@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, Params, UnixNanos,
+    AtomicMap, DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -47,8 +47,7 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
-        TriggerType,
+        AccountType, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::OrderEventAny,
     identifiers::{
@@ -71,10 +70,7 @@ use super::{
 use crate::{
     common::{
         consts::{KRAKEN_SPOT_POST_ONLY_ERROR, KRAKEN_VENUE},
-        enums::{
-            KrakenOrderSide, KrakenOrderType, KrakenProductType, KrakenSpotTrigger,
-            KrakenTimeInForce, product_type_from_symbol,
-        },
+        enums::{KrakenOrderSide, KrakenOrderType, KrakenSpotTrigger, KrakenTimeInForce},
         order_params::{
             build_add_order_params, build_amend_order_params, build_cancel_order_params,
             compute_ws_time_in_force, format_expire_time,
@@ -826,50 +822,6 @@ impl KrakenSpotExecutionClient {
         }
     }
 
-    fn sweep_stale_margin_positions(
-        &self,
-        account_id: AccountId,
-        reports: &mut Vec<PositionStatusReport>,
-    ) {
-        let reported: HashSet<InstrumentId> = reports
-            .iter()
-            .filter(|r| r.position_side != PositionSide::Flat)
-            .map(|r| r.instrument_id)
-            .collect();
-
-        let ts_now = self.clock.get_time_ns();
-        let cache = self.core.cache();
-        let open_positions =
-            cache.positions_open(Some(&*KRAKEN_VENUE), None, None, Some(&account_id), None);
-
-        for pos in open_positions {
-            let inst_id = pos.instrument_id;
-
-            if product_type_from_symbol(inst_id.symbol.inner().as_str()) != KrakenProductType::Spot
-            {
-                continue;
-            }
-
-            if reported.contains(&inst_id) {
-                continue;
-            }
-
-            let precision = cache.instrument(&inst_id).map_or(0, |i| i.size_precision());
-            log::debug!("Emitting synthetic FLAT for closed margin position {inst_id}");
-            reports.push(PositionStatusReport::new(
-                account_id,
-                inst_id,
-                PositionSide::Flat,
-                Quantity::zero(precision),
-                ts_now,
-                ts_now,
-                None,
-                None,
-                None,
-            ));
-        }
-    }
-
     fn batch_add_via_rest(
         &self,
         order_tuples: Vec<BatchOrderTuple>,
@@ -1102,6 +1054,17 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         self.core.oms_type
     }
 
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        // Deferred to the HTTP client so the answer is derived from the read that produces the
+        // reports, rather than restated here where it could drift.
+        self.http.covers_bulk_position_reports(
+            instrument_id,
+            self.config.spot_account_type,
+            self.config.use_spot_position_reports,
+            Ustr::from(self.config.spot_positions_quote_currency.as_str()),
+        )
+    }
+
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
     }
@@ -1323,8 +1286,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         );
 
         let account_id = self.core.account_id;
-        let mut reports = self
-            .http
+        self.http
             .request_position_status_reports(
                 account_id,
                 cmd.instrument_id,
@@ -1332,13 +1294,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 self.config.use_spot_position_reports,
                 Ustr::from(self.config.spot_positions_quote_currency.as_str()),
             )
-            .await?;
-
-        if cmd.instrument_id.is_none() && self.config.spot_account_type == AccountType::Margin {
-            self.sweep_stale_margin_positions(account_id, &mut reports);
-        }
-
-        Ok(reports)
+            .await
     }
 
     async fn generate_mass_status(
@@ -1347,18 +1303,28 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         log::debug!("Generating mass status: lookback_mins={lookback_mins:?}");
 
-        let start = lookback_mins.map(|mins| Timestamp::now() - Duration::from_secs(mins * 60));
+        let ts_init = self.clock.get_time_ns();
+        // Saturating arithmetic: an unclamped lookback must not overflow, and a cutoff before the
+        // epoch must not panic converting into `UnixNanos`.
+        let lookback_start = lookback_mins.map(|mins| {
+            let nanos = mins.saturating_mul(60).saturating_mul(1_000_000_000);
+            ts_init.saturating_sub(DurationNanos::new(nanos))
+        });
+        let start = lookback_start.map(Timestamp::from);
 
         let account_id = self.core.account_id;
-        let order_reports = self
+        // Read closed orders as well as open ones, matching the shared default. An order that
+        // reached a terminal state while the node was down is only visible through ClosedOrders.
+        // The lookback cutoff and the closed-order page cap bound the read.
+        let (order_reports, orders_complete) = self
             .http
-            .request_order_status_reports(account_id, None, start, None, true)
+            .request_order_status_reports_checked(account_id, None, start, None, false)
             .await?;
-        let fill_reports = self
+        let (fill_reports, fills_complete) = self
             .http
-            .request_fill_reports(account_id, None, start, None)
+            .request_fill_reports_checked(account_id, None, start, None)
             .await?;
-        let mut position_reports = self
+        let position_reports = self
             .http
             .request_position_status_reports(
                 account_id,
@@ -1369,20 +1335,19 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             )
             .await?;
 
-        if self.config.spot_account_type == AccountType::Margin {
-            self.sweep_stale_margin_positions(account_id, &mut position_reports);
-        }
-
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
             self.core.account_id,
             *KRAKEN_VENUE,
-            self.clock.get_time_ns(),
+            ts_init,
             None,
         );
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
+        // One cutoff covers every historical query above, so record it with the completeness of
+        // the sources the engine needs to interpret the bounded set.
+        mass_status.set_report_window(lookback_start, orders_complete && fills_complete);
 
         Ok(Some(mass_status))
     }
@@ -1570,7 +1535,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 .all(|w| w[0].instrument_id() == w[1].instrument_id());
 
             if any_quote_qty {
-                log::warn!(
+                log::debug!(
                     "Kraken WS batch_add does not support quote-quantity orders, falling back to REST for order_list_id={}",
                     cmd.order_list.id,
                 );
@@ -1580,7 +1545,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                     Err(e) => log::warn!("Kraken WS batch_add fallback to REST: {e}"),
                 }
             } else {
-                log::warn!(
+                log::debug!(
                     "Kraken WS batch_add requires single shared symbol, falling back to REST for order_list_id={}",
                     cmd.order_list.id,
                 );
@@ -1605,85 +1570,58 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if cmd.order_side.is_none() {
-            log::debug!("Canceling all orders: instrument_id={instrument_id} (bulk)");
-
-            let http = self.http.clone();
-
-            self.spawn_task("cancel_all_orders", async move {
-                if let Err(e) = http.inner.cancel_all_orders().await {
-                    match command_failure_from_cancel_error(e) {
-                        CommandFailure::NotSent(reason) => {
-                            log::warn!("Cancel-all failed local validation: {reason}");
-                        }
-                        CommandFailure::Ambiguous(reason)
-                        | CommandFailure::VenueRejected(reason) => {
-                            log::warn!(
-                                "Cancel-all ambiguous failure, awaiting reconciliation: {reason}"
-                            );
-                        }
-                    }
-                }
-                Ok(())
-            });
-
-            return Ok(());
-        }
-
         log::debug!(
             "Canceling all orders: instrument_id={instrument_id}, side={:?}",
             cmd.order_side
         );
 
-        let orders_to_cancel: Vec<_> = {
+        // Kraken's account-wide `CancelAll` ignores the requested instrument, so select the
+        // matching open orders and cancel them by explicit venue id instead.
+        let cancels: Vec<CancelOrder> = {
             let cache = self.core.cache();
-            let open_orders = cache.orders_open(None, Some(&instrument_id), None, None, None);
+            let ts_init = self.clock.get_time_ns();
+            let correlation_id = cmd.correlation_id.or(Some(cmd.command_id));
 
-            open_orders
+            // In-flight orders are included because the venue can have accepted an order the
+            // cache still records as `Submitted`. The venue-wide cancellation this replaced
+            // reached those, so selecting only open orders would silently stop covering them.
+            let mut seen = HashSet::new();
+
+            cache
+                .orders_open(None, Some(&instrument_id), None, None, None)
                 .into_iter()
-                .filter(|order| Some(order.order_side()) == cmd.order_side)
-                .filter_map(|order| {
-                    Some((
-                        order.venue_order_id()?,
-                        order.client_order_id(),
-                        order.instrument_id(),
+                .chain(cache.orders_inflight(None, Some(&instrument_id), None, None, None))
+                .filter(|order| cmd.order_side.is_none_or(|side| order.order_side() == side))
+                .filter(|order| seen.insert(order.client_order_id()))
+                .map(|order| {
+                    CancelOrder::new(
+                        cmd.trader_id,
+                        cmd.client_id,
+                        // Each cancel keeps the owning strategy of the order it targets.
                         order.strategy_id(),
-                    ))
+                        order.instrument_id(),
+                        order.client_order_id(),
+                        order.venue_order_id(),
+                        UUID4::new(),
+                        ts_init,
+                        cmd.params.clone(),
+                        correlation_id,
+                    )
                 })
                 .collect()
         };
 
-        let account_id = self.core.account_id;
-
-        for (venue_order_id, client_order_id, order_instrument_id, strategy_id) in orders_to_cancel
-        {
-            let http = self.http.clone();
-            let emitter = self.emitter.clone();
-            let clock = self.clock;
-
-            self.spawn_task("cancel_order_by_side", async move {
-                if let Err(failure) = cancel_order_for_spot(
-                    &http,
-                    account_id,
-                    order_instrument_id,
-                    Some(client_order_id),
-                    Some(venue_order_id),
-                )
-                .await
-                {
-                    handle_cancel_failure(
-                        &emitter,
-                        clock,
-                        strategy_id,
-                        order_instrument_id,
-                        client_order_id,
-                        Some(venue_order_id),
-                        failure,
-                    );
-                }
-                Ok(())
-            });
+        if cancels.is_empty() {
+            log::debug!("No open orders to cancel for {instrument_id}");
+            return Ok(());
         }
+
+        let http = self.http.clone();
+
+        self.spawn_task("cancel_all_orders", async move {
+            batch_cancel_orders_for_spot(&http, &cancels).await;
+            Ok(())
+        });
 
         Ok(())
     }
@@ -1757,12 +1695,23 @@ async fn cancel_order_for_spot(
     Ok(())
 }
 
+/// How Kraken identifies one order in a batch cancellation.
+///
+/// Kraken keys transaction IDs and client order IDs in separate request fields, so the two cannot
+/// be mixed into one array.
+enum SpotBatchCancelId {
+    VenueOrderId(String),
+    ClientOrderId(String),
+}
+
+const SPOT_BATCH_CANCEL_LIMIT: usize = 50;
+
 async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[CancelOrder]) {
-    let mut orders = Vec::new();
+    let mut ids = Vec::new();
 
     for cancel in cancels {
         match batch_cancel_item_for_spot(http, cancel) {
-            Ok(order) => orders.push(order),
+            Ok(id) => ids.push(id),
             Err(CommandFailure::NotSent(reason)) => {
                 log::warn!(
                     "Batch cancel command failed local validation for {}: {reason}",
@@ -1778,10 +1727,23 @@ async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[Ca
         }
     }
 
-    for chunk in orders.chunks(50) {
-        let params = KrakenSpotCancelOrderBatchParams {
-            orders: chunk.to_vec(),
-        };
+    // The venue limit counts both fields together, so chunk before splitting them.
+    for chunk in ids.chunks(SPOT_BATCH_CANCEL_LIMIT) {
+        let mut orders = Vec::new();
+        let mut cl_ord_ids = Vec::new();
+
+        for id in chunk {
+            match id {
+                SpotBatchCancelId::VenueOrderId(venue_order_id) => {
+                    orders.push(venue_order_id.clone());
+                }
+                SpotBatchCancelId::ClientOrderId(client_order_id) => {
+                    cl_ord_ids.push(client_order_id.clone());
+                }
+            }
+        }
+
+        let params = KrakenSpotCancelOrderBatchParams { orders, cl_ord_ids };
 
         match http.inner.cancel_order_batch(&params).await {
             Ok(response) => {
@@ -1810,7 +1772,7 @@ async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[Ca
 fn batch_cancel_item_for_spot(
     http: &KrakenSpotHttpClient,
     cancel: &CancelOrder,
-) -> Result<String, CommandFailure> {
+) -> Result<SpotBatchCancelId, CommandFailure> {
     http.get_cached_instrument(&cancel.instrument_id.symbol.inner())
         .ok_or_else(|| {
             CommandFailure::not_sent(
@@ -1819,9 +1781,11 @@ fn batch_cancel_item_for_spot(
         })?;
 
     if let Some(venue_order_id) = cancel.venue_order_id {
-        Ok(venue_order_id.to_string())
+        Ok(SpotBatchCancelId::VenueOrderId(venue_order_id.to_string()))
     } else {
-        Ok(truncate_cl_ord_id(&cancel.client_order_id))
+        Ok(SpotBatchCancelId::ClientOrderId(truncate_cl_ord_id(
+            &cancel.client_order_id,
+        )))
     }
 }
 
@@ -1906,7 +1870,7 @@ mod tests {
     use axum::{Router, http::StatusCode, routing::post};
     use nautilus_common::{
         cache::{Cache, InstrumentLookupError},
-        clock::TestClock,
+        clock::VirtualClock,
         factories::ExecutionClientFactory,
         messages::execution::CancelOrder,
     };
@@ -2104,7 +2068,7 @@ mod tests {
             ..Default::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create(
             TraderId::from("TRADER-001"),

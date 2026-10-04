@@ -49,6 +49,7 @@ from nautilus_trader.model import ContingencyType  # type: ignore[attr-defined]
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LimitOrder  # type: ignore[attr-defined]
 from nautilus_trader.model import MarketOrder  # type: ignore[attr-defined]
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType  # type: ignore[attr-defined]
 from nautilus_trader.model import OptionChainSlice  # type: ignore[attr-defined]
 from nautilus_trader.model import OptionSeriesId  # type: ignore[attr-defined]
@@ -331,12 +332,12 @@ def main() -> None:
     )
     data = [
         BacktestDataConfig(
-            data_type="QuoteTick",
+            data_type=NautilusDataType.QuoteTick,
             catalog_path=str(args.catalog_path),
             instrument_ids=selection.instrument_ids,
         ),
         BacktestDataConfig(
-            data_type="OptionGreeks",
+            data_type=NautilusDataType.OptionGreeks,
             catalog_path=str(args.catalog_path),
             instrument_ids=selection.instrument_ids,
         ),

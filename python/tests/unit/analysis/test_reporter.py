@@ -17,6 +17,7 @@ Test reporter behavior.
 """
 
 import math
+from decimal import Decimal
 
 import pytest
 
@@ -24,6 +25,7 @@ from nautilus_trader.analysis import ReportProvider
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.core import UUID4
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import ClientOrderId
@@ -140,6 +142,10 @@ def _engine_with_account() -> object:
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     return engine
 
@@ -327,6 +333,10 @@ def _run_small_backtest_with_fills() -> BacktestEngine:
         account_type=AccountType.MARGIN,
         base_currency=usd,
         starting_balances=[Money(1_000_000.0, usd)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(audusd)
     engine.add_data(_e2e_quotes(audusd))

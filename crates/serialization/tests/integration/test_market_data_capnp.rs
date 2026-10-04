@@ -28,7 +28,7 @@ use nautilus_model::{
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
         deltas::OrderBookDeltas,
-        depth::OrderBookDepth10,
+        depth::OrderBookDepth,
         order::BookOrder,
     },
     enums::{
@@ -1007,27 +1007,35 @@ fn test_order_book_deltas_with_multiple_deltas() {
 }
 
 #[rstest]
-fn test_order_book_depth10_roundtrip() {
-    let bids = std::array::from_fn(|i| {
-        BookOrder::new(
-            OrderSide::Buy,
-            Price::from_decimal_dp(Decimal::new(10_000 - 50 * i as i64, 2), 2).unwrap(),
-            Quantity::from_decimal_dp(Decimal::new(100 + i as i64, 1), 1).unwrap(),
-            0,
-        )
-    });
-    let asks = std::array::from_fn(|i| {
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from_decimal_dp(Decimal::new(10_050 + 50 * i as i64, 2), 2).unwrap(),
-            Quantity::from_decimal_dp(Decimal::new(200 + i as i64, 1), 1).unwrap(),
-            0,
-        )
-    });
-    let bid_counts = std::array::from_fn(|i| i as u32 + 1);
-    let ask_counts = std::array::from_fn(|i| i as u32 + 11);
+#[case(0)]
+#[case(3)]
+#[case(10)]
+#[case(25)]
+fn test_order_book_depth_roundtrip(#[case] levels: usize) {
+    let bids = (0..levels)
+        .map(|i| {
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from_decimal_dp(Decimal::new(10_000 - 50 * i as i64, 2), 2).unwrap(),
+                Quantity::from_decimal_dp(Decimal::new(100 + i as i64, 1), 1).unwrap(),
+                0,
+            )
+        })
+        .collect::<Vec<_>>();
+    let asks = (0..levels)
+        .map(|i| {
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from_decimal_dp(Decimal::new(10_050 + 50 * i as i64, 2), 2).unwrap(),
+                Quantity::from_decimal_dp(Decimal::new(200 + i as i64, 1), 1).unwrap(),
+                0,
+            )
+        })
+        .collect::<Vec<_>>();
+    let bid_counts = (0..levels).map(|i| i as u32 + 1).collect::<Vec<_>>();
+    let ask_counts = (0..levels).map(|i| i as u32 + 11).collect::<Vec<_>>();
 
-    let depth = OrderBookDepth10::new(
+    let depth = OrderBookDepth::new(
         InstrumentId::from("BTCUSDT.BINANCE"),
         bids,
         asks,
@@ -1040,7 +1048,7 @@ fn test_order_book_depth10_roundtrip() {
     );
 
     let mut message = capnp::message::Builder::new_default();
-    let builder = message.init_root::<market_capnp::order_book_depth10::Builder>();
+    let builder = message.init_root::<market_capnp::order_book_depth::Builder>();
     depth.to_capnp(builder);
 
     let mut bytes = Vec::new();
@@ -1050,19 +1058,19 @@ fn test_order_book_depth10_roundtrip() {
         capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())
             .unwrap();
     let root = reader
-        .get_root::<market_capnp::order_book_depth10::Reader>()
+        .get_root::<market_capnp::order_book_depth::Reader>()
         .unwrap();
-    let decoded = OrderBookDepth10::from_capnp(root).unwrap();
+    let decoded = OrderBookDepth::from_capnp(root).unwrap();
 
     assert_eq!(depth.instrument_id, decoded.instrument_id);
 
-    for i in 0..10 {
+    for i in 0..levels {
         assert_eq!(depth.bids[i].side, decoded.bids[i].side);
         assert_eq!(depth.bids[i].price, decoded.bids[i].price);
         assert_eq!(depth.bids[i].size, decoded.bids[i].size);
     }
 
-    for i in 0..10 {
+    for i in 0..levels {
         assert_eq!(depth.asks[i].side, decoded.asks[i].side);
         assert_eq!(depth.asks[i].price, decoded.asks[i].price);
         assert_eq!(depth.asks[i].size, decoded.asks[i].size);
@@ -1077,7 +1085,7 @@ fn test_order_book_depth10_roundtrip() {
 }
 
 #[rstest]
-fn test_order_book_depth10_with_partial_levels() {
+fn test_order_book_depth_with_partial_levels() {
     use nautilus_model::data::order::NULL_ORDER;
 
     let mut bids = [NULL_ORDER; 10];
@@ -1111,7 +1119,7 @@ fn test_order_book_depth10_with_partial_levels() {
         0,
     );
 
-    let depth = OrderBookDepth10::new(
+    let depth = OrderBookDepth::new(
         InstrumentId::from("ETHUSDT.BINANCE"),
         bids,
         asks,
@@ -1124,7 +1132,7 @@ fn test_order_book_depth10_with_partial_levels() {
     );
 
     let mut message = capnp::message::Builder::new_default();
-    let builder = message.init_root::<market_capnp::order_book_depth10::Builder>();
+    let builder = message.init_root::<market_capnp::order_book_depth::Builder>();
     depth.to_capnp(builder);
 
     let mut bytes = Vec::new();
@@ -1134,9 +1142,9 @@ fn test_order_book_depth10_with_partial_levels() {
         capnp::serialize::read_message(&mut &bytes[..], capnp::message::ReaderOptions::new())
             .unwrap();
     let root = reader
-        .get_root::<market_capnp::order_book_depth10::Reader>()
+        .get_root::<market_capnp::order_book_depth::Reader>()
         .unwrap();
-    let decoded = OrderBookDepth10::from_capnp(root).unwrap();
+    let decoded = OrderBookDepth::from_capnp(root).unwrap();
 
     assert_eq!(depth.instrument_id, decoded.instrument_id);
 
@@ -1160,4 +1168,138 @@ fn test_order_book_depth10_with_partial_levels() {
     assert_eq!(depth.sequence, decoded.sequence);
     assert_eq!(depth.ts_event, decoded.ts_event);
     assert_eq!(depth.ts_init, decoded.ts_init);
+}
+
+/// Wire-format bytes for a depth snapshot encoded under the pre-rename `OrderBookDepth10`
+/// schema names. The renamed schema pins the pre-rename node ID (0xa314672be4630bdd) and
+/// field ordinals, so these bytes must keep decoding under the canonical names.
+///
+/// Price and quantity raws are scaled at the high-precision `FIXED_PRECISION` of 16 decimal
+/// places, so the fixture is only asserted under that feature.
+#[cfg(feature = "high-precision")]
+#[rustfmt::skip]
+const PRE_RENAME_ORDER_BOOK_DEPTH_BYTES: [u8; 504] = [
+    0x00, 0x00, 0x00, 0x00, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x07, 0x00,
+    0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xe7, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x2d, 0x00, 0x00, 0x00, 0x27, 0x00, 0x00, 0x00,
+    0x7d, 0x00, 0x00, 0x00, 0x27, 0x00, 0x00, 0x00, 0xcd, 0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00,
+    0xcd, 0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0xcc, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0xcc, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+    0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x42, 0x00, 0x00, 0x00,
+    0x45, 0x54, 0x48, 0x55, 0x53, 0x44, 0x54, 0x00, 0x01, 0x00, 0x00, 0x00, 0x42, 0x00, 0x00, 0x00,
+    0x42, 0x49, 0x4e, 0x41, 0x4e, 0x43, 0x45, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00,
+    0x0c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+    0x24, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x30, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x25, 0x17, 0xa6, 0x3d, 0x04, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xc5, 0x2e, 0xbc, 0xa2, 0xb1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xe6, 0x86, 0x98, 0xc4, 0x27, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x47, 0x0e, 0xa1, 0xb0, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+    0x18, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x24, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+    0x30, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x89, 0xbe, 0x59, 0xf4, 0xe4, 0x1b,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4b, 0xcd, 0x6a, 0xcc, 0x86, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4a, 0x2e, 0x4c, 0x7b, 0x08, 0x1c,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xcd, 0xac, 0x4f, 0xda, 0xcd, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x6f, 0x10, 0xa5, 0xd4, 0xe8, 0x00, 0x00, 0x00,
+    0xde, 0x10, 0xa5, 0xd4, 0xe8, 0x00, 0x00, 0x00,
+];
+
+#[cfg(feature = "high-precision")]
+#[rstest]
+fn test_pre_rename_order_book_depth_bytes_decode_under_canonical_schema() {
+    let message = capnp::serialize::read_message(
+        &mut &PRE_RENAME_ORDER_BOOK_DEPTH_BYTES[..],
+        capnp::message::ReaderOptions::new(),
+    )
+    .unwrap();
+    let reader = message
+        .get_root::<market_capnp::order_book_depth::Reader>()
+        .unwrap();
+    let depth = OrderBookDepth::from_capnp(reader).unwrap();
+
+    assert_eq!(depth.instrument_id, InstrumentId::from("ETHUSDT.BINANCE"));
+    assert_eq!(depth.bids.len(), 2);
+    assert_eq!(depth.asks.len(), 2);
+    assert_eq!(
+        depth
+            .bids
+            .iter()
+            .map(|order| (order.side, order.price, order.size, order.order_id))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                OrderSide::Buy.into(),
+                Price::from("101.00"),
+                Quantity::from("5"),
+                0
+            ),
+            (
+                OrderSide::Buy.into(),
+                Price::from("102.00"),
+                Quantity::from("7"),
+                0
+            ),
+        ]
+    );
+    assert_eq!(
+        depth
+            .asks
+            .iter()
+            .map(|order| (order.side, order.price, order.size, order.order_id))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                OrderSide::Sell.into(),
+                Price::from("201.00"),
+                Quantity::from("11"),
+                0
+            ),
+            (
+                OrderSide::Sell.into(),
+                Price::from("202.00"),
+                Quantity::from("13"),
+                0
+            ),
+        ]
+    );
+    assert_eq!(depth.bid_counts.to_vec(), vec![3, 4]);
+    assert_eq!(depth.ask_counts.to_vec(), vec![1, 2]);
+    assert_eq!(depth.flags, 23);
+    assert_eq!(depth.sequence, 999);
+    assert_eq!(
+        depth.ts_event,
+        nautilus_core::UnixNanos::from(1_000_000_000_111)
+    );
+    assert_eq!(
+        depth.ts_init,
+        nautilus_core::UnixNanos::from(1_000_000_000_222)
+    );
+}
+
+#[rstest]
+fn test_order_book_depth_capnp_node_ids_match_pre_rename_identities() {
+    use capnp::traits::HasTypeId;
+    use nautilus_serialization::capnp::data_capnp;
+
+    assert_eq!(
+        <market_capnp::order_book_depth::Builder<'_> as HasTypeId>::TYPE_ID,
+        0xa314_672b_e463_0bdd
+    );
+    assert_eq!(
+        <data_capnp::subscribe_book_depth::Builder<'_> as HasTypeId>::TYPE_ID,
+        0xbcf1_c6b4_f4ad_99b8
+    );
+    assert_eq!(
+        <data_capnp::unsubscribe_book_depth::Builder<'_> as HasTypeId>::TYPE_ID,
+        0xeba2_5002_462f_2bd9
+    );
 }

@@ -44,18 +44,21 @@ use nautilus_common::{
     },
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory, OrderEventFactory},
-    live::runner::{get_data_event_sender, get_exec_event_sender},
+    live::{
+        runner::{get_data_event_sender, get_exec_event_sender},
+        sender::EventSender,
+    },
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport,
         data::{
             RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
             RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
             RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
+            SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData, SubscribeFundingRates,
             SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
             SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
             SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
             UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
@@ -78,7 +81,7 @@ use nautilus_model::{
     data::{
         Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
         InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, PositionSide},
     events::{
@@ -440,12 +443,12 @@ pub struct ClientOutput {
 
 #[derive(Debug, Default)]
 struct OutputState {
-    sender: Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>,
+    sender: Option<EventSender<DataEvent>>,
     bound: bool,
     disposed: bool,
     claimed: bool,
     client_id: Option<ClientId>,
-    exec_sender: Option<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>,
+    exec_sender: Option<EventSender<ExecutionEvent>>,
     event_factory: Option<OrderEventFactory>,
     venue: Option<Venue>,
 }
@@ -843,7 +846,7 @@ impl ClientOutput {
         self.sender()?.send(event).map_err(to_pyruntime_err)
     }
 
-    fn sender(&self) -> PyResult<tokio::sync::mpsc::UnboundedSender<DataEvent>> {
+    fn sender(&self) -> PyResult<EventSender<DataEvent>> {
         if thread::current().id() != self.owner {
             return Err(to_pyruntime_err("Client output requires its owner thread"));
         }
@@ -864,7 +867,7 @@ impl ClientOutput {
             .ok_or_else(|| to_pyruntime_err("Client has no execution identity"))
     }
 
-    fn exec_sender(&self) -> PyResult<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>> {
+    fn exec_sender(&self) -> PyResult<EventSender<ExecutionEvent>> {
         if thread::current().id() != self.owner {
             return Err(to_pyruntime_err("Client output requires its owner thread"));
         }
@@ -1138,6 +1141,7 @@ impl PythonClients {
                 kwargs.set_item("config", &config.0)?;
                 kwargs.set_item("cache", PyClientCache { id: cache_id })?;
                 kwargs.set_item("clock", PyClock::from_rc(clock.clone()))?;
+
                 if let Some(trader_id) = trader_id {
                     kwargs.set_item("trader_id", trader_id)?;
                 }
@@ -1157,6 +1161,7 @@ impl PythonClients {
                 let base = py
                     .import("nautilus_trader.live.clients")?
                     .getattr(base_name)?;
+
                 if !client.bind(py).is_instance(&base)? {
                     return Err(to_pytype_err(format!("Factory must return a {base_name}")));
                 }
@@ -1359,10 +1364,10 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
-    fn subscribe_book_depth10(&mut self, command: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth(&mut self, command: SubscribeBookDepth) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
-                .call_method1(py, "admit", ("_subscribe_book_depth10", (command,)))
+                .call_method1(py, "admit", ("_subscribe_book_depth", (command,)))
         })?;
 
         Ok(())
@@ -1483,13 +1488,10 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
-    fn unsubscribe_book_depth10(&mut self, command: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth(&mut self, command: &UnsubscribeBookDepth) -> anyhow::Result<()> {
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "admit",
-                ("_unsubscribe_book_depth10", (command.clone(),)),
-            )
+            self.runtime
+                .call_method1(py, "admit", ("_unsubscribe_book_depth", (command.clone(),)))
         })?;
 
         Ok(())
@@ -1765,7 +1767,7 @@ fn extract_data(data: &Bound<'_, PyAny>) -> PyResult<Data> {
         Bar,
         OrderBookDelta,
         OrderBookDeltas,
-        OrderBookDepth10,
+        OrderBookDepth,
         MarkPriceUpdate,
         IndexPriceUpdate,
         FundingRateUpdate,
@@ -2200,7 +2202,7 @@ fn mass_status_matches(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::{clock::TestClock, enums::LogLevel};
+    use nautilus_common::{clock::VirtualClock, enums::LogLevel};
     use nautilus_core::python::to_pyvalue_err;
     use nautilus_model::{
         enums::{OrderStatus, OrderType, TimeInForce},
@@ -2220,7 +2222,7 @@ mod tests {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         {
             let mut state = output.state.lock();
-            state.exec_sender = Some(sender);
+            state.exec_sender = Some(sender.into());
             state.bound = true;
             state.event_factory = Some(OrderEventFactory::new(
                 TraderId::from("TESTER-001"),
@@ -2295,7 +2297,7 @@ class Runtime:
                     runtime,
                     output: ClientOutput::py_new(),
                     execution: None,
-                    clock: Rc::new(RefCell::new(TestClock::default())),
+                    clock: Rc::new(RefCell::new(VirtualClock::default())),
                 },
                 identity: ExecutionIdentity {
                     tolerance: Decimal::ZERO,
@@ -2325,6 +2327,7 @@ class Runtime:
     ) {
         let client = native_execution_client;
         let mut expected = order_report();
+
         if result_kind == "foreign" {
             expected.account_id = AccountId::from("OTHER-001");
         }
@@ -2402,6 +2405,7 @@ class Runtime:
     fn test_output_rebinding_is_rejected(#[case] disposed: bool) {
         Python::initialize();
         let output = ClientOutput::py_new();
+
         if disposed {
             output.invalidate();
         } else {
@@ -2457,7 +2461,7 @@ class Runtime:
     ) {
         let (output, _) = execution_output;
         let (sender, _) = tokio::sync::mpsc::unbounded_channel();
-        output.state.lock().sender = Some(sender);
+        output.state.lock().sender = Some(sender.into());
         output.invalidate();
         output.invalidate();
         assert_eq!(
@@ -2686,7 +2690,7 @@ class Runtime:
             let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
             {
                 let mut state = output.state.lock();
-                state.sender = Some(sender);
+                state.sender = Some(sender.into());
                 state.client_id = Some(ClientId::from("SIM"));
             }
 
@@ -2899,6 +2903,7 @@ class Runtime:
         let commission = Money::from("0.17 USD");
         Python::attach(|py| {
             let runtime = client.client.runtime.bind(py);
+
             if mode == "money" {
                 runtime.setattr("result", commission).unwrap();
             } else if mode == "exception" {
@@ -3204,6 +3209,7 @@ class Runtime:
     ) {
         let client = native_execution_client;
         let account = AccountId::from("OTHER-001");
+
         if kind == "order" {
             order_report.account_id = account;
         }

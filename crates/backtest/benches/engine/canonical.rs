@@ -30,6 +30,7 @@ use nautilus_backtest::{
 };
 use nautilus_common::{actor::DataActor, logging::logger::LoggerConfig, timer::TimeEvent};
 use nautilus_core::{UnixNanos, paths::get_test_data_path};
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
     indicator::{Indicator, MovingAverage},
@@ -45,6 +46,7 @@ use nautilus_model::{
 };
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde_json::Value;
 
 const DATA_FILE: &str = "btc-perp-20211231-20220201_1m.csv";
@@ -114,6 +116,11 @@ impl CanonicalScenario {
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .queue_position(true)
+                // Matches the canonical instrument's defined rates; fingerprints pin this behavior.
+                .fee_model(
+                    FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0004)))
+                        .into(),
+                )
                 .build()?,
         )?;
         engine.add_instrument(&canonical_instrument())?;

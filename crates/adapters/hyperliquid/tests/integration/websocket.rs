@@ -1938,7 +1938,7 @@ async fn test_book_subscribe_recovers_after_venue_reject() {
 
 #[rstest]
 #[tokio::test]
-async fn test_unsubscribe_book_deltas_keeps_shared_stream_for_depth10() {
+async fn test_unsubscribe_book_deltas_keeps_shared_stream_for_depth() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -1955,12 +1955,12 @@ async fn test_unsubscribe_book_deltas_keeps_shared_stream_for_depth10() {
         .await
         .expect("subscribe deltas failed");
     client
-        .subscribe_book_depth10(instrument_id)
+        .subscribe_book_depth(instrument_id)
         .await
-        .expect("subscribe depth10 failed");
+        .expect("subscribe depth failed");
 
-    // Releasing deltas must not tear down the stream while depth10 remains;
-    // releasing depth10 as the last use must. Commands are processed in
+    // Releasing deltas must not tear down the stream while depth remains;
+    // releasing depth as the last use must. Commands are processed in
     // order, so a lone unsubscription after the final release proves the
     // deltas release sent none.
     client
@@ -1968,9 +1968,9 @@ async fn test_unsubscribe_book_deltas_keeps_shared_stream_for_depth10() {
         .await
         .expect("unsubscribe deltas failed");
     client
-        .unsubscribe_book_depth10(instrument_id)
+        .unsubscribe_book_depth(instrument_id)
         .await
-        .expect("unsubscribe depth10 failed");
+        .expect("unsubscribe depth failed");
 
     wait_until_async(
         || {
@@ -2005,7 +2005,7 @@ async fn test_unsubscribe_book_deltas_keeps_shared_stream_for_depth10() {
 
 #[rstest]
 #[tokio::test]
-async fn test_depth10_only_unsubscribe_tears_down_stream_with_original_options() {
+async fn test_depth_only_unsubscribe_tears_down_stream_with_original_options() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -2018,9 +2018,9 @@ async fn test_depth10_only_unsubscribe_tears_down_stream_with_original_options()
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     client
-        .subscribe_book_depth10_with_options(instrument_id, Some(4), None)
+        .subscribe_book_depth_with_options(instrument_id, Some(4), None)
         .await
-        .expect("subscribe depth10 failed");
+        .expect("subscribe depth failed");
 
     wait_until_async(
         || {
@@ -2035,9 +2035,9 @@ async fn test_depth10_only_unsubscribe_tears_down_stream_with_original_options()
     .await;
 
     client
-        .unsubscribe_book_depth10(instrument_id)
+        .unsubscribe_book_depth(instrument_id)
         .await
-        .expect("unsubscribe depth10 failed");
+        .expect("unsubscribe depth failed");
 
     wait_until_async(
         || {
@@ -2052,7 +2052,7 @@ async fn test_depth10_only_unsubscribe_tears_down_stream_with_original_options()
     assert_eq!(
         unsubscriptions.len(),
         1,
-        "expected depth10-only unsubscribe to tear down the venue stream"
+        "expected depth-only unsubscribe to tear down the venue stream"
     );
     assert_eq!(
         unsubscriptions[0].get("type").and_then(Value::as_str),

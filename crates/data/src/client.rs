@@ -34,11 +34,11 @@ use nautilus_common::{
     messages::data::{
         RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
         RequestInstrument, RequestInstruments, RequestOptionChainReferencePrice, RequestQuotes,
-        RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand,
+        RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand,
         SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCommand,
         UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
@@ -68,7 +68,7 @@ pub struct DataClientAdapter {
     pub handles_book_snapshots: bool,
     pub subscriptions_custom: AHashSet<DataType>,
     pub subscriptions_book_deltas: AHashSet<InstrumentId>,
-    pub subscriptions_book_depth10: AHashSet<InstrumentId>,
+    pub subscriptions_book_depth: AHashSet<InstrumentId>,
     pub subscriptions_quotes: AHashSet<InstrumentId>,
     pub subscriptions_trades: AHashSet<InstrumentId>,
     pub subscriptions_bars: AHashSet<BarType>,
@@ -122,7 +122,7 @@ impl Debug for DataClientAdapter {
             .field("handles_book_snapshots", &self.handles_book_snapshots)
             .field("subscriptions_custom", &self.subscriptions_custom)
             .field("subscriptions_book_deltas", &self.subscriptions_book_deltas)
-            .field("subscriptions_book_depth10", &self.subscriptions_book_depth10)
+            .field("subscriptions_book_depth", &self.subscriptions_book_depth)
             .field("subscriptions_quotes", &self.subscriptions_quotes)
             .field("subscriptions_trades", &self.subscriptions_trades)
             .field("subscriptions_bars", &self.subscriptions_bars)
@@ -154,7 +154,7 @@ impl DataClientAdapter {
             handles_book_snapshots: handles_order_book_snapshots,
             subscriptions_custom: AHashSet::new(),
             subscriptions_book_deltas: AHashSet::new(),
-            subscriptions_book_depth10: AHashSet::new(),
+            subscriptions_book_depth: AHashSet::new(),
             subscriptions_quotes: AHashSet::new(),
             subscriptions_trades: AHashSet::new(),
             subscriptions_mark_prices: AHashSet::new(),
@@ -236,7 +236,7 @@ impl DataClientAdapter {
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
             SubscribeCommand::Instruments(cmd) => self.subscribe_instruments(cmd),
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd),
-            SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depth10(cmd),
+            SubscribeCommand::BookDepth(cmd) => self.subscribe_book_depth(cmd),
             SubscribeCommand::BookSnapshots(_) => Ok(()), // Handled internally by engine
             SubscribeCommand::Quotes(cmd) => self.subscribe_quotes(cmd),
             SubscribeCommand::Trades(cmd) => self.subscribe_trades(cmd),
@@ -277,7 +277,7 @@ impl DataClientAdapter {
             SubscribeCommand::Instrument(cmd) => self.subscriptions_instrument.contains(&cmd.instrument_id),
             SubscribeCommand::Instruments(cmd) => self.subscriptions_instrument_venue.contains(&cmd.venue),
             SubscribeCommand::BookDeltas(cmd) => self.subscriptions_book_deltas.contains(&cmd.instrument_id),
-            SubscribeCommand::BookDepth10(cmd) => self.subscriptions_book_depth10.contains(&cmd.instrument_id),
+            SubscribeCommand::BookDepth(cmd) => self.subscriptions_book_depth.contains(&cmd.instrument_id),
             SubscribeCommand::Quotes(cmd) => self.subscriptions_quotes.contains(&cmd.instrument_id),
             SubscribeCommand::Trades(cmd) => self.subscriptions_trades.contains(&cmd.instrument_id),
             SubscribeCommand::Bars(cmd) => self.subscriptions_bars.contains(&cmd.bar_type),
@@ -294,7 +294,7 @@ impl DataClientAdapter {
     pub(crate) fn clear_subscription_state(&mut self) {
         self.subscriptions_custom.clear();
         self.subscriptions_book_deltas.clear();
-        self.subscriptions_book_depth10.clear();
+        self.subscriptions_book_depth.clear();
         self.subscriptions_quotes.clear();
         self.subscriptions_trades.clear();
         self.subscriptions_bars.clear();
@@ -336,7 +336,7 @@ impl DataClientAdapter {
             UnsubscribeCommand::Instrument(cmd) => self.unsubscribe_instrument(cmd),
             UnsubscribeCommand::Instruments(cmd) => self.unsubscribe_instruments(cmd),
             UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd),
-            UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depth10(cmd),
+            UnsubscribeCommand::BookDepth(cmd) => self.unsubscribe_book_depth(cmd),
             UnsubscribeCommand::BookSnapshots(_) => Ok(()), // Handled internally by engine
             UnsubscribeCommand::Quotes(cmd) => self.unsubscribe_quotes(cmd),
             UnsubscribeCommand::Trades(cmd) => self.unsubscribe_trades(cmd),
@@ -481,13 +481,13 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
         Self::execute_tracked_subscribe(
             self.client.as_mut(),
-            &mut self.subscriptions_book_depth10,
+            &mut self.subscriptions_book_depth,
             cmd.instrument_id,
             "order book depth",
-            |client| client.subscribe_book_depth10(cmd),
+            |client| client.subscribe_book_depth(cmd),
         )
     }
 
@@ -496,13 +496,13 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
-    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
         Self::execute_tracked_unsubscribe(
             self.client.as_mut(),
-            &mut self.subscriptions_book_depth10,
+            &mut self.subscriptions_book_depth,
             &cmd.instrument_id,
             "order book depth",
-            |client| client.unsubscribe_book_depth10(cmd),
+            |client| client.unsubscribe_book_depth(cmd),
         )
     }
 

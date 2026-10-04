@@ -39,7 +39,6 @@ use futures_util::Stream;
 use nautilus_common::live::dst::time;
 use nautilus_core::{
     AtomicMap, AtomicTime, UnixNanos,
-    consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
     string::secret::{REDACTED, SecretString},
     time::get_atomic_clock_realtime,
@@ -56,7 +55,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::USER_AGENT,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{
@@ -73,7 +72,7 @@ use ustr::Ustr;
 use super::{
     enums::OKXWsChannel,
     error::OKXWsError,
-    handler::{HandlerCommand, OKXWsFeedHandler},
+    handler::{HandlerCommand, OKXWsFeedHandler, SnapshotGate},
     messages::{
         OKXAuthentication, OKXAuthenticationArg, OKXSubscriptionArg, OKXWsMessage, OKXWsRequest,
         WsAmendOrderParamsBuilder, WsAttachAlgoOrdParams, WsCancelOrderParamsBuilder,
@@ -686,7 +685,7 @@ impl OKXWebSocketClient {
         // Inbound Ping frames are answered by the transport, so no ping handler is needed;
         // the reader routes them away from the message channel and the handler never sees them.
 
-        let headers = vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())];
+        let headers = create_standard_nautilus_headers();
 
         let config = WebSocketConfig {
             url: self.url.clone(),
@@ -701,11 +700,14 @@ impl OKXWebSocketClient {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
             proxy_url: self
                 .proxy_url
                 .as_ref()
                 .map(|value| value.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
 
         let keyed_quotas = vec![
@@ -1137,7 +1139,12 @@ impl OKXWebSocketClient {
                 OKXWsError::ClientError(format!("Failed to send subscribe command: {e}"))
             })?;
 
-        for arg in &args {
+        self.record_subscriptions(&args);
+        Ok(())
+    }
+
+    fn record_subscriptions(&self, args: &[OKXSubscriptionArg]) {
+        for arg in args {
             let topic = topic_from_subscription_arg(arg);
             self.subscriptions_state.mark_subscribe(&topic);
 
@@ -1167,8 +1174,6 @@ impl OKXWebSocketClient {
                 }
             }
         }
-
-        Ok(())
     }
 
     #[expect(clippy::collapsible_if)]
@@ -1345,15 +1350,6 @@ impl OKXWebSocketClient {
         self.subscribe_book_with_depth(instrument_id, 0).await
     }
 
-    /// Subscribes to the standard books channel (internal method).
-    pub(crate) async fn subscribe_books_channel(
-        &self,
-        instrument_id: InstrumentId,
-    ) -> Result<(), OKXWsError> {
-        self.subscribe_inst_id(OKXWsChannel::Books, instrument_id.symbol.inner())
-            .await
-    }
-
     /// Subscribes to the Retail Price Improvement order book channel.
     ///
     /// # Errors
@@ -1364,26 +1360,78 @@ impl OKXWebSocketClient {
             .await
     }
 
+    pub(crate) async fn subscribe_book_channel(
+        &self,
+        instrument_id: InstrumentId,
+        channel: OKXBookChannel,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+    ) -> Result<(), OKXWsError> {
+        let (completion, receiver) = tokio::sync::oneshot::channel();
+        let sender = self.cmd_tx.read().await;
+
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+
+        let subscription = OKXSubscriptionArg {
+            channel: ws_channel_for_book(channel),
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(instrument_id.symbol.inner()),
+        };
+
+        self.record_subscriptions(std::slice::from_ref(&subscription));
+        sender
+            .send(HandlerCommand::SubscribeBook {
+                subscription,
+                cancel: cancel.clone(),
+                gate,
+                completion,
+            })
+            .map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))?;
+
+        drop(sender);
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Ok(()),
+            result = receiver => result.map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))?,
+        }
+    }
+
     /// Requests a fresh snapshot by replacing the current incremental book subscription.
     pub(crate) async fn resubscribe_book_channel(
         &self,
         instrument_id: InstrumentId,
         channel: OKXBookChannel,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
     ) -> Result<(), OKXWsError> {
-        let channel = ws_channel_for_book(channel);
-        self.resubscribe_ws_channel(instrument_id, channel).await
-    }
+        let (completion, receiver) = tokio::sync::oneshot::channel();
+        let sender = self.cmd_tx.read().await;
 
-    /// Replaces an instrument subscription on the specified WebSocket channel.
-    pub(crate) async fn resubscribe_ws_channel(
-        &self,
-        instrument_id: InstrumentId,
-        channel: OKXWsChannel,
-    ) -> Result<(), OKXWsError> {
-        self.unsubscribe_inst_id(channel.clone(), instrument_id.symbol.inner())
-            .await?;
-        self.subscribe_inst_id(channel, instrument_id.symbol.inner())
+        if cancel.is_cancelled() {
+            return Err(OKXWsError::ClientError("Book recovery canceled".into()));
+        }
+
+        sender
+            .send(HandlerCommand::Resubscribe {
+                subscription: OKXSubscriptionArg {
+                    channel: ws_channel_for_book(channel),
+                    inst_type: None,
+                    inst_family: None,
+                    inst_id: Some(instrument_id.symbol.inner()),
+                },
+                cancel,
+                gate,
+                completion,
+            })
+            .map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))?;
+
+        drop(sender);
+        receiver
             .await
+            .map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))?
     }
 
     /// Subscribes to 5-level order book snapshot data for an instrument.
@@ -3603,7 +3651,7 @@ async fn authenticate_session(
         Err(e) => {
             let auth_error = Error::Io(std::io::Error::other(e.to_string()));
             if !auth_attempt_superseded(&auth_error) {
-                log::error!("WebSocket authentication failed: error={e}");
+                log::warn!("WebSocket authentication failed: error={e}");
             }
 
             Err(auth_error)
@@ -3685,7 +3733,7 @@ async fn retry_reconnect_authentication(
     }
 }
 
-fn ws_channel_for_book(channel: OKXBookChannel) -> OKXWsChannel {
+pub(crate) fn ws_channel_for_book(channel: OKXBookChannel) -> OKXWsChannel {
     match channel {
         OKXBookChannel::Book => OKXWsChannel::Books,
         OKXBookChannel::BookL2Tbt => OKXWsChannel::BooksTbt,

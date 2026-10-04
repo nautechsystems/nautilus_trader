@@ -75,7 +75,7 @@ class TemplateDataClient(MarketDataClient):
         raise NotImplementedError(NOT_IMPLEMENTED)
 
     @override
-    async def _subscribe_book_depth10(self, command: live.SubscribeBookDepth10) -> None:
+    async def _subscribe_book_depth(self, command: live.SubscribeBookDepth) -> None:
         raise NotImplementedError(NOT_IMPLEMENTED)
 
     @override
@@ -127,7 +127,7 @@ class TemplateDataClient(MarketDataClient):
         raise NotImplementedError(NOT_IMPLEMENTED)
 
     @override
-    async def _unsubscribe_book_depth10(self, command: live.UnsubscribeBookDepth10) -> None:
+    async def _unsubscribe_book_depth(self, command: live.UnsubscribeBookDepth) -> None:
         raise NotImplementedError(NOT_IMPLEMENTED)
 
     @override

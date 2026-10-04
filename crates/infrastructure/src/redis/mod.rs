@@ -85,7 +85,7 @@ pub trait RedisConnectionConfig {
 }
 
 /// Parses a Redis connection URL from the given Redis config, returning the
-/// full URL and a redacted version with the password obfuscated.
+/// full URL and a redacted version with the password replaced by `***`.
 ///
 /// Authentication matrix handled:
 /// ┌───────────┬───────────┬────────────────────────────┐
@@ -107,27 +107,15 @@ pub fn get_redis_url(config: &impl RedisConnectionConfig) -> (String, String) {
     let password = config.password().unwrap_or_default();
     let ssl = config.ssl();
 
-    // Redact the password for logging/metrics: keep the first & last two chars.
-    let redact_pw = |pw: &str| {
-        if pw.len() > 4 {
-            format!("{}...{}", &pw[..2], &pw[pw.len() - 2..])
-        } else {
-            pw.to_owned()
-        }
-    };
-
     // Build the `userinfo@` portion for both the real and redacted URLs.
     let (auth, auth_redacted) = match (username.is_empty(), password.is_empty()) {
         // user:pass@
         (false, false) => (
             format!("{username}:{password}@"),
-            format!("{username}:{}@", redact_pw(password)),
+            format!("{username}:***@"),
         ),
         // :pass@
-        (true, false) => (
-            format!(":{password}@"),
-            format!(":{}@", redact_pw(password)),
-        ),
+        (true, false) => (format!(":{password}@"), ":***@".to_string()),
         // username but no password ⇒  configuration error
         (false, true) => panic!(
             "Redis config error: username supplied without password. \
@@ -282,12 +270,12 @@ mod tests {
         let config_json = json!({
             "host": "example.com",
             "port": 6380,
-            "password": "secretpw",   // >4 chars ⇒ will be redacted
+            "password": "secretpw",
         });
         let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
         let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://:secretpw@example.com:6380");
-        assert_eq!(redacted_url, "redis://:se...pw@example.com:6380");
+        assert_eq!(redacted_url, "redis://:***@example.com:6380");
     }
 
     #[rstest]
@@ -302,7 +290,7 @@ mod tests {
         let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
         let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "rediss://user:pass@example.com:6380");
-        assert_eq!(redacted_url, "rediss://user:pass@example.com:6380");
+        assert_eq!(redacted_url, "rediss://user:***@example.com:6380");
     }
 
     #[rstest]
@@ -317,7 +305,7 @@ mod tests {
         let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
         let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://username:password@example.com:6380");
-        assert_eq!(redacted_url, "redis://username:pa...rd@example.com:6380");
+        assert_eq!(redacted_url, "redis://username:***@example.com:6380");
     }
 
     #[rstest]
@@ -345,7 +333,33 @@ mod tests {
         let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
         let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://username:password@example.com:6380");
-        assert_eq!(redacted_url, "redis://username:pa...rd@example.com:6380");
+        assert_eq!(redacted_url, "redis://username:***@example.com:6380");
+    }
+
+    #[rstest]
+    fn test_get_redis_url_redacts_whole_password(
+        #[values("a", "ab", "abc", "abcd", "abcde", "pä", "pässwort", "größe")] password: &str,
+        #[values(None, Some("user"))] username: Option<&str>,
+    ) {
+        let config_json = json!({
+            "host": "example.com",
+            "port": 6380,
+            "username": username,
+            "password": password,
+        });
+        let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
+        let username = username.unwrap_or_default();
+
+        let (url, redacted_url) = get_redis_url(&config);
+
+        assert_eq!(
+            url,
+            format!("redis://{username}:{password}@example.com:6380")
+        );
+        assert_eq!(
+            redacted_url,
+            format!("redis://{username}:***@example.com:6380")
+        );
     }
 
     #[rstest]

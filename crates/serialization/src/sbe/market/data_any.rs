@@ -15,7 +15,7 @@
 
 use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-    OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+    OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
 };
 
 use super::{
@@ -37,9 +37,9 @@ impl MarketSbeMessage for DataAny {
                 writer.write_u16_le(data_any_variant::ORDER_BOOK_DELTAS);
                 <OrderBookDeltas as MarketSbeMessage>::encode_body(value, writer)
             }
-            Self::BookDepth10(value) => {
-                writer.write_u16_le(data_any_variant::ORDER_BOOK_DEPTH10);
-                <OrderBookDepth10 as MarketSbeMessage>::encode_body(value, writer)
+            Self::BookDepth(value) => {
+                writer.write_u16_le(data_any_variant::ORDER_BOOK_DEPTH);
+                <OrderBookDepth as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::Quote(value) => {
                 writer.write_u16_le(data_any_variant::QUOTE);
@@ -90,8 +90,8 @@ impl MarketSbeMessage for DataAny {
             data_any_variant::ORDER_BOOK_DELTAS => Ok(Self::BookDeltas(
                 <OrderBookDeltas as MarketSbeMessage>::decode_body(cursor)?,
             )),
-            data_any_variant::ORDER_BOOK_DEPTH10 => Ok(Self::BookDepth10(
-                <OrderBookDepth10 as MarketSbeMessage>::decode_body(cursor)?,
+            data_any_variant::ORDER_BOOK_DEPTH => Ok(Self::BookDepth(
+                <OrderBookDepth as MarketSbeMessage>::decode_body(cursor)?,
             )),
             data_any_variant::QUOTE => Ok(Self::Quote(
                 <QuoteTick as MarketSbeMessage>::decode_body(cursor)?,
@@ -130,7 +130,7 @@ impl MarketSbeMessage for DataAny {
             + match self {
                 Self::BookDelta(value) => value.encoded_body_size(),
                 Self::BookDeltas(value) => value.encoded_body_size(),
-                Self::BookDepth10(value) => value.encoded_body_size(),
+                Self::BookDepth(value) => value.encoded_body_size(),
                 Self::Quote(value) => value.encoded_body_size(),
                 Self::Trade(value) => value.encoded_body_size(),
                 Self::Bar(value) => value.encoded_body_size(),
@@ -156,9 +156,9 @@ impl From<OrderBookDeltas> for DataAny {
     }
 }
 
-impl From<OrderBookDepth10> for DataAny {
-    fn from(value: OrderBookDepth10) -> Self {
-        Self::BookDepth10(value)
+impl From<OrderBookDepth> for DataAny {
+    fn from(value: OrderBookDepth) -> Self {
+        Self::BookDepth(value)
     }
 }
 

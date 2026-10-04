@@ -16,7 +16,7 @@
 //! Example demonstrating live execution testing with the Polymarket adapter.
 //!
 //! Uses an event-scoped instrument provider to load only the configured event (avoiding
-//! loading all 71K+ instruments) and `SignatureType::PolyGnosisSafe` for Gnosis
+//! loading all 71K+ instruments) and `PolymarketSignatureType::PolyGnosisSafe` for Gnosis
 //! Safe proxy wallet authentication.
 //!
 //! Edit the constants below to change the target event, market token, and order size.
@@ -38,7 +38,7 @@ use nautilus_model::{
     types::Quantity,
 };
 use nautilus_polymarket::{
-    common::{consts::POLYMARKET_CLIENT_ID, enums::SignatureType},
+    common::{consts::POLYMARKET_CLIENT_ID, enums::PolymarketSignatureType},
     config::{
         PolymarketDataClientConfig, PolymarketExecutionClientConfig,
         PolymarketInstrumentProviderConfig,
@@ -56,11 +56,11 @@ const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "POLYMARKET-001";
 const NODE_NAME: &str = "POLYMARKET-EXEC-TESTER-001";
 const STRATEGY_ID: &str = "EXEC_TESTER-001";
-const EVENT_SLUG: &str = "fed-decision-in-september-762";
+const EVENT_SLUG: &str = "presidential-election-winner-2028";
 
-// Fed Decision in September (No)
-// https://polymarket.com/event/fed-decision-in-september-762
-const INSTRUMENT_ID: &str = "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830-28239418772633645184924651434956000849078365566842629564562475378531350731731.POLYMARKET";
+// 2028 US presidential election winner (JD Vance, Yes).
+// https://polymarket.com/event/presidential-election-winner-2028
+const INSTRUMENT_ID: &str = "0x7ad403c3508f8e3912940fd1a913f227591145ca0614074208e0b962d5fcc422-16040015440196279900485035793550429453516625694844857319147506590755961451627.POLYMARKET";
 const ORDER_QTY: &str = "5"; // Polymarket min_qty = 5 shares
 
 #[tokio::main]
@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // PolyGnosisSafe: POLYMARKET_PK is the EOA signer, POLYMARKET_FUNDER is the Gnosis Safe proxy
     let exec_config = PolymarketExecutionClientConfig {
         account_id,
-        signature_type: SignatureType::PolyGnosisSafe,
+        signature_type: PolymarketSignatureType::PolyGnosisSafe,
         instrument_config: Some(instrument_config),
         ..Default::default()
     };

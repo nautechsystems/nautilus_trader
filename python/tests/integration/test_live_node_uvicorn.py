@@ -37,7 +37,7 @@ from nautilus_trader.live import NodeState
 from nautilus_trader.model import TraderId
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("collect_node_cycles")]
 
 
 def build_node(trader_id: str) -> LiveNode:

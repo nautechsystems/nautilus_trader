@@ -24,7 +24,7 @@ use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate,
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick, stubs::stub_depth10,
+        OrderBookDepth, QuoteTick, TradeTick, stubs::stub_depth10,
     },
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, InstrumentCloseType,
@@ -82,11 +82,11 @@ capnp_codec!(
     market_capnp::order_book_deltas::Reader
 );
 capnp_codec!(
-    encode_order_book_depth10_capnp,
-    decode_order_book_depth10_capnp,
-    OrderBookDepth10,
-    market_capnp::order_book_depth10::Builder,
-    market_capnp::order_book_depth10::Reader
+    encode_order_book_depth_capnp,
+    decode_order_book_depth_capnp,
+    OrderBookDepth,
+    market_capnp::order_book_depth::Builder,
+    market_capnp::order_book_depth::Reader
 );
 capnp_codec!(
     encode_quote_tick_capnp,
@@ -307,7 +307,7 @@ fn sample_order_book_deltas(count: usize) -> OrderBookDeltas {
     OrderBookDeltas::new(instrument_id, deltas)
 }
 
-fn sample_order_book_depth10() -> OrderBookDepth10 {
+fn sample_order_book_depth() -> OrderBookDepth {
     let mut depth = stub_depth10();
 
     // The wire format stores book levels without order IDs
@@ -388,10 +388,10 @@ fn bench_market_data_types(c: &mut Criterion) {
     );
     bench_capnp_sbe_type(
         c,
-        "OrderBookDepth10::wire",
-        sample_order_book_depth10(),
-        encode_order_book_depth10_capnp,
-        decode_order_book_depth10_capnp,
+        "OrderBookDepth::wire",
+        sample_order_book_depth(),
+        encode_order_book_depth_capnp,
+        decode_order_book_depth_capnp,
     );
     bench_capnp_sbe_type(
         c,
@@ -528,10 +528,7 @@ fn bench_data_any(c: &mut Criterion) {
             "OrderBookDeltas",
             DataAny::from(sample_order_book_deltas(10)),
         ),
-        (
-            "OrderBookDepth10",
-            DataAny::from(sample_order_book_depth10()),
-        ),
+        ("OrderBookDepth", DataAny::from(sample_order_book_depth())),
         ("QuoteTick", DataAny::from(sample_quote_tick())),
         ("TradeTick", DataAny::from(sample_trade_tick())),
         ("Bar", DataAny::from(sample_bar())),

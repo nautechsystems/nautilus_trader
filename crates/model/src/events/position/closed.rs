@@ -20,6 +20,7 @@ use nautilus_core::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    data::InstrumentClose,
     enums::{OrderSide, PositionSide},
     events::OrderFilled,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
@@ -127,6 +128,44 @@ impl PositionClosed {
             ts_opened: position.ts_opened,
             ts_closed: position.ts_closed,
             ts_event: fill.ts_event,
+            ts_init,
+        }
+    }
+
+    #[must_use]
+    pub fn create_from_instrument_close(
+        position: &Position,
+        close: &InstrumentClose,
+        last_qty: Quantity,
+        event_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            trader_id: position.trader_id,
+            strategy_id: position.strategy_id,
+            instrument_id: position.instrument_id,
+            position_id: position.id,
+            account_id: position.account_id,
+            opening_order_id: position.opening_order_id,
+            closing_order_id: None,
+            entry: position.entry,
+            side: position.side,
+            signed_qty: position.signed_qty,
+            quantity: position.quantity,
+            peak_quantity: position.peak_qty,
+            last_qty,
+            last_px: close.close_price,
+            currency: position.quote_currency,
+            avg_px_open: position.avg_px_open,
+            avg_px_close: position.avg_px_close,
+            realized_return: position.realized_return,
+            realized_pnl: position.realized_pnl,
+            unrealized_pnl: Money::zero(position.quote_currency),
+            duration: position.duration_ns,
+            event_id,
+            ts_opened: position.ts_opened,
+            ts_closed: position.ts_closed,
+            ts_event: close.ts_event,
             ts_init,
         }
     }

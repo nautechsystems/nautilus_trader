@@ -34,6 +34,8 @@ This crate provides feature flags to control source code inclusion during compil
 
 ## Documentation
 
+See [Parquet streaming](../../docs/how_to/stream_parquet_catalog.md) for staging, promotion, and query visibility.
+
 See [the docs](https://docs.rs/nautilus-persistence) for more detailed usage.
 
 ## License

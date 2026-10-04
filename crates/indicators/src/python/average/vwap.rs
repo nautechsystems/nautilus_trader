@@ -16,12 +16,14 @@
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
-use crate::{average::vwap::VolumeWeightedAveragePrice, indicator::Indicator};
+use crate::{
+    average::vwap::VolumeWeightedAveragePrice, indicator::Indicator, python::float_precision,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl VolumeWeightedAveragePrice {
-    /// Creates a new `VolumeWeightedAveragePrice` instance.
+    /// Volume-weighted average price.
     #[new]
     #[must_use]
     pub const fn py_new() -> Self {
@@ -57,8 +59,11 @@ impl VolumeWeightedAveragePrice {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
+        float_precision::check_bar_volume(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]
@@ -66,8 +71,10 @@ impl VolumeWeightedAveragePrice {
         self.reset();
     }
 
+    /// Adds a price and nonnegative volume to the current manually reset window.
+    /// Non-finite inputs and negative volume leave state unchanged.
     #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, value: f64, volume: f64, ts: f64) {
-        self.update_raw(value, volume, ts);
+    fn py_update_raw(&mut self, value: f64, volume: f64) {
+        self.update_raw(value, volume);
     }
 }

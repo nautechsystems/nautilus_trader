@@ -15,8 +15,7 @@ released. Confirm the install with:
 python -c "import nautilus_trader; print(nautilus_trader.__version__)"
 ```
 
-See the [Installation](installation) guide for platform support, source builds, and
-Docker images.
+See the [Installation](installation) guide for platform support and source builds.
 
 ## 2. Run the quickstart
 
@@ -55,7 +54,9 @@ in-memory data but has no live-trading path.
 :::warning[One node per process]
 Running multiple `BacktestNode` or `LiveNode` instances concurrently in the same
 process is not supported due to global singleton state. Sequential execution with
-proper disposal between runs is supported.
+proper disposal between runs is supported. A replacement `LiveNode` on the same
+thread also requires dropping the previous node, or releasing all references to
+it in Python, before construction.
 
 See [Processes and threads](../concepts/architecture.md#processes-and-threads) for
 details.

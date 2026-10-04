@@ -197,3 +197,19 @@ name = "greeks_actor_example"
 path = "examples/greeks_actor_example.rs"
 required-features = ["live"]
 doc = false
+
+# Run with `cargo run -p nautilus-common --example cache_xrate_profile -- mixed 20 25 4 100`
+[[example]]
+name = "cache_xrate_profile"
+path = "examples/cache_xrate_profile.rs"
+doc = false
+
+[[example]]
+name = "signal_reentrancy"
+path = "examples/signal_reentrancy.rs"
+doc = false
+
+[[example]]
+name = "cache_reentrancy"
+path = "examples/cache_reentrancy.rs"
+doc = false

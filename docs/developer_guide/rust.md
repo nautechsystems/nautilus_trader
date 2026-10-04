@@ -232,6 +232,9 @@ the lint does not apply:
 )]
 ```
 
+Use `try_update` instead of the deprecated `fetch_update` on standard atomics. The pre-commit hook
+rejects `fetch_update`.
+
 ## Type qualification
 
 | Item                          | Convention                                                                  |
@@ -292,7 +295,7 @@ Choose the error type at the API boundary:
 
 ```rust
 parse_timestamp(value).context("failed to parse timestamp")?;
-connect().context("BitMEX websocket did not become active")?;
+connect().context("Bybit websocket did not become active")?;
 ```
 
 ### Panic policy

@@ -684,6 +684,12 @@ impl PyNodeRun {
                 if let Some(raised) = self.pending_throw.take() {
                     // Shutdown finished, so the injected exception is now honored. Reporting
                     // success here would break `asyncio.timeout`, `wait_for`, and task groups.
+                    if let Err(e) = result {
+                        let shutdown_error = to_pyruntime_err(e);
+                        shutdown_error.set_cause(py, raised.cause(py));
+                        raised.set_cause(py, Some(shutdown_error));
+                    }
+
                     return Err(raised);
                 }
 
@@ -966,7 +972,8 @@ impl PyLiveNode {
     /// Takes the node and returns an awaitable that resolves once the node has stopped. The host
     /// owns the loop and its signal handling, so this installs no signal handlers. Stop the node
     /// through the handle from `handle()`; cancelling the awaiting task requests the same graceful
-    /// shutdown, waits for it to finish, then re-raises the cancellation.
+    /// shutdown, waits for it to finish, then re-raises the cancellation. A shutdown error,
+    /// including incomplete submission recovery, is preserved as the exception's cause.
     ///
     /// Capture `cache`, `portfolio`, and `handle()` before calling this. They stay usable while the
     /// node runs, whereas the node itself is owned by the returned awaitable.
@@ -2948,6 +2955,61 @@ primary = KeyboardInterrupt("run failed")
         factory: Py<pyo3::PyAny>,
     ) -> pyo3::PyResult<Box<dyn MessageBusBackingFactory>> {
         Ok(Box::new(factory.extract::<TestMessageBusFactory>(py)?))
+    }
+
+    #[rstest]
+    #[case("instance")]
+    #[case("class")]
+    #[case("builder")]
+    fn test_python_build_rejects_existing_node(#[case] constructor: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let builder = PyLiveNode::py_builder(
+                "Original".to_string(),
+                TraderId::from("PROBE-001"),
+                Environment::Sandbox,
+            )
+            .unwrap();
+            let node = Py::new(py, builder.py_build().unwrap()).unwrap();
+            let bus = get_message_bus();
+            let second_builder = PyLiveNode::py_builder(
+                "Extra".to_string(),
+                TraderId::from("OTHER-002"),
+                Environment::Sandbox,
+            )
+            .unwrap();
+            let second_builder = Py::new(py, second_builder).unwrap();
+
+            let result = match constructor {
+                "instance" => node.bind(py).call_method1("build", ("Extra",)),
+                "class" => py
+                    .get_type::<PyLiveNode>()
+                    .call_method1("build", ("Extra",)),
+                "builder" => second_builder.bind(py).call_method0("build"),
+                _ => unreachable!(),
+            };
+
+            let error = result.unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+            assert!(error.to_string().contains("A LiveNode already exists"));
+            assert!(Rc::ptr_eq(&bus, &get_message_bus()));
+            assert_eq!(
+                node.borrow(py).node().unwrap().trader_id(),
+                TraderId::from("PROBE-001")
+            );
+
+            drop(node);
+            let replacement = second_builder.bind(py).call_method0("build").unwrap();
+            assert_eq!(
+                replacement
+                    .extract::<pyo3::PyRef<'_, PyLiveNode>>()
+                    .unwrap()
+                    .node()
+                    .unwrap()
+                    .trader_id(),
+                TraderId::from("OTHER-002")
+            );
+        });
     }
 
     #[rstest]

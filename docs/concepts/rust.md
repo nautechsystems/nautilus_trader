@@ -56,7 +56,6 @@ registration path (importable controller configs) is Python-only.
 | Architect AX        | ✓    | ✓      |
 | Betfair             | ✓    | ✓      |
 | Binance             | ✓    | ✓      |
-| BitMEX              | ✓    | ✓      |
 | Blockchain          | ✓    | ✓      |
 | Bybit               | ✓    | ✓      |
 | Coinbase            | ✓    | ✓      |
@@ -89,11 +88,11 @@ The Nautilus crates are published to
 
 ```toml
 [dependencies]
-nautilus-backtest = "0.63"
-nautilus-common = "0.63"
-nautilus-execution = "0.63"
-nautilus-model = { version = "0.63", features = ["test-support"] }
-nautilus-trading = { version = "0.63", features = ["examples"] }
+nautilus-backtest = "0.64"
+nautilus-common = "0.64"
+nautilus-execution = "0.64"
+nautilus-model = { version = "0.64", features = ["test-support"] }
+nautilus-trading = { version = "0.64", features = ["examples"] }
 
 anyhow = "1"
 log = "0.4"
@@ -103,8 +102,8 @@ For live trading, add the live crate and the adapter for your venue:
 
 ```toml
 [dependencies]
-nautilus-live = "0.63"
-nautilus-okx = "0.63"
+nautilus-live = "0.64"
+nautilus-okx = "0.64"
 ```
 
 To track the latest development branch, point all Nautilus dependencies at the
@@ -247,6 +246,14 @@ The `OrderApi` (accessed via `self.order()`) builds orders and order lists:
 - `bracket`
 - `create_list`
 
+### Cache and clock access
+
+The cache facade's `try_*` lookups return a lookup error's `Access` variant for borrow conflicts;
+`NotFound` still means the requested data is absent. The cache facade's `get()` method and native-backed clock
+scheduling methods return access errors through `anyhow::Result`. Existing infallible accessors
+still panic on conflicts. Release conflicting borrows before retrying; these errors do not defer
+callbacks or change their delivery order.
+
 ### Core wiring macros
 
 Rust actors, strategies, and execution algorithms keep their runtime core as a
@@ -316,6 +323,15 @@ for normal strategy order construction. Reach for
 | `clock_rc()`  | `Rc<RefCell<dyn Clock>>` | Store or pass the shared clock. |
 | `cache_ref()` | `Ref<'_, Cache>`         | Need short live-cache reads.    |
 | `cache_rc()`  | `Rc<RefCell<Cache>>`     | Mutate, store, or pass cache.   |
+
+Use `try_cache_ref()` and `try_clock_mut()` to handle failed native borrows without panicking.
+`try_cache_ref()` returns `ComponentAccessError::ReadConflict` when the cache is mutably borrowed;
+`try_clock_mut()` returns `ComponentAccessError::WriteConflict` when the clock is already borrowed.
+Both return `ComponentAccessError::NotRegistered` when registration has not supplied the resource.
+Import the error type from `nautilus_common::component`. The error identifies the resource and
+attempted operation. Callback reentry can cause a conflict, but a conflict alone does not establish its cause.
+See [reentrancy diagnostics](../developer_guide/callback_dispatch.md#reentrancy-and-dispatch-diagnostics)
+for message meanings and corrective action.
 
 #### `StrategyNative` methods
 
@@ -448,7 +464,6 @@ event loop. Each adapter provides its own factory and config types.
 | Architect AX        | `crates/adapters/architect_ax/examples/`        |
 | Betfair             | `crates/adapters/betfair/examples/`             |
 | Binance             | `crates/adapters/binance/examples/`             |
-| BitMEX              | `crates/adapters/bitmex/examples/`              |
 | Blockchain          | `crates/adapters/blockchain/examples/`          |
 | Bybit               | `crates/adapters/bybit/examples/`               |
 | Coinbase            | `crates/adapters/coinbase/examples/`            |

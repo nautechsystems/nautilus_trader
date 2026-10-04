@@ -25,7 +25,7 @@ use nautilus_model::{
     instruments::{InstrumentAny, stubs::equity_aapl_itch},
     types::fixed::PRECISION_BYTES,
 };
-use nautilus_serialization::arrow::DecodeFromRecordBatch;
+use nautilus_serialization::arrow::{DecodeFromRecordBatch, normalize_legacy_fixed_columns};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 /// Returns the full path to the test data file at the specified relative `path` within the standard test data directory.
@@ -42,7 +42,9 @@ pub fn get_test_data_file_path(path: &str) -> String {
         .to_string()
 }
 
-/// Returns the full path to the Nautilus-specific test data file given by `filename`, within the configured precision directory ("64-bit" or "128-bit").
+/// Returns the full path to the Nautilus-specific legacy test data file given by `filename`.
+///
+/// Files are resolved under `legacy/64-bit` or `legacy/128-bit` for the active model build.
 ///
 /// # Panics
 ///
@@ -52,6 +54,7 @@ pub fn get_nautilus_test_data_file_path(filename: &str) -> String {
     let precision_directory = format!("{}-bit", PRECISION_BYTES * 8);
     let path = get_test_data_path()
         .join("nautilus")
+        .join("legacy")
         .join(precision_directory);
 
     path.join(filename).to_str().unwrap().to_string()
@@ -199,7 +202,7 @@ fn load_deltas_from_parquet(filepath: &Path, limit: Option<usize>) -> Vec<OrderB
     let mut deltas = Vec::new();
 
     for batch_result in reader {
-        let batch = batch_result.unwrap();
+        let batch = normalize_legacy_fixed_columns(&batch_result.unwrap()).unwrap();
         let batch_deltas = OrderBookDelta::decode_batch(&metadata, batch).unwrap();
         deltas.extend(batch_deltas);
     }

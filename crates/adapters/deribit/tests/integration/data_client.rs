@@ -47,7 +47,7 @@ use nautilus_common::{
         data::{
             InstrumentResponse, RequestCustomData, RequestInstrument,
             RequestOptionChainReferencePrice, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
+            SubscribeBookDepth, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
             SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeTrades,
         },
         system::SocketState,
@@ -1699,7 +1699,7 @@ enum SubscribeKind {
     Quotes,
     Trades,
     BookDeltas,
-    BookDepth10,
+    BookDepth,
     MarkPrices,
     IndexPrices,
     Bars,
@@ -1747,7 +1747,7 @@ fn dispatch_subscribe(
             None,
             None,
         )),
-        SubscribeKind::BookDepth10 => client.subscribe_book_depth10(SubscribeBookDepth10::new(
+        SubscribeKind::BookDepth => client.subscribe_book_depth(SubscribeBookDepth::new(
             instrument_id,
             BookType::L2_MBP,
             client_id,
@@ -1809,7 +1809,7 @@ fn dispatch_subscribe(
 #[case::quotes(SubscribeKind::Quotes)]
 #[case::trades(SubscribeKind::Trades)]
 #[case::book_deltas(SubscribeKind::BookDeltas)]
-#[case::book_depth10(SubscribeKind::BookDepth10)]
+#[case::book_depth(SubscribeKind::BookDepth)]
 #[case::mark_prices(SubscribeKind::MarkPrices)]
 #[case::index_prices(SubscribeKind::IndexPrices)]
 #[case::bars(SubscribeKind::Bars)]

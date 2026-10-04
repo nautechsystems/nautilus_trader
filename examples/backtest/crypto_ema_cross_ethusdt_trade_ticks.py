@@ -27,6 +27,7 @@ from nautilus_trader.adapters.binance import BINANCE_VENUE
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
 from nautilus_trader.model import Currency
@@ -59,6 +60,10 @@ if __name__ == "__main__":
         account_type=AccountType.CASH,
         base_currency=None,
         starting_balances=[Money(1_000_000, USDT), Money(10, ETH)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.0001"),
+            taker_rate=Decimal("0.0001"),
+        ),
     )
 
     ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()

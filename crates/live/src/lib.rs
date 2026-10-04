@@ -118,6 +118,7 @@
 // macro expansion; an item-level `allow` cannot reach the expansion
 #![allow(clippy::clone_on_copy)]
 
+pub mod book;
 pub mod execution;
 pub mod runner;
 pub mod socket;
@@ -139,6 +140,8 @@ pub mod python;
 
 #[cfg(feature = "test-support")]
 pub mod testing;
+
+mod dispatch;
 
 // Re-exports for adapters
 pub use execution::{emitter, emitter::ExecutionEventEmitter, manager};

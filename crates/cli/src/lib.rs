@@ -59,11 +59,15 @@ mod blockchain;
 mod database;
 pub mod opt;
 
+use nautilus_persistence::backend::parquet::migration::{
+    ParquetMigrationConfig, migrate_parquet_catalog,
+};
+
 #[cfg(feature = "defi")]
 use crate::blockchain::run_blockchain_command;
 use crate::{
     database::postgres::run_database_command,
-    opt::{Commands, NautilusCli},
+    opt::{CatalogCommand, Commands, NautilusCli},
 };
 
 /// Builds the top-level CLI command, augmented with capability-aware blockchain help.
@@ -85,6 +89,18 @@ pub fn cli_command() -> clap::Command {
 /// Returns an error if execution of the specified command fails.
 pub async fn run(opt: NautilusCli) -> anyhow::Result<()> {
     match opt.command {
+        Commands::Catalog(catalog) => match catalog.command {
+            CatalogCommand::MigrateParquet(args) => {
+                let report = migrate_parquet_catalog(ParquetMigrationConfig {
+                    source_uri: args.source,
+                    target_uri: args.destination,
+                    source_options: args.source_options,
+                    target_options: args.target_options,
+                    dry_run: args.dry_run,
+                })?;
+                println!("{report}");
+            }
+        },
         Commands::Database(database_opt) => run_database_command(database_opt).await?,
         #[cfg(feature = "defi")]
         Commands::Blockchain(blockchain_opt) => {

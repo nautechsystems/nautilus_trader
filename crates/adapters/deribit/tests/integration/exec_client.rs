@@ -73,7 +73,8 @@ use nautilus_model::{
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
-use serde_json::{Value, json};
+use serde::Deserialize;
+use serde_json::{Value, json, value::RawValue};
 use ustr::Ustr;
 
 fn data_path() -> PathBuf {
@@ -132,6 +133,7 @@ struct TestServerState {
     command_responses: Arc<tokio::sync::Mutex<CommandResponses>>,
     command_request_count: Arc<AtomicUsize>,
     command_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    command_request_texts: Arc<tokio::sync::Mutex<Vec<String>>>,
 }
 
 async fn handle_jsonrpc_request(
@@ -381,6 +383,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     Some(DeribitWsMethod::Buy | DeribitWsMethod::Sell) => {
                         state.command_request_count.fetch_add(1, Ordering::Relaxed);
                         state.command_requests.lock().await.push(payload.clone());
+                        state
+                            .command_request_texts
+                            .lock()
+                            .await
+                            .push(text.to_string());
                         let response_kind = state.command_responses.lock().await.submit;
                         let result = order_response_result(&payload);
                         if !send_command_response(&mut socket, id, response_kind, &result).await {
@@ -397,6 +404,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     }
                     Some(DeribitWsMethod::Edit) => {
                         state.command_request_count.fetch_add(1, Ordering::Relaxed);
+                        state
+                            .command_request_texts
+                            .lock()
+                            .await
+                            .push(text.to_string());
                         let response_kind = state.command_responses.lock().await.modify;
                         let result = order_response_result(&payload);
                         if !send_command_response(&mut socket, id, response_kind, &result).await {
@@ -934,6 +946,175 @@ async fn test_limit_submit_sends_time_in_force() {
 
 #[rstest]
 #[tokio::test]
+async fn test_limit_submit_sends_exact_number_tokens() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let request_count = state.command_request_count.clone();
+    let command_request_texts = state.command_request_texts.clone();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("limit-submit-exact-test-001");
+    let order_any = add_sized_limit_order_to_cache(
+        &cache,
+        client_order_id,
+        Quantity::from("10"),
+        Price::from("65000.50"),
+    );
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    let texts = command_request_texts.lock().await;
+    let request: RawOrderRequest = serde_json::from_str(&texts[0]).unwrap();
+
+    let expected_price = if serde_json_keeps_number_text() {
+        "65000.50"
+    } else {
+        "65000.5"
+    };
+
+    assert_eq!(request.params.label, client_order_id.as_str());
+    assert_eq!(request.params.amount.get(), "10");
+    assert_eq!(
+        request.params.price.map(|price| price.get().to_string()),
+        Some(expected_price.to_string())
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_limit_submit_sends_or_rejects_unrepresentable_amount() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let request_count = state.command_request_count.clone();
+    let command_request_texts = state.command_request_texts.clone();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("limit-submit-exact-test-002");
+    let order_any = add_sized_limit_order_to_cache(
+        &cache,
+        client_order_id,
+        Quantity::from("100000000.005000001"),
+        Price::from("65000.5"),
+    );
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    if serde_json_keeps_number_text() {
+        wait_for_command_requests(&request_count, 1).await;
+
+        let texts = command_request_texts.lock().await;
+        let request: RawOrderRequest = serde_json::from_str(&texts[0]).unwrap();
+
+        assert_eq!(request.params.amount.get(), "100000000.005000001");
+    } else {
+        // Without arbitrary precision, an f64 cannot carry the amount
+        match recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await {
+            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.reason.as_str(), UNREPRESENTABLE_PARAMS_REASON);
+            }
+            other => panic!("Expected Rejected event, was {other:?}"),
+        }
+
+        assert_eq!(request_count.load(Ordering::Relaxed), 0);
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_sends_exact_number_tokens() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let request_count = state.command_request_count.clone();
+    let command_request_texts = state.command_request_texts.clone();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("modify-exact-test-001");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .modify_order(modify_order_command(client_order_id))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    let texts = command_request_texts.lock().await;
+    let request: RawEditRequest = serde_json::from_str(&texts[0]).unwrap();
+
+    assert_eq!(request.params.order_id, "DERIBIT-ORDER-1");
+    assert_eq!(request.params.amount.get(), "2");
+    assert_eq!(request.params.price.get(), "51000.0");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_sends_or_rejects_unrepresentable_amount() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let request_count = state.command_request_count.clone();
+    let command_request_texts = state.command_request_texts.clone();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("modify-exact-test-002");
+    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    let result = client.modify_order(sized_modify_order_command(
+        client_order_id,
+        Quantity::from("100000000.005000001"),
+    ));
+
+    if serde_json_keeps_number_text() {
+        result.unwrap();
+        wait_for_command_requests(&request_count, 1).await;
+
+        let texts = command_request_texts.lock().await;
+        let request: RawEditRequest = serde_json::from_str(&texts[0]).unwrap();
+
+        assert_eq!(request.params.order_id, "DERIBIT-ORDER-1");
+        assert_eq!(request.params.amount.get(), "100000000.005000001");
+        assert_eq!(request.params.price.get(), "51000.0");
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            UNREPRESENTABLE_PARAMS_REASON
+        );
+
+        match recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await {
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(
+                    event.venue_order_id,
+                    Some(VenueOrderId::from("DERIBIT-ORDER-1"))
+                );
+                assert_eq!(event.reason.as_str(), UNREPRESENTABLE_PARAMS_REASON);
+            }
+            other => panic!("Expected ModifyRejected event, was {other:?}"),
+        }
+
+        assert_eq!(request_count.load(Ordering::Relaxed), 0);
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_ambiguous_cancel_failure_does_not_emit_cancel_rejected() {
     let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses {
@@ -1344,6 +1525,65 @@ fn add_order_to_cache(
     order
 }
 
+fn add_sized_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    quantity: Quantity,
+    price: Price,
+) -> OrderAny {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(quantity)
+        .price(price)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    order
+}
+
+#[derive(Deserialize)]
+struct RawOrderRequest<'a> {
+    #[serde(borrow)]
+    params: RawOrderParams<'a>,
+}
+
+#[derive(Deserialize)]
+struct RawOrderParams<'a> {
+    label: &'a str,
+    #[serde(borrow)]
+    amount: &'a RawValue,
+    #[serde(borrow)]
+    price: Option<&'a RawValue>,
+}
+
+#[derive(Deserialize)]
+struct RawEditRequest<'a> {
+    #[serde(borrow)]
+    params: RawEditParams<'a>,
+}
+
+#[derive(Deserialize)]
+struct RawEditParams<'a> {
+    order_id: &'a str,
+    #[serde(borrow)]
+    amount: &'a RawValue,
+    #[serde(borrow)]
+    price: &'a RawValue,
+}
+
+const UNREPRESENTABLE_PARAMS_REASON: &str = "Cannot serialize order params: exact decimal number serialization requires serde_json/arbitrary_precision";
+
+// `serde_json/arbitrary_precision` keeps a number's text, including trailing zeros
+fn serde_json_keeps_number_text() -> bool {
+    serde_json::Number::from_str("0.10").unwrap().to_string() == "0.10"
+}
+
 fn find_command_request_params(requests: &[Value], client_order_id: ClientOrderId) -> &Value {
     requests
         .iter()
@@ -1405,6 +1645,10 @@ fn cancel_order_command_without_venue_order_id(client_order_id: ClientOrderId) -
 }
 
 fn modify_order_command(client_order_id: ClientOrderId) -> ModifyOrder {
+    sized_modify_order_command(client_order_id, Quantity::from("2"))
+}
+
+fn sized_modify_order_command(client_order_id: ClientOrderId, quantity: Quantity) -> ModifyOrder {
     ModifyOrder::new(
         test_trader_id(),
         Some(*DERIBIT_CLIENT_ID),
@@ -1412,7 +1656,7 @@ fn modify_order_command(client_order_id: ClientOrderId) -> ModifyOrder {
         test_instrument_id(),
         client_order_id,
         Some(VenueOrderId::from("DERIBIT-ORDER-1")),
-        Some(Quantity::from("2")),
+        Some(quantity),
         Some(Price::from("51000.0")),
         None,
         UUID4::new(),

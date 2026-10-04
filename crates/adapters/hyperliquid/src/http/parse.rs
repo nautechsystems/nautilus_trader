@@ -46,7 +46,7 @@ use crate::{
         },
         parse::{
             format_outcome_nautilus_symbol, is_conditional_order_data, make_fill_trade_id,
-            millis_to_nanos, parse_trigger_order_type,
+            millis_to_nanos, parse_trigger_order_type, parse_trigger_order_type_label,
         },
         types::HyperliquidAssetId,
     },
@@ -378,6 +378,29 @@ pub fn parse_outcome_instruments(
     }
 
     Ok(defs)
+}
+
+pub(crate) fn parse_unlisted_outcome_instrument(
+    asset_id: HyperliquidAssetId,
+) -> Result<HyperliquidInstrumentDef, String> {
+    let (Some(outcome), Some(side)) = (asset_id.outcome_index(), asset_id.outcome_side()) else {
+        return Err(format!("Asset {asset_id} is not a HIP-4 outcome"));
+    };
+
+    // Only the encoding survives settlement, so market metadata stays empty
+    let market = OutcomeMarket {
+        outcome,
+        name: String::new(),
+        description: String::new(),
+        side_specs: Vec::new(),
+    };
+
+    let meta = OutcomeMeta {
+        outcomes: Vec::new(),
+        questions: Vec::new(),
+    };
+
+    build_outcome_def(&market, side, &meta)
 }
 
 fn build_outcome_def(
@@ -955,9 +978,20 @@ pub fn parse_order_status_report_from_basic(
     let venue_order_id = VenueOrderId::new(order.oid.to_string());
     let order_side = OrderSide::from(order.side);
 
-    let is_conditional = is_conditional_order_data(order.trigger_px, order.tpsl.as_ref());
+    // REST rows (`frontendOpenOrders`) carry trigger semantics in the `orderType` label
+    // instead of the WebSocket `tpsl` / `isMarket` fields
+    let (tpsl, is_market) = match (order.tpsl, order.order_type.as_deref()) {
+        (Some(tpsl), _) => (Some(tpsl), order.is_market),
+        (None, Some(label)) => match parse_trigger_order_type_label(label) {
+            Some((tpsl, is_market)) => (Some(tpsl), Some(is_market)),
+            None => (None, order.is_market),
+        },
+        (None, None) => (None, order.is_market),
+    };
+
+    let is_conditional = is_conditional_order_data(order.trigger_px, tpsl.as_ref());
     let order_type = if is_conditional {
-        match (order.is_market, order.tpsl.as_ref()) {
+        match (is_market, tpsl.as_ref()) {
             (Some(is_market), Some(tpsl)) => parse_trigger_order_type(is_market, tpsl),
             (None, Some(tpsl)) => parse_trigger_order_type(false, tpsl),
             _ => OrderType::Limit,
@@ -969,8 +1003,6 @@ pub fn parse_order_status_report_from_basic(
     let time_in_force = order
         .tif
         .map_or(TimeInForce::Gtc, hyperliquid_time_in_force_to_nautilus);
-    let order_status = OrderStatus::from(*status);
-
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
@@ -982,6 +1014,16 @@ pub fn parse_order_status_report_from_basic(
     let filled_sz = orig_sz.abs() - current_sz.abs();
     let filled_qty = Quantity::from_decimal_dp(filled_sz, size_precision)
         .map_err(|e| anyhow::anyhow!("Failed to create quantity from filled_sz: {e}"))?;
+
+    // The venue marks an order `filled` once it stops executing, with `sz` holding any remainder
+    // it canceled (seen on IOC orders). A filled report would leave that remainder open.
+    let venue_status = OrderStatus::from(*status);
+    let remainder_canceled = venue_status == OrderStatus::Filled && filled_qty < quantity;
+    let order_status = if remainder_canceled {
+        OrderStatus::Canceled
+    } else {
+        venue_status
+    };
 
     let ts_accepted = UnixNanos::from(order.timestamp * 1_000_000);
     let ts_last = ts_accepted;
@@ -1019,13 +1061,15 @@ pub fn parse_order_status_report_from_basic(
 
     if let Some(reason) = status.rejection_reason() {
         report = report.with_cancel_reason(reason.to_string());
+    } else if remainder_canceled {
+        report = report.with_cancel_reason("Unfilled remainder canceled".to_string());
     }
 
-    // Only set price for non-filled orders. For filled orders, the limit price is not
-    // the execution price, and setting it would cause bogus inferred fills to be created
-    // during reconciliation. Real fills arrive via the userEvents WebSocket channel.
+    // Only set price for orders the venue did not report as filled. For filled orders, the
+    // limit price is not the execution price, and setting it would cause bogus inferred fills
+    // to be created during reconciliation. Real fills arrive via the userEvents WebSocket channel.
     if !matches!(
-        order_status,
+        venue_status,
         OrderStatus::Filled | OrderStatus::PartiallyFilled
     ) {
         let price = Price::from_decimal_dp(order.limit_px, price_precision)
@@ -2076,6 +2120,67 @@ mod tests {
     }
 
     #[rstest]
+    #[case::yes(0, "20-YES-OUTCOME", "#200", "+200", 100_000_200, "Yes")]
+    #[case::no(1, "20-NO-OUTCOME", "#201", "+201", 100_000_201, "No")]
+    fn test_parse_unlisted_outcome_instrument(
+        #[case] side: u8,
+        #[case] symbol: &str,
+        #[case] raw_symbol: &str,
+        #[case] base: &str,
+        #[case] asset_index: u32,
+        #[case] side_name: &str,
+    ) {
+        let listed_meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 20,
+                name: "Recurring".to_string(),
+                description: "class:priceBinary|underlying:BTC|expiry:20260511-0600".to_string(),
+                side_specs: vec![],
+            }],
+            questions: vec![],
+        };
+
+        let listed = parse_outcome_instruments(&listed_meta).unwrap();
+
+        let def = parse_unlisted_outcome_instrument(HyperliquidAssetId::outcome(20, side)).unwrap();
+
+        let listed = &listed[usize::from(side)];
+        let outcome = def.outcome.as_ref().unwrap();
+        assert_eq!(def.symbol, symbol);
+        assert_eq!(def.raw_symbol, raw_symbol);
+        assert_eq!(def.base, base);
+        assert_eq!(def.quote, "USDH");
+        assert_eq!(def.market_type, HyperliquidMarketType::Outcome);
+        assert_eq!(def.asset_index, asset_index);
+        assert_eq!(def.price_decimals, OUTCOME_PRICE_DECIMALS);
+        assert_eq!(def.size_decimals, OUTCOME_SIZE_DECIMALS);
+        assert_eq!(def.tick_size, dec!(0.0001));
+        assert_eq!(def.lot_size, dec!(0.01));
+        assert!(def.active);
+        assert_eq!(outcome.outcome_index, 20);
+        assert_eq!(outcome.outcome_side, side);
+        assert_eq!(outcome.market_name, "");
+        assert_eq!(outcome.side_name.unwrap(), side_name);
+        assert_eq!(outcome.description, None);
+        assert_eq!(outcome.expiration_ns, UnixNanos::default());
+        assert_eq!(
+            (def.symbol, def.raw_symbol, def.asset_index),
+            (listed.symbol, listed.raw_symbol, listed.asset_index),
+            "an unlisted side must map to the same instrument as its listed form",
+        );
+    }
+
+    #[rstest]
+    fn test_parse_unlisted_outcome_instrument_rejects_non_outcome_asset() {
+        let result = parse_unlisted_outcome_instrument(HyperliquidAssetId::spot(107));
+
+        assert_eq!(
+            result.unwrap_err(),
+            "Asset 10107 is not a HIP-4 outcome".to_string()
+        );
+    }
+
+    #[rstest]
     fn test_get_usdh_currency_registers_with_explicit_precision() {
         let currency = get_usdh_currency();
         assert_eq!(currency.code, "USDH");
@@ -2275,6 +2380,7 @@ mod tests {
             tid: 77_001,
             fee_token: Ustr::from("+420"),
             builder_fee: Some(dec!(0.0001)),
+            cloid: None,
         };
 
         let account_id = AccountId::from("HYPERLIQUID-001");
@@ -2554,5 +2660,138 @@ mod tests {
         assert!(meta.parent_question(7).is_some());
         assert!(meta.parent_question(6).is_some());
         assert!(meta.parent_question(99).is_none());
+    }
+
+    fn frontend_open_order_row(order_type: &str, is_trigger: bool, trigger_px: &str) -> Value {
+        // Shape of a `frontendOpenOrders` row: no `tpsl` / `isMarket`, the trigger kind is
+        // only carried by the `orderType` label
+        json!({
+            "coin": "BTC",
+            "side": "A",
+            "limitPx": "49000.0",
+            "sz": "0.01",
+            "oid": 42,
+            "timestamp": 1_754_000_000_000u64,
+            "triggerCondition": if is_trigger { "Price below 50000" } else { "N/A" },
+            "isTrigger": is_trigger,
+            "triggerPx": trigger_px,
+            "children": [],
+            "isPositionTpsl": false,
+            "reduceOnly": true,
+            "orderType": order_type,
+            "origSz": "0.01",
+            "tif": if is_trigger { Value::Null } else { json!("Gtc") },
+            "cloid": null
+        })
+    }
+
+    fn create_btc_perp_instrument() -> InstrumentAny {
+        let instrument_id = InstrumentId::new(Symbol::new("BTC-PERP"), *HYPERLIQUID_VENUE);
+
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("BTC-PERP"))
+                .base_currency(Currency::from("BTC"))
+                .quote_currency(Currency::from("USDC"))
+                .settlement_currency(Currency::from("USDC"))
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(5)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
+    }
+
+    #[rstest]
+    #[case("Stop Market", OrderType::StopMarket)]
+    #[case("Stop Limit", OrderType::StopLimit)]
+    #[case("Take Profit Market", OrderType::MarketIfTouched)]
+    #[case("Take Profit Limit", OrderType::LimitIfTouched)]
+    fn test_parse_order_status_report_from_frontend_open_order_trigger_label(
+        #[case] label: &str,
+        #[case] expected: OrderType,
+    ) {
+        let instrument = create_btc_perp_instrument();
+        let order: WsBasicOrderData =
+            serde_json::from_value(frontend_open_order_row(label, true, "50000.0")).unwrap();
+
+        let report = parse_order_status_report_from_basic(
+            &order,
+            &HyperliquidOrderStatusEnum::Open,
+            &instrument,
+            AccountId::new("HYPERLIQUID-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, expected);
+        assert_eq!(report.trigger_price, Some(Price::from("50000.0")));
+        assert_eq!(report.trigger_type, Some(TriggerType::Default));
+        assert_eq!(report.price, Some(Price::from("49000.0")));
+        assert!(report.reduce_only);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_from_frontend_open_order_plain_limit() {
+        let instrument = create_btc_perp_instrument();
+        let order: WsBasicOrderData =
+            serde_json::from_value(frontend_open_order_row("Limit", false, "0.0")).unwrap();
+
+        let report = parse_order_status_report_from_basic(
+            &order,
+            &HyperliquidOrderStatusEnum::Open,
+            &instrument,
+            AccountId::new("HYPERLIQUID-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert!(report.trigger_price.is_none());
+        assert!(report.trigger_type.is_none());
+    }
+
+    #[rstest]
+    #[case("Ioc", "0.0005", OrderStatus::Canceled, "0.0145")]
+    #[case("Gtc", "0.0005", OrderStatus::Canceled, "0.0145")]
+    #[case("Ioc", "0.0", OrderStatus::Filled, "0.015")]
+    #[case("Ioc", "0.000001", OrderStatus::Filled, "0.015")] // Below size precision
+    fn test_parse_order_status_report_from_basic_filled_with_remainder(
+        #[case] tif: &str,
+        #[case] sz: &str,
+        #[case] expected_status: OrderStatus,
+        #[case] expected_filled: &str,
+    ) {
+        // The venue marks an IOC order `filled` even when its remainder was canceled; `sz`
+        // carries that unfilled remainder
+        let instrument = create_btc_perp_instrument();
+        let mut row = frontend_open_order_row("Limit", false, "0.0");
+        row["origSz"] = json!("0.015");
+        row["sz"] = json!(sz);
+        row["tif"] = json!(tif);
+        let order: WsBasicOrderData = serde_json::from_value(row).unwrap();
+
+        let report = parse_order_status_report_from_basic(
+            &order,
+            &HyperliquidOrderStatusEnum::Filled,
+            &instrument,
+            AccountId::new("HYPERLIQUID-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(report.quantity, Quantity::from("0.015"));
+        assert_eq!(report.filled_qty, Quantity::from(expected_filled));
+        assert!(report.price.is_none(), "venue-filled rows carry no price");
+        assert_eq!(
+            report.cancel_reason.is_some(),
+            expected_status == OrderStatus::Canceled
+        );
     }
 }

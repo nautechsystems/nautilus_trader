@@ -86,8 +86,7 @@ for file in $changed_files; do
   if [[ "$file" =~ ^crates/adapters/([^/]+)/ ]]; then
     pkg="nautilus-${BASH_REMATCH[1]}"
     pkg="${pkg//_/-}"
-  elif [[ "$file" =~ ^crates/persistence/macros/ ]]; then
-    pkg="nautilus-persistence-macros"
+
   elif [[ "$file" =~ ^crates/([^/]+)/ ]]; then
     name="${BASH_REMATCH[1]}"
     [[ "$name" == "adapters" ]] && continue

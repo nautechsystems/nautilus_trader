@@ -1,0 +1,20 @@
+{
+  "id": "fee-sports-1",
+  "conditionId": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "question": "Sports fee market",
+  "clobTokenIds": "[\"33333333333333333333333333333333333333333333333333333333333333333333333333333\", \"44444444444444444444444444444444444444444444444444444444444444444444444444444\"]",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "feesEnabled": true,
+  "feeType": "sports_fees_v2",
+  "feeSchedule": {
+    "exponent": 1,
+    "rate": 0.05,
+    "takerOnly": true,
+    "rebateRate": 0
+  }
+}

@@ -1,0 +1,3946 @@
+{
+  "instruments": [
+    {
+      "symbol": "USO-PERP",
+      "product": "USO",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "15.0",
+      "initial_margin_pct": "30.0",
+      "category": "energy_etfs",
+      "description": "US Oil Fund US Equity Perpetual Future",
+      "underlying_benchmark_price": "Arca Official Closing Price",
+      "contract_mark_price": "Average price on AX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Margin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "AAPL-PERP",
+      "product": "AAPL",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "0.02",
+      "funding_rate_cap_lower_pct": "-0.02",
+      "maintenance_margin_pct": "10.0",
+      "initial_margin_pct": "15.0",
+      "category": "equities",
+      "description": "Apple US Equity Perpetual Future",
+      "underlying_benchmark_price": "Trailing 30 minute TWAP of underlying stock",
+      "contract_mark_price": "Trailing 30 minute TWAP on AX",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "13 per day, every 30 minutes from 10:00 A.M. to 4:00 P.M. (inclusive) NY time",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "QQQ-PERP",
+      "product": "QQQ",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "10.0",
+      "initial_margin_pct": "15.0",
+      "category": "equities",
+      "description": "Invesco NASDAQ 100 ETF",
+      "underlying_benchmark_price": "NASDAQ Official Closing Price",
+      "contract_mark_price": "Average price on AX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Martin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "AMZN-PERP",
+      "product": "AMZN",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "0.02",
+      "funding_rate_cap_lower_pct": "-0.02",
+      "maintenance_margin_pct": "10.0",
+      "initial_margin_pct": "15.0",
+      "category": "equities",
+      "description": "Amazon US Equity Perpetual Future",
+      "underlying_benchmark_price": "Trailing 30 minute TWAP of underlying stock",
+      "contract_mark_price": "Trailing 30 minute TWAP on AX",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "13 per day, every 30 minutes from 10:00 A.M. to 4:00 P.M. (inclusive) NY time",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "GOOGL-PERP",
+      "product": "GOOGL",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "0.02",
+      "funding_rate_cap_lower_pct": "-0.02",
+      "maintenance_margin_pct": "10.0",
+      "initial_margin_pct": "15.0",
+      "category": "equities",
+      "description": "Google US Equity Perpetual Future",
+      "underlying_benchmark_price": "Trailing 30 minute TWAP of underlying stock",
+      "contract_mark_price": "Trailing 30 minute TWAP on AX",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "13 per day, every 30 minutes from 10:00 A.M. to 4:00 P.M. (inclusive) NY time",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "EURUSD-PERP",
+      "product": "EURUSD",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 10000,
+      "minimum_order_size": "100",
+      "tick_size": "0.0001",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "4.0",
+      "initial_margin_pct": "6.0",
+      "category": "fx",
+      "description": "Euro / US Dollar FX Perpetual Future",
+      "underlying_benchmark_price": "WMR London 4pm Closing Spot Rate",
+      "contract_mark_price": "Average price on AX at London 4pm",
+      "contract_size": "1 Euro per contract",
+      "price_quotation": "U.S. dollars per Euro",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. London time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "Europe/London",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": []
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "XAU-PERP",
+      "product": "XAU",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 10,
+      "minimum_order_size": "1",
+      "tick_size": "0.1",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1",
+      "funding_rate_cap_lower_pct": "-1",
+      "maintenance_margin_pct": "7.5",
+      "initial_margin_pct": "12.5",
+      "category": "metals",
+      "description": "Gold Metals Perpetual Future",
+      "underlying_benchmark_price": "XAU WMR Metals Daily Closing Rate",
+      "contract_mark_price": "Average price on ArchitectX at London 4pm",
+      "contract_size": "1 ounce per contract",
+      "price_quotation": "U.S. dollars per ounce",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. London time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "Europe/London",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": []
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "INTC-PERP",
+      "product": "INTC",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "25.0",
+      "initial_margin_pct": "33.3",
+      "category": "equities",
+      "description": "Intel Corp US Equity Perpetual Future",
+      "underlying_benchmark_price": "Nasdaq Official Closing Price",
+      "contract_mark_price": "Average price on AX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Martin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "SNDK-PERP",
+      "product": "SNDK",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "25.0",
+      "initial_margin_pct": "33.3",
+      "category": "equities",
+      "description": "SanDisk Corp US Equity Perpetual Future",
+      "underlying_benchmark_price": "Nasdaq Official Closing Price",
+      "contract_mark_price": "Average price on AX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Martin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "UNG-PERP",
+      "product": "UNG",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "15.0",
+      "initial_margin_pct": "30.0",
+      "category": "energy_etfs",
+      "description": "US Natural Gas Fund US Equity Perpetual Future",
+      "underlying_benchmark_price": "Arca Official Closing Price",
+      "contract_mark_price": "Average price on AX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Margin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "UST10Y-PERP",
+      "product": "UST10Y",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "4.0",
+      "initial_margin_pct": "8.0",
+      "category": "treasuries",
+      "description": "U.S. Treasury 10-Year On-the-Run Perpetual Future",
+      "underlying_benchmark_price": "MarketVector\u2122 U.S. Treasury 10-Year On-the-Run Index (MVOTR10) daily closing level",
+      "contract_mark_price": "Average price on AX at 4:00pm U.S. Eastern time (early close time on SIFMA-recommended early bond market closure days)",
+      "contract_size": "1 Index Point per contract",
+      "price_quotation": "U.S. dollars per Index Point",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. U.S. Eastern time (aligned with early bond market close on SIFMA-recommended early closure days)",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Martin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Presidents Day"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Good Friday - early close (SIFMA)"
+          },
+          {
+            "date": "2026-05-22",
+            "times": [
+              {
+                "hours": 14,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Memorial Day Eve - early close (SIFMA)"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-02",
+            "times": [
+              {
+                "hours": 14,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Independence Day Eve - early close (SIFMA)"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day (observed)"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-10-12",
+            "times": [],
+            "reason": "Columbus Day"
+          },
+          {
+            "date": "2026-11-11",
+            "times": [],
+            "reason": "Veterans Day"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-11-27",
+            "times": [
+              {
+                "hours": 14,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Day after Thanksgiving - early close (SIFMA)"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 14,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close (SIFMA)"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": {
+        "on_the_run_bond": "US91282CRF04"
+      }
+    },
+    {
+      "symbol": "MSFT-PERP",
+      "product": "MSFT",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "0.02",
+      "funding_rate_cap_lower_pct": "-0.02",
+      "maintenance_margin_pct": "10.0",
+      "initial_margin_pct": "15.0",
+      "category": "equities",
+      "description": "Microsoft US Equity Perpetual Future",
+      "underlying_benchmark_price": "Trailing 30 minute TWAP of underlying stock",
+      "contract_mark_price": "Trailing 30 minute TWAP on AX",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "13 per day, every 30 minutes from 10:00 A.M. to 4:00 P.M. (inclusive) NY time",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "XAU-2026-SEP",
+      "product": "XAU",
+      "expiration": "2026-09-30T15:00:00Z",
+      "multiplier": "1",
+      "price_scale": 10,
+      "minimum_order_size": "1",
+      "tick_size": "0.1",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "additional_product_specs": null,
+      "estimated_funding_supported": false,
+      "maintenance_margin_pct": "7.5",
+      "initial_margin_pct": "12.5",
+      "category": "metals",
+      "description": "Gold Metals Sep-2026 Future",
+      "underlying_benchmark_price": "XAU WMR Metals Daily Closing Rate",
+      "contract_mark_price": "Average price on AX at London 4pm",
+      "contract_size": "1 ounce per contract",
+      "price_quotation": "U.S. dollars per ounce",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "trading_schedule": null
+    },
+    {
+      "symbol": "NVDA-PERP",
+      "product": "NVDA",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "0.08",
+      "funding_rate_cap_lower_pct": "-0.08",
+      "maintenance_margin_pct": "10",
+      "initial_margin_pct": "17.5",
+      "category": "equities",
+      "description": "NVIDIA Corp US Equity Perpetual Future",
+      "underlying_benchmark_price": "Trailing 30 minute TWAP of underlying stock",
+      "contract_mark_price": "Trailing 30 minute TWAP on AX",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "13 per day, every 30 minutes from 10:00 A.M. to 4:00 P.M. (inclusive) NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": true,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "XAG-PERP",
+      "product": "XAG",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1",
+      "funding_rate_cap_lower_pct": "-1",
+      "maintenance_margin_pct": "15",
+      "initial_margin_pct": "25",
+      "category": "metals",
+      "description": "Silver Metals Perpetual Future",
+      "underlying_benchmark_price": "XAG WMR Metals Daily Closing Rate",
+      "contract_mark_price": "Average price on ArchitectX at London 4pm",
+      "contract_size": "1 ounce per contract",
+      "price_quotation": "U.S. dollars per ounce",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. London time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "Europe/London",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": []
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "XAU-2026-DEC",
+      "product": "XAU",
+      "expiration": "2026-12-31T16:00:00Z",
+      "multiplier": "1",
+      "price_scale": 10,
+      "minimum_order_size": "1",
+      "tick_size": "0.1",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "additional_product_specs": null,
+      "estimated_funding_supported": false,
+      "maintenance_margin_pct": "7.5",
+      "initial_margin_pct": "12.5",
+      "category": "metals",
+      "description": "Gold Metals Dec-2026 Future",
+      "underlying_benchmark_price": "XAU WMR Metals Daily Closing Rate",
+      "contract_mark_price": "Average price on AX at London 4pm",
+      "contract_size": "1 ounce per contract",
+      "price_quotation": "U.S. dollars per ounce",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "trading_schedule": null
+    },
+    {
+      "symbol": "BRLUSD-PERP",
+      "product": "BRLUSD",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 10000,
+      "minimum_order_size": "100",
+      "tick_size": "0.0001",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "4.0",
+      "initial_margin_pct": "6.0",
+      "category": "fx",
+      "description": "Brazilian Real / US Dollar FX Perpetual Future",
+      "underlying_benchmark_price": "WMR London 4pm Closing Spot Rate",
+      "contract_mark_price": "Average price on AX at London 4pm",
+      "contract_size": "1 Brazilian Real per contract",
+      "price_quotation": "U.S. dollars per Brazilian Real",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. London time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "Europe/London",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": []
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "BNO-PERP",
+      "product": "BNO",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "15.0",
+      "initial_margin_pct": "30.0",
+      "category": "energy_etfs",
+      "description": "US Brent Oil Fund US Equity Perpetual Future",
+      "underlying_benchmark_price": "Arca Official Closing Price",
+      "contract_mark_price": "Average price on AX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Margin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "SPY-PERP",
+      "product": "SPY",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "10.0",
+      "initial_margin_pct": "15.0",
+      "category": "equities",
+      "description": "SPDR S&P 500 ETF",
+      "underlying_benchmark_price": "Arca Official Closing Price",
+      "contract_mark_price": "Average price on AX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Martin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "TSLA-PERP",
+      "product": "TSLA",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1",
+      "funding_rate_cap_lower_pct": "-1",
+      "maintenance_margin_pct": "12",
+      "initial_margin_pct": "20",
+      "category": "equities",
+      "description": "Tesla Inc US Equity Perpetual Future",
+      "underlying_benchmark_price": "Nasdaq Official Closing Price",
+      "contract_mark_price": "Average price on ArchitectX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 15,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": []
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "GBPUSD-PERP",
+      "product": "GBPUSD",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 10000,
+      "minimum_order_size": "100",
+      "tick_size": "0.0001",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "4.0",
+      "initial_margin_pct": "6.0",
+      "category": "fx",
+      "description": "British Pound / US Dollar FX Perpetual Future",
+      "underlying_benchmark_price": "WMR London 4pm Closing Spot Rate",
+      "contract_mark_price": "Average price on AX at London 4pm",
+      "contract_size": "1 British Pound per contract",
+      "price_quotation": "U.S. dollars per British Pound",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. London time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "Europe/London",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": []
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "XCU-PERP",
+      "product": "XCU",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 10000,
+      "minimum_order_size": "1",
+      "tick_size": "0.0001",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "10.0",
+      "initial_margin_pct": "20.0",
+      "category": "metals",
+      "description": "Copper Metals Perpetual Future",
+      "underlying_benchmark_price": "COMEX Copper (HG) futures daily settlement",
+      "contract_mark_price": "Average price on AX at 1pm U.S. Eastern time",
+      "contract_size": "1 Pound per contract",
+      "price_quotation": "U.S. dollars per pound",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 1:00 P.M. U.S. Eastern time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Martin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 30,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": {
+        "composition_for_todays_settlement": "100% HGZ6",
+        "composition_for_settlement_on_2026-11-09": "80.0% HGZ6, 20.0% HGH7"
+      }
+    },
+    {
+      "symbol": "META-PERP",
+      "product": "META",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "0.02",
+      "funding_rate_cap_lower_pct": "-0.02",
+      "maintenance_margin_pct": "10.0",
+      "initial_margin_pct": "15.0",
+      "category": "equities",
+      "description": "Meta US Equity Perpetual Future",
+      "underlying_benchmark_price": "Trailing 30 minute TWAP of underlying stock",
+      "contract_mark_price": "Trailing 30 minute TWAP on AX",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "13 per day, every 30 minutes from 10:00 A.M. to 4:00 P.M. (inclusive) NY time",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 10,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 11,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 12,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 0,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 15,
+              "minutes": 30,
+              "seconds": 0
+            }
+          },
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 10,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 10,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 11,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 0,
+                "seconds": 0
+              },
+              {
+                "hours": 12,
+                "minutes": 30,
+                "seconds": 0
+              },
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "AMD-PERP",
+      "product": "AMD",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "12.0",
+      "initial_margin_pct": "20.0",
+      "category": "equities",
+      "description": "Advanced Micro Devices US Equity Perpetual Future",
+      "underlying_benchmark_price": "Nasdaq Official Closing Price",
+      "contract_mark_price": "Average price on AX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Martin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "JPYUSD-PERP",
+      "product": "JPYUSD",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 1000000,
+      "minimum_order_size": "10000",
+      "tick_size": "0.000001",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "4.0",
+      "initial_margin_pct": "6.0",
+      "category": "fx",
+      "description": "Japanese Yen / US Dollar FX Perpetual Future",
+      "underlying_benchmark_price": "WMR London 4pm Closing Spot Rate",
+      "contract_mark_price": "Average price on AX at London 4pm",
+      "contract_size": "1 Japanese Yen per contract",
+      "price_quotation": "U.S. dollars per Japanese Yen",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. London time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "Europe/London",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": []
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "MXNUSD-PERP",
+      "product": "MXNUSD",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100000,
+      "minimum_order_size": "1000",
+      "tick_size": "0.00001",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1",
+      "funding_rate_cap_lower_pct": "-1",
+      "maintenance_margin_pct": "4",
+      "initial_margin_pct": "6.0",
+      "category": "fx",
+      "description": "Mexican Peso / US Dollar FX Perpetual Future",
+      "underlying_benchmark_price": "WMR London 4pm Closing Spot Rate",
+      "contract_mark_price": "Average price on AX at London 4pm",
+      "contract_size": "1 Mexican Peso per contract",
+      "price_quotation": "U.S. dollars per Mexican Peso",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. London time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "Europe/London",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          },
+          {
+            "date": "2026-12-28",
+            "times": [],
+            "reason": "Boxing Day (Observed)"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "MU-PERP",
+      "product": "MU",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 100,
+      "minimum_order_size": "1",
+      "tick_size": "0.01",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "12.0",
+      "initial_margin_pct": "20.0",
+      "category": "equities",
+      "description": "Micron Technology US Equity Perpetual Future",
+      "underlying_benchmark_price": "Nasdaq Official Closing Price",
+      "contract_mark_price": "Average price on AX at 4pm New York Time",
+      "contract_size": "1 share per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 4:00 P.M. NY time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 16,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Martin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-25",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Thanksgiving - early close"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 0,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    },
+    {
+      "symbol": "WTIOIL-PERP",
+      "product": "WTIOIL",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 1000,
+      "minimum_order_size": "1",
+      "tick_size": "0.001",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "20.0",
+      "initial_margin_pct": "30.0",
+      "category": "energy",
+      "description": "WTI Crude Oil Future Perpetual Future",
+      "underlying_benchmark_price": "CME WTI Crude Oil futures daily settlement",
+      "contract_mark_price": "Average price on AX at 2:30pm U.S. Eastern time",
+      "contract_size": "1 Barrel of Oil per contract",
+      "price_quotation": "U.S. dollars per share",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 2:30 P.M. U.S. Eastern time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "America/New_York",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 14,
+              "minutes": 30,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          },
+          {
+            "date": "2026-01-19",
+            "times": [],
+            "reason": "Martin Luther King, Jr. Day"
+          },
+          {
+            "date": "2026-02-16",
+            "times": [],
+            "reason": "Washington's Birthday"
+          },
+          {
+            "date": "2026-04-03",
+            "times": [],
+            "reason": "Good Friday"
+          },
+          {
+            "date": "2026-05-25",
+            "times": [],
+            "reason": "Memorial Day"
+          },
+          {
+            "date": "2026-06-19",
+            "times": [],
+            "reason": "Juneteenth National Independence Day"
+          },
+          {
+            "date": "2026-07-03",
+            "times": [],
+            "reason": "Independence Day"
+          },
+          {
+            "date": "2026-09-07",
+            "times": [],
+            "reason": "Labor Day"
+          },
+          {
+            "date": "2026-11-26",
+            "times": [],
+            "reason": "Thanksgiving Day"
+          },
+          {
+            "date": "2026-12-24",
+            "times": [
+              {
+                "hours": 13,
+                "minutes": 30,
+                "seconds": 0
+              }
+            ],
+            "reason": "Christmas Eve - early close"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": true,
+      "additional_product_specs": {
+        "composition_for_settlement_on_2026-10-08": "80.0% CLX6, 20.0% CLZ6",
+        "composition_for_todays_settlement": "100% CLX6"
+      }
+    },
+    {
+      "symbol": "XAL-PERP",
+      "product": "XAL",
+      "expiration": null,
+      "multiplier": "1",
+      "price_scale": 10000,
+      "minimum_order_size": "1",
+      "tick_size": "0.0001",
+      "quote_currency": "USD",
+      "price_band_lower_deviation_pct": "10",
+      "price_band_upper_deviation_pct": "10",
+      "funding_settlement_currency": "USD",
+      "funding_rate_cap_upper_pct": "1.0",
+      "funding_rate_cap_lower_pct": "-1.0",
+      "maintenance_margin_pct": "10.0",
+      "initial_margin_pct": "20.0",
+      "category": "metals",
+      "description": "Aluminum Metals Perpetual Future",
+      "underlying_benchmark_price": "LME Aluminum (AH) futures daily settlement",
+      "contract_mark_price": "Average price on AX at London 1pm",
+      "contract_size": "1 kg per contract",
+      "price_quotation": "U.S. dollars per kg",
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "funding_schedule_time_description": "Daily around 1:00 P.M. London time",
+      "funding_schedule_calendar_description": "All days where a valid Underlying Benchmark Price AND Contract Mark Price are published",
+      "funding_schedule": {
+        "timezone": "Europe/London",
+        "times": [
+          {
+            "days_of_week": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "time_of_day": {
+              "hours": 13,
+              "minutes": 0,
+              "seconds": 0
+            }
+          }
+        ],
+        "exceptions": [
+          {
+            "date": "2026-08-31",
+            "times": [],
+            "reason": "Summer Bank Holiday"
+          },
+          {
+            "date": "2026-12-25",
+            "times": [],
+            "reason": "Christmas Day"
+          },
+          {
+            "date": "2026-12-28",
+            "times": [],
+            "reason": "Boxing Day"
+          },
+          {
+            "date": "2027-01-01",
+            "times": [],
+            "reason": "New Year's Day"
+          }
+        ]
+      },
+      "trading_schedule": null,
+      "estimated_funding_supported": false,
+      "additional_product_specs": null
+    }
+  ]
+}

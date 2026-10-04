@@ -28,7 +28,7 @@ use super::{
     requests::{remove_request_bar_aggregation_params, request_params, response_params},
 };
 
-const TIME_RANGE_GENERATOR: &str = "time_range_generator";
+pub(super) const TIME_RANGE_GENERATOR: &str = "time_range_generator";
 const TIME_RANGE_DURATIONS_SECONDS: &str = "durations_seconds";
 const TIME_RANGE_POINT_DATA: &str = "point_data";
 

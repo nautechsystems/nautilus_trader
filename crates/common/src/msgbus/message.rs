@@ -44,7 +44,7 @@ pub enum BusPayloadType {
     Custom(Ustr),
     Instrument,
     OrderBookDeltas,
-    OrderBookDepth10,
+    OrderBookDepth,
     QuoteTick,
     TradeTick,
     Bar,
@@ -80,7 +80,7 @@ impl BusPayloadType {
     pub(crate) const PUBLISHED_TYPES: &'static [Self] = &[
         Self::Instrument,
         Self::OrderBookDeltas,
-        Self::OrderBookDepth10,
+        Self::OrderBookDepth,
         Self::QuoteTick,
         Self::TradeTick,
         Self::Bar,
@@ -122,7 +122,7 @@ impl BusPayloadType {
             Self::Custom(type_name) => type_name.as_str(),
             Self::Instrument => "InstrumentAny",
             Self::OrderBookDeltas => "OrderBookDeltas",
-            Self::OrderBookDepth10 => "OrderBookDepth10",
+            Self::OrderBookDepth => "OrderBookDepth",
             Self::QuoteTick => "QuoteTick",
             Self::TradeTick => "TradeTick",
             Self::Bar => "Bar",
@@ -165,7 +165,7 @@ impl BusPayloadType {
         match name {
             "InstrumentAny" => Self::Instrument,
             "OrderBookDeltas" => Self::OrderBookDeltas,
-            "OrderBookDepth10" => Self::OrderBookDepth10,
+            "OrderBookDepth" => Self::OrderBookDepth,
             "QuoteTick" => Self::QuoteTick,
             "TradeTick" => Self::TradeTick,
             "Bar" => Self::Bar,
@@ -255,7 +255,7 @@ impl BusPayloadType {
         matches!(
             self,
             Self::OrderBookDeltas
-                | Self::OrderBookDepth10
+                | Self::OrderBookDepth
                 | Self::QuoteTick
                 | Self::TradeTick
                 | Self::Bar
@@ -518,6 +518,18 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(payload_type.supports(encoding), expected);
+    }
+
+    #[rstest]
+    fn bus_payload_type_accepts_canonical_depth_name() {
+        assert_eq!(
+            BusPayloadType::from_name("OrderBookDepth"),
+            BusPayloadType::OrderBookDepth
+        );
+        assert_eq!(
+            BusPayloadType::from_name("OrderBookDepth10"),
+            BusPayloadType::Custom(Ustr::from("OrderBookDepth10")),
+        );
     }
 
     #[rstest]

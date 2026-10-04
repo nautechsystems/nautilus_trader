@@ -23,7 +23,9 @@
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
+    events::{OrderEventAny, OrderFilled},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
+    orders::{Order, OrderAny},
     types::{Price, Quantity},
 };
 use uuid::Uuid;
@@ -33,6 +35,8 @@ use super::types::FillSnapshot;
 // FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0100_0000_01b3;
+
+const DETERMINISTIC_UUID_VERSION: u8 = 5;
 
 /// Create a synthetic `VenueOrderId` for a derived fill.
 ///
@@ -100,6 +104,16 @@ pub fn create_inferred_reconciliation_trade_id(
     TradeId::new(deterministic_uuid_from_seed("reconciliation-fill", &seed))
 }
 
+/// Checks whether `trade_id` has the format of an inferred reconciliation `TradeId`.
+///
+/// A mismatch proves [`create_inferred_reconciliation_trade_id`] did not produce the ID, so callers
+/// can skip regenerating it; a match does not prove the ID was inferred.
+#[must_use]
+pub fn is_inferred_reconciliation_trade_id_format(trade_id: &TradeId) -> bool {
+    Uuid::parse_str(trade_id.as_str())
+        .is_ok_and(|uuid| uuid.get_version_num() == usize::from(DETERMINISTIC_UUID_VERSION))
+}
+
 /// The `account_id` scopes the ID to the venue account, preventing cross-account
 /// collisions where the engine would otherwise fall back to `ClientOrderId::from(venue_order_id)`
 /// and conflate orders from different accounts. The `ts_last` (venue-provided) ensures that
@@ -141,6 +155,87 @@ pub fn create_position_reconciliation_venue_order_id(
     ))
 }
 
+/// Returns active fill IDs proven to come from deterministic reconciliation inference.
+///
+/// Replays candidate order history to recover each fill's cumulative quantity before comparing
+/// the complete deterministic ID. A matching UUID format alone does not establish provenance.
+///
+/// # Errors
+///
+/// Returns an error when candidate order history cannot be replayed.
+pub fn inferred_reconciliation_trade_ids(order: &OrderAny) -> anyhow::Result<Vec<TradeId>> {
+    let events = order.events();
+    let trade_ids = order.trade_ids();
+
+    let is_candidate = |fill: &OrderFilled| {
+        fill.reconciliation
+            && is_inferred_reconciliation_trade_id_format(&fill.trade_id)
+            && trade_ids.contains(&&fill.trade_id)
+    };
+
+    if !events
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Filled(fill) if is_candidate(fill)))
+    {
+        return Ok(Vec::new());
+    }
+
+    let Some((first, remaining)) = events.split_first() else {
+        return Ok(Vec::new());
+    };
+
+    let mut projected = OrderAny::from_events(vec![(*first).clone()]).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot replay order {} for inferred fill detection: {e}",
+            order.client_order_id(),
+        )
+    })?;
+
+    let mut inferred_trade_ids = Vec::new();
+
+    for event in remaining {
+        projected.apply((*event).clone()).map_err(|e| {
+            anyhow::anyhow!(
+                "cannot replay order {} for inferred fill detection: {e}",
+                order.client_order_id(),
+            )
+        })?;
+
+        let OrderEventAny::Filled(fill) = event else {
+            continue;
+        };
+
+        if !is_candidate(fill) {
+            continue;
+        }
+
+        let external_position_id = PositionId::new(format!("{}-EXTERNAL", fill.instrument_id));
+        let position_ids = [fill.position_id, Some(external_position_id)];
+
+        let inferred = position_ids.into_iter().flatten().any(|position_id| {
+            create_inferred_reconciliation_trade_id(
+                fill.account_id,
+                fill.instrument_id,
+                fill.client_order_id,
+                Some(fill.venue_order_id),
+                fill.order_side,
+                fill.order_type,
+                projected.filled_qty(),
+                fill.last_qty,
+                fill.last_px,
+                position_id,
+                fill.ts_event,
+            ) == fill.trade_id
+        });
+
+        if inferred {
+            inferred_trade_ids.push(fill.trade_id);
+        }
+    }
+
+    Ok(inferred_trade_ids)
+}
+
 fn synthetic_fill_id_suffix(
     namespace: &str,
     fill: &FillSnapshot,
@@ -167,7 +262,7 @@ fn deterministic_uuid_from_seed(namespace: &str, seed: &str) -> String {
     let mut bytes = [0_u8; 16];
     bytes[..8].copy_from_slice(&primary.to_be_bytes());
     bytes[8..].copy_from_slice(&secondary.to_be_bytes());
-    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[6] = (bytes[6] & 0x0f) | (DETERMINISTIC_UUID_VERSION << 4);
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
     Uuid::from_bytes(bytes).to_string()

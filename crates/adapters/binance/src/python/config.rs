@@ -136,6 +136,7 @@ impl BinanceDataClientConfig {
         max_retries = None,
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
+        book_snapshot_timeout_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -156,6 +157,7 @@ impl BinanceDataClientConfig {
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        book_snapshot_timeout_secs: Option<u64>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
         let config = Self {
@@ -171,6 +173,8 @@ impl BinanceDataClientConfig {
                 .unwrap_or(defaults.instrument_refresh_interval_secs),
             instrument_status_poll_secs: instrument_status_poll_secs
                 .unwrap_or(defaults.instrument_status_poll_secs),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(defaults.book_snapshot_timeout_secs),
             proxy_url: proxy_url.map(SecretString::from).or(defaults.proxy_url),
             recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
@@ -368,7 +372,7 @@ mod tests {
     fn test_data_client_py_new_uses_defaults_for_omitted_fields() {
         let config = BinanceDataClientConfig::py_new(
             None, None, None, None, None, None, None, None, None, None, None, None, false, None,
-            None, None, None,
+            None, None, None, None,
         )
         .unwrap();
         let defaults = BinanceDataClientConfig::default();
@@ -388,6 +392,10 @@ mod tests {
         assert_eq!(
             config.instrument_status_poll_secs,
             defaults.instrument_status_poll_secs
+        );
+        assert_eq!(
+            config.book_snapshot_timeout_secs,
+            defaults.book_snapshot_timeout_secs
         );
         assert_eq!(config.proxy_url, defaults.proxy_url);
         assert_eq!(config.recv_window_ms, defaults.recv_window_ms);
@@ -414,6 +422,7 @@ mod tests {
             Some(7),
             Some(123),
             Some(456),
+            Some(0),
         )
         .unwrap();
 
@@ -446,6 +455,7 @@ mod tests {
         assert_eq!(config.max_retries, 7);
         assert_eq!(config.retry_delay_initial_ms, 123);
         assert_eq!(config.retry_delay_max_ms, 456);
+        assert_eq!(config.book_snapshot_timeout_secs, 0);
     }
 
     #[rstest]

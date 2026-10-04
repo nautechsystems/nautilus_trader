@@ -455,6 +455,17 @@ pub fn data_cmd_queue_is_empty() -> bool {
     DATA_CMD_QUEUE.with(|q| q.borrow().is_empty())
 }
 
+/// Discards the current synchronous data and trading command batches without executing them.
+///
+/// Queue borrows end before captures are destroyed. Commands emitted by capture destruction remain
+/// queued; callers must establish a safe teardown boundary before discarding work.
+pub fn clear_command_queues() {
+    let data = DATA_CMD_QUEUE.with(|queue| std::mem::take(&mut *queue.borrow_mut()));
+    let trading = TRADING_CMD_QUEUE.with(|queue| std::mem::take(&mut *queue.borrow_mut()));
+    drop(data);
+    drop(trading);
+}
+
 /// Gets the global data command sender.
 ///
 /// # Panics
@@ -702,17 +713,35 @@ pub fn drain_trading_cmd_queue() {
     TRADING_CMD_QUEUE.with(|q| {
         let messages: Vec<QueuedTradingCommand> = q.borrow_mut().drain(..).collect();
         for message in messages {
-            dispatch_trading_cmd(message);
+            dispatch_trading_cmd(message, &mut |_| {});
         }
     });
 }
 
-fn dispatch_trading_cmd(message: QueuedTradingCommand) {
+#[cfg(feature = "live")]
+pub(crate) fn dispatch_scoped_trading_command(
+    message: TradingCommandMessage,
+    context: ChainContext,
+    mut before: impl FnMut(&TradingCommandMessage),
+) {
+    dispatch_trading_cmd(
+        QueuedTradingCommand {
+            message: Some(message),
+            context,
+        },
+        &mut before,
+    );
+}
+
+fn dispatch_trading_cmd(
+    message: QueuedTradingCommand,
+    before: &mut impl FnMut(&TradingCommandMessage),
+) {
     // Reuse the child buffer so leaf commands need no traversal allocation
-    let mut messages = message.dispatch();
+    let mut messages = message.dispatch(before);
     messages.reverse();
     while let Some(message) = messages.pop() {
-        messages.extend(message.dispatch().into_iter().rev());
+        messages.extend(message.dispatch(before).into_iter().rev());
     }
 }
 
@@ -729,9 +758,11 @@ impl QueuedTradingCommand {
         }
     }
 
-    fn dispatch(mut self) -> Vec<Self> {
+    fn dispatch(mut self, before: &mut impl FnMut(&TradingCommandMessage)) -> Vec<Self> {
         let message = self.message.take().expect("queued command is present");
         self.context.with_chain(|| {
+            before(&message);
+
             let TradingCommandDispatch::Sync(messages) =
                 message.dispatch_with(TradingCommandDispatch::Sync(Vec::new()))
             else {

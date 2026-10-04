@@ -1,0 +1,27 @@
+{
+  "id": "fee-conflict-1",
+  "conditionId": "0x1414141414141414141414141414141414141414141414141414141414141414",
+  "question": "Conflicting category signals",
+  "clobTokenIds": "[\"15151515151515151515151515151515151515151515151515151515151515151515151515151\", \"16161616161616161616161616161616161616161616161616161616161616161616161616161\"]",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "feesEnabled": true,
+  "category": "Crypto",
+  "tags": [
+    {
+      "id": "1",
+      "label": "Sports",
+      "slug": "sports"
+    }
+  ],
+  "feeSchedule": {
+    "exponent": 1,
+    "rate": 0.07,
+    "takerOnly": true,
+    "rebateRate": 0
+  }
+}

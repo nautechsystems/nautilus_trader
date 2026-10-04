@@ -49,7 +49,6 @@ USTR_FIELD_MAP=(
   "crates/adapters/binance/src/futures|symbol"
   "crates/adapters/binance/src/spot/sbe|symbol"
   "crates/adapters/binance/src/spot/websocket|symbol"
-  "crates/adapters/bitmex/src/websocket|symbol"
   "crates/adapters/deribit/src|instrument_name"
   "crates/adapters/derive/src|channel"
   "crates/adapters/dydx/src/common|ticker"

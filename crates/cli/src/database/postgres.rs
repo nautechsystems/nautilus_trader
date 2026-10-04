@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_infrastructure::sql::pg::{
-    connect_pg, drop_postgres, get_postgres_connect_options, init_postgres,
+use nautilus_infrastructure::sql::{
+    pg::{connect_pg, drop_postgres, get_postgres_connect_options, init_postgres},
+    queries::DatabaseQueries,
 };
+use nautilus_model::identifiers::{AccountId, TraderId};
 
 use crate::opt::{DatabaseCommand, DatabaseOpt};
 
@@ -76,6 +78,29 @@ pub(crate) async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()>
             log::info!("Connected");
 
             drop_postgres(&pg, pg_connect_options.database).await?;
+        }
+        DatabaseCommand::AssignAccount(config) => {
+            let account_id = AccountId::new_checked(&config.account_id)?;
+            let trader_id = TraderId::new_checked(&config.trader_id)?;
+            let database = config.database;
+            let pg_connect_options = get_postgres_connect_options(
+                database.host,
+                database.port,
+                database.username,
+                database.password,
+                database.database,
+            );
+            log::info!(
+                "Connecting to Postgres at {}",
+                pg_connect_options.connection_string_masked()
+            );
+
+            let pg = connect_pg(pg_connect_options.into()).await?;
+            log::info!("Connected");
+
+            let assigned =
+                DatabaseQueries::assign_account_trader(&pg, &account_id, &trader_id).await?;
+            log::info!("Assigned {assigned} account events of {account_id} to {trader_id}");
         }
     }
     Ok(())

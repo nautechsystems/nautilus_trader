@@ -39,7 +39,7 @@ impl BettingInstrument {
     /// Represents a betting instrument with complete market and selection details.
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, event_type_id, event_type_name, competition_id, competition_name, event_id, event_name, event_country_code, event_open_date, betting_type, market_id, market_name, market_type, market_start_time, selection_id, selection_name, selection_handicap, currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, tick_scheme=None, info=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, event_type_id, event_type_name, competition_id, competition_name, event_id, event_name, event_country_code, event_open_date, betting_type, market_id, market_name, market_type, market_start_time, selection_id, selection_name, selection_handicap, currency, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -74,8 +74,6 @@ impl BettingInstrument {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<String>,
         info: Option<Py<PyDict>>,
     ) -> PyResult<Self> {
@@ -118,8 +116,6 @@ impl BettingInstrument {
             .maybe_min_price(min_price)
             .maybe_margin_init(margin_init)
             .maybe_margin_maint(margin_maint)
-            .maybe_maker_fee(maker_fee)
-            .maybe_taker_fee(taker_fee)
             .maybe_tick_scheme(tick_scheme.map(|name| ustr::Ustr::from(name.as_str())))
             .maybe_info(info_map)
             .ts_event(ts_event.into())
@@ -334,18 +330,6 @@ impl BettingInstrument {
     }
 
     #[getter]
-    #[pyo3(name = "maker_fee")]
-    fn py_maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    #[getter]
-    #[pyo3(name = "taker_fee")]
-    fn py_taker_fee(&self) -> Decimal {
-        self.taker_fee
-    }
-
-    #[getter]
     #[pyo3(name = "info")]
     fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         // Convert HashMap<String, serde_json::Value> back to Python dict
@@ -412,8 +396,6 @@ impl BettingInstrument {
         dict.set_item("size_increment", self.size_increment.to_string())?;
         dict.set_item("margin_init", self.margin_init.to_string())?;
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
-        dict.set_item("maker_fee", self.maker_fee.to_string())?;
-        dict.set_item("taker_fee", self.taker_fee.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         // Serialize info dict

@@ -93,3 +93,86 @@ impl CustomDataTrait for Signal {
         self.clone().into_py_any(py)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::data::stubs::StubCustomData;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn test_signal() -> Signal {
+        Signal::new(
+            Ustr::from("price_alert"),
+            "TRIGGERED".to_string(),
+            UnixNanos::from(3),
+            UnixNanos::from(5),
+        )
+    }
+
+    #[rstest]
+    fn test_new_assigns_every_field() {
+        let signal = test_signal();
+
+        assert_eq!(signal.name, Ustr::from("price_alert"));
+        assert_eq!(signal.value, "TRIGGERED");
+        assert_eq!(signal.ts_event, UnixNanos::from(3));
+        assert_eq!(signal.ts_init, UnixNanos::from(5));
+    }
+
+    #[rstest]
+    fn test_custom_data_trait_accessors() {
+        let signal = test_signal();
+
+        assert_eq!(signal.type_name(), "Signal");
+        assert_eq!(CustomDataTrait::ts_event(&signal), UnixNanos::from(3));
+        assert_eq!(HasTsInit::ts_init(&signal), UnixNanos::from(5));
+        assert_eq!(
+            signal.as_any().downcast_ref::<Signal>(),
+            Some(&test_signal())
+        );
+    }
+
+    #[rstest]
+    fn test_to_json_round_trips() {
+        let signal = test_signal();
+
+        let json = signal.to_json().unwrap();
+
+        assert_eq!(serde_json::from_str::<Signal>(&json).unwrap(), signal);
+    }
+
+    #[rstest]
+    fn test_clone_arc_preserves_value() {
+        let signal = test_signal();
+
+        let cloned = signal.clone_arc();
+
+        assert_eq!(cloned.type_name(), "Signal");
+        assert_eq!(cloned.as_any().downcast_ref::<Signal>(), Some(&signal));
+    }
+
+    #[rstest]
+    #[case::name(Signal { name: Ustr::from("other_name"), ..test_signal() })]
+    #[case::value(Signal { value: "CLEARED".to_string(), ..test_signal() })]
+    #[case::ts_event(Signal { ts_event: UnixNanos::from(4), ..test_signal() })]
+    #[case::ts_init(Signal { ts_init: UnixNanos::from(6), ..test_signal() })]
+    fn test_eq_arc_rejects_any_differing_field(#[case] other: Signal) {
+        let signal = test_signal();
+
+        assert!(signal.eq_arc(&test_signal()));
+        assert!(!signal.eq_arc(&other));
+    }
+
+    #[rstest]
+    fn test_eq_arc_rejects_a_different_custom_data_type() {
+        let signal = test_signal();
+
+        let other = StubCustomData {
+            ts_init: UnixNanos::from(5),
+            value: 1,
+        };
+
+        assert!(!signal.eq_arc(&other));
+    }
+}

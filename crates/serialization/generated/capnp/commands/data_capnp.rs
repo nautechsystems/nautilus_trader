@@ -1068,7 +1068,7 @@ pub mod data_command {
 }
 
 pub mod subscribe_command {
-    pub use self::Which::{CustomData,Instrument,Instruments,BookDeltas,BookDepth10,BookSnapshots,Quotes,Trades,Bars,MarkPrices,IndexPrices,FundingRates,InstrumentStatus,InstrumentClose};
+    pub use self::Which::{CustomData,Instrument,Instruments,BookDeltas,BookDepth,BookSnapshots,Quotes,Trades,Bars,MarkPrices,IndexPrices,FundingRates,InstrumentStatus,InstrumentClose};
 
     #[derive(Copy, Clone)]
     pub struct Owned(());
@@ -1151,7 +1151,7 @@ pub mod subscribe_command {
             !self.reader.get_pointer_field(0).is_null()
         }
         #[inline]
-        pub fn has_book_depth10(&self) -> bool {
+        pub fn has_book_depth(&self) -> bool {
             if self.reader.get_data_field::<u16>(0) != 4 { return false; }
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -1224,7 +1224,7 @@ pub mod subscribe_command {
                     ))
                 }
                 4 => {
-                    ::core::result::Result::Ok(BookDepth10(
+                    ::core::result::Result::Ok(BookDepth(
                         ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(0), ::core::option::Option::None)
                     ))
                 }
@@ -1391,17 +1391,17 @@ pub mod subscribe_command {
             !self.builder.is_pointer_field_null(0)
         }
         #[inline]
-        pub fn set_book_depth10(&mut self, value: crate::data_capnp::subscribe_book_depth10::Reader<'_>) -> ::capnp::Result<()> {
+        pub fn set_book_depth(&mut self, value: crate::data_capnp::subscribe_book_depth::Reader<'_>) -> ::capnp::Result<()> {
             self.builder.set_data_field::<u16>(0, 4);
             ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(0), value, false)
         }
         #[inline]
-        pub fn init_book_depth10(self, ) -> crate::data_capnp::subscribe_book_depth10::Builder<'a> {
+        pub fn init_book_depth(self, ) -> crate::data_capnp::subscribe_book_depth::Builder<'a> {
             self.builder.set_data_field::<u16>(0, 4);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
         #[inline]
-        pub fn has_book_depth10(&self) -> bool {
+        pub fn has_book_depth(&self) -> bool {
             if self.builder.get_data_field::<u16>(0) != 4 { return false; }
             !self.builder.is_pointer_field_null(0)
         }
@@ -1564,7 +1564,7 @@ pub mod subscribe_command {
                     ))
                 }
                 4 => {
-                    ::core::result::Result::Ok(BookDepth10(
+                    ::core::result::Result::Ok(BookDepth(
                         ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(0), ::core::option::Option::None)
                     ))
                 }
@@ -1634,7 +1634,7 @@ pub mod subscribe_command {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(1, 0, 7, 0, 0, 0, 14, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(27, 4, 0, 0, 190, 6, 0, 0),
+            ::capnp::word(27, 4, 0, 0, 186, 6, 0, 0),
             ::capnp::word(21, 0, 0, 0, 42, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1679,7 +1679,7 @@ pub mod subscribe_command {
             ::capnp::word(4, 0, 251, 255, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 4, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(153, 1, 0, 0, 98, 0, 0, 0),
+            ::capnp::word(153, 1, 0, 0, 82, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(152, 1, 0, 0, 3, 0, 1, 0),
             ::capnp::word(164, 1, 0, 0, 2, 0, 1, 0),
@@ -1783,7 +1783,7 @@ pub mod subscribe_command {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(98, 111, 111, 107, 68, 101, 112, 116),
-            ::capnp::word(104, 49, 48, 0, 0, 0, 0, 0),
+            ::capnp::word(104, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(184, 153, 173, 244, 180, 198, 241, 188),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -1877,7 +1877,7 @@ pub mod subscribe_command {
                 1 => <crate::data_capnp::subscribe_instrument::Owned as ::capnp::introspect::Introspect>::introspect(),
                 2 => <crate::data_capnp::subscribe_instruments::Owned as ::capnp::introspect::Introspect>::introspect(),
                 3 => <crate::data_capnp::subscribe_book_deltas::Owned as ::capnp::introspect::Introspect>::introspect(),
-                4 => <crate::data_capnp::subscribe_book_depth10::Owned as ::capnp::introspect::Introspect>::introspect(),
+                4 => <crate::data_capnp::subscribe_book_depth::Owned as ::capnp::introspect::Introspect>::introspect(),
                 5 => <crate::data_capnp::subscribe_book_snapshots::Owned as ::capnp::introspect::Introspect>::introspect(),
                 6 => <crate::data_capnp::subscribe_quotes::Owned as ::capnp::introspect::Introspect>::introspect(),
                 7 => <crate::data_capnp::subscribe_trades::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -1910,7 +1910,7 @@ pub mod subscribe_command {
         Instrument(A1),
         Instruments(A2),
         BookDeltas(A3),
-        BookDepth10(A4),
+        BookDepth(A4),
         BookSnapshots(A5),
         Quotes(A6),
         Trades(A7),
@@ -1921,12 +1921,12 @@ pub mod subscribe_command {
         InstrumentStatus(A12),
         InstrumentClose(A13),
     }
-    pub type WhichReader<'a,> = Which<::capnp::Result<crate::data_capnp::subscribe_custom_data::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_instruments::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_deltas::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_depth10::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_snapshots::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_quotes::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_trades::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_bars::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_mark_prices::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_index_prices::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_funding_rates::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument_status::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument_close::Reader<'a>>>;
-    pub type WhichBuilder<'a,> = Which<::capnp::Result<crate::data_capnp::subscribe_custom_data::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_instruments::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_deltas::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_depth10::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_snapshots::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_quotes::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_trades::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_bars::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_mark_prices::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_index_prices::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_funding_rates::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument_status::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument_close::Builder<'a>>>;
+    pub type WhichReader<'a,> = Which<::capnp::Result<crate::data_capnp::subscribe_custom_data::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_instruments::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_deltas::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_depth::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_snapshots::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_quotes::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_trades::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_bars::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_mark_prices::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_index_prices::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_funding_rates::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument_status::Reader<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument_close::Reader<'a>>>;
+    pub type WhichBuilder<'a,> = Which<::capnp::Result<crate::data_capnp::subscribe_custom_data::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_instruments::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_deltas::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_depth::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_book_snapshots::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_quotes::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_trades::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_bars::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_mark_prices::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_index_prices::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_funding_rates::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument_status::Builder<'a>>,::capnp::Result<crate::data_capnp::subscribe_instrument_close::Builder<'a>>>;
 }
 
 pub mod unsubscribe_command {
-    pub use self::Which::{CustomData,Instrument,Instruments,BookDeltas,BookDepth10,BookSnapshots,Quotes,Trades,Bars,MarkPrices,IndexPrices,FundingRates,InstrumentStatus,InstrumentClose};
+    pub use self::Which::{CustomData,Instrument,Instruments,BookDeltas,BookDepth,BookSnapshots,Quotes,Trades,Bars,MarkPrices,IndexPrices,FundingRates,InstrumentStatus,InstrumentClose};
 
     #[derive(Copy, Clone)]
     pub struct Owned(());
@@ -2009,7 +2009,7 @@ pub mod unsubscribe_command {
             !self.reader.get_pointer_field(0).is_null()
         }
         #[inline]
-        pub fn has_book_depth10(&self) -> bool {
+        pub fn has_book_depth(&self) -> bool {
             if self.reader.get_data_field::<u16>(0) != 4 { return false; }
             !self.reader.get_pointer_field(0).is_null()
         }
@@ -2082,7 +2082,7 @@ pub mod unsubscribe_command {
                     ))
                 }
                 4 => {
-                    ::core::result::Result::Ok(BookDepth10(
+                    ::core::result::Result::Ok(BookDepth(
                         ::capnp::traits::FromPointerReader::get_from_pointer(&self.reader.get_pointer_field(0), ::core::option::Option::None)
                     ))
                 }
@@ -2249,17 +2249,17 @@ pub mod unsubscribe_command {
             !self.builder.is_pointer_field_null(0)
         }
         #[inline]
-        pub fn set_book_depth10(&mut self, value: crate::data_capnp::unsubscribe_book_depth10::Reader<'_>) -> ::capnp::Result<()> {
+        pub fn set_book_depth(&mut self, value: crate::data_capnp::unsubscribe_book_depth::Reader<'_>) -> ::capnp::Result<()> {
             self.builder.set_data_field::<u16>(0, 4);
             ::capnp::traits::SetterInput::set_pointer_builder(self.builder.reborrow().get_pointer_field(0), value, false)
         }
         #[inline]
-        pub fn init_book_depth10(self, ) -> crate::data_capnp::unsubscribe_book_depth10::Builder<'a> {
+        pub fn init_book_depth(self, ) -> crate::data_capnp::unsubscribe_book_depth::Builder<'a> {
             self.builder.set_data_field::<u16>(0, 4);
             ::capnp::traits::FromPointerBuilder::init_pointer(self.builder.get_pointer_field(0), 0)
         }
         #[inline]
-        pub fn has_book_depth10(&self) -> bool {
+        pub fn has_book_depth(&self) -> bool {
             if self.builder.get_data_field::<u16>(0) != 4 { return false; }
             !self.builder.is_pointer_field_null(0)
         }
@@ -2422,7 +2422,7 @@ pub mod unsubscribe_command {
                     ))
                 }
                 4 => {
-                    ::core::result::Result::Ok(BookDepth10(
+                    ::core::result::Result::Ok(BookDepth(
                         ::capnp::traits::FromPointerBuilder::get_from_pointer(self.builder.get_pointer_field(0), ::core::option::Option::None)
                     ))
                 }
@@ -2492,7 +2492,7 @@ pub mod unsubscribe_command {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(1, 0, 7, 0, 0, 0, 14, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(220, 6, 0, 0, 157, 9, 0, 0),
+            ::capnp::word(216, 6, 0, 0, 149, 9, 0, 0),
             ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2537,7 +2537,7 @@ pub mod unsubscribe_command {
             ::capnp::word(4, 0, 251, 255, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 4, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(153, 1, 0, 0, 98, 0, 0, 0),
+            ::capnp::word(153, 1, 0, 0, 82, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(152, 1, 0, 0, 3, 0, 1, 0),
             ::capnp::word(164, 1, 0, 0, 2, 0, 1, 0),
@@ -2641,7 +2641,7 @@ pub mod unsubscribe_command {
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(98, 111, 111, 107, 68, 101, 112, 116),
-            ::capnp::word(104, 49, 48, 0, 0, 0, 0, 0),
+            ::capnp::word(104, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(217, 43, 47, 70, 2, 80, 162, 235),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -2735,7 +2735,7 @@ pub mod unsubscribe_command {
                 1 => <crate::data_capnp::unsubscribe_instrument::Owned as ::capnp::introspect::Introspect>::introspect(),
                 2 => <crate::data_capnp::unsubscribe_instruments::Owned as ::capnp::introspect::Introspect>::introspect(),
                 3 => <crate::data_capnp::unsubscribe_book_deltas::Owned as ::capnp::introspect::Introspect>::introspect(),
-                4 => <crate::data_capnp::unsubscribe_book_depth10::Owned as ::capnp::introspect::Introspect>::introspect(),
+                4 => <crate::data_capnp::unsubscribe_book_depth::Owned as ::capnp::introspect::Introspect>::introspect(),
                 5 => <crate::data_capnp::unsubscribe_book_snapshots::Owned as ::capnp::introspect::Introspect>::introspect(),
                 6 => <crate::data_capnp::unsubscribe_quotes::Owned as ::capnp::introspect::Introspect>::introspect(),
                 7 => <crate::data_capnp::unsubscribe_trades::Owned as ::capnp::introspect::Introspect>::introspect(),
@@ -2768,7 +2768,7 @@ pub mod unsubscribe_command {
         Instrument(A1),
         Instruments(A2),
         BookDeltas(A3),
-        BookDepth10(A4),
+        BookDepth(A4),
         BookSnapshots(A5),
         Quotes(A6),
         Trades(A7),
@@ -2779,8 +2779,8 @@ pub mod unsubscribe_command {
         InstrumentStatus(A12),
         InstrumentClose(A13),
     }
-    pub type WhichReader<'a,> = Which<::capnp::Result<crate::data_capnp::unsubscribe_custom_data::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instruments::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_deltas::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_depth10::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_snapshots::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_quotes::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_trades::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_bars::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_mark_prices::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_index_prices::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_funding_rates::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument_status::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument_close::Reader<'a>>>;
-    pub type WhichBuilder<'a,> = Which<::capnp::Result<crate::data_capnp::unsubscribe_custom_data::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instruments::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_deltas::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_depth10::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_snapshots::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_quotes::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_trades::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_bars::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_mark_prices::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_index_prices::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_funding_rates::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument_status::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument_close::Builder<'a>>>;
+    pub type WhichReader<'a,> = Which<::capnp::Result<crate::data_capnp::unsubscribe_custom_data::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instruments::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_deltas::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_depth::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_snapshots::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_quotes::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_trades::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_bars::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_mark_prices::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_index_prices::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_funding_rates::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument_status::Reader<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument_close::Reader<'a>>>;
+    pub type WhichBuilder<'a,> = Which<::capnp::Result<crate::data_capnp::unsubscribe_custom_data::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instruments::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_deltas::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_depth::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_book_snapshots::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_quotes::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_trades::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_bars::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_mark_prices::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_index_prices::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_funding_rates::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument_status::Builder<'a>>,::capnp::Result<crate::data_capnp::unsubscribe_instrument_close::Builder<'a>>>;
 }
 
 pub mod request_command {
@@ -3170,7 +3170,7 @@ pub mod request_command {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(1, 0, 7, 0, 0, 0, 8, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(183, 9, 0, 0, 26, 11, 0, 0),
+            ::capnp::word(175, 9, 0, 0, 18, 11, 0, 0),
             ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -3536,7 +3536,7 @@ pub mod subscribe_custom_data {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(49, 11, 0, 0, 136, 11, 0, 0),
+            ::capnp::word(41, 11, 0, 0, 128, 11, 0, 0),
             ::capnp::word(21, 0, 0, 0, 66, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -3793,7 +3793,7 @@ pub mod subscribe_instrument {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(138, 11, 0, 0, 249, 11, 0, 0),
+            ::capnp::word(130, 11, 0, 0, 241, 11, 0, 0),
             ::capnp::word(21, 0, 0, 0, 66, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4023,7 +4023,7 @@ pub mod subscribe_instruments {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(1, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(251, 11, 0, 0, 60, 12, 0, 0),
+            ::capnp::word(243, 11, 0, 0, 52, 12, 0, 0),
             ::capnp::word(21, 0, 0, 0, 74, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4288,7 +4288,7 @@ pub mod subscribe_book_deltas {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(62, 12, 0, 0, 228, 12, 0, 0),
+            ::capnp::word(54, 12, 0, 0, 220, 12, 0, 0),
             ::capnp::word(21, 0, 0, 0, 66, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4391,7 +4391,7 @@ pub mod subscribe_book_deltas {
     }
 }
 
-pub mod subscribe_book_depth10 {
+pub mod subscribe_book_depth {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl ::capnp::introspect::Introspect for Owned { fn introspect() -> ::capnp::introspect::Type { ::capnp::introspect::TypeVariant::Struct(::capnp::introspect::RawBrandedStructSchema { generic: &_private::RAW_SCHEMA, field_types: _private::get_field_types, annotation_types: _private::get_annotation_types, type_id: ::core::any::TypeId::of::<Owned>() }).into() } }
@@ -4571,26 +4571,25 @@ pub mod subscribe_book_depth10 {
         }
     }
     mod _private {
-        pub(crate) static ENCODED_NODE: [::capnp::Word; 52] = [
+        pub(crate) static ENCODED_NODE: [::capnp::Word; 51] = [
             ::capnp::word(0, 0, 0, 0, 6, 0, 6, 0),
             ::capnp::word(184, 153, 173, 244, 180, 198, 241, 188),
             ::capnp::word(20, 0, 0, 0, 1, 0, 0, 0),
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(230, 12, 0, 0, 86, 13, 0, 0),
-            ::capnp::word(21, 0, 0, 0, 74, 1, 0, 0),
-            ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
+            ::capnp::word(222, 12, 0, 0, 96, 13, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
+            ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(37, 0, 0, 0, 119, 0, 0, 0),
+            ::capnp::word(33, 0, 0, 0, 119, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(99, 111, 109, 109, 97, 110, 100, 115),
             ::capnp::word(47, 100, 97, 116, 97, 46, 99, 97),
             ::capnp::word(112, 110, 112, 58, 83, 117, 98, 115),
             ::capnp::word(99, 114, 105, 98, 101, 66, 111, 111),
-            ::capnp::word(107, 68, 101, 112, 116, 104, 49, 48),
-            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(107, 68, 101, 112, 116, 104, 0, 0),
             ::capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(8, 0, 0, 0, 3, 0, 4, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -4860,7 +4859,7 @@ pub mod subscribe_book_snapshots {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(88, 13, 0, 0, 1, 14, 0, 0),
+            ::capnp::word(98, 13, 0, 0, 11, 14, 0, 0),
             ::capnp::word(21, 0, 0, 0, 90, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5151,7 +5150,7 @@ pub mod subscribe_quotes {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(3, 14, 0, 0, 110, 14, 0, 0),
+            ::capnp::word(13, 14, 0, 0, 120, 14, 0, 0),
             ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5408,7 +5407,7 @@ pub mod subscribe_trades {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(112, 14, 0, 0, 219, 14, 0, 0),
+            ::capnp::word(122, 14, 0, 0, 229, 14, 0, 0),
             ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5665,7 +5664,7 @@ pub mod subscribe_bars {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(221, 14, 0, 0, 55, 15, 0, 0),
+            ::capnp::word(231, 14, 0, 0, 65, 15, 0, 0),
             ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -5921,7 +5920,7 @@ pub mod subscribe_mark_prices {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(57, 15, 0, 0, 168, 15, 0, 0),
+            ::capnp::word(67, 15, 0, 0, 178, 15, 0, 0),
             ::capnp::word(21, 0, 0, 0, 66, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6178,7 +6177,7 @@ pub mod subscribe_index_prices {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(170, 15, 0, 0, 26, 16, 0, 0),
+            ::capnp::word(180, 15, 0, 0, 36, 16, 0, 0),
             ::capnp::word(21, 0, 0, 0, 74, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6436,7 +6435,7 @@ pub mod subscribe_funding_rates {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(28, 16, 0, 0, 141, 16, 0, 0),
+            ::capnp::word(38, 16, 0, 0, 151, 16, 0, 0),
             ::capnp::word(21, 0, 0, 0, 82, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6694,7 +6693,7 @@ pub mod subscribe_instrument_status {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(143, 16, 0, 0, 4, 17, 0, 0),
+            ::capnp::word(153, 16, 0, 0, 14, 17, 0, 0),
             ::capnp::word(21, 0, 0, 0, 114, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -6952,7 +6951,7 @@ pub mod subscribe_instrument_close {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(6, 17, 0, 0, 122, 17, 0, 0),
+            ::capnp::word(16, 17, 0, 0, 132, 17, 0, 0),
             ::capnp::word(21, 0, 0, 0, 106, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -7207,7 +7206,7 @@ pub mod unsubscribe_custom_data {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(147, 17, 0, 0, 236, 17, 0, 0),
+            ::capnp::word(157, 17, 0, 0, 246, 17, 0, 0),
             ::capnp::word(21, 0, 0, 0, 82, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -7465,7 +7464,7 @@ pub mod unsubscribe_instrument {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(238, 17, 0, 0, 95, 18, 0, 0),
+            ::capnp::word(248, 17, 0, 0, 105, 18, 0, 0),
             ::capnp::word(21, 0, 0, 0, 82, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -7696,7 +7695,7 @@ pub mod unsubscribe_instruments {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(1, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(97, 18, 0, 0, 164, 18, 0, 0),
+            ::capnp::word(107, 18, 0, 0, 174, 18, 0, 0),
             ::capnp::word(21, 0, 0, 0, 90, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -7937,7 +7936,7 @@ pub mod unsubscribe_book_deltas {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(166, 18, 0, 0, 23, 19, 0, 0),
+            ::capnp::word(176, 18, 0, 0, 33, 19, 0, 0),
             ::capnp::word(21, 0, 0, 0, 82, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -8008,7 +8007,7 @@ pub mod unsubscribe_book_deltas {
     }
 }
 
-pub mod unsubscribe_book_depth10 {
+pub mod unsubscribe_book_depth {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl ::capnp::introspect::Introspect for Owned { fn introspect() -> ::capnp::introspect::Type { ::capnp::introspect::TypeVariant::Struct(::capnp::introspect::RawBrandedStructSchema { generic: &_private::RAW_SCHEMA, field_types: _private::get_field_types, annotation_types: _private::get_annotation_types, type_id: ::core::any::TypeId::of::<Owned>() }).into() } }
@@ -8195,8 +8194,8 @@ pub mod unsubscribe_book_depth10 {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(25, 19, 0, 0, 139, 19, 0, 0),
-            ::capnp::word(21, 0, 0, 0, 90, 1, 0, 0),
+            ::capnp::word(35, 19, 0, 0, 167, 19, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 74, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(37, 0, 0, 0, 119, 0, 0, 0),
@@ -8207,7 +8206,7 @@ pub mod unsubscribe_book_depth10 {
             ::capnp::word(112, 110, 112, 58, 85, 110, 115, 117),
             ::capnp::word(98, 115, 99, 114, 105, 98, 101, 66),
             ::capnp::word(111, 111, 107, 68, 101, 112, 116, 104),
-            ::capnp::word(49, 48, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(8, 0, 0, 0, 3, 0, 4, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -8453,7 +8452,7 @@ pub mod unsubscribe_book_snapshots {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(141, 19, 0, 0, 1, 20, 0, 0),
+            ::capnp::word(169, 19, 0, 0, 29, 20, 0, 0),
             ::capnp::word(21, 0, 0, 0, 106, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -8711,7 +8710,7 @@ pub mod unsubscribe_quotes {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(3, 20, 0, 0, 112, 20, 0, 0),
+            ::capnp::word(31, 20, 0, 0, 140, 20, 0, 0),
             ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -8968,7 +8967,7 @@ pub mod unsubscribe_trades {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(114, 20, 0, 0, 223, 20, 0, 0),
+            ::capnp::word(142, 20, 0, 0, 251, 20, 0, 0),
             ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -9225,7 +9224,7 @@ pub mod unsubscribe_bars {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(225, 20, 0, 0, 61, 21, 0, 0),
+            ::capnp::word(253, 20, 0, 0, 89, 21, 0, 0),
             ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -9481,7 +9480,7 @@ pub mod unsubscribe_mark_prices {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(63, 21, 0, 0, 176, 21, 0, 0),
+            ::capnp::word(91, 21, 0, 0, 204, 21, 0, 0),
             ::capnp::word(21, 0, 0, 0, 82, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -9739,7 +9738,7 @@ pub mod unsubscribe_index_prices {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(178, 21, 0, 0, 36, 22, 0, 0),
+            ::capnp::word(206, 21, 0, 0, 64, 22, 0, 0),
             ::capnp::word(21, 0, 0, 0, 90, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -9997,7 +9996,7 @@ pub mod unsubscribe_funding_rates {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(38, 22, 0, 0, 153, 22, 0, 0),
+            ::capnp::word(66, 22, 0, 0, 181, 22, 0, 0),
             ::capnp::word(21, 0, 0, 0, 98, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -10255,7 +10254,7 @@ pub mod unsubscribe_instrument_status {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(155, 22, 0, 0, 18, 23, 0, 0),
+            ::capnp::word(183, 22, 0, 0, 46, 23, 0, 0),
             ::capnp::word(21, 0, 0, 0, 130, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -10513,7 +10512,7 @@ pub mod unsubscribe_instrument_close {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(20, 23, 0, 0, 138, 23, 0, 0),
+            ::capnp::word(48, 23, 0, 0, 166, 23, 0, 0),
             ::capnp::word(21, 0, 0, 0, 122, 1, 0, 0),
             ::capnp::word(41, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -10768,7 +10767,7 @@ pub mod request_custom_data {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(159, 23, 0, 0, 244, 23, 0, 0),
+            ::capnp::word(187, 23, 0, 0, 16, 24, 0, 0),
             ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -11025,7 +11024,7 @@ pub mod request_instrument {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(246, 23, 0, 0, 99, 24, 0, 0),
+            ::capnp::word(18, 24, 0, 0, 127, 24, 0, 0),
             ::capnp::word(21, 0, 0, 0, 50, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -11255,7 +11254,7 @@ pub mod request_instruments {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(1, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(101, 24, 0, 0, 164, 24, 0, 0),
+            ::capnp::word(129, 24, 0, 0, 192, 24, 0, 0),
             ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -11507,7 +11506,7 @@ pub mod request_book_snapshot {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(166, 24, 0, 0, 43, 25, 0, 0),
+            ::capnp::word(194, 24, 0, 0, 71, 25, 0, 0),
             ::capnp::word(21, 0, 0, 0, 66, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -11792,7 +11791,7 @@ pub mod request_book_depth {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(45, 25, 0, 0, 175, 25, 0, 0),
+            ::capnp::word(73, 25, 0, 0, 203, 25, 0, 0),
             ::capnp::word(21, 0, 0, 0, 42, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -12131,7 +12130,7 @@ pub mod request_quotes {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(4, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(177, 25, 0, 0, 106, 26, 0, 0),
+            ::capnp::word(205, 25, 0, 0, 134, 26, 0, 0),
             ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -12502,7 +12501,7 @@ pub mod request_trades {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(4, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(108, 26, 0, 0, 37, 27, 0, 0),
+            ::capnp::word(136, 26, 0, 0, 65, 27, 0, 0),
             ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -12873,7 +12872,7 @@ pub mod request_bars {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(4, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(39, 27, 0, 0, 207, 27, 0, 0),
+            ::capnp::word(67, 27, 0, 0, 235, 27, 0, 0),
             ::capnp::word(21, 0, 0, 0, 2, 1, 0, 0),
             ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -13346,7 +13345,7 @@ pub mod data_response {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(1, 0, 7, 0, 0, 0, 7, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(226, 27, 0, 0, 18, 29, 0, 0),
+            ::capnp::word(254, 27, 0, 0, 46, 29, 0, 0),
             ::capnp::word(21, 0, 0, 0, 10, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -13717,7 +13716,7 @@ pub mod custom_data_response {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(20, 29, 0, 0, 139, 29, 0, 0),
+            ::capnp::word(48, 29, 0, 0, 167, 29, 0, 0),
             ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -14014,7 +14013,7 @@ pub mod instrument_response {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(141, 29, 0, 0, 46, 30, 0, 0),
+            ::capnp::word(169, 29, 0, 0, 74, 30, 0, 0),
             ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -14285,7 +14284,7 @@ pub mod instruments_response {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(48, 30, 0, 0, 179, 30, 0, 0),
+            ::capnp::word(76, 30, 0, 0, 207, 30, 0, 0),
             ::capnp::word(21, 0, 0, 0, 66, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -14570,7 +14569,7 @@ pub mod book_response {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(181, 30, 0, 0, 74, 31, 0, 0),
+            ::capnp::word(209, 30, 0, 0, 102, 31, 0, 0),
             ::capnp::word(21, 0, 0, 0, 10, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -14867,7 +14866,7 @@ pub mod quotes_response {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(76, 31, 0, 0, 222, 31, 0, 0),
+            ::capnp::word(104, 31, 0, 0, 250, 31, 0, 0),
             ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -15168,7 +15167,7 @@ pub mod trades_response {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(3, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(224, 31, 0, 0, 114, 32, 0, 0),
+            ::capnp::word(252, 31, 0, 0, 142, 32, 0, 0),
             ::capnp::word(21, 0, 0, 0, 26, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -15496,7 +15495,7 @@ pub mod bars_response {
             ::capnp::word(32, 223, 58, 94, 92, 214, 226, 229),
             ::capnp::word(4, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(116, 32, 0, 0, 9, 33, 0, 0),
+            ::capnp::word(144, 32, 0, 0, 37, 33, 0, 0),
             ::capnp::word(21, 0, 0, 0, 10, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),

@@ -59,6 +59,7 @@ use nautilus_lighter::{
     },
     websocket::{LighterWebSocketClient, LighterWsChannel, NautilusWsMessage},
 };
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{
     enums::PositionSide,
     identifiers::{AccountId, InstrumentId, TraderId},
@@ -122,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&registry),
         TransportBackend::Tungstenite,
         30,
+        Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         None,
     );
 
@@ -239,11 +241,11 @@ enum PositionSnapshotOutcome {
     Complete(Vec<PositionStatusReport>),
     TimedOut {
         partial: Vec<PositionStatusReport>,
-        skipped_market_ids: Vec<i16>,
+        skipped_market_ids: Vec<i64>,
     },
     StreamEnded {
         partial: Vec<PositionStatusReport>,
-        skipped_market_ids: Vec<i16>,
+        skipped_market_ids: Vec<i64>,
     },
 }
 
@@ -400,7 +402,7 @@ fn record_failure(summary: &mut FlattenSummary, failure: String) {
 
 async fn fetch_crossing_price(
     http: &LighterHttpClient,
-    market_id: i16,
+    market_id: i64,
     price_decimals: u8,
     is_ask: bool,
 ) -> anyhow::Result<u32> {
@@ -497,7 +499,7 @@ async fn close_one_position(
     credential: &Credential,
     nonce_mgr: &NonceManager,
     chain_id: u32,
-    market_index: i16,
+    market_index: i64,
     base_amount: i64,
     is_ask: bool,
     crossing_price: u32,
@@ -612,7 +614,7 @@ async fn wait_for_authoritative_positions(
 
 fn incomplete_position_snapshot(
     partial: Vec<PositionStatusReport>,
-    skipped: HashSet<i16>,
+    skipped: HashSet<i64>,
     timed_out: bool,
 ) -> PositionSnapshotOutcome {
     let mut skipped_market_ids: Vec<_> = skipped.into_iter().collect();
@@ -634,7 +636,7 @@ fn incomplete_position_snapshot(
 fn apply_position_snapshot(
     latest: &mut Vec<PositionStatusReport>,
     reports: Vec<PositionStatusReport>,
-    skipped_market_ids: &[i16],
+    skipped_market_ids: &[i64],
 ) {
     if skipped_market_ids.is_empty() {
         *latest = reports;
@@ -720,7 +722,7 @@ mod tests {
     fn apply_position_snapshot_matrix(
         #[case] prior: Vec<(&str, &str)>,
         #[case] reports: Vec<(&str, &str)>,
-        #[case] skipped_market_ids: Vec<i16>,
+        #[case] skipped_market_ids: Vec<i64>,
         #[case] expected: Vec<(&str, &str)>,
     ) {
         let mut latest = position_reports(prior);

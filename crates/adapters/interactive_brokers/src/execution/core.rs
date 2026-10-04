@@ -53,7 +53,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     enums::LogLevel,
     factories::OrderEventFactory,
-    live::runner::get_exec_event_sender,
+    live::{runner::get_exec_event_sender, sender::EventSender},
     messages::{
         ExecutionEvent,
         execution::{
@@ -1432,11 +1432,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 match tokio::time::timeout(timeout_dur, client_clone.all_open_orders()).await {
                     Ok(Ok(s)) => s,
                     Ok(Err(e)) => {
-                        tracing::error!("query_order: failed to request open orders: {e}");
+                        tracing::warn!("query_order: failed to request open orders: {e}");
                         return;
                     }
                     Err(_) => {
-                        tracing::error!("query_order: timeout requesting open orders");
+                        tracing::warn!("query_order: timeout requesting open orders");
                         return;
                     }
                 };
@@ -1929,7 +1929,7 @@ impl InteractiveBrokersExecutionClient {
     fn send_order_modify_rejected(
         cmd: &ModifyOrder,
         reason: &str,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_event: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
@@ -1954,7 +1954,7 @@ impl InteractiveBrokersExecutionClient {
     fn send_order_cancel_rejected(
         target_order: &OrderAny,
         reason: &str,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_event: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
@@ -2144,7 +2144,7 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
         request_timeout_secs: u64,
@@ -2173,7 +2173,7 @@ impl InteractiveBrokersExecutionClient {
         )?;
 
         if let Err(e) = client.cancel_order(ib_order_id, "").await {
-            tracing::error!(
+            tracing::warn!(
                 "Cancel outcome is unknown after attempting to send order {} to IB: {e}",
                 cmd.client_order_id
             );
@@ -2287,7 +2287,7 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
         request_timeout_secs: u64,
@@ -2350,7 +2350,7 @@ impl InteractiveBrokersExecutionClient {
                 venue_order_id.unwrap_or_else(|| VenueOrderId::from(ib_order_id.to_string()));
 
             if let Err(e) = client.cancel_order(ib_order_id, "").await {
-                tracing::error!(
+                tracing::warn!(
                     "Failed to cancel order {} (IB order ID: {}): {e}",
                     client_order_id,
                     ib_order_id
@@ -2396,7 +2396,7 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         ts_init: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {

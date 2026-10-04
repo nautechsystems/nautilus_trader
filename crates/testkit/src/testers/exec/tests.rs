@@ -19,7 +19,7 @@ use ahash::AHashSet;
 use nautilus_common::{
     actor::DataActor,
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     config::ConfigError,
     messages::execution::{ModifyOrder, SubmitOrder, TradingCommand},
     msgbus::{
@@ -70,7 +70,7 @@ use crate::testers::exec::strategy::LimitOrderMaintenanceState;
 /// This gives the tester access to `OrderFactory` for actual order creation.
 fn register_exec_tester(tester: &mut ExecTester, cache: Rc<RefCell<Cache>>) {
     let trader_id = TraderId::from("TRADER-001");
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
         clock.clone(),
         cache.clone(),

@@ -20,10 +20,7 @@ use std::{
     sync::Arc,
 };
 
-use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT,
-    time::{AtomicTime, get_atomic_clock_realtime},
-};
+use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
 use nautilus_model::{
     data::BookOrder,
     enums::{BookType, OrderSide},
@@ -31,7 +28,9 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, Method, USER_AGENT},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, Method, create_standard_nautilus_headers,
+    },
     websocket::proxy::ProxyUrl,
 };
 use rust_decimal::Decimal;
@@ -161,6 +160,7 @@ impl PolymarketClobHttpClient {
         let rate_limiter = PolymarketRateLimiter::for_signer(&address);
         Ok(Self {
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .header_keys(RateLimitHeaders::names())
                 .timeout_secs(timeout_secs)
@@ -178,14 +178,19 @@ impl PolymarketClobHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([
-            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Content-Type".to_string(), "application/json".to_string()),
-        ])
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        headers
     }
 
     fn url(&self, path: &str) -> String {
         format!("{}{path}", self.base_url)
+    }
+
+    pub(crate) async fn list_session_keys(&self) -> Result<crate::session::SessionKeysResponse> {
+        self.send_get::<(), _>("/v1/user/session-signers", None, true)
+            .await
     }
 
     fn timestamp(&self) -> String {
@@ -684,12 +689,13 @@ impl PolymarketClobPublicClient {
         timeout_secs: u64,
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
         Ok(Self {
             client: HttpClient::builder()
-                .headers(HashMap::from([
-                    (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-                    ("Content-Type".to_string(), "application/json".to_string()),
-                ]))
+                .headers(headers)
                 .timeout_secs(timeout_secs)
                 .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
                 .build()?,
@@ -719,6 +725,19 @@ impl PolymarketClobPublicClient {
         let response = self
             .client
             .request_with_params(Method::GET, url, None::<&()>, None, None, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+
+        decode_response(&response)
+    }
+
+    /// Fetches the fee rate (in basis points) for a token from the CLOB API.
+    pub async fn get_fee_rate(&self, token_id: &str) -> Result<FeeRateResponse> {
+        let params = [("token_id", token_id)];
+        let url = format!("{}/fee-rate", self.base_url);
+        let response = self
+            .client
+            .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
             .await
             .map_err(Error::from_http_client)?;
 

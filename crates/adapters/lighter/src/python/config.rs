@@ -45,6 +45,7 @@ impl LighterDataClientConfig {
         transport_backend = None,
         deployment = None,
         venue = None,
+        book_snapshot_timeout_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -62,6 +63,7 @@ impl LighterDataClientConfig {
         transport_backend: Option<TransportBackend>,
         deployment: Option<LighterDeployment>,
         venue: Option<Venue>,
+        book_snapshot_timeout_secs: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -78,6 +80,8 @@ impl LighterDataClientConfig {
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(defaults.book_snapshot_timeout_secs),
             rest_quota_per_min,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
@@ -115,6 +119,7 @@ impl LighterExecutionClientConfig {
         transport_backend = None,
         deployment = None,
         venue = None,
+        use_gtd = true,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -134,6 +139,7 @@ impl LighterExecutionClientConfig {
         transport_backend: Option<TransportBackend>,
         deployment: Option<LighterDeployment>,
         venue: Option<Venue>,
+        use_gtd: bool,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -154,6 +160,7 @@ impl LighterExecutionClientConfig {
             rest_quota_per_min,
             sendtx_quota_per_min,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            use_gtd,
         }
     }
 
@@ -164,5 +171,46 @@ impl LighterExecutionClientConfig {
 
     fn __repr__(&self) -> String {
         stringify!(LighterExecutionClientConfig).to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_config_py_new_book_timeout() {
+        let config = LighterDataClientConfig::py_new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(7),
+            None,
+            None,
+            None,
+            Some(42),
+        );
+
+        assert_eq!(config.rest_quota_per_min, Some(7));
+        assert_eq!(config.book_snapshot_timeout_secs, 42);
+    }
+
+    #[rstest]
+    fn test_data_config_py_new_book_timeout_default() {
+        let config = LighterDataClientConfig::py_new(
+            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
+            None,
+        );
+
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 }

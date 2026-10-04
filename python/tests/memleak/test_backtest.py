@@ -18,11 +18,13 @@ Test Python and PyO3 memory ownership across repeated backtest lifecycles.
 
 import gc
 import weakref
+from decimal import Decimal
 
 import pytest
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
@@ -94,6 +96,10 @@ def _run_backtest() -> tuple[int, int, weakref.ReferenceType[QuoteCountActor]]:
             account_type=AccountType.MARGIN,
             starting_balances=[Money(1_000_000.0, _USD)],
             base_currency=_USD,
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.00002"),
+                taker_rate=Decimal("0.00002"),
+            ),
         )
         engine.add_instrument(_INSTRUMENT)
         engine.add_actor(actor)

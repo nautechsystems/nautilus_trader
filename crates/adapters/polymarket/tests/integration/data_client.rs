@@ -48,9 +48,8 @@ use nautilus_common::{
         DataEvent, DataResponse, SystemEvent,
         data::{
             RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
-            SubscribeBookDepth10, SubscribeCustomData, SubscribeInstrument,
-            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeQuotes,
-            UnsubscribeInstrument,
+            SubscribeBookDepth, SubscribeCustomData, SubscribeInstrument, SubscribeInstrumentClose,
+            SubscribeInstrumentStatus, SubscribeQuotes, UnsubscribeInstrument,
         },
         system::SocketState,
     },
@@ -79,7 +78,7 @@ use nautilus_polymarket::{
 use nautilus_testkit::events::{collect_data_events_until_response, drain_data_events};
 use rstest::rstest;
 use rust_decimal_macros::dec;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const TEST_CONDITION_ID: &str =
     "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b";
@@ -172,13 +171,23 @@ async fn handle_trades(State(state): State<TestServerState>) -> Response {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    let body = state
+    // Overrides carry the page's rows; the envelope is the v2 response shape.
+    let rows = state
         .trades_response
         .lock()
         .await
         .clone()
-        .unwrap_or_else(|| load_json("data_api_trades_response.json"));
-    Json(body).into_response()
+        .unwrap_or_else(|| json!([]));
+    Json(json!({
+        "data": rows,
+        "pagination": {
+            "limit": 500,
+            "offset": 0,
+            "has_more": false,
+            "next_cursor": null,
+        },
+    }))
+    .into_response()
 }
 
 async fn handle_market_upgrade(
@@ -262,7 +271,7 @@ fn create_router(state: TestServerState) -> Router {
         .route("/markets", get(handle_gamma_markets))
         .route("/markets/keyset", get(handle_gamma_markets_keyset))
         .route("/book", get(handle_book))
-        .route("/trades", get(handle_trades))
+        .route("/v2/trades", get(handle_trades))
         .route("/ws/market", get(handle_market_upgrade))
         .route("/rtds", get(handle_rtds_upgrade))
         .with_state(state)
@@ -299,13 +308,37 @@ fn create_test_data_client(
 
 #[rstest]
 #[tokio::test]
-async fn test_connect_emits_market_socket_state_change() {
+async fn test_connect_without_new_markets_does_not_open_market_socket() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_system_event_sender(system_tx);
     let registry = SocketReconnectRegistry::default();
     let (mut client, _data_rx) = registry.scope(|| create_test_data_client(addr));
+    let endpoint = ustr::Ustr::from("polymarket-market-streams");
+
+    client.connect().await.expect("connect data client");
+
+    let event = tokio::time::timeout(Duration::from_millis(300), system_rx.recv()).await;
+    assert!(
+        event.is_err(),
+        "idle connect must not open a market socket, was {event:?}"
+    );
+    assert!(registry.handle(*POLYMARKET_CLIENT_ID, endpoint).is_none());
+
+    client.disconnect().await.expect("disconnect data client");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_with_new_markets_emits_market_socket_state_change() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _data_rx) =
+        registry.scope(|| create_test_data_client_with_new_markets(addr, true));
 
     client.connect().await.expect("connect data client");
 
@@ -325,16 +358,6 @@ async fn test_connect_emits_market_socket_state_change() {
         handle.request_reconnect(),
         SocketReconnectRequestOutcome::Accepted
     );
-
-    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
-        .await
-        .expect("wait for socket state change")
-        .expect("system event channel closed");
-    let SystemEvent::SocketState(change) = event;
-    assert_eq!(change.client_id, *POLYMARKET_CLIENT_ID);
-    assert_eq!(change.venue, Some(*POLYMARKET_VENUE));
-    assert_eq!(change.endpoint, endpoint);
-    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.expect("disconnect data client");
     assert!(registry.handle(*POLYMARKET_CLIENT_ID, endpoint).is_none());
@@ -465,7 +488,7 @@ fn yes_instrument_id() -> InstrumentId {
 
 #[derive(Clone, Copy)]
 enum UnsupportedGenericSubscription {
-    BookDepth10,
+    BookDepth,
 }
 
 async fn wait_for_market_payload_count(
@@ -668,9 +691,9 @@ async fn test_subscribe_instrument_does_not_replay_cached_definition() {
 }
 
 #[rstest]
-#[case::book_depth10(
-    UnsupportedGenericSubscription::BookDepth10,
-    "Polymarket does not support OrderBookDepth10 subscriptions; use managed L2_MBP order book deltas"
+#[case::book_depth(
+    UnsupportedGenericSubscription::BookDepth,
+    "Polymarket does not support OrderBookDepth subscriptions; use managed L2_MBP order book deltas"
 )]
 #[tokio::test]
 async fn test_unsupported_generic_subscription_returns_exact_reason(
@@ -683,8 +706,8 @@ async fn test_unsupported_generic_subscription_returns_exact_reason(
     let instrument_id = yes_instrument_id();
 
     let result = match subscription {
-        UnsupportedGenericSubscription::BookDepth10 => {
-            client.subscribe_book_depth10(SubscribeBookDepth10::new(
+        UnsupportedGenericSubscription::BookDepth => {
+            client.subscribe_book_depth(SubscribeBookDepth::new(
                 instrument_id,
                 BookType::L2_MBP,
                 Some(*POLYMARKET_CLIENT_ID),
@@ -904,38 +927,38 @@ async fn test_request_trades_returns_trades_response() {
     let other_token = "0".repeat(76);
     let trades_fixture = serde_json::json!([
         {
-            "asset": TEST_TOKEN_ID_YES,
-            "conditionId": TEST_CONDITION_ID,
+            "token_id": TEST_TOKEN_ID_YES,
+            "condition_id": TEST_CONDITION_ID,
             "side": "BUY",
             "price": 0.55,
             "size": 100.0,
             "timestamp": 1_710_000_000,
-            "transactionHash": "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456",
-            "proxyWallet": "0x1111111111111111111111111111111111111111",
+            "transaction_hash": "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456",
+            "proxy_wallet": "0x1111111111111111111111111111111111111111",
             "title": "GTA VI",
             "slug": "gta-vi"
         },
         {
-            "asset": other_token,
-            "conditionId": TEST_CONDITION_ID,
+            "token_id": other_token,
+            "condition_id": TEST_CONDITION_ID,
             "side": "SELL",
             "price": 0.45,
             "size": 50.0,
             "timestamp": 1_710_000_010,
-            "transactionHash": "0xdef456789012345678901234567890abcdef1234567890abcdef123456789abc",
-            "proxyWallet": "0x2222222222222222222222222222222222222222",
+            "transaction_hash": "0xdef456789012345678901234567890abcdef1234567890abcdef123456789abc",
+            "proxy_wallet": "0x2222222222222222222222222222222222222222",
             "title": "GTA VI",
             "slug": "gta-vi"
         },
         {
-            "asset": TEST_TOKEN_ID_YES,
-            "conditionId": TEST_CONDITION_ID,
+            "token_id": TEST_TOKEN_ID_YES,
+            "condition_id": TEST_CONDITION_ID,
             "side": "SELL",
             "price": 0.53,
             "size": 25.0,
             "timestamp": 1_710_000_020,
-            "transactionHash": "0xfeedface789012345678901234567890abcdef1234567890abcdef123456beef",
-            "proxyWallet": "0x3333333333333333333333333333333333333333",
+            "transaction_hash": "0xfeedface789012345678901234567890abcdef1234567890abcdef123456beef",
+            "proxy_wallet": "0x3333333333333333333333333333333333333333",
             "title": "GTA VI",
             "slug": "gta-vi"
         }

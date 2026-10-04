@@ -180,7 +180,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                     sink.emit_deltas(deltas);
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Failed to parse L3 snapshot for {}: {e}, clearing state and resyncing",
                         snap.symbol,
                     );
@@ -274,7 +274,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                     }
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Failed to parse L3 update for {}: {e}, clearing state and resyncing",
                         update.symbol,
                     );

@@ -17,6 +17,7 @@ Test quote behavior.
 """
 
 import pickle
+import re
 
 import pytest
 
@@ -256,3 +257,183 @@ def test_quote_from_raw(audusd_id: InstrumentId) -> None:
     assert quote.ask_price == Price.from_str("1.00001")
     assert quote.ts_event == 1
     assert quote.ts_init == 2
+
+
+def test_quote_from_raw_rejects_invalid_precision(audusd_id: InstrumentId) -> None:
+    """
+    Test quote from raw rejects invalid precision.
+    """
+    with pytest.raises(ValueError, match="exceeded maximum") as exc_info:
+        QuoteTick.from_raw(
+            instrument_id=audusd_id,
+            bid_price_raw=10_000_000_000_000_000,
+            ask_price_raw=10_000_100_000_000_000,
+            bid_price_prec=5,
+            ask_price_prec=255,
+            bid_size_raw=5_000_000_000_000_000_000_000,
+            ask_size_raw=8_000_000_000_000_000_000_000,
+            bid_size_prec=0,
+            ask_size_prec=0,
+            ts_event=1,
+            ts_init=2,
+        )
+
+    assert str(exc_info.value) == "`precision` exceeded maximum `WEI_PRECISION` (18), was 255"
+
+
+def test_quote_from_raw_rejects_out_of_range_size(audusd_id: InstrumentId) -> None:
+    """
+    Test quote from raw rejects out of range size.
+    """
+    with pytest.raises(ValueError, match="exceeds QUANTITY_RAW_MAX") as exc_info:
+        QuoteTick.from_raw(
+            instrument_id=audusd_id,
+            bid_price_raw=10_000_000_000_000_000,
+            ask_price_raw=10_000_100_000_000_000,
+            bid_price_prec=5,
+            ask_price_prec=5,
+            bid_size_raw=340_282_366_920_930_000_000_000_000_001,
+            ask_size_raw=8_000_000_000_000_000_000_000,
+            bid_size_prec=0,
+            ask_size_prec=0,
+            ts_event=1,
+            ts_init=2,
+        )
+
+    assert str(exc_info.value) == (
+        "raw value 340282366920930000000000000001 exceeds "
+        "QUANTITY_RAW_MAX=340282366920930000000000000000"
+    )
+
+
+@pytest.mark.parametrize(
+    ("index", "value", "message"),
+    [
+        (
+            0,
+            "AUDUSD",
+            "invalid `InstrumentId` value 'AUDUSD': "
+            "missing '.' separator between symbol and venue components",
+        ),
+        (
+            2,
+            -170_141_183_460_460_000_000_000_000_001,
+            "raw value -170141183460460000000000000001 outside valid range "
+            "[-170141183460460000000000000000, 170141183460460000000000000000]",
+        ),
+        (3, 255, "`precision` exceeded maximum `WEI_PRECISION` (18), was 255"),
+        (
+            6,
+            340_282_366_920_930_000_000_000_000_001,
+            "raw value 340282366920930000000000000001 exceeds "
+            "QUANTITY_RAW_MAX=340282366920930000000000000000",
+        ),
+        (8, 19, "`precision` exceeded maximum `WEI_PRECISION` (18), was 19"),
+    ],
+)
+def test_quote_setstate_rejects_invalid_state_without_mutation(
+    quote: object,
+    usdjpy_id: InstrumentId,
+    index: int,
+    value: object,
+    message: str,
+) -> None:
+    """
+    Test quote setstate rejects invalid state without mutation.
+    """
+    original_state = quote.__getstate__()
+    other = QuoteTick(
+        instrument_id=usdjpy_id,
+        bid_price=Price.from_str("150.000"),
+        ask_price=Price.from_str("150.001"),
+        bid_size=Quantity.from_int(2),
+        ask_size=Quantity.from_int(3),
+        ts_event=5,
+        ts_init=6,
+    )
+    state = list(other.__getstate__())
+    state[index] = value
+
+    with pytest.raises(ValueError, match=re.escape(message)) as exc_info:
+        quote.__setstate__(tuple(state))
+
+    assert str(exc_info.value) == message
+    assert quote.__getstate__() == original_state
+
+
+def test_quote_pickle_roundtrip_preserves_maximum_precision(audusd_id: InstrumentId) -> None:
+    """
+    Test quote pickle roundtrip preserves maximum precision.
+    """
+    quote = QuoteTick(
+        instrument_id=audusd_id,
+        bid_price=Price.from_str("1.000000000000000001"),
+        ask_price=Price.from_str("1.000000000000000002"),
+        bid_size=Quantity.from_str("0.000000000000000003"),
+        ask_size=Quantity.from_str("0.000000000000000004"),
+        ts_event=5,
+        ts_init=6,
+    )
+
+    restored = pickle.loads(pickle.dumps(quote))
+
+    assert restored.__getstate__() == quote.__getstate__()
+    assert restored.bid_price.precision == 18
+    assert restored.ask_size.raw == 4
+
+
+@pytest.mark.parametrize(
+    ("raw", "precision"),
+    [(-(2**127), 4), (2**127 - 1, 0)],
+)
+def test_quote_pickle_roundtrip_preserves_sentinel_prices(
+    audusd_id: InstrumentId,
+    raw: int,
+    precision: int,
+) -> None:
+    """
+    Test quote pickle roundtrip preserves sentinel prices.
+    """
+    quote = QuoteTick.from_raw(
+        instrument_id=audusd_id,
+        bid_price_raw=raw,
+        ask_price_raw=raw,
+        bid_price_prec=precision,
+        ask_price_prec=precision,
+        bid_size_raw=10_000_000_000_000_000,
+        ask_size_raw=20_000_000_000_000_000,
+        bid_size_prec=0,
+        ask_size_prec=0,
+        ts_event=1,
+        ts_init=2,
+    )
+
+    restored = pickle.loads(pickle.dumps(quote))
+
+    assert restored.__getstate__() == quote.__getstate__()
+    assert restored.bid_price.raw == raw
+    assert restored.bid_price.precision == precision
+
+
+def test_quote_pickle_roundtrip_preserves_mismatched_precisions() -> None:
+    """
+    Test quote pickle roundtrip preserves mismatched precisions.
+    """
+    quote = QuoteTick.from_dict(
+        {
+            "type": "QuoteTick",
+            "instrument_id": "AUD/USD.SIM",
+            "bid_price": "1.0",
+            "ask_price": "1.00001",
+            "bid_size": "1",
+            "ask_size": "1.0",
+            "ts_event": 1,
+            "ts_init": 2,
+        },
+    )
+
+    restored = pickle.loads(pickle.dumps(quote))
+
+    assert restored.__getstate__() == quote.__getstate__()
+    assert restored.bid_price.precision == 1
+    assert restored.ask_price.precision == 5

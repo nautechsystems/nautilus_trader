@@ -27,8 +27,12 @@ __all__ = [
     "PolymarketRtdsCryptoPrice",
     "PolymarketRtdsCryptoTwap",
     "PolymarketRtdsEquityPrice",
+    "PolymarketSessionKey",
+    "PolymarketSessionKeyClient",
+    "PolymarketSessionKeyClientConfig",
+    "PolymarketSignatureType",
+    "PolymarketSignerType",
     "PolymarketUpDownEventSlugConfig",
-    "SignatureType",
 ]
 
 POLYMARKET: str
@@ -85,6 +89,12 @@ class PolymarketDataClientConfig:
     def drop_quotes_missing_side(self) -> bool: ...
     @property
     def compute_effective_deltas(self) -> bool: ...
+    @property
+    def book_snapshot_timeout_secs(self) -> int: ...
+    @property
+    def book_stale_check_interval_secs(self) -> int: ...
+    @property
+    def book_stale_threshold_secs(self) -> int: ...
     def __init__(
         self,
         instrument_config: PolymarketInstrumentProviderConfig | None = ...,
@@ -112,6 +122,9 @@ class PolymarketDataClientConfig:
         drop_quotes_missing_side: bool | None = None,
         proxy_url: str | None = None,
         compute_effective_deltas: bool | None = None,
+        book_snapshot_timeout_secs: int | None = None,
+        book_stale_check_interval_secs: int | None = None,
+        book_stale_threshold_secs: int | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -128,7 +141,9 @@ class PolymarketExecutionClientConfig:
     @property
     def funder(self) -> str | None: ...
     @property
-    def signature_type(self) -> SignatureType: ...
+    def signature_type(self) -> PolymarketSignatureType: ...
+    @property
+    def signer_type(self) -> PolymarketSignerType: ...
     @property
     def base_url_http(self) -> str | None: ...
     @property
@@ -157,7 +172,7 @@ class PolymarketExecutionClientConfig:
         api_secret: str | None = None,
         passphrase: str | None = None,
         funder: str | None = None,
-        signature_type: SignatureType | None = None,
+        signature_type: PolymarketSignatureType | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,
         base_url_data_api: str | None = None,
@@ -169,6 +184,7 @@ class PolymarketExecutionClientConfig:
         transport_backend: network.TransportBackend | None = None,
         proxy_url: str | None = None,
         instrument_config: PolymarketInstrumentProviderConfig | None = None,
+        signer_type: PolymarketSignerType | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -439,8 +455,56 @@ class PolymarketPositionTransaction:
     def wait(self) -> typing.Any: ...
 
 @typing.final
-class SignatureType(enum.Enum):
+class PolymarketSessionKey:
+    @property
+    def address(self) -> str: ...
+    @property
+    def scopes(self) -> list[str]: ...
+    @property
+    def valid_until(self) -> int: ...
+
+@typing.final
+class PolymarketSessionKeyClient:
+    def __init__(self, config: PolymarketSessionKeyClientConfig) -> None: ...
+    def list_session_keys(self) -> typing.Any: ...
+    def authorize_session_key(self, address: str) -> typing.Any: ...
+    def revoke_session_key(self, address: str) -> typing.Any: ...
+
+@typing.final
+class PolymarketSessionKeyClientConfig:
+    def __init__(
+        self,
+        private_key: str,
+        api_key: str,
+        api_secret: str,
+        passphrase: str,
+        builder_api_key: str,
+        builder_api_secret: str,
+        builder_passphrase: str,
+        funder: str,
+        base_url_http: str | None = None,
+        base_url_relayer: str | None = None,
+        proxy_url: str | None = None,
+    ) -> None: ...
+    @property
+    def funder(self) -> str: ...
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_relayer(self) -> str | None: ...
+    @property
+    def has_proxy_url(self) -> bool: ...
+
+@typing.final
+class PolymarketSignatureType(enum.Enum):
     Eoa = ...
     PolyProxy = ...
     PolyGnosisSafe = ...
     Poly1271 = ...
+
+@typing.final
+class PolymarketSignerType(enum.Enum):
+    Owner = ...
+    Session = ...
+
+    def __hash__(self) -> int: ...

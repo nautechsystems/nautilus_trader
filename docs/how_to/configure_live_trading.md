@@ -140,7 +140,8 @@ node.set_cache_database(cache_database)?;
 node.run().await?;
 ```
 
-Set `CacheConfig.flush_on_start = true` to clear the attached backing instead of restoring it.
+Set `CacheConfig.flush_on_start = true` to clear the attached backing instead of restoring it. A
+Postgres backing clears only the node's trader rows.
 
 Python injects the same database config through `LiveNodeBuilder`. The node constructs and owns the
 adapter when it starts:
@@ -176,6 +177,10 @@ Pass `PostgresCacheConfig` instead to back the cache with Postgres. Any other ob
 `NotImplementedError` from `with_cache_database_factory`, and a failed database connection fails
 `run()`. Database-backed nodes must use `run()` because `run_async()` rejects cache database
 backings that would block the host event loop.
+
+A Postgres backing loads, writes, and flushes only the node's trader, so nodes with different
+trader IDs can share one database. See [Cache](../concepts/cache.md) for what a scoped flush keeps
+and how to assign account events persisted before trader scoping.
 
 With `snapshot_orders=True`, the execution engine persists an order snapshot during submission
 processing and after each state change. Order snapshots require a Redis or Postgres cache backing.
@@ -369,10 +374,10 @@ and caveats, see [Runtime checks](../concepts/execution/reconciliation.md#runtim
 | `max_single_order_queries_per_cycle` | 10             | Cap on single-order queries per cycle. Prevents rate-limit exhaustion.                                                                                                                         |
 | `single_order_query_delay_ms`        | 100&nbsp;ms    | Delay (ms) between single-order queries to avoid rate limits.                                                                                                                                  |
 | `reconciliation_startup_delay_secs`  | 10.0&nbsp;s    | Delay (seconds) *after* startup reconciliation before continuous checks begin.                                                                                                                 |
-| `own_books_audit_interval_secs`      | None           | Interval (seconds) between auditing own order books against public books.                                                                                                                      |
+| `own_books_audit_interval_secs`      | None           | Interval (seconds) between audits that remove own-book orders the cache no longer holds as active. None disables.                                                                              |
 | `position_check_interval_secs`       | None           | Interval (seconds) between position consistency checks. On discrepancy, queries for missing fills. None disables. Recommended: 30-60s.                                                         |
 | `position_check_lookback_mins`       | 60&nbsp;min    | Lookback window (minutes) for querying fill reports on position discrepancy.                                                                                                                   |
-| `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum time since last local activity before acting on position discrepancies.                                                                                                                |
+| `position_check_threshold_ms`        | 5,000&nbsp;ms  | Minimum time since last local activity before acting on position discrepancies, and how long a fill that fails to apply defers synthetic reconciliation.                                       |
 | `position_check_retries`             | 3&nbsp;retries | Max attempts per instrument/account before the engine stops retrying that discrepancy. Once exceeded, an error is logged and the discrepancy is no longer actively reconciled until it clears. |
 
 :::warning

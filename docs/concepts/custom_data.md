@@ -185,6 +185,10 @@ When Python code calls `register_custom_data_class(MyType)`:
    it accepts the object. Otherwise, it wraps the object in
    `PythonCustomDataWrapper`.
 
+For catalog use, provide the Arrow schema through `_schema` or `arrow_schema_py()` before
+registration, or use `@customdataclass`. Registration accepts classes without a schema for JSON
+and message-bus use; catalog writes enforce the [catalog schema requirements](#catalog-write-flow).
+
 JSON and Arrow callbacks on this path run under the Python GIL.
 
 ### Same-binary Rust registration
@@ -210,8 +214,9 @@ This path stays fully native in Rust for encode/decode.
    registered.
 1. Otherwise, use the Python wrapper and callback handlers.
 
-The idempotent `ensure_*` registrations do not overwrite existing native
-handlers.
+The idempotent `ensure_*` registrations do not overwrite existing handlers. For each type name,
+the first Arrow registration retains its schema, encoder, and decoder. After correcting an
+already-registered Python class's Arrow schema, restart the process before registering it again.
 
 ## Wrapper backends
 
@@ -255,6 +260,8 @@ The custom-data write path:
 
 1. Takes `type_name` from the inner payload and `metadata` and `identifier` from
    the first value's `DataType`.
+1. Validates that the registered Arrow schema contains `ts_init` and that any `ts_event` or
+   `ts_init` fields use `timestamp("ns", tz="UTC")`.
 1. Looks up the Arrow encoder in the process-wide registry.
 1. Encodes the values to a `RecordBatch`.
 1. Appends a `data_type` column containing the persisted `DataType`.
@@ -277,15 +284,23 @@ On query:
 
 This makes custom-data query resolution symmetric with write-time registration.
 When converting a Feather stream to Parquet, such as after a backtest, the
-custom-data branch is designed to transform the Arrow batches and write the
-result directly to the matching custom-data path.
+custom-data branch transforms the Arrow batches and writes the result directly
+to the matching custom-data path. Pass the data class as `custom/{TypeName}`
+with the registered type name verbatim, because a Feather session stores custom
+data under `data/custom/{TypeName}` rather than under a snake_case directory. Set
+`promote_on_close=False` when you intend to convert manually, because promotion on close is the
+default and converting an already promoted session rewrites the same `ts_init` interval under a
+different filename, which the catalog rejects as non-disjoint.
 
 :::info
-The direct Python `StreamingFeatherWriter.write()` method rejects `CustomData` with an `OSError`.
-Write custom data directly to the catalog with `ParquetDataCatalog.write_custom_data` from Python.
-The Rust Feather writer supports custom data, but `convert_stream_to_data` does not currently
-convert custom-data Feather streams to Parquet.
+Python `StreamingFeatherWriter.write()` accepts `CustomData` wrappers for registered Arrow-capable
+types, and `convert_stream_to_data` converts those staged Feather streams to Parquet. To skip
+staging, write custom data directly to the catalog with `ParquetDataCatalog.write_custom_data`.
 :::
+
+Reads use only `data/custom/{TypeName}`. Convert catalogs that still use the legacy Python-written
+`data/custom_<snake_case>` layout (for example `data/custom_binance_bar`) with
+[nautilus catalog migrate-parquet](../how_to/migrate_parquet_catalog.md).
 
 ## The Arrow C FFI bridge
 

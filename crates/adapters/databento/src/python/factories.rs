@@ -32,13 +32,15 @@ use crate::{
 impl DatabentoDataClientConfig {
     /// Configuration for the Databento data client.
     #[new]
-    #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true, venue_dataset_map=None))]
+    #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true, venue_dataset_map=None, historical_base_url=None, live_gateway_addr=None))]
     fn py_new(
         api_key: String,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
         venue_dataset_map: Option<IndexMap<String, String>>,
+        historical_base_url: Option<String>,
+        live_gateway_addr: Option<String>,
     ) -> Self {
         let mut config = Self::new(
             api_key,
@@ -50,6 +52,9 @@ impl DatabentoDataClientConfig {
         if let Some(venue_dataset_map) = venue_dataset_map {
             config.venue_dataset_map = venue_dataset_map;
         }
+
+        config.historical_base_url = historical_base_url;
+        config.live_gateway_addr = live_gateway_addr;
 
         config
     }

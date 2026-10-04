@@ -151,8 +151,6 @@ impl KrakenSpotHttpClient {
     ///
     /// When `pairs` is `None` (loading all), also fetches tokenized asset pairs
     /// (xStocks) and merges them with the default currency pairs.
-    /// When credentials are configured, instruments use account fee rates from `TradeVolume`;
-    /// otherwise, they use the public base-tier rates from `AssetPairs`.
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (pairs=None))]
     fn py_request_instruments<'py>(

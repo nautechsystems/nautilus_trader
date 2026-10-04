@@ -64,7 +64,8 @@ stream, raw reports, generated events, and metadata needed to replay how the eng
 world. Data responses are the exception: every response to an engine request is captured, including
 book, option-chain reference price, and custom-data responses. Only some of them, listed under
 [Cache replay](#cache-replay), carry a rule that applies them back to cache state; the rest are
-inspection records.
+inspection records. Every published `InstrumentClose` is also captured, because a contract
+expiration settles positions.
 
 ## Boundaries
 
@@ -355,6 +356,8 @@ tail in `seq` order, decodes supported cache-affecting payloads, and applies the
 - Synthesized account, order, and position events
 - Captured order lists
 - Complete data responses for instruments, quotes, trades, funding rates, and bars
+- Instrument closes, which settle binary-option positions as live execution does. A replayed fill
+  or fill void after that settlement updates its order but not the settled position
 
 The loader **does not**:
 
@@ -408,7 +411,7 @@ The sidecar has two marker kinds:
   `marker_seq`, `event_seq_before`, `ts_init`, and the `StreamCursor` entries that advanced since
   the previous snapshot. A `StreamCursor` carries the stream `slot`, the highest `ts_init` seen
   in that slot (`ts_init_hi`), and the record `count`. A `StreamDictEntry` maps each `slot` to its
-  `data_cls` (`BookDeltas`, `BookDepth10`, `Quote`, `Trade`, `Bar`) and instrument `identifier`.
+  `data_cls` (`BookDeltas`, `BookDepth`, `Quote`, `Trade`, `Bar`) and instrument `identifier`.
 - **High-fidelity markers** (`HiFiMarker`): opt-in per instrument via
   `DataMarkerConfig.high_fidelity`. Each records `marker_seq`, `event_seq_before`, `slot`,
   `ts_event`, `ts_init`, `same_ts_ordinal`, and a 32-byte `record_fingerprint` over the canonical

@@ -23,11 +23,9 @@
 //! [`NonceManager::next_nonce`] errors so the caller can drain or refresh
 //! before issuing further transactions.
 //!
-//! The window is the L2's tolerance for out-of-order submission: the sequencer
-//! accepts a tx whose nonce is up to `skip_window` ahead of the last applied
-//! nonce, which is what makes the optimistic allocation correct in the first
-//! place. Lower the window if the venue rejects rates of out-of-order accepts;
-//! raise it when burst-trading multiple keys.
+//! The window bounds local unconfirmed allocations, not venue acceptance of
+//! out-of-order transactions. With `skip_nonce=0`, the venue requires consecutive
+//! nonces per API key; callers must preserve submission order.
 //!
 //! The module is lock-free per key: a [`DashMap`] keys an [`Arc`] holding two
 //! [`AtomicI64`]s (`last_issued` and `baseline`). [`NonceManager::next_nonce`]
@@ -46,9 +44,8 @@ use thiserror::Error;
 
 /// Default skip-window used when the caller does not specify one.
 ///
-/// The venue accepts up to 16 out-of-order nonces per `(account, api_key)`;
-/// matching that bound on the client keeps optimistic submissions inside the
-/// sequencer's tolerance.
+/// Bounds local unconfirmed allocations per `(account, api_key)` to 16.
+/// This is an adapter capacity limit, not a venue out-of-order allowance.
 pub const DEFAULT_SKIP_WINDOW: u32 = 16;
 
 /// Errors raised by [`NonceManager`].

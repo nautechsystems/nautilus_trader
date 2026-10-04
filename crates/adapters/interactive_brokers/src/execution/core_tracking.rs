@@ -7,6 +7,8 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::live::sender::EventSender;
+
 use super::*;
 
 impl InteractiveBrokersExecutionClient {
@@ -255,7 +257,7 @@ impl InteractiveBrokersExecutionClient {
         account_id: AccountId,
         ts_event: UnixNanos,
         active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
     ) -> anyhow::Result<bool> {
         let mut contexts = active_order_contexts.lock();
         let Some(context) = contexts.get_mut(&ib_order_id) else {
@@ -273,7 +275,7 @@ impl InteractiveBrokersExecutionClient {
         ts_event: UnixNanos,
         active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
         terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
     ) -> anyhow::Result<bool> {
         if Self::emit_order_accepted_if_needed(
             ib_order_id,
@@ -299,7 +301,7 @@ impl InteractiveBrokersExecutionClient {
         venue_order_id: VenueOrderId,
         account_id: AccountId,
         ts_event: UnixNanos,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
     ) -> anyhow::Result<bool> {
         if context.accepted {
             return Ok(false);

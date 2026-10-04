@@ -21,6 +21,7 @@ use nautilus_backtest::{
 };
 use nautilus_common::actor::registry::try_get_actor_unchecked;
 use nautilus_core::UnixNanos;
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{BookOrder, Data, OrderBookDelta, OrderBookDeltas},
     enums::{AccountType, BookAction, BookType, OmsType, OrderSide},
@@ -42,6 +43,7 @@ fn create_engine() -> BacktestEngine {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L2_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .unwrap(),
         )

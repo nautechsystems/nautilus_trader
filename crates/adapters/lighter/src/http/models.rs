@@ -195,7 +195,7 @@ pub struct LighterOrderBooks {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct LighterOrderBook {
     pub symbol: Ustr,
-    pub market_id: i16,
+    pub market_id: i64,
     pub market_type: LighterProductType,
     pub base_asset_id: i16,
     pub quote_asset_id: i16,
@@ -333,7 +333,7 @@ pub struct LighterOrderBookDepth {
 }
 
 /// A single book level returned by the order-book REST snapshot and the
-/// WebSocket ticker / order_book / order_book_depth10 frames.
+/// WebSocket ticker / order_book / order_book_depth frames.
 ///
 /// Lighter sends empty strings on the bid or ask side of a ticker frame when
 /// that side currently has no resting orders; [`deserialize_decimal_or_zero`]
@@ -420,7 +420,7 @@ pub struct LighterTrade {
     pub tx_hash: String,
     #[serde(rename = "type")]
     pub trade_type: LighterTradeType,
-    pub market_id: i16,
+    pub market_id: i64,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub size: Decimal,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
@@ -476,7 +476,7 @@ pub struct LighterOrder {
     pub client_order_index: i64,
     pub order_id: String,
     pub client_order_id: String,
-    pub market_index: i16,
+    pub market_index: i64,
     pub owner_account_index: i64,
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub initial_base_amount: Decimal,
@@ -568,12 +568,16 @@ mod tests {
 
     const HTTP_ORDER_BOOK_DETAILS: &str =
         include_str!("../../test_data/http_order_book_details.json");
+    const HTTP_ORDER_BOOK_DETAILS_WIDENED_IDS: &str =
+        include_str!("../../test_data/http_order_book_details_widened_ids.json");
     const HTTP_RECENT_TRADES: &str = include_str!("../../test_data/http_recent_trades.json");
     const HTTP_RECENT_TRADES_MISSING: &str =
         include_str!("../../test_data/http_recent_trades_missing.json");
     const HTTP_RECENT_TRADES_NULL: &str =
         include_str!("../../test_data/http_recent_trades_null.json");
     const HTTP_ORDER_BOOKS: &str = include_str!("../../test_data/http_order_books.json");
+    const HTTP_ORDER_BOOKS_WIDENED_IDS: &str =
+        include_str!("../../test_data/http_order_books_widened_ids.json");
     const HTTP_ORDER_BOOK_ORDERS: &str =
         include_str!("../../test_data/http_order_book_orders.json");
     const HTTP_ORDER_BOOK_DEPTH: &str = include_str!("../../test_data/http_order_book_depth.json");
@@ -660,6 +664,42 @@ mod tests {
             LighterPositionMarginMode::Cross,
         );
         assert!(details.spot_order_book_details.is_empty());
+    }
+
+    #[rstest]
+    fn test_order_book_details_deserializes_widened_market_ids() {
+        let details: LighterOrderBookDetails =
+            serde_json::from_str(HTTP_ORDER_BOOK_DETAILS_WIDENED_IDS).unwrap();
+
+        assert_eq!(details.code, 200);
+        assert_eq!(details.order_book_details.len(), 2);
+        assert_eq!(details.spot_order_book_details.len(), 2);
+
+        let perp_ids: Vec<i64> = details
+            .order_book_details
+            .iter()
+            .map(|d| d.order_book.market_id)
+            .collect();
+        assert_eq!(perp_ids, vec![4095, 40_000]);
+        assert!(
+            details
+                .order_book_details
+                .iter()
+                .all(|d| d.order_book.market_type == LighterProductType::Perp)
+        );
+
+        let spot_ids: Vec<i64> = details
+            .spot_order_book_details
+            .iter()
+            .map(|d| d.order_book.market_id)
+            .collect();
+        assert_eq!(spot_ids, vec![4098, 50_000]);
+        assert!(
+            details
+                .spot_order_book_details
+                .iter()
+                .all(|d| d.order_book.market_type == LighterProductType::Spot)
+        );
     }
 
     #[rstest]
@@ -786,6 +826,25 @@ mod tests {
             LighterMarketStatus::Active
         );
         assert_eq!(order_books.order_books[0].supported_price_decimals, 2);
+    }
+
+    #[rstest]
+    fn test_order_books_deserializes_widened_market_ids() {
+        let order_books: LighterOrderBooks =
+            serde_json::from_str(HTTP_ORDER_BOOKS_WIDENED_IDS).unwrap();
+
+        assert_eq!(order_books.code, 200);
+        assert_eq!(order_books.order_books.len(), 2);
+        assert_eq!(order_books.order_books[0].market_id, 4095);
+        assert_eq!(
+            order_books.order_books[0].market_type,
+            LighterProductType::Perp
+        );
+        assert_eq!(order_books.order_books[1].market_id, 50_000);
+        assert_eq!(
+            order_books.order_books[1].market_type,
+            LighterProductType::Spot
+        );
     }
 
     #[rstest]

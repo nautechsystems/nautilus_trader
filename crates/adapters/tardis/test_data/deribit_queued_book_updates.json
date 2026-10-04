@@ -1,0 +1,111 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "method": "subscription",
+    "params": {
+      "channel": "book.BTC-PERPETUAL.raw",
+      "data": {
+        "type": "snapshot",
+        "instrument_name": "BTC-PERPETUAL",
+        "timestamp": 1727136000000,
+        "change_id": 100,
+        "bids": [
+          [
+            "new",
+            100,
+            3
+          ],
+          [
+            "new",
+            99,
+            2
+          ]
+        ],
+        "asks": [
+          [
+            "new",
+            101,
+            4
+          ],
+          [
+            "new",
+            102,
+            5
+          ]
+        ]
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "subscription",
+    "params": {
+      "channel": "book.BTC-PERPETUAL.raw",
+      "data": {
+        "type": "change",
+        "instrument_name": "BTC-PERPETUAL",
+        "timestamp": 1727136000000,
+        "change_id": 99,
+        "bids": [
+          [
+            "delete",
+            99,
+            0
+          ]
+        ],
+        "asks": [],
+        "prev_change_id": 98
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "subscription",
+    "params": {
+      "channel": "book.BTC-PERPETUAL.raw",
+      "data": {
+        "type": "change",
+        "instrument_name": "BTC-PERPETUAL",
+        "timestamp": 1727136000000,
+        "change_id": 100,
+        "bids": [],
+        "asks": [
+          [
+            "change",
+            102,
+            99
+          ]
+        ],
+        "prev_change_id": 99
+      }
+    }
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "subscription",
+    "params": {
+      "channel": "book.BTC-PERPETUAL.raw",
+      "data": {
+        "type": "change",
+        "instrument_name": "BTC-PERPETUAL",
+        "timestamp": 1727136000000,
+        "change_id": 101,
+        "bids": [
+          [
+            "change",
+            100,
+            7
+          ]
+        ],
+        "asks": [
+          [
+            "delete",
+            101,
+            0
+          ]
+        ],
+        "prev_change_id": 100
+      }
+    }
+  }
+]

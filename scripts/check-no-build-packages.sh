@@ -31,7 +31,7 @@ while (($# > 0)); do
   esac
 done
 
-for tool in awk comm diff git grep sed sort tr uniq; do
+for tool in awk comm git grep sed sort tr uniq; do
   command -v "$tool" > /dev/null || {
     echo "Required tool not on PATH: $tool" >&2
     exit 2
@@ -81,16 +81,29 @@ declared_packages() {
 }
 
 if ((${#pairs[@]} == 0)); then
+  for tool in mktemp rm; do
+    command -v "$tool" > /dev/null || {
+      echo "Required tool not on PATH: $tool" >&2
+      exit 2
+    }
+  done
+  discovery_root=$(mktemp -d "${TMPDIR:-/tmp}/nautilus-no-build-discovery.XXXXXX")
+  trap 'rm -rf "$discovery_root"' EXIT
+  git ls-files -z > "${discovery_root}/tracked"
   while IFS= read -r -d '' lock; do
     [[ "$lock" == "uv.lock" || "$lock" == */uv.lock ]] || continue
     manifest="$(dirname "$lock")/pyproject.toml"
     if [[ "$manifest" == "./pyproject.toml" ]]; then
       manifest=pyproject.toml
     fi
-    if [[ -f "$manifest" ]] && grep -q '^[[:space:]]*no-build-package[[:space:]]*=' "$manifest"; then
+    [[ -f "$manifest" ]] || continue
+    if grep -q '^[[:space:]]*no-build-package[[:space:]]*=' "$manifest"; then
       pairs+=("${lock}:${manifest}")
+    else
+      status=$?
+      [[ "$status" == 1 ]] || exit "$status"
     fi
-  done < <(git ls-files -z)
+  done < "${discovery_root}/tracked"
 fi
 
 if ((${#pairs[@]} == 0)); then
@@ -131,18 +144,23 @@ for pair in "${pairs[@]}"; do
 
   locked=$(locked_third_party "$lock")
   declared_raw=$(declared_packages "$manifest")
-  declared_sorted=$(printf '%s\n' "$declared_raw" | LC_ALL=C sort -u)
+  declared_ordered=$(printf '%s\n' "$declared_raw" | LC_ALL=C sort)
+  declared_sorted=$(printf '%s\n' "$declared_ordered" | LC_ALL=C uniq)
 
   missing=$(LC_ALL=C comm -23 <(printf '%s\n' "$locked") <(printf '%s\n' "$declared_sorted"))
   stale=$(LC_ALL=C comm -13 <(printf '%s\n' "$locked") <(printf '%s\n' "$declared_sorted"))
-  duplicates=$(printf '%s\n' "$declared_raw" | LC_ALL=C sort | uniq -d)
+  duplicates=$(printf '%s\n' "$declared_ordered" | LC_ALL=C uniq -d)
   out_of_order=""
-  if ! diff -q <(printf '%s\n' "$declared_raw") <(printf '%s\n' "$declared_raw" | LC_ALL=C sort) > /dev/null 2>&1; then
+  if [[ "$declared_raw" != "$declared_ordered" ]]; then
     out_of_order="yes"
   fi
 
   if [[ -z "$missing" && -z "$stale" && -z "$duplicates" && -z "$out_of_order" ]]; then
-    count=$(printf '%s\n' "$locked" | grep -c . || true)
+    count_status=0
+    count=$(grep -c . <<< "$locked") || count_status=$?
+    if ((count_status > 1)); then
+      exit "$count_status"
+    fi
     echo "OK  ${manifest}: ${count} packages, in sync with ${lock}"
     continue
   fi

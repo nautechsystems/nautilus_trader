@@ -142,7 +142,7 @@ struct DataAny {
         instrumentClose @8 :InstrumentClose;
         orderBookDelta @9 :OrderBookDelta;
         orderBookDeltas @10 :OrderBookDeltas;
-        orderBookDepth10 @11 :OrderBookDepth10;
+        orderBookDepth @11 :OrderBookDepth;
     }
 }
 
@@ -181,11 +181,12 @@ struct BookLevel {
     size @1 :Types.Quantity;
 }
 
-# Order book depth (top 10 levels)
-struct OrderBookDepth10 {
+# Order book depth snapshot with a variable number of levels per side.
+# The node ID is pinned to the pre-rename `OrderBookDepth10` identity for wire continuity.
+struct OrderBookDepth @0xa314672be4630bdd {
     instrumentId @0 :Identifiers.InstrumentId;
-    bids @1 :List(BookLevel);  # Up to 10 levels
-    asks @2 :List(BookLevel);  # Up to 10 levels
+    bids @1 :List(BookLevel);
+    asks @2 :List(BookLevel);
     bidCounts @3 :List(UInt32);
     askCounts @4 :List(UInt32);
     flags @5 :UInt8;

@@ -31,6 +31,7 @@ use crate::{
         OwnBookOrder,
         own::{OwnOrderBook, validate_accepted_buffer},
     },
+    python::types::fixed::FloatArithmetic,
     types::{Price, Quantity},
 };
 
@@ -154,14 +155,17 @@ impl OwnBookOrder {
 
     /// Returns the order exposure as an `f64`.
     #[pyo3(name = "exposure")]
-    fn py_exposure(&self) -> f64 {
-        self.exposure()
+    fn py_exposure(&self) -> PyResult<f64> {
+        self.price.check_float_precision()?;
+        self.size.check_float_precision()?;
+        Ok(self.exposure())
     }
 
     /// Returns the signed order exposure as an `f64`.
     #[pyo3(name = "signed_size")]
-    fn py_signed_size(&self) -> f64 {
-        self.signed_size()
+    fn py_signed_size(&self) -> PyResult<f64> {
+        self.size.check_float_precision()?;
+        Ok(self.signed_size())
     }
 }
 
@@ -206,13 +210,14 @@ impl OwnOrderBook {
         self.reset();
     }
 
-    /// Adds an own order to the book.
+    /// Adds an own order to its side of the book, replacing any order there with the same client
+    /// order ID.
     #[pyo3(name = "add")]
     fn py_add(&mut self, order: OwnBookOrder) {
         self.add(order);
     }
 
-    /// Updates an existing own order in the book.
+    /// Updates an existing own order in the book, removing it if the size becomes zero.
     ///
     /// # Errors
     ///

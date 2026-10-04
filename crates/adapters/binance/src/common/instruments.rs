@@ -58,6 +58,19 @@ impl BinanceInstrumentSelector {
         })
     }
 
+    /// Returns whether the symbol was explicitly selected via `load_ids` or the `symbols` filter.
+    ///
+    /// Broad category filters (`bases`, `quotes`, `contract_types`) do not count:
+    /// they still match bulk loads where non-trading skips are routine.
+    #[must_use]
+    pub fn is_explicit(&self, instrument_id: InstrumentId, symbol: &str) -> bool {
+        self.load_ids.contains(&instrument_id)
+            || self
+                .symbols
+                .as_ref()
+                .is_some_and(|values| contains(values, symbol))
+    }
+
     /// Returns whether the definition passes startup selection and venue filters.
     #[must_use]
     pub fn includes(
@@ -190,5 +203,31 @@ mod tests {
             "USDT",
             None,
         ));
+    }
+
+    #[rstest]
+    fn test_is_explicit_matches_load_ids_and_symbol_filters_only() {
+        let config = BinanceInstrumentProviderConfig {
+            load_all: false,
+            load_ids: Some(vec!["BTCUSDT.BINANCE".to_string()]),
+            filters: HashMap::from([
+                ("symbols".to_string(), serde_json::json!(["ethusdt"])),
+                ("quotes".to_string(), serde_json::json!("USDT")),
+            ]),
+            ..Default::default()
+        };
+        let selector = BinanceInstrumentSelector::new(&config).unwrap();
+
+        assert!(selector.is_explicit(InstrumentId::from("BTCUSDT.BINANCE"), "BTCUSDT"));
+        assert!(selector.is_explicit(InstrumentId::from("ETHUSDT.BINANCE"), "ETHUSDT"));
+        assert!(!selector.is_explicit(InstrumentId::from("SOLUSDT.BINANCE"), "SOLUSDT"));
+    }
+
+    #[rstest]
+    fn test_is_explicit_is_false_for_bulk_loads() {
+        let selector =
+            BinanceInstrumentSelector::new(&BinanceInstrumentProviderConfig::default()).unwrap();
+
+        assert!(!selector.is_explicit(InstrumentId::from("BTCUSDT.BINANCE"), "BTCUSDT"));
     }
 }

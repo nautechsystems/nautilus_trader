@@ -27,6 +27,7 @@ pub mod config;
 pub mod factories;
 pub mod loader;
 pub mod positions;
+pub mod session;
 pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
@@ -414,6 +415,20 @@ fn extract_data_config_from_pyobject(
         Some(value) => value.extract::<TransportBackend>()?,
         None => default.transport_backend,
     };
+
+    let book_snapshot_timeout_secs = getattr_optional(obj, "book_snapshot_timeout_secs")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.book_snapshot_timeout_secs);
+    let book_stale_check_interval_secs = getattr_optional(obj, "book_stale_check_interval_secs")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.book_stale_check_interval_secs);
+    let book_stale_threshold_secs = getattr_optional(obj, "book_stale_threshold_secs")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.book_stale_threshold_secs);
+
     let config = PolymarketDataClientConfig {
         instrument_config,
         filters: Vec::new(),
@@ -442,6 +457,9 @@ fn extract_data_config_from_pyobject(
         resolve_poll_grace_secs,
         resolve_poll_max_wait_secs,
         transport_backend,
+        book_snapshot_timeout_secs,
+        book_stale_check_interval_secs,
+        book_stale_threshold_secs,
     };
     validate_data_config(&config)?;
     Ok(config)
@@ -509,7 +527,8 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(POLYMARKET), POLYMARKET)?;
     m.add(stringify!(POLYMARKET_CLIENT_ID), *POLYMARKET_CLIENT_ID)?;
     m.add(stringify!(POLYMARKET_VENUE), *POLYMARKET_VENUE)?;
-    m.add_class::<crate::common::enums::SignatureType>()?;
+    m.add_class::<crate::common::enums::PolymarketSignatureType>()?;
+    m.add_class::<crate::common::enums::PolymarketSignerType>()?;
     m.add_class::<PolymarketUpDownEventSlugConfig>()?;
     m.add_class::<PolymarketInstrumentProviderConfig>()?;
     m.add_class::<PolymarketDataClientConfig>()?;
@@ -518,6 +537,9 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketExecutionClientFactory>()?;
     m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<loader::PyPolymarketDataLoader>()?;
+    m.add_class::<session::PyPolymarketSessionKeyClient>()?;
+    m.add_class::<session::PyPolymarketSessionKeyClientConfig>()?;
+    m.add_class::<session::PyPolymarketSessionKey>()?;
     m.add_class::<positions::PyPolymarketPositionClient>()?;
     m.add_class::<positions::PyPolymarketPositionOutcome>()?;
     m.add_class::<positions::PyPolymarketPositionTransaction>()?;
@@ -589,7 +611,10 @@ mod tests {
 
     use super::extract_data_config_from_pyobject;
     use crate::{
-        config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
+        config::{
+            PolymarketDataClientConfig, PolymarketInstrumentProviderConfig,
+            PolymarketUpDownEventSlugConfig,
+        },
         data_types::{PolymarketRtdsCryptoPrice, register_polymarket_custom_data},
     };
 
@@ -684,6 +709,15 @@ mod tests {
             config_kwargs
                 .set_item("resolve_poll_max_wait_secs", 2400)
                 .unwrap();
+            config_kwargs
+                .set_item("book_snapshot_timeout_secs", 42)
+                .unwrap();
+            config_kwargs
+                .set_item("book_stale_check_interval_secs", 7)
+                .unwrap();
+            config_kwargs
+                .set_item("book_stale_threshold_secs", 9)
+                .unwrap();
             let config_obj = namespace
                 .call((), Some(&config_kwargs))
                 .expect("config namespace");
@@ -747,6 +781,52 @@ mod tests {
             assert_eq!(rust_config.resolve_poll_interval_secs, 45);
             assert_eq!(rust_config.resolve_poll_grace_secs, 12);
             assert_eq!(rust_config.resolve_poll_max_wait_secs, 2400);
+            assert_eq!(rust_config.book_snapshot_timeout_secs, 42);
+            assert_eq!(rust_config.book_stale_check_interval_secs, 7);
+            assert_eq!(rust_config.book_stale_threshold_secs, 9);
+        });
+    }
+
+    #[rstest]
+    fn data_config_py_constructor_accepts_book_sync_kwargs() {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("book_snapshot_timeout_secs", 42).unwrap();
+            kwargs
+                .set_item("book_stale_check_interval_secs", 7)
+                .unwrap();
+            kwargs.set_item("book_stale_threshold_secs", 9).unwrap();
+
+            let config = py
+                .get_type::<PolymarketDataClientConfig>()
+                .call((), Some(&kwargs))
+                .expect("data config should accept book sync kwargs");
+
+            assert_eq!(
+                config
+                    .getattr("book_snapshot_timeout_secs")
+                    .expect("timeout getter")
+                    .extract::<u64>()
+                    .expect("u64 timeout"),
+                42
+            );
+            assert_eq!(
+                config
+                    .getattr("book_stale_check_interval_secs")
+                    .expect("interval getter")
+                    .extract::<u64>()
+                    .expect("u64 interval"),
+                7
+            );
+            assert_eq!(
+                config
+                    .getattr("book_stale_threshold_secs")
+                    .expect("threshold getter")
+                    .extract::<u64>()
+                    .expect("u64 threshold"),
+                9
+            );
         });
     }
 

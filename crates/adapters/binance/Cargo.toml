@@ -21,6 +21,7 @@ crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
+arrow = ["dep:arrow", "nautilus-serialization/arrow"]
 examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
 high-precision = [
   "nautilus-model/high-precision",
@@ -50,7 +51,7 @@ python = [
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["examples", "high-precision"]
+features = ["arrow", "examples", "high-precision"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -59,13 +60,12 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true, features = ["transport-sockudo"] }
-nautilus-serialization = { workspace = true, features = ["sbe", "arrow"] }
+nautilus-serialization = { workspace = true, features = ["sbe"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
-arrow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
@@ -90,11 +90,14 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+arrow = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-execution = { workspace = true }
+nautilus-live = { workspace = true, features = ["test-support"] }
+nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -105,6 +108,7 @@ criterion = { workspace = true }
 dotenvy = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
+tempfile = { workspace = true }
 toml = { workspace = true }
 
 # Run with `cargo bench -p nautilus-binance --bench encoder`
@@ -170,3 +174,12 @@ name = "binance-futures-exec-trailing-stop-tester"
 path = "examples/futures/node_exec_trailing_stop_tester.rs"
 required-features = ["examples"]
 doc = false
+
+# Live validation harness, excluded from `cargo test` and nextest runs.
+# Run with `cargo test --package nautilus-binance --features examples --test binance-book-stress -- --product futures`
+[[test]]
+name = "binance-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

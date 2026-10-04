@@ -26,9 +26,22 @@ create_case() {
 
   mkdir -p \
     "$case_dir/crates/live/src/execution" \
-    "$case_dir/crates/execution/src/matching_engine"
+    "$case_dir/crates/execution/src/matching_engine" \
+    "$case_dir/crates/adapters/okx/src/book" \
+    "$case_dir/crates/adapters/okx/src/common" \
+    "$case_dir/crates/adapters/okx/src/http" \
+    "$case_dir/crates/adapters/okx/src/websocket"
   : > "$case_dir/crates/live/src/execution/manager.rs"
   : > "$case_dir/crates/execution/src/matching_engine/mod.rs"
+  for adapter_path in \
+    book/mod.rs book/recovery.rs book/sync.rs \
+    common/parse.rs common/task.rs \
+    config.rs data.rs execution.rs \
+    http/client.rs http/models.rs http/query.rs \
+    websocket/client.rs websocket/dispatch.rs websocket/handler.rs \
+    websocket/messages.rs websocket/parse.rs websocket/subscription.rs; do
+    : > "$case_dir/crates/adapters/okx/src/$adapter_path"
+  done
 }
 
 run_hook() {
@@ -182,9 +195,6 @@ done
 
 adapter_case="$CASE_ROOT/adapter"
 create_case "$adapter_case"
-mkdir -p \
-  "$adapter_case/crates/adapters/okx/src/common" \
-  "$adapter_case/crates/adapters/okx/src/websocket"
 printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   'use tokio::time;' \
   'pub async fn imported() { time::sleep(delay).await; }' \
@@ -195,6 +205,12 @@ printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   > "$adapter_case/crates/adapters/okx/src/websocket/dispatch.rs"
 printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   > "$adapter_case/crates/adapters/okx/src/common/task.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/config.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/http/query.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/okx/src/websocket/subscription.rs"
 run_hook "$adapter_case"
 if [ "$RUN_STATUS" -ne 1 ]; then
   echo "Expected the audited OKX path to reject a raw Tokio timer"
@@ -207,5 +223,24 @@ rg -Fq "Error (rule7): crates/adapters/okx/src/data.rs:2" "$adapter_case/plain.t
 rg -Fq "Error (rule7): crates/adapters/okx/src/execution.rs:1" "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/okx/src/websocket/dispatch.rs:1" "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/okx/src/common/task.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/config.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/http/query.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/okx/src/websocket/subscription.rs:1" "$adapter_case/plain.txt"
+
+# A missing audited file must fail loudly; split book files must stay gated
+missing_case="$CASE_ROOT/missing-adapter"
+create_case "$missing_case"
+rm "$missing_case/crates/adapters/okx/src/book/sync.rs"
+printf '%s\n' 'pub fn nondeterministic() { let _now = std::time::Instant::now(); }' \
+  > "$missing_case/crates/adapters/okx/src/book/recovery.rs"
+run_hook "$missing_case"
+if [ "$RUN_STATUS" -ne 1 ]; then
+  echo "Expected DST convention hook to reject a missing audited file"
+  cat "$missing_case/output.txt"
+  exit 1
+fi
+strip_color "$missing_case/output.txt" > "$missing_case/plain.txt"
+rg -Fq "Error (coverage): crates/adapters/okx/src/book/sync.rs:0" "$missing_case/plain.txt"
+rg -Fq "Error (rule1): crates/adapters/okx/src/book/recovery.rs:1" "$missing_case/plain.txt"
 
 echo "DST convention hook tests passed"

@@ -51,13 +51,13 @@ pub use response::{
     OptionChainReferencePriceResponse, QuotesResponse, TradesResponse,
 };
 pub use subscribe::{
-    SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+    SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeBookSnapshots,
     SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
     SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
     SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
 };
 pub use unsubscribe::{
-    UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+    UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeBookSnapshots,
     UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
     UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
     UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
@@ -92,9 +92,20 @@ impl DataCommand {
     /// Returns `None` for request and unsubscribe variants.
     pub(crate) fn into_unsubscribe(self, command_id: UUID4, ts_init: UnixNanos) -> Option<Self> {
         match self {
-            Self::Subscribe(command) => Some(Self::Unsubscribe(
-                command.into_unsubscribe(command_id, ts_init, None),
-            )),
+            Self::Subscribe(command) => {
+                let correlation_id = matches!(
+                    command,
+                    SubscribeCommand::BookDeltas(_)
+                        | SubscribeCommand::BookDepth(_)
+                        | SubscribeCommand::BookSnapshots(_)
+                )
+                .then(|| command.command_id());
+                Some(Self::Unsubscribe(command.into_unsubscribe(
+                    command_id,
+                    ts_init,
+                    correlation_id,
+                )))
+            }
             #[cfg(feature = "defi")]
             Self::DefiSubscribe(command) => Some(Self::DefiUnsubscribe(
                 command.into_unsubscribe(command_id, ts_init),
@@ -110,7 +121,7 @@ pub enum SubscribeCommand {
     Instrument(SubscribeInstrument),
     Instruments(SubscribeInstruments),
     BookDeltas(SubscribeBookDeltas),
-    BookDepth10(SubscribeBookDepth10),
+    BookDepth(SubscribeBookDepth),
     BookSnapshots(SubscribeBookSnapshots),
     Quotes(SubscribeQuotes),
     Trades(SubscribeTrades),
@@ -184,7 +195,7 @@ impl SubscribeCommand {
                 correlation_id,
                 cmd.params,
             )),
-            Self::BookDepth10(cmd) => UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
+            Self::BookDepth(cmd) => UnsubscribeCommand::BookDepth(UnsubscribeBookDepth::new(
                 cmd.instrument_id,
                 cmd.client_id,
                 cmd.venue,
@@ -314,7 +325,7 @@ impl SubscribeCommand {
             Self::Instrument(cmd) => cmd.command_id,
             Self::Instruments(cmd) => cmd.command_id,
             Self::BookDeltas(cmd) => cmd.command_id,
-            Self::BookDepth10(cmd) => cmd.command_id,
+            Self::BookDepth(cmd) => cmd.command_id,
             Self::BookSnapshots(cmd) => cmd.command_id,
             Self::Quotes(cmd) => cmd.command_id,
             Self::Trades(cmd) => cmd.command_id,
@@ -335,7 +346,7 @@ impl SubscribeCommand {
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
             Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::BookDeltas(cmd) => cmd.client_id.as_ref(),
-            Self::BookDepth10(cmd) => cmd.client_id.as_ref(),
+            Self::BookDepth(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshots(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
@@ -356,7 +367,7 @@ impl SubscribeCommand {
             Self::Instrument(cmd) => cmd.venue.as_ref(),
             Self::Instruments(cmd) => Some(&cmd.venue),
             Self::BookDeltas(cmd) => cmd.venue.as_ref(),
-            Self::BookDepth10(cmd) => cmd.venue.as_ref(),
+            Self::BookDepth(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshots(cmd) => cmd.venue.as_ref(),
             Self::Quotes(cmd) => cmd.venue.as_ref(),
             Self::Trades(cmd) => cmd.venue.as_ref(),
@@ -377,7 +388,7 @@ impl SubscribeCommand {
             Self::Instrument(cmd) => cmd.ts_init,
             Self::Instruments(cmd) => cmd.ts_init,
             Self::BookDeltas(cmd) => cmd.ts_init,
-            Self::BookDepth10(cmd) => cmd.ts_init,
+            Self::BookDepth(cmd) => cmd.ts_init,
             Self::BookSnapshots(cmd) => cmd.ts_init,
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
@@ -398,7 +409,7 @@ impl SubscribeCommand {
             Self::Instrument(cmd) => cmd.correlation_id,
             Self::Instruments(cmd) => cmd.correlation_id,
             Self::BookDeltas(cmd) => cmd.correlation_id,
-            Self::BookDepth10(cmd) => cmd.correlation_id,
+            Self::BookDepth(cmd) => cmd.correlation_id,
             Self::BookSnapshots(cmd) => cmd.correlation_id,
             Self::Quotes(cmd) => cmd.correlation_id,
             Self::Trades(cmd) => cmd.correlation_id,
@@ -419,7 +430,7 @@ impl SubscribeCommand {
             Self::Instrument(cmd) => cmd.params.as_ref(),
             Self::Instruments(cmd) => cmd.params.as_ref(),
             Self::BookDeltas(cmd) => cmd.params.as_ref(),
-            Self::BookDepth10(cmd) => cmd.params.as_ref(),
+            Self::BookDepth(cmd) => cmd.params.as_ref(),
             Self::BookSnapshots(cmd) => cmd.params.as_ref(),
             Self::Quotes(cmd) => cmd.params.as_ref(),
             Self::Trades(cmd) => cmd.params.as_ref(),
@@ -441,7 +452,7 @@ pub enum UnsubscribeCommand {
     Instrument(UnsubscribeInstrument),
     Instruments(UnsubscribeInstruments),
     BookDeltas(UnsubscribeBookDeltas),
-    BookDepth10(UnsubscribeBookDepth10),
+    BookDepth(UnsubscribeBookDepth),
     BookSnapshots(UnsubscribeBookSnapshots),
     Quotes(UnsubscribeQuotes),
     Trades(UnsubscribeTrades),
@@ -473,7 +484,7 @@ impl UnsubscribeCommand {
             Self::Instrument(cmd) => cmd.command_id,
             Self::Instruments(cmd) => cmd.command_id,
             Self::BookDeltas(cmd) => cmd.command_id,
-            Self::BookDepth10(cmd) => cmd.command_id,
+            Self::BookDepth(cmd) => cmd.command_id,
             Self::BookSnapshots(cmd) => cmd.command_id,
             Self::Quotes(cmd) => cmd.command_id,
             Self::Trades(cmd) => cmd.command_id,
@@ -494,7 +505,7 @@ impl UnsubscribeCommand {
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
             Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::BookDeltas(cmd) => cmd.client_id.as_ref(),
-            Self::BookDepth10(cmd) => cmd.client_id.as_ref(),
+            Self::BookDepth(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshots(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
@@ -515,7 +526,7 @@ impl UnsubscribeCommand {
             Self::Instrument(cmd) => cmd.venue.as_ref(),
             Self::Instruments(cmd) => Some(&cmd.venue),
             Self::BookDeltas(cmd) => cmd.venue.as_ref(),
-            Self::BookDepth10(cmd) => cmd.venue.as_ref(),
+            Self::BookDepth(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshots(cmd) => cmd.venue.as_ref(),
             Self::Quotes(cmd) => cmd.venue.as_ref(),
             Self::Trades(cmd) => cmd.venue.as_ref(),
@@ -536,7 +547,7 @@ impl UnsubscribeCommand {
             Self::Instrument(cmd) => cmd.ts_init,
             Self::Instruments(cmd) => cmd.ts_init,
             Self::BookDeltas(cmd) => cmd.ts_init,
-            Self::BookDepth10(cmd) => cmd.ts_init,
+            Self::BookDepth(cmd) => cmd.ts_init,
             Self::BookSnapshots(cmd) => cmd.ts_init,
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
@@ -557,7 +568,7 @@ impl UnsubscribeCommand {
             Self::Instrument(cmd) => cmd.correlation_id,
             Self::Instruments(cmd) => cmd.correlation_id,
             Self::BookDeltas(cmd) => cmd.correlation_id,
-            Self::BookDepth10(cmd) => cmd.correlation_id,
+            Self::BookDepth(cmd) => cmd.correlation_id,
             Self::BookSnapshots(cmd) => cmd.correlation_id,
             Self::Quotes(cmd) => cmd.correlation_id,
             Self::Trades(cmd) => cmd.correlation_id,

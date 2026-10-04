@@ -86,9 +86,12 @@ pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high-precision") as u8;
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 16;
 
+/// The maximum fixed-point precision used by standard-precision catalog data.
+pub const FIXED_PRECISION_STANDARD: u8 = 9;
+
 #[cfg(not(feature = "high-precision"))]
 /// The maximum fixed-point precision.
-pub const FIXED_PRECISION: u8 = 9;
+pub const FIXED_PRECISION: u8 = FIXED_PRECISION_STANDARD;
 
 // -----------------------------------------------------------------------------
 // PRECISION_BYTES (size of integer backing the fixed-point values)
@@ -102,17 +105,8 @@ pub const PRECISION_BYTES: i32 = 16;
 /// The width in bytes for fixed-point value types in standard-precision mode (64-bit).
 pub const PRECISION_BYTES: i32 = 8;
 
-// -----------------------------------------------------------------------------
-// FIXED_BINARY_SIZE
-// -----------------------------------------------------------------------------
-
-#[cfg(feature = "high-precision")]
-/// The data type name for the Arrow fixed-size binary representation.
-pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(16)";
-
-#[cfg(not(feature = "high-precision"))]
-/// The data type name for the Arrow fixed-size binary representation.
-pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(8)";
+/// The Arrow data type name for fixed-point value types.
+pub const FIXED_DECIMAL: &str = "Decimal128(38, 16)";
 
 // -----------------------------------------------------------------------------
 // FIXED_SCALAR
@@ -211,6 +205,23 @@ pub fn check_fixed_precision(precision: u8) -> CorrectnessResult<()> {
         return Err(CorrectnessError::PredicateViolation {
             message: format!(
                 "`precision` exceeded maximum `FIXED_PRECISION` ({FIXED_PRECISION}), was {precision}"
+            ),
+        });
+    }
+
+    Ok(())
+}
+
+/// Checks that a value with the given `precision` can be converted to `f64`.
+///
+/// # Errors
+///
+/// Returns an error if `precision` exceeds [`MAX_FLOAT_PRECISION`].
+pub fn check_float_precision(precision: u8) -> CorrectnessResult<()> {
+    if precision > MAX_FLOAT_PRECISION {
+        return Err(CorrectnessError::PredicateViolation {
+            message: format!(
+                "Fixed-point precision {precision} exceeds maximum float precision {MAX_FLOAT_PRECISION}"
             ),
         });
     }
@@ -333,6 +344,64 @@ pub(crate) fn scaled_raw_to_decimal(scaled_raw: i128, precision: u8) -> Decimal 
         Decimal::from(scaled_raw / divisor)
             + Decimal::from_i128_with_scale(scaled_raw % divisor, scale)
     })
+}
+
+pub(crate) fn format_scaled_i128(raw: i128, precision: u8) -> String {
+    let sign = if raw < 0 { "-" } else { "" };
+    format!(
+        "{sign}{}",
+        format_scaled_u128(raw.unsigned_abs(), precision)
+    )
+}
+
+/// Parses a plain decimal string into its signed mantissa and fractional precision.
+pub(crate) fn parse_decimal_mantissa(value: &str) -> Result<(i128, u8), String> {
+    let (negative, unsigned) = value
+        .strip_prefix('-')
+        .map_or((false, value), |value| (true, value));
+    let unsigned = if negative {
+        unsigned
+    } else {
+        unsigned.strip_prefix('+').unwrap_or(unsigned)
+    };
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    if fraction.contains('.') {
+        return Err(format!("Invalid decimal value '{value}'"));
+    }
+    let digits = format!("{whole}{fraction}");
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(format!("Invalid decimal value '{value}'"));
+    }
+    let precision = u8::try_from(fraction.len())
+        .map_err(|_| format!("Decimal value '{value}' has too many fractional digits"))?;
+    let mut mantissa = 0_i128;
+    for digit in digits.bytes().map(|byte| i128::from(byte - b'0')) {
+        mantissa = if negative {
+            mantissa
+                .checked_mul(10)
+                .and_then(|value| value.checked_sub(digit))
+        } else {
+            mantissa
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(digit))
+        }
+        .ok_or_else(|| format!("Decimal value '{value}' exceeds i128 range"))?;
+    }
+    Ok((mantissa, precision))
+}
+
+pub(crate) fn format_scaled_u128(raw: u128, precision: u8) -> String {
+    if precision == 0 {
+        return raw.to_string();
+    }
+
+    let scale = 10_u128.pow(u32::from(precision));
+    format!(
+        "{}.{:0>width$}",
+        raw / scale,
+        raw % scale,
+        width = usize::from(precision),
+    )
 }
 
 /// Returns `lhs * rhs / FIXED_SCALAR`, truncated toward zero.
@@ -997,12 +1066,199 @@ mod tests {
 
     use super::*;
 
-    #[cfg(not(feature = "defi"))]
     #[rstest]
-    fn test_precision_boundaries() {
-        assert!(check_fixed_precision(0).is_ok());
-        assert!(check_fixed_precision(FIXED_PRECISION).is_ok());
-        assert!(check_fixed_precision(FIXED_PRECISION + 1).is_err());
+    fn test_correct_raw_rounds_half_away_from_zero() {
+        let precision = FIXED_PRECISION - 1;
+
+        assert_eq!(correct_raw_u128(20, precision), 20);
+        assert_eq!(correct_raw_u128(14, precision), 10);
+        assert_eq!(correct_raw_u128(15, precision), 20);
+        assert_eq!(correct_raw_u64(14, precision), 10);
+        assert_eq!(correct_raw_u64(15, precision), 20);
+        assert_eq!(correct_raw_i128(15, precision), 20);
+        assert_eq!(correct_raw_i128(-14, precision), -10);
+        assert_eq!(correct_raw_i128(-15, precision), -20);
+        assert_eq!(correct_raw_i64(15, precision), 20);
+        assert_eq!(correct_raw_i64(-14, precision), -10);
+        assert_eq!(correct_raw_i64(-15, precision), -20);
+    }
+
+    #[rstest]
+    fn test_f64_fixed_u128_round_trip() {
+        let raw = f64_to_fixed_u128(1.5, 1);
+
+        assert_eq!(raw, 15 * 10_u128.pow(u32::from(FIXED_PRECISION - 1)));
+        assert_eq!(fixed_u128_to_f64(raw), 1.5);
+    }
+
+    #[rstest]
+    fn test_mantissa_exponent_to_fixed_i128_allows_max_scale_factor() {
+        let exponent = i8::try_from(38 - FIXED_PRECISION).unwrap();
+
+        assert_eq!(
+            mantissa_exponent_to_fixed_i128(1, exponent, 0).unwrap(),
+            10_i128.pow(38)
+        );
+        assert_eq!(
+            mantissa_exponent_to_fixed_i128(1, exponent + 1, 0)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Exponent {} produces scale factor 10^39 which exceeds i128 range",
+                exponent + 1
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_raw_scales_match_requires_equal_effective_scale() {
+        assert!(raw_scales_match(0, FIXED_PRECISION));
+        assert!(raw_scales_match(FIXED_PRECISION + 1, FIXED_PRECISION + 1));
+        assert!(!raw_scales_match(FIXED_PRECISION, FIXED_PRECISION + 1));
+    }
+
+    #[rstest]
+    fn test_canonical_raw_trims_native_scale_trailing_zeros() {
+        assert_eq!(
+            canonical_raw(0_u128, FIXED_PRECISION + 2),
+            (0, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(1_200_u128, FIXED_PRECISION + 2),
+            (12, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(12_000_u128, FIXED_PRECISION + 2),
+            (120, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(1_205_u128, FIXED_PRECISION + 2),
+            (1_205, FIXED_PRECISION + 2)
+        );
+        assert_eq!(
+            canonical_raw(5_u128, FIXED_PRECISION - 1),
+            (5, FIXED_PRECISION)
+        );
+    }
+
+    #[rstest]
+    fn test_compare_raw_zero_operands_are_equal_across_scales() {
+        assert_eq!(compare_raw(0_u128, u8::MAX, 0_u128, 2), Ordering::Equal);
+    }
+
+    #[rstest]
+    #[case("1.00", 100, 2)]
+    #[case("+1.00", 100, 2)]
+    #[case("-1.00", -100, 2)]
+    #[case("-0.00", 0, 2)]
+    fn test_parse_decimal_mantissa_sign(
+        #[case] input: &str,
+        #[case] mantissa: i128,
+        #[case] precision: u8,
+    ) {
+        assert_eq!(parse_decimal_mantissa(input), Ok((mantissa, precision)));
+    }
+
+    #[rstest]
+    #[case("-+1.00")]
+    #[case("+-1.00")]
+    #[case("--1.00")]
+    #[case("++1.00")]
+    #[case("-+0.00")]
+    fn test_parse_decimal_mantissa_rejects_multiple_signs(#[case] input: &str) {
+        assert_eq!(
+            parse_decimal_mantissa(input),
+            Err(format!("Invalid decimal value '{input}'")),
+        );
+        assert!(input.parse::<crate::types::Price>().is_err());
+        assert!(input.parse::<crate::types::Quantity>().is_err());
+        assert!(
+            format!("{input} USD")
+                .parse::<crate::types::Money>()
+                .is_err()
+        );
+    }
+
+    #[rstest]
+    #[case(i128::MIN)]
+    #[case(i128::MAX)]
+    fn test_parse_decimal_mantissa_integer_limits(#[case] value: i128) {
+        assert_eq!(parse_decimal_mantissa(&value.to_string()), Ok((value, 0)));
+    }
+
+    #[rstest]
+    #[case("170141183460469231731687303715884105728")]
+    #[case("-170141183460469231731687303715884105729")]
+    fn test_parse_decimal_mantissa_overflow(#[case] input: &str) {
+        assert_eq!(
+            parse_decimal_mantissa(input),
+            Err(format!("Decimal value '{input}' exceeds i128 range")),
+        );
+    }
+
+    #[rstest]
+    #[case(".5", 5, 1)]
+    #[case("-.5", -5, 1)]
+    #[case("1.", 1, 0)]
+    #[case("0001.0200", 10200, 4)]
+    fn test_parse_decimal_mantissa_syntax(
+        #[case] input: &str,
+        #[case] mantissa: i128,
+        #[case] precision: u8,
+    ) {
+        assert_eq!(parse_decimal_mantissa(input), Ok((mantissa, precision)));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case(".")]
+    #[case("+")]
+    #[case("-")]
+    #[case("1.2.3")]
+    #[case(" 1")]
+    #[case("1 ")]
+    #[case("1 2")]
+    #[case("１")]
+    fn test_parse_decimal_mantissa_invalid_syntax(#[case] input: &str) {
+        assert_eq!(
+            parse_decimal_mantissa(input),
+            Err(format!("Invalid decimal value '{input}'")),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_decimal_mantissa_fraction_length_limit() {
+        let accepted = format!("0.{}", "0".repeat(255));
+        let rejected = format!("{accepted}0");
+
+        assert_eq!(parse_decimal_mantissa(&accepted), Ok((0, 255)));
+        assert_eq!(
+            parse_decimal_mantissa(&rejected),
+            Err(format!(
+                "Decimal value '{rejected}' has too many fractional digits"
+            )),
+        );
+    }
+
+    #[rstest]
+    fn test_decimal_string_domain_precision_limit() {
+        use crate::types::{Price, Quantity};
+
+        #[cfg(feature = "defi")]
+        let precision = crate::defi::WEI_PRECISION;
+        #[cfg(not(feature = "defi"))]
+        let precision = FIXED_PRECISION;
+        let accepted = format!("0.{}1", "0".repeat(usize::from(precision - 1)));
+        let rejected = format!("{accepted}0");
+        let price = accepted.parse::<Price>().unwrap();
+        let quantity = accepted.parse::<Quantity>().unwrap();
+
+        assert_eq!(price.raw, 1);
+        assert_eq!(price.precision, precision);
+        assert_eq!(quantity.raw, 1);
+        assert_eq!(quantity.precision, precision);
+        assert!(rejected.parse::<Price>().is_err());
+        assert!(rejected.parse::<Quantity>().is_err());
     }
 
     #[rstest]
@@ -1058,6 +1314,14 @@ mod tests {
         // and fractional parts lets `Decimal` drop scale instead, which is the only representable
         // outcome once the value needs more than a 96-bit mantissa.
         assert_eq!(scaled_raw_to_decimal(raw, precision).to_string(), expected);
+    }
+
+    #[cfg(not(feature = "defi"))]
+    #[rstest]
+    fn test_precision_boundaries() {
+        assert!(check_fixed_precision(0).is_ok());
+        assert!(check_fixed_precision(FIXED_PRECISION).is_ok());
+        assert!(check_fixed_precision(FIXED_PRECISION + 1).is_err());
     }
 
     #[cfg(feature = "defi")]
@@ -1153,6 +1417,33 @@ mod tests {
         let precision = WEI_PRECISION + 1;
         let result = check_fixed_precision(precision);
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_check_float_precision_matches_supported_range() {
+        for precision in 0..=u8::MAX {
+            let expected = if precision <= MAX_FLOAT_PRECISION {
+                Ok(())
+            } else {
+                Err(CorrectnessError::PredicateViolation {
+                    message: format!(
+                        "Fixed-point precision {precision} exceeds maximum float precision 16"
+                    ),
+                })
+            };
+
+            assert_eq!(check_float_precision(precision), expected);
+        }
+    }
+
+    #[rstest]
+    fn test_check_float_precision_error_display() {
+        let error = check_float_precision(18).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Fixed-point precision 18 exceeds maximum float precision 16"
+        );
     }
 
     #[cfg(not(feature = "defi"))]
@@ -1470,6 +1761,86 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_correct_raw_rounds_half_away_from_zero() {
+        let precision = FIXED_PRECISION - 1;
+
+        assert_eq!(correct_raw_u128(20, precision), 20);
+        assert_eq!(correct_raw_u128(14, precision), 10);
+        assert_eq!(correct_raw_u128(15, precision), 20);
+        assert_eq!(correct_raw_u64(14, precision), 10);
+        assert_eq!(correct_raw_u64(15, precision), 20);
+        assert_eq!(correct_raw_i128(15, precision), 20);
+        assert_eq!(correct_raw_i128(-14, precision), -10);
+        assert_eq!(correct_raw_i128(-15, precision), -20);
+        assert_eq!(correct_raw_i64(15, precision), 20);
+        assert_eq!(correct_raw_i64(-14, precision), -10);
+        assert_eq!(correct_raw_i64(-15, precision), -20);
+    }
+
+    #[rstest]
+    fn test_f64_fixed_u128_round_trip() {
+        let raw = f64_to_fixed_u128(1.5, 1);
+
+        assert_eq!(raw, 15 * 10_u128.pow(u32::from(FIXED_PRECISION - 1)));
+        assert_eq!(fixed_u128_to_f64(raw), 1.5);
+    }
+
+    #[rstest]
+    fn test_mantissa_exponent_to_fixed_i128_allows_max_scale_factor() {
+        let exponent = i8::try_from(38 - FIXED_PRECISION).unwrap();
+
+        assert_eq!(
+            mantissa_exponent_to_fixed_i128(1, exponent, 0).unwrap(),
+            10_i128.pow(38)
+        );
+        assert_eq!(
+            mantissa_exponent_to_fixed_i128(1, exponent + 1, 0)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Exponent {} produces scale factor 10^39 which exceeds i128 range",
+                exponent + 1
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_raw_scales_match_requires_equal_effective_scale() {
+        assert!(raw_scales_match(0, FIXED_PRECISION));
+        assert!(raw_scales_match(FIXED_PRECISION + 1, FIXED_PRECISION + 1));
+        assert!(!raw_scales_match(FIXED_PRECISION, FIXED_PRECISION + 1));
+    }
+
+    #[rstest]
+    fn test_canonical_raw_trims_native_scale_trailing_zeros() {
+        assert_eq!(
+            canonical_raw(0_u128, FIXED_PRECISION + 2),
+            (0, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(1_200_u128, FIXED_PRECISION + 2),
+            (12, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(12_000_u128, FIXED_PRECISION + 2),
+            (120, FIXED_PRECISION)
+        );
+        assert_eq!(
+            canonical_raw(1_205_u128, FIXED_PRECISION + 2),
+            (1_205, FIXED_PRECISION + 2)
+        );
+        assert_eq!(
+            canonical_raw(5_u128, FIXED_PRECISION - 1),
+            (5, FIXED_PRECISION)
+        );
+    }
+
+    #[rstest]
+    fn test_compare_raw_zero_operands_are_equal_across_scales() {
+        assert_eq!(compare_raw(0_u128, u8::MAX, 0_u128, 2), Ordering::Equal);
+    }
 
     #[rstest]
     fn test_precision_boundaries() {

@@ -18,28 +18,31 @@
 use std::iter::Peekable;
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
-    data::{
-        Bar, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10,
-        QuoteTick, TradeTick,
-    },
+    data::{Data, HasTsInit, NautilusDataType},
     enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
     types::Money,
 };
-use nautilus_persistence::backend::{catalog::ParquetDataCatalog, session::QueryResult};
+use nautilus_persistence::{
+    backend::default_catalog_factories,
+    catalog::{
+        factory as catalog_factory,
+        traits::{CatalogInstrumentQuery, CatalogQuery, DataCatalog},
+    },
+    config::DataCatalogConfig,
+};
 
 use crate::{
-    config::{BacktestDataConfig, BacktestRunConfig, NautilusDataType, SimulatedVenueConfig},
+    config::{BacktestDataConfig, BacktestRunConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
     result::BacktestResult,
 };
 
 /// Orchestrates catalog-driven backtests from run configurations.
 ///
-/// `BacktestNode` connects the [`ParquetDataCatalog`] with [`BacktestEngine`] to load
+/// `BacktestNode` connects the catalog with [`BacktestEngine`] to load
 /// historical data and run backtests. Supports both oneshot and streaming modes.
 #[derive(Debug)]
 #[cfg_attr(
@@ -53,6 +56,7 @@ use crate::{
 pub struct BacktestNode {
     configs: Vec<BacktestRunConfig>,
     engines: AHashMap<String, BacktestEngine>,
+    disposed: bool,
 }
 
 impl BacktestNode {
@@ -72,6 +76,7 @@ impl BacktestNode {
         Ok(Self {
             configs,
             engines: AHashMap::new(),
+            disposed: false,
         })
     }
 
@@ -87,12 +92,17 @@ impl BacktestNode {
     /// instruments from the catalog. If building a config fails with
     /// [`BacktestRunConfig::raise_exception`] disabled, logs the error and skips that config;
     /// successful return does not guarantee an engine for every config.
+    /// A disposed node cannot be built again; create a new node instead.
     ///
     /// # Errors
     ///
-    /// Returns an error if building an engine from a config fails and
-    /// [`BacktestRunConfig::raise_exception`] is enabled for that config.
+    /// Returns an error if:
+    /// - This node has been disposed.
+    /// - Building an engine from a config fails and
+    ///   [`BacktestRunConfig::raise_exception`] is enabled for that config.
     pub fn build(&mut self) -> anyhow::Result<()> {
+        self.ensure_not_disposed()?;
+
         for config in &self.configs {
             if self.engines.contains_key(config.id()) {
                 continue;
@@ -138,12 +148,18 @@ impl BacktestNode {
     /// Configs without a built engine are skipped. If a run fails with
     /// [`BacktestRunConfig::raise_exception`] disabled, logs the error, clears its loaded data,
     /// leaves the engine undisposed, and omits its result.
+    /// A node disposed by a completed run or by [`dispose()`](Self::dispose)
+    /// cannot run again; create a new node instead.
     ///
     /// # Errors
     ///
-    /// Returns an error if building, data loading, or engine execution fails and
-    /// [`BacktestRunConfig::raise_exception`] is enabled for the run config.
+    /// Returns an error if:
+    /// - This node has been disposed.
+    /// - Building, data loading, or engine execution fails and
+    ///   [`BacktestRunConfig::raise_exception`] is enabled for the run config.
     pub fn run(&mut self) -> anyhow::Result<Vec<BacktestResult>> {
+        self.ensure_not_disposed()?;
+
         // Auto-build if not already done
         if self.engines.is_empty() {
             self.build()?;
@@ -175,6 +191,7 @@ impl BacktestNode {
 
             if config.dispose_on_completion() {
                 engine.dispose();
+                self.disposed = true;
             } else {
                 engine.clear_data();
             }
@@ -183,12 +200,12 @@ impl BacktestNode {
         Ok(results)
     }
 
-    /// Creates a [`ParquetDataCatalog`] from a data config.
+    /// Creates a catalog from a data config.
     ///
     /// # Errors
     ///
     /// Returns an error if the catalog cannot be created from the URI.
-    pub fn load_catalog(config: &BacktestDataConfig) -> anyhow::Result<ParquetDataCatalog> {
+    pub fn load_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalog> {
         create_catalog(config)
     }
 
@@ -206,11 +223,23 @@ impl BacktestNode {
     }
 
     /// Disposes all engines and releases resources.
+    /// Subsequent calls to [`run()`](Self::run) or [`build()`](Self::build)
+    /// return an error; create a new node to run again.
     pub fn dispose(&mut self) {
+        self.disposed = true;
+
         for engine in self.engines.values_mut() {
             engine.dispose();
         }
         self.engines.clear();
+    }
+
+    fn ensure_not_disposed(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !self.disposed,
+            "BacktestNode has been disposed; create a new BacktestNode to run again"
+        );
+        Ok(())
     }
 }
 
@@ -240,7 +269,18 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             .cloned()
             .unwrap_or_default()
             .into();
-        let fee_model = venue_config.fee_model().cloned().unwrap_or_default().into();
+
+        let fee_model = venue_config
+            .fee_model()
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "BacktestVenueConfig for '{}' requires an explicit fee_model, including an explicit zero-fee model",
+                    venue_config.name()
+                )
+            })?
+            .into();
+
         let latency_model = venue_config.latency_model().cloned().map(Into::into);
         let sim_config = SimulatedVenueConfig::builder()
             .venue(Venue::from(venue_config.name().as_str()))
@@ -281,7 +321,7 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
     }
 
     for data_config in config.data() {
-        let catalog = create_catalog(data_config)?;
+        let mut catalog = create_catalog(data_config)?;
         let instr_ids: Vec<InstrumentId> = data_config.get_instrument_ids()?;
         let filter: Option<Vec<String>> = if instr_ids.is_empty() {
             None
@@ -289,7 +329,8 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             Some(instr_ids.iter().map(ToString::to_string).collect())
         };
 
-        let instruments = catalog.query_instruments(filter.as_deref())?;
+        let instruments =
+            catalog.instruments(&CatalogInstrumentQuery::new().with_instrument_ids(filter))?;
 
         if !instr_ids.is_empty() && instruments.is_empty() {
             let ids: Vec<String> = instr_ids.iter().map(ToString::to_string).collect();
@@ -359,7 +400,7 @@ fn validate_configs(configs: &[BacktestRunConfig]) -> anyhow::Result<()> {
                 let has_book_data = config.data().iter().any(|dc| {
                     let is_book_type = matches!(
                         dc.data_type(),
-                        NautilusDataType::OrderBookDelta | NautilusDataType::OrderBookDepth10
+                        NautilusDataType::OrderBookDelta | NautilusDataType::OrderBookDepth
                     );
 
                     if !is_book_type {
@@ -417,9 +458,7 @@ fn run_streaming(
 
     for (catalog, data_config) in catalogs.iter_mut().zip(data_configs) {
         let result = dispatch_query(catalog, data_config, config.start(), config.end())?;
-        let mut stream = result
-            .map(|item| item.map_err(anyhow::Error::from))
-            .peekable();
+        let mut stream = result.peekable();
 
         match stream.peek() {
             Some(Ok(_)) => streams.push(stream),
@@ -539,16 +578,23 @@ fn take_aligned_chunk<I: Iterator<Item = anyhow::Result<Data>>>(
     Ok(chunk)
 }
 
-fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<ParquetDataCatalog> {
-    let uri = match config.catalog_fs_protocol() {
-        Some(protocol) => format!("{protocol}://{}", config.catalog_path()),
-        None => config.catalog_path().to_string(),
-    };
-    let storage_options = config
-        .catalog_fs_rust_storage_options()
-        .cloned()
-        .or_else(|| config.catalog_fs_storage_options().cloned());
-    ParquetDataCatalog::from_uri(&uri, storage_options, None, None, None)
+fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalog> {
+    let catalog_config = DataCatalogConfig::new(
+        config.catalog_path().to_string(),
+        config.catalog_fs_protocol().map(str::to_string),
+        Some(config.catalog_backend()),
+    )
+    .with_storage_options(
+        config
+            .catalog_fs_rust_storage_options()
+            .cloned()
+            .or_else(|| config.catalog_fs_storage_options().cloned()),
+    );
+    catalog_factory::create_catalog(
+        catalog_config.catalog_backend(),
+        &catalog_config.connect_config(),
+        &default_catalog_factories(),
+    )
 }
 
 fn load_data(
@@ -558,38 +604,51 @@ fn load_data(
 ) -> anyhow::Result<Vec<Data>> {
     let mut catalog = create_catalog(config)?;
     let result = dispatch_query(&mut catalog, config, run_start, run_end)?;
-    Ok(result.collect::<Result<Vec<_>, _>>()?)
+    result.collect::<Result<Vec<_>, _>>()
 }
 
 fn dispatch_query(
-    catalog: &mut ParquetDataCatalog,
+    catalog: &mut DataCatalog,
     config: &BacktestDataConfig,
-    run_start: Option<UnixNanos>,
-    run_end: Option<UnixNanos>,
-) -> anyhow::Result<QueryResult> {
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> anyhow::Result<Box<dyn Iterator<Item = anyhow::Result<Data>>>> {
     catalog.reset_session();
+    let mut query = CatalogQuery::new(config.data_type().clone())
+        .with_identifiers(config.query_identifiers())
+        .with_range(
+            max_opt(config.start_time(), start),
+            min_opt(config.end_time(), end),
+        )
+        .with_where_clause(config.filter_expr().map(str::to_string));
+    let mut params = Params::new();
+    params.insert(
+        "optimize_file_loading".to_string(),
+        config.optimize_file_loading().into(),
+    );
+    query.params = Some(params);
+    let mut session = catalog.query_batch_session(&query, None)?;
+    let mut failed = false;
+    Ok(Box::new(
+        std::iter::from_fn(move || {
+            if failed {
+                return None;
+            }
 
-    let identifiers = config.query_identifiers();
-    let start = max_opt(config.start_time(), run_start);
-    let end = min_opt(config.end_time(), run_end);
-    let filter = config.filter_expr();
-    let optimize = config.optimize_file_loading();
-
-    #[rustfmt::skip]
-    let result = match config.data_type() {
-        NautilusDataType::QuoteTick => catalog.query::<QuoteTick>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::TradeTick => catalog.query::<TradeTick>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::Bar => catalog.query::<Bar>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::OrderBookDelta => catalog.query::<OrderBookDelta>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::OrderBookDepth10 => catalog.query::<OrderBookDepth10>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::MarkPriceUpdate => catalog.query::<MarkPriceUpdate>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::IndexPriceUpdate => catalog.query::<IndexPriceUpdate>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::FundingRateUpdate => catalog.query::<FundingRateUpdate>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::InstrumentStatus => catalog.query::<InstrumentStatus>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::OptionGreeks => catalog.query::<OptionGreeks>(identifiers, start, end, filter, None, optimize),
-        NautilusDataType::InstrumentClose => catalog.query::<InstrumentClose>(identifiers, start, end, filter, None, optimize),
-    };
-    result
+            match session.next_batch() {
+                Ok(Some(batch)) => Some(Ok(batch.to_data_vec_for_compat())),
+                Ok(None) => None,
+                Err(e) => {
+                    failed = true;
+                    Some(Err(e))
+                }
+            }
+        })
+        .flat_map(|batch| match batch {
+            Ok(rows) => rows.into_iter().map(Ok).collect::<Vec<_>>(),
+            Err(e) => vec![Err(e)],
+        }),
+    ))
 }
 
 fn max_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
@@ -613,9 +672,10 @@ fn min_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "python")]
-    use nautilus_model::enums::{AccountType, OmsType};
+    use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
     use nautilus_model::{
-        enums::AggressorSide,
+        data::{QuoteTick, TradeTick},
+        enums::{AccountType, AggressorSide, OmsType},
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
     };
@@ -624,10 +684,9 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::config::MAX_BACKTEST_CHUNK_SIZE;
+    use crate::config::{BacktestVenueConfig, MAX_BACKTEST_CHUNK_SIZE};
     #[cfg(feature = "python")]
     use crate::{
-        config::BacktestVenueConfig,
         modules::SimulationModuleAny,
         python::modules::{PySimulationModule, PythonSimulationModule},
     };
@@ -811,6 +870,7 @@ mod tests {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec!["1000 USD".to_string()])
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
                 .modules(vec![SimulationModuleAny::Python(
                     PythonSimulationModule::new(module.clone().unbind()),
                 )])
@@ -830,5 +890,27 @@ mod tests {
                 1
             );
         });
+    }
+
+    #[rstest]
+    fn test_build_engine_rejects_venue_without_fee_model() {
+        let venue = BacktestVenueConfig::builder()
+            .name("SIM")
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec!["1_000_000 USD".to_string()])
+            .build()
+            .unwrap();
+        let config = BacktestRunConfig::builder()
+            .venues(vec![venue])
+            .data(Vec::new())
+            .build()
+            .unwrap();
+        let err = build_engine(&config).unwrap_err();
+        assert!(
+            err.to_string().contains("explicit fee_model"),
+            "unexpected error: {err}"
+        );
     }
 }

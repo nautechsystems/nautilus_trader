@@ -139,6 +139,8 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
   active instrument publishes a slice immediately. Suitable for latency-sensitive
   strategies that react to individual updates.
 
+The engine rejects `snapshot_interval_ms=0`; use `None` for raw mode.
+
 ## Backtesting option chains
 
 Option-chain backtests use the same `OptionChainManager` and `OptionChainAggregator`
@@ -161,12 +163,12 @@ the series:
 ```python
 data = [
     BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/path/to/catalog",
         instrument_ids=option_instrument_ids,
     ),
     BacktestDataConfig(
-        data_type="OptionGreeks",
+        data_type=NautilusDataType.OptionGreeks,
         catalog_path="/path/to/catalog",
         instrument_ids=option_instrument_ids,
     ),

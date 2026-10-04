@@ -281,11 +281,16 @@ pub fn py_init_logging(
     config.fileout_sync_on_flush = fileout_sync_on_flush.unwrap_or(true);
     config.buffered_stdout = buffered_stdout.unwrap_or(false);
 
-    if config.bypass_logging {
+    let is_bypassed = config.bypass_logging;
+    let guard = logging::init_logging(trader_id, instance_id, config, file_config)
+        .map_err(to_pyvalue_err)?;
+
+    // Set after init succeeds so a failed attempt leaves no global bypass behind
+    if is_bypassed {
         logging_set_bypass();
     }
 
-    logging::init_logging(trader_id, instance_id, config, file_config).map_err(to_pyvalue_err)
+    Ok(guard)
 }
 
 #[pyfunction()]
@@ -445,6 +450,18 @@ impl PyLogger {
         }
     }
 
+    /// Logs a failed Python callback with its traceback and component identity.
+    pub fn log_callback_error(&self, method: &str, result: PyResult<()>) {
+        if let Err(e) = result {
+            let exception = format_exception(&e);
+            self.log_message(
+                LogLevel::Error,
+                Some(LogColor::Red),
+                &format!("Python {method} failed:\n{exception}"),
+            );
+        }
+    }
+
     fn log_message(&self, level: LogLevel, color: Option<LogColor>, message: &str) {
         let color = color.unwrap_or(LogColor::Normal);
         logger::log(level, color, self.name, message);
@@ -533,5 +550,133 @@ impl PyLogger {
     #[pyo3(signature = (level, color=None, message=""))]
     fn py_log(&self, level: LogLevel, color: Option<LogColor>, message: &str) {
         self.log_message(level, color, message);
+    }
+}
+
+/// Formats a Python exception, including its traceback and chained exceptions.
+///
+/// Falls back to the exception type and message if traceback formatting fails.
+#[must_use]
+pub fn format_exception(e: &PyErr) -> String {
+    Python::attach(|py| {
+        py.import("traceback")
+            .and_then(|module| {
+                module.call_method1(
+                    "format_exception",
+                    (e.get_type(py), e.value(py), e.traceback(py)),
+                )
+            })
+            .and_then(|lines| lines.extract::<Vec<String>>())
+            .map_or_else(|_| e.to_string(), |lines| lines.concat())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::python::to_pyruntime_err;
+    use pyo3::ffi::c_str;
+    use rstest::rstest;
+
+    use super::*;
+
+    // Uses the process-global logger, so it relies on nextest running each test in its own process
+    #[rstest]
+    fn test_init_logging_failure_leaves_no_bypass_for_retry() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let blocking_file = temp_dir.path().join("not_a_directory");
+        std::fs::write(&blocking_file, "").unwrap();
+
+        let init = |directory: &std::path::Path, is_bypassed: bool| {
+            py_init_logging(
+                TraderId::from("TRADER-001"),
+                UUID4::new(),
+                LogLevel::Off,
+                Some(LogLevel::Info),
+                None,
+                Some(directory.to_str().unwrap().to_string()),
+                None,
+                None,
+                None,
+                None,
+                Some(is_bypassed),
+                None,
+                None,
+                None,
+                None,
+            )
+        };
+
+        let failed = init(&blocking_file, true);
+        let guard = init(temp_dir.path(), false).unwrap();
+        log::info!(component = "BypassTest"; "logged after retry");
+        crate::logging::logging_sync_to_disk().unwrap();
+
+        assert!(failed.is_err());
+        let log_path = std::fs::read_dir(temp_dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.extension().is_some_and(|extension| extension == "log"))
+            .unwrap();
+        let contents = std::fs::read_to_string(log_path).unwrap();
+        assert!(
+            contents.contains("logged after retry"),
+            "log file: {contents:?}"
+        );
+        drop(guard);
+    }
+
+    #[rstest]
+    fn test_format_exception_traceback_and_cause() {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+def callback():
+    try:
+        fail()
+    except ValueError as e:
+        raise RuntimeError("callback failure") from e
+
+def fail():
+    raise ValueError("original failure")
+"#
+                ),
+                c_str!("strategy_callback.py"),
+                c_str!("strategy_callback"),
+            )
+            .unwrap();
+            let e = module.call_method0("callback").unwrap_err();
+            let formatted = format_exception(&e);
+
+            assert!(formatted.contains("File \"strategy_callback.py\", line 9, in fail"));
+            assert!(formatted.contains("File \"strategy_callback.py\", line 6, in callback"));
+            assert!(formatted.contains("ValueError: original failure"));
+            assert!(formatted.contains("The above exception was the direct cause"));
+            assert!(formatted.ends_with("RuntimeError: callback failure\n"));
+        });
+    }
+
+    #[rstest]
+    fn test_format_exception_without_traceback() {
+        Python::initialize();
+        let e = to_pyruntime_err("callback failure");
+        assert_eq!(format_exception(&e), "RuntimeError: callback failure\n");
+    }
+
+    #[rstest]
+    fn test_format_exception_fallback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let traceback = py.import("traceback").unwrap();
+            let original = traceback.getattr("format_exception").unwrap();
+            traceback.setattr("format_exception", py.None()).unwrap();
+            let e = to_pyruntime_err("callback failure");
+            let formatted = format_exception(&e);
+            traceback.setattr("format_exception", original).unwrap();
+
+            assert_eq!(formatted, "RuntimeError: callback failure");
+        });
     }
 }

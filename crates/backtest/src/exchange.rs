@@ -27,7 +27,7 @@ use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     messages::execution::{ModifyOrder, TradingCommand},
     msgbus::{self, MessagingSwitchboard, TypedHandler, switchboard},
 };
@@ -50,7 +50,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelHandle},
     data::{
         Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType},
     events::{FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted, PositionEvent},
@@ -817,13 +817,13 @@ impl SimulatedExchange {
     ///
     /// # Panics
     ///
-    /// Panics if the clock is not a [`TestClock`].
+    /// Panics if the clock is not a [`VirtualClock`].
     pub fn set_clock_time(&self, ts_now: UnixNanos) {
         let mut clock_ref = self.clock.borrow_mut();
         let test_clock = clock_ref
             .as_any_mut()
-            .downcast_mut::<TestClock>()
-            .expect("SimulatedExchange requires TestClock");
+            .downcast_mut::<VirtualClock>()
+            .expect("SimulatedExchange requires VirtualClock");
         test_clock.set_time(ts_now);
     }
 
@@ -951,8 +951,8 @@ impl SimulatedExchange {
     /// # Errors
     ///
     /// Returns an error if module pre-processing or matching engine processing fails.
-    pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
-        self.pre_process_modules(&Data::BookDepth10(Box::new(*depth)))?;
+    pub fn process_order_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::BookDepth(Box::new(depth.clone())))?;
 
         if !self.matching_engines.contains_key(&depth.instrument_id) {
             let instrument = {
@@ -971,7 +971,7 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&depth.instrument_id) {
-            matching_engine.process_order_book_depth10(depth)?;
+            matching_engine.process_order_book_depth(depth)?;
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
@@ -1583,7 +1583,7 @@ impl SimulatedExchange {
     ///
     /// # Panics
     ///
-    /// Panics if the exchange clock is not a [`TestClock`] or popping an inflight command fails
+    /// Panics if the exchange clock is not a [`VirtualClock`] or popping an inflight command fails
     /// during processing.
     pub fn process(&mut self, ts_now: UnixNanos) {
         self.process_commands(ts_now, SettlementScope::All);
@@ -2093,7 +2093,10 @@ impl Drop for DeferEventsGuard {
 mod tests {
     use nautilus_common::messages::execution::{QueryAccount, QueryOrder, SubmitOrder};
     use nautilus_core::DurationNanos;
-    use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
+    use nautilus_execution::models::{
+        fee::{FeeModelAny, MakerTakerFeeModel},
+        latency::{LatencyModelHandle, StaticLatencyModel},
+    };
     use nautilus_model::{
         accounts::MarginAccount,
         enums::{AccountType, BookType, OrderSide, OrderType},
@@ -2121,13 +2124,14 @@ mod tests {
 
     fn setup_exchange(dispatch: Dispatch) -> SimulatedExchange {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let mut config = SimulatedVenueConfig::builder()
             .venue(Venue::new("SIM"))
             .oms_type(OmsType::Netting)
             .account_type(AccountType::Margin)
             .book_type(BookType::L2_MBP)
             .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
 
@@ -2152,7 +2156,7 @@ mod tests {
     #[case(true)]
     fn test_liquidation_enabled(#[case] expected: bool) {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let config = SimulatedVenueConfig::builder()
             .venue(Venue::new("SIM"))
             .oms_type(OmsType::Netting)
@@ -2160,6 +2164,7 @@ mod tests {
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
             .liquidation_enabled(expected)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         let exchange = SimulatedExchange::new(config, cache, clock).unwrap();
@@ -2180,10 +2185,11 @@ mod tests {
             .account_type(account_type)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000 USD")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
 
         let exchange = SimulatedExchange::new(config, cache, clock).unwrap();
 

@@ -21,7 +21,7 @@ use std::{
 
 use nautilus_core::{
     python::{
-        IntoPyObjectNautilusExt,
+        IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err,
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
@@ -594,14 +594,29 @@ impl Bar {
         let ts_event: u64 = py_tuple.get_item(8)?.extract()?;
         let ts_init: u64 = py_tuple.get_item(9)?.extract()?;
 
-        self.bar_type = BarType::from_str(&bar_type_str).map_err(to_pyvalue_err)?;
-        self.open = Price::from_raw(open_raw, open_prec);
-        self.high = Price::from_raw(high_raw, open_prec);
-        self.low = Price::from_raw(low_raw, open_prec);
-        self.close = Price::from_raw(close_raw, open_prec);
-        self.volume = Quantity::from_raw(volume_raw, volume_prec);
-        self.ts_event = ts_event.into();
-        self.ts_init = ts_init.into();
+        let bar_type = BarType::from_str(&bar_type_str).map_err(to_pyvalue_err)?;
+        let open = Price::from_raw_checked(open_raw, open_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let high = Price::from_raw_checked(high_raw, open_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let low = Price::from_raw_checked(low_raw, open_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let close = Price::from_raw_checked(close_raw, open_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let volume = Quantity::from_raw_checked(volume_raw, volume_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+
+        *self = Self {
+            bar_type,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            ts_event: ts_event.into(),
+            ts_init: ts_init.into(),
+        };
+
         Ok(())
     }
 

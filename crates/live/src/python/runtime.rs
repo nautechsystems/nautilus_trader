@@ -288,6 +288,7 @@ impl ClientRuntime {
         };
 
         self.discard_commands(py)?;
+
         for task in tasks {
             if task.call_method0(py, "done")?.extract::<bool>(py)? {
                 self.completed(py, task.bind(py))?;
@@ -690,6 +691,7 @@ impl RuntimeOperation {
                     };
 
                     runtime.discard_commands(py)?;
+
                     if let Some(worker) = worker {
                         runtime.cancel_task(worker.bind(py))?;
                     }

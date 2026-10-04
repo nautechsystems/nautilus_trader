@@ -86,8 +86,7 @@ for file in $changed_files; do
   if [[ "$file" =~ ^crates/adapters/([^/]+)/ ]]; then
     pkg="nautilus-${BASH_REMATCH[1]}"
     pkg="${pkg//_/-}"
-  elif [[ "$file" =~ ^crates/persistence/macros/ ]]; then
-    pkg="nautilus-persistence-macros"
+
   elif [[ "$file" =~ ^crates/([^/]+)/ ]]; then
     name="${BASH_REMATCH[1]}"
     [[ "$name" == "adapters" ]] && continue
@@ -147,6 +146,11 @@ for p in data['packages']:
     esac
   done
 done
+
+# Blockchain enables DeFi in dependencies without exposing a local defi feature
+if [[ " $seen " == *" nautilus-blockchain "* && " $feat_seen " != *" defi "* ]]; then
+  feat_seen="$feat_seen defi"
+fi
 
 # When 'defi' is enabled for any selected package, Cargo feature unification adds
 # DeFi variants to shared enums for all consumers. Backtest and live gate match

@@ -38,6 +38,15 @@ impl PendingSubmitTracker {
     pub(crate) fn client_order_id(&self, venue_order_id: &VenueOrderId) -> Option<ClientOrderId> {
         self.venue_to_client.lock().get(venue_order_id).copied()
     }
+
+    pub(crate) fn venue_order_id(&self, client_order_id: ClientOrderId) -> Option<VenueOrderId> {
+        let guard = self.venue_to_client.lock();
+        let mut matches = guard
+            .iter()
+            .filter(|(_, client)| **client == client_order_id);
+        let (venue_order_id, _) = matches.next()?;
+        matches.next().is_none().then_some(*venue_order_id)
+    }
 }
 
 /// Tracks client order IDs whose cancel was deferred because the venue order ID was not yet
@@ -58,5 +67,41 @@ impl PendingCancelTracker {
 
     pub(crate) fn contains(&self, client_order_id: &ClientOrderId) -> bool {
         self.client_order_ids.lock().contains(client_order_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::missing(0, None)]
+    #[case::unique(1, Some(VenueOrderId::from("V-1")))]
+    #[case::ambiguous(2, None)]
+    fn venue_order_id_requires_unique_client_mapping(
+        #[case] matching_orders: usize,
+        #[case] expected: Option<VenueOrderId>,
+    ) {
+        let tracker = PendingSubmitTracker::default();
+        let client_order_id = ClientOrderId::from("O-1");
+        tracker.insert(
+            VenueOrderId::from("V-OTHER"),
+            ClientOrderId::from("O-OTHER"),
+        );
+
+        for venue_order_id in [VenueOrderId::from("V-1"), VenueOrderId::from("V-2")]
+            .into_iter()
+            .take(matching_orders)
+        {
+            tracker.insert(venue_order_id, client_order_id);
+        }
+
+        assert_eq!(tracker.venue_order_id(client_order_id), expected);
+        assert_eq!(
+            tracker.venue_order_id(ClientOrderId::from("O-OTHER")),
+            Some(VenueOrderId::from("V-OTHER"))
+        );
     }
 }

@@ -55,6 +55,12 @@
 //! connection it was issued on, so a failed Ping, Pong, or Close is dropped instead of replayed.
 //! Ownership-bound sends carry an expected connection epoch and never enter that replay buffer.
 //!
+//! [`WebSocketConfig::writer_capacity`] limits the combined number of ordinary messages queued,
+//! in flight, or retained for replay (default 1,024). Ownership-bound sends, keepalives, and control
+//! frames share a separate allowance of the same size so authentication can unblock replay. A full allowance
+//! rejects new sends with [`crate::error::SendError::BufferFull`] before enqueueing. Accepted
+//! messages retain their replay policy. These are message-count limits, not payload-byte limits.
+//!
 //! The initial connection has epoch `0`. The writer advances the epoch when it installs a
 //! replacement sink. Epoch-aware handlers receive that epoch on messages from the replacement
 //! reader and on its reconnect notification. Epochs identify transport ownership; they do not

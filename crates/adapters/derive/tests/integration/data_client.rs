@@ -47,8 +47,8 @@ use nautilus_common::{
         data::{
             DataResponse, RequestBars, RequestFundingRates, RequestInstrument, RequestInstruments,
             RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBookDeltas,
-            SubscribeBookDepth10, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeBookDepth, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            UnsubscribeBookDepth, UnsubscribeQuotes, UnsubscribeTrades,
         },
         system::SocketState,
     },
@@ -641,11 +641,8 @@ fn subscribe_book_deltas(
     )
 }
 
-fn subscribe_book_depth10(
-    instrument_id: InstrumentId,
-    params: Option<Params>,
-) -> SubscribeBookDepth10 {
-    SubscribeBookDepth10::new(
+fn subscribe_book_depth(instrument_id: InstrumentId, params: Option<Params>) -> SubscribeBookDepth {
+    SubscribeBookDepth::new(
         instrument_id,
         BookType::L2_MBP,
         Some(*DERIVE_CLIENT_ID),
@@ -674,8 +671,8 @@ fn unsubscribe_book_deltas(
     )
 }
 
-fn unsubscribe_book_depth10(instrument_id: InstrumentId) -> UnsubscribeBookDepth10 {
-    UnsubscribeBookDepth10::new(
+fn unsubscribe_book_depth(instrument_id: InstrumentId) -> UnsubscribeBookDepth {
+    UnsubscribeBookDepth::new(
         instrument_id,
         Some(*DERIVE_CLIENT_ID),
         None,
@@ -875,7 +872,7 @@ async fn test_data_client_subscribes_dispatches_and_unsubscribes_exact_channels(
 
 #[rstest]
 #[tokio::test]
-async fn test_subscribe_book_depth10_emits_depth10_snapshot() {
+async fn test_subscribe_book_depth_emits_depth_snapshot() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let rest_addr = start_rest_server(rest_state).await;
@@ -888,12 +885,12 @@ async fn test_subscribe_book_depth10_emits_depth10_snapshot() {
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
     client
-        .subscribe_book_depth10(subscribe_book_depth10(instrument_id, None))
+        .subscribe_book_depth(subscribe_book_depth(instrument_id, None))
         .unwrap();
     wait_for_subscribe(&ws_state, "orderbook.ETH-PERP.1.10").await;
 
     match recv_data(&mut rx).await {
-        Data::BookDepth10(depth) => {
+        Data::BookDepth(depth) => {
             assert_eq!(depth.instrument_id, instrument_id);
             assert_eq!(depth.bids[0].price, Price::from("3500.00"));
             assert_eq!(depth.bids[0].size, Quantity::from("1.000"));
@@ -902,13 +899,13 @@ async fn test_subscribe_book_depth10_emits_depth10_snapshot() {
             assert_eq!(depth.bid_counts[0], 1);
             assert_eq!(depth.ask_counts[0], 1);
         }
-        other => panic!("expected depth10 data, was {other:?}"),
+        other => panic!("expected depth data, was {other:?}"),
     }
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(
         rx.try_recv().is_err(),
-        "book depth10 subscription must not emit extra data",
+        "book depth subscription must not emit extra data",
     );
 
     client.disconnect().await.unwrap();
@@ -932,7 +929,7 @@ async fn test_shared_orderbook_channel_unsubscribes_after_last_owner() {
         .subscribe_book_deltas(subscribe_book_deltas(instrument_id, Some(10), None))
         .unwrap();
     client
-        .subscribe_book_depth10(subscribe_book_depth10(instrument_id, None))
+        .subscribe_book_depth(subscribe_book_depth(instrument_id, None))
         .unwrap();
     wait_for_subscribe(&ws_state, channel).await;
 
@@ -942,7 +939,7 @@ async fn test_shared_orderbook_channel_unsubscribes_after_last_owner() {
     assert!(ws_state.unsubscribes().await.is_empty());
 
     client
-        .unsubscribe_book_depth10(&unsubscribe_book_depth10(instrument_id))
+        .unsubscribe_book_depth(&unsubscribe_book_depth(instrument_id))
         .unwrap();
     wait_for_unsubscribe(&ws_state, channel).await;
 

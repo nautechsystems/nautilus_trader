@@ -55,7 +55,7 @@ use nautilus_okx::{
         enums::{
             OKXAccountLevel, OKXAlgoOrderStatus, OKXApiKeyPermission, OKXEnvironment, OKXFeeType,
             OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
-            OKXRpiPermission, OKXSide, OKXTradeMode, OKXTriggerType,
+            OKXRpiPermission, OKXSide, OKXTradeMode, OKXTriggerType, OKXVipLevel,
         },
         failure::classify_okx_http_failure,
         models::OKXInstrument,
@@ -89,6 +89,8 @@ use ustr::Ustr;
 struct TestServerState {
     account_configuration_request: Arc<tokio::sync::Mutex<Option<(HeaderMap, Uri, Bytes)>>>,
     account_configuration_response: Arc<tokio::sync::Mutex<Option<(StatusCode, String)>>>,
+    trade_fee_request: Arc<tokio::sync::Mutex<Option<(HeaderMap, Uri, Bytes)>>>,
+    trade_fee_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     request_count: Arc<tokio::sync::Mutex<usize>>,
     last_history_trades_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_pending_orders_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
@@ -114,6 +116,7 @@ struct TestServerState {
     algo_pending_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     algo_history_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     last_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+    place_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_cancel_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     cancel_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_spread_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -234,7 +237,7 @@ fn load_instruments_from(filename: &str) -> Vec<InstrumentAny> {
         .data
         .iter()
         .filter_map(|raw| {
-            nautilus_okx::common::parse::parse_instrument_any(raw, None, None, None, None, ts_init)
+            nautilus_okx::common::parse::parse_instrument_any(raw, None, None, ts_init)
                 .ok()
                 .flatten()
         })
@@ -368,6 +371,7 @@ fn event_contract_markets_response(params: &HashMap<String, String>) -> Value {
 
 fn create_router(state: Arc<TestServerState>) -> Router {
     let account_configuration_state = state.clone();
+    let trade_fee_state = state.clone();
     let instruments_state = state.clone();
     let spreads_state = state.clone();
     let spread_order_query_state = state.clone();
@@ -884,19 +888,28 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                     }
 
                     *state.last_order_body.lock().await = Some(payload);
-                    Json(json!({
-                        "code": "0",
-                        "msg": "",
-                        "data": [
-                            {
-                                "ordId": "12345",
-                                "clOrdId": "O-bracket-entry",
-                                "sCode": "0",
-                                "sMsg": "Order placed",
-                            }
-                        ],
-                    }))
-                    .into_response()
+
+                    let response = state
+                        .place_order_response
+                        .lock()
+                        .await
+                        .clone()
+                        .unwrap_or_else(|| {
+                            json!({
+                                "code": "0",
+                                "msg": "",
+                                "data": [
+                                    {
+                                        "ordId": "12345",
+                                        "clOrdId": "O-bracket-entry",
+                                        "sCode": "0",
+                                        "sMsg": "Order placed",
+                                    }
+                                ],
+                            })
+                        });
+
+                    Json(response).into_response()
                 }
             }),
         )
@@ -1180,20 +1193,34 @@ fn create_router(state: Arc<TestServerState>) -> Router {
         )
         .route(
             "/api/v5/account/trade-fee",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!({
-                            "code": "401",
-                            "msg": "Missing authentication headers",
-                            "data": [],
-                        })),
-                    )
-                        .into_response();
-                }
+            get(move |headers: HeaderMap, uri: Uri, body: Bytes| {
+                let state = trade_fee_state.clone();
+                async move {
+                    let authenticated = has_auth_headers(&headers);
+                    *state.trade_fee_request.lock().await = Some((headers, uri, body));
 
-                Json(load_test_data("http_get_trade_fee_response.json")).into_response()
+                    if !authenticated {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({
+                                "code": "401",
+                                "msg": "Missing authentication headers",
+                                "data": [],
+                            })),
+                        )
+                            .into_response();
+                    }
+
+                    Json(
+                        state
+                            .trade_fee_response
+                            .lock()
+                            .await
+                            .clone()
+                            .unwrap_or_else(|| load_test_data("http_get_trade_fee_response.json")),
+                    )
+                    .into_response()
+                }
             }),
         )
         .route(
@@ -4365,17 +4392,17 @@ async fn test_http_cancel_orders_preserves_rejected_items() {
 }
 
 #[rstest]
+#[case::linked_position("http_get_positions_close_order_algo.json", "0.05")]
+#[case::unlinked_position("http_get_positions.json", "0.00")]
 #[tokio::test]
-async fn test_http_request_algo_order_status_report_parses_close_fraction_conditional_order() {
-    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+async fn test_http_request_algo_order_status_report_parses_close_fraction_conditional_order(
+    #[case] positions_fixture: &str,
+    #[case] expected_quantity: &str,
+) {
+    let state = Arc::new(TestServerState::default());
+    *state.positions_response.lock().await = Some(load_test_data(positions_fixture));
+    let addr = start_test_server(state).await;
     let base_url = format!("http://{addr}");
-
-    let swap_instruments = load_swap_instruments_any();
-    let size_precision = swap_instruments
-        .iter()
-        .find(|instrument| instrument.id() == InstrumentId::from("BTC-USDT-SWAP.OKX"))
-        .expect("expected BTC-USDT-SWAP instrument")
-        .size_precision();
 
     let client = OKXHttpClient::with_credentials(
         Some("test_key".to_string()),
@@ -4391,7 +4418,7 @@ async fn test_http_request_algo_order_status_report_parses_close_fraction_condit
     )
     .unwrap();
 
-    for instrument in swap_instruments {
+    for instrument in load_swap_instruments_any() {
         client.cache_instrument(instrument);
     }
 
@@ -4405,12 +4432,57 @@ async fn test_http_request_algo_order_status_report_parses_close_fraction_condit
         .unwrap()
         .expect("expected algo report");
 
+    assert_eq!(report.venue_order_id, VenueOrderId::from("close-frac-algo"));
+    assert_eq!(report.order_status, OrderStatus::Accepted);
     assert_eq!(report.order_type, OrderType::StopMarket);
     assert_eq!(report.trigger_price, Some(Price::from("50000")));
     assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
     assert_eq!(report.price, None);
-    assert_eq!(report.quantity, Quantity::zero(size_precision));
+    assert_eq!(report.quantity, Quantity::from(expected_quantity));
     assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_algo_order_status_report_rejects_invalid_close_fraction_position_size() {
+    let state = Arc::new(TestServerState::default());
+    let mut positions = load_test_data("http_get_positions_close_order_algo.json");
+    positions["data"][0]["pos"] = json!("invalid");
+    *state.positions_response.lock().await = Some(positions);
+    let addr = start_test_server(state).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let error = client
+        .request_algo_order_status_report(
+            AccountId::new("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            ClientOrderId::from("O-close-frac-status"),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("invalid position size for algo order close-frac-algo"),
+        "was {error:#}"
+    );
 }
 
 #[rstest]
@@ -5278,6 +5350,332 @@ async fn test_http_get_position_tiers_returns_data() {
     assert_eq!(tiers[0].inst_id, Ustr::from("BTC-USDT"));
 }
 
+async fn trade_fee_client(
+    state: Arc<TestServerState>,
+    environment: OKXEnvironment,
+) -> OKXRawHttpClient {
+    let addr = start_test_server(state).await;
+    OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "passphrase".to_string(),
+        format!("http://{addr}"),
+        5,
+        0,
+        1,
+        1,
+        environment,
+        None,
+    )
+    .unwrap()
+}
+
+#[rstest]
+#[case::unscoped(OKXInstrumentType::Spot, None, None, None, None, "instType=SPOT")]
+#[case::spot(
+    OKXInstrumentType::Spot,
+    Some("BTC-USDT"),
+    None,
+    None,
+    None,
+    "instType=SPOT&instId=BTC-USDT"
+)]
+#[case::margin(
+    OKXInstrumentType::Margin,
+    Some("BTC-USDT"),
+    None,
+    None,
+    None,
+    "instType=MARGIN&instId=BTC-USDT"
+)]
+#[case::swap(
+    OKXInstrumentType::Swap,
+    None,
+    Some("BTC-USD"),
+    None,
+    None,
+    "instType=SWAP&instFamily=BTC-USD"
+)]
+#[case::futures(
+    OKXInstrumentType::Futures,
+    None,
+    Some("BTC-USD"),
+    None,
+    None,
+    "instType=FUTURES&instFamily=BTC-USD"
+)]
+#[case::option(
+    OKXInstrumentType::Option,
+    None,
+    Some("BTC-USD"),
+    None,
+    None,
+    "instType=OPTION&instFamily=BTC-USD"
+)]
+#[case::group(
+    OKXInstrumentType::Spot,
+    None,
+    None,
+    Some("1"),
+    None,
+    "instType=SPOT&groupId=1"
+)]
+#[case::events_group(
+    OKXInstrumentType::Events,
+    None,
+    None,
+    Some("0"),
+    None,
+    "instType=EVENTS&groupId=0"
+)]
+#[case::legacy(
+    OKXInstrumentType::Swap,
+    None,
+    Some("BTC-USD"),
+    None,
+    Some("BTC-USD"),
+    "instType=SWAP&uly=BTC-USD&instFamily=BTC-USD"
+)]
+#[tokio::test]
+async fn test_http_trade_fee_authenticated_scoped_request(
+    #[case] inst_type: OKXInstrumentType,
+    #[case] inst_id: Option<&str>,
+    #[case] inst_family: Option<&str>,
+    #[case] group_id: Option<&str>,
+    #[case] uly: Option<&str>,
+    #[case] expected_query: &str,
+    #[values(OKXEnvironment::Live, OKXEnvironment::Demo)] environment: OKXEnvironment,
+) {
+    let state = Arc::new(TestServerState::default());
+    let client = trade_fee_client(state.clone(), environment).await;
+    let mut builder = GetTradeFeeParamsBuilder::default();
+    builder.inst_type(inst_type);
+    if let Some(value) = inst_id {
+        builder.inst_id(value);
+    }
+
+    if let Some(value) = inst_family {
+        builder.inst_family(value);
+    }
+
+    if let Some(value) = group_id {
+        builder.group_id(value);
+    }
+
+    if let Some(value) = uly {
+        builder.uly(value);
+    }
+
+    let fees = client
+        .get_trade_fee(builder.build().unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(fees.len(), 1);
+    assert_eq!(fees[0].maker, "-0.0008");
+    assert_eq!(fees[0].taker, "-0.001");
+    assert!(fees[0].fee_group.is_empty());
+    let (headers, uri, body) = state.trade_fee_request.lock().await.clone().unwrap();
+    assert_eq!(uri.path(), "/api/v5/account/trade-fee");
+    assert_eq!(uri.query(), Some(expected_query));
+    assert!(body.is_empty());
+    assert!(has_auth_headers(&headers));
+    assert_eq!(headers["ok-access-key"], "test_key");
+    assert_eq!(headers["ok-access-passphrase"], "passphrase");
+    assert_eq!(
+        headers
+            .get("x-simulated-trading")
+            .map(|value| value.to_str().unwrap()),
+        (environment == OKXEnvironment::Demo).then_some("1"),
+    );
+    let timestamp = headers["ok-access-timestamp"].to_str().unwrap();
+    assert_eq!(
+        timestamp,
+        format!("{:.3}", timestamp.parse::<Timestamp>().unwrap())
+    );
+    let credential = Credential::new(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "passphrase".to_string(),
+    );
+    assert_eq!(
+        headers["ok-access-sign"],
+        credential.sign_bytes(
+            timestamp,
+            "GET",
+            uri.path_and_query().unwrap().as_str(),
+            None
+        ),
+    );
+}
+
+#[rstest]
+#[case::instrument(Some("BTC-USDT"), None)]
+#[case::family(None, Some("BTC-USD"))]
+#[case::both(Some("BTC-USDT"), Some("BTC-USD"))]
+#[tokio::test]
+async fn test_http_trade_fee_rejects_conflicting_scope_before_request(
+    #[case] inst_id: Option<&str>,
+    #[case] inst_family: Option<&str>,
+) {
+    let state = Arc::new(TestServerState::default());
+    let client = trade_fee_client(state.clone(), OKXEnvironment::Demo).await;
+    let mut params = GetTradeFeeParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Spot)
+        .group_id("1")
+        .build()
+        .unwrap();
+    params.inst_id = inst_id.map(str::to_string);
+    params.inst_family = inst_family.map(str::to_string);
+
+    let result = client.get_trade_fee(params).await;
+
+    assert!(matches!(result, Err(OKXHttpError::ValidationError(_))));
+    assert!(state.trade_fee_request.lock().await.is_none());
+}
+
+#[tokio::test]
+async fn test_http_trade_fee_documented_response() {
+    let state = Arc::new(TestServerState::default());
+    *state.trade_fee_response.lock().await = Some(
+        serde_json::from_str(include_str!(
+            "../../test_data/http_get_trade_fee_grouped_response.json"
+        ))
+        .unwrap(),
+    );
+    let client = trade_fee_client(state, OKXEnvironment::Demo).await;
+    let params = GetTradeFeeParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Spot)
+        .build()
+        .unwrap();
+
+    let fees = client.get_trade_fee(params).await.unwrap();
+
+    assert_eq!(fees.len(), 1);
+    let fee = &fees[0];
+    assert_eq!(fee.level, OKXVipLevel::Vip1);
+    assert_eq!(fee.inst_type, OKXInstrumentType::Spot);
+    assert_eq!(fee.category, "1");
+    assert_eq!(fee.ts, 1_763_979_985_847);
+    assert_eq!(fee.maker, "-0.0008");
+    assert_eq!(fee.taker, "-0.001");
+    assert!(fee.maker_u.is_empty());
+    assert!(fee.taker_u.is_empty());
+    assert!(fee.delivery.is_empty());
+    assert!(fee.exercise.is_empty());
+    assert!(fee.settle.is_empty());
+    assert_eq!(fee.rpi_maker, None);
+    assert_eq!(fee.fee_group.len(), 1);
+    let group = &fee.fee_group[0];
+    assert_eq!(group.group_id, "1");
+    assert_eq!(
+        group.maker,
+        Some(Decimal::from_str_exact("-0.0008").unwrap())
+    );
+    assert_eq!(
+        group.taker,
+        Some(Decimal::from_str_exact("-0.001").unwrap())
+    );
+    assert_eq!(
+        group.rpi_maker,
+        Some(Decimal::from_str_exact("-0.0008").unwrap())
+    );
+    assert_eq!(
+        group.elp_maker,
+        Some(Decimal::from_str_exact("-0.0008").unwrap())
+    );
+}
+
+#[rstest]
+#[case::rpi_only(Some("-0.00015"), None)]
+#[case::elp_only(None, Some("-0.00016"))]
+#[case::both_equal(Some("-0.00015"), Some("-0.00015"))]
+#[case::both_distinct(Some("-0.00015"), Some("-0.00016"))]
+#[case::empty_rpi(Some(""), Some("-0.00016"))]
+#[case::empty_elp(Some("-0.00015"), Some(""))]
+#[tokio::test]
+async fn test_http_trade_fee_grouped_response_without_legacy_scalars(
+    #[case] rpi: Option<&str>,
+    #[case] elp: Option<&str>,
+) {
+    let state = Arc::new(TestServerState::default());
+    let mut response: Value = serde_json::from_str(include_str!(
+        "../../test_data/http_get_trade_fee_grouped_response.json"
+    ))
+    .unwrap();
+    let fee = response["data"][0].as_object_mut().unwrap();
+
+    // Derive grouped-only and edge-rate cases from the documented response
+    for field in [
+        "maker",
+        "taker",
+        "makerU",
+        "takerU",
+        "makerUSDC",
+        "takerUSDC",
+    ] {
+        fee.remove(field);
+    }
+
+    let groups = fee.get_mut("feeGroup").unwrap().as_array_mut().unwrap();
+    let first_group = groups[0].as_object_mut().unwrap();
+    first_group.insert("maker".to_string(), json!("0.0002"));
+    first_group.remove("rpiMaker");
+    first_group.remove("elpMaker");
+
+    if let Some(value) = rpi {
+        first_group.insert("rpiMaker".to_string(), json!(value));
+    }
+
+    if let Some(value) = elp {
+        first_group.insert("elpMaker".to_string(), json!(value));
+    }
+
+    groups.push(json!({"groupId": "2", "maker": "0", "taker": "", "rpiMaker": ""}));
+    *state.trade_fee_response.lock().await = Some(response);
+    let client = trade_fee_client(state, OKXEnvironment::Demo).await;
+    let params = GetTradeFeeParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Spot)
+        .build()
+        .unwrap();
+
+    let fees = client.get_trade_fee(params).await.unwrap();
+
+    assert_eq!(fees.len(), 1);
+    let fee = &fees[0];
+    assert!(fee.maker.is_empty());
+    assert!(fee.taker.is_empty());
+    assert!(fee.maker_u.is_empty());
+    assert!(fee.taker_u.is_empty());
+    assert_eq!(fee.fee_group.len(), 2);
+    let first = &fee.fee_group[0];
+    assert_eq!(first.group_id, "1");
+    assert_eq!(
+        first.maker,
+        Some(Decimal::from_str_exact("0.0002").unwrap())
+    );
+    assert_eq!(
+        first.taker,
+        Some(Decimal::from_str_exact("-0.001").unwrap())
+    );
+    assert_eq!(
+        first.rpi_maker,
+        rpi.filter(|value| !value.is_empty())
+            .map(|value| Decimal::from_str_exact(value).unwrap())
+    );
+    assert_eq!(
+        first.elp_maker,
+        elp.filter(|value| !value.is_empty())
+            .map(|value| Decimal::from_str_exact(value).unwrap())
+    );
+    let second = &fee.fee_group[1];
+    assert_eq!(second.group_id, "2");
+    assert_eq!(second.maker, Some(Decimal::ZERO));
+    assert_eq!(second.taker, None);
+    assert_eq!(second.rpi_maker, None);
+    assert_eq!(second.elp_maker, None);
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_http_get_trade_fee_requires_credentials() {
@@ -6053,6 +6451,164 @@ async fn test_http_okx_error_falls_back_to_s_code_when_s_msg_empty() {
             assert_eq!(message, "51008");
         }
         other => panic!("expected OkxError: {other:?}"),
+    }
+}
+
+#[rstest]
+#[case::invalid_access_key(
+    StatusCode::UNAUTHORIZED,
+    "http_error_invalid_access_key.json",
+    "50111",
+    "Invalid OK-ACCESS-KEY",
+    "OKX error 50111: Invalid OK-ACCESS-KEY",
+    false,
+    1
+)]
+#[case::rate_limit(
+    StatusCode::TOO_MANY_REQUESTS,
+    "http_error_rate_limit.json",
+    "50011",
+    "Too Many Requests",
+    "Temporary OKX error 50011: Too Many Requests",
+    true,
+    3
+)]
+#[tokio::test]
+async fn test_http_okx_error_without_data_on_non_2xx(
+    #[case] status: StatusCode,
+    #[case] fixture: &'static str,
+    #[case] expected_code: &str,
+    #[case] expected_message: &str,
+    #[case] expected_display: &str,
+    #[case] retryable: bool,
+    #[case] expected_attempts: usize,
+) {
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempt_count);
+
+    let router = Router::new().route(
+        "/api/v5/account/balance",
+        get(move || {
+            let counter = Arc::clone(&counter);
+            async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                (status, Json(load_test_data(fixture))).into_response()
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "test_passphrase".to_string(),
+        format!("http://{addr}"),
+        60,
+        2,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let error = client.get_balance().await.unwrap_err();
+
+    match (&error, retryable) {
+        (
+            OKXHttpError::RetryableOkxError {
+                error_code,
+                message,
+                retry_after: None,
+            },
+            true,
+        )
+        | (
+            OKXHttpError::OkxError {
+                error_code,
+                message,
+            },
+            false,
+        ) => {
+            assert_eq!(error_code, expected_code);
+            assert_eq!(message, expected_message);
+        }
+        _ => panic!("unexpected OKX error classification: {error:?}"),
+    }
+
+    assert_eq!(error.to_string(), expected_display);
+
+    let expected_failure = if retryable {
+        CommandFailure::Ambiguous(expected_display.to_string())
+    } else {
+        CommandFailure::VenueRejected(expected_display.to_string())
+    };
+
+    assert_eq!(classify_okx_http_failure(&error), expected_failure);
+    assert_eq!(attempt_count.load(Ordering::SeqCst), expected_attempts);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_not_found_json_body_is_unexpected_status() {
+    let router = Router::new().route(
+        "/api/v5/trade/orders-algo-pending",
+        get(|| async {
+            (
+                StatusCode::NOT_FOUND,
+                Json(load_test_data("http_error_not_found.json")),
+            )
+                .into_response()
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXRawHttpClient::with_credentials(
+        "test_key".to_string(),
+        "test_secret".to_string(),
+        "test_passphrase".to_string(),
+        format!("http://{addr}"),
+        60,
+        2,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let params = GetAlgoOrdersParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Swap)
+        .build()
+        .unwrap();
+
+    let error = client.get_order_algo_pending(params).await.unwrap_err();
+
+    match error {
+        OKXHttpError::UnexpectedStatus { status, body } => {
+            assert_eq!(status, StatusCode::NOT_FOUND);
+            assert_eq!(
+                serde_json::from_str::<Value>(&body).unwrap(),
+                load_test_data("http_error_not_found.json")
+            );
+        }
+        other => panic!("expected UnexpectedStatus: {other:?}"),
     }
 }
 
@@ -7671,7 +8227,7 @@ fn load_usdc_spot_instrument() -> (InstrumentAny, OKXInstrument) {
     let response: OKXResponse<OKXInstrument> =
         serde_json::from_value(payload).expect("invalid USDC instrument payload");
     let raw = response.data.into_iter().next().expect("USDC instrument");
-    let instrument = parse_instrument_any(&raw, None, None, None, None, UnixNanos::default())
+    let instrument = parse_instrument_any(&raw, None, None, UnixNanos::default())
         .expect("USDC instrument parses")
         .expect("USDC instrument supported");
     (instrument, raw)
@@ -7956,6 +8512,78 @@ async fn test_http_place_order_rejects_unlisted_trade_quote_ccy() {
     }
 
     assert!(state.last_order_body.lock().await.is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_order_preserves_usdc_activation_error_code() {
+    let rejection = load_test_data("http_place_order_rejected.json");
+    let expected_message = rejection["data"][0]["sMsg"].as_str().unwrap().to_string();
+    let state = Arc::new(TestServerState::default());
+    *state.place_order_response.lock().await = Some(rejection);
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let (instrument, raw) = load_usdc_spot_instrument();
+    client.cache_instruments(std::slice::from_ref(&instrument));
+    client.cache_trade_quote_ccy_lists([(raw.inst_id, raw.trade_quote_ccy_list)]);
+
+    let error = client
+        .place_order_with_domain_types(
+            instrument.id(),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Ousdcnotactive1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.01"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("100000.0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    let body = state.last_order_body.lock().await.clone().unwrap();
+    assert_eq!(body["instId"], "BTC-USDC");
+
+    match &error {
+        OKXHttpError::OkxError {
+            error_code,
+            message,
+        } => {
+            assert_eq!(error_code, "54109");
+            assert_eq!(message, &expected_message);
+        }
+        other => panic!("expected OkxError, was {other:?}"),
+    }
+
+    assert_eq!(
+        classify_okx_http_failure(&error),
+        CommandFailure::VenueRejected(format!("OKX error 54109: {expected_message}"))
+    );
 }
 
 #[rstest]

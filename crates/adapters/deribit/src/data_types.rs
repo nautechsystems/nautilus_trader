@@ -19,8 +19,12 @@
 //! [`CustomData`](nautilus_model::data::CustomData).
 
 use nautilus_core::UnixNanos;
-use nautilus_model::identifiers::{InstrumentId, Symbol};
-use nautilus_persistence_macros::custom_data;
+use nautilus_model::{
+    custom_data,
+    identifiers::{InstrumentId, Symbol},
+};
+#[cfg(feature = "arrow")]
+use nautilus_serialization::arrow_custom_data;
 use rust_decimal::Decimal;
 
 use crate::{common::consts::DERIBIT_VENUE, http::models::DeribitBookSummaryRaw};
@@ -30,12 +34,9 @@ use crate::{common::consts::DERIBIT_VENUE, http::models::DeribitBookSummaryRaw};
 /// Emitted from the `deribit_volatility_index.{index_name}` WebSocket channel.
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.adapters.deribit")
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.deribit")
 )]
-#[cfg_attr(
-    not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.deribit")
-)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.deribit")]
 pub struct DeribitVolatilityIndex {
     /// The index identifier (for example `"btc_usd"` or `"eth_usd"`).
     pub index_name: String,
@@ -54,12 +55,9 @@ pub struct DeribitVolatilityIndex {
 /// Convert from the wire DTO via [`DeribitBookSummary::from_raw`].
 #[cfg_attr(
     feature = "arrow",
-    custom_data(pyo3, stub_module = "nautilus_trader.adapters.deribit")
+    arrow_custom_data(pyo3, stub_module = "nautilus_trader.adapters.deribit")
 )]
-#[cfg_attr(
-    not(feature = "arrow"),
-    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.deribit")
-)]
+#[custom_data(pyo3, stub_module = "nautilus_trader.adapters.deribit")]
 pub struct DeribitBookSummary {
     /// Nautilus instrument identifier (venue-qualified).
     pub instrument_id: InstrumentId,
@@ -264,7 +262,7 @@ mod tests {
     #[rstest]
     fn test_deribit_volatility_index_arrow_schema() {
         use arrow::datatypes::DataType;
-        use nautilus_serialization::arrow::ArrowSchemaProvider;
+        use nautilus_serialization::arrow::{ArrowSchemaProvider, timestamp_data_type};
 
         let schema = DeribitVolatilityIndex::get_schema(None);
 
@@ -274,9 +272,9 @@ mod tests {
         assert_eq!(schema.field(1).name(), "volatility");
         assert_eq!(schema.field(1).data_type(), &DataType::Float64);
         assert_eq!(schema.field(2).name(), "ts_event");
-        assert_eq!(schema.field(2).data_type(), &DataType::UInt64);
+        assert_eq!(schema.field(2).data_type(), &timestamp_data_type());
         assert_eq!(schema.field(3).name(), "ts_init");
-        assert_eq!(schema.field(3).data_type(), &DataType::UInt64);
+        assert_eq!(schema.field(3).data_type(), &timestamp_data_type());
     }
 
     #[cfg(feature = "arrow")]

@@ -25,6 +25,7 @@ import pandas as pd
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.execution import ProbabilisticFillModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
@@ -59,6 +60,10 @@ if __name__ == "__main__":
             prob_fill_on_limit=0.2,
             prob_slippage=0.5,
             random_seed=42,
+        ),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
         ),
     )
 

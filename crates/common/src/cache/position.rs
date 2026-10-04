@@ -186,11 +186,9 @@ impl Cache {
     fn build_position_snapshot(&self, position: &Position) -> (String, Position) {
         let position_id = position.id;
 
-        let mut copied_position = position.clone();
+        let mut copied_position = position.clone_for_snapshot();
         let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
         copied_position.id = PositionId::new(new_id);
-        copied_position.replay_events.clear();
-        copied_position.fill_voids.clear();
 
         let blob_ref = format!(
             "cache://position-snapshots/{}/{}",

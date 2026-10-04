@@ -24,6 +24,7 @@
 
 use std::{future::Future, pin::Pin, time::Duration};
 
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     clients::ExecutionClient,
@@ -149,13 +150,15 @@ impl LiveNode {
                 match dst::time::timeout(remaining, request_open_order_reports(clients, command))
                     .await
                 {
-                    Ok(result) => ReportTaskOutcome::Completed(OpenOrderReportResult {
-                        check,
-                        reports: result.reports,
-                        queried_clients: result.queried_clients,
-                        failed_clients: result.failed_clients,
-                    }),
-                    Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(result) if dst::time::Instant::now() < deadline => {
+                        ReportTaskOutcome::Completed(OpenOrderReportResult {
+                            check,
+                            reports: result.reports,
+                            queried_clients: result.queried_clients,
+                            failed_clients: result.failed_clients,
+                        })
+                    }
+                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
         })
@@ -183,14 +186,17 @@ impl LiveNode {
                     .map(|client| client as &dyn ExecutionClient)
                     .collect::<Vec<_>>();
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+
                 match dst::time::timeout(
                     remaining,
                     request_targeted_order_reports(queries, &client_refs, query_delay),
                 )
                 .await
                 {
-                    Ok(result) => ReportTaskOutcome::Completed(result),
-                    Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(result) if dst::time::Instant::now() < deadline => {
+                        ReportTaskOutcome::Completed(result)
+                    }
+                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
             planned_client_order_ids,
@@ -221,15 +227,17 @@ impl LiveNode {
                 match dst::time::timeout(remaining, request_position_reports(clients, command))
                     .await
                 {
-                    Ok(result) => ReportTaskOutcome::Completed(
-                        PositionReportTaskResult::Positions(PositionReportResult {
-                            check,
-                            reports: result.reports,
-                            queried_clients: result.queried_clients,
-                            failed_clients: result.failed_clients,
-                        }),
-                    ),
-                    Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(result) if dst::time::Instant::now() < deadline => {
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(
+                            PositionReportResult {
+                                check,
+                                reports: result.reports,
+                                queried_clients: result.queried_clients,
+                                failed_clients: result.failed_clients,
+                            },
+                        ))
+                    }
+                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
         })
@@ -249,14 +257,16 @@ impl LiveNode {
                 match dst::time::timeout(remaining, request_position_fill_reports(clients, queries))
                     .await
                 {
-                    Ok(result) => ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(
-                        PositionFillReportResult {
-                            position_result,
-                            reports: result.reports,
-                            successful_keys: result.successful_keys,
-                        },
-                    )),
-                    Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(result) if dst::time::Instant::now() < deadline => {
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(
+                            PositionFillReportResult {
+                                position_result,
+                                reports: result.reports,
+                                successful_keys: result.successful_keys,
+                            },
+                        ))
+                    }
+                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
         }
@@ -301,6 +311,7 @@ impl LiveNode {
             successful_keys,
         } = result;
         let mut venue_reports = IndexMap::new();
+
         for report in &position_result.reports {
             venue_reports
                 .entry((report.instrument_id, report.account_id))
@@ -342,6 +353,16 @@ impl LiveNode {
                     continue;
                 }
 
+                if self.exec_manager.is_unapplied_fill_report_expired(&report) {
+                    log::warn!(
+                        "Ignoring fill {} for {}/{}: not applied within the position check threshold",
+                        report.trade_id,
+                        key.0,
+                        key.1,
+                    );
+                    continue;
+                }
+
                 if dispatches >= POSITION_FILLS_PER_CYCLE {
                     log::warn!(
                         "Deferring remaining authoritative fills after reaching the per-cycle dispatch limit"
@@ -364,6 +385,15 @@ impl LiveNode {
                         );
                         continue;
                     }
+                    Ok(PositionFillReportPreparation::SnapshotOverlap) => {
+                        log::debug!(
+                            "Ignoring fill {} for {}/{} because a reconciled position already includes it",
+                            report.trade_id,
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
                     Ok(PositionFillReportPreparation::Unattributed) => {
                         log::debug!(
                             "Ignoring unattributable hedge fill {} for {}/{} before synthetic fallback",
@@ -380,6 +410,7 @@ impl LiveNode {
                             key.0,
                             key.1,
                         );
+                        self.exec_manager.record_unapplied_fill_report(&report);
                         blocked = true;
                         break;
                     }
@@ -404,6 +435,7 @@ impl LiveNode {
                         key.1,
                         report.trade_id,
                     );
+                    self.exec_manager.record_unapplied_fill_report(&report);
                     blocked = true;
                     break;
                 }
@@ -472,7 +504,32 @@ impl LiveNode {
         drop(open_order_report_task.take());
         drop(targeted_order_report_task.take());
         drop(position_report_task.take());
+
+        for client in &self.exec_clients {
+            client.cancel_report_task();
+        }
+
         self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+    }
+
+    pub(super) async fn finish_report_tasks(
+        clients: &[LiveExecutionClient],
+        errors: &mut Vec<String>,
+    ) {
+        for client in clients {
+            client.cancel_report_task();
+        }
+
+        let mut tasks = clients
+            .iter()
+            .map(|client| async move { (client.client_id(), client.join_report_task().await) })
+            .collect::<FuturesUnordered<_>>();
+
+        while let Some((client_id, result)) = tasks.next().await {
+            if let Err(e) = result {
+                errors.push(format!("{client_id} report collection: {e}"));
+            }
+        }
     }
 }
 
@@ -804,4 +861,100 @@ struct PositionReportQueryResult {
 pub(super) struct PositionFillReportQueryResult {
     pub(super) reports: IndexMap<InstrumentAccountKey, Vec<FillReport>>,
     pub(super) successful_keys: IndexSet<InstrumentAccountKey>,
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::{LiquiditySide, OrderSide},
+        identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
+        types::{Money, Price, Quantity},
+    };
+    use proptest::prelude::*;
+    use rstest::{fixture, rstest};
+
+    use super::*;
+
+    #[rstest]
+    #[case::start(1_000, Some(1_000), Some(2_000), true)]
+    #[case::end(2_000, Some(1_000), Some(2_000), true)]
+    #[case::before(999, Some(1_000), Some(2_000), false)]
+    #[case::after(2_001, Some(1_000), Some(2_000), false)]
+    #[case::point(1_000, Some(1_000), Some(1_000), true)]
+    #[case::inverted(1_500, Some(2_000), Some(1_000), false)]
+    #[case::unbounded_zero(0, None, None, true)]
+    #[case::unbounded_max(u64::MAX, None, None, true)]
+    #[case::start_only(u64::MAX, Some(u64::MAX), None, true)]
+    #[case::end_only(0, None, Some(0), true)]
+    fn test_fill_report_window_boundaries(
+        #[case] event: u64,
+        #[case] start: Option<u64>,
+        #[case] end: Option<u64>,
+        #[case] expected: bool,
+        mut fill_report: FillReport,
+    ) {
+        fill_report.ts_event = UnixNanos::from(event);
+
+        let command = GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(fill_report.instrument_id),
+            None,
+            start.map(UnixNanos::from),
+            end.map(UnixNanos::from),
+            None,
+            None,
+        );
+
+        assert_eq!(
+            fill_report_in_query_window(&fill_report, &command),
+            expected
+        );
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_fill_report_window_contains_exactly_inclusive_interval(
+            event in any::<u64>(),
+            start in proptest::option::of(any::<u64>()),
+            end in proptest::option::of(any::<u64>()),
+        ) {
+            let mut report = fill_report();
+            report.ts_event = UnixNanos::from(event);
+            let command = GenerateFillReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(report.instrument_id),
+                None,
+                start.map(UnixNanos::from),
+                end.map(UnixNanos::from),
+                None,
+                None,
+            );
+            let interval = start.unwrap_or(0)..=end.unwrap_or(u64::MAX);
+
+            prop_assert_eq!(fill_report_in_query_window(&report, &command), interval.contains(&event));
+        }
+    }
+
+    #[fixture]
+    fn fill_report() -> FillReport {
+        FillReport::new(
+            AccountId::from("TEST-001"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            VenueOrderId::from("V-1"),
+            TradeId::from("T-1"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("100.0"),
+            Money::from("0.10 USDT"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(1_500),
+            UnixNanos::from(2_000),
+            None,
+        )
+    }
 }

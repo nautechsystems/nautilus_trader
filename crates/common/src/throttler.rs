@@ -23,7 +23,7 @@ use std::{
     any::Any,
     cell::{RefCell, UnsafeCell},
     collections::VecDeque,
-    fmt::Debug,
+    fmt::{Debug, Display},
     marker::PhantomData,
     num::{NonZeroU64, NonZeroUsize},
     rc::Rc,
@@ -44,56 +44,6 @@ use crate::{
 };
 
 const MAX_INITIAL_TIMESTAMPS_CAPACITY: usize = 1024;
-
-/// Represents a throttling limit per interval.
-///
-/// The non-zero field types make a degenerate rate limit unrepresentable: a zero `limit`
-/// underflows the throttler's `limit - 1` indexing, and a zero `interval_ns` disables
-/// throttling entirely.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RateLimit {
-    limit: NonZeroUsize,
-    interval_ns: NonZeroU64,
-}
-
-impl RateLimit {
-    /// Creates a new [`RateLimit`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `limit` or `interval_ns` is zero.
-    pub fn new_checked(limit: usize, interval_ns: DurationNanos) -> anyhow::Result<Self> {
-        let limit = NonZeroUsize::new(limit)
-            .ok_or_else(|| anyhow::anyhow!("Invalid limit: {limit} (must be non-zero)"))?;
-        let interval_ns = NonZeroU64::new(interval_ns.as_u64()).ok_or_else(|| {
-            anyhow::anyhow!("Invalid interval_ns: {interval_ns} (must be non-zero)")
-        })?;
-        Ok(Self { limit, interval_ns })
-    }
-
-    /// Creates a new [`RateLimit`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `limit` or `interval_ns` is zero.
-    #[must_use]
-    pub fn new(limit: usize, interval_ns: DurationNanos) -> Self {
-        Self::new_checked(limit, interval_ns).expect(FAILED)
-    }
-
-    /// Maximum number of messages that can be sent within the interval.
-    #[must_use]
-    pub const fn limit(&self) -> usize {
-        self.limit.get()
-    }
-
-    /// Interval between messages in nanoseconds.
-    #[must_use]
-    pub const fn interval_ns(&self) -> DurationNanos {
-        DurationNanos::new(self.interval_ns.get())
-    }
-}
 
 /// Throttler rate limits messages by dropping or buffering them.
 ///
@@ -640,6 +590,83 @@ where
     })
 }
 
+/// Represents a throttling limit per interval.
+///
+/// Displays as `limit/HH:MM:SS`, with hours unrestricted. Intervals with a subsecond
+/// component append six fractional digits, truncating any precision below microseconds.
+///
+/// The non-zero field types make a degenerate rate limit unrepresentable: a zero `limit`
+/// underflows the throttler's `limit - 1` indexing, and a zero `interval_ns` disables
+/// throttling entirely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RateLimit {
+    limit: NonZeroUsize,
+    interval_ns: NonZeroU64,
+}
+
+impl RateLimit {
+    /// Creates a new [`RateLimit`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `limit` or `interval_ns` is zero.
+    pub fn new_checked(limit: usize, interval_ns: DurationNanos) -> anyhow::Result<Self> {
+        let limit = NonZeroUsize::new(limit)
+            .ok_or_else(|| anyhow::anyhow!("Invalid limit: {limit} (must be non-zero)"))?;
+
+        let interval_ns = NonZeroU64::new(interval_ns.as_u64()).ok_or_else(|| {
+            anyhow::anyhow!("Invalid interval_ns: {interval_ns} (must be non-zero)")
+        })?;
+
+        Ok(Self { limit, interval_ns })
+    }
+
+    /// Creates a new [`RateLimit`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limit` or `interval_ns` is zero.
+    #[must_use]
+    pub fn new(limit: usize, interval_ns: DurationNanos) -> Self {
+        Self::new_checked(limit, interval_ns).expect(FAILED)
+    }
+
+    /// Maximum number of messages that can be sent within the interval.
+    #[must_use]
+    pub const fn limit(&self) -> usize {
+        self.limit.get()
+    }
+
+    /// Interval between messages in nanoseconds.
+    #[must_use]
+    pub const fn interval_ns(&self) -> DurationNanos {
+        DurationNanos::new(self.interval_ns.get())
+    }
+}
+
+impl Display for RateLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let interval = self.interval_ns();
+        let limit = self.limit();
+        let total_secs = interval.as_secs();
+        let remainder_ns = interval.subsec_nanos();
+        let hours = total_secs / 3600;
+        let minutes = (total_secs % 3600) / 60;
+        let seconds = total_secs % 60;
+
+        if remainder_ns == 0 {
+            write!(f, "{limit}/{hours:02}:{minutes:02}:{seconds:02}")
+        } else {
+            let micros = remainder_ns / 1_000;
+            write!(
+                f,
+                "{limit}/{hours:02}:{minutes:02}:{seconds:02}.{micros:06}"
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -653,7 +680,7 @@ mod tests {
 
     use super::{MAX_INITIAL_TIMESTAMPS_CAPACITY, RateLimit, Throttler, ThrottlerProcess};
     use crate::{
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         msgbus::{self, Handler},
     };
     type SharedThrottler = Rc<UnsafeCell<Throttler<u64, Box<dyn Fn(u64)>>>>;
@@ -665,7 +692,7 @@ mod tests {
     #[derive(Clone)]
     struct TestThrottler {
         throttler: SharedThrottler,
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         interval: DurationNanos,
     }
 
@@ -722,12 +749,29 @@ mod tests {
         assert_eq!(rate.interval_ns(), DurationNanos::new(10));
     }
 
+    #[rstest]
+    #[case::whole_seconds(100, 1_000_000_000, "100/00:00:01")]
+    #[case::hours_minutes_seconds(17, 3_723_000_000_000, "17/01:02:03")]
+    #[case::large_hours(23, 360_000_000_000_000, "23/100:00:00")]
+    #[case::fractional_seconds(31, 1_234_567_000, "31/00:00:01.234567")]
+    #[case::truncated_nanoseconds(41, 1_234_567_890, "41/00:00:01.234567")]
+    #[case::below_microsecond(53, 999, "53/00:00:00.000000")]
+    fn test_rate_limit_display(
+        #[case] limit: usize,
+        #[case] interval_ns: u64,
+        #[case] expected: &str,
+    ) {
+        let rate = RateLimit::new(limit, DurationNanos::new(interval_ns));
+
+        assert_eq!(rate.to_string(), expected);
+    }
+
     #[fixture]
     pub fn test_throttler_buffered() -> TestThrottler {
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Sent: {msg}");
         });
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, DurationNanos::new(10));
         let interval = rate_limit.interval_ns();
@@ -756,7 +800,7 @@ mod tests {
         let output_drop: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Dropped: {msg}");
         });
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, DurationNanos::new(10));
         let interval = rate_limit.interval_ns();
@@ -883,7 +927,7 @@ mod tests {
 
     #[rstest]
     fn test_try_reserve_rejects_batch_larger_than_limit() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
             RateLimit::new(5, DurationNanos::new(10)),
             clock,
@@ -905,7 +949,7 @@ mod tests {
 
     #[rstest]
     fn test_try_reserve_zero_count_is_noop() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
             RateLimit::new(5, DurationNanos::new(10)),
             clock,
@@ -1132,7 +1176,7 @@ mod tests {
 
     #[rstest]
     fn test_embedded_dropping_auto_resets_after_window_without_actor_callback() {
-        let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let sent = Rc::new(RefCell::new(0));
         let dropped = Rc::new(RefCell::new(0));
 
@@ -1171,7 +1215,7 @@ mod tests {
 
     #[rstest]
     fn test_large_limit_fast_path_admits_until_limit_then_limits() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let limit = MAX_INITIAL_TIMESTAMPS_CAPACITY + 1;
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
             RateLimit::new(limit, DurationNanos::new(10)),
@@ -1197,7 +1241,7 @@ mod tests {
 
     #[rstest]
     fn test_new_preserves_rate_limit() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let rate_limit = RateLimit::new(5, DurationNanos::new(10));
 
         let throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
@@ -1216,7 +1260,7 @@ mod tests {
 
     #[rstest]
     fn test_debug_output_includes_identity_and_state() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let actor_id = Ustr::from("debug-actor");
         let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
             RateLimit::new(5, DurationNanos::new(10)),
@@ -1264,7 +1308,7 @@ mod tests {
 
     #[rstest]
     fn test_two_throttlers_share_clock_without_timer_collision() {
-        let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let interval = 10u64;
 
         let mk = |base: &str| -> SharedThrottler {
@@ -1350,7 +1394,7 @@ mod tests {
 
     #[rstest]
     fn test_try_reserve_then_buffered_sends_drain_in_order_after_window() {
-        let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let sent: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(Vec::new()));
         let sent_cb = {
             let sent = Rc::clone(&sent);
@@ -1520,7 +1564,7 @@ mod tests {
         // and sent_count tracks the send callback exactly. Catches conservation
         // violations and panics under random send/advance sequences.
         proptest!(|(inputs in throttler_test_strategy())| {
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             let sent: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
             let dropped: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
 

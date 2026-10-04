@@ -28,7 +28,7 @@ use dbn::{
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexMap;
 use nautilus_model::{
-    data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -52,7 +52,7 @@ use crate::{
 /// # Supported Schemas
 ///  - `MBO` -> `OrderBookDelta`
 ///  - `MBP_1` -> `(QuoteTick, Option<TradeTick>)`
-///  - `MBP_10` -> `OrderBookDepth10`
+///  - `MBP_10` -> `OrderBookDepth`
 ///  - `BBO_1S` -> `QuoteTick`
 ///  - `BBO_1M` -> `QuoteTick`
 ///  - `CMBP_1` -> `(QuoteTick, Option<TradeTick>)`
@@ -511,21 +511,21 @@ impl DatabentoDataLoader {
         }))
     }
 
-    /// Loads order book depth10 snapshots from a DBN MBP-10 schema file.
+    /// Loads order book depth snapshots from a DBN MBP-10 schema file.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading order book depth10 fails.
-    pub fn load_order_book_depth10(
+    /// Returns an error if loading order book depth fails.
+    pub fn load_order_book_depth(
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> anyhow::Result<Vec<OrderBookDepth10>> {
+    ) -> anyhow::Result<Vec<OrderBookDepth>> {
         self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
-                    if let Data::BookDepth10(depth) = item1 {
+                    if let Data::BookDepth(depth) = item1 {
                         Some(Ok(*depth))
                     } else {
                         None
@@ -1321,12 +1321,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_load_order_book_depth10(loader: DatabentoDataLoader) {
+    fn test_load_order_book_depth(loader: DatabentoDataLoader) {
         let path = test_data_path().join("test_data.mbp-10.dbn.zst");
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let depths = loader
-            .load_order_book_depth10(&path, Some(instrument_id), None)
+            .load_order_book_depth(&path, Some(instrument_id), None)
             .unwrap();
 
         assert_eq!(depths.len(), 2);

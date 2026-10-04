@@ -1,0 +1,24 @@
+{
+  "t": "r",
+  "ts": 1783418123,
+  "tn": 183021495,
+  "eid": "E-01KWY01WX8JT4DABKC6FRS5NT4",
+  "ro": {
+    "oid": "O-01KWY01WB0S4G2F8WZG4B8S9N1",
+    "u": "account-1",
+    "aid": "account-1",
+    "s": "EURUSD-PERP",
+    "p": "1.0925",
+    "q": 150,
+    "xq": 0,
+    "rq": 150,
+    "o": "ACCEPTED",
+    "d": "B",
+    "tif": "GTC",
+    "cid": 18287515403216302336,
+    "tag": "Nautilus",
+    "po": true,
+    "ts": 1783418122,
+    "tn": 593022905
+  }
+}

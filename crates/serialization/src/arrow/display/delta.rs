@@ -30,6 +30,7 @@ use nautilus_model::{data::OrderBookDelta, enums::BookAction};
 use super::{
     float64_field, price_to_f64, quantity_to_f64, timestamp_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`OrderBookDelta`].
 #[must_use]
@@ -71,8 +72,10 @@ pub fn encode_deltas(data: &[OrderBookDelta]) -> Result<RecordBatch, ArrowError>
     let mut order_id_builder = StringBuilder::new();
     let mut flags_builder = UInt8Builder::with_capacity(data.len());
     let mut sequence_builder = UInt64Builder::with_capacity(data.len());
-    let mut ts_event_builder = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init_builder = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for delta in data {
         instrument_id_builder.append_value(delta.instrument_id.to_string());
@@ -186,7 +189,7 @@ mod tests {
         assert_eq!(fields[8].name(), "ts_event");
         assert_eq!(
             fields[8].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[9].name(), "ts_init");
     }

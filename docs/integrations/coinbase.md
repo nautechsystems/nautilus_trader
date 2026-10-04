@@ -439,7 +439,9 @@ To prevent cross-account bleed-through:
 
 Run one execution client per scope; if you need both spot and CFM activity
 on the same trader, instantiate two clients with distinct `account_type`
-values (and distinct `account_id`s).
+values (and distinct `account_id`s). Configure an explicit `COINBASE` venue route or a default client
+as described in [Execution client routing](../concepts/live.md#execution-client-routing), and pass
+the intended `client_id` when submitting orders.
 
 ### Order types
 

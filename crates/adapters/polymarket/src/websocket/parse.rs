@@ -145,6 +145,9 @@ struct BookSnapshotHashPreimage<'a> {
 }
 
 /// Parses a book snapshot into [`OrderBookDeltas`] (CLEAR + ADD).
+///
+/// A book with no resting orders is a valid snapshot: it parses to a lone
+/// CLEAR so the baseline is accepted instead of burning recovery budget.
 pub fn parse_book_snapshot(
     snap: &PolymarketBookSnapshot,
     instrument_id: InstrumentId,
@@ -157,10 +160,6 @@ pub fn parse_book_snapshot(
     let bids_len = snap.bids.len();
     let asks_len = snap.asks.len();
 
-    if bids_len == 0 && asks_len == 0 {
-        anyhow::bail!("Empty book snapshot for {instrument_id}");
-    }
-
     let total = bids_len + asks_len;
     let mut deltas = Vec::with_capacity(total + 1);
 
@@ -168,7 +167,13 @@ pub fn parse_book_snapshot(
     // downstream consumers can recognize the rebuild; F_LAST closes the batch
     // on the final delta. `OrderBookDelta::clear` already sets F_SNAPSHOT.
     let snapshot_flag = RecordFlag::F_SNAPSHOT as u8;
-    deltas.push(OrderBookDelta::clear(instrument_id, 0, ts_event, ts_init));
+    let mut clear = OrderBookDelta::clear(instrument_id, 0, ts_event, ts_init);
+
+    if total == 0 {
+        clear.flags |= RecordFlag::F_LAST as u8;
+    }
+
+    deltas.push(clear);
 
     let mut count = 0;
 
@@ -725,6 +730,29 @@ mod tests {
             deltas.deltas.last().unwrap().flags & RecordFlag::F_LAST as u8,
             0
         );
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_empty_book_parses_to_lone_clear() {
+        let mut snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
+        snap.bids.clear();
+        snap.asks.clear();
+        let instrument = test_instrument();
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let deltas = parse_book_snapshot(
+            &snap,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_ne!(deltas.deltas[0].flags & RecordFlag::F_SNAPSHOT as u8, 0);
+        assert_ne!(deltas.deltas[0].flags & RecordFlag::F_LAST as u8, 0);
     }
 
     #[rstest]

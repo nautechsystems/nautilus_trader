@@ -582,7 +582,7 @@ pub struct BinanceSymbolFilterJson {
 pub struct BinanceAccountCommission {
     /// Venue symbol.
     pub symbol: String,
-    /// Standard commission rates representable on a Nautilus instrument.
+    /// Standard maker and taker commission rates from the venue.
     pub standard_commission: BinanceCommissionRates,
 }
 

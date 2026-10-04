@@ -30,6 +30,44 @@ systems outside the process boundary.
 - **Reconciliation**: Startup and runtime checks align retained local state with venue reports. See
   [Execution reconciliation](execution/reconciliation.md).
 
+## Execution client routing
+
+A live node can register independently named execution clients for the same venue. A command's
+`client_id` selects a registered client directly. Venue and default routes select a client when
+neither the command's `client_id` nor account-based routing resolves one.
+
+:::warning[Account isolation]
+Registering multiple clients for a venue does not provide end-to-end account isolation for
+positions and order management across same-venue accounts. Pre-trade risk checks use the account of
+the client that will run each command; see
+[Account selection](execution/index.md#account-selection).
+:::
+
+### Order routing
+
+Configure venue and default routes through each client's `RoutingConfig`:
+
+- `venues` assigns the listed venues to that client. These explicit routes take precedence over
+  automatic venue routes and the default client.
+- `default=True` selects the fallback client when no venue route applies.
+
+The only client registered for a venue automatically routes that venue unless another client
+explicitly routes it. Multiple clients for the same venue require an explicit venue route or a
+default client, even when strategies supply a `client_id` for each command. Duplicate client IDs,
+conflicting venue routes, and multiple defaults fail during node construction.
+
+### Instrument updates
+
+Instrument updates reach every client whose own venue matches, plus the client routed to that
+venue, if any. Each matching client receives the update once. Receiving an instrument update does
+not select that client as the recipient of order commands.
+
+### Direct Rust callers
+
+`ExecutionEngine::register_client` registers a client without assigning routing. Call
+`register_venue_routing` or `set_default_client` afterward to configure venue or fallback routing.
+Alternatively, `register_default_client` registers a client and makes it the default.
+
 ## Live node lifecycle
 
 Rust `LiveNode::run()` prepares cached and venue state before starting trader components, then owns
@@ -53,6 +91,26 @@ Live node lifecycle: instruments and execution state are prepared before strateg
 
 Cache restoration runs when a backing database is attached and cache loading is enabled. Connection,
 reconciliation, or trader startup failures abort startup and follow the coordinated cleanup path.
+
+### Submission recovery at shutdown
+
+Rust `LiveNode::stop`, `run`, and `run_with_mode`, and Python `run_async()` use the same submission
+recovery boundary. During `delay_post_stop`, the node continues processing venue evidence and native
+managed-exit timers without starting new reconciliation queries. At the end of that window, any
+retained submission without a native outcome or venue confirmation makes shutdown return an error
+listing the unresolved client order IDs. Clients disconnect and the kernel stops even when recovery
+is incomplete. Evidence drained after this boundary cannot change the recorded shutdown result.
+
+This applies to `RetainUnresolved` and to clients which require submission retention, including
+submissions whose recovery budget has not yet exhausted. Polymarket requires retention automatically,
+so its callers can receive this error without selecting an opt-in policy. The default `ResolveLocally`
+policy remains unchanged for clients which do not require retention.
+
+Submission acknowledgement ends submission recovery; it does not prove that an accepted order's
+cancel or update completed, or that positions are flat. Managed exit keeps its existing attempt
+budget, and this result does not extend cleanup beyond `delay_post_stop` or implement recovery
+across restarts. See [submission recovery](execution/reconciliation.md#submission-recovery)
+for identity and query-budget rules.
 
 ## Hosted event loops
 
@@ -129,6 +187,10 @@ graceful shutdown and returns immediately, so the awaiting task resolves only on
 finishes. Cancelling that task requests the same shutdown, waits for it, then re-raises the
 cancellation, which keeps `asyncio.timeout` and task groups behaving as their callers expect.
 
+The shared [submission recovery shutdown contract](#submission-recovery-at-shutdown) applies to
+hosted nodes. If an awaiting Python task is cancelled, cancellation still propagates after teardown,
+with any shutdown error preserved as the cancellation exception's cause.
+
 ### Host integration and limits
 
 Compatibility is tested with the default asyncio loop and uvloop. An ASGI lifespan managed by
@@ -145,6 +207,14 @@ large instrument load or a shutdown backlog can hold the loop for the length of 
 Run one concurrent `LiveNode` per process. The runner binds its channel senders and message bus into
 thread-local storage, and other runtime state is process-wide. `run_async()` also rejects a second
 hosted node on the same event loop. Run additional nodes in separate processes.
+
+Building another `LiveNode` on the same thread raises an error while the first node exists or is
+being built. In Python, `node.build(...)` is a static constructor and attempts to create another node.
+Drop the existing node, or release all references to it in Python, before building its replacement.
+With a single Python reference, call `del node` first: `node = LiveNode.build(...)` attempts construction
+while the old node still exists. Calling `dispose()` alone does not release this construction guard.
+Exceptions and unfinished coroutines can retain the node; release those references too. If an
+unreachable reference cycle retains it, run `gc.collect()` before rebuilding.
 
 When an ASGI application lifespan constructs the node, run that application with one worker. Do not
 use hot reload for live trading because it restarts the worker and its node. Scale HTTP request
@@ -181,6 +251,8 @@ portfolio economics.
 
 See [Execution reconciliation](execution/reconciliation.md) for configuration, recovery procedures,
 runtime checks, scenarios, and invariants.
+For runtime protection against stale snapshots and the distinction from genuine corrections and explicit fill-void events,
+see [Snapshot freshness and fill corrections](execution/reconciliation.md#snapshot-freshness-and-fill-corrections).
 
 ## Rust live runner metrics
 

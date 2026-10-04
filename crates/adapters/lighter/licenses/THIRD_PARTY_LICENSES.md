@@ -44,7 +44,7 @@ and oracle fixtures Lighter requires for L2 transaction signing.
   - Full text: `Apache-2.0-poseidon-crypto.txt`
 
 - **`elliottech/lighter-python` SDK contributors**
-  - Usage: The script under `tests/oracle-py/` loads the compiled signer
+  - Usage: The script under `scripts/oracle-py/lighter/` loads the compiled signer
     distributed with the official Python SDK to generate deterministic
     transaction and auth-token oracle fixtures under `test_data/`. The compiled
     signer is not vendored in this repository and is not linked into the crate;

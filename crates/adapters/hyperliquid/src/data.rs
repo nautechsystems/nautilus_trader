@@ -19,7 +19,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -28,17 +28,17 @@ use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
             BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
             InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
             RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
             SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
@@ -51,7 +51,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     SocketControl,
-    task::{TaskGroup, TaskGroupGuard},
+    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate, TradeTick},
@@ -67,6 +67,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
+    book::{self, sync::BookSyncTracker},
     common::{
         consts::HYPERLIQUID_VENUE,
         credential::{Secrets, credential_env_vars},
@@ -96,12 +97,13 @@ pub struct HyperliquidDataClient {
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
     // serializes instrument fetch-and-apply passes, see `refresh_instruments`
     instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
     stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
+    book_sync: BookSyncTracker,
 }
 
 impl HyperliquidDataClient {
@@ -202,6 +204,7 @@ impl HyperliquidDataClient {
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
             instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             stream_health,
+            book_sync: BookSyncTracker::default(),
         })
     }
 
@@ -247,6 +250,7 @@ impl HyperliquidDataClient {
             self.shutdown_errors.push(e.to_string());
         }
         self.clear_stream_health();
+        self.book_sync.clear();
         self.is_connected.store(false, Ordering::Release);
 
         if !self.shutdown_errors.is_empty() {
@@ -310,6 +314,9 @@ impl HyperliquidDataClient {
         let interval = Duration::from_secs(self.config.stream_health_check_interval_secs);
         let clock = self.clock;
         let ws_client = self.ws_client.clone();
+        let book_sync = self.book_sync.clone();
+        let snapshot_timeout = self.book_snapshot_timeout();
+        let book_tasks = self.pending_tasks.spawner()?;
 
         self.session_tasks.spawn(async move {
             log::debug!("Hyperliquid stream health monitor started");
@@ -325,7 +332,14 @@ impl HyperliquidDataClient {
                             .lock()
                             .check_stale(Instant::now(), clock.get_time_ns());
 
-                        handle_stream_health_events(&ws_client, &events).await;
+                        handle_stream_health_events(
+                            &ws_client,
+                            &events,
+                            &book_sync,
+                            snapshot_timeout,
+                            &book_tasks,
+                        )
+                        .await;
                     }
                 }
             }
@@ -334,6 +348,10 @@ impl HyperliquidDataClient {
         })?;
 
         Ok(())
+    }
+
+    fn book_snapshot_timeout(&self) -> Duration {
+        Duration::from_secs(self.config.book_snapshot_timeout_secs)
     }
 
     fn venue(&self) -> Venue {
@@ -480,6 +498,9 @@ impl HyperliquidDataClient {
         let data_sender = self.data_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
         let stream_health = Arc::clone(&self.stream_health);
+        let book_sync = self.book_sync.clone();
+        let snapshot_timeout = self.book_snapshot_timeout();
+        let book_tasks = self.pending_tasks.spawner()?;
 
         self.session_tasks.spawn(async move {
             log::debug!("Hyperliquid WebSocket consumption loop started");
@@ -521,20 +542,30 @@ impl HyperliquidDataClient {
                                     }
                                 }
                                 NautilusWsMessage::Deltas(deltas) => {
-                                    if let Err(e) = data_sender
-                                        .send(DataEvent::Data(Data::BookDeltas(
-                                            Box::new(deltas),
-                                        )))
+                                    if book_sync
+                                        .record_snapshot(deltas.instrument_id, Instant::now())
+                                        && let Err(e) = data_sender.send(DataEvent::Data(
+                                            Data::BookDeltas(Box::new(deltas)),
+                                        ))
                                     {
                                         log::error!("Failed to send order book deltas: {e}");
                                     }
                                 }
-                                NautilusWsMessage::Depth10(depth) => {
+                                NautilusWsMessage::Depth(depth) => {
                                     if let Err(e) =
-                                        data_sender.send(DataEvent::Data(Data::BookDepth10(depth)))
+                                        data_sender.send(DataEvent::Data(Data::BookDepth(depth)))
                                     {
-                                        log::error!("Failed to send order book depth10: {e}");
+                                        log::error!("Failed to send order book depth: {e}");
                                     }
+                                }
+                                NautilusWsMessage::BookInvalid(instrument_id) => {
+                                    book::recovery::reject_snapshot(
+                                        instrument_id,
+                                        &book_sync,
+                                        &ws_client,
+                                        snapshot_timeout,
+                                        &book_tasks,
+                                    );
                                 }
                                 NautilusWsMessage::Candle(bar) => {
                                     if let Err(e) = data_sender
@@ -571,6 +602,12 @@ impl HyperliquidDataClient {
                                 }
                                 NautilusWsMessage::Reconnected => {
                                     log::info!("WebSocket reconnected");
+                                    book::recovery::reset_on_reconnect(
+                                        &book_sync,
+                                        &ws_client,
+                                        snapshot_timeout,
+                                        &book_tasks,
+                                    );
                                 }
                                 NautilusWsMessage::Error(e) => {
                                     log::warn!("WebSocket error: {e}");
@@ -676,6 +713,7 @@ impl DataClient for HyperliquidDataClient {
                 .await
                 .context("failed to tear down Hyperliquid WebSocket before reconnect")?;
             self.ws_client.reset_runtime_state();
+            self.book_sync.clear();
             self.abort_session_tasks();
             self.abort_pending_tasks();
             let (session_result, pending_result) =
@@ -941,36 +979,42 @@ impl DataClient for HyperliquidDataClient {
             anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
         }
 
-        let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
         let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
         self.register_stream_health(MarketDataChannel::Deltas, instrument_id);
 
-        self.spawn_task("subscribe_book_deltas", async move {
-            ws.subscribe_book_with_options(instrument_id, n_sig_figs, mantissa)
-                .await
-        });
+        match self.pending_tasks.spawner() {
+            Ok(tasks) => book::recovery::spawn_subscription_task(
+                instrument_id,
+                n_sig_figs,
+                mantissa,
+                self.book_sync.clone(),
+                self.ws_client.clone(),
+                self.book_snapshot_timeout(),
+                &tasks,
+            ),
+            Err(e) => {
+                log::warn!("Skipping Hyperliquid subscribe_book_deltas after shutdown began: {e}");
+            }
+        }
 
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, subscription: SubscribeBookDepth10) -> anyhow::Result<()> {
-        log::debug!(
-            "Subscribing to book depth10: {}",
-            subscription.instrument_id
-        );
+    fn subscribe_book_depth(&mut self, subscription: SubscribeBookDepth) -> anyhow::Result<()> {
+        log::debug!("Subscribing to book depth: {}", subscription.instrument_id);
 
         if subscription.book_type != BookType::L2_MBP {
-            anyhow::bail!("Hyperliquid only supports L2_MBP order book depth10");
+            anyhow::bail!("Hyperliquid only supports L2_MBP order book depth");
         }
 
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
         let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
-        self.register_stream_health(MarketDataChannel::Depth10, instrument_id);
+        self.register_stream_health(MarketDataChannel::Depth, instrument_id);
 
-        self.spawn_task("subscribe_book_depth10", async move {
-            ws.subscribe_book_depth10_with_options(instrument_id, n_sig_figs, mantissa)
+        self.spawn_task("subscribe_book_depth", async move {
+            ws.subscribe_book_depth_with_options(instrument_id, n_sig_figs, mantissa)
                 .await
         });
 
@@ -1073,6 +1117,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
         self.remove_stream_health(MarketDataChannel::Deltas, instrument_id);
+        self.book_sync.remove(instrument_id);
 
         self.spawn_task("unsubscribe_book_deltas", async move {
             ws.unsubscribe_book(instrument_id).await
@@ -1081,21 +1126,21 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depth10(
+    fn unsubscribe_book_depth(
         &mut self,
-        unsubscription: &UnsubscribeBookDepth10,
+        unsubscription: &UnsubscribeBookDepth,
     ) -> anyhow::Result<()> {
         log::debug!(
-            "Unsubscribing from book depth10: {}",
+            "Unsubscribing from book depth: {}",
             unsubscription.instrument_id
         );
 
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
-        self.remove_stream_health(MarketDataChannel::Depth10, instrument_id);
+        self.remove_stream_health(MarketDataChannel::Depth, instrument_id);
 
-        self.spawn_task("unsubscribe_book_depth10", async move {
-            ws.unsubscribe_book_depth10(instrument_id).await
+        self.spawn_task("unsubscribe_book_depth", async move {
+            ws.unsubscribe_book_depth(instrument_id).await
         });
 
         Ok(())
@@ -1694,7 +1739,7 @@ async fn refresh_instruments(
     ws_client: &HyperliquidWebSocketClient,
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
 ) -> anyhow::Result<InstrumentRefresh> {
     let _update_guard = update_lock.lock().await;
 
@@ -1732,7 +1777,7 @@ async fn reconcile_instruments(
     ws_client: &HyperliquidWebSocketClient,
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
 ) -> InstrumentRefresh {
     let changed = changed_definitions(&fetched, instruments_by_id);
     let added = added_symbols(&changed, instruments_by_id);
@@ -1826,7 +1871,7 @@ fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum MarketDataChannel {
     Deltas,
-    Depth10,
+    Depth,
     Quote,
 }
 
@@ -1834,7 +1879,7 @@ impl MarketDataChannel {
     const fn as_str(self) -> &'static str {
         match self {
             Self::Deltas => "deltas",
-            Self::Depth10 => "depth10",
+            Self::Depth => "depth",
             Self::Quote => "quote",
         }
     }
@@ -1871,6 +1916,31 @@ impl MarketDataStreamHealth {
         self.last_warning_at = None;
         self.last_recovery_at = None;
         self.resubscribe_attempts = 0;
+    }
+
+    // Records a recovery action at `recovery_at` and returns the next step of the ladder
+    fn record_recovery(
+        &mut self,
+        recovery_at: Instant,
+        book_recovery: bool,
+        max_targeted_resubscribes: u32,
+    ) -> StaleStreamAction {
+        self.last_recovery_at = Some(recovery_at);
+        self.last_warning_at = Some(recovery_at);
+
+        // Shared book recovery owns retries and backoff for a delta book's stream
+        if book_recovery {
+            return StaleStreamAction::Recover;
+        }
+
+        if self.resubscribe_attempts < max_targeted_resubscribes {
+            self.resubscribe_attempts += 1;
+            return StaleStreamAction::Resubscribe;
+        }
+
+        // Reconnect replays all active subscriptions
+        self.resubscribe_attempts = 0;
+        StaleStreamAction::Reconnect
     }
 }
 
@@ -1955,6 +2025,14 @@ impl MarketDataStreamHealthMonitor {
             .map(|((_, instrument_id), _)| *instrument_id)
             .collect();
 
+        // Depth shares the instrument's `l2Book` stream with its delta book
+        let delta_book_instruments: AHashSet<InstrumentId> = self
+            .streams
+            .keys()
+            .filter(|(channel, _)| *channel == MarketDataChannel::Deltas)
+            .map(|(_, instrument_id)| *instrument_id)
+            .collect();
+
         let mut events = Vec::new();
 
         for ((channel, instrument_id), stream) in &mut self.streams {
@@ -1968,7 +2046,7 @@ impl MarketDataStreamHealthMonitor {
 
             let quote_is_fresh = matches!(
                 channel,
-                MarketDataChannel::Deltas | MarketDataChannel::Depth10
+                MarketDataChannel::Deltas | MarketDataChannel::Depth
             ) && fresh_quote_instruments.contains(instrument_id);
 
             let venue_age = stream.last_venue_ts_event.map(|ts_event| {
@@ -1983,17 +2061,15 @@ impl MarketDataStreamHealthMonitor {
                 if stream.last_warning_at.is_some()
                     && now.saturating_duration_since(anchor) >= recovery.cooldown
                 {
-                    let action = if stream.resubscribe_attempts < recovery.max_targeted_resubscribes
-                    {
-                        stream.resubscribe_attempts += 1;
-                        StaleStreamAction::Resubscribe
-                    } else {
-                        // Reconnect replays all active subscriptions
-                        stream.resubscribe_attempts = 0;
-                        StaleStreamAction::Reconnect
-                    };
-                    stream.last_recovery_at = Some(now);
-                    stream.last_warning_at = Some(now);
+                    let book_recovery = matches!(
+                        channel,
+                        MarketDataChannel::Deltas | MarketDataChannel::Depth
+                    ) && delta_book_instruments.contains(instrument_id);
+                    let action = stream.record_recovery(
+                        now,
+                        book_recovery,
+                        recovery.max_targeted_resubscribes,
+                    );
 
                     events.push(MarketDataStaleEvent {
                         channel: *channel,
@@ -2037,6 +2113,7 @@ impl MarketDataStreamHealthMonitor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StaleStreamAction {
     Warn,
+    Recover,
     Resubscribe,
     Reconnect,
 }
@@ -2045,6 +2122,7 @@ impl StaleStreamAction {
     const fn as_str(self) -> &'static str {
         match self {
             Self::Warn => "warn",
+            Self::Recover => "recover",
             Self::Resubscribe => "resubscribe",
             Self::Reconnect => "reconnect",
         }
@@ -2077,8 +2155,8 @@ fn stream_health_update(
             deltas.instrument_id,
             deltas.ts_event,
         )),
-        NautilusWsMessage::Depth10(depth) => Some((
-            MarketDataChannel::Depth10,
+        NautilusWsMessage::Depth(depth) => Some((
+            MarketDataChannel::Depth,
             depth.instrument_id,
             depth.ts_event,
         )),
@@ -2123,8 +2201,11 @@ fn log_stream_health_event(event: &MarketDataStaleEvent) {
 async fn handle_stream_health_events(
     ws_client: &HyperliquidWebSocketClient,
     events: &[MarketDataStaleEvent],
+    book_sync: &BookSyncTracker,
+    snapshot_timeout: Duration,
+    book_tasks: &TaskSpawner,
 ) {
-    // Deltas and depth10 share one venue `l2Book` stream
+    // Deltas and depth share one venue `l2Book` stream
     let mut resubscribed_books: AHashSet<InstrumentId> = AHashSet::new();
     let mut reconnect_requested = false;
 
@@ -2133,8 +2214,15 @@ async fn handle_stream_health_events(
 
         match event.action {
             StaleStreamAction::Warn => {}
+            StaleStreamAction::Recover => book::recovery::start_recovery(
+                event.instrument_id,
+                book_sync,
+                ws_client,
+                snapshot_timeout,
+                book_tasks,
+            ),
             StaleStreamAction::Resubscribe => match event.channel {
-                MarketDataChannel::Deltas | MarketDataChannel::Depth10 => {
+                MarketDataChannel::Deltas | MarketDataChannel::Depth => {
                     if resubscribed_books.insert(event.instrument_id)
                         && let Err(e) = ws_client.resubscribe_book(event.instrument_id).await
                     {
@@ -2570,7 +2658,7 @@ mod tests {
         let instrument_id = btc_perp_id();
         let start = Instant::now();
 
-        monitor.subscribe(MarketDataChannel::Depth10, instrument_id, start);
+        monitor.subscribe(MarketDataChannel::Depth, instrument_id, start);
         assert_eq!(
             monitor
                 .check_stale(
@@ -2582,7 +2670,7 @@ mod tests {
         );
 
         monitor.record_receive(
-            MarketDataChannel::Depth10,
+            MarketDataChannel::Depth,
             instrument_id,
             start + Duration::from_secs(7),
             UnixNanos::from(7_000_000_000),
@@ -2723,7 +2811,7 @@ mod tests {
         let instrument_id = btc_perp_id();
         let start = Instant::now();
 
-        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+        monitor.subscribe(MarketDataChannel::Depth, instrument_id, start);
 
         let events = check_at(&mut monitor, start, 5);
         assert_eq!(events.len(), 1);
@@ -2736,7 +2824,7 @@ mod tests {
         assert_eq!(
             events,
             vec![MarketDataStaleEvent {
-                channel: MarketDataChannel::Deltas,
+                channel: MarketDataChannel::Depth,
                 instrument_id,
                 receive_age: Duration::from_secs(35),
                 venue_age: None,
@@ -2758,6 +2846,83 @@ mod tests {
 
         let events = check_at(&mut monitor, start, 125);
         assert_eq!(events[0].action, StaleStreamAction::Resubscribe);
+    }
+
+    #[rstest]
+    fn test_stream_health_recovery_hands_deltas_to_book_recovery_without_reconnect() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(10))
+                .with_recovery(Duration::from_secs(30), 1);
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+
+        let first = check_at(&mut monitor, start, 5);
+        let second = check_at(&mut monitor, start, 35);
+        let third = check_at(&mut monitor, start, 65);
+        let fourth = check_at(&mut monitor, start, 95);
+
+        assert_eq!(first[0].action, StaleStreamAction::Warn);
+        assert_eq!(
+            second,
+            vec![MarketDataStaleEvent {
+                channel: MarketDataChannel::Deltas,
+                instrument_id,
+                receive_age: Duration::from_secs(35),
+                venue_age: None,
+                stale_count: 2,
+                action: StaleStreamAction::Recover,
+                cooldown: Duration::from_secs(30),
+                quote_is_fresh: false,
+            }],
+        );
+        assert_eq!(third[0].action, StaleStreamAction::Recover);
+        assert_eq!(fourth[0].action, StaleStreamAction::Recover);
+    }
+
+    #[rstest]
+    fn test_stream_health_recovery_hands_shared_depth_to_book_recovery() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(10))
+                .with_recovery(Duration::from_secs(30), 1);
+        let shared = btc_perp_id();
+        let depth_only = InstrumentId::from("ETH-PERP.HYPERLIQUID");
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Deltas, shared, start);
+        monitor.subscribe(MarketDataChannel::Depth, shared, start);
+        monitor.subscribe(MarketDataChannel::Depth, depth_only, start);
+
+        let actions = |events: Vec<MarketDataStaleEvent>| {
+            let mut actions = events
+                .into_iter()
+                .map(|event| (event.channel.as_str(), event.instrument_id, event.action))
+                .collect::<Vec<_>>();
+            actions.sort_by_key(|(channel, instrument_id, _)| (*channel, *instrument_id));
+            actions
+        };
+
+        check_at(&mut monitor, start, 5);
+        let first = actions(check_at(&mut monitor, start, 35));
+        let second = actions(check_at(&mut monitor, start, 65));
+
+        assert_eq!(
+            first,
+            vec![
+                ("deltas", shared, StaleStreamAction::Recover),
+                ("depth", shared, StaleStreamAction::Recover),
+                ("depth", depth_only, StaleStreamAction::Resubscribe),
+            ],
+        );
+        assert_eq!(
+            second,
+            vec![
+                ("deltas", shared, StaleStreamAction::Recover),
+                ("depth", shared, StaleStreamAction::Recover),
+                ("depth", depth_only, StaleStreamAction::Reconnect),
+            ],
+        );
     }
 
     #[rstest]
@@ -2788,7 +2953,7 @@ mod tests {
         let instrument_id = btc_perp_id();
         let start = Instant::now();
 
-        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+        monitor.subscribe(MarketDataChannel::Depth, instrument_id, start);
         assert_eq!(
             check_at(&mut monitor, start, 5)[0].action,
             StaleStreamAction::Warn
@@ -2799,7 +2964,7 @@ mod tests {
         );
 
         monitor.record_receive(
-            MarketDataChannel::Deltas,
+            MarketDataChannel::Depth,
             instrument_id,
             start + Duration::from_secs(16),
             UnixNanos::from(16_000_000_000),
@@ -2905,9 +3070,9 @@ mod tests {
             )),
         );
         assert_eq!(
-            stream_health_update(&NautilusWsMessage::Depth10(Box::new(depth))),
+            stream_health_update(&NautilusWsMessage::Depth(Box::new(depth.clone()))),
             Some((
-                MarketDataChannel::Depth10,
+                MarketDataChannel::Depth,
                 depth.instrument_id,
                 depth.ts_event
             )),

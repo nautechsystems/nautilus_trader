@@ -15,15 +15,16 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
-const MAX_PERIOD: usize = 1024;
-
+/// Percentage difference between price and its moving average.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -91,29 +92,42 @@ impl Bias {
     /// - If `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        assert!(
-            period > 0,
-            "BollingerBands: period must be > 0 (received {period})"
+        Self::new_checked(period, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (1..=MAX_PERIOD).contains(&period),
+            "period must be in 1..={MAX_PERIOD}"
         );
-        assert!(
-            period <= MAX_PERIOD,
-            "Bias: period {period} exceeds MAX_PERIOD {MAX_PERIOD}"
-        );
-        Self {
+        let ma_type = ma_type.unwrap_or(MovingAverageType::Simple);
+        Ok(Self {
             period,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma_type,
             value: 0.0,
             count: 0,
-            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
+            ma: MovingAverageFactory::create(ma_type, period),
             has_inputs: false,
             initialized: false,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, close: f64) {
+        if !close.is_finite() {
+            return;
+        }
         self.count += 1;
         self.ma.update_raw(close);
-        self.value = (close / self.ma.value()) - 1.0;
+        // A zero mean (e.g. an all-zero series) emits 0 instead of dividing
+        // to infinity/NaN
+        if self.ma.value() == 0.0 {
+            self.value = 0.0;
+        } else {
+            self.value = 100.0 * ((close / self.ma.value()) - 1.0);
+        }
         self.check_initialized();
     }
 
@@ -176,7 +190,7 @@ mod tests {
     #[rstest]
     fn test_value_with_all_higher_inputs_returns_expected_value(mut bias: Bias) {
         const EPS: f64 = 1e-12;
-        const EXPECTED: f64 = 0.000_654_735_923_177_662_8;
+        const EXPECTED: f64 = 0.065_473_592_317_766_28;
 
         fn abs_diff_lt(lhs: f64, rhs: f64) -> bool {
             (lhs - rhs).abs() < EPS

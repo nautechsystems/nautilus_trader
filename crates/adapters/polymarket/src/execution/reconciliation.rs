@@ -15,38 +15,48 @@
 
 //! Reconciliation report generation for the Polymarket execution client.
 
+use std::sync::Arc;
+
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use indexmap::IndexMap;
+use nautilus_common::cache::Cache;
 use nautilus_core::{
-    DurationNanos, UnixNanos, collections::AtomicMap, correctness::check_valid_string_ascii,
-    datetime::NANOSECONDS_IN_SECOND, time::AtomicTime,
+    DurationNanos, UnixNanos, collections::AtomicMap, datetime::NANOSECONDS_IN_SECOND,
+    time::AtomicTime,
 };
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, PositionSide, TimeInForce},
+    enums::{InstrumentCloseType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::OrderEventAny,
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::{
-    order_fill_tracker::OrderFillTrackerMap,
     parse::{
-        MakerFillParseContext, OrderReportParseContext, TakerFillParseContext,
-        composite_trade_id_value, determine_order_side, instrument_fee_exponent,
-        instrument_taker_fee, parse_timestamp, parse_validated_fill_report,
-        parse_validated_maker_fill_report, parse_validated_order_status_report,
+        OrderReportParseContext, parse_timestamp, parse_validated_order_status_report,
+        sum_filled_quantity, weighted_average_price,
+    },
+    settlement::{
+        AdmissionContext, AdmissionError, AdmittedLeg, SettlementRegistry, TradeEvidence,
+        admit_trade_legs,
     },
 };
 use crate::{
     common::{
         consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
-        enums::{PolymarketLiquiditySide, PolymarketOutcome, PolymarketTradeStatus},
-        models::{PolymarketMakerOrder, is_owned_by_account},
+        enums::{
+            PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOutcome, PolymarketSignerType,
+            PolymarketTradeStatus,
+        },
+        models::is_owned_by_account,
     },
     http::{
         clob::PolymarketClobHttpClient,
@@ -96,10 +106,12 @@ pub(crate) fn venue_leg_filled_before_and_quantity(
 /// Shared context for trade-to-fill-report conversion.
 pub(crate) struct FillContext<'a> {
     pub account_id: AccountId,
+    pub signer_type: PolymarketSignerType,
     pub user_address: &'a str,
     pub api_key: &'a str,
     pub pusd: Currency,
     pub clock: &'static AtomicTime,
+    pub settlement: Arc<SettlementRegistry>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -177,65 +189,12 @@ fn validate_target_trade_role(
     Ok(true)
 }
 
-fn validate_maker_order_side(
-    trade: &PolymarketTradeReport,
-    maker_order: &PolymarketMakerOrder,
-) -> anyhow::Result<OrderSide> {
-    let derived_side = determine_order_side(
-        trade.trader_side,
-        trade.side,
-        trade.asset_id.as_str(),
-        maker_order.asset_id.as_str(),
-    );
-    let provider_side = maker_order
-        .side
-        .with_context(|| format!("REST maker order {} is missing side", maker_order.order_id))?;
-    anyhow::ensure!(
-        OrderSide::from(provider_side) == derived_side,
-        "provider maker order {} side {provider_side} contradicts derived side {derived_side}",
-        maker_order.order_id,
-    );
-    Ok(derived_side)
-}
-
-fn checked_venue_order_id(value: &str, evidence: &str) -> anyhow::Result<VenueOrderId> {
+pub(crate) fn checked_venue_order_id(value: &str, evidence: &str) -> anyhow::Result<VenueOrderId> {
     VenueOrderId::new_checked(value)
         .with_context(|| format!("{evidence} has invalid venue order ID {value:?}"))
 }
 
-fn checked_trade_id(value: &str, evidence: &str) -> anyhow::Result<TradeId> {
-    TradeId::new_checked(value)
-        .with_context(|| format!("{evidence} has invalid trade ID {value:?}"))
-}
-
-#[derive(Clone, Copy)]
-struct ValidatedMakerReportIdentifiers {
-    venue_order_id: VenueOrderId,
-    trade_id: TradeId,
-}
-
-fn validate_maker_report_identifiers(
-    trade: &PolymarketTradeReport,
-    maker_order: &PolymarketMakerOrder,
-) -> anyhow::Result<ValidatedMakerReportIdentifiers> {
-    let venue_order_id = checked_venue_order_id(
-        &maker_order.order_id,
-        &format!("maker order in trade {}", trade.id),
-    )?;
-    check_valid_string_ascii(&trade.id, "trade.id")
-        .with_context(|| format!("maker trade {} has invalid trade ID source", trade.id))?;
-    let composite_trade_id = composite_trade_id_value(&trade.id, &maker_order.order_id);
-    let trade_id = checked_trade_id(
-        &composite_trade_id,
-        &format!("maker trade {} composite", trade.id),
-    )?;
-    Ok(ValidatedMakerReportIdentifiers {
-        venue_order_id,
-        trade_id,
-    })
-}
-
-fn validate_instrument_binding(
+pub(crate) fn validate_instrument_binding(
     instrument: &InstrumentAny,
     condition_id: &str,
     outcome: PolymarketOutcome,
@@ -264,7 +223,7 @@ fn validate_instrument_binding(
     Ok(())
 }
 
-fn validate_quantity_evidence(
+pub(crate) fn validate_quantity_evidence(
     value: Decimal,
     precision: u8,
     field: &str,
@@ -289,7 +248,11 @@ fn validate_quantity_evidence(
     Ok(())
 }
 
-fn validate_price_evidence(value: Decimal, precision: u8, field: &str) -> anyhow::Result<()> {
+pub(crate) fn validate_price_evidence(
+    value: Decimal,
+    precision: u8,
+    field: &str,
+) -> anyhow::Result<()> {
     anyhow::ensure!(
         value > Decimal::ZERO && value < Decimal::ONE,
         "{field} {value} must be greater than zero and less than one",
@@ -302,25 +265,6 @@ fn validate_price_evidence(value: Decimal, precision: u8, field: &str) -> anyhow
         "{field} {value} is not exactly representable with price precision {precision}",
     );
     Ok(())
-}
-
-fn validate_historical_price_evidence(value: Decimal, field: &str) -> anyhow::Result<Price> {
-    anyhow::ensure!(
-        value > Decimal::ZERO && value < Decimal::ONE,
-        "{field} {value} must be greater than zero and less than one",
-    );
-    let evidence = value.normalize();
-    anyhow::ensure!(
-        evidence.scale() <= u32::from(FIXED_PRECISION),
-        "historical {field} {value} exceeds the maximum representable price precision of {FIXED_PRECISION} decimals",
-    );
-    let price = Price::from_decimal(evidence)
-        .with_context(|| format!("failed to represent historical {field} {value}"))?;
-    anyhow::ensure!(
-        price.as_decimal() == value,
-        "historical {field} {value} is not exactly representable as a price",
-    );
-    Ok(price)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -398,46 +342,6 @@ fn validate_order_row_values(
     })
 }
 
-fn validate_trade_values(
-    quantity: Decimal,
-    price: Decimal,
-    size_precision: u8,
-    quantity_field: &str,
-    price_field: &str,
-) -> anyhow::Result<Price> {
-    validate_quantity_evidence(quantity, size_precision, quantity_field, false)?;
-    validate_historical_price_evidence(price, price_field)
-}
-
-fn validate_pending_trade_values(
-    quantity: Decimal,
-    price: Decimal,
-    quantity_field: &str,
-    price_field: &str,
-) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        quantity > Decimal::ZERO,
-        "{quantity_field} {quantity} must be positive"
-    );
-    anyhow::ensure!(
-        price > Decimal::ZERO && price < Decimal::ONE,
-        "{price_field} {price} must be greater than zero and less than one",
-    );
-    Ok(())
-}
-
-fn require_trade_timestamp(
-    ts_event: Option<UnixNanos>,
-    trade: &PolymarketTradeReport,
-) -> anyhow::Result<UnixNanos> {
-    ts_event.with_context(|| {
-        format!(
-            "selected trade {} has invalid match_time {}",
-            trade.id, trade.match_time,
-        )
-    })
-}
-
 fn resolve_target_instrument(
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     token_id: Ustr,
@@ -470,12 +374,28 @@ pub(super) fn validate_client_bound_order_quantity(
     expected_quantity: Quantity,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
-        expected_quantity.as_decimal() == provider_order.original_size,
+        venue_qty_matches(
+            provider_order.side == PolymarketOrderSide::Buy,
+            provider_order.original_size,
+            provider_order.size_matched,
+            expected_quantity.as_decimal(),
+        ),
         "provider order quantity {} does not match cached order quantity {}",
         provider_order.original_size,
         expected_quantity,
     );
     Ok(())
+}
+
+// A BUY whose venue fills exceed its signed size had its cached quantity raised to those fills
+pub(super) fn venue_qty_matches(
+    is_buy: bool,
+    signed_qty: Decimal,
+    matched_qty: Decimal,
+    expected_qty: Decimal,
+) -> bool {
+    expected_qty == signed_qty
+        || (is_buy && matched_qty > signed_qty && expected_qty == matched_qty)
 }
 
 fn validate_client_bound_order_row(
@@ -595,6 +515,7 @@ fn build_order_report_from_order(
         &order.owner,
         ctx.user_address,
         ctx.api_key,
+        ctx.signer_type,
     ) {
         return match scope {
             OrderEvidenceScope::Collection { .. } => {
@@ -775,240 +696,6 @@ pub(crate) fn build_target_order_report(
     Ok(report)
 }
 
-#[derive(Clone, Copy)]
-enum TargetFillParticipant<'a> {
-    Taker {
-        venue_order_id: VenueOrderId,
-        trade_id: TradeId,
-    },
-    Maker {
-        maker_order: &'a PolymarketMakerOrder,
-        identifiers: ValidatedMakerReportIdentifiers,
-    },
-}
-
-struct AdmittedTargetFill<'a> {
-    participant: TargetFillParticipant<'a>,
-    instrument: InstrumentAny,
-    last_px: Price,
-    ts_event: UnixNanos,
-}
-
-#[derive(Clone, Copy)]
-enum TargetTradeClass {
-    Unrelated,
-    Pending,
-    Confirmed,
-    Failed,
-}
-
-struct TargetTradeAdmission<'a> {
-    class: TargetTradeClass,
-    confirmed_fill: Option<AdmittedTargetFill<'a>>,
-}
-
-fn classify_target_trade<'a>(
-    trade: &'a PolymarketTradeReport,
-    ctx: &FillContext<'_>,
-    instruments: &AtomicMap<Ustr, InstrumentAny>,
-    instrument_id: Option<InstrumentId>,
-    venue_order_id: VenueOrderId,
-    expected_order_side: Option<OrderSide>,
-) -> anyhow::Result<TargetTradeAdmission<'a>> {
-    if !validate_target_trade_role(trade, venue_order_id)? {
-        return Ok(TargetTradeAdmission {
-            class: TargetTradeClass::Unrelated,
-            confirmed_fill: None,
-        });
-    }
-
-    let (participant, instrument, quantity, price, quantity_field, price_field) =
-        if trade.trader_side == PolymarketLiquiditySide::Maker {
-            let maker_order = trade
-                .maker_orders
-                .iter()
-                .find(|order| order.order_id == venue_order_id.as_str())
-                .context("validated target maker occurrence is missing")?;
-            anyhow::ensure!(
-                maker_order.is_owned_by(ctx.user_address, ctx.api_key),
-                "target maker order {} is not owned by the account",
-                maker_order.order_id,
-            );
-            let identifiers = validate_maker_report_identifiers(trade, maker_order)?;
-            let instrument = resolve_target_instrument(
-                instruments,
-                maker_order.asset_id,
-                instrument_id,
-                &format!(
-                    "target maker trade {} order {}",
-                    trade.id, maker_order.order_id
-                ),
-            )?;
-            validate_instrument_binding(&instrument, trade.market.as_str(), maker_order.outcome)?;
-            let order_side = validate_maker_order_side(trade, maker_order)?;
-            validate_expected_order_side(
-                expected_order_side,
-                order_side,
-                &format!("target maker order {}", maker_order.order_id),
-            )?;
-            (
-                TargetFillParticipant::Maker {
-                    maker_order,
-                    identifiers,
-                },
-                instrument,
-                maker_order.matched_amount,
-                maker_order.price,
-                format!("target maker order {} matched amount", maker_order.order_id),
-                format!("target maker order {} price", maker_order.order_id),
-            )
-        } else {
-            anyhow::ensure!(
-                is_owned_by_account(
-                    &trade.maker_address,
-                    &trade.owner,
-                    ctx.user_address,
-                    ctx.api_key,
-                ),
-                "target taker order {} is not owned by the account",
-                trade.taker_order_id,
-            );
-            let venue_order_id =
-                checked_venue_order_id(&trade.taker_order_id, "target taker trade")?;
-            let trade_id = checked_trade_id(&trade.id, "target taker trade")?;
-            let instrument = resolve_target_instrument(
-                instruments,
-                trade.asset_id,
-                instrument_id,
-                &format!("target taker trade {}", trade.id),
-            )?;
-            validate_instrument_binding(&instrument, trade.market.as_str(), trade.outcome)?;
-            validate_expected_order_side(
-                expected_order_side,
-                OrderSide::from(trade.side),
-                &format!("target taker order {}", trade.taker_order_id),
-            )?;
-            (
-                TargetFillParticipant::Taker {
-                    venue_order_id,
-                    trade_id,
-                },
-                instrument,
-                trade.size,
-                trade.price,
-                format!("target taker trade {} size", trade.id),
-                format!("target taker trade {} price", trade.id),
-            )
-        };
-
-    match trade.status {
-        PolymarketTradeStatus::Matched
-        | PolymarketTradeStatus::Mined
-        | PolymarketTradeStatus::Retrying => {
-            validate_pending_trade_values(
-                quantity,
-                price,
-                &format!("pending {quantity_field}"),
-                &format!("pending {price_field}"),
-            )?;
-            require_trade_timestamp(parse_timestamp(&trade.match_time), trade)?;
-            Ok(TargetTradeAdmission {
-                class: TargetTradeClass::Pending,
-                confirmed_fill: None,
-            })
-        }
-        PolymarketTradeStatus::Confirmed => {
-            let last_px = validate_trade_values(
-                quantity,
-                price,
-                instrument.size_precision(),
-                &quantity_field,
-                &price_field,
-            )?;
-            let ts_event = require_trade_timestamp(parse_timestamp(&trade.match_time), trade)?;
-            Ok(TargetTradeAdmission {
-                class: TargetTradeClass::Confirmed,
-                confirmed_fill: Some(AdmittedTargetFill {
-                    participant,
-                    instrument,
-                    last_px,
-                    ts_event,
-                }),
-            })
-        }
-        PolymarketTradeStatus::Failed => Ok(TargetTradeAdmission {
-            class: TargetTradeClass::Failed,
-            confirmed_fill: None,
-        }),
-    }
-}
-
-fn build_admitted_target_fill(
-    trade: &PolymarketTradeReport,
-    admitted: &AdmittedTargetFill<'_>,
-    ctx: &FillContext<'_>,
-    ts_init: UnixNanos,
-) -> anyhow::Result<FillReport> {
-    let instrument_id = admitted.instrument.id();
-    let price_prec = admitted.last_px.precision;
-    let size_prec = admitted.instrument.size_precision();
-
-    match admitted.participant {
-        TargetFillParticipant::Maker {
-            maker_order,
-            identifiers,
-        } => parse_validated_maker_fill_report(
-            maker_order,
-            trade.trader_side,
-            trade.side,
-            trade.asset_id.as_str(),
-            MakerFillParseContext {
-                account_id: ctx.account_id,
-                instrument_id,
-                venue_order_id: identifiers.venue_order_id,
-                trade_id: identifiers.trade_id,
-                price_precision: price_prec,
-                size_precision: size_prec,
-                currency: ctx.pusd,
-                liquidity_side: LiquiditySide::Maker,
-                ts_event: admitted.ts_event,
-                ts_init,
-            },
-        )
-        .with_context(|| {
-            format!(
-                "failed to build target maker fill report for trade {} and order {}",
-                trade.id, maker_order.order_id,
-            )
-        }),
-        TargetFillParticipant::Taker {
-            venue_order_id,
-            trade_id,
-        } => {
-            let taker_fee_rate = instrument_taker_fee(&admitted.instrument);
-            let fee_exponent = instrument_fee_exponent(&admitted.instrument)?;
-            parse_validated_fill_report(
-                trade,
-                TakerFillParseContext {
-                    instrument_id,
-                    account_id: ctx.account_id,
-                    client_order_id: None,
-                    venue_order_id,
-                    trade_id,
-                    price_precision: price_prec,
-                    size_precision: size_prec,
-                    currency: ctx.pusd,
-                    taker_fee_rate,
-                    fee_exponent,
-                    ts_event: admitted.ts_event,
-                    ts_init,
-                },
-            )
-            .with_context(|| format!("failed to build target taker fill for trade {}", trade.id))
-        }
-    }
-}
-
 /// Counts of confirmed trade evidence dropped while building fill reports.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FillBuildDiscards {
@@ -1025,7 +712,7 @@ pub(crate) struct FillBuildDiscards {
     pub untimestamped_trades: usize,
 }
 
-fn admit_selected_trade<'a>(
+pub(crate) fn admit_selected_trade<'a>(
     selected_trades: &mut AHashMap<&'a str, &'a PolymarketTradeReport>,
     trade: &'a PolymarketTradeReport,
 ) -> anyhow::Result<bool> {
@@ -1044,6 +731,8 @@ fn admit_selected_trade<'a>(
 
 /// Converts trade reports into fill reports: single implementation of maker/taker
 /// parsing used by both `generate_fill_reports()` and `generate_mass_status()`.
+///
+/// Every reported leg passes the settlement admission boundary shared with WebSocket evidence.
 pub(crate) fn build_fill_reports_from_trades(
     trades: &[PolymarketTradeReport],
     ctx: &FillContext<'_>,
@@ -1053,298 +742,276 @@ pub(crate) fn build_fill_reports_from_trades(
     load_ids: Option<&[InstrumentId]>,
     lookback_start: Option<UnixNanos>,
 ) -> anyhow::Result<(Vec<FillReport>, FillBuildDiscards)> {
+    let admission_ctx = AdmissionContext {
+        signer_type: ctx.signer_type,
+        user_address: ctx.user_address,
+        api_key: ctx.api_key,
+        pusd: ctx.pusd,
+        instruments,
+    };
+
+    if let Some(target_order_id) = scope.venue_order_id {
+        return build_target_fill_reports(
+            trades,
+            &admission_ctx,
+            &ctx.settlement,
+            scope,
+            target_order_id,
+            ts_init,
+        );
+    }
+
     let mut reports = Vec::new();
     let mut discards = FillBuildDiscards::default();
     let mut selected_trades = AHashMap::new();
 
     for trade in trades {
-        if let Some(target_order_id) = scope.venue_order_id {
-            let admission = classify_target_trade(
-                trade,
-                ctx,
-                instruments,
-                scope.instrument_id,
-                target_order_id,
-                scope.expected_order_side,
-            )?;
-
-            if matches!(admission.class, TargetTradeClass::Unrelated) {
-                continue;
-            }
-
-            if !admit_selected_trade(&mut selected_trades, trade)? {
-                continue;
-            }
-
-            match admission.class {
-                TargetTradeClass::Unrelated | TargetTradeClass::Failed => continue,
-                TargetTradeClass::Pending => {
-                    discards.has_pending_target = true;
-                    continue;
-                }
-                TargetTradeClass::Confirmed => {
-                    let admitted = admission
-                        .confirmed_fill
-                        .as_ref()
-                        .context("confirmed target admission is missing fill evidence")?;
-                    reports.push(build_admitted_target_fill(trade, admitted, ctx, ts_init)?);
-                    continue;
-                }
-            }
-        }
-
         if trade.status != PolymarketTradeStatus::Confirmed {
             continue;
         }
 
-        let is_maker = trade.trader_side == PolymarketLiquiditySide::Maker;
+        let selected_order_ids = select_reportable_order_ids(
+            trade,
+            ctx,
+            instruments,
+            scope.instrument_id,
+            load_ids,
+            lookback_start,
+            &mut discards,
+        );
 
-        if is_maker {
-            if !trade
-                .maker_orders
-                .iter()
-                .any(|mo| mo.is_owned_by(ctx.user_address, ctx.api_key))
-            {
-                let ts_event = parse_timestamp(&trade.match_time);
-                let instrument_id =
-                    instrument_id_from_market_token(trade.market.as_str(), trade.asset_id.as_str());
-                let in_load_ids_scope = instrument_in_load_ids_scope(instrument_id, load_ids);
+        if selected_order_ids.is_empty() {
+            continue;
+        }
 
+        let admitted = match admit_trade_legs(
+            TradeEvidence::Rest(trade),
+            &admission_ctx,
+            &selected_order_ids,
+        ) {
+            Ok(admitted) => admitted,
+            Err(AdmissionError::Untimestamped(_))
                 if !trade_in_lookback_window(
-                    ts_event,
+                    None,
                     lookback_start,
-                    in_load_ids_scope,
+                    true,
                     &trade.id,
                     &mut discards,
-                ) {
-                    continue;
-                }
-                discards.unowned_maker_trades += 1;
-                log::debug!(
-                    "Confirmed maker trade {} holds no maker order owned by the account",
-                    trade.id,
-                );
-                continue;
-            }
-
-            let mut selected_maker_orders: Vec<(
-                &PolymarketMakerOrder,
-                InstrumentAny,
-                ValidatedMakerReportIdentifiers,
-                Price,
-            )> = Vec::new();
-
-            for mo in &trade.maker_orders {
-                if !mo.is_owned_by(ctx.user_address, ctx.api_key) {
-                    continue;
-                }
-
-                let token_id = mo.asset_id;
-                let instrument = match instruments.get_cloned(&token_id) {
-                    Some(instrument) => instrument,
-                    None => {
-                        classify_unmapped_historical(
-                            &mut discards,
-                            load_ids,
-                            &trade.market,
-                            token_id.as_str(),
-                        );
-                        continue;
-                    }
-                };
-                let instrument_id = instrument.id();
-
-                if scope
-                    .instrument_id
-                    .is_some_and(|requested| instrument_id != requested)
-                {
-                    continue;
-                }
-
-                if !instrument_in_load_ids_scope(instrument_id, load_ids) {
-                    log::debug!(
-                        "Dropping loaded out-of-scope historical instrument {instrument_id}",
-                    );
-                    continue;
-                }
-
-                anyhow::ensure!(
-                    !selected_maker_orders
-                        .iter()
-                        .any(|(selected, _, _, _)| selected.order_id == mo.order_id),
-                    "maker order {} appears more than once in trade {}",
-                    mo.order_id,
-                    trade.id,
-                );
-
-                let identifiers = validate_maker_report_identifiers(trade, mo)?;
-
-                validate_instrument_binding(&instrument, trade.market.as_str(), mo.outcome)?;
-                validate_maker_order_side(trade, mo)?;
-                let last_px = validate_trade_values(
-                    mo.matched_amount,
-                    mo.price,
-                    instrument.size_precision(),
-                    &format!("maker order {} matched amount", mo.order_id),
-                    &format!("maker order {} price", mo.order_id),
-                )?;
-                selected_maker_orders.push((mo, instrument, identifiers, last_px));
-            }
-
-            if selected_maker_orders.is_empty() {
-                continue;
-            }
-
-            let ts_event = parse_timestamp(&trade.match_time);
-            let in_load_ids_scope = selected_maker_orders.iter().any(|(_, instrument, _, _)| {
-                instrument_in_load_ids_scope(instrument.id(), load_ids)
-            });
-
-            if !trade_in_lookback_window(
-                ts_event,
-                lookback_start,
-                in_load_ids_scope,
-                &trade.id,
-                &mut discards,
-            ) {
-                continue;
-            }
-
-            if !admit_selected_trade(&mut selected_trades, trade)? {
-                continue;
-            }
-
-            let ts_event = require_trade_timestamp(ts_event, trade)?;
-
-            for (mo, instrument, identifiers, last_px) in selected_maker_orders {
-                let instrument_id = instrument.id();
-                let price_prec = last_px.precision;
-                let size_prec = instrument.size_precision();
-
-                let report = parse_validated_maker_fill_report(
-                    mo,
-                    trade.trader_side,
-                    trade.side,
-                    trade.asset_id.as_str(),
-                    MakerFillParseContext {
-                        account_id: ctx.account_id,
-                        instrument_id,
-                        venue_order_id: identifiers.venue_order_id,
-                        trade_id: identifiers.trade_id,
-                        price_precision: price_prec,
-                        size_precision: size_prec,
-                        currency: ctx.pusd,
-                        liquidity_side: LiquiditySide::Maker,
-                        ts_event,
-                        ts_init,
-                    },
-                )
-                .with_context(|| {
-                    format!(
-                        "failed to build maker fill report for trade {} and order {}",
-                        trade.id, mo.order_id,
-                    )
-                })?;
-                reports.push(report);
-            }
-        } else {
-            if !is_owned_by_account(
-                &trade.maker_address,
-                &trade.owner,
-                ctx.user_address,
-                ctx.api_key,
-            ) {
-                log::debug!(
-                    "Dropping confirmed taker trade {} not owned by the account",
-                    trade.id
-                );
-                continue;
-            }
-
-            let token_id = trade.asset_id;
-            let instrument = match instruments.get_cloned(&token_id) {
-                Some(instrument) => instrument,
-                None => {
-                    classify_unmapped_historical(
-                        &mut discards,
-                        load_ids,
-                        &trade.market,
-                        token_id.as_str(),
-                    );
-                    continue;
-                }
-            };
-            let instrument_id = instrument.id();
-
-            if scope
-                .instrument_id
-                .is_some_and(|requested| instrument_id != requested)
+                ) =>
             {
                 continue;
             }
-
-            if !instrument_in_load_ids_scope(instrument_id, load_ids) {
-                log::debug!("Dropping loaded out-of-scope historical instrument {instrument_id}",);
-                continue;
+            Err(AdmissionError::Untimestamped(e) | AdmissionError::Invalid(e)) => return Err(e),
+            Err(e) => {
+                anyhow::bail!("selected trade {} was not admitted: {e}", trade.id)
             }
+        };
 
-            let venue_order_id = checked_venue_order_id(&trade.taker_order_id, "taker trade")?;
-            let trade_id = checked_trade_id(&trade.id, "taker trade")?;
+        if !trade_in_lookback_window(
+            parse_timestamp(&trade.match_time),
+            lookback_start,
+            true,
+            &trade.id,
+            &mut discards,
+        ) {
+            continue;
+        }
 
-            validate_instrument_binding(&instrument, trade.market.as_str(), trade.outcome)?;
-            let last_px = validate_trade_values(
-                trade.size,
-                trade.price,
-                instrument.size_precision(),
-                &format!("taker trade {} size", trade.id),
-                &format!("taker trade {} price", trade.id),
-            )?;
-            let ts_event = parse_timestamp(&trade.match_time);
-            let in_load_ids_scope = instrument_in_load_ids_scope(instrument_id, load_ids);
+        if !admit_selected_trade(&mut selected_trades, trade)? {
+            continue;
+        }
 
-            if !trade_in_lookback_window(
-                ts_event,
-                lookback_start,
-                in_load_ids_scope,
-                &trade.id,
-                &mut discards,
-            ) {
-                continue;
-            }
-
-            if !admit_selected_trade(&mut selected_trades, trade)? {
-                continue;
-            }
-
-            let ts_event = require_trade_timestamp(ts_event, trade)?;
-            let price_prec = last_px.precision;
-            let size_prec = instrument.size_precision();
-            let taker_fee_rate = instrument_taker_fee(&instrument);
-            let fee_exponent = instrument_fee_exponent(&instrument)?;
-
-            let report = parse_validated_fill_report(
-                trade,
-                TakerFillParseContext {
-                    instrument_id,
-                    account_id: ctx.account_id,
-                    client_order_id: None,
-                    venue_order_id,
-                    trade_id,
-                    price_precision: price_prec,
-                    size_precision: size_prec,
-                    currency: ctx.pusd,
-                    taker_fee_rate,
-                    fee_exponent,
-                    ts_event,
-                    ts_init,
-                },
-            )
-            .with_context(|| format!("failed to build taker fill report for trade {}", trade.id))?;
-            reports.push(report);
+        for leg in &admitted.legs {
+            reports.push(ctx.settlement.build_fill_report(
+                &admitted.venue_trade_id,
+                leg,
+                ts_init,
+            )?);
         }
     }
 
     Ok((reports, discards))
+}
+
+fn build_target_fill_reports(
+    trades: &[PolymarketTradeReport],
+    ctx: &AdmissionContext<'_>,
+    settlement: &SettlementRegistry,
+    scope: FillReportScope,
+    target_order_id: VenueOrderId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<(Vec<FillReport>, FillBuildDiscards)> {
+    let mut reports = Vec::new();
+    let mut discards = FillBuildDiscards::default();
+    let mut selected_trades = AHashMap::new();
+
+    for trade in trades {
+        let target = classify_target_trade(
+            trade,
+            ctx,
+            scope.instrument_id,
+            target_order_id,
+            scope.expected_order_side,
+        )?;
+
+        if matches!(target, TargetTrade::Unrelated) {
+            continue;
+        }
+
+        if !admit_selected_trade(&mut selected_trades, trade)? {
+            continue;
+        }
+
+        match target {
+            TargetTrade::Unrelated | TargetTrade::Failed => {}
+            TargetTrade::Pending => discards.has_pending_target = true,
+            TargetTrade::Confirmed(leg) => {
+                reports.push(settlement.build_fill_report(&trade.id, &leg, ts_init)?);
+            }
+        }
+    }
+
+    Ok((reports, discards))
+}
+
+enum TargetTrade {
+    Unrelated,
+    Pending,
+    Confirmed(AdmittedLeg),
+    Failed,
+}
+
+fn classify_target_trade(
+    trade: &PolymarketTradeReport,
+    ctx: &AdmissionContext<'_>,
+    instrument_id: Option<InstrumentId>,
+    venue_order_id: VenueOrderId,
+    expected_order_side: Option<OrderSide>,
+) -> anyhow::Result<TargetTrade> {
+    if !validate_target_trade_role(trade, venue_order_id)? {
+        return Ok(TargetTrade::Unrelated);
+    }
+
+    let admitted = admit_trade_legs(TradeEvidence::Rest(trade), ctx, &[venue_order_id.as_str()])
+        .map_err(|e| match e {
+            AdmissionError::Untimestamped(e) | AdmissionError::Invalid(e) => e,
+            AdmissionError::Unowned => {
+                anyhow::anyhow!("target order {venue_order_id} is not owned by the account")
+            }
+            AdmissionError::UnknownInstrument(token_id) => anyhow::anyhow!(
+                "target trade {} token {token_id} has no loaded Polymarket instrument",
+                trade.id,
+            ),
+        })?;
+
+    let status = admitted.status;
+    let leg = admitted
+        .legs
+        .into_iter()
+        .next()
+        .context("admitted target trade holds no leg")?;
+
+    if let Some(requested_instrument_id) = instrument_id {
+        anyhow::ensure!(
+            leg.instrument_id == requested_instrument_id,
+            "target trade {} resolves to instrument {}, not requested instrument {requested_instrument_id}",
+            trade.id,
+            leg.instrument_id,
+        );
+    }
+
+    validate_expected_order_side(
+        expected_order_side,
+        leg.order_side,
+        &format!("target order {venue_order_id}"),
+    )?;
+
+    Ok(match status {
+        PolymarketTradeStatus::Matched
+        | PolymarketTradeStatus::MatchedNotBroadcasted
+        | PolymarketTradeStatus::Mined
+        | PolymarketTradeStatus::Retrying => TargetTrade::Pending,
+        PolymarketTradeStatus::Confirmed => TargetTrade::Confirmed(leg),
+        PolymarketTradeStatus::Failed => TargetTrade::Failed,
+    })
+}
+
+fn select_reportable_order_ids<'a>(
+    trade: &'a PolymarketTradeReport,
+    ctx: &FillContext<'_>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_filter: Option<InstrumentId>,
+    load_ids: Option<&[InstrumentId]>,
+    lookback_start: Option<UnixNanos>,
+    discards: &mut FillBuildDiscards,
+) -> Vec<&'a str> {
+    let owned_orders: Vec<(&str, Ustr)> = if trade.trader_side == PolymarketLiquiditySide::Maker {
+        trade
+            .maker_orders
+            .iter()
+            .filter(|mo| mo.is_owned_by(ctx.user_address, ctx.api_key, ctx.signer_type))
+            .map(|mo| (mo.order_id.as_str(), mo.asset_id))
+            .collect()
+    } else if is_owned_by_account(
+        &trade.maker_address,
+        &trade.owner,
+        ctx.user_address,
+        ctx.api_key,
+        ctx.signer_type,
+    ) {
+        vec![(trade.taker_order_id.as_str(), trade.asset_id)]
+    } else {
+        log::debug!(
+            "Dropping confirmed taker trade {} not owned by the account",
+            trade.id
+        );
+        return Vec::new();
+    };
+
+    if owned_orders.is_empty() {
+        let instrument_id =
+            instrument_id_from_market_token(trade.market.as_str(), trade.asset_id.as_str());
+
+        if trade_in_lookback_window(
+            parse_timestamp(&trade.match_time),
+            lookback_start,
+            instrument_in_load_ids_scope(instrument_id, load_ids),
+            &trade.id,
+            discards,
+        ) {
+            discards.unowned_maker_trades += 1;
+            log::debug!(
+                "Confirmed maker trade {} holds no maker order owned by the account",
+                trade.id,
+            );
+        }
+
+        return Vec::new();
+    }
+
+    let mut selected = Vec::new();
+
+    for (order_id, token_id) in owned_orders {
+        let Some(instrument) = instruments.get_cloned(&token_id) else {
+            classify_unmapped_historical(discards, load_ids, &trade.market, token_id.as_str());
+            continue;
+        };
+
+        let instrument_id = instrument.id();
+
+        if instrument_filter.is_some_and(|requested| instrument_id != requested) {
+            continue;
+        }
+
+        if !instrument_in_load_ids_scope(instrument_id, load_ids) {
+            log::debug!("Dropping loaded out-of-scope historical instrument {instrument_id}");
+            continue;
+        }
+
+        selected.push(order_id);
+    }
+
+    selected
 }
 
 /// Converts open orders into order status reports.
@@ -1423,17 +1090,71 @@ fn build_position_report_from_reportable_position(
             return None;
         }
     };
-    Some(PositionStatusReport::new(
-        account_id,
-        instrument_id,
-        PositionSide::Long,
-        quantity,
-        ts_init,
-        ts_init,
-        None,
-        None,
-        position.avg_price,
-    ))
+
+    // The Data API reports average cost to four decimal places
+    Some(
+        PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            quantity,
+            ts_init,
+            ts_init,
+            None,
+            None,
+            position.avg_price,
+        )
+        .with_avg_px_open_precision(4),
+    )
+}
+
+/// Cached execution state that decides which resolved Data API balances to omit.
+///
+/// A balance no longer represents open exposure once core settles its instrument, or once the
+/// Data API marks it redeemable and no open position holds it. A redeemable balance that still
+/// backs an open position stays reported until settlement, so its absence cannot be taken as a
+/// flat venue position.
+pub(crate) struct ResolvedBalanceScope {
+    settled_instrument_ids: AHashSet<InstrumentId>,
+    open_instrument_ids: AHashSet<InstrumentId>,
+}
+
+impl ResolvedBalanceScope {
+    pub(crate) fn from_cache(cache: &Cache, venue: Venue, account_id: AccountId) -> Self {
+        let settled_instrument_ids = cache
+            .instrument_close_ids()
+            .into_iter()
+            .filter(|instrument_id| {
+                instrument_id.venue == venue
+                    && cache.instrument_close(instrument_id).is_some_and(|close| {
+                        close.close_type == InstrumentCloseType::ContractExpired
+                    })
+            })
+            .copied()
+            .collect();
+
+        let open_instrument_ids = cache
+            .positions_open(Some(&venue), None, None, Some(&account_id), None)
+            .iter()
+            .map(|position| position.instrument_id)
+            .collect();
+
+        Self {
+            settled_instrument_ids,
+            open_instrument_ids,
+        }
+    }
+
+    fn excludes(&self, position: &DataApiPosition, instrument_id: InstrumentId) -> bool {
+        let contains = |instrument_ids: &AHashSet<InstrumentId>| {
+            instrument_ids
+                .iter()
+                .any(|id| polymarket_instrument_ids_equivalent(*id, instrument_id))
+        };
+
+        contains(&self.settled_instrument_ids)
+            || (position.redeemable && !contains(&self.open_instrument_ids))
+    }
 }
 
 pub(crate) fn build_reconciliation_position_reports(
@@ -1443,6 +1164,7 @@ pub(crate) fn build_reconciliation_position_reports(
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
+    resolved_balances: &ResolvedBalanceScope,
 ) -> anyhow::Result<Vec<PositionStatusReport>> {
     let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
     let mut reports = Vec::with_capacity(positions.len());
@@ -1455,6 +1177,7 @@ pub(crate) fn build_reconciliation_position_reports(
             instruments,
             instrument_filter,
             collection_load_ids,
+            resolved_balances,
         )? {
             reports.push(report);
         }
@@ -1470,6 +1193,7 @@ fn build_reconciliation_position_report(
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     collection_load_ids: Option<&[InstrumentId]>,
+    resolved_balances: &ResolvedBalanceScope,
 ) -> anyhow::Result<Option<PositionStatusReport>> {
     let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
 
@@ -1481,6 +1205,11 @@ fn build_reconciliation_position_report(
 
     if !instrument_in_load_ids_scope(instrument_id, collection_load_ids) {
         log::debug!("Dropping out-of-scope position instrument {instrument_id}");
+        return Ok(None);
+    }
+
+    if resolved_balances.excludes(position, instrument_id) {
+        log::debug!("Dropping resolved position balance for {instrument_id}");
         return Ok(None);
     }
 
@@ -1508,13 +1237,16 @@ pub(crate) async fn generate_mass_status(
     http_client: &PolymarketClobHttpClient,
     data_api_client: &PolymarketDataApiHttpClient,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    fill_tracker: &OrderFillTrackerMap,
     ctx: &FillContext<'_>,
-    client_id: ClientId,
-    venue: Venue,
+    core: &ExecutionClientCore,
     lookback_mins: Option<u64>,
     load_ids: Option<&[InstrumentId]>,
+    resolved_balances: &ResolvedBalanceScope,
+    retained_trade_ids: &AHashMap<InstrumentId, AHashSet<TradeId>>,
+    is_cached_order: impl Fn(&VenueOrderId) -> bool,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+    let client_id = core.client_id;
+    let venue = core.venue;
     let ts_init = ctx.clock.get_time_ns();
     let lookback_start = lookback_mins
         .map(DurationNanos::try_from_mins)
@@ -1537,7 +1269,16 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch trades for mass status")?;
 
-    let (mut fill_reports, fill_discards) = build_fill_reports_from_trades(
+    let positions = if ctx.signer_type == PolymarketSignerType::Session {
+        Vec::new()
+    } else {
+        data_api_client
+            .get_positions(ctx.user_address)
+            .await
+            .context("failed to fetch positions for mass status")?
+    };
+
+    let (fill_reports, fill_discards) = build_fill_reports_from_trades(
         &trades,
         ctx,
         instruments,
@@ -1555,27 +1296,51 @@ pub(crate) async fn generate_mass_status(
         );
     }
 
-    fill_tracker.snap_fill_reports(&mut fill_reports);
+    let mut position_reports = if ctx.signer_type == PolymarketSignerType::Session {
+        Vec::new()
+    } else {
+        build_reconciliation_position_reports(
+            &positions,
+            ctx.account_id,
+            ts_init,
+            instruments,
+            None,
+            load_ids,
+            resolved_balances,
+        )?
+    };
 
-    let positions = data_api_client
-        .get_positions(ctx.user_address)
-        .await
-        .context("failed to fetch positions for mass status")?;
+    {
+        let cache = core.cache();
+        let orders = cache.orders_refs(Some(&venue), None, None, Some(&ctx.account_id), None);
+        cap_order_reports_to_confirmed_fills(
+            &mut order_reports,
+            &fill_reports,
+            &ctx.settlement,
+            orders.iter().map(|order| &**order),
+        )?;
+    }
 
-    let position_reports = build_reconciliation_position_reports(
-        &positions,
-        ctx.account_id,
+    let aligned_instrument_ids =
+        align_position_reports_to_fills(&mut position_reports, &fill_reports, retained_trade_ids)?;
+    let closed_order_reports = build_closed_order_reports(
+        &fill_reports,
+        &order_reports,
+        &position_reports,
+        &aligned_instrument_ids,
+        lookback_start.is_some(),
+        is_cached_order,
         ts_init,
-        instruments,
-        None,
-        load_ids,
     )?;
+    let closed_order_count = closed_order_reports.len();
+    order_reports.extend(closed_order_reports);
 
     log::debug!(
-        "Generated mass status: {} orders ({} filtered), {} fills ({} instrument-filtered, \
-         {} in-scope historical misses, {} unowned maker trades, {} untimestamped trades), {} \
-         positions",
+        "Generated mass status: {} orders ({} closed, {} filtered), {} fills ({} \
+         instrument-filtered, {} in-scope historical misses, {} unowned maker trades, {} \
+         untimestamped trades), {} positions",
         order_reports.len(),
+        closed_order_count,
         orders_filtered,
         fill_reports.len(),
         fill_discards.unmapped_instruments,
@@ -1584,10 +1349,6 @@ pub(crate) async fn generate_mass_status(
         fill_discards.untimestamped_trades,
         position_reports.len(),
     );
-
-    if lookback_start.is_none() {
-        cap_order_reports_to_confirmed_fills(&mut order_reports, &fill_reports);
-    }
 
     let mut mass_status = ExecutionMassStatus::new(client_id, ctx.account_id, venue, ts_init, None);
 
@@ -1610,6 +1371,198 @@ pub(crate) async fn generate_mass_status(
     mass_status.add_fill_reports(fill_reports);
 
     Ok(Some(mass_status))
+}
+
+// The CLOB lists only open orders, and reconciliation drops fills that have no order evidence
+fn build_closed_order_reports(
+    fill_reports: &[FillReport],
+    order_reports: &[OrderStatusReport],
+    position_reports: &[PositionStatusReport],
+    aligned_instrument_ids: &AHashSet<InstrumentId>,
+    is_bounded: bool,
+    is_cached_order: impl Fn(&VenueOrderId) -> bool,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Vec<OrderStatusReport>> {
+    let open_order_ids: AHashSet<VenueOrderId> = order_reports
+        .iter()
+        .map(|report| report.venue_order_id)
+        .collect();
+    let position_instrument_ids: AHashSet<InstrumentId> = position_reports
+        .iter()
+        .map(|report| report.instrument_id)
+        .collect();
+    let mut fills_by_order: IndexMap<VenueOrderId, Vec<FillReport>> = IndexMap::new();
+
+    for fill in fill_reports {
+        if open_order_ids.contains(&fill.venue_order_id) || is_cached_order(&fill.venue_order_id) {
+            continue;
+        }
+
+        // Reported positions take fills only when they explain the position, and unbounded
+        // reconciliation builds positions from fills, which miss redemptions and merges.
+        let is_reportable = if position_instrument_ids.contains(&fill.instrument_id) {
+            aligned_instrument_ids.contains(&fill.instrument_id)
+        } else {
+            is_bounded
+        };
+
+        if !is_reportable {
+            continue;
+        }
+
+        fills_by_order
+            .entry(fill.venue_order_id)
+            .or_default()
+            .push(fill.clone());
+    }
+
+    fills_by_order
+        .values()
+        .map(|fills| build_closed_order_report(fills, ts_init))
+        .collect()
+}
+
+fn build_closed_order_report(
+    fills: &[FillReport],
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    let first = fills.first().context("closed order holds no fills")?;
+    anyhow::ensure!(
+        fills
+            .iter()
+            .all(|fill| fill.instrument_id == first.instrument_id
+                && fill.order_side == first.order_side),
+        "confirmed fills of venue order {} disagree on instrument or side",
+        first.venue_order_id,
+    );
+
+    let filled = sum_filled_quantity(fills);
+    let filled_qty = Quantity::from_decimal_dp(filled, first.last_qty.precision)?;
+    let ts_accepted = fills
+        .iter()
+        .map(|fill| fill.ts_event)
+        .fold(first.ts_event, Ord::min);
+    let ts_last = fills
+        .iter()
+        .map(|fill| fill.ts_event)
+        .fold(first.ts_event, Ord::max);
+
+    // Trades carry no limit price, time in force, or signed size, so the fills define the order
+    let mut report = OrderStatusReport::new(
+        first.account_id,
+        first.instrument_id,
+        None,
+        first.venue_order_id,
+        Some(first.order_side),
+        OrderType::Market,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        filled_qty,
+        filled_qty,
+        ts_accepted,
+        ts_last,
+        ts_init,
+        None,
+    );
+    report.avg_px = weighted_average_price(fills, filled);
+    Ok(report)
+}
+
+// The Data API reports size and average cost to four decimal places, too coarse to match fills
+fn align_position_reports_to_fills(
+    position_reports: &mut [PositionStatusReport],
+    fill_reports: &[FillReport],
+    retained_trade_ids: &AHashMap<InstrumentId, AHashSet<TradeId>>,
+) -> anyhow::Result<AHashSet<InstrumentId>> {
+    let mut aligned_instrument_ids = AHashSet::new();
+
+    for report in position_reports {
+        let fills: Vec<&FillReport> = fill_reports
+            .iter()
+            .filter(|fill| fill.instrument_id == report.instrument_id)
+            .collect();
+
+        // Reconciliation keeps a retained position, so align only when these fills built it
+        if retained_trade_ids
+            .get(&report.instrument_id)
+            .is_some_and(|trade_ids| {
+                !trade_ids
+                    .iter()
+                    .all(|trade_id| fills.iter().any(|fill| fill.trade_id == *trade_id))
+            })
+        {
+            continue;
+        }
+
+        let Some((qty, avg_px)) = long_position_from_fills(&fills) else {
+            continue;
+        };
+
+        if (qty - report.quantity.as_decimal()).abs() >= dec!(0.0001) {
+            continue;
+        }
+
+        let quantity = Quantity::from_decimal_dp(qty, report.quantity.precision)?;
+
+        log::debug!(
+            "Aligning position report {} from Data API size {} to confirmed fills {quantity}",
+            report.instrument_id,
+            report.quantity,
+        );
+
+        *report = PositionStatusReport::new(
+            report.account_id,
+            report.instrument_id,
+            report.position_side,
+            quantity,
+            report.ts_last,
+            report.ts_init,
+            Some(report.report_id),
+            report.venue_position_id,
+            Some(avg_px),
+        );
+        aligned_instrument_ids.insert(report.instrument_id);
+    }
+
+    Ok(aligned_instrument_ids)
+}
+
+// Returns the quantity and average entry price when the fills build one long position from zero,
+// or `None` when a sell empties or exceeds it, or a buy and a sell share an ambiguous event time.
+fn long_position_from_fills(fills: &[&FillReport]) -> Option<(Decimal, Decimal)> {
+    let mut sorted_fills = fills.to_vec();
+    sorted_fills.sort_by_key(|fill| fill.ts_event);
+
+    if sorted_fills.windows(2).any(|pair| {
+        matches!(pair, [left, right]
+            if left.ts_event == right.ts_event && left.order_side != right.order_side)
+    }) {
+        return None;
+    }
+
+    let mut qty = Decimal::ZERO;
+    let mut value = Decimal::ZERO;
+
+    for fill in sorted_fills {
+        let last_qty = fill.last_qty.as_decimal();
+
+        match fill.order_side {
+            OrderSide::Buy => {
+                qty += last_qty;
+                value += last_qty * fill.last_px.as_decimal();
+            }
+            OrderSide::Sell => {
+                if last_qty >= qty {
+                    return None;
+                }
+
+                value -= value * last_qty / qty;
+                qty -= last_qty;
+            }
+        }
+    }
+
+    (qty > Decimal::ZERO).then(|| (qty, value / qty))
 }
 
 pub(crate) fn trades_params_for_window(
@@ -1758,11 +1711,13 @@ fn classify_unmapped_historical(
     log::debug!("Dropping out-of-scope unmapped historical instrument {instrument_id}");
 }
 
-fn cap_order_reports_to_confirmed_fills(
+fn cap_order_reports_to_confirmed_fills<'a>(
     order_reports: &mut [OrderStatusReport],
     fill_reports: &[FillReport],
-) {
-    let confirmed_by_order = confirmed_filled_quantities(fill_reports);
+    settlement: &SettlementRegistry,
+    orders: impl IntoIterator<Item = &'a OrderAny>,
+) -> anyhow::Result<()> {
+    let confirmed_by_order = settlement.report_filled_quantities(fill_reports, orders)?;
 
     for report in order_reports {
         let local_filled = Quantity::zero(report.quantity.precision);
@@ -1772,6 +1727,8 @@ fn cap_order_reports_to_confirmed_fills(
             confirmed_by_order.get(&report.venue_order_id).copied(),
         );
     }
+
+    Ok(())
 }
 
 pub(crate) fn confirmed_filled_quantities(
@@ -1801,8 +1758,23 @@ pub(crate) fn cap_order_report_filled_qty(
 pub(crate) fn normalize_terminal_order_report_quantity(report: &mut OrderStatusReport) {
     if report.order_status != OrderStatus::Filled
         || report.filled_qty.is_zero()
-        || report.filled_qty >= report.quantity
+        || report.filled_qty == report.quantity
     {
+        return;
+    }
+
+    if report.filled_qty > report.quantity {
+        // A BUY is bounded by its pUSD spend, so it can fill more shares than it signed
+        if report.order_side == Some(OrderSide::Buy) {
+            log::debug!(
+                "Raising terminal BUY order report {} quantity from {} to venue fills {}",
+                report.venue_order_id,
+                report.quantity,
+                report.filled_qty,
+            );
+            report.quantity = report.filled_qty;
+        }
+
         return;
     }
 
@@ -1821,11 +1793,15 @@ pub(crate) fn normalize_terminal_order_report_quantity(report: &mut OrderStatusR
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-        identifiers::TradeId,
+        data::InstrumentClose,
+        enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+        events::order::spec::OrderFilledSpec,
+        identifiers::{PositionId, TradeId},
+        position::Position,
         types::{Money, Price},
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -1852,8 +1828,6 @@ mod tests {
             price_precision: 3,
             tick_size: Decimal::new(1, 3),
             min_size: None,
-            maker_fee: None,
-            taker_fee: None,
             start_date: None,
             event_start_time: None,
             end_date: None,
@@ -1879,11 +1853,13 @@ mod tests {
 
     fn test_fill_context() -> FillContext<'static> {
         FillContext {
+            signer_type: PolymarketSignerType::Owner,
             account_id: AccountId::from("POLY-001"),
             user_address: TEST_USER_ADDRESS,
             api_key: TEST_API_KEY,
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
+            settlement: Arc::new(SettlementRegistry::new(AccountId::from("POLY-001"))),
         }
     }
 
@@ -1892,16 +1868,72 @@ mod tests {
             .expect("valid trade fixture")
     }
 
+    #[rstest]
+    #[case::collection(false)]
+    #[case::target(true)]
+    fn test_fill_reports_reject_rest_failed_tombstone(#[case] targeted: bool) {
+        let ctx = test_fill_context();
+        let instruments = test_instruments();
+        let trade = confirmed_taker_trade();
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+
+        let admission_ctx = AdmissionContext {
+            signer_type: ctx.signer_type,
+            user_address: ctx.user_address,
+            api_key: ctx.api_key,
+            pusd: ctx.pusd,
+            instruments: &instruments,
+        };
+
+        let mut admitted = admit_trade_legs(
+            TradeEvidence::Rest(&trade),
+            &admission_ctx,
+            &[venue_order_id.as_str()],
+        )
+        .unwrap();
+        admitted.status = PolymarketTradeStatus::Failed;
+        assert!(ctx.settlement.admit_rest_result(&admitted).is_empty());
+
+        let result = build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            FillReportScope::new(None, targeted.then_some(venue_order_id)),
+            UnixNanos::from(1),
+            None,
+            None,
+        );
+
+        assert!(result.unwrap_err().to_string().contains("settled FAILED"));
+        assert_eq!(
+            super::super::settlement::registry::tests::settlement_state(
+                &ctx.settlement,
+                &admitted.venue_trade_id,
+            ),
+            Some(super::super::settlement::state::SettlementState::RestFailed),
+        );
+        assert_eq!(
+            super::super::settlement::registry::tests::leg_application(
+                &ctx.settlement,
+                &admitted.legs[0].trade_id,
+            ),
+            Some(super::super::settlement::state::LegApplication::Absent),
+        );
+        assert_eq!(ctx.settlement.record_count(), 1);
+        ctx.settlement.ensure_resolved(None, "fills").unwrap();
+    }
+
     fn open_order() -> PolymarketOpenOrder {
         serde_json::from_str(include_str!("../../test_data/http_open_order.json"))
             .expect("valid open-order fixture")
     }
 
     fn data_api_positions() -> Vec<DataApiPosition> {
-        serde_json::from_str(include_str!(
-            "../../test_data/data_api_positions_response.json"
-        ))
-        .expect("valid Data API position fixture")
+        let page: crate::http::models::DataApiPage<DataApiPosition> = serde_json::from_str(
+            include_str!("../../test_data/data_api_positions_response.json"),
+        )
+        .expect("valid Data API position fixture");
+        page.data
     }
 
     #[rstest]
@@ -1950,6 +1982,7 @@ mod tests {
 
         assert!(report.is_long());
         assert_eq!(report.avg_px_open, Some(expected_avg_price));
+        assert_eq!(report.avg_px_open_precision, Some(4));
         assert_eq!(report.quantity.precision, USDC_DECIMALS as u8);
     }
 
@@ -1966,6 +1999,191 @@ mod tests {
         .expect("fixture position is reportable");
 
         assert_eq!(report.avg_px_open, None);
+    }
+
+    fn data_api_position(token_id: &str, redeemable: bool) -> DataApiPosition {
+        DataApiPosition {
+            asset: token_id.to_string(),
+            condition_id: TEST_CONDITION_ID.to_string(),
+            size: dec!(10),
+            avg_price: Some(dec!(0.4)),
+            redeemable,
+        }
+    }
+
+    fn resolved_balance_scope(
+        settled: Option<InstrumentId>,
+        open: Option<InstrumentId>,
+    ) -> ResolvedBalanceScope {
+        ResolvedBalanceScope {
+            settled_instrument_ids: settled.into_iter().collect(),
+            open_instrument_ids: open.into_iter().collect(),
+        }
+    }
+
+    #[rstest]
+    #[case::unresolved(false, false, false, true)]
+    #[case::settled(false, true, false, false)]
+    #[case::redeemable(true, false, false, false)]
+    #[case::redeemable_open_position(true, false, true, true)]
+    #[case::settled_open_position(true, true, true, false)]
+    fn test_position_reports_drop_resolved_balances(
+        #[case] redeemable: bool,
+        #[case] settled: bool,
+        #[case] open: bool,
+        #[case] expected_reported: bool,
+    ) {
+        let instrument_id = test_instrument().id();
+        let position = data_api_position(TEST_TOKEN_ID, redeemable);
+        let resolved_balances = resolved_balance_scope(
+            settled.then_some(instrument_id),
+            open.then_some(instrument_id),
+        );
+
+        let reports = build_reconciliation_position_reports(
+            &[position],
+            AccountId::from("POLY-001"),
+            UnixNanos::from(1),
+            &test_instruments(),
+            None,
+            None,
+            &resolved_balances,
+        )
+        .unwrap();
+
+        let reported_ids: Vec<_> = reports.iter().map(|report| report.instrument_id).collect();
+
+        let expected_ids = if expected_reported {
+            vec![instrument_id]
+        } else {
+            vec![]
+        };
+
+        assert_eq!(reported_ids, expected_ids);
+    }
+
+    #[rstest]
+    #[case::settled(false, false, true)]
+    #[case::open_position(true, true, false)]
+    fn test_resolved_balance_scope_matches_condition_ids_ignoring_case(
+        #[case] open: bool,
+        #[case] redeemable: bool,
+        #[case] expected_excluded: bool,
+    ) {
+        let instrument_id = test_instrument().id();
+        let uppercase_id =
+            instrument_id_from_market_token(&TEST_CONDITION_ID.to_uppercase(), TEST_TOKEN_ID);
+
+        let resolved_balances = if open {
+            resolved_balance_scope(None, Some(uppercase_id))
+        } else {
+            resolved_balance_scope(Some(uppercase_id), None)
+        };
+
+        let excluded = resolved_balances
+            .excludes(&data_api_position(TEST_TOKEN_ID, redeemable), instrument_id);
+
+        assert_eq!(excluded, expected_excluded);
+    }
+
+    #[rstest]
+    #[case::settled(false, true, None)]
+    #[case::redeemable(true, false, None)]
+    #[case::unresolved(false, false, Some("unmapped in-scope position instrument"))]
+    fn test_position_reports_drop_unloaded_resolved_balances(
+        #[case] redeemable: bool,
+        #[case] settled: bool,
+        #[case] expected_error: Option<&str>,
+    ) {
+        let unloaded_token_id = "1234567890";
+        let instrument_id = instrument_id_from_market_token(TEST_CONDITION_ID, unloaded_token_id);
+        let position = data_api_position(unloaded_token_id, redeemable);
+        let resolved_balances = resolved_balance_scope(settled.then_some(instrument_id), None);
+
+        let result = build_reconciliation_position_reports(
+            &[position],
+            AccountId::from("POLY-001"),
+            UnixNanos::from(1),
+            &test_instruments(),
+            None,
+            None,
+            &resolved_balances,
+        );
+
+        match expected_error {
+            Some(expected) => {
+                let error = result.unwrap_err().to_string();
+                assert!(error.contains(expected), "unexpected error: {error}");
+            }
+            None => assert!(result.unwrap().is_empty()),
+        }
+    }
+
+    #[rstest]
+    fn test_resolved_balance_scope_from_cache_collects_settlements_and_open_positions() {
+        let instrument = test_instrument();
+        let account_id = AccountId::from("POLY-001");
+        let venue = instrument.id().venue;
+        let settled_id = InstrumentId::from("SETTLED-TOKEN.POLYMARKET");
+
+        let close = |instrument_id, close_type| {
+            InstrumentClose::new(
+                instrument_id,
+                Price::from("1.000"),
+                close_type,
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            )
+        };
+
+        let position = |account_id: AccountId, position_id: &str| {
+            let fill = OrderFilledSpec::builder()
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from(position_id))
+                .account_id(account_id)
+                .trade_id(TradeId::from(position_id))
+                .last_qty(Quantity::from("10.000000"))
+                .last_px(Price::from("0.400"))
+                .currency(Currency::pUSD())
+                .position_id(PositionId::from(position_id))
+                .build();
+            Position::new(&instrument, fill)
+        };
+
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument.clone()).unwrap();
+
+        for instrument_close in [
+            close(settled_id, InstrumentCloseType::ContractExpired),
+            close(
+                InstrumentId::from("SESSION-TOKEN.POLYMARKET"),
+                InstrumentCloseType::EndOfSession,
+            ),
+            close(
+                InstrumentId::from("OTHER-TOKEN.OTHER"),
+                InstrumentCloseType::ContractExpired,
+            ),
+        ] {
+            cache.add_instrument_close(instrument_close).unwrap();
+        }
+
+        for position in [
+            position(account_id, "P-OWNED"),
+            position(AccountId::from("POLY-002"), "P-FOREIGN"),
+        ] {
+            cache.add_position(&position, OmsType::Netting).unwrap();
+        }
+
+        let scope = ResolvedBalanceScope::from_cache(&cache, venue, account_id);
+
+        assert_eq!(
+            scope.settled_instrument_ids,
+            AHashSet::from_iter([settled_id])
+        );
+        assert_eq!(
+            scope.open_instrument_ids,
+            AHashSet::from_iter([instrument.id()])
+        );
     }
 
     #[rstest]
@@ -1986,6 +2204,31 @@ mod tests {
         .expect("foreign taker trade is outside local report scope");
 
         assert!(reports.is_empty());
+    }
+
+    #[rstest]
+    #[case(PolymarketSignerType::Owner, 1)]
+    #[case(PolymarketSignerType::Session, 0)]
+    fn shared_wallet_foreign_session_trade_is_not_owned(
+        #[case] signer_type: PolymarketSignerType,
+        #[case] expected_reports: usize,
+    ) {
+        let mut trade = confirmed_taker_trade();
+        trade.maker_address = TEST_USER_ADDRESS.to_string();
+        trade.owner = "another-session-api-key".to_string();
+        let mut ctx = test_fill_context();
+        ctx.signer_type = signer_type;
+        let (reports, _) = build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &test_instruments(),
+            FillReportScope::new(None, None),
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(reports.len(), expected_reports);
     }
 
     #[rstest]
@@ -2123,7 +2366,13 @@ mod tests {
             None,
         )];
 
-        cap_order_reports_to_confirmed_fills(&mut reports, &fills);
+        cap_order_reports_to_confirmed_fills(
+            &mut reports,
+            &fills,
+            &test_fill_context().settlement,
+            [],
+        )
+        .unwrap();
 
         assert_eq!(reports[0].filled_qty, Quantity::from("4.0000"));
     }
@@ -2171,7 +2420,13 @@ mod tests {
             None,
         )];
 
-        cap_order_reports_to_confirmed_fills(&mut reports, &fills);
+        cap_order_reports_to_confirmed_fills(
+            &mut reports,
+            &fills,
+            &test_fill_context().settlement,
+            [],
+        )
+        .unwrap();
 
         assert_eq!(reports[0].quantity, Quantity::from(expected_quantity));
         assert_eq!(reports[0].filled_qty, Quantity::from(confirmed));
@@ -2260,5 +2515,356 @@ mod tests {
 
         assert!(reports.is_empty());
         assert_eq!(filtered, 1);
+    }
+
+    #[rstest]
+    #[case::signed_qty(PolymarketOrderSide::Buy, dec!(10.0040), dec!(10.0000), true)]
+    #[case::raised_buy(PolymarketOrderSide::Buy, dec!(10.0040), dec!(10.0040), true)]
+    #[case::raised_sell(PolymarketOrderSide::Sell, dec!(10.0040), dec!(10.0040), false)]
+    #[case::buy_short_of_fills(PolymarketOrderSide::Buy, dec!(10.0040), dec!(10.0020), false)]
+    #[case::buy_without_overfill(PolymarketOrderSide::Buy, dec!(10.0000), dec!(10.0040), false)]
+    fn test_validate_client_bound_order_quantity(
+        #[case] side: PolymarketOrderSide,
+        #[case] size_matched: Decimal,
+        #[case] expected_qty: Decimal,
+        #[case] valid: bool,
+    ) {
+        let mut order = open_order();
+        order.side = side;
+        order.original_size = dec!(10.0000);
+        order.size_matched = size_matched;
+
+        let result = validate_client_bound_order_quantity(
+            &order,
+            Quantity::from_decimal_dp(expected_qty, 4).unwrap(),
+        );
+
+        assert_eq!(result.is_ok(), valid);
+    }
+
+    #[rstest]
+    #[case::buy_overfill_raises(OrderSide::Buy, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(714.285714))]
+    #[case::sell_overfill_unchanged(OrderSide::Sell, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(714.285710))]
+    #[case::buy_overfill_not_filled(OrderSide::Buy, OrderStatus::PartiallyFilled, dec!(714.285710), dec!(714.285714), dec!(714.285710))]
+    #[case::dust_underfill_lowers(OrderSide::Sell, OrderStatus::Filled, dec!(100.000000), dec!(99.995000), dec!(99.995000))]
+    #[case::real_underfill_unchanged(OrderSide::Buy, OrderStatus::Filled, dec!(100.000000), dec!(99.000000), dec!(100.000000))]
+    fn test_normalize_terminal_order_report_quantity(
+        #[case] order_side: OrderSide,
+        #[case] order_status: OrderStatus,
+        #[case] quantity: Decimal,
+        #[case] filled_qty: Decimal,
+        #[case] expected_qty: Decimal,
+    ) {
+        let mut report = OrderStatusReport::new(
+            AccountId::from("POLYMARKET-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            None,
+            VenueOrderId::from("0xorder"),
+            order_side.into(),
+            OrderType::Limit,
+            TimeInForce::Fok,
+            order_status,
+            Quantity::from_decimal_dp(quantity, 6).unwrap(),
+            Quantity::from_decimal_dp(filled_qty, 6).unwrap(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+
+        normalize_terminal_order_report_quantity(&mut report);
+
+        assert_eq!(report.quantity.as_decimal(), expected_qty);
+        assert_eq!(report.filled_qty.as_decimal(), filled_qty);
+    }
+
+    fn window_fill(
+        venue_order_id: &str,
+        order_side: OrderSide,
+        last_qty: Decimal,
+        last_px: Decimal,
+        ts_event: u64,
+    ) -> FillReport {
+        FillReport::new(
+            AccountId::from("POLYMARKET-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            VenueOrderId::from(venue_order_id),
+            TradeId::from(format!("T-{venue_order_id}-{ts_event}").as_str()),
+            order_side,
+            Quantity::from_decimal_dp(last_qty, 6).unwrap(),
+            Price::from_decimal_dp(last_px, 4).unwrap(),
+            Money::zero(Currency::pUSD()),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(ts_event),
+            UnixNanos::from(ts_event),
+            None,
+        )
+    }
+
+    fn data_api_position_report(quantity: Decimal, avg_px: Decimal) -> PositionStatusReport {
+        PositionStatusReport::new(
+            AccountId::from("POLYMARKET-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            PositionSide::Long,
+            Quantity::from_decimal_dp(quantity, 6).unwrap(),
+            UnixNanos::from(100),
+            UnixNanos::from(100),
+            None,
+            None,
+            Some(avg_px),
+        )
+        .with_avg_px_open_precision(4)
+    }
+
+    #[rstest]
+    fn test_build_closed_order_reports_groups_fills_of_unreported_orders() {
+        let fills = vec![
+            window_fill("V-BUY", OrderSide::Buy, dec!(5), dec!(0.55), 10),
+            window_fill("V-SELL", OrderSide::Sell, dec!(8.92), dec!(0.54), 20),
+            window_fill("V-BUY", OrderSide::Buy, dec!(3.928572), dec!(0.56), 30),
+            window_fill("V-OPEN", OrderSide::Buy, dec!(1), dec!(0.50), 40),
+            window_fill("V-CACHED", OrderSide::Buy, dec!(2), dec!(0.50), 50),
+        ];
+
+        let open_report = OrderStatusReport::new(
+            AccountId::from("POLYMARKET-001"),
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            None,
+            VenueOrderId::from("V-OPEN"),
+            OrderSide::Buy.into(),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("10.000000"),
+            Quantity::from("1.000000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+        );
+
+        let reports = build_closed_order_reports(
+            &fills,
+            &[open_report],
+            &[],
+            &AHashSet::new(),
+            true,
+            |venue_order_id| venue_order_id.as_str() == "V-CACHED",
+            UnixNanos::from(100),
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), 2);
+        let buy = &reports[0];
+        assert_eq!(buy.account_id, AccountId::from("POLYMARKET-001"));
+        assert_eq!(
+            buy.instrument_id,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET")
+        );
+        assert_eq!(buy.client_order_id, None);
+        assert_eq!(buy.venue_order_id, VenueOrderId::from("V-BUY"));
+        assert_eq!(buy.order_side, Some(OrderSide::Buy));
+        assert_eq!(buy.order_type, OrderType::Market);
+        assert_eq!(buy.time_in_force, TimeInForce::Gtc);
+        assert_eq!(buy.order_status, OrderStatus::Filled);
+        assert_eq!(buy.quantity, Quantity::from("8.928572"));
+        assert_eq!(buy.filled_qty, Quantity::from("8.928572"));
+        assert_eq!(
+            buy.avg_px,
+            Some((dec!(2.75) + dec!(3.928572) * dec!(0.56)) / dec!(8.928572))
+        );
+        assert_eq!(buy.price, None);
+        assert_eq!(buy.ts_accepted, UnixNanos::from(10));
+        assert_eq!(buy.ts_last, UnixNanos::from(30));
+        assert_eq!(buy.ts_init, UnixNanos::from(100));
+        let sell = &reports[1];
+        assert_eq!(sell.venue_order_id, VenueOrderId::from("V-SELL"));
+        assert_eq!(sell.order_side, Some(OrderSide::Sell));
+        assert_eq!(sell.order_status, OrderStatus::Filled);
+        assert_eq!(sell.quantity, Quantity::from("8.920000"));
+        assert_eq!(sell.filled_qty, Quantity::from("8.920000"));
+        assert_eq!(sell.avg_px, Some(dec!(0.54)));
+        assert_eq!(sell.ts_accepted, UnixNanos::from(20));
+        assert_eq!(sell.ts_last, UnixNanos::from(20));
+    }
+
+    #[rstest]
+    #[case::bounded_without_position(true, false, false, 1)]
+    #[case::bounded_aligned_position(true, true, true, 1)]
+    #[case::bounded_unaligned_position(true, true, false, 0)]
+    #[case::unbounded_aligned_position(false, true, true, 1)]
+    #[case::unbounded_unaligned_position(false, true, false, 0)]
+    #[case::unbounded_without_position(false, false, false, 0)]
+    fn test_build_closed_order_reports_scope(
+        #[case] is_bounded: bool,
+        #[case] has_position: bool,
+        #[case] is_aligned: bool,
+        #[case] expected_count: usize,
+    ) {
+        let fills = vec![window_fill(
+            "V-BUY",
+            OrderSide::Buy,
+            dec!(5),
+            dec!(0.55),
+            10,
+        )];
+
+        let position_reports = if has_position {
+            vec![data_api_position_report(dec!(5), dec!(0.55))]
+        } else {
+            Vec::new()
+        };
+
+        let aligned_instrument_ids = if is_aligned {
+            AHashSet::from([InstrumentId::from("TEST-TOKEN.POLYMARKET")])
+        } else {
+            AHashSet::new()
+        };
+
+        let reports = build_closed_order_reports(
+            &fills,
+            &[],
+            &position_reports,
+            &aligned_instrument_ids,
+            is_bounded,
+            |_| false,
+            UnixNanos::from(100),
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), expected_count);
+    }
+
+    #[rstest]
+    fn test_build_closed_order_reports_rejects_contradictory_sides() {
+        let fills = vec![
+            window_fill("V-1", OrderSide::Buy, dec!(5), dec!(0.55), 10),
+            window_fill("V-1", OrderSide::Sell, dec!(5), dec!(0.55), 20),
+        ];
+
+        let error = build_closed_order_reports(
+            &fills,
+            &[],
+            &[],
+            &AHashSet::new(),
+            true,
+            |_| false,
+            UnixNanos::from(100),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "confirmed fills of venue order V-1 disagree on instrument or side"
+        );
+    }
+
+    #[rstest]
+    #[case::truncated_size(dec!(8.928572), None, dec!(8.937144), dec!(0.56), true)]
+    #[case::gap_at_increment(dec!(8.928628), None, dec!(8.9371), dec!(0.5599), false)]
+    #[case::retained_from_fills(dec!(8.928572), Some("T-V-1-10"), dec!(8.937144), dec!(0.56), true)]
+    #[case::retained_from_report(dec!(8.928572), Some("S-RETAINED"), dec!(8.9371), dec!(0.5599), false)]
+    fn test_align_position_reports_to_fills(
+        #[case] last_buy_qty: Decimal,
+        #[case] retained_trade_id: Option<&str>,
+        #[case] expected_qty: Decimal,
+        #[case] expected_avg_px: Decimal,
+        #[case] is_aligned: bool,
+    ) {
+        let mut other_instrument_fill =
+            window_fill("V-OTHER", OrderSide::Buy, dec!(1), dec!(0.30), 15);
+        other_instrument_fill.instrument_id = InstrumentId::from("OTHER-TOKEN.POLYMARKET");
+        let fills = vec![
+            window_fill("V-1", OrderSide::Buy, dec!(8.928572), dec!(0.56), 10),
+            other_instrument_fill,
+            window_fill("V-2", OrderSide::Sell, dec!(8.92), dec!(0.55), 20),
+            window_fill("V-3", OrderSide::Buy, last_buy_qty, dec!(0.56), 30),
+        ];
+        let mut reports = vec![data_api_position_report(dec!(8.9371), dec!(0.5599))];
+        let report_id = reports[0].report_id;
+
+        let retained_trade_ids: AHashMap<InstrumentId, AHashSet<TradeId>> = retained_trade_id
+            .map(|trade_id| {
+                (
+                    InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+                    AHashSet::from([TradeId::from(trade_id)]),
+                )
+            })
+            .into_iter()
+            .collect();
+
+        let aligned_instrument_ids =
+            align_position_reports_to_fills(&mut reports, &fills, &retained_trade_ids).unwrap();
+
+        let report = &reports[0];
+        assert_eq!(
+            aligned_instrument_ids.contains(&InstrumentId::from("TEST-TOKEN.POLYMARKET")),
+            is_aligned
+        );
+        assert_eq!(aligned_instrument_ids.len(), usize::from(is_aligned));
+        assert_eq!(report.account_id, AccountId::from("POLYMARKET-001"));
+        assert_eq!(
+            report.instrument_id,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET")
+        );
+        assert_eq!(report.position_side, PositionSide::Long);
+        assert_eq!(report.quantity.as_decimal(), expected_qty);
+        assert_eq!(report.quantity.precision, 6);
+        assert_eq!(report.signed_decimal_qty, expected_qty);
+        assert_eq!(report.avg_px_open, Some(expected_avg_px));
+        assert_eq!(
+            report.avg_px_open_precision,
+            if is_aligned { None } else { Some(4) }
+        );
+        assert_eq!(report.report_id, report_id);
+        assert_eq!(report.ts_last, UnixNanos::from(100));
+        assert_eq!(report.ts_init, UnixNanos::from(100));
+    }
+
+    #[rstest]
+    #[case::partial_close_keeps_average(
+        vec![(OrderSide::Buy, dec!(10), dec!(0.50), 1), (OrderSide::Sell, dec!(4), dec!(0.60), 2), (OrderSide::Buy, dec!(2), dec!(0.80), 3)],
+        Some((dec!(8), dec!(0.575))),
+    )]
+    #[case::replays_in_event_order(
+        vec![(OrderSide::Buy, dec!(2), dec!(0.80), 3), (OrderSide::Sell, dec!(4), dec!(0.60), 2), (OrderSide::Buy, dec!(10), dec!(0.50), 1)],
+        Some((dec!(8), dec!(0.575))),
+    )]
+    #[case::same_side_share_time(
+        vec![(OrderSide::Buy, dec!(4), dec!(0.50), 1), (OrderSide::Buy, dec!(4), dec!(0.60), 1)],
+        Some((dec!(8), dec!(0.55))),
+    )]
+    #[case::opposite_sides_share_time(
+        vec![(OrderSide::Buy, dec!(10), dec!(0.50), 1), (OrderSide::Sell, dec!(4), dec!(0.60), 2), (OrderSide::Buy, dec!(2), dec!(0.80), 2)],
+        None,
+    )]
+    #[case::sells_to_flat(
+        vec![(OrderSide::Buy, dec!(10), dec!(0.50), 1), (OrderSide::Sell, dec!(10), dec!(0.60), 2), (OrderSide::Buy, dec!(5), dec!(0.40), 3)],
+        None,
+    )]
+    #[case::sells_earlier_shares(
+        vec![(OrderSide::Sell, dec!(1), dec!(0.60), 1), (OrderSide::Buy, dec!(5), dec!(0.40), 2)],
+        None,
+    )]
+    #[case::ends_flat(
+        vec![(OrderSide::Buy, dec!(5), dec!(0.40), 1), (OrderSide::Sell, dec!(5), dec!(0.60), 2)],
+        None,
+    )]
+    fn test_long_position_from_fills(
+        #[case] trades: Vec<(OrderSide, Decimal, Decimal, u64)>,
+        #[case] expected: Option<(Decimal, Decimal)>,
+    ) {
+        let fills: Vec<FillReport> = trades
+            .into_iter()
+            .map(|(side, qty, px, ts_event)| {
+                window_fill(&format!("V-{ts_event}"), side, qty, px, ts_event)
+            })
+            .collect();
+
+        let fill_refs: Vec<&FillReport> = fills.iter().collect();
+
+        assert_eq!(long_position_from_fills(&fill_refs), expected);
     }
 }

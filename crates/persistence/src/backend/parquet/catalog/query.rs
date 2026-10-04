@@ -1,0 +1,1276 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Parquet catalog query paths and typed query wrappers.
+
+#![expect(
+    clippy::missing_errors_doc,
+    reason = "query methods forward DataFusion errors"
+)]
+
+use nautilus_model::instruments::NautilusInstrumentType;
+use nautilus_serialization::arrow::{
+    catalog_identifier_from_metadata, instrument::decode_instrument_any_batch,
+    record_batch_with_identifier_column,
+};
+
+use super::{
+    ArrowSchemaProvider, Bar, CustomDataDecoder, Data, DecodeDataFromRecordBatch,
+    DecodeTypedFromRecordBatch, FundingRateUpdate, HasCatalogDataType, HasTsInit, HashMap,
+    INSTRUMENT_PATH_PREFIXES, InstrumentAny, InstrumentClose, NautilusDataType, OptionGreeks,
+    OrderBookDelta, OrderBookDepth, ParquetDataCatalog, Path, QuoteTick, RecordBatch, TradeTick,
+    UnixNanos, build_query, catalog_record_batch_to_display, datafusion,
+    decode_object_store_segment, extract_bar_type_instrument_id, extract_identifier_from_path,
+    extract_sql_safe_filename, filter_instruments_for_request_range, instrument_path_prefix,
+    is_monotonically_increasing_by_init, make_object_store_path, make_sql_safe_identifier,
+    parquet_data_path_prefix, parse_filename_timestamps, query_intersects_filename,
+    read_parquet_from_object_store, read_parquet_schema_from_object_store,
+    session::{MergedPages, TypedPages, decode_typed_pages},
+    urisafe_instrument_id,
+};
+use crate::{
+    catalog::types::{
+        CatalogDataType, parquet_catalog_data_type_path_prefixes,
+        parquet_catalog_data_type_table_stem,
+    },
+    common::arrow::{empty_display_batch_with_identifier, validate_catalog_schema},
+};
+
+impl ParquetDataCatalog {
+    /// Queries instruments from the catalog.
+    ///
+    /// Instruments are stored under v1-compatible concrete instrument type folders:
+    /// `data/{instrument_type}/{instrument_id}/`.
+    ///
+    /// # Parameters
+    ///
+    /// - `instrument_ids`: Optional list of instrument IDs to filter by. If `None`, queries all instruments.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `InstrumentAny` instances, or an error if the operation fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - File discovery fails.
+    /// - File reading fails.
+    /// - Data deserialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_model::instruments::InstrumentAny;
+    /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+    ///
+    /// let mut catalog = ParquetDataCatalog::new(
+    ///     std::path::Path::new("/tmp/nautilus_data"),
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     None,
+    /// );
+    ///
+    /// // Query all instruments
+    /// let instruments = catalog.query_instruments(None)?;
+    ///
+    /// // Query specific instruments
+    /// let instrument_ids = vec!["EUR/USD.SIM".to_string()];
+    /// let instruments = catalog.query_instruments(Some(&instrument_ids))?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn query_instruments(
+        &self,
+        instrument_ids: Option<&[String]>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        self.query_instruments_filtered(instrument_ids, None, None)
+    }
+
+    /// Queries instruments from the catalog with optional timestamp filtering.
+    ///
+    /// This reads all matching parquet files under
+    /// `data/{instrument_type}/{instrument_id}/`, decodes the records back to
+    /// `InstrumentAny`, and filters them by `ts_init` when a range is provided.
+    pub fn query_instruments_filtered(
+        &self,
+        instrument_ids: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let instrument_files = self.discover_instrument_files(instrument_ids, end, None)?;
+        self.decode_instrument_files(instrument_files, start, end)
+    }
+
+    /// Queries instruments from the catalog with optional timestamp and SQL filtering.
+    ///
+    /// When `where_clause` is provided, the predicate is applied through DataFusion
+    /// before instrument records are decoded.
+    pub fn query_instruments_filtered_with_where(
+        &mut self,
+        instrument_ids: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        self.query_instruments_filtered_with_where_and_type(
+            instrument_ids,
+            start,
+            end,
+            where_clause,
+            None,
+        )
+    }
+
+    /// Queries instruments from the catalog with optional timestamp, SQL, and instrument type
+    /// filtering.
+    ///
+    /// When `instrument_type` is provided, only that instrument class directory is read.
+    pub fn query_instruments_filtered_with_where_and_type(
+        &mut self,
+        instrument_ids: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        instrument_type: Option<&NautilusInstrumentType>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let Some(where_clause) = where_clause else {
+            let instrument_files =
+                self.discover_instrument_files(instrument_ids, end, instrument_type)?;
+            return self.decode_instrument_files(instrument_files, start, end);
+        };
+
+        self.clear_session_tables();
+        self.register_remote_object_store()?;
+
+        let mut all_instruments = Vec::new();
+        let instrument_files =
+            self.discover_instrument_files(instrument_ids, end, instrument_type)?;
+
+        for (index, file_path) in instrument_files.into_iter().enumerate() {
+            let object_path = self.to_object_path_parsed(&file_path)?;
+
+            let (_, builder_schema) = self.execute_async(|| async {
+                read_parquet_from_object_store(self.object_store.clone(), &object_path).await
+            })?;
+
+            validate_catalog_schema(&builder_schema)?;
+            let metadata = builder_schema.metadata().clone();
+            let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
+
+            let table_name = format!(
+                "instruments_{}_{}",
+                index,
+                extract_sql_safe_filename(&file_path)
+            );
+
+            // The range filter below applies `start` to keep the latest pre-start definition
+            let query = build_query(&table_name, None, end, Some(where_clause));
+            let resolved_path = self.resolve_path_for_datafusion(&file_path);
+            let batches = self.session.collect_parquet_files_batches(
+                &table_name,
+                vec![resolved_path],
+                Some(&query),
+            )?;
+
+            for batch in batches {
+                let batch = datafusion::cast_record_batch_to_schema(&batch, &target_schema)?;
+                all_instruments.extend(decode_instrument_any_batch(&metadata, &batch)?);
+            }
+        }
+
+        Ok(filter_instruments_for_request_range(
+            all_instruments,
+            start,
+            end,
+        ))
+    }
+
+    /// Discovers instrument parquet files under `data/{instrument_type}/{instrument_id}/`,
+    /// filtered by instrument IDs and an optional `end` timestamp, sorted by path.
+    fn discover_instrument_files(
+        &self,
+        instrument_ids: Option<&[String]>,
+        end: Option<UnixNanos>,
+        instrument_type: Option<&NautilusInstrumentType>,
+    ) -> anyhow::Result<Vec<String>> {
+        let base_dir = make_object_store_path(&self.base_path, ["data"]);
+        let end_u64 = end.map(|ts| ts.as_u64());
+        let list_result = self.list_objects(&base_dir)?;
+
+        let mut instrument_files = Vec::new();
+
+        for object in list_result {
+            let path_str = object.location.to_string();
+            if !path_str.ends_with(".parquet") {
+                continue;
+            }
+
+            let path_parts: Vec<&str> = path_str.split('/').collect();
+
+            let Some(data_index) = path_parts.iter().position(|part| *part == "data") else {
+                continue;
+            };
+
+            let Some(type_dir) = path_parts.get(data_index + 1) else {
+                continue;
+            };
+
+            let type_dir = decode_object_store_segment(type_dir);
+            if !is_parquet_instrument_type_prefix(&type_dir)
+                || instrument_type.is_some_and(|value| instrument_path_prefix(value) != type_dir)
+            {
+                continue;
+            }
+
+            if path_parts.len() < data_index + 4 {
+                continue;
+            }
+
+            let instrument_id_dir = decode_object_store_segment(path_parts[path_parts.len() - 2]);
+
+            if let Some(ids) = instrument_ids
+                && !ids
+                    .iter()
+                    .map(|id| urisafe_instrument_id(id))
+                    .any(|x| x.as_str() == urisafe_instrument_id(&instrument_id_dir))
+            {
+                continue;
+            }
+
+            let include_file = if path_str.ends_with("/instrument.parquet") {
+                true
+            } else if let Some((file_start, _)) = parse_filename_timestamps(&path_str) {
+                end_u64.is_none_or(|end| file_start <= end)
+            } else {
+                // Include files with nonstandard names rather than silently dropping
+                // instruments written by external or older tooling.
+                log::warn!(
+                    "Including instrument file with unparsable interval filename: {path_str}"
+                );
+                true
+            };
+
+            if include_file {
+                instrument_files.push(path_str);
+            }
+        }
+
+        instrument_files.sort();
+        Ok(instrument_files)
+    }
+
+    fn decode_instrument_files(
+        &self,
+        instrument_files: Vec<String>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let mut instruments = Vec::new();
+
+        for file_path in instrument_files {
+            let object_path = self.to_object_path_parsed(&file_path)?;
+
+            let (batches, builder_schema) = self.execute_async(|| async {
+                read_parquet_from_object_store(self.object_store.clone(), &object_path).await
+            })?;
+
+            validate_catalog_schema(&builder_schema)?;
+            let metadata = builder_schema.metadata().clone();
+            let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
+
+            for batch in batches {
+                let batch = datafusion::cast_record_batch_to_schema(&batch, &target_schema)?;
+                instruments.extend(decode_instrument_any_batch(&metadata, &batch)?);
+            }
+        }
+
+        Ok(filter_instruments_for_request_range(
+            instruments,
+            start,
+            end,
+        ))
+    }
+
+    /// Queries data of type `T` from the catalog.
+    ///
+    /// # Type Parameters
+    ///
+    /// - `T`: The data type to query and return, which selects the catalog directory and decoder.
+    ///
+    /// # Parameters
+    ///
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings (e.g., "EUR/USD.SIM")
+    ///   or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL"). If `None`, queries all identifiers.
+    ///   For bars, partial matching is supported (e.g., "EUR/USD.SIM" will match "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    /// - `start`: Optional start timestamp for filtering (inclusive). If `None`, queries from the beginning.
+    /// - `end`: Optional end timestamp for filtering (inclusive). If `None`, queries to the end.
+    /// - `where_clause`: Optional SQL WHERE clause for additional filtering. Use standard SQL syntax
+    ///   with column names matching the Parquet schema (e.g., "`bid_price` > 1.2000", "volume > 1000").
+    /// - `files`: Optional list of catalog files to read in place of the files matching the filters.
+    /// - `optimize_file_loading`: Whether to register each parent directory as one table rather
+    ///   than each file as its own table. When `true`, every file in those directories is read,
+    ///   including files not listed in `files`. A directory whose files cannot merge into one
+    ///   schema, such as one instrument written at two precisions, instead registers only the
+    ///   files selected by `files` or the filters, each as its own table.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of the specific data type `T`, sorted by timestamp. The vector will be
+    /// empty if no data matches the query criteria.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The underlying query execution fails.
+    /// - Record batch decoding fails.
+    /// - A file uses a legacy catalog schema.
+    /// - Object store access fails.
+    /// - Invalid WHERE clause syntax is provided.
+    ///
+    /// # Performance Considerations
+    ///
+    /// - Use specific instrument IDs and time ranges to minimize data scanning.
+    /// - WHERE clauses are pushed down to Parquet readers when possible.
+    /// - Results are automatically sorted by timestamp during collection.
+    /// - Memory usage scales with the amount of data returned.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::{Bar, QuoteTick, TradeTick};
+    /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+    ///
+    /// let mut catalog = ParquetDataCatalog::new(
+    ///     std::path::Path::new("/tmp/nautilus_data"),
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     None,
+    /// );
+    ///
+    /// // Query all quotes for a specific instrument
+    /// let quotes: Vec<QuoteTick> = catalog.query(
+    ///     Some(vec!["EUR/USD.SIM".to_string()]),
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     true,
+    /// )?;
+    ///
+    /// // Query trades within a specific time range
+    /// let trades: Vec<TradeTick> = catalog.query(
+    ///     Some(vec!["BTC/USD.SIM".to_string()]),
+    ///     Some(UnixNanos::from(1609459200000000000)),
+    ///     Some(UnixNanos::from(1609545600000000000)),
+    ///     None,
+    ///     None,
+    ///     true,
+    /// )?;
+    ///
+    /// // Query bars with volume filter (using instrument_id - partial match for bar_type)
+    /// let bars: Vec<Bar> = catalog.query(
+    ///     Some(vec!["AAPL.NASDAQ".to_string()]),
+    ///     None,
+    ///     None,
+    ///     Some("volume > 1000000"),
+    ///     None,
+    ///     true,
+    /// )?;
+    ///
+    /// // Query bars with specific bar_type
+    /// let bars: Vec<Bar> = catalog.query(
+    ///     Some(vec!["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL".to_string()]),
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     true,
+    /// )?;
+    ///
+    /// // Query multiple instruments with price filter
+    /// let quotes: Vec<QuoteTick> = catalog.query(
+    ///     Some(vec!["EUR/USD.SIM".to_string(), "GBP/USD.SIM".to_string()]),
+    ///     None,
+    ///     None,
+    ///     Some("bid_price > 1.2000 AND ask_price < 1.3000"),
+    ///     None,
+    ///     true,
+    /// )?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn query<T>(
+        &mut self,
+        identifiers: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        files: Option<Vec<String>>,
+        optimize_file_loading: bool,
+    ) -> anyhow::Result<Vec<T>>
+    where
+        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
+    {
+        self.clear_session_tables();
+
+        self.register_remote_object_store()?;
+
+        let data_type = T::catalog_data_type();
+        let path_prefix = parquet_data_path_prefix(&data_type);
+
+        let files_list = if let Some(files) = files {
+            files
+        } else {
+            self.query_files(
+                &CatalogDataType::Data(data_type.clone()),
+                identifiers,
+                start,
+                end,
+            )?
+        };
+
+        let table_prefix = make_sql_safe_identifier(path_prefix.as_ref());
+        let tables =
+            self.resolve_tables_for_datafusion(&table_prefix, &files_list, optimize_file_loading)?;
+        let mut all_records = Vec::new();
+
+        for table in tables {
+            let query = build_query(&table.name, start, end, where_clause);
+            let batches = self.session.collect_parquet_files_batches(
+                &table.name,
+                vec![table.path],
+                Some(&query),
+            )?;
+
+            all_records.extend(self.convert_record_batches_to_typed::<T>(batches)?);
+        }
+
+        if !is_monotonically_increasing_by_init(&all_records) {
+            all_records.sort_by_key(HasTsInit::ts_init);
+        }
+
+        Ok(all_records)
+    }
+
+    pub(super) fn query_typed_pages<T>(
+        &mut self,
+        identifiers: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        files: Option<Vec<String>>,
+        optimize_file_loading: bool,
+    ) -> anyhow::Result<TypedPages<T>>
+    where
+        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit + Send + 'static,
+    {
+        self.clear_session_tables();
+        self.register_remote_object_store()?;
+        let data_type = T::catalog_data_type();
+
+        let files = match files {
+            Some(files) => files,
+            None => self.query_files(&CatalogDataType::Data(data_type), identifiers, start, end)?,
+        };
+
+        let tables =
+            self.resolve_tables_for_datafusion("parquet", &files, optimize_file_loading)?;
+        let mut sources = Vec::with_capacity(tables.len());
+        for table in tables {
+            let sql = build_query(&table.name, start, end, where_clause);
+            let stream = self.session.parquet_files_batch_stream(
+                &table.name,
+                vec![table.path],
+                Some(&sql),
+            )?;
+            let pages = decode_typed_pages::<T>(stream);
+            sources.push(
+                Box::new(datafusion::BlockingBatchStream::from_stream_with_runtime(
+                    pages,
+                    &self.session.runtime,
+                )) as TypedPages<T>,
+            );
+        }
+
+        Ok(Box::new(MergedPages::new(sources, self.batch_size)))
+    }
+
+    /// Queries raw catalog Arrow record batches for any supported record table.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file discovery or DataFusion query execution fails.
+    pub fn query_record_batches(
+        &mut self,
+        data_type: &CatalogDataType,
+        identifier: Option<String>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        optimize_file_loading: bool,
+    ) -> anyhow::Result<Vec<RecordBatch>> {
+        self.clear_session_tables();
+        self.register_remote_object_store()?;
+
+        let identifiers = identifier.map(|value| vec![value]);
+        let files_list = self.query_files(data_type, identifiers, start, end)?;
+        let mut record_batches = Vec::new();
+        let table_prefix =
+            make_sql_safe_identifier(&parquet_catalog_data_type_table_stem(data_type));
+
+        let tables =
+            self.resolve_tables_for_datafusion(&table_prefix, &files_list, optimize_file_loading)?;
+
+        for table in tables {
+            let query = build_query(&table.name, start, end, where_clause);
+            record_batches.extend(self.session.collect_parquet_files_batches(
+                &table.name,
+                vec![table.path],
+                Some(&query),
+            )?);
+        }
+
+        Ok(record_batches)
+    }
+
+    /// Queries raw catalog batches and converts them to display-friendly Arrow batches.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if file discovery, DataFusion query execution, or catalog display
+    /// conversion fails.
+    pub fn query_display_record_batches(
+        &mut self,
+        data_type: &NautilusDataType,
+        identifiers: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        optimize_file_loading: bool,
+    ) -> anyhow::Result<Vec<RecordBatch>> {
+        self.clear_session_tables();
+        self.register_remote_object_store()?;
+
+        let data_path_prefix = parquet_data_path_prefix(data_type);
+        let files_list = self.query_files(
+            &CatalogDataType::Data(data_type.clone()),
+            identifiers,
+            start,
+            end,
+        )?;
+        let mut display_batches = Vec::new();
+        let table_prefix = make_sql_safe_identifier(data_path_prefix.as_ref());
+        let tables =
+            self.resolve_tables_for_datafusion(&table_prefix, &files_list, optimize_file_loading)?;
+
+        for table in tables {
+            let path_identifier = display_identifier(data_type, &table.directory);
+            let query = build_query(&table.name, start, end, where_clause);
+            let batches = self.session.collect_parquet_files_batches(
+                &table.name,
+                vec![table.path],
+                Some(&query),
+            )?;
+
+            for batch in batches {
+                let identifier =
+                    display_batch_identifier(data_type, &batch, path_identifier.as_deref());
+                let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
+                let metadata = batch.schema().metadata().clone();
+                display_batches.push(catalog_record_batch_to_display(
+                    data_type, &metadata, &batch,
+                )?);
+            }
+        }
+
+        if display_batches.is_empty() {
+            display_batches.push(empty_display_batch_with_identifier(data_type)?);
+        }
+
+        Ok(display_batches)
+    }
+
+    /// Queries concrete catalog identifiers for matching data rows.
+    pub fn query_identifiers(
+        &mut self,
+        data_type: &CatalogDataType,
+        identifiers: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        _optimize_file_loading: bool,
+    ) -> anyhow::Result<Vec<String>> {
+        self.clear_session_tables();
+        self.register_remote_object_store()?;
+
+        let files_list = self.query_files(data_type, identifiers, start, end)?;
+        let table_prefix =
+            make_sql_safe_identifier(&parquet_catalog_data_type_table_stem(data_type));
+        let tables = self.resolve_tables_for_datafusion(&table_prefix, &files_list, true)?;
+        let mut identifiers = Vec::new();
+
+        for table in tables {
+            let identifier = dir_identifier(&table.directory);
+            let query = format!(
+                "{} LIMIT 1",
+                build_query(&table.name, start, end, where_clause)
+            );
+            let batches = self.session.collect_parquet_files_batches(
+                &table.name,
+                vec![table.path],
+                Some(&query),
+            )?;
+
+            if batches.iter().any(|batch| batch.num_rows() != 0) {
+                identifiers.push(decode_object_store_segment(&identifier));
+            }
+        }
+
+        identifiers.sort();
+        identifiers.dedup();
+        Ok(identifiers)
+    }
+
+    // Registers each directory table up front, so a directory whose file schemas cannot merge
+    // (such as one instrument written at two precisions) falls back to one table per listed file.
+    // File tables register when queried.
+    fn resolve_tables_for_datafusion(
+        &mut self,
+        table_prefix: &str,
+        files: &[String],
+        optimize_file_loading: bool,
+    ) -> anyhow::Result<Vec<DataFusionTable>> {
+        let table_name = |index: usize| format!("{table_prefix}_{index}");
+        let mut tables = Vec::new();
+
+        if !optimize_file_loading {
+            for file in files {
+                tables.push(self.file_table(table_name(tables.len()), file)?);
+            }
+            return Ok(tables);
+        }
+
+        // Deterministic registration order so equal-ts_init tie order is reproducible.
+        for directory in parent_directories(files) {
+            let name = table_name(tables.len());
+            let path = self.resolve_directory_for_datafusion(&directory);
+
+            if self
+                .session
+                .try_register_parquet_files_table(&name, vec![path.clone()])?
+            {
+                tables.push(DataFusionTable {
+                    name,
+                    directory,
+                    path,
+                });
+                continue;
+            }
+
+            for file in files
+                .iter()
+                .filter(|file| parent_directory(file).as_ref() == Some(&directory))
+            {
+                tables.push(self.file_table(table_name(tables.len()), file)?);
+            }
+        }
+
+        Ok(tables)
+    }
+
+    fn file_table(&self, name: String, file: &str) -> anyhow::Result<DataFusionTable> {
+        let directory = parent_directory(file)
+            .ok_or_else(|| anyhow::anyhow!("Cannot extract directory from '{file}'"))?;
+        let path = self.resolve_path_for_datafusion(file);
+
+        Ok(DataFusionTable {
+            name,
+            directory,
+            path,
+        })
+    }
+
+    /// Queries custom data dynamically by type name.
+    ///
+    /// This method allows querying custom data types without compile-time knowledge of the type.
+    /// It uses dynamic schema decoding based on the type name stored in metadata.
+    ///
+    /// # Parameters
+    ///
+    /// - `type_name`: The name of the custom data type to query.
+    /// - `identifiers`: Optional list of instrument identifiers to filter by.
+    /// - `start`: Optional start timestamp for filtering.
+    /// - `end`: Optional end timestamp for filtering.
+    /// - `where_clause`: Optional SQL WHERE clause for additional filtering.
+    /// - `files`: Optional list of specific files to query.
+    /// - `_optimize_file_loading`: Whether to optimize file loading (currently unused).
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `Data` enum variants containing the custom data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - File discovery fails.
+    /// - Data decoding fails.
+    /// - Query execution fails.
+    #[expect(clippy::too_many_arguments)]
+    pub fn query_custom_data_dynamic(
+        &mut self,
+        type_name: &str,
+        identifiers: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+        files: Option<Vec<String>>,
+        _optimize_file_loading: bool,
+    ) -> anyhow::Result<Vec<Data>> {
+        self.clear_session_tables();
+
+        self.register_remote_object_store()?;
+
+        let files = if let Some(f) = files {
+            f.into_iter()
+                .map(|p| self.to_object_path_parsed(&p).map(|op| op.to_string()))
+                .collect::<anyhow::Result<Vec<_>>>()?
+        } else {
+            self.list_parquet_files_with_criteria(
+                &CatalogDataType::Data(NautilusDataType::Custom {
+                    type_name: type_name.to_string(),
+                }),
+                identifiers,
+                start,
+                end,
+            )?
+        };
+
+        if files.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Use CustomDataDecoder for all custom data. Pass type_name so decode can look up
+        // the type when Parquet/DataFusion does not preserve schema metadata. Callers must
+        // ensure Rust custom types are registered via ensure_custom_data_registered::<T>().
+        let mut lookup_metadata = HashMap::new();
+        lookup_metadata.insert("type_name".to_string(), type_name.to_string());
+        let registered_schema = CustomDataDecoder::get_schema(Some(lookup_metadata.clone()));
+        registered_schema.field_with_name("ts_init").map_err(|_| {
+            anyhow::anyhow!(
+                "custom data type '{type_name}' is not registered with an Arrow schema containing ts_init; \
+                 call ensure_custom_data_registered::<T>() before querying"
+            )
+        })?;
+
+        let mut all_data = Vec::new();
+
+        for file in files {
+            let object_path = self.to_object_path_parsed(&file)?;
+
+            let mut decode_metadata = self.execute_async(|| async {
+                let schema =
+                    read_parquet_schema_from_object_store(self.object_store.clone(), &object_path)
+                        .await?;
+                validate_catalog_schema(&schema)?;
+                Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().clone())
+            })?;
+
+            decode_metadata.extend(lookup_metadata.clone());
+            let identifier = extract_identifier_from_path(&file)
+                .ok_or_else(|| anyhow::anyhow!("Cannot extract identifier from path '{file}'"))?;
+            let safe_type_name = make_sql_safe_identifier(type_name);
+            let safe_sql_identifier = make_sql_safe_identifier(identifier);
+            let safe_filename = extract_sql_safe_filename(&file);
+            let table_name =
+                format!("custom_{safe_type_name}_{safe_sql_identifier}_{safe_filename}");
+            let resolved_path = self.resolve_path_for_datafusion(&file);
+            let sql_query = build_query(&table_name, start, end, where_clause);
+
+            // Use schemaless registration so DataFusion preserves the parquet file's
+            // schema metadata (e.g. `bar_type`) on output batches, since the
+            // explicit-schema variant strips per-batch metadata that decoders rely on.
+            let batches = self.session.collect_parquet_files_batches(
+                &table_name,
+                vec![resolved_path],
+                Some(&sql_query),
+            )?;
+
+            for batch in batches {
+                all_data.extend(CustomDataDecoder::decode_data_batch(
+                    &decode_metadata,
+                    batch,
+                )?);
+            }
+        }
+
+        all_data.sort_by_key(HasTsInit::ts_init);
+        Ok(all_data)
+    }
+
+    /// Queries all Parquet files for a specific data type and optional instrument IDs.
+    ///
+    /// This method finds all Parquet files that match the specified criteria and returns
+    /// their full URIs. The files are filtered by data type, instrument IDs (if provided),
+    /// and timestamp range (if provided).
+    ///
+    /// # Parameters
+    ///
+    /// - `data_type`: The stored family to read.
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
+    ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    ///   For bars, partial matching is supported.
+    /// - `start`: Optional start timestamp to filter files by their time range.
+    /// - `end`: Optional end timestamp to filter files by their time range.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of file URI strings that match the query criteria,
+    /// or an error if the query fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The directory path cannot be constructed.
+    /// - Object store listing operations fail.
+    /// - URI reconstruction fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::NautilusDataType;
+    /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+    ///
+    /// let mut catalog = ParquetDataCatalog::new(
+    ///     std::path::Path::new("/tmp/nautilus_data"),
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     None,
+    /// );
+    ///
+    /// // Query all quote files
+    /// let files = catalog.query_files(&NautilusDataType::QuoteTick.into(), None, None, None)?;
+    ///
+    /// // Query trade files for specific instruments within a time range
+    /// let files = catalog.query_files(
+    ///     &NautilusDataType::TradeTick.into(),
+    ///     Some(vec!["BTC/USD.SIM".to_string(), "ETH/USD.SIM".to_string()]),
+    ///     Some(UnixNanos::from(1609459200000000000)),
+    ///     Some(UnixNanos::from(1609545600000000000)),
+    /// )?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn query_files(
+        &self,
+        data_type: &CatalogDataType,
+        identifiers: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<String>> {
+        // Take the identifiers once so every prefix shares them without cloning per directory.
+        let identifiers = identifiers.map(Vec::into_boxed_slice);
+
+        let mut files = Vec::new();
+
+        for prefix in parquet_catalog_data_type_path_prefixes(data_type) {
+            files.extend(self.query_prefix_files(
+                prefix.as_ref(),
+                identifiers.as_deref(),
+                start,
+                end,
+            )?);
+        }
+
+        files.sort();
+        files.dedup();
+
+        Ok(files)
+    }
+
+    fn query_prefix_files(
+        &self,
+        data_cls: &str,
+        identifiers: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut files = Vec::new();
+
+        let start_u64 = start.map(|s| s.as_u64());
+        let end_u64 = end.map(|e| e.as_u64());
+
+        let base_dir = self.make_path(data_cls, None)?;
+
+        // Use recursive listing to match Python's glob behavior
+        let list_result = self.list_objects(&base_dir)?;
+
+        let mut file_paths: Vec<String> = list_result
+            .into_iter()
+            .filter_map(|object| {
+                let path_str = object.location.to_string();
+                if path_str.ends_with(".parquet") {
+                    Some(path_str)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if let Some(identifiers) = identifiers {
+            file_paths =
+                filter_identifier_files(file_paths, identifiers, is_parquet_bar_prefix(data_cls));
+        }
+
+        // Apply timestamp filtering
+        file_paths.retain(|file_path| query_intersects_filename(file_path, start_u64, end_u64));
+
+        for file_path in file_paths {
+            files.push(self.path_for_query_list(&file_path));
+        }
+
+        Ok(files)
+    }
+
+    /// Queries quote tick data for the specified instrument(s) and time range.
+    pub fn quote_ticks(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<QuoteTick>> {
+        self.query::<QuoteTick>(instrument_ids, start, end, None, None, true)
+    }
+
+    /// Queries trade tick data for the specified instrument(s) and time range.
+    pub fn trade_ticks(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        self.query::<TradeTick>(instrument_ids, start, end, None, None, true)
+    }
+
+    /// Queries bar data for the specified instrument(s) and time range.
+    pub fn bars(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<Bar>> {
+        self.query::<Bar>(instrument_ids, start, end, None, None, true)
+    }
+
+    /// Queries order book delta data for the specified instrument(s) and time range.
+    pub fn order_book_deltas(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<OrderBookDelta>> {
+        self.query::<OrderBookDelta>(instrument_ids, start, end, None, None, true)
+    }
+
+    /// Queries order book depth data for the specified instrument(s) and time range.
+    pub fn order_book_depths(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<OrderBookDepth>> {
+        self.query::<OrderBookDepth>(instrument_ids, start, end, None, None, true)
+    }
+
+    /// Queries funding rate updates for the specified instrument(s) and time range.
+    pub fn funding_rates(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        self.query::<FundingRateUpdate>(instrument_ids, start, end, None, None, true)
+    }
+
+    /// Queries instrument close data for the specified instrument(s) and time range.
+    pub fn instrument_closes(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<InstrumentClose>> {
+        self.query::<InstrumentClose>(instrument_ids, start, end, None, None, true)
+    }
+
+    /// Queries option greeks data for the specified instrument(s) and time range.
+    pub fn option_greeks(
+        &mut self,
+        instrument_ids: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<OptionGreeks>> {
+        self.query::<OptionGreeks>(instrument_ids, start, end, None, None, true)
+    }
+
+    /// Queries any instrument data for the specified instrument(s) and time range.
+    pub fn instruments(
+        &self,
+        instrument_ids: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        self.query_instruments_filtered(instrument_ids, start, end)
+    }
+
+    /// Retrieves a list of file paths for a given data type.
+    ///
+    /// This method constructs a path pattern to find all parquet files
+    /// associated with the specified data type in the catalog's directory structure.
+    ///
+    /// # Parameters
+    ///
+    /// - `data_type`: The stored family to read.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of file paths matching the data type, or an error if the operation fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Object store listing operations fail.
+    /// - Directory access is denied.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_model::data::NautilusDataType;
+    /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+    ///
+    /// let mut catalog = ParquetDataCatalog::new(
+    ///     std::path::Path::new("/tmp/nautilus_data"),
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     None,
+    /// );
+    /// let files = catalog.get_file_list_from_data_cls(&NautilusDataType::QuoteTick.into())?;
+    ///
+    /// for file in files {
+    ///     println!("Found file: {}", file);
+    /// }
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn get_file_list_from_data_cls(
+        &self,
+        data_type: &CatalogDataType,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut file_paths = Vec::new();
+
+        for data_cls in parquet_catalog_data_type_path_prefixes(data_type) {
+            let directory = self.make_path(data_cls.as_ref(), None)?;
+            file_paths.extend(self.list_parquet_files(&directory)?);
+        }
+
+        Ok(file_paths)
+    }
+
+    /// Filters a list of file paths based on identifiers and time range.
+    ///
+    /// This method filters the provided file paths by:
+    /// 1. Matching identifiers (exact match for instruments, prefix match for bars)
+    /// 2. Intersecting with the specified time range
+    ///
+    /// # Parameters
+    ///
+    /// - `data_type`: The stored family to read.
+    /// - `file_paths`: List of file paths to filter.
+    /// - `identifiers`: Optional list of identifiers to match against file paths.
+    /// - `start`: Optional start timestamp for filtering.
+    /// - `end`: Optional end timestamp for filtering.
+    ///
+    /// # Returns
+    ///
+    /// Returns a filtered vector of file paths that match the criteria.
+    ///
+    /// # Notes
+    ///
+    /// For Bar data types, if exact identifier matching fails, the function attempts
+    /// partial matching by checking if the file's identifier starts with the provided identifier
+    /// followed by a dash (to match bar type patterns).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::NautilusDataType;
+    /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+    ///
+    /// let mut catalog = ParquetDataCatalog::new(
+    ///     std::path::Path::new("/tmp/nautilus_data"),
+    ///     None,
+    ///     None,
+    ///     None,
+    ///     None,
+    /// );
+    /// let all_files = catalog.get_file_list_from_data_cls(&NautilusDataType::QuoteTick.into())?;
+    ///
+    /// let filtered = catalog.filter_files(
+    ///     &NautilusDataType::QuoteTick.into(),
+    ///     all_files,
+    ///     Some(vec!["EUR/USD.SIM".to_string()]),
+    ///     Some(UnixNanos::from(1609459200000000000)),
+    ///     Some(UnixNanos::from(1609545600000000000)),
+    /// )?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn filter_files(
+        &self,
+        data_type: &CatalogDataType,
+        file_paths: Vec<String>,
+        identifiers: Option<Vec<String>>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<String>> {
+        let has_bar_prefix = parquet_catalog_data_type_path_prefixes(data_type)
+            .iter()
+            .any(|data_cls| is_parquet_bar_prefix(data_cls.as_ref()));
+        let mut filtered_paths = file_paths;
+
+        if let Some(identifiers) = identifiers {
+            filtered_paths = filter_identifier_files(filtered_paths, &identifiers, has_bar_prefix);
+        }
+
+        // Apply timestamp filtering
+        let start_u64 = start.map(|s| s.as_u64());
+        let end_u64 = end.map(|e| e.as_u64());
+        filtered_paths.retain(|file_path| query_intersects_filename(file_path, start_u64, end_u64));
+
+        Ok(filtered_paths)
+    }
+}
+
+fn is_parquet_instrument_type_prefix(prefix: &str) -> bool {
+    INSTRUMENT_PATH_PREFIXES.contains(&prefix)
+}
+
+pub(super) fn is_parquet_bar_prefix(data_cls: &str) -> bool {
+    data_cls == parquet_data_path_prefix(&NautilusDataType::Bar).as_ref()
+}
+
+// Each identifier matches its URI-safe directory exactly. For bars, an identifier with no exact
+// match falls back to the bar-type directories of that instrument ID, decided per identifier so
+// one exact match does not disable the fallback for the others.
+pub(super) fn filter_identifier_files(
+    file_paths: Vec<String>,
+    identifiers: &[String],
+    bars: bool,
+) -> Vec<String> {
+    let directories = file_paths
+        .iter()
+        .map(|file_path| identifier_directory(file_path))
+        .collect::<Vec<_>>();
+    let mut keep = vec![false; file_paths.len()];
+
+    for safe_id in identifiers.iter().map(|id| urisafe_instrument_id(id)) {
+        let has_exact = directories
+            .iter()
+            .flatten()
+            .any(|directory| *directory == safe_id);
+        let partial = bars && !has_exact;
+
+        for (keep, directory) in keep.iter_mut().zip(&directories) {
+            let Some(directory) = directory else {
+                continue;
+            };
+
+            *keep |= if partial {
+                extract_bar_type_instrument_id(directory) == Some(safe_id.as_str())
+            } else {
+                *directory == safe_id
+            };
+        }
+    }
+
+    file_paths
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(file_path, keep)| keep.then_some(file_path))
+        .collect()
+}
+
+fn identifier_directory(file_path: &str) -> Option<String> {
+    let mut segments = file_path.rsplit('/');
+    segments.next()?;
+    segments.next().map(decode_object_store_segment)
+}
+
+// A table over a parent directory or one of its files, with `path` resolved for DataFusion and
+// `directory` naming the parent directory in either case.
+struct DataFusionTable {
+    name: String,
+    directory: String,
+    path: String,
+}
+
+/// Returns the sorted, deduplicated parent directories (everything except the filename)
+/// of the given file URIs.
+fn parent_directories(files: &[String]) -> Vec<String> {
+    let mut directories: Vec<String> = files
+        .iter()
+        .filter_map(|file_uri| parent_directory(file_uri))
+        .collect();
+
+    directories.sort();
+    directories.dedup();
+    directories
+}
+
+fn parent_directory(file_uri: &str) -> Option<String> {
+    Path::new(file_uri)
+        .parent()
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+/// Extracts the identifier from a directory path (last component).
+fn dir_identifier(directory: &str) -> String {
+    directory
+        .rsplit_once('/')
+        .map_or(directory, |(_, name)| name)
+        .to_string()
+}
+
+fn display_identifier(data_type: &NautilusDataType, directory: &str) -> Option<String> {
+    let identifier = dir_identifier(directory);
+    let is_unpartitioned_custom = matches!(data_type, NautilusDataType::Custom { .. })
+        && Path::new(directory)
+            .ends_with(Path::new("data").join(parquet_data_path_prefix(data_type).as_ref()));
+
+    (!is_unpartitioned_custom).then(|| decode_object_store_segment(&identifier))
+}
+
+fn display_batch_identifier(
+    data_type: &NautilusDataType,
+    batch: &RecordBatch,
+    path_identifier: Option<&str>,
+) -> Option<String> {
+    if matches!(data_type, NautilusDataType::Custom { .. }) {
+        path_identifier.map(str::to_string)
+    } else {
+        catalog_identifier_from_metadata(batch.schema().metadata())
+            .or_else(|| path_identifier.map(str::to_string))
+    }
+}

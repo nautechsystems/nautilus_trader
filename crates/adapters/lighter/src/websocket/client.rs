@@ -30,6 +30,8 @@ use dashmap::{DashMap, mapref::entry::Entry};
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
 use nautilus_core::string::secret::{SecretString, redact_option};
+#[cfg(test)]
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_live::{
     SocketControl,
     task::{SharedTaskSlot, TaskJoinOutcome, TaskSlot, finish_task},
@@ -40,6 +42,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     SocketStateSink,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         InitialConnectRetryPolicy, SubscriptionState, TransportBackend, WebSocketClient,
@@ -102,11 +105,12 @@ pub struct LighterWebSocketClient {
     subscriptions: SubscriptionState,
     subscription_args: Arc<DashMap<String, SubscriptionArgs>>,
     next_subscription_generation: Arc<AtomicU64>,
-    instruments: Arc<DashMap<i16, InstrumentAny>>,
+    instruments: Arc<DashMap<i64, InstrumentAny>>,
     registry: Arc<MarketRegistry>,
     task_handle: TaskSlot<()>,
     transport_backend: TransportBackend,
     ws_timeout_secs: u64,
+    book_snapshot_timeout: Duration,
     proxy_url: Option<SecretString>,
     socket_sink: Option<SocketStateSink>,
     socket_control: Option<SocketControl>,
@@ -206,6 +210,7 @@ impl Debug for LighterWebSocketClient {
             .field("instruments_len", &self.instruments.len())
             .field("transport_backend", &self.transport_backend)
             .field("ws_timeout_secs", &self.ws_timeout_secs)
+            .field("book_snapshot_timeout", &self.book_snapshot_timeout)
             .field("proxy_url", &redact_option(self.proxy_url.as_ref()))
             .finish_non_exhaustive()
     }
@@ -231,6 +236,7 @@ impl Clone for LighterWebSocketClient {
             task_handle: TaskSlot::new(),
             transport_backend: self.transport_backend,
             ws_timeout_secs: self.ws_timeout_secs,
+            book_snapshot_timeout: self.book_snapshot_timeout,
             proxy_url: self.proxy_url.clone(),
             socket_sink: self.socket_sink.clone(),
             socket_control: self.socket_control.clone(),
@@ -259,6 +265,7 @@ impl LighterWebSocketClient {
         registry: Arc<MarketRegistry>,
         transport_backend: TransportBackend,
         ws_timeout_secs: u64,
+        book_snapshot_timeout: Duration,
         proxy_url: Option<String>,
     ) -> Self {
         let url = url.unwrap_or_else(|| lighter_ws_url(environment).to_string());
@@ -287,6 +294,7 @@ impl LighterWebSocketClient {
             task_handle: TaskSlot::new(),
             transport_backend,
             ws_timeout_secs,
+            book_snapshot_timeout,
             proxy_url: proxy_url.map(SecretString::from),
             socket_sink: None,
             socket_control: None,
@@ -364,13 +372,13 @@ impl LighterWebSocketClient {
 
     /// Returns a clone of the shared instrument cache.
     #[must_use]
-    pub fn instruments_cache(&self) -> Arc<DashMap<i16, InstrumentAny>> {
+    pub fn instruments_cache(&self) -> Arc<DashMap<i64, InstrumentAny>> {
         Arc::clone(&self.instruments)
     }
 
     /// Caches a batch of instruments along with their venue `market_index`,
     /// replaying them to the handler if a connection is already established.
-    pub fn cache_instruments(&self, instruments: Vec<(i16, InstrumentAny)>) {
+    pub fn cache_instruments(&self, instruments: Vec<(i64, InstrumentAny)>) {
         self.instruments.clear();
         for (market_index, instrument) in &instruments {
             self.instruments.insert(*market_index, instrument.clone());
@@ -386,7 +394,7 @@ impl LighterWebSocketClient {
     }
 
     /// Caches a single instrument and pushes it to the handler if connected.
-    pub fn cache_instrument(&self, market_index: i16, instrument: InstrumentAny) {
+    pub fn cache_instrument(&self, market_index: i64, instrument: InstrumentAny) {
         self.instruments.insert(market_index, instrument.clone());
 
         if let Ok(cmd_tx) = self.cmd_tx.try_read() {
@@ -449,9 +457,11 @@ impl LighterWebSocketClient {
             .store(Arc::new(cancellation_token.clone()));
 
         let (message_handler, raw_rx) = channel_epoch_message_handler();
+        let headers = create_standard_nautilus_headers();
+
         let cfg = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: Some(HEARTBEAT_INTERVAL.as_secs()),
             heartbeat_payload: None,
             connect_timeout_ms: Some(self.ws_timeout_secs.saturating_mul(1_000).max(1)),
@@ -462,11 +472,14 @@ impl LighterWebSocketClient {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: Some(HEARTBEAT_TIMEOUT.as_secs()),
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
             proxy_url: self
                 .proxy_url
                 .as_ref()
                 .map(|value| value.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
         let connect = WebSocketClient::epoch_builder()
             .config(cfg)
@@ -520,7 +533,7 @@ impl LighterWebSocketClient {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        let initial_instruments: Vec<(i16, InstrumentAny)> = self
+        let initial_instruments: Vec<(i64, InstrumentAny)> = self
             .instruments
             .iter()
             .map(|entry| (*entry.key(), entry.value().clone()))
@@ -547,6 +560,7 @@ impl LighterWebSocketClient {
         let subscription_args = Arc::clone(&self.subscription_args);
         let cmd_tx_for_reconnect = cmd_tx.clone();
         let settlement_currency = self.registry.settlement_currency();
+        let book_snapshot_timeout = self.book_snapshot_timeout;
 
         if let Err(e) = self.task_handle.spawn(async move {
             let mut handler = FeedHandler::new_with_settlement_currency(
@@ -556,6 +570,7 @@ impl LighterWebSocketClient {
                 out_tx,
                 subscriptions,
                 settlement_currency,
+                book_snapshot_timeout,
             );
 
             handler.set_command_sender(cmd_tx_for_reconnect.clone());
@@ -766,12 +781,12 @@ impl LighterWebSocketClient {
     ///
     /// Returns an error if the instrument is not registered, the command
     /// cannot be queued, or the venue rejects the subscription.
-    pub async fn subscribe_book_depth10(
+    pub async fn subscribe_book_depth(
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), LighterWsError> {
         let market_index = self.market_index_for(&instrument_id)?;
-        self.send_cmd(HandlerCommand::SetDepth10Sub {
+        self.send_cmd(HandlerCommand::SetDepthSub {
             market_index,
             subscribed: true,
         })
@@ -779,7 +794,7 @@ impl LighterWebSocketClient {
 
         if let Err(e) = self.subscribe_order_book_stream(market_index).await {
             let _ = self
-                .send_cmd(HandlerCommand::SetDepth10Sub {
+                .send_cmd(HandlerCommand::SetDepthSub {
                     market_index,
                     subscribed: false,
                 })
@@ -800,12 +815,12 @@ impl LighterWebSocketClient {
     ///
     /// Returns an error if the instrument is not registered or the command
     /// cannot be queued.
-    pub async fn unsubscribe_book_depth10(
+    pub async fn unsubscribe_book_depth(
         &self,
         instrument_id: InstrumentId,
     ) -> Result<(), LighterWsError> {
         let market_index = self.market_index_for(&instrument_id)?;
-        self.send_cmd(HandlerCommand::SetDepth10Sub {
+        self.send_cmd(HandlerCommand::SetDepthSub {
             market_index,
             subscribed: false,
         })
@@ -1095,16 +1110,24 @@ impl LighterWebSocketClient {
         })?
     }
 
-    #[cfg(test)]
-    pub(crate) async fn drop_next_send_tx_result_for_test(&self) {
-        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        *self.cmd_tx.write().await = cmd_tx;
+    pub(crate) async fn send_tx_batch_on_connection(
+        &self,
+        data: super::messages::LighterWsSendTxBatch,
+        connection_epoch: u64,
+    ) -> Result<(), LighterWsError> {
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.send_cmd(HandlerCommand::SendTxBatch {
+            data,
+            connection_epoch,
+            response_tx,
+        })
+        .await?;
 
-        get_runtime().spawn(async move {
-            if let Some(HandlerCommand::SendTx { response_tx, .. }) = cmd_rx.recv().await {
-                drop(response_tx);
-            }
-        });
+        response_rx.await.map_err(|e| {
+            LighterWsError::SendTxOutcomeUnknown(format!(
+                "handler dropped sendTxBatch result after accepting the command: {e}",
+            ))
+        })?
     }
 
     async fn send_subscribe(
@@ -1128,24 +1151,29 @@ impl LighterWebSocketClient {
 
         if let Err(e) = self
             .send_cmd(HandlerCommand::Subscribe {
-                channel,
+                channel: channel.clone(),
                 auth,
                 response_tx: Some(response_tx),
             })
             .await
         {
-            self.restore_subscription_args(&topic, generation, previous);
+            if matches!(channel, LighterWsChannel::OrderBook(_)) {
+                self.remove_subscription_args(&channel, generation);
+            } else {
+                self.restore_subscription_args(&topic, generation, previous);
+            }
+
             return Err(e);
         }
 
         match response_rx.await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(message)) => {
-                self.remove_subscription_args(&topic, generation);
+                self.remove_subscription_args(&channel, generation);
                 Err(LighterWsError::Client(message))
             }
             Err(e) => {
-                self.remove_subscription_args(&topic, generation);
+                self.remove_subscription_args(&channel, generation);
                 Err(LighterWsError::Client(format!(
                     "handler dropped subscription result for {topic}: {e}",
                 )))
@@ -1174,8 +1202,16 @@ impl LighterWebSocketClient {
         }
     }
 
-    fn remove_subscription_args(&self, topic: &str, generation: u64) {
-        let Entry::Occupied(entry) = self.subscription_args.entry(topic.to_string()) else {
+    fn remove_subscription_args(&self, channel: &LighterWsChannel, generation: u64) {
+        let topic = channel.topic_key();
+        // Remove the failed caller before deciding whether another book consumer needs replay.
+        if matches!(channel, LighterWsChannel::OrderBook(_))
+            && !self.subscriptions.remove_reference(&topic)
+        {
+            return;
+        }
+
+        let Entry::Occupied(entry) = self.subscription_args.entry(topic) else {
             return;
         };
 
@@ -1192,7 +1228,7 @@ impl LighterWebSocketClient {
         Ok(())
     }
 
-    async fn subscribe_order_book_stream(&self, market_index: i16) -> Result<(), LighterWsError> {
+    async fn subscribe_order_book_stream(&self, market_index: i64) -> Result<(), LighterWsError> {
         let channel = LighterWsChannel::OrderBook(market_index);
         let topic = channel.topic_key();
 
@@ -1200,15 +1236,10 @@ impl LighterWebSocketClient {
             return Ok(());
         }
 
-        if let Err(e) = self.send_subscribe(channel, None).await {
-            self.subscriptions.remove_reference(topic.as_str());
-            return Err(e);
-        }
-
-        Ok(())
+        self.send_subscribe(channel, None).await
     }
 
-    async fn unsubscribe_order_book_stream(&self, market_index: i16) -> Result<(), LighterWsError> {
+    async fn unsubscribe_order_book_stream(&self, market_index: i64) -> Result<(), LighterWsError> {
         let channel = LighterWsChannel::OrderBook(market_index);
         let topic = channel.topic_key();
 
@@ -1232,7 +1263,7 @@ impl LighterWebSocketClient {
             .map_err(|e| LighterWsError::Client(format!("handler unavailable: {e}")))
     }
 
-    fn market_index_for(&self, instrument_id: &InstrumentId) -> Result<i16, LighterWsError> {
+    fn market_index_for(&self, instrument_id: &InstrumentId) -> Result<i64, LighterWsError> {
         self.registry.market_index(instrument_id).ok_or_else(|| {
             LighterWsError::Client(format!(
                 "no Lighter market_index registered for instrument: {instrument_id}"
@@ -1277,14 +1308,80 @@ mod tests {
         enums::{LighterProductType, LighterTxType},
     };
 
+    impl LighterWebSocketClient {
+        pub(crate) async fn drop_next_send_tx_result_for_test(&self) {
+            let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+            *self.cmd_tx.write().await = cmd_tx;
+
+            get_runtime().spawn(async move {
+                if let Some(
+                    HandlerCommand::SendTx { response_tx, .. }
+                    | HandlerCommand::SendTxBatch { response_tx, .. },
+                ) = cmd_rx.recv().await
+                {
+                    drop(response_tx);
+                }
+            });
+        }
+    }
+
     fn registry_with(
-        market_index: i16,
+        market_index: i64,
         symbol: &str,
         product: LighterProductType,
     ) -> Arc<MarketRegistry> {
         let registry = Arc::new(MarketRegistry::new());
         registry.insert(market_index, symbol, product);
         registry
+    }
+
+    #[rstest]
+    #[case::only_caller(1, false, false)]
+    #[case::other_consumer(2, false, true)]
+    #[case::other_consumer_leaves(2, true, false)]
+    fn book_failed_initial_waiter_preserves_other_consumer_replay(
+        #[case] references: usize,
+        #[case] other_leaves: bool,
+        #[case] retained: bool,
+    ) {
+        let client = LighterWebSocketClient::new(
+            Some("wss://example/test".into()),
+            LighterEnvironment::Testnet,
+            registry_with(0, "ETH", LighterProductType::Perp),
+            TransportBackend::default(),
+            30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
+            None,
+        );
+        let topic = "order_book:0";
+        for _ in 0..references {
+            client.subscriptions.add_reference(topic);
+        }
+
+        client.subscription_args.insert(
+            topic.into(),
+            SubscriptionArgs {
+                channel: LighterWsChannel::OrderBook(0),
+                auth: None,
+                generation: 7,
+            },
+        );
+
+        if other_leaves {
+            assert!(!client.subscriptions.remove_reference(topic));
+        }
+
+        client.remove_subscription_args(&LighterWsChannel::OrderBook(0), 7);
+
+        assert_eq!(client.subscription_args.contains_key(topic), retained);
+        assert_eq!(
+            client.subscriptions.get_reference_count(topic),
+            references - 1 - usize::from(other_leaves)
+        );
+
+        if retained {
+            assert_eq!(client.subscription_args.get(topic).unwrap().generation, 7);
+        }
     }
 
     #[rstest]
@@ -1295,6 +1392,7 @@ mod tests {
             Arc::new(MarketRegistry::new()),
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             Some("http://user:proxy-secret@localhost".to_string()),
         );
         client.subscription_args.insert(
@@ -1322,6 +1420,7 @@ mod tests {
             Arc::clone(&registry),
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         let id = registry.instrument_id(7).expect("registered");
@@ -1337,6 +1436,7 @@ mod tests {
             registry,
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         let id = InstrumentId::new(Symbol::from_str_unchecked("UNKNOWN-PERP"), *LIGHTER_VENUE);
@@ -1352,6 +1452,7 @@ mod tests {
             Arc::clone(&registry),
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         let id = registry.instrument_id(0).expect("registered");
@@ -1368,6 +1469,7 @@ mod tests {
             Arc::new(MarketRegistry::new()),
             TransportBackend::default(),
             0,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
 
@@ -1400,6 +1502,7 @@ mod tests {
             Arc::new(MarketRegistry::new()),
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
@@ -1425,6 +1528,7 @@ mod tests {
             Arc::new(MarketRegistry::new()),
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         client
@@ -1452,6 +1556,7 @@ mod tests {
             Arc::new(MarketRegistry::new()),
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         client
@@ -1483,6 +1588,7 @@ mod tests {
             Arc::new(MarketRegistry::new()),
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         client.drop_next_send_tx_result_for_test().await;
@@ -1504,6 +1610,7 @@ mod tests {
             Arc::new(MarketRegistry::new()),
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1548,6 +1655,7 @@ mod tests {
             Arc::new(MarketRegistry::new()),
             TransportBackend::default(),
             30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
             None,
         );
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();

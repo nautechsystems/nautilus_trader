@@ -687,6 +687,7 @@ fn decode_cancel_order_list(buf: &[u8]) -> Result<BinanceCancelOrderListResponse
     }
 
     let mut order_reports = Vec::with_capacity(report_count as usize);
+
     for _ in 0..report_count {
         cursor.require(report_block_length as usize)?;
         let order_id = cursor.read_i64_le()?;

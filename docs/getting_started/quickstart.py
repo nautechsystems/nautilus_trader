@@ -8,7 +8,7 @@
 # %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.12+
+# - Python 3.12-3.14
 # - NautilusTrader 2.x installed (`pip install -U --pre nautilus_trader`). The `--pre`
 #   flag is required while 2.x ships as `2.0.0rcN`; without it pip installs the 1.x
 #   line, whose Python API differs and cannot run this page.
@@ -128,6 +128,7 @@ from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import CurrencyPair
@@ -217,6 +218,10 @@ engine.add_venue(
     starting_balances=[Money(1_000_000, USD)],
     base_currency=USD,
     default_leverage=Decimal(1),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal(0),
+        taker_rate=Decimal(0),
+    ),
 )
 
 # Add instrument, data, and strategy

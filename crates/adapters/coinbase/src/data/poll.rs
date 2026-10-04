@@ -30,7 +30,7 @@
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_core::{UnixNanos, time::AtomicTime};
 use nautilus_live::task::TaskGroup;
 use nautilus_model::{
@@ -77,7 +77,7 @@ struct DerivPollState {
 pub(crate) struct DerivPollManager {
     polls: Arc<Mutex<AHashMap<InstrumentId, DerivPollState>>>,
     http_client: CoinbaseHttpClient,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     interval_secs: u64,
     tasks: TaskGroup,
@@ -86,7 +86,7 @@ pub(crate) struct DerivPollManager {
 impl DerivPollManager {
     pub(crate) fn new(
         http_client: CoinbaseHttpClient,
-        data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: EventSender<DataEvent>,
         clock: &'static AtomicTime,
         interval_secs: u64,
     ) -> Self {
@@ -309,7 +309,7 @@ pub(crate) fn emit_deriv_updates(
     emit_index: bool,
     emit_funding: bool,
     ts_now: UnixNanos,
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
 ) {
     let Some(details) = product.future_product_details.as_ref() else {
         log::debug!("Skipping derivatives update for {instrument_id}: not a futures product");
@@ -445,7 +445,7 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let ts = UnixNanos::default();
 
-        emit_deriv_updates(instrument_id, &product, true, true, ts, &tx);
+        emit_deriv_updates(instrument_id, &product, true, true, ts, &tx.into());
 
         let mut got_index = None;
         let mut got_funding = None;
@@ -486,7 +486,7 @@ mod tests {
             false,
             false,
             UnixNanos::default(),
-            &tx,
+            &tx.into(),
         );
         assert!(rx.try_recv().is_err(), "neither flag on => no events");
     }
@@ -504,7 +504,7 @@ mod tests {
             true,
             true,
             UnixNanos::default(),
-            &tx,
+            &tx.into(),
         );
         assert!(
             rx.try_recv().is_err(),
@@ -802,7 +802,7 @@ mod tests {
             emit_index,
             emit_funding,
             UnixNanos::default(),
-            &tx,
+            &tx.into(),
         );
 
         let mut got_index = false;
@@ -830,7 +830,14 @@ mod tests {
         product.future_product_details.as_mut().unwrap().index_price = None;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
-        emit_deriv_updates(perp_id(), &product, true, false, UnixNanos::default(), &tx);
+        emit_deriv_updates(
+            perp_id(),
+            &product,
+            true,
+            false,
+            UnixNanos::default(),
+            &tx.into(),
+        );
         assert!(rx.try_recv().is_err(), "index_price=None must not emit");
     }
 
@@ -844,7 +851,14 @@ mod tests {
             .funding_rate = String::new();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
-        emit_deriv_updates(perp_id(), &product, false, true, UnixNanos::default(), &tx);
+        emit_deriv_updates(
+            perp_id(),
+            &product,
+            false,
+            true,
+            UnixNanos::default(),
+            &tx.into(),
+        );
         assert!(rx.try_recv().is_err(), "empty funding_rate must not emit");
     }
 
@@ -858,7 +872,14 @@ mod tests {
             .funding_rate = "not-a-decimal".to_string();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
-        emit_deriv_updates(perp_id(), &product, true, true, UnixNanos::default(), &tx);
+        emit_deriv_updates(
+            perp_id(),
+            &product,
+            true,
+            true,
+            UnixNanos::default(),
+            &tx.into(),
+        );
 
         // Malformed funding_rate path logs a warning and does not emit a
         // FundingRateUpdate; the index path still emits.
@@ -889,7 +910,14 @@ mod tests {
         details.funding_interval = None;
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        emit_deriv_updates(perp_id(), &product, false, true, UnixNanos::default(), &tx);
+        emit_deriv_updates(
+            perp_id(),
+            &product,
+            false,
+            true,
+            UnixNanos::default(),
+            &tx.into(),
+        );
 
         let mut got_funding = None;
 
@@ -912,7 +940,7 @@ mod tests {
         let http = CoinbaseHttpClient::new(CoinbaseEnvironment::Live, 5, None, None).unwrap();
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let clock = nautilus_core::time::get_atomic_clock_realtime();
-        super::DerivPollManager::new(http, tx, clock, interval_secs)
+        super::DerivPollManager::new(http, tx.into(), clock, interval_secs)
     }
 
     fn seeded_perp_product() -> Product {

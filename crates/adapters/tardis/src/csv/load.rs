@@ -20,7 +20,7 @@ use csv::StringRecord;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        DEPTH10_LEN, Data, FundingRateUpdate, NULL_ORDER, OrderBookDelta, OrderBookDepth10,
+        DEPTH10_LEN, Data, FundingRateUpdate, NULL_ORDER, OrderBookDelta, OrderBookDepth,
         QuoteTick, TradeTick,
     },
     enums::{OrderSide, RecordFlag},
@@ -181,6 +181,8 @@ pub fn load_deltas<P: AsRef<Path>>(
     let mut current_size_precision = size_precision.unwrap_or(0);
     let mut last_ts_init: Option<UnixNanos> = None;
     let mut last_is_snapshot = false;
+    let mut seen_first_snapshot = false;
+    let mut skipped_before_snapshot: usize = 0;
 
     let mut reader = create_csv_reader(filepath)?;
     let mut record = StringRecord::new();
@@ -193,6 +195,26 @@ pub fn load_deltas<P: AsRef<Path>>(
         }
 
         let data: TardisBookUpdateRecord = record.deserialize(None)?;
+
+        // Rows before the first snapshot are pre-snapshot orphans and must be skipped, see
+        // https://docs.tardis.dev/faq/order-books
+        if !seen_first_snapshot {
+            if !data.is_snapshot {
+                skipped_before_snapshot += 1;
+                continue;
+            }
+
+            if skipped_before_snapshot > 0 {
+                log::warn!(
+                    "Skipped {skipped_before_snapshot} pre-snapshot buffered delta record(s) for \
+                     {}/{} (received before the first snapshot row, see \
+                     https://docs.tardis.dev/faq/order-books)",
+                    data.exchange,
+                    data.symbol,
+                );
+            }
+            seen_first_snapshot = true;
+        }
 
         update_precision_if_needed(&mut current_price_precision, data.price, price_precision);
         update_precision_if_needed(&mut current_size_precision, data.amount, size_precision);
@@ -253,6 +275,14 @@ pub fn load_deltas<P: AsRef<Path>>(
         deltas.push(delta);
     }
 
+    if !seen_first_snapshot && skipped_before_snapshot > 0 {
+        log::warn!(
+            "No snapshot row found in Tardis CSV: all {skipped_before_snapshot} row(s) were \
+             pre-snapshot buffered records and have been skipped, zero deltas will be produced \
+             (see https://docs.tardis.dev/faq/order-books)"
+        );
+    }
+
     // Set F_LAST flag for final delta
     if let Some(last_delta) = deltas.last_mut() {
         last_delta.flags = RecordFlag::F_LAST as u8;
@@ -271,9 +301,9 @@ pub fn load_deltas<P: AsRef<Path>>(
     Ok(deltas)
 }
 
-/// Loads [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
+/// Loads [`OrderBookDepth`]s from a Tardis format CSV at the given `filepath`,
 /// automatically applying `GZip` decompression for files ending in ".gz".
-/// Load order book depth-10 snapshots (5-level) from a CSV or gzipped CSV file.
+/// Load order book depth snapshots (5-level) from a CSV or gzipped CSV file.
 ///
 /// # Errors
 ///
@@ -281,17 +311,17 @@ pub fn load_deltas<P: AsRef<Path>>(
 ///
 /// # Panics
 ///
-/// Panics if a record level cannot be parsed to depth-10.
-pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
+/// Panics if a record level cannot be parsed to depth.
+pub fn load_depth_from_snapshot5<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
-) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
+) -> Result<Vec<OrderBookDepth>, Box<dyn Error>> {
     // Estimate capacity for Vec pre-allocation
     let estimated_capacity = limit.unwrap_or(1_000_000).min(10_000_000);
-    let mut depths: Vec<OrderBookDepth10> = Vec::with_capacity(estimated_capacity);
+    let mut depths: Vec<OrderBookDepth> = Vec::with_capacity(estimated_capacity);
 
     let mut current_price_precision = price_precision.unwrap_or(0);
     let mut current_size_precision = size_precision.unwrap_or(0);
@@ -328,15 +358,13 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
         // If precision increased, update all previous depths
         if precision_updated {
             for depth in &mut depths {
-                for i in 0..DEPTH10_LEN {
+                for order in depth.bids.iter_mut().chain(depth.asks.iter_mut()) {
                     if price_precision.is_none() {
-                        depth.bids[i].price.precision = current_price_precision;
-                        depth.asks[i].price.precision = current_price_precision;
+                        order.price.precision = current_price_precision;
                     }
 
                     if size_precision.is_none() {
-                        depth.bids[i].size.precision = current_size_precision;
-                        depth.asks[i].size.precision = current_size_precision;
+                        order.size.precision = current_size_precision;
                     }
                 }
             }
@@ -410,7 +438,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
             ask_counts[i] = ask_count;
         }
 
-        let depth = OrderBookDepth10::new(
+        let depth = OrderBookDepth::new(
             instrument_id,
             bids,
             asks,
@@ -434,23 +462,23 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     Ok(depths)
 }
 
-/// Loads [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
+/// Loads [`OrderBookDepth`]s from a Tardis format CSV at the given `filepath`,
 /// automatically applying `GZip` decompression for files ending in ".gz".
-/// Load order book depth-10 snapshots (25-level) from a CSV or gzipped CSV file.
+/// Load order book depth snapshots (25-level) from a CSV or gzipped CSV file.
 ///
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened, read, or parsed as CSV.
-pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
+pub fn load_depth_from_snapshot25<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
     size_precision: Option<u8>,
     instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
-) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
+) -> Result<Vec<OrderBookDepth>, Box<dyn Error>> {
     // Estimate capacity for Vec pre-allocation
     let estimated_capacity = limit.unwrap_or(1_000_000).min(10_000_000);
-    let mut depths: Vec<OrderBookDepth10> = Vec::with_capacity(estimated_capacity);
+    let mut depths: Vec<OrderBookDepth> = Vec::with_capacity(estimated_capacity);
 
     let mut current_price_precision = price_precision.unwrap_or(0);
     let mut current_size_precision = size_precision.unwrap_or(0);
@@ -486,15 +514,13 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
         // If precision increased, update all previous depths
         if precision_updated {
             for depth in &mut depths {
-                for i in 0..DEPTH10_LEN {
+                for order in depth.bids.iter_mut().chain(depth.asks.iter_mut()) {
                     if price_precision.is_none() {
-                        depth.bids[i].price.precision = current_price_precision;
-                        depth.asks[i].price.precision = current_price_precision;
+                        order.price.precision = current_price_precision;
                     }
 
                     if size_precision.is_none() {
-                        depth.bids[i].size.precision = current_size_precision;
-                        depth.asks[i].size.precision = current_size_precision;
+                        order.size.precision = current_size_precision;
                     }
                 }
             }
@@ -510,43 +536,20 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
         let ts_event = parse_timestamp(data.timestamp);
         let ts_init = parse_timestamp(data.local_timestamp);
 
-        // Initialize empty arrays for the first 10 levels only
-        let mut bids = [NULL_ORDER; DEPTH10_LEN];
-        let mut asks = [NULL_ORDER; DEPTH10_LEN];
-        let mut bid_counts = [0u32; DEPTH10_LEN];
-        let mut ask_counts = [0u32; DEPTH10_LEN];
+        // Initialize empty arrays for all 25 levels
+        let mut bids = [NULL_ORDER; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut asks = [NULL_ORDER; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut bid_counts = [0u32; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut ask_counts = [0u32; TardisOrderBookSnapshot25Record::LEVELS];
 
-        // Fill only the first 10 levels from the 25-level record
-        for i in 0..DEPTH10_LEN {
+        // Fill all 25 levels from the 25-level record
+        for i in 0..TardisOrderBookSnapshot25Record::LEVELS {
             // Create bids
+            let (bid_price, bid_amount) = data.bid_level(i);
             let (bid_order, bid_count) = create_book_order(
                 OrderSide::Buy,
-                match i {
-                    0 => data.bids_0_price,
-                    1 => data.bids_1_price,
-                    2 => data.bids_2_price,
-                    3 => data.bids_3_price,
-                    4 => data.bids_4_price,
-                    5 => data.bids_5_price,
-                    6 => data.bids_6_price,
-                    7 => data.bids_7_price,
-                    8 => data.bids_8_price,
-                    9 => data.bids_9_price,
-                    _ => unreachable!("i is constrained to 0..10 by loop"),
-                },
-                match i {
-                    0 => data.bids_0_amount,
-                    1 => data.bids_1_amount,
-                    2 => data.bids_2_amount,
-                    3 => data.bids_3_amount,
-                    4 => data.bids_4_amount,
-                    5 => data.bids_5_amount,
-                    6 => data.bids_6_amount,
-                    7 => data.bids_7_amount,
-                    8 => data.bids_8_amount,
-                    9 => data.bids_9_amount,
-                    _ => unreachable!("i is constrained to 0..10 by loop"),
-                },
+                bid_price,
+                bid_amount,
                 current_price_precision,
                 current_size_precision,
             );
@@ -554,34 +557,11 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
             bid_counts[i] = bid_count;
 
             // Create asks
+            let (ask_price, ask_amount) = data.ask_level(i);
             let (ask_order, ask_count) = create_book_order(
                 OrderSide::Sell,
-                match i {
-                    0 => data.asks_0_price,
-                    1 => data.asks_1_price,
-                    2 => data.asks_2_price,
-                    3 => data.asks_3_price,
-                    4 => data.asks_4_price,
-                    5 => data.asks_5_price,
-                    6 => data.asks_6_price,
-                    7 => data.asks_7_price,
-                    8 => data.asks_8_price,
-                    9 => data.asks_9_price,
-                    _ => unreachable!("i is constrained to 0..10 by loop"),
-                },
-                match i {
-                    0 => data.asks_0_amount,
-                    1 => data.asks_1_amount,
-                    2 => data.asks_2_amount,
-                    3 => data.asks_3_amount,
-                    4 => data.asks_4_amount,
-                    5 => data.asks_5_amount,
-                    6 => data.asks_6_amount,
-                    7 => data.asks_7_amount,
-                    8 => data.asks_8_amount,
-                    9 => data.asks_9_amount,
-                    _ => unreachable!("i is constrained to 0..10 by loop"),
-                },
+                ask_price,
+                ask_amount,
                 current_price_precision,
                 current_size_precision,
             );
@@ -589,7 +569,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
             ask_counts[i] = ask_count;
         }
 
-        let depth = OrderBookDepth10::new(
+        let depth = OrderBookDepth::new(
             instrument_id,
             bids,
             asks,
@@ -874,20 +854,25 @@ pub fn load_options_chain<P: AsRef<Path>>(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, fs::File, sync::Arc};
+    use std::fs;
+    #[cfg(feature = "arrow")]
+    use std::{fs::File, sync::Arc};
 
+    #[cfg(feature = "arrow")]
     use nautilus_core::paths::get_test_data_path as get_test_data_root;
     use nautilus_model::{
         enums::{AggressorSide, BookAction, OrderSide},
         identifiers::{InstrumentId, TradeId},
         types::Price,
     };
+    #[cfg(feature = "arrow")]
     use nautilus_serialization::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
     use nautilus_testkit::common::{
         get_tardis_binance_snapshot5_path, get_tardis_binance_snapshot25_path,
         get_tardis_bitmex_trades_path, get_tardis_deribit_book_l2_path,
         get_tardis_huobi_quotes_path,
     };
+    #[cfg(feature = "arrow")]
     use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
     use rstest::*;
     use rust_decimal_macros::dec;
@@ -1002,13 +987,13 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
     #[rstest]
     #[case(Some(2), Some(3))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
-    pub fn test_read_depth10s_from_snapshot5(
+    pub fn test_read_depths_from_snapshot5(
         #[case] price_precision: Option<u8>,
         #[case] size_precision: Option<u8>,
     ) {
         let filepath = get_tardis_binance_snapshot5_path();
         let depths =
-            load_depth10_from_snapshot5(filepath, price_precision, size_precision, None, Some(100))
+            load_depth_from_snapshot5(filepath, price_precision, size_precision, None, Some(100))
                 .unwrap();
 
         assert_eq!(depths.len(), 10);
@@ -1016,18 +1001,18 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
             depths[0].instrument_id,
             InstrumentId::from("BTCUSDT.BINANCE")
         );
-        assert_eq!(depths[0].bids.len(), 10);
+        assert_eq!(depths[0].bids.len(), 5);
         assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
         assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
         assert_eq!(depths[0].bids[0].side, OrderSide::Buy.into());
         assert_eq!(depths[0].bids[0].order_id, 0);
-        assert_eq!(depths[0].asks.len(), 10);
+        assert_eq!(depths[0].asks.len(), 5);
         assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
         assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
         assert_eq!(depths[0].asks[0].side, OrderSide::Sell.into());
         assert_eq!(depths[0].asks[0].order_id, 0);
-        assert_eq!(depths[0].bid_counts[0], 1);
-        assert_eq!(depths[0].ask_counts[0], 1);
+        assert_eq!(depths[0].bid_counts.as_slice(), &[1; 5]);
+        assert_eq!(depths[0].ask_counts.as_slice(), &[1; 5]);
         // F_SNAPSHOT (32) | F_LAST (128) = 160
         assert_eq!(
             depths[0].flags,
@@ -1041,31 +1026,26 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
     #[rstest]
     #[case(Some(2), Some(3))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
-    pub fn test_read_depth10s_from_snapshot25(
+    pub fn test_read_depths_from_snapshot25(
         #[case] price_precision: Option<u8>,
         #[case] size_precision: Option<u8>,
     ) {
         let filepath = get_tardis_binance_snapshot25_path();
-        let depths = load_depth10_from_snapshot25(
-            filepath,
-            price_precision,
-            size_precision,
-            None,
-            Some(100),
-        )
-        .unwrap();
+        let depths =
+            load_depth_from_snapshot25(filepath, price_precision, size_precision, None, Some(100))
+                .unwrap();
 
         assert_eq!(depths.len(), 10);
         assert_eq!(
             depths[0].instrument_id,
             InstrumentId::from("BTCUSDT.BINANCE")
         );
-        assert_eq!(depths[0].bids.len(), 10);
+        assert_eq!(depths[0].bids.len(), 25);
         assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
         assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
         assert_eq!(depths[0].bids[0].side, OrderSide::Buy.into());
         assert_eq!(depths[0].bids[0].order_id, 0);
-        assert_eq!(depths[0].asks.len(), 10);
+        assert_eq!(depths[0].asks.len(), 25);
         assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
         assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
         assert_eq!(depths[0].asks[0].side, OrderSide::Sell.into());
@@ -1314,14 +1294,74 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
     }
 
     #[rstest]
+    fn test_load_deltas_skips_rows_before_first_snapshot() {
+        // Two leading rows are pre-snapshot orphans and must be skipped, see
+        // https://docs.tardis.dev/faq/order-books
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1,1,false,bid,99.0,1.0
+binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0
+binance-futures,BTCUSDT,3,3,true,bid,100.0,5.0
+binance-futures,BTCUSDT,3,3,true,ask,100.5,6.0
+binance-futures,BTCUSDT,4,4,false,bid,100.0,7.0";
+
+        let temp_file = std::env::temp_dir().join("test_load_deltas_pre_snapshot_orphans.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let deltas = load_deltas(&temp_file, Some(1), Some(0), None, None).unwrap();
+
+        // The 2 pre-snapshot rows are skipped entirely: 1 CLEAR + 2 snapshot Adds + 1 Update.
+        assert_eq!(deltas.len(), 4);
+        assert_eq!(deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas[0].ts_event, UnixNanos::from(3_000));
+        assert_eq!(deltas[0].ts_init, UnixNanos::from(3_000));
+        assert_eq!(deltas[1].action, BookAction::Add);
+        assert_eq!(deltas[1].order.price, Price::from("100.0"));
+        assert_eq!(deltas[2].action, BookAction::Add);
+        assert_eq!(deltas[2].order.price, Price::from("100.5"));
+        assert_eq!(deltas[3].action, BookAction::Update);
+        assert_eq!(deltas[3].order.price, Price::from("100.0"));
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_deltas_returns_empty_when_no_snapshot_present() {
+        // A file with no `is_snapshot=true` row anywhere has no usable base state to apply
+        // deltas against, so every row is skipped and no deltas are produced.
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+binance-futures,BTCUSDT,1,1,false,bid,99.0,1.0
+binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0";
+
+        let temp_file = std::env::temp_dir().join("test_load_deltas_no_snapshot.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let deltas = load_deltas(&temp_file, Some(1), Some(0), None, None).unwrap();
+
+        assert!(deltas.is_empty());
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
     fn test_load_deltas_groups_messages_by_local_timestamp() {
+        // Fixture opens with a snapshot row (own, earlier local_timestamp) so the two message
+        // groups that follow are not treated as pre-snapshot orphans; it contributes its own
+        // CLEAR + Add pair ahead of the two original message groups.
         let filepath = get_test_data_path("csv/deltas_message_boundaries.csv");
         let deltas = load_deltas(filepath, Some(1), Some(1), None, None).unwrap();
 
-        assert_eq!(deltas.len(), 4);
+        assert_eq!(deltas.len(), 6);
+        assert_eq!(deltas[0].action, BookAction::Clear);
         assert_eq!(
             deltas.iter().map(|delta| delta.flags).collect::<Vec<_>>(),
-            vec![0, RecordFlag::F_LAST as u8, 0, RecordFlag::F_LAST as u8]
+            vec![
+                RecordFlag::F_SNAPSHOT as u8, // OrderBookDelta::clear() always sets F_SNAPSHOT
+                RecordFlag::F_LAST as u8,
+                0,
+                RecordFlag::F_LAST as u8,
+                0,
+                RecordFlag::F_LAST as u8,
+            ]
         );
         assert_eq!(
             deltas
@@ -1329,6 +1369,8 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
                 .map(|delta| delta.ts_event)
                 .collect::<Vec<_>>(),
             vec![
+                UnixNanos::from(900_000),
+                UnixNanos::from(900_000),
                 UnixNanos::from(1_000_000),
                 UnixNanos::from(1_000_000),
                 UnixNanos::from(1_000_000),
@@ -1338,24 +1380,29 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(
             deltas.iter().map(|delta| delta.ts_init).collect::<Vec<_>>(),
             vec![
+                UnixNanos::from(1_900_000),
+                UnixNanos::from(1_900_000),
                 UnixNanos::from(2_000_000),
                 UnixNanos::from(2_000_000),
                 UnixNanos::from(2_010_000),
                 UnixNanos::from(2_010_000),
             ]
         );
-        assert_eq!(deltas[0].order.side, Some(OrderSide::Buy));
-        assert_eq!(deltas[0].order.price, Price::from("100.0"));
-        assert_eq!(deltas[0].order.size, Quantity::from("1.0"));
-        assert_eq!(deltas[1].order.side, Some(OrderSide::Sell));
-        assert_eq!(deltas[1].order.price, Price::from("101.0"));
-        assert_eq!(deltas[1].order.size, Quantity::from("2.0"));
+        assert_eq!(deltas[1].order.side, Some(OrderSide::Buy));
+        assert_eq!(deltas[1].order.price, Price::from("98.0"));
+        assert_eq!(deltas[1].order.size, Quantity::from("9.0"));
         assert_eq!(deltas[2].order.side, Some(OrderSide::Buy));
-        assert_eq!(deltas[2].order.price, Price::from("99.0"));
-        assert_eq!(deltas[2].order.size, Quantity::from("3.0"));
+        assert_eq!(deltas[2].order.price, Price::from("100.0"));
+        assert_eq!(deltas[2].order.size, Quantity::from("1.0"));
         assert_eq!(deltas[3].order.side, Some(OrderSide::Sell));
-        assert_eq!(deltas[3].order.price, Price::from("102.0"));
-        assert_eq!(deltas[3].order.size, Quantity::from("4.0"));
+        assert_eq!(deltas[3].order.price, Price::from("101.0"));
+        assert_eq!(deltas[3].order.size, Quantity::from("2.0"));
+        assert_eq!(deltas[4].order.side, Some(OrderSide::Buy));
+        assert_eq!(deltas[4].order.price, Price::from("99.0"));
+        assert_eq!(deltas[4].order.size, Quantity::from("3.0"));
+        assert_eq!(deltas[5].order.side, Some(OrderSide::Sell));
+        assert_eq!(deltas[5].order.price, Price::from("102.0"));
+        assert_eq!(deltas[5].order.size, Quantity::from("4.0"));
     }
 
     #[rstest]
@@ -1472,18 +1519,18 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
     }
 
     #[rstest]
-    fn test_load_depth10_from_snapshot5_comprehensive() {
+    fn test_load_depth_from_snapshot5_comprehensive() {
         let filepath = get_tardis_binance_snapshot5_path();
-        let depths = load_depth10_from_snapshot5(&filepath, None, None, None, Some(100)).unwrap();
+        let depths = load_depth_from_snapshot5(&filepath, None, None, None, Some(100)).unwrap();
 
         assert_eq!(depths.len(), 10);
 
         let first = &depths[0];
         assert_eq!(first.instrument_id.to_string(), "BTCUSDT.BINANCE");
-        assert_eq!(first.bids.len(), 10);
-        assert_eq!(first.asks.len(), 10);
+        assert_eq!(first.bids.len(), 5);
+        assert_eq!(first.asks.len(), 5);
 
-        // Check all bid levels (first 5 from data, rest empty)
+        // Check all bid levels (5 from data)
         assert_eq!(first.bids[0].price, Price::from("11657.07"));
         assert_eq!(first.bids[0].size, Quantity::from("10.896"));
         assert_eq!(first.bids[0].side, OrderSide::Buy.into());
@@ -1504,14 +1551,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(first.bids[4].size, Quantity::from("0.111"));
         assert_eq!(first.bids[4].side, OrderSide::Buy.into());
 
-        // Empty levels
-        for i in 5..10 {
-            assert_eq!(first.bids[i].price.raw(), 0);
-            assert_eq!(first.bids[i].size.raw(), 0);
-            assert_eq!(first.bids[i].side, None);
-        }
-
-        // Check all ask levels (first 5 from data, rest empty)
+        // Check all ask levels (5 from data)
         assert_eq!(first.asks[0].price, Price::from("11657.08"));
         assert_eq!(first.asks[0].size, Quantity::from("1.714"));
         assert_eq!(first.asks[0].side, OrderSide::Sell.into());
@@ -1531,13 +1571,6 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(first.asks[4].price, Price::from("11657.92"));
         assert_eq!(first.asks[4].size, Quantity::from("0.918"));
         assert_eq!(first.asks[4].side, OrderSide::Sell.into());
-
-        // Empty levels
-        for i in 5..10 {
-            assert_eq!(first.asks[i].price.raw(), 0);
-            assert_eq!(first.asks[i].size.raw(), 0);
-            assert_eq!(first.asks[i].side, None);
-        }
 
         // Logical checks: bid prices should decrease
         for i in 1..5 {
@@ -1565,15 +1598,10 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
             "Best ask should be greater than best bid"
         );
 
-        // Check counts
-        for i in 0..5 {
-            assert_eq!(first.bid_counts[i], 1);
-            assert_eq!(first.ask_counts[i], 1);
-        }
-
-        for i in 5..10 {
-            assert_eq!(first.bid_counts[i], 0);
-            assert_eq!(first.ask_counts[i], 0);
+        assert_eq!(first.bid_counts.as_slice(), &[1; 5]);
+        assert_eq!(first.ask_counts.as_slice(), &[1; 5]);
+        for order in first.bids.iter().chain(&first.asks) {
+            assert_eq!(order.order_id, 0);
         }
 
         // Check metadata - F_SNAPSHOT (32) | F_LAST (128) = 160
@@ -1587,18 +1615,18 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
     }
 
     #[rstest]
-    fn test_load_depth10_from_snapshot25_comprehensive() {
+    fn test_load_depth_from_snapshot25_comprehensive() {
         let filepath = get_tardis_binance_snapshot25_path();
-        let depths = load_depth10_from_snapshot25(&filepath, None, None, None, Some(100)).unwrap();
+        let depths = load_depth_from_snapshot25(&filepath, None, None, None, Some(100)).unwrap();
 
         assert_eq!(depths.len(), 10);
 
         let first = &depths[0];
         assert_eq!(first.instrument_id.to_string(), "BTCUSDT.BINANCE");
-        assert_eq!(first.bids.len(), 10);
-        assert_eq!(first.asks.len(), 10);
+        assert_eq!(first.bids.len(), 25);
+        assert_eq!(first.asks.len(), 25);
 
-        // Check all 10 bid levels from snapshot25
+        // Check all 25 bid levels from snapshot25
         let expected_bids = vec![
             ("11657.07", "10.896"),
             ("11656.97", "0.2"),
@@ -1610,6 +1638,21 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
             ("11655.48", "0.4"),
             ("11655.26", "1.185"),
             ("11654.86", "0.195"),
+            ("11654.85", "0.275"),
+            ("11654.7", "0.175"),
+            ("11654.69", "0.194"),
+            ("11654.67", "1"),
+            ("11654.65", "0.05"),
+            ("11654.58", "0.05"),
+            ("11654.41", "0.11"),
+            ("11654.28", "0.618"),
+            ("11653.84", "0.135"),
+            ("11653.4", "0.17"),
+            ("11653.39", "1.008"),
+            ("11653.35", "4"),
+            ("11653.34", "2"),
+            ("11653.32", "0.5"),
+            ("11653.25", "1.003"),
         ];
 
         for (i, (price, size)) in expected_bids.iter().enumerate() {
@@ -1618,7 +1661,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
             assert_eq!(first.bids[i].side, OrderSide::Buy.into());
         }
 
-        // Check all 10 ask levels from snapshot25
+        // Check all 25 ask levels from snapshot25
         let expected_asks = vec![
             ("11657.08", "1.714"),
             ("11657.54", "5.4"),
@@ -1630,6 +1673,21 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
             ("11658.19", "0.583"),
             ("11658.28", "0.255"),
             ("11658.29", "0.656"),
+            ("11658.64", "1.463"),
+            ("11658.71", "0.155"),
+            ("11658.75", "0.155"),
+            ("11658.88", "0.625"),
+            ("11658.94", "0.155"),
+            ("11658.98", "1.005"),
+            ("11658.99", "0.155"),
+            ("11659", "1.922"),
+            ("11659.02", "0.001"),
+            ("11659.13", "0.11"),
+            ("11659.17", "0.144"),
+            ("11659.18", "0.665"),
+            ("11659.22", "0.22"),
+            ("11659.28", "0.06"),
+            ("11659.34", "0.618"),
         ];
 
         for (i, (price, size)) in expected_asks.iter().enumerate() {
@@ -1639,7 +1697,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         }
 
         // Logical checks: bid prices should strictly decrease
-        for i in 1..10 {
+        for i in 1..25 {
             assert!(
                 first.bids[i].price < first.bids[i - 1].price,
                 "Bid price at level {} ({}) should be less than level {} ({})",
@@ -1651,7 +1709,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         }
 
         // Logical checks: ask prices should strictly increase
-        for i in 1..10 {
+        for i in 1..25 {
             assert!(
                 first.asks[i].price > first.asks[i - 1].price,
                 "Ask price at level {} ({}) should be greater than level {} ({})",
@@ -1671,7 +1729,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         );
 
         // Check counts (all should be 1 for snapshot data)
-        for i in 0..10 {
+        for i in 0..25 {
             assert_eq!(first.bid_counts[i], 1);
             assert_eq!(first.ask_counts[i], 1);
         }
@@ -1684,6 +1742,108 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
         assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
         assert_eq!(first.sequence, 0);
+    }
+
+    /// Writes a two-row depth snapshot CSV with `levels` levels per side where the
+    /// second row's best bid price carries higher precision, forcing a retroactive
+    /// precision rewrite of the first row's depth.
+    fn write_precision_rewrite_csv(path: &std::path::Path, levels: usize) {
+        let mut headers = vec![
+            "exchange".to_string(),
+            "symbol".to_string(),
+            "timestamp".to_string(),
+            "local_timestamp".to_string(),
+        ];
+
+        for i in 0..levels {
+            headers.extend([
+                format!("asks[{i}].price"),
+                format!("asks[{i}].amount"),
+                format!("bids[{i}].price"),
+                format!("bids[{i}].amount"),
+            ]);
+        }
+
+        let row = |timestamp: &str, best_bid: &str| -> String {
+            let mut fields = vec![
+                "binance-futures".to_string(),
+                "BTCUSDT".to_string(),
+                timestamp.to_string(),
+                timestamp.to_string(),
+            ];
+
+            for i in 0..levels {
+                let bid = if i == 0 {
+                    best_bid.to_string()
+                } else {
+                    format!("{}", 49_990 - i)
+                };
+                fields.extend([
+                    format!("{}", 50_001 + i),
+                    "1.5".to_string(),
+                    bid,
+                    "1.5".to_string(),
+                ]);
+            }
+            fields.join(",")
+        };
+
+        let csv_data = format!(
+            "{}\n{}\n{}",
+            headers.join(","),
+            row("1640995200000000", "49999"),
+            row("1640995201000000", "49998.12"),
+        );
+        std::fs::write(path, csv_data).unwrap();
+    }
+
+    #[rstest]
+    fn test_load_depth_from_snapshot25_precision_rewrite_updates_all_levels() {
+        let temp_file = std::env::temp_dir().join("test_depth_snapshot25_precision_rewrite.csv");
+        write_precision_rewrite_csv(&temp_file, 25);
+
+        let depths = load_depth_from_snapshot25(&temp_file, None, None, None, None).unwrap();
+        assert_eq!(depths.len(), 2);
+
+        // Both rows end at the maximum inferred precision on every level,
+        // including levels past the first 10
+        for (r, depth) in depths.iter().enumerate() {
+            assert_eq!(depth.bids.len(), 25, "row {r}");
+            assert_eq!(depth.asks.len(), 25, "row {r}");
+            for (i, order) in depth.bids.iter().chain(depth.asks.iter()).enumerate() {
+                assert_eq!(order.price.precision, 2, "row {r} level {i}");
+                assert_eq!(order.size.precision, 1, "row {r} level {i}");
+            }
+        }
+        // Values are unchanged; only the precision display is rewritten
+        assert_eq!(depths[0].bids[0].price, Price::new(49999.0, 2));
+        assert_eq!(depths[0].bids[24].price, Price::new(49966.0, 2));
+        assert_eq!(depths[1].bids[0].price, Price::new(49998.12, 2));
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_depth_from_snapshot5_precision_rewrite_updates_all_levels() {
+        let temp_file = std::env::temp_dir().join("test_depth_snapshot5_precision_rewrite.csv");
+        write_precision_rewrite_csv(&temp_file, 5);
+
+        let depths = load_depth_from_snapshot5(&temp_file, None, None, None, None).unwrap();
+        assert_eq!(depths.len(), 2);
+
+        // The rewrite must cover the 5 retained levels without indexing past them
+        for (r, depth) in depths.iter().enumerate() {
+            assert_eq!(depth.bids.len(), 5, "row {r}");
+            assert_eq!(depth.asks.len(), 5, "row {r}");
+            for (i, order) in depth.bids.iter().chain(depth.asks.iter()).enumerate() {
+                assert_eq!(order.price.precision, 2, "row {r} level {i}");
+                assert_eq!(order.size.precision, 1, "row {r} level {i}");
+            }
+        }
+        assert_eq!(depths[0].bids[0].price, Price::new(49999.0, 2));
+        assert_eq!(depths[1].bids[0].price, Price::new(49998.12, 2));
+
+        std::fs::remove_file(&temp_file).ok();
     }
 
     #[rstest]
@@ -1707,7 +1867,7 @@ binance-futures,BTCUSDT,1000000,2000000,\
         let temp_file = std::env::temp_dir().join("test_interleaved_snapshot5.csv");
         std::fs::write(&temp_file, csv_data).unwrap();
 
-        let depths = load_depth10_from_snapshot5(&temp_file, None, None, None, Some(1)).unwrap();
+        let depths = load_depth_from_snapshot5(&temp_file, None, None, None, Some(1)).unwrap();
         assert_eq!(depths.len(), 1);
 
         let depth = &depths[0];
@@ -1872,7 +2032,8 @@ hyperliquid,BTC,1640995201000001,1640995201100000,true,ask,49991.0,4.0";
     }
 
     // Curates the large Tardis Deribit CSV.gz into NautilusTrader Parquet format.
-    // Run manually: `cargo test -p nautilus-tardis test_curate_deribit_deltas -- --ignored --nocapture`
+    // Run manually: `cargo test -p nautilus-tardis --features arrow test_curate_deribit_deltas -- --ignored --nocapture`
+    #[cfg(feature = "arrow")]
     #[rstest]
     #[ignore = "one-time dataset curation, not for routine CI"]
     fn test_curate_deribit_deltas() {

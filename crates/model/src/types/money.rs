@@ -83,8 +83,9 @@ use crate::types::{
     Currency, Quantity,
     fixed::{
         FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, check_fixed_raw_i128,
-        check_fixed_raw_u128, compare_raw_signed, mantissa_exponent_to_fixed_i128, raw_scale,
-        raw_scales_match, scaled_raw_to_decimal,
+        check_fixed_raw_u128, compare_raw_signed, format_scaled_i128,
+        mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, parse_decimal_mantissa,
+        raw_scale, raw_scales_match, scaled_raw_to_decimal,
     },
 };
 
@@ -473,11 +474,7 @@ impl Money {
     /// Returns a formatted string representation of this instance.
     #[must_use]
     pub fn to_formatted_string(&self) -> String {
-        let amount_str = if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
-            self.raw.to_string()
-        } else {
-            self.as_decimal().to_string()
-        };
+        let amount_str = format_scaled_i128(self.raw_at_precision(), self.currency.precision);
         format!(
             "{} {}",
             amount_str.separate_with_underscores(),
@@ -511,6 +508,20 @@ impl Money {
         })?;
 
         Self::from_rescaled_raw(raw, quantity.precision, currency, "quantity")
+    }
+
+    fn raw_at_precision(&self) -> i128 {
+        let precision_diff = FIXED_PRECISION.saturating_sub(self.currency.precision);
+        let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(precision_diff));
+        Self::raw_as_i128(rescaled_raw)
+    }
+
+    fn raw_as_i128(raw: MoneyRaw) -> i128 {
+        #[allow(
+            clippy::useless_conversion,
+            reason = "i128::from is a widening conversion when MoneyRaw is i64"
+        )]
+        i128::from(raw)
     }
 
     /// Creates a new [`Money`] from a `Decimal` value with specified currency.
@@ -619,16 +630,25 @@ impl FromStr for Money {
 
         let clean_amount = parts[0].replace('_', "");
 
-        let decimal = if clean_amount.contains('e') || clean_amount.contains('E') {
-            Decimal::from_scientific(&clean_amount)
-                .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?
-        } else {
-            Decimal::from_str(&clean_amount)
-                .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?
-        };
-
         let currency = Currency::from_str(parts[1]).map_err(|e| e.to_string())?;
-        Self::from_decimal(decimal, currency).map_err(|e| e.to_string())
+        if clean_amount.contains('e') || clean_amount.contains('E') {
+            let decimal = Decimal::from_scientific(&clean_amount)
+                .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?;
+            return Self::from_decimal(decimal, currency).map_err(|e| e.to_string());
+        }
+
+        let (mantissa, amount_precision) = parse_decimal_mantissa(&clean_amount)?;
+        let exponent = -i8::try_from(amount_precision).map_err(|e| e.to_string())?;
+        let raw = mantissa_exponent_to_raw_checked::<MoneyRaw>(
+            mantissa,
+            exponent,
+            currency.precision,
+            "Money::from_str",
+            "MoneyRaw",
+            "Money",
+        )
+        .map_err(|e| e.to_string())?;
+        Self::from_raw_checked(raw, currency).map_err(|e| e.to_string())
     }
 }
 
@@ -796,7 +816,13 @@ impl Div<f64> for Money {
 impl Debug for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
-            write!(f, "{}({}, {})", stringify!(Money), self.raw, self.currency)
+            write!(
+                f,
+                "{}({}, {})",
+                stringify!(Money),
+                format_scaled_i128(Self::raw_as_i128(self.raw), self.currency.precision),
+                self.currency,
+            )
         } else {
             let precision = self.currency.precision;
             let scale = MoneyRaw::try_from(raw_scale(precision))
@@ -826,11 +852,12 @@ impl Debug for Money {
 
 impl Display for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
-            write!(f, "{} {}", self.raw, self.currency)
-        } else {
-            write!(f, "{} {}", self.as_decimal(), self.currency)
-        }
+        write!(
+            f,
+            "{} {}",
+            format_scaled_i128(self.raw_at_precision(), self.currency.precision),
+            self.currency,
+        )
     }
 }
 
@@ -879,6 +906,71 @@ mod tests {
     use super::*;
     use crate::enums::CurrencyType;
 
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_as_decimal_above_decimal_mantissa() {
+        // Regression: a precision-16 currency amount above roughly 7.92e12 rescales to a raw
+        // value beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion.
+        let currency = Currency::new("XYZ", 16, 0, "XYZ", crate::enums::CurrencyType::Crypto);
+        let money = Money::from_raw(MONEY_RAW_MAX, currency);
+
+        assert_eq!(money.as_decimal(), dec!(17014118346046));
+    }
+
+    #[rstest]
+    fn test_money_ordering_is_structural_across_currencies() {
+        use std::collections::BTreeSet;
+
+        let aud_low = Money::new(-1.0, Currency::AUD());
+        let aud_high = Money::new(100.0, Currency::AUD());
+        let usd_low = Money::new(-100.0, Currency::USD());
+        let usd_high = Money::new(1.0, Currency::USD());
+
+        assert_eq!(aud_high.cmp(&usd_low), Ordering::Less);
+        assert_eq!(aud_high.partial_cmp(&usd_low), Some(Ordering::Less));
+        assert_eq!(
+            (
+                aud_high < usd_low,
+                aud_high <= usd_low,
+                aud_high > usd_low,
+                aud_high >= usd_low,
+                usd_low < aud_high,
+                usd_low <= aud_high,
+                usd_low > aud_high,
+                usd_low >= aud_high,
+            ),
+            (true, true, false, false, false, false, true, true),
+        );
+
+        let expected = vec![aud_low, aud_high, usd_low, usd_high];
+        let mut sorted = vec![usd_high, aud_high, usd_low, aud_low];
+        sorted.sort();
+        let ordered = BTreeSet::from([usd_high, aud_high, usd_low, aud_low]);
+
+        assert_eq!(sorted, expected);
+        assert_eq!(ordered.into_iter().collect::<Vec<_>>(), expected);
+    }
+
+    #[rstest]
+    fn test_money_cmp_equal_matches_equality() {
+        use crate::enums::CurrencyType;
+
+        let currency = Currency::new("TST", 2, 1, "Test fiat", CurrencyType::Fiat);
+        let same_code = Currency::new("TST", 8, 2, "Test crypto", CurrencyType::Crypto);
+        let other_code = Currency::new("TSU", 2, 1, "Other fiat", CurrencyType::Fiat);
+        let money = Money::from_raw(1, currency);
+        let cases = [
+            (Money::from_raw(1, same_code), true),
+            (Money::from_raw(2, same_code), false),
+            (Money::from_raw(1, other_code), false),
+        ];
+
+        for (other, expected_equal) in cases {
+            assert_eq!(money == other, expected_equal);
+            assert_eq!(money.cmp(&other) == Ordering::Equal, expected_equal);
+        }
+    }
+
     #[rstest]
     fn test_from_quantity_rejects_noncanonical_raw() {
         let precision = FIXED_PRECISION - 1;
@@ -911,17 +1003,38 @@ mod tests {
         assert!(Money::from_raw_checked(min.raw, Currency::USD()).is_ok());
     }
 
-    #[cfg(feature = "high-precision")]
+    #[cfg(all(feature = "defi", feature = "high-precision"))]
     #[rstest]
-    fn test_as_decimal_above_decimal_mantissa() {
-        // Regression: a precision-16 currency amount above roughly 7.92e12 rescales to a raw
-        // value beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion and
-        // took `Display` and `to_formatted_string` down with it.
-        let currency = Currency::new("XYZ", 16, 0, "XYZ", crate::enums::CurrencyType::Crypto);
-        let money = Money::from_raw(MONEY_RAW_MAX, currency);
+    fn test_wei_above_decimal_mantissa_formats_exactly() {
+        let raw = 80_000_000_000_000_000_250_000_000_000_i128;
+        let currency = Currency::new("ETH", 18, 0, "Ether", crate::enums::CurrencyType::Crypto);
+        let money = Money::from_raw(raw, currency);
 
-        assert_eq!(money.as_decimal(), dec!(17014118346046));
-        assert_eq!(money.to_formatted_string(), "17_014_118_346_046 XYZ");
+        assert_eq!(money.to_string(), "80000000000.000000250000000000 ETH");
+        assert_eq!(
+            money.to_formatted_string(),
+            "80_000_000_000.000000250000000000 ETH"
+        );
+    }
+
+    #[cfg(all(feature = "defi", feature = "high-precision"))]
+    #[rstest]
+    fn test_wei_money_serde_json_round_trip() {
+        let currency = Currency::new(
+            "WXW",
+            18,
+            0,
+            "Wei exact",
+            crate::enums::CurrencyType::Crypto,
+        );
+        Currency::register(currency, true).unwrap();
+        let money = Money::from_raw(80_000_000_000_000_000_250_000_000_000_i128, currency);
+
+        let json = serde_json::to_string(&money).unwrap();
+        let deserialized = serde_json::from_str::<Money>(&json).unwrap();
+
+        assert_eq!(json, "\"80000000000.000000250000000000 WXW\"");
+        assert_eq!(deserialized, money);
     }
 
     #[rstest]
@@ -975,6 +1088,8 @@ mod tests {
 
     #[rstest]
     #[case(42.0, 0, "JPY", "Money(42, JPY)", "42 JPY")]
+    #[case(0.0, 2, "USD", "Money(0.00, USD)", "0.00 USD")]
+    #[case(-1010.12, 2, "USD", "Money(-1010.12, USD)", "-1010.12 USD")]
     #[case(1010.12, 2, "USD", "Money(1010.12, USD)", "1010.12 USD")] // Normal precision
     #[case(123.456_789, 8, "BTC", "Money(123.45678900, BTC)", "123.45678900 BTC")] // At max normal precision
     fn test_formatting_normal_precision(
@@ -1004,15 +1119,15 @@ mod tests {
         1_000_000_000_000_000_000_i128,
         18,
         "wei",
-        "Money(1000000000000000000, wei)",
-        "1000000000000000000 wei"
+        "Money(1.000000000000000000, wei)",
+        "1.000000000000000000 wei"
     )] // High precision
     #[case(
         2_500_000_000_000_000_000_i128,
         18,
         "ETH",
-        "Money(2500000000000000000, ETH)",
-        "2500000000000000000 ETH"
+        "Money(2.500000000000000000, ETH)",
+        "2.500000000000000000 ETH"
     )] // High precision
     fn test_formatting_high_precision(
         #[case] raw_value: i128,
@@ -1033,6 +1148,10 @@ mod tests {
 
         assert_eq!(format!("{money:?}"), expected_debug);
         assert_eq!(format!("{money}"), expected_display);
+        assert_eq!(
+            serde_json::to_value(money).unwrap(),
+            serde_json::Value::String(expected_display.to_string()),
+        );
     }
 
     #[rstest]
@@ -1148,60 +1267,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_money_ordering_is_structural_across_currencies() {
-        use std::collections::BTreeSet;
-
-        let aud_low = Money::new(-1.0, Currency::AUD());
-        let aud_high = Money::new(100.0, Currency::AUD());
-        let usd_low = Money::new(-100.0, Currency::USD());
-        let usd_high = Money::new(1.0, Currency::USD());
-
-        assert_eq!(aud_high.cmp(&usd_low), Ordering::Less);
-        assert_eq!(aud_high.partial_cmp(&usd_low), Some(Ordering::Less));
-        assert_eq!(
-            (
-                aud_high < usd_low,
-                aud_high <= usd_low,
-                aud_high > usd_low,
-                aud_high >= usd_low,
-                usd_low < aud_high,
-                usd_low <= aud_high,
-                usd_low > aud_high,
-                usd_low >= aud_high,
-            ),
-            (true, true, false, false, false, false, true, true),
-        );
-
-        let expected = vec![aud_low, aud_high, usd_low, usd_high];
-        let mut sorted = vec![usd_high, aud_high, usd_low, aud_low];
-        sorted.sort();
-        let ordered = BTreeSet::from([usd_high, aud_high, usd_low, aud_low]);
-
-        assert_eq!(sorted, expected);
-        assert_eq!(ordered.into_iter().collect::<Vec<_>>(), expected);
-    }
-
-    #[rstest]
-    fn test_money_cmp_equal_matches_equality() {
-        use crate::enums::CurrencyType;
-
-        let currency = Currency::new("TST", 2, 1, "Test fiat", CurrencyType::Fiat);
-        let same_code = Currency::new("TST", 8, 2, "Test crypto", CurrencyType::Crypto);
-        let other_code = Currency::new("TSU", 2, 1, "Other fiat", CurrencyType::Fiat);
-        let money = Money::from_raw(1, currency);
-        let cases = [
-            (Money::from_raw(1, same_code), true),
-            (Money::from_raw(2, same_code), false),
-            (Money::from_raw(1, other_code), false),
-        ];
-
-        for (other, expected_equal) in cases {
-            assert_eq!(money == other, expected_equal);
-            assert_eq!(money.cmp(&other) == Ordering::Equal, expected_equal);
-        }
-    }
-
-    #[rstest]
     fn test_add() {
         let a = 1000.0;
         let b = 500.0;
@@ -1251,6 +1316,36 @@ mod tests {
         let near_min = Money::from_raw(MONEY_RAW_MIN, usd);
         let one = Money::new(1.0, usd);
         assert_eq!(near_min.checked_sub(one), None);
+    }
+
+    #[rstest]
+    fn test_money_checked_add_below_min_returns_none() {
+        let usd = Currency::USD();
+        let minus_one_unit = Money::from_raw(-1, usd);
+
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MIN, usd).checked_add(minus_one_unit),
+            None
+        );
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MIN + 1, usd).checked_add(minus_one_unit),
+            Some(Money::from_raw(MONEY_RAW_MIN, usd))
+        );
+    }
+
+    #[rstest]
+    fn test_money_checked_sub_above_max_returns_none() {
+        let usd = Currency::USD();
+        let minus_one_unit = Money::from_raw(-1, usd);
+
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MAX, usd).checked_sub(minus_one_unit),
+            None
+        );
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MAX - 1, usd).checked_sub(minus_one_unit),
+            Some(Money::from_raw(MONEY_RAW_MAX, usd))
+        );
     }
 
     #[rstest]
@@ -1358,7 +1453,7 @@ mod tests {
     #[rstest]
     fn test_money_new_usd() {
         let money = Money::new(1000.0, Currency::USD());
-        assert_eq!(money.currency.code, "USD");
+        assert_eq!(money.currency.code.as_str(), "USD");
         assert_eq!(money.currency.precision, 2);
         assert_eq!(money.to_string(), "1000.00 USD");
         assert_eq!(money.to_formatted_string(), "1_000.00 USD");
@@ -1369,7 +1464,7 @@ mod tests {
     #[rstest]
     fn test_money_new_btc() {
         let money = Money::new(10.3, Currency::BTC());
-        assert_eq!(money.currency.code, "BTC");
+        assert_eq!(money.currency.code.as_str(), "BTC");
         assert_eq!(money.currency.precision, 8);
         assert_eq!(money.to_string(), "10.30000000 BTC");
         assert_eq!(money.to_formatted_string(), "10.30000000 BTC");
@@ -1410,6 +1505,22 @@ mod tests {
         let money = Money::from(input);
         assert_eq!(money.currency, expected_currency);
         assert_eq!(money.as_decimal(), expected_dec);
+    }
+
+    #[rstest]
+    #[case("1.005 USD", dec!(1.00))]
+    #[case("1.015 USD", dec!(1.02))]
+    #[case("-1.005 USD", dec!(-1.00))]
+    #[case("-1.015 USD", dec!(-1.02))]
+    fn test_from_str_rounds_half_to_even(#[case] input: &str, #[case] expected: Decimal) {
+        let money = input.parse::<Money>().unwrap();
+
+        assert_eq!(
+            money,
+            Money::from_decimal(expected, Currency::USD()).unwrap()
+        );
+        assert_eq!(money.currency, Currency::USD());
+        assert_eq!(money.as_decimal(), expected);
     }
 
     #[rstest]
@@ -1580,6 +1691,24 @@ mod tests {
         let huge = Decimal::from_str("99999999999999999999.99").unwrap();
         let result = Money::from_decimal(huge, Currency::USD());
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_from_decimal_rejects_raw_between_money_and_raw_bounds() {
+        let usd = Currency::USD();
+        let at_max = Decimal::try_from(MONEY_MAX).unwrap();
+        let above_max = at_max + dec!(0.5);
+        let expected_raw = MONEY_RAW_MAX + 5 * MoneyRaw::pow(10, u32::from(FIXED_PRECISION - 1));
+
+        let error = Money::from_decimal(above_max, usd).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Raw value {expected_raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+            )
+        );
+        assert_eq!(Money::from_decimal(at_max, usd).unwrap().raw, MONEY_RAW_MAX);
     }
 
     #[rstest]

@@ -18,6 +18,7 @@
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -75,6 +76,12 @@ pub struct AxDataClientConfig {
     /// Funding rate poll interval in minutes.
     #[builder(default = 15)]
     pub funding_rate_poll_interval_mins: u64,
+    /// Maximum time to wait for an initial, post-reconnect, or recovery order book
+    /// snapshot in seconds.
+    ///
+    /// Set to 0 to disable snapshot deadlines.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
     /// WebSocket transport backend.
     ///
     /// Defaults to `Sockudo` when `transport-sockudo` is enabled, otherwise `Tungstenite`.
@@ -96,6 +103,7 @@ nautilus_core::impl_pyo3_config_getters!(AxDataClientConfig {
     recv_window_ms: u64,
     update_instruments_interval_mins: u64,
     funding_rate_poll_interval_mins: u64,
+    book_snapshot_timeout_secs: u64,
     transport_backend: TransportBackend,
 });
 
@@ -361,6 +369,7 @@ environment = "PRODUCTION"
 http_timeout_secs = 30
 heartbeat_interval_secs = 10
 update_instruments_interval_mins = 5
+book_snapshot_timeout_secs = 4
 "#,
         )
         .unwrap();
@@ -369,6 +378,14 @@ update_instruments_interval_mins = 5
         assert_eq!(config.http_timeout_secs, 30);
         assert_eq!(config.heartbeat_interval_secs, 10);
         assert_eq!(config.update_instruments_interval_mins, 5);
+        assert_eq!(config.book_snapshot_timeout_secs, 4);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_empty_uses_book_snapshot_timeout_default() {
+        let config: AxDataClientConfig = toml::from_str("").unwrap();
+
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]

@@ -39,6 +39,7 @@ import pytest
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.execution import ExecutionEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BarType
@@ -231,6 +232,10 @@ class TestBacktestAcceptanceTestsUSDJPY:
             starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
             # FXRolloverInterestModule(records=[...]) supported in v2 via
             # InterestRateRecord; not exercised here for parity-validation focus.
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.00002"),
+                taker_rate=Decimal("0.00002"),
+            ),
         )
         self.engine.add_instrument(self.usdjpy)
 
@@ -379,6 +384,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
             account_type=AccountType.MARGIN,
             base_currency=Currency.from_str("GBP"),
             starting_balances=[Money(1_000_000.0, Currency.from_str("GBP"))],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.00002"),
+                taker_rate=Decimal("0.00002"),
+            ),
         )
         self.engine.add_instrument(self.gbpusd)
 
@@ -552,6 +561,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
             account_type=AccountType.MARGIN,
             base_currency=Currency.from_str("USD"),
             starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.00002"),
+                taker_rate=Decimal("0.00002"),
+            ),
         )
         self.engine.add_instrument(self.gbpusd)
 
@@ -613,6 +626,10 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
                 Money(10.0, Currency.from_str("BTC")),
                 Money(10_000_000.0, Currency.from_str("USDT")),
             ],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.001"),
+                taker_rate=Decimal("0.001"),
+            ),
         )
         self.engine.add_instrument(self.btcusdt)
 
@@ -732,6 +749,10 @@ class TestBacktestAcceptanceTestsAUDUSD:
             account_type=AccountType.MARGIN,
             base_currency=Currency.from_str("AUD"),
             starting_balances=[Money(1_000_000.0, Currency.from_str("AUD"))],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.00002"),
+                taker_rate=Decimal("0.00002"),
+            ),
         )
         self.engine.add_instrument(self.audusd)
 
@@ -797,6 +818,10 @@ class TestBacktestAcceptanceTestsETHUSDT:
             account_type=AccountType.MARGIN,
             base_currency=None,
             starting_balances=[Money(1_000_000.0, Currency.from_str("USDT"))],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.0001"),
+                taker_rate=Decimal("0.0001"),
+            ),
         )
         self.engine.add_instrument(self.ethusdt)
 
@@ -853,6 +878,10 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             base_currency=self.gbp,
             starting_balances=[Money(100_000.0, self.gbp)],
             book_type=BookType.L2_MBP,
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal(0),
+                taker_rate=Decimal(0),
+            ),
         )
         self.engine.add_instrument(self.instrument)
         self.engine.add_data(_betfair_order_book_deltas(self.instrument))
@@ -989,6 +1018,10 @@ def test_correct_account_balance_from_issue_2632() -> None:
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USDT"),
         starting_balances=[Money(1_000_000.0, Currency.from_str("USDT"))],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.000200"),
+            taker_rate=Decimal("0.000180"),
+        ),
     )
     engine.add_instrument(instrument)
 
@@ -1108,6 +1141,10 @@ def test_backtest_result_summary_parity_smoke() -> None:
         account_type=AccountType.MARGIN,
         base_currency=usd,
         starting_balances=[Money(1_000_000.0, usd)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
     engine.add_instrument(instrument)
     engine.add_data(_backtest_parity_quotes(instrument))
@@ -1164,12 +1201,20 @@ def test_backtest_cash_margin_account_order_fill_position_parity_golden() -> Non
         account_type=AccountType.MARGIN,
         base_currency=usd,
         starting_balances=[Money(1_000_000.0, usd)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
     engine.add_venue(
         venue=binance,
         oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,
         starting_balances=[Money(10.0, eth), Money(100_000.0, usdt)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.0001"),
+            taker_rate=Decimal("0.0001"),
+        ),
     )
     engine.add_instrument(audusd)
     engine.add_instrument(ethusdt)
@@ -1402,6 +1447,10 @@ class TestBacktestPnLAlignmentAcceptance:
             account_type=AccountType.MARGIN,
             base_currency=Currency.from_str("USD"),
             starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.00002"),
+                taker_rate=Decimal("0.00002"),
+            ),
         )
         engine.add_instrument(audusd)
         return engine, audusd
@@ -1523,6 +1572,10 @@ def test_backtest_postrun_realized_pnl_by_oms_type(oms_type: object) -> None:
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=[Money.from_str("1000000.00 USD")],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
     engine.add_instrument(audusd)
     engine.add_data(_build_pnl_quotes(audusd, periods=70, scenario="multi_cycle"))
@@ -1610,6 +1663,10 @@ def _build_audusd_engine_with_quotes(
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
     engine.add_instrument(audusd)
 
@@ -1766,6 +1823,10 @@ def usdjpy_engine_synthetic() -> object:
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
     engine.add_instrument(usdjpy)
     engine.add_data(TestDataProvider.usdjpy_quotes())
@@ -1804,6 +1865,10 @@ def test_synthetic_run_with_synthetic_trades() -> None:
             Money(10.0, Currency.from_str("ETH")),
             Money(10_000_000.0, Currency.from_str("USDT")),
         ],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.0001"),
+            taker_rate=Decimal("0.0001"),
+        ),
     )
     engine.add_instrument(ethusdt)
 
@@ -1874,6 +1939,10 @@ def test_engine_run_empty_produces_zero_iterations() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
         base_currency=Currency.from_str("USD"),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.run()
     assert engine.get_result().iterations == 0
@@ -1891,6 +1960,10 @@ def test_engine_reset_allows_rerun() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
         base_currency=Currency.from_str("USD"),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.run()
     engine.reset()
@@ -1919,6 +1992,10 @@ def test_engine_cache_shares_kernel_state() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
         base_currency=Currency.from_str("USD"),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
     engine.add_instrument(instrument)
 
@@ -1943,6 +2020,10 @@ def test_two_venues_with_separate_instruments() -> None:
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_venue(
         venue=Venue("BINANCE"),
@@ -1952,6 +2033,10 @@ def test_two_venues_with_separate_instruments() -> None:
             Money(10.0, Currency.from_str("ETH")),
             Money(100_000.0, Currency.from_str("USDT")),
         ],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     venues = engine.list_venues()

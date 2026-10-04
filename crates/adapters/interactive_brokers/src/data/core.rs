@@ -39,7 +39,7 @@ use ibapi::{
 use nautilus_common::live::get_runtime;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -103,7 +103,7 @@ pub struct InteractiveBrokersDataClient {
     cancellation_token: CancellationToken,
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     subscriptions: Arc<tokio::sync::Mutex<AHashMap<InstrumentId, SubscriptionInfo>>>,
     option_greeks_subscriptions: Arc<tokio::sync::Mutex<AHashMap<InstrumentId, CancellationToken>>>,
     quote_cache: Arc<tokio::sync::Mutex<QuoteCache>>,

@@ -20,7 +20,6 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::{Currency, Price, Quantity},
 };
-use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use super::{
@@ -83,8 +82,6 @@ fn parse_spot_instrument(
     let base_currency = get_currency(info.base_currency.to_uppercase().as_str());
     let mut size_increment = parse_spot_size_increment(info.amount_increment, base_currency);
     let mut multiplier = parse_multiplier(info.contract_multiplier);
-    let mut maker_fee = parse_fee_rate(info.maker_fee);
-    let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = info
         .changes
         .as_ref()
@@ -101,8 +98,6 @@ fn parse_spot_instrument(
         multiplier,
         margin_init,
         margin_maint,
-        maker_fee,
-        taker_fee,
         ts_event,
         ts_init.unwrap_or(ts_event),
     )];
@@ -140,8 +135,6 @@ fn parse_spot_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
-                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
-                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
 
             // Replace with single instrument reflecting effective state
@@ -154,8 +147,6 @@ fn parse_spot_instrument(
                 multiplier,
                 margin_init,
                 margin_maint,
-                maker_fee,
-                taker_fee,
                 ts_event,
                 ts_init.unwrap_or(ts_event),
             )];
@@ -179,8 +170,6 @@ fn parse_spot_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
-                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
-                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
@@ -198,8 +187,6 @@ fn parse_spot_instrument(
                     multiplier,
                     margin_init,
                     margin_maint,
-                    maker_fee,
-                    taker_fee,
                     ts_event,
                     ts_init.unwrap_or(ts_event),
                 ));
@@ -231,8 +218,6 @@ fn parse_perp_instrument(
     let mut price_increment = parse_price_increment(info.price_increment);
     let mut size_increment = parse_size_increment(info.amount_increment);
     let mut multiplier = parse_multiplier(info.contract_multiplier);
-    let mut maker_fee = parse_fee_rate(info.maker_fee);
-    let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = info
         .changes
         .as_ref()
@@ -249,8 +234,6 @@ fn parse_perp_instrument(
         multiplier,
         margin_init,
         margin_maint,
-        maker_fee,
-        taker_fee,
         ts_event,
         ts_init.unwrap_or(ts_event),
     )];
@@ -288,8 +271,6 @@ fn parse_perp_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
-                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
-                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
 
             // Replace with single instrument reflecting effective state
@@ -302,8 +283,6 @@ fn parse_perp_instrument(
                 multiplier,
                 margin_init,
                 margin_maint,
-                maker_fee,
-                taker_fee,
                 ts_event,
                 ts_init.unwrap_or(ts_event),
             )];
@@ -327,8 +306,6 @@ fn parse_perp_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
-                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
-                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
@@ -346,8 +323,6 @@ fn parse_perp_instrument(
                     multiplier,
                     margin_init,
                     margin_maint,
-                    maker_fee,
-                    taker_fee,
                     ts_event,
                     ts_init.unwrap_or(ts_event),
                 ));
@@ -381,8 +356,6 @@ fn parse_future_instrument(
     let mut price_increment = parse_price_increment(info.price_increment);
     let mut size_increment = parse_size_increment(info.amount_increment);
     let mut multiplier = parse_multiplier(info.contract_multiplier);
-    let mut maker_fee = parse_fee_rate(info.maker_fee);
-    let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = info
         .changes
         .as_ref()
@@ -401,8 +374,6 @@ fn parse_future_instrument(
         multiplier,
         margin_init,
         margin_maint,
-        maker_fee,
-        taker_fee,
         ts_event,
         ts_init.unwrap_or(ts_event),
     )];
@@ -440,8 +411,6 @@ fn parse_future_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
-                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
-                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
 
             // Replace with single instrument reflecting effective state
@@ -456,8 +425,6 @@ fn parse_future_instrument(
                 multiplier,
                 margin_init,
                 margin_maint,
-                maker_fee,
-                taker_fee,
                 ts_event,
                 ts_init.unwrap_or(ts_event),
             )];
@@ -481,8 +448,6 @@ fn parse_future_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
-                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
-                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
@@ -502,8 +467,6 @@ fn parse_future_instrument(
                     multiplier,
                     margin_init,
                     margin_maint,
-                    maker_fee,
-                    taker_fee,
                     ts_event,
                     ts_init.unwrap_or(ts_event),
                 ));
@@ -537,8 +500,6 @@ fn parse_option_instrument(
     let mut price_increment = parse_price_increment(info.price_increment);
     let mut size_increment = parse_size_increment(info.amount_increment);
     let mut multiplier = parse_multiplier(info.contract_multiplier);
-    let mut maker_fee = parse_fee_rate(info.maker_fee);
-    let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = info
         .changes
         .as_ref()
@@ -557,8 +518,6 @@ fn parse_option_instrument(
         multiplier,
         margin_init,
         margin_maint,
-        maker_fee,
-        taker_fee,
         ts_event,
         ts_init.unwrap_or(ts_event),
     )?];
@@ -596,8 +555,6 @@ fn parse_option_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
-                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
-                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
 
             // Replace with single instrument reflecting effective state
@@ -612,8 +569,6 @@ fn parse_option_instrument(
                 multiplier,
                 margin_init,
                 margin_maint,
-                maker_fee,
-                taker_fee,
                 ts_event,
                 ts_init.unwrap_or(ts_event),
             )?];
@@ -637,8 +592,6 @@ fn parse_option_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
-                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
-                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
@@ -658,8 +611,6 @@ fn parse_option_instrument(
                     multiplier,
                     margin_init,
                     margin_maint,
-                    maker_fee,
-                    taker_fee,
                     ts_event,
                     ts_init.unwrap_or(ts_event),
                 )?);
@@ -696,15 +647,6 @@ fn parse_spot_size_increment(value: f64, currency: Currency) -> Quantity {
 /// Parses the multiplier from the given `value`.
 fn parse_multiplier(value: Option<f64>) -> Option<Quantity> {
     value.map(|x| Quantity::from(x.to_string()))
-}
-
-/// Parses the fee rate from the given `value`.
-/// Returns zero for invalid f64 values (NaN, infinity).
-fn parse_fee_rate(value: f64) -> Decimal {
-    Decimal::try_from(value).unwrap_or_else(|e| {
-        log::warn!("Invalid fee rate value {value}: {e}, defaulting to zero");
-        Decimal::ZERO
-    })
 }
 
 /// Parses the given RFC 3339 datetime string (UTC) into a `UnixNanos` timestamp.
@@ -772,8 +714,6 @@ mod tests {
         assert_eq!(inst0.max_quantity(), None);
         assert_eq!(inst0.min_notional(), None);
         assert_eq!(inst0.max_notional(), None);
-        assert_eq!(inst0.maker_fee(), dec!(0));
-        assert_eq!(inst0.taker_fee(), dec!(0));
         assert_eq!(inst0.ts_event().to_rfc3339(), "2023-04-24T00:00:00+00:00");
         assert_eq!(inst0.ts_init().to_rfc3339(), "2023-04-24T00:00:00+00:00");
 
@@ -796,8 +736,6 @@ mod tests {
         assert_eq!(inst1.max_quantity(), None);
         assert_eq!(inst1.min_notional(), None);
         assert_eq!(inst1.max_notional(), None);
-        assert_eq!(inst1.maker_fee(), dec!(0));
-        assert_eq!(inst1.taker_fee(), dec!(0));
         assert_eq!(inst1.ts_event().to_rfc3339(), "2024-04-02T12:10:00+00:00");
         assert_eq!(inst1.ts_init().to_rfc3339(), "2024-04-02T12:10:00+00:00");
     }
@@ -833,8 +771,6 @@ mod tests {
         assert_eq!(instrument.max_quantity(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_notional(), None);
-        assert_eq!(instrument.maker_fee(), dec!(0.00050));
-        assert_eq!(instrument.taker_fee(), dec!(0.00050));
     }
 
     #[rstest]
@@ -872,8 +808,6 @@ mod tests {
         assert_eq!(instrument.max_quantity(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_notional(), None);
-        assert_eq!(instrument.maker_fee(), dec!(-0.0001));
-        assert_eq!(instrument.taker_fee(), dec!(0.0005));
     }
 
     #[rstest]
@@ -931,8 +865,6 @@ mod tests {
         assert_eq!(instrument.max_quantity(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_notional(), None);
-        assert_eq!(instrument.maker_fee(), dec!(0));
-        assert_eq!(instrument.taker_fee(), dec!(0));
     }
 
     #[rstest]
@@ -976,8 +908,6 @@ mod tests {
         assert_eq!(instrument.max_quantity(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_notional(), None);
-        assert_eq!(instrument.maker_fee(), dec!(0.0003));
-        assert_eq!(instrument.taker_fee(), dec!(0.0003));
     }
 
     #[rstest]
@@ -1053,8 +983,6 @@ mod tests {
         assert_eq!(instrument.lot_size(), Some(Quantity::from(1)));
         assert_eq!(instrument.min_quantity(), Some(Quantity::from(1)));
         assert_eq!(instrument.max_quantity(), None);
-        assert_eq!(instrument.maker_fee(), dec!(0.0002));
-        assert_eq!(instrument.taker_fee(), dec!(0.0005));
         assert_eq!(
             instrument.ts_event(),
             UnixNanos::from("2026-03-30T00:00:00Z")

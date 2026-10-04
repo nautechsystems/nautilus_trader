@@ -259,10 +259,16 @@ impl Default for DydxAdapterConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.dydx")
 )]
 pub struct DydxDataClientConfig {
+    /// Network environment (mainnet or testnet).
+    #[serde(default)]
+    #[builder(default)]
+    pub network: DydxNetwork,
     /// Base URL for the HTTP API.
     pub base_url_http: Option<String>,
     /// Base URL for the WebSocket API.
     pub base_url_ws: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// HTTP request timeout in seconds.
     #[serde(default = "default_data_http_timeout_secs")]
     #[builder(default = 60)]
@@ -279,12 +285,6 @@ pub struct DydxDataClientConfig {
     #[serde(default = "default_data_retry_delay_max_ms")]
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
-    /// Network environment (mainnet or testnet).
-    #[serde(default)]
-    #[builder(default)]
-    pub network: DydxNetwork,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<SecretString>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[serde(default)]
     #[builder(default)]
@@ -351,10 +351,12 @@ pub struct DydxExecutionClientConfig {
     #[serde(default)]
     #[builder(default)]
     pub grpc_urls: Vec<String>,
-    /// WebSocket endpoint URL (optional, uses default for network if not provided).
-    pub ws_endpoint: Option<String>,
     /// HTTP endpoint URL (optional, uses default for network if not provided).
     pub http_endpoint: Option<String>,
+    /// WebSocket endpoint URL (optional, uses default for network if not provided).
+    pub ws_endpoint: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// Private key (hex) for wallet signing.
     ///
     /// If not provided, falls back to environment variable:
@@ -387,8 +389,6 @@ pub struct DydxExecutionClientConfig {
     /// When `None`, rate limiting is disabled.
     #[serde(default = "default_grpc_rate_limit_per_second")]
     pub grpc_rate_limit_per_second: Option<u32>,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<SecretString>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[serde(default)]
     #[builder(default)]

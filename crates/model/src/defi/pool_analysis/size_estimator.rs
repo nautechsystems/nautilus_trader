@@ -21,6 +21,7 @@
 use alloy_primitives::U256;
 
 use super::{PoolProfiler, error::PoolEventKind};
+use crate::defi::tick_map::full_math::FullMath;
 
 /// Configuration for size estimation algorithms.
 ///
@@ -131,7 +132,12 @@ struct BinarySearchState {
 /// Uses active liquidity, the current square root price, swap direction, and target impact in basis
 /// points, then applies a fixed 2x safety factor. Set `zero_for_one` to `true` for token0-to-token1
 /// swaps. The binary search refines the estimate.
+/// The estimate is clamped to `[10^6, 10^30]` raw token units.
 #[must_use]
+#[allow(
+    clippy::missing_panics_doc,
+    reason = "u128 liquidity times U160 price times u32 impact divided by 2^96 * 10000 fits U256"
+)]
 pub fn estimate_max_size_for_impact(
     profiler: &PoolProfiler,
     impact_bps: u32,
@@ -150,7 +156,12 @@ pub fn estimate_max_size_for_impact(
     let base = if zero_for_one {
         (liquidity_u256 * q96 * impact_ratio) / (sqrt_price * U256::from(10000))
     } else {
-        (liquidity_u256 * sqrt_price * impact_ratio) / (q96 * U256::from(10000))
+        FullMath::mul_div(
+            liquidity_u256,
+            sqrt_price * impact_ratio,
+            q96 * U256::from(10000),
+        )
+        .expect("Size estimate from u128 liquidity, U160 price, and u32 impact fits U256")
     };
 
     // 2x safety factor, clamp to reasonable range
@@ -258,13 +269,10 @@ fn binary_search_for_size(
         if slippage_mid < impact_bps {
             low = mid;
 
-            // Adaptive expansion: only expand when midpoint is in the top 20% of the range
-            // This indicates we're approaching the upper bound
-            let range = high - low;
-            let threshold = range / U256::from(5); // 20% of range
-
+            // Adaptive expansion: only expand when the midpoint is within the top 20% of the
+            // upper bound, which indicates the target lies at or beyond it.
             if config.enable_adaptive_bounds
-                && high - mid <= threshold
+                && high - mid <= high / U256::from(5)
                 && expansions < config.max_bound_expansions
             {
                 high *= U256::from(2);

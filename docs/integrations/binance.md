@@ -26,7 +26,7 @@ Supported products:
 The adapter exposes these public components:
 
 - `BinanceDataClientConfig` and `BinanceExecutionClientConfig`: Live client configuration.
-- `BinanceInstrumentProviderConfig`: Instrument selection, filtering, warning, and fee policy.
+- `BinanceInstrumentProviderConfig`: Instrument selection, filtering, and warning policy.
 - `BinanceDataClientFactory` and `BinanceExecutionClientFactory`: Trading node client factories.
 - `load_binance_instruments`: Standalone configured instrument discovery.
 - `load_binance_order_book_deltas`: Rust-backed Binance depth CSV loading for order book wrangling.
@@ -98,7 +98,9 @@ singular `product_type` field, and the live factories create one data or
 execution client from one config. To run Spot and Futures in the same node,
 configure separate clients with distinct IDs such as `BINANCE_SPOT` and
 `BINANCE_FUTURES`, then pass the matching `client_id` when a strategy subscribes
-or submits orders. See the current Python examples for complete client setup.
+or submits orders. When using both execution clients, configure an explicit `BINANCE` venue route
+or a default client as described in [Execution client routing](../concepts/live.md#execution-client-routing).
+See the current Python examples for complete client setup.
 :::
 
 ## Data types
@@ -114,6 +116,13 @@ The integration includes several custom data types:
 - `BinanceFuturesOpenInterestHist`: Futures open interest history for a period (request only).
 
 See the Binance [API Reference](/docs/python-api-latest/adapters/binance.html) for full definitions.
+
+`BinanceBar`, `BinanceFuturesTicker`, `BinanceFuturesOpenInterest`, and
+`BinanceFuturesLiquidation` support Arrow/Parquet catalog persistence under
+`data/custom/{TypeName}/{identifier}`. Rust builds need the `nautilus-binance` `arrow` feature
+flag for this persistence. Convert catalogs that still use the legacy Python-written
+`data/custom_<snake_case>` layout (for example `data/custom_binance_bar`) with
+[nautilus catalog migrate-parquet](../how_to/migrate_parquet_catalog.md).
 
 ## Symbology
 
@@ -279,6 +288,13 @@ the adapter compares orders associated with the requesting strategy against all 
 for that instrument. If all orders are associated with the strategy, a single cancel-all API
 call is used. Otherwise, per-strategy cancels are sent (batch for regular
 orders, individual for algo orders) to avoid affecting other strategies.
+
+**Side filter**: A `CancelAllOrders` command with `order_side` set cancels only open
+orders on that side for the instrument. Spot sends one cancel per matching order,
+while Futures batches regular orders and cancels algo orders individually. A
+side-filtered request selects from open orders only, so an inflight (`SUBMITTED`)
+order not yet acknowledged by Binance survives one; use an unfiltered cancel-all
+to include it.
 
 **Futures algo orders**: Conditional order types (`STOP_MARKET`, `STOP_LIMIT`,
 `TAKE_PROFIT`, `TAKE_PROFIT_MARKET`, `TRAILING_STOP_MARKET`) require a
@@ -620,25 +636,34 @@ error. Use `activation_price` instead.
 
 ## Link & Trade
 
-The NautilusTrader integration ID is automatically prefixed to all
-system-generated client order IDs for every order placed through the Binance
-adapter. This provides transparent order attribution through Binance's
-[Link and Trade](https://developers.binance.com/docs/binance_link/link-and-trade)
-program without requiring any user configuration.
+The adapter prefixes supported client order IDs with the NautilusTrader integration ID for
+Binance's [Link and Trade](https://www.binance.com/en/support/faq/detail/a78a065d0c4846aaa1af474d8e712ab9)
+program. No user configuration is required.
 
-The adapter uses a deterministic two-way encoding to compress outgoing
-`ClientOrderId` values into a compact format that fits within Binance's
-36-character `newClientOrderId` limit, and decodes incoming order events back
-to the original ID before they reach strategies. This transformation is fully
-transparent: strategies see only their original `ClientOrderId` values at all
-times.
+The adapter compresses outgoing `ClientOrderId` values to fit Binance's 36-character limit and
+decodes incoming events before they reach strategies. Supported formats include numeric factory
+IDs, UUIDs, and hyphenated factory IDs with a short alphanumeric trader or strategy tag, such as
+`O-20260922-160119-V2-000-8`.
 
-:::note
-The integration ID prefix applies to all order operations including
-submissions, modifications, cancellations, and status queries. Orders placed
-before this support was added are handled gracefully through passthrough
-decoding.
-:::
+The short-tag format supports one or two ASCII letters or digits in one tag. The other tag must
+be a numeric value in `[0, 1023]`, padded to at least three digits. Its count supports `[0, 4194303]`
+without leading zeros, and timestamps span `[2020-01-01 00:00:00, 2156-02-07 06:28:15]` UTC.
+Enabling `use_uuid_client_order_ids` is optional.
+
+Custom IDs of at most 24 bytes need no compression. For longer unsupported IDs, the adapter logs
+a warning and sends the original ID without a prefix.
+Binance's length and character restrictions still apply.
+
+### Existing orders after an upgrade
+
+Existing numeric, UUID, and raw-prefixed encodings remain unchanged. The decoder also accepts
+historical unprefixed IDs. When an existing-order operation has a short-tag ID but no venue order
+ID, the adapter queries both its encoded form and the historical unprefixed form. If these identify
+separate orders, it rejects the operation as ambiguous.
+
+Modifications and cancellations use the recovered venue order ID. Spot cancel-replace retains the
+existing wire client order ID when replacing the same logical order, including orders submitted
+with a historical unprefixed ID. These lookups also apply when the mutation uses WebSocket transport.
 
 ### Decoding client order IDs
 
@@ -683,41 +708,50 @@ rate differ by product and Spot transport:
 | Spot JSON           | `<symbol>@depth`     | 1000ms (default) |
 | Futures             | `<symbol>@depth@0ms` | Unthrottled      |
 
+Book subscriptions emit snapshots, whether seeded from REST or received as partial-depth frames,
+with these flags:
+
+- Every snapshot delta carries `F_SNAPSHOT`, and the final delta carries `F_SNAPSHOT | F_LAST`.
+- A snapshot without levels is a lone `Clear` that empties the book.
+
 ### Futures L2 subscriptions
 
-Futures `L2_MBP` subscriptions with depth 5, 10, or 20 use the partial-depth stream
-`<symbol>@depth<levels>@100ms`. Binance provides partial-depth streams only at these depths.
+The `L2_MBP` subscription depth selects the stream:
 
-Each message is a snapshot of both sides of the book, emitted as a `Clear` delta followed by
-the snapshot levels. This removes absent prices and keeps at most the requested number of
-levels per side. These subscriptions do not request a REST snapshot, including after reconnects.
+| Depth                       | Stream                         | Book source               |
+| --------------------------- | ------------------------------ | ------------------------- |
+| 5, 10, or 20                | `<symbol>@depth<levels>@100ms` | Snapshot in each message  |
+| None, 50, 100, 500, or 1000 | `<symbol>@depth@0ms`           | REST snapshot, then diffs |
+| Any other                   | None                           | Rejected                  |
 
-Futures subscriptions without a depth, or with depth 50, 100, 500, or 1000, use the diff-depth
-stream. The depth limits the initial and reconnect REST snapshots, not the maintained book;
-omitting it selects a 1000-level snapshot. Subsequent updates can add levels beyond that depth.
+- **Partial depth**: Binance provides partial-depth streams only at 5, 10, and 20 levels. Each
+  message is a snapshot of both sides, emitted as a `Clear` delta followed by the snapshot levels,
+  so it removes absent prices and keeps at most the requested number of levels per side. These
+  subscriptions never request a REST snapshot, including after reconnects.
+- **Diff depth**: The depth limits the initial, reconnect, and recovery REST snapshots, not the
+  maintained book; omitting it selects a 1000-level snapshot. Later updates can add levels beyond
+  that depth.
 
 The `OrderBook.bids(depth=...)` and `OrderBook.asks(depth=...)` accessors limit their returned
-results without removing stored levels.
-
-Other `L2_MBP` subscription depths are rejected. Unsubscribe before changing an instrument's
-subscription depth.
+results without removing stored levels. Unsubscribe before changing an instrument's subscription
+depth.
 
 ### Spot L2 subscriptions
 
 Spot partial-depth subscriptions deliver self-contained top-N snapshots. The supported depths
-depend on the market data mode:
+depend on the [Spot market data mode](#spot-market-data-mode):
 
-- **JSON**: Explicit depths 5, 10, or 20 use the `<symbol>@depth<levels>` partial-depth stream.
-  Other explicit depths, including 50, 100, 500, and 1000, are rejected before subscription with
-  an error listing the valid depths.
-- **SBE**: Partial books require depth 20. Other partial depths are rejected before subscription;
-  use JSON market data for depth 5 or 10.
+| Depth                                   | JSON                     | SBE                |
+| --------------------------------------- | ------------------------ | ------------------ |
+| 5 or 10                                 | `<symbol>@depth<levels>` | Rejected; use JSON |
+| 20                                      | `<symbol>@depth20`       | `<symbol>@depth20` |
+| None (diff depth)                       | `<symbol>@depth`         | `<symbol>@depth`   |
+| Any other, including 50, 100, 500, 1000 | Rejected                 | Rejected           |
 
-Omit depth to use the diff-depth stream in either mode, seeded by a 5000-level REST snapshot.
-Unsubscribe before changing an instrument's subscription depth; a new partial-depth subscription
-does not remove the previous stream.
-
-See [Spot market data mode](#spot-market-data-mode) for transport configuration.
+- Rejected depths fail before subscription; in JSON mode the error lists the valid depths.
+- Diff-depth subscriptions are seeded by a 5000-level REST snapshot.
+- Unsubscribe before changing an instrument's subscription depth; a new partial-depth subscription
+  does not remove the previous stream.
 
 ### L1 top-of-book subscriptions
 
@@ -736,20 +770,108 @@ Explicit order-book snapshot requests are supported separately from subscription
 - **Spot**: Depths in [1, 5000].
 - **Futures**: Depths 5, 10, 20, 50, 100, 500, or 1000.
 
-### Snapshot synchronization
+### Snapshot synchronization and recovery
 
-Futures diff-depth subscriptions and Spot `BookDeltas` subscriptions without an explicit depth
-rebuild the order book on the initial subscription and on every data WebSocket reconnect.
-The rebuild runs in this order:
+Futures diff-depth subscriptions and Spot `L2_MBP` subscriptions without an explicit depth keep
+the diff-depth stream subscribed and seed the book from a REST snapshot, using the
+[shared book recovery machinery](../developer_guide/adapters.md#order-book-recovery-ownership).
 
-1. Buffering of incoming deltas starts.
-1. The snapshot is requested and awaited.
-1. The snapshot response is parsed to `OrderBookDeltas`.
-1. The snapshot deltas are sent to the `DataEngine`.
-1. Buffered deltas are iterated, dropping those whose sequence number is not greater than the last
-   delta in the snapshot.
-1. Buffering stops.
-1. The remaining deltas are sent to the `DataEngine`.
+#### Synchronization
+
+Synchronization starts at the first diff after a subscription or data WebSocket reconnect:
+
+1. Diffs are buffered and a REST snapshot is requested.
+1. Buffered diffs covered by the snapshot's `lastUpdateId` are dropped.
+1. The remaining diffs must continue from the snapshot; otherwise another snapshot is requested.
+1. The snapshot is sent to the `DataEngine`, followed by the remaining buffered diffs.
+1. Each later diff is validated against the previous one before it is sent.
+
+Each diff must continue from the snapshot or the previous diff:
+
+| Product | First diff after the snapshot | Later diffs           |
+| ------- | ----------------------------- | --------------------- |
+| Spot    | `U <= lastUpdateId + 1`       | `U <= previous u + 1` |
+| Futures | `U <= lastUpdateId <= u`      | `pu == previous u`    |
+
+A diff that breaks these rules is a sequence gap: book output stops, diffs are buffered, and a
+fresh snapshot is requested without resubscribing. A diff that fails to parse surfaces as a gap on
+the next diff.
+
+#### Recovery limits
+
+- **Snapshot timeout**: `book_snapshot_timeout_secs` (default **10 seconds**) bounds each snapshot
+  request. Set it to `0` to leave requests to the HTTP client timeout.
+- **Retry budget**: Each recovery makes **up to eight snapshot attempts within 180 seconds**, with
+  exponential backoff and jitter, then continues at an interval that doubles from one minute to
+  fifteen minutes. A permanent request failure moves straight to that interval.
+- **Reconnects**: A reconnect restarts synchronization from the new stream and keeps a running
+  recovery with its remaining budget. A recovery waiting between attempts after its budget retries
+  at once. That recovery's next snapshot can seed the book before the new stream delivers a diff;
+  the first diff must then continue from the snapshot.
+- **Persistent failures**: Recovery continues until a snapshot bridges the buffered diffs or the
+  book is unsubscribed. Other books continue independently.
+
+#### Snapshot pacing
+
+Snapshot requests draw on a per-client share of the venue request-weight budget, so a burst of
+resyncs, such as after a reconnect, waits for budget instead of exceeding it:
+
+| Product | Snapshot budget  | Burst (half the budget) | Full snapshot cost |
+| ------- | ---------------- | ----------------------- | ------------------ |
+| Spot    | 3,000 per minute | 1,500                   | 250 (5000 levels)  |
+| Futures | 1,200 per minute | 600                     | 20 (1000 levels)   |
+
+- Queueing for the first snapshot does not consume the recovery's attempts or 180-second budget.
+- Explicit snapshot requests draw on the same budget.
+- The HTTP client's retries of a failed snapshot request are not paced.
+
+### Live recovery validation
+
+The `binance-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It connects to the selected product's market data, submits no orders, and checks emitted
+books against the book stream contract and two independent oracles: the venue's
+`<symbol>@depth20@100ms` stream at matching update IDs, and a reference book rebuilt from raw diffs
+and forwarded REST snapshots.
+
+The harness drops diffs to force gaps, fails, delays, and rejects REST snapshots, cuts and freezes
+connections, requests reconnects, and churns subscriptions. Its REST proxy refuses snapshot requests
+before venue request weight nears its limit, and a run fails if the venue throttles it.
+
+From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-binance --features examples --test binance-book-stress -- --product futures
+```
+
+`--product` selects the venue:
+
+| Product          | Venue                                                                       |
+| ---------------- | --------------------------------------------------------------------------- |
+| `spot` (default) | Spot mainnet JSON streams.                                                  |
+| `spot-sbe`       | Spot mainnet SBE streams; reads `BINANCE_API_KEY` and `BINANCE_API_SECRET`. |
+| `futures`        | USD-M testnet.                                                              |
+| `coinm`          | COIN-M testnet.                                                             |
+
+Run `spot-sbe` without `strip-adapter-env.bash`, which unsets the API key it needs.
+
+`--scenario` selects the run:
+
+- `churn` (default): rotates gap, reconnect, subscription churn, cut, and freeze faults.
+- `boundaries`: probes snapshot deadlines, retry exhaustion into the retry ceiling, and a
+  permanent rejection.
+- `resubscribe`: races an unsubscribe with an immediate resubscribe once per round.
+- `quiet`: watches thinly traded books, one round per minute.
+- `crowd`: subscribes liquid books and reconnects once per round so snapshot pacing engages.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
+`--rounds` sets the number of rounds (14 by default). `--books` sets how many books `quiet` and
+`crowd` select by 24-hour trade count (4 by default).
+
+The harness requires access to the selected product's REST API and WebSocket market data streams.
+Automated book lifecycle tests use local mock servers. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared flags
+and output format.
 
 ## Quote timestamps
 
@@ -1086,11 +1208,13 @@ Binance charges these weights per request:
 | `/api/v3/order`           | 1      | Spot order placement.                  |
 | `/api/v3/allOrders`       | 20     | Spot historical orders (expensive).    |
 | `/api/v3/klines`          | 2+     | Scales with `limit` parameter.         |
+| `/api/v3/depth`           | 5+     | Scales with `limit`; 250 at 5000.      |
 | `/fapi/v1/order`          | 1      | Futures order placement.               |
 | `/fapi/v1/algoOrder`      | 0      | Uses order-count limits.               |
 | `/fapi/v1/allOrders`      | 20     | Futures historical orders (expensive). |
 | `/fapi/v1/commissionRate` | 20     | Futures commission rate query.         |
 | `/fapi/v1/klines`         | 5+     | Scales with `limit` parameter.         |
+| `/fapi/v1/depth`          | 2+     | Scales with `limit`; 20 at 1000.       |
 
 USD-M Futures `POST /fapi/v1/algoOrder` consumes `1` from both
 `X-MBX-ORDER-COUNT-10S` and `X-MBX-ORDER-COUNT-1M`. Binance charges no IP
@@ -1129,7 +1253,8 @@ The request bucket counts calls rather than weight, so it does not mirror the ve
 accounting. A run of high-weight or dynamic-weight endpoints (`/api/v3/allOrders` at weight 20, or
 `/klines` scaling with `limit`) spends venue weight faster than the local bucket accounts for.
 Large history requests may need manual pacing. Monitor the `X-MBX-USED-WEIGHT-*` response headers
-to track actual venue usage.
+to track actual venue usage. Order book snapshot requests also wait on a weight-aware budget; see
+[Snapshot pacing](#snapshot-pacing).
 
 :::warning
 Binance returns HTTP 429 when you exceed the allowed weight. Repeated
@@ -1160,6 +1285,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `instrument_provider`              | default   | Loading, filters, parser-warning, and commission policy.                       |
 | `instrument_refresh_interval_secs` | `3,600`   | Full catalog refresh interval; `0` disables it.                                |
 | `instrument_status_poll_secs`      | `3,600`   | Status-only exchange-info poll interval; `0` disables it.                      |
+| `book_snapshot_timeout_secs`       | `10`      | Deadline for each diff-depth REST snapshot request; `0` disables it.           |
 | `proxy_url`                        | `None`    | Proxy applied to HTTP and every market WebSocket connection.                   |
 | `recv_window_ms`                   | `5,000`   | Signed HTTP receive window, inclusive range `1..=60000`.                       |
 | `max_retries`                      | `3`       | Maximum retries for HTTP GET requests.                                         |
@@ -1481,9 +1607,9 @@ Testnet credentials are completely separate from your live account. Market
 data and liquidity differ from production.
 :::
 
-### Commission rate queries
+### Instrument loading
 
-The instrument provider controls both selection and fee policy:
+The instrument provider controls selection and filters:
 
 ```python
 from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
@@ -1502,29 +1628,17 @@ filters are `symbols`, `bases`, and `quotes`, plus `contract_types` for Futures.
 or non-empty list of strings, and matching is case-insensitive. The adapter rejects
 `filter_callable`; use the supported declarative filters.
 
-Every parsed instrument receives maker and taker fees:
-
-- Spot uses the account-wide rate when credentials are present, otherwise 0.1% maker and taker.
-- Futures uses the account VIP tier when credentials are present, otherwise VIP 0.
-- `query_commission_rates=True` opts Global Spot and Futures into rate-limited exact per-symbol
-  queries. A failed or invalid query falls back to the account or tier rate for that symbol.
-- Binance US uses its account-wide commission rates because it does not expose the Global
-  `account/commission` endpoint.
-
-The exact-query behavior follows the Global Spot
-[commission FAQ](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/commission_faq.md)
-and the USD-M
-[user commission rate](https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api/User-Commission-Rate)
-endpoint.
-
-Exact queries require credentials. Because they issue one private request per selected symbol,
-combine `load_ids` or filters with this option on large catalogs.
+Parsed instruments do not carry maker or taker fee rates.
+`query_commission_rates` does not copy account commission onto instruments.
 
 ### Parser warnings
 
 Some Binance instruments cannot be parsed into Nautilus objects if they contain
 field values beyond what the platform handles. These instruments are skipped
 with a warning.
+
+Non-trading symbols are skipped with a debug log during bulk loads. They still
+warn when explicitly selected through `load_ids` or the `symbols` filter.
 
 To suppress these warnings:
 

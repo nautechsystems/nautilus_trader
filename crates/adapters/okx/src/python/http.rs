@@ -21,7 +21,7 @@ use nautilus_core::python::{
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
+    enums::{AccountType, OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
@@ -267,9 +267,12 @@ impl OKXHttpClient {
 
     /// Activates an account feature such as USDC order book trading.
     ///
-    /// This does not run at client start. Call it once per master account and
-    /// once per sub-account before trading a `Crypto-USDC` instrument if that
-    /// account has not already traded USDC.
+    /// This does not run at client start. Call it only after OKX rejects a
+    /// `Crypto-USDC` order with error code `54109`. Activation is shared between a
+    /// master account and its sub-accounts, so one successful call covers all of
+    /// them. Error code `51773` means the account does not support activation, not
+    /// that USDC trading is unavailable; a successful order confirms the account can
+    /// trade the instrument.
     ///
     /// # Errors
     ///
@@ -522,20 +525,25 @@ impl OKXHttpClient {
 
     /// Requests the account state for the `account_id` from OKX.
     ///
+    /// Pass the execution client's configured account type; the OKX balance payload carries
+    /// no account-mode field.
+    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or no account state is returned.
     #[pyo3(name = "request_account_state")]
+    #[pyo3(signature = (account_id, account_type=AccountType::Margin))]
     fn py_request_account_state<'py>(
         &self,
         py: Python<'py>,
         account_id: AccountId,
+        account_type: AccountType,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let account_state = client
-                .request_account_state(account_id)
+                .request_account_state(account_id, account_type)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -1438,7 +1446,7 @@ impl OKXHttpClient {
 
     /// Cancels multiple algo orders via HTTP in a single request.
     ///
-    /// Items with non-zero `sCode` are logged as warnings but do not
+    /// Items with non-zero `sCode` are logged at debug level but do not
     /// fail the entire batch.
     ///
     /// # Errors

@@ -13,9 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
+use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::events::{PositionAdjusted, PositionChanged, PositionClosed, PositionOpened};
 
-use super::json::{JsonFieldSpec, impl_json_arrow};
+use super::{
+    ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
+    KEY_INSTRUMENT_ID,
+    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+};
 
 const POSITION_OPENED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
@@ -34,8 +41,8 @@ const POSITION_OPENED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::f64("avg_px_open", false),
     JsonFieldSpec::utf8("realized_pnl", true),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const POSITION_CHANGED_FIELDS: &[JsonFieldSpec] = &[
@@ -59,9 +66,9 @@ const POSITION_CHANGED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("realized_pnl", true),
     JsonFieldSpec::utf8("unrealized_pnl", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_opened", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_opened", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const POSITION_CLOSED_FIELDS: &[JsonFieldSpec] = &[
@@ -87,10 +94,10 @@ const POSITION_CLOSED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("unrealized_pnl", false),
     JsonFieldSpec::u64("duration", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_opened", false),
-    JsonFieldSpec::u64("ts_closed", true),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_opened", false),
+    JsonFieldSpec::timestamp("ts_closed", true),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const POSITION_ADJUSTED_FIELDS: &[JsonFieldSpec] = &[
@@ -104,14 +111,61 @@ const POSITION_ADJUSTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("pnl_change", true),
     JsonFieldSpec::utf8("reason", true),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
-impl_json_arrow!(instrument PositionOpened, "PositionOpened", POSITION_OPENED_FIELDS);
-impl_json_arrow!(instrument PositionChanged, "PositionChanged", POSITION_CHANGED_FIELDS);
-impl_json_arrow!(instrument PositionClosed, "PositionClosed", POSITION_CLOSED_FIELDS);
-impl_json_arrow!(instrument PositionAdjusted,
+fn instrument_metadata(type_name: &'static str, instrument_id: &str) -> HashMap<String, String> {
+    let mut metadata = metadata_for_type(type_name);
+    metadata.insert(KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string());
+    metadata
+}
+
+macro_rules! impl_position_event_arrow {
+    ($type:ty, $type_name:expr, $fields:expr) => {
+        impl ArrowSchemaProvider for $type {
+            fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
+                schema_for_type($type_name, metadata, $fields)
+            }
+        }
+
+        impl EncodeToRecordBatch for $type {
+            fn encode_batch<T>(
+                metadata: &HashMap<String, String>,
+                data: &[T],
+            ) -> Result<RecordBatch, ArrowError>
+            where
+                T: std::borrow::Borrow<Self>,
+            {
+                encode_batch(
+                    $type_name,
+                    metadata,
+                    data.iter().map(std::borrow::Borrow::borrow),
+                    $fields,
+                )
+            }
+
+            fn metadata(&self) -> HashMap<String, String> {
+                instrument_metadata($type_name, &self.instrument_id.to_string())
+            }
+        }
+
+        impl DecodeTypedFromRecordBatch for $type {
+            fn decode_typed_batch(
+                metadata: &HashMap<String, String>,
+                record_batch: RecordBatch,
+            ) -> Result<Vec<Self>, EncodingError> {
+                decode_batch(metadata, &record_batch, $fields, Some($type_name))
+            }
+        }
+    };
+}
+
+impl_position_event_arrow!(PositionOpened, "PositionOpened", POSITION_OPENED_FIELDS);
+impl_position_event_arrow!(PositionChanged, "PositionChanged", POSITION_CHANGED_FIELDS);
+impl_position_event_arrow!(PositionClosed, "PositionClosed", POSITION_CLOSED_FIELDS);
+impl_position_event_arrow!(
+    PositionAdjusted,
     "PositionAdjusted",
     POSITION_ADJUSTED_FIELDS
 );
@@ -131,7 +185,6 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBatch};
 
     #[rstest]
     fn test_position_adjusted_round_trip() {
@@ -244,7 +297,7 @@ mod tests {
             realized_return: 0.0071,
             realized_pnl: Some(Money::new(112.50, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
-            duration: DurationNanos::from_hours(1),
+            duration: DurationNanos::new(3_600_000_000_000),
             event_id: UUID4::default(),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),

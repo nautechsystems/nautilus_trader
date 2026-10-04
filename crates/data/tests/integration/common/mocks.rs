@@ -38,11 +38,11 @@ use nautilus_common::{
         DataCommand, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
         RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
         RequestInstruments, RequestOptionChainReferencePrice, RequestQuotes, RequestTrades,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand,
+        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand,
         SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCommand,
         UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
@@ -70,7 +70,7 @@ pub(crate) struct MockDataClient {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MockSubscribeFailure {
     BookDeltas,
-    BookDepth10,
+    BookDepth,
     Quotes,
     Trades,
 }
@@ -243,15 +243,15 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
-        if self.fail_next_subscribe == Some(MockSubscribeFailure::BookDepth10) {
+    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
+        if self.fail_next_subscribe == Some(MockSubscribeFailure::BookDepth) {
             self.fail_next_subscribe = None;
-            anyhow::bail!("test book depth10 subscribe failure");
+            anyhow::bail!("test book depth subscribe failure");
         }
 
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Subscribe(SubscribeCommand::BookDepth10(cmd)));
+                .push(DataCommand::Subscribe(SubscribeCommand::BookDepth(cmd)));
         }
         Ok(())
     }
@@ -457,10 +457,10 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
-                .push(DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth(
                     cmd.clone(),
                 )));
         }

@@ -27,6 +27,7 @@ from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import DataActorConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import ActorId
 from nautilus_trader.model import ClientOrderId
@@ -239,6 +240,10 @@ def _engine() -> BacktestEngine:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, USDT)],
         base_currency=USDT,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(ETHUSDT)
 

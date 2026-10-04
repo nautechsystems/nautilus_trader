@@ -15,6 +15,7 @@
 
 use ahash::AHashMap;
 use nautilus_network::websocket::SubscriptionState;
+use parking_lot::Mutex;
 
 #[derive(Debug)]
 pub(crate) enum PendingSubscriptionRequest {
@@ -125,11 +126,72 @@ pub(crate) fn reset_requests_after_reconnect(
     subscriptions.reset_after_reconnect();
 }
 
+/// Chains a detached stream pool command after its predecessor in `tail`.
+///
+/// Registration and unregistration then reach the pool in command order even though their tasks
+/// run concurrently, so a delayed unsubscribe cannot remove a stream that a later resubscribe
+/// expects. The returned future waits until the previous command finishes or is dropped, runs
+/// `command`, then releases the next one.
+pub(crate) fn chain_command<F>(
+    tail: &Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+    command: F,
+) -> impl Future<Output = F::Output> + Send + 'static
+where
+    F: Future + Send + 'static,
+    F::Output: Send,
+{
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+    let previous = tail.lock().replace(done_rx);
+
+    async move {
+        if let Some(previous) = previous {
+            let _ = previous.await;
+        }
+
+        let output = command.await;
+        let _ = done_tx.send(());
+        output
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_chain_command_runs_each_command_after_its_predecessor() {
+        let tail = Mutex::new(None);
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+
+        let first = chain_command(&tail, async move {
+            let _ = released.await;
+            1
+        });
+
+        let second = chain_command(&tail, async { 2 });
+        let third = chain_command(&tail, async { 3 });
+        let fourth = chain_command(&tail, async { 4 });
+        tokio::pin!(second);
+
+        let second_blocked = tokio::time::timeout(Duration::from_millis(20), &mut second)
+            .await
+            .is_err();
+        release.send(()).unwrap();
+        let first_output = first.await;
+        let second_output = tokio::time::timeout(Duration::from_secs(1), second).await;
+        drop(third);
+        let fourth_output = tokio::time::timeout(Duration::from_secs(1), fourth).await;
+
+        assert!(second_blocked);
+        assert_eq!(first_output, 1);
+        assert_eq!(second_output, Ok(2));
+        assert_eq!(fourth_output, Ok(4));
+    }
 
     #[rstest]
     fn test_reset_requests_after_reconnect_preserves_only_subscribe_intent() {

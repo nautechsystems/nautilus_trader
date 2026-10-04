@@ -264,7 +264,7 @@ impl FeedHandler {
                             if let Some(client) = &self.client
                                 && let Err(e) = client.send_pong(data.to_vec()).await
                             {
-                                log::error!("Failed to send pong: {e}");
+                                log::warn!("Failed to send pong: {e}");
                             }
                         }
                         Message::Close(_) => return None,

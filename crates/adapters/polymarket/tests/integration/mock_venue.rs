@@ -132,6 +132,8 @@ pub(super) struct TestServerState {
     pub(super) last_headers: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
     pub(super) last_path: Arc<tokio::sync::Mutex<String>>,
     pub(super) last_query: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+    pub(super) trade_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    pub(super) balance_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) version_response: Arc<tokio::sync::Mutex<Value>>,
     pub(super) version_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
@@ -178,6 +180,7 @@ pub(super) struct TestServerState {
     pub(super) market_cancel_delete_count: Arc<tokio::sync::Mutex<usize>>,
     pub(super) market_cancel_request_gate: Arc<RequestGate>,
     pub(super) order_request_gate: Arc<RequestGate>,
+    pub(super) order_response_gate: Arc<RequestGate>,
     pub(super) batch_order_request_gate: Arc<RequestGate>,
     pub(super) open_order_ids: Arc<tokio::sync::Mutex<HashSet<String>>>,
     pub(super) orders_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -185,12 +188,15 @@ pub(super) struct TestServerState {
     pub(super) orders_get_count: Arc<AtomicUsize>,
     pub(super) book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) single_order_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
+    pub(super) single_order_response_statuses: Arc<tokio::sync::Mutex<VecDeque<StatusCode>>>,
     pub(super) single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) single_order_get_count: Arc<AtomicUsize>,
     pub(super) trades_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) trades_filter_after: Arc<AtomicBool>,
     pub(super) positions_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) user_frames: tokio::sync::broadcast::Sender<String>,
     pub(super) user_socket_count: Arc<AtomicUsize>,
+    pub(super) user_upgrade_gate: Arc<RequestGate>,
 }
 
 impl Default for TestServerState {
@@ -202,6 +208,8 @@ impl Default for TestServerState {
             last_headers: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_path: Arc::new(tokio::sync::Mutex::new(String::new())),
             last_query: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            trade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            balance_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
             version_response: Arc::new(tokio::sync::Mutex::new(load_json(
                 "http_version_response.json",
@@ -252,15 +260,18 @@ impl Default for TestServerState {
             market_cancel_delete_count: Arc::new(tokio::sync::Mutex::new(0)),
             market_cancel_request_gate: Arc::new(RequestGate::default()),
             order_request_gate: Arc::new(RequestGate::default()),
+            order_response_gate: Arc::new(RequestGate::default()),
             batch_order_request_gate: Arc::new(RequestGate::default()),
             open_order_ids: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             orders_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             orders_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             orders_get_count: Arc::new(AtomicUsize::new(0)),
             single_order_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            single_order_response_statuses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             single_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             single_order_get_count: Arc::new(AtomicUsize::new(0)),
             trades_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            trades_filter_after: Arc::new(AtomicBool::new(false)),
             positions_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             book_response: Arc::new(tokio::sync::Mutex::new(Some(json!({
                 "bids": [
@@ -276,6 +287,7 @@ impl Default for TestServerState {
             })))),
             user_frames,
             user_socket_count: Arc::new(AtomicUsize::new(0)),
+            user_upgrade_gate: Arc::new(RequestGate::default()),
         }
     }
 }
@@ -348,6 +360,15 @@ async fn handle_get_orders(
 async fn handle_get_order(State(state): State<TestServerState>, uri: Uri) -> Response {
     *state.last_path.lock().await = uri.path().to_string();
     state.single_order_get_count.fetch_add(1, Ordering::AcqRel);
+    if let Some(status) = state
+        .single_order_response_statuses
+        .lock()
+        .await
+        .pop_front()
+    {
+        return (status, Json(json!({"error": "order lookup failed"}))).into_response();
+    }
+
     if let Some(resp) = state.single_order_responses.lock().await.pop_front() {
         return Json(resp).into_response();
     }
@@ -365,9 +386,28 @@ async fn handle_get_trades(
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     *state.last_path.lock().await = uri.path().to_string();
+    let after = query
+        .get("after")
+        .and_then(|value| value.parse::<u64>().ok());
+    state.trade_queries.lock().await.push(query.clone());
     *state.last_query.lock().await = query;
     if let Some(override_value) = state.trades_response_override.lock().await.as_ref() {
-        return Json(override_value.clone()).into_response();
+        let mut page = override_value.clone();
+
+        // The venue's `after` keeps only rows matched later than the given Unix second
+        if state.trades_filter_after.load(Ordering::Acquire)
+            && let Some(after) = after
+            && let Some(rows) = page["data"].as_array_mut()
+        {
+            rows.retain(|row| {
+                row["match_time"]
+                    .as_str()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .is_some_and(|match_time| match_time > after)
+            });
+        }
+
+        return Json(page).into_response();
     }
     Json(load_json("http_trades_page.json")).into_response()
 }
@@ -376,7 +416,9 @@ async fn handle_get_balance(
     State(state): State<TestServerState>,
     uri: Uri,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Response {
+    state.balance_queries.lock().await.push(query);
     *state.last_path.lock().await = uri.path().to_string();
     state
         .startup_request_paths
@@ -461,6 +503,7 @@ async fn handle_post_order(
     }
 
     record_open_order_ids(&state, std::slice::from_ref(&body)).await;
+    state.order_response_gate.wait().await;
     let mut response = (status, Json(body)).into_response();
     response
         .headers_mut()
@@ -636,6 +679,7 @@ async fn handle_user_upgrade(
         .lock()
         .await
         .push("/ws".to_string());
+    state.user_upgrade_gate.wait().await;
     ws.on_upgrade(move |socket| handle_user_socket(socket, state))
 }
 
@@ -798,14 +842,21 @@ async fn handle_health() -> impl IntoResponse {
 }
 
 async fn handle_get_positions(State(state): State<TestServerState>) -> impl IntoResponse {
-    Json(
-        state
+    // Overrides carry the page's rows; the envelope is the v2 response shape.
+    Json(json!({
+        "data": state
             .positions_response_override
             .lock()
             .await
             .clone()
             .unwrap_or_else(|| json!([])),
-    )
+        "pagination": {
+            "limit": 500,
+            "offset": 0,
+            "has_more": false,
+            "next_cursor": null,
+        },
+    }))
 }
 
 fn create_test_router(state: TestServerState) -> Router {
@@ -830,7 +881,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/fee-rate", get(handle_get_fee_rate))
         .route("/v1/heartbeats", post(handle_heartbeat))
         .route("/health", get(handle_health))
-        .route("/positions", get(handle_get_positions))
+        .route("/v2/positions", get(handle_get_positions))
         .route("/ws", get(handle_user_upgrade))
         .with_state(state)
 }

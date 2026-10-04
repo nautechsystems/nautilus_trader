@@ -41,7 +41,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_network::{
-    http::{HttpClient, Method},
+    http::{HttpClient, HttpRedirectPolicy, Method, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -220,6 +220,7 @@ impl DeribitRawHttpClient {
         Ok(Self {
             base_url,
             client: HttpClient::builder()
+                .headers(create_standard_nautilus_headers().into_iter().collect())
                 .keyed_quotas(Self::rate_limiter_quotas())
                 .default_quota(*DERIBIT_HTTP_REST_QUOTA)
                 .timeout_secs(timeout_secs)
@@ -354,6 +355,8 @@ impl DeribitRawHttpClient {
         Ok(Self {
             base_url,
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
+                .headers(create_standard_nautilus_headers().into_iter().collect())
                 .keyed_quotas(Self::rate_limiter_quotas())
                 .default_quota(*DERIBIT_HTTP_REST_QUOTA)
                 .timeout_secs(timeout_secs)
@@ -488,9 +491,25 @@ impl DeribitRawHttpClient {
                 // Note: Deribit may return JSON-RPC errors with non-2xx HTTP status (e.g., 400)
                 // Always try to parse as JSON-RPC first, then fall back to HTTP error handling
 
-                // Try to parse as JSON first
-                let json_value: serde_json::Value = match serde_json::from_slice(&resp.body) {
-                    Ok(json) => json,
+                // Decode the body directly so exact decimal fields read the raw numeric tokens
+                let json_rpc_response: DeribitJsonRpcResponse<T> = match serde_json::from_slice(
+                    &resp.body,
+                ) {
+                    Ok(response) => response,
+                    Err(e) if e.is_data() => {
+                        log::warn!(
+                            "Failed to deserialize Deribit JSON-RPC response: method={method}, status={}, error={e}",
+                            resp.status.as_u16()
+                        );
+                        log::debug!(
+                            "Response JSON (first 2000 chars): {}",
+                            String::from_utf8_lossy(&resp.body)
+                                .chars()
+                                .take(2000)
+                                .collect::<String>()
+                        );
+                        return Err(DeribitHttpError::JsonError(e.to_string()));
+                    }
                     Err(_) => {
                         // Not valid JSON - treat as HTTP error
                         let error_body = String::from_utf8_lossy(&resp.body);
@@ -504,24 +523,6 @@ impl DeribitRawHttpClient {
                         });
                     }
                 };
-
-                // Try to parse as JSON-RPC response
-                let json_rpc_response: DeribitJsonRpcResponse<T> =
-                    serde_json::from_value(json_value.clone()).map_err(|e| {
-                        log::warn!(
-                            "Failed to deserialize Deribit JSON-RPC response: method={method}, status={}, error={e}",
-                            resp.status.as_u16()
-                        );
-                        log::debug!(
-                            "Response JSON (first 2000 chars): {}",
-                            json_value
-                                .to_string()
-                                .chars()
-                                .take(2000)
-                                .collect::<String>()
-                        );
-                        DeribitHttpError::JsonError(e.to_string())
-                    })?;
 
                 // Check if it's a success or error result
                 if json_rpc_response.result.is_some() {
@@ -584,7 +585,7 @@ impl DeribitRawHttpClient {
         if let Err(ref e) = result
             && e.is_retryable()
         {
-            log::error!("Request exhausted retries: method={method}, error={e}");
+            log::warn!("Request exhausted retries: method={method}, error={e}");
         }
 
         result
@@ -2015,12 +2016,39 @@ impl DeribitHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
     use crate::common::consts::{
         DERIBIT_ACCOUNT_RATE_KEY, DERIBIT_GLOBAL_RATE_KEY, DERIBIT_ORDER_RATE_KEY,
     };
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = DeribitRawHttpClient::with_credentials(
+            "key".into(),
+            "secret".into(),
+            None,
+            DeribitEnvironment::Testnet,
+            3,
+            0,
+            1,
+            1,
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     #[case("private/buy", true, false)]

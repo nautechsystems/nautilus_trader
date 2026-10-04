@@ -5,8 +5,6 @@ permissions: # Principle of least privilege
   actions: read
 
 on:
-  push:
-    branches: [nightly-merge-test]
   schedule:
     - cron: "0 14 * * *" # At 14:00 UTC daily
   workflow_dispatch: # Allow manual trigger
@@ -14,6 +12,7 @@ on:
 jobs:
   check-develop-status:
     runs-on: ubuntu-latest
+    environment: nightly-merge
     permissions:
       contents: read
     outputs:
@@ -21,7 +20,7 @@ jobs:
       has_changes: ${{ steps.check-workflow.outputs.has_changes }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -46,9 +45,10 @@ jobs:
     needs: check-develop-status
     if: needs.check-develop-status.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
+    environment: nightly-merge
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-

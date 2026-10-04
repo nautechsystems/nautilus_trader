@@ -32,7 +32,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-arrow = ["dep:arrow", "nautilus-model/arrow"]
+arrow = ["dep:arrow", "dep:nautilus-macros", "nautilus-model/arrow"]
 arrow-display = ["arrow"]
 capnp = ["dep:capnp", "dep:capnpc", "dep:walkdir"]
 sbe = []
@@ -63,6 +63,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-core = { workspace = true }
+nautilus-macros = { workspace = true, optional = true }
 nautilus-model = { workspace = true }
 
 anyhow = { workspace = true }
@@ -113,3 +114,8 @@ name = "market_data_capnp_vs_sbe"
 path = "benches/market_data_capnp_vs_sbe.rs"
 harness = false
 required-features = ["capnp", "sbe"]
+
+[[test]]
+name = "arrow_custom_data_macro"
+path = "tests/arrow_custom_data_macro.rs"
+required-features = ["arrow"]

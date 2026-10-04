@@ -20,8 +20,7 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
-        depth::DEPTH10_LEN,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType, RecordFlag,
@@ -148,7 +147,7 @@ pub fn parse_ws_order_book_deltas(
             instrument.id(),
             BookAction::Add,
             order,
-            RecordFlag::F_LAST as u8,
+            RecordFlag::F_SNAPSHOT as u8,
             0, // sequence
             ts_event,
             ts_init,
@@ -171,7 +170,7 @@ pub fn parse_ws_order_book_deltas(
             instrument.id(),
             BookAction::Add,
             order,
-            RecordFlag::F_LAST as u8,
+            RecordFlag::F_SNAPSHOT as u8,
             0, // sequence
             ts_event,
             ts_init,
@@ -180,20 +179,25 @@ pub fn parse_ws_order_book_deltas(
         deltas.push(delta);
     }
 
+    // One event group, so consumers never observe a partially rebuilt book
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
+    }
+
     Ok(OrderBookDeltas::new(instrument.id(), deltas))
 }
 
-/// Parses a WebSocket L2 order book snapshot into [`OrderBookDepth10`].
+/// Parses a WebSocket L2 order book snapshot into [`OrderBookDepth`].
 ///
 /// Hyperliquid's `l2Book` subscription emits snapshots of bid/ask levels.
 /// Fills any missing levels past the venue-provided depth with zero-size
 /// placeholder orders so the fixed-size `[BookOrder; 10]` arrays are
 /// always fully populated.
-pub fn parse_ws_order_book_depth10(
+pub fn parse_ws_order_book_depth(
     book: &WsBookData,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let ts_event = millis_to_nanos(book.time)?;
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -238,7 +242,7 @@ pub fn parse_ws_order_book_depth10(
         );
     }
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument.id(),
         bids,
         asks,
@@ -724,6 +728,7 @@ mod tests {
                 tpsl: None,
                 trigger_activated: None,
                 trailing_stop: None,
+                order_type: None,
             },
             status: HyperliquidOrderStatusEnum::Open,
             status_timestamp: 1704470400000,
@@ -777,6 +782,7 @@ mod tests {
                 tpsl: None,
                 trigger_activated: None,
                 trailing_stop: None,
+                order_type: None,
             },
             status,
             status_timestamp: 1704470400000,
@@ -953,26 +959,53 @@ mod tests {
 
         assert_eq!(deltas.deltas.len(), 3); // clear + bid + ask
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas.deltas[0].flags, RecordFlag::F_SNAPSHOT as u8);
 
         let bid_delta = &deltas.deltas[1];
         assert_eq!(bid_delta.action, BookAction::Add);
         assert_eq!(bid_delta.order.side, OrderSide::Buy.into());
-        assert!(bid_delta.order.size.is_positive());
+        assert_eq!(bid_delta.order.price.as_decimal(), dec!(50000.0));
+        assert_eq!(bid_delta.order.size.as_decimal(), dec!(1.0));
         assert_eq!(bid_delta.order.order_id, 0);
+        assert_eq!(bid_delta.flags, RecordFlag::F_SNAPSHOT as u8);
 
         let ask_delta = &deltas.deltas[2];
         assert_eq!(ask_delta.action, BookAction::Add);
         assert_eq!(ask_delta.order.side, OrderSide::Sell.into());
-        assert!(ask_delta.order.size.is_positive());
+        assert_eq!(ask_delta.order.price.as_decimal(), dec!(50001.0));
+        assert_eq!(ask_delta.order.size.as_decimal(), dec!(2.0));
         assert_eq!(ask_delta.order.order_id, 0);
+        assert_eq!(
+            ask_delta.flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
     }
 
     #[rstest]
-    fn test_parse_ws_order_book_depth10_pads_sparse_book() {
+    fn test_parse_ws_order_book_deltas_empty_book_is_lone_clear() {
         let instrument = create_test_instrument();
-        let ts_init = UnixNanos::default();
 
-        // 3 bids, 2 asks - Depth10 must pad the remaining 7/8 slots with zero orders
+        let book = WsBookData {
+            coin: Ustr::from("BTC"),
+            levels: [vec![], vec![]],
+            time: 1_704_470_400_000,
+        };
+
+        let deltas = parse_ws_order_book_deltas(&book, &instrument, UnixNanos::default()).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            deltas.deltas[0].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_book_depth_preserves_sparse_book() {
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::from(123);
+
         let book = WsBookData {
             coin: Ustr::from("BTC"),
             levels: [
@@ -1009,36 +1042,31 @@ mod tests {
             time: 1_704_470_400_000,
         };
 
-        let depth = parse_ws_order_book_depth10(&book, &instrument, ts_init).unwrap();
+        let depth = parse_ws_order_book_depth(&book, &instrument, ts_init).unwrap();
+
+        let expected_bids = [("100.00", "1.000"), ("99.99", "2.000"), ("99.98", "3.000")];
+        let expected_asks = [("100.01", "1.500"), ("100.02", "2.500")];
 
         assert_eq!(depth.instrument_id, instrument.id());
-        assert_eq!(depth.bids.len(), 10);
-        assert_eq!(depth.asks.len(), 10);
-
-        assert_eq!(depth.bids[0].price.as_f64(), 100.00);
-        assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
-        assert_eq!(depth.bid_counts[0], 2);
-        assert_eq!(depth.bids[2].price.as_f64(), 99.98);
-        assert_eq!(depth.bid_counts[2], 1);
-
-        // Padded bid slots
-        for i in 3..10 {
-            assert_eq!(depth.bids[i].side, OrderSide::Buy.into());
-            assert!(depth.bids[i].size.is_zero());
-            assert_eq!(depth.bid_counts[i], 0);
+        assert_eq!(depth.bids.len(), expected_bids.len());
+        assert_eq!(depth.asks.len(), expected_asks.len());
+        assert_eq!(depth.bid_counts.as_slice(), &[2, 3, 1]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1, 4]);
+        for (order, (price, size)) in depth.bids.iter().zip(expected_bids) {
+            assert_eq!(order.side, Some(OrderSide::Buy));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
         }
 
-        assert_eq!(depth.asks[0].price.as_f64(), 100.01);
-        assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
-        assert_eq!(depth.ask_counts[0], 1);
-        assert_eq!(depth.asks[1].price.as_f64(), 100.02);
-        assert_eq!(depth.ask_counts[1], 4);
-
-        for i in 2..10 {
-            assert_eq!(depth.asks[i].side, OrderSide::Sell.into());
-            assert!(depth.asks[i].size.is_zero());
-            assert_eq!(depth.ask_counts[i], 0);
+        for (order, (price, size)) in depth.asks.iter().zip(expected_asks) {
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
         }
+        assert_eq!(depth.sequence, 0);
+        assert_eq!(depth.ts_init, ts_init);
 
         // Snapshot flag set
         assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
@@ -1049,7 +1077,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_ws_order_book_depth10_truncates_beyond_10() {
+    fn test_parse_ws_order_book_depth_truncates_beyond_10() {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
 
@@ -1069,7 +1097,7 @@ mod tests {
             time: 1_704_470_400_000,
         };
 
-        let depth = parse_ws_order_book_depth10(&book, &instrument, ts_init).unwrap();
+        let depth = parse_ws_order_book_depth(&book, &instrument, ts_init).unwrap();
 
         // Only first 10 on each side retained
         for i in 0..10 {

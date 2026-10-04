@@ -15,10 +15,19 @@
 
 //! Integration tests for the Tardis HTTP client using a mock Axum server.
 
-use std::net::SocketAddr;
+use std::{io::Write, net::SocketAddr};
 
 use ahash::AHashSet;
-use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
+use axum::{
+    Router,
+    http::{
+        HeaderMap, StatusCode,
+        header::{ACCEPT_ENCODING, CONTENT_ENCODING},
+    },
+    response::IntoResponse,
+    routing::get,
+};
+use flate2::{Compression, write::GzEncoder};
 use nautilus_tardis::{
     common::enums::TardisExchange,
     http::{TardisHttpClient, error::Error},
@@ -42,6 +51,12 @@ fn create_client(addr: SocketAddr) -> TardisHttpClient {
     TardisHttpClient::new(Some("test_key"), Some(&base_url), Some(5), true, None).unwrap()
 }
 
+fn gzip(data: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(data).unwrap();
+    encoder.finish().unwrap()
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_instruments_info_list_response() {
@@ -60,6 +75,38 @@ async fn test_instruments_info_list_response() {
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].id.as_str(), "BTC_USDC");
     assert_eq!(result[0].exchange, TardisExchange::Deribit);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_instruments_info_gzip_response() {
+    let app = Router::new().route(
+        "/instruments/{exchange}",
+        get(|headers: HeaderMap| async move {
+            if headers
+                .get(ACCEPT_ENCODING)
+                .and_then(|value| value.to_str().ok())
+                != Some("gzip")
+            {
+                return StatusCode::NOT_ACCEPTABLE.into_response();
+            }
+
+            let body = gzip(format!("[{SPOT_FIXTURE},{PERPETUAL_FIXTURE}]").as_bytes());
+            ([(CONTENT_ENCODING, "gzip")], body).into_response()
+        }),
+    );
+
+    let (addr, _handle) = start_mock_server(app).await;
+    let client = create_client(addr);
+
+    let result = client
+        .instruments_info(TardisExchange::Deribit, None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].id.as_str(), "BTC_USDC");
+    assert_eq!(result[1].id.as_str(), "XBTUSD");
 }
 
 #[rstest]
@@ -115,6 +162,39 @@ async fn test_instruments_info_api_error() {
     } else {
         panic!("Expected ApiError");
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_instruments_info_gzip_api_error() {
+    let app = Router::new().route(
+        "/instruments/{exchange}",
+        get(|| async {
+            let body = gzip(br#"{"code": 403, "message": "Invalid API key"}"#);
+            (StatusCode::FORBIDDEN, [(CONTENT_ENCODING, "gzip")], body).into_response()
+        }),
+    );
+
+    let (addr, _handle) = start_mock_server(app).await;
+    let client = create_client(addr);
+
+    let error = client
+        .instruments_info(TardisExchange::Deribit, None, None)
+        .await
+        .unwrap_err();
+
+    let Error::ApiError {
+        status,
+        code,
+        message,
+    } = error
+    else {
+        panic!("expected API error, was {error:?}");
+    };
+
+    assert_eq!(status, 403);
+    assert_eq!(code, 403);
+    assert_eq!(message, "Invalid API key");
 }
 
 #[rstest]

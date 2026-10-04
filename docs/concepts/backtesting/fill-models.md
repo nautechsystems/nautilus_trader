@@ -48,8 +48,13 @@ arrives. See [order book immutability](fill-prices-and-matching.md#order-book-im
 | `VolumeSensitiveFillModel`   | Places 25% of its internal volume at best.              |
 | `MarketHoursFillModel`       | Uses a normal or one-tick-wider synthetic spread.       |
 
+`BestPriceFillModel` also fills a limit order at or inside the spread at the order's own price.
+
 The tier sizes are model constants expressed in instrument quantity units. Confirm that they suit
 the scale of the instrument before using a tiered model.
+
+Synthetic books omit any level outside the instrument's `min_price` and `max_price`, or at a zero or
+negative price for an instrument that does not allow one.
 
 `CompetitionAwareFillModel` accepts `liquidity_factor` values in `[0.0, 1.0]`, defaults to `0.3`,
 and clamps the calculated size to at least one instrument quantity unit.
@@ -63,8 +68,11 @@ and normal-liquidity mode.
 Pass a built-in model object directly to `BacktestVenueConfig`:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.execution import DefaultFillModel
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -80,12 +88,19 @@ venue = BacktestVenueConfig(
         prob_slippage=0.5,
         random_seed=42,
     ),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
 Synthetic book models use the same constructor parameters:
 
 ```python
+from decimal import Decimal
+
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.execution import ThreeTierFillModel
 
 venue = BacktestVenueConfig(
@@ -99,11 +114,17 @@ venue = BacktestVenueConfig(
         prob_slippage=0.0,
         random_seed=42,
     ),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
 The current high-level venue configuration accepts built-in fill models. It does not load fill
 models from import-path configuration objects.
+
+### Custom fill models
 
 The low-level `BacktestEngine.add_venue()` method also accepts a custom Python object. It must
 implement:
@@ -118,6 +139,11 @@ It may also implement:
 
 Subclassing `nautilus_trader.execution.FillModel` supplies default implementations for these
 methods. This custom-object protocol applies to the low-level engine only.
+
+The liquidity hook receives `None` for a missing historical bid or ask. Custom models must handle
+these optional prices. Returning `None` uses the standard fill logic; returning an `OrderBook`
+restricts fills to that book's eligible liquidity, even when no fills are available. Partial custom
+fills are not topped up with historical liquidity or the L1 remainder-fill rule.
 
 ## Probabilistic parameters
 
@@ -141,7 +167,9 @@ For L1 books, this value controls a one-tick adverse move on each fill:
 - `0.5`: Add one tick on half of fills on average.
 - `1.0`: Add one tick to every fill.
 
-The draw applies to maker and taker fills. It does not apply to L2 or L3 books.
+The draw applies to maker and taker fills. It does not apply to L2 or L3 books. A slip that would
+cross the instrument's `min_price` or `max_price`, or reach a zero or negative price where the
+instrument does not allow one, keeps the original fill price.
 
 ## Synthetic order books
 

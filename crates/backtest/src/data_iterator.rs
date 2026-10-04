@@ -40,10 +40,12 @@ struct ReplayKey {
 
 fn replay_key(data: DataRef<'_>) -> ReplayKey {
     let ts = data.ts_init();
-    match data {
-        DataRef::BookDelta(_)
+
+    let (block_number, transaction_index, log_index, phase) = match data {
+        DataRef::Instrument(_)
+        | DataRef::BookDelta(_)
         | DataRef::BookDeltas(_)
-        | DataRef::BookDepth10(_)
+        | DataRef::BookDepth(_)
         | DataRef::Quote(_)
         | DataRef::Trade(_)
         | DataRef::Bar(_)
@@ -53,37 +55,40 @@ fn replay_key(data: DataRef<'_>) -> ReplayKey {
         | DataRef::OptionGreeks(_)
         | DataRef::InstrumentStatus(_)
         | DataRef::InstrumentClose(_)
-        | DataRef::Custom(_) => ReplayKey {
-            ts,
-            block_number: 0,
-            transaction_index: 0,
-            log_index: 0,
-            phase: 0,
-        },
+        | DataRef::Custom(_) => (0, 0, 0, 0),
         #[cfg(feature = "defi")]
-        DataRef::Defi(defi) => {
-            let (block_number, transaction_index, log_index, phase) = replay_position(defi);
-            ReplayKey {
-                ts,
-                block_number,
-                transaction_index,
-                log_index,
-                phase,
-            }
-        }
+        DataRef::Defi(defi) => replay_position(defi),
+        #[cfg(not(feature = "defi"))]
+        #[allow(
+            unreachable_patterns,
+            reason = "DeFi variants can exist without this crate's defi feature"
+        )]
+        _ => (0, 0, 0, 0),
+    };
+
+    ReplayKey {
+        ts,
+        block_number,
+        transaction_index,
+        log_index,
+        phase,
     }
 }
 
 fn sort_by_replay_key(batch: &mut DataBatch) {
     match batch {
+        DataBatch::Instrument(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::Instrument(item));
+        }
+        DataBatch::Custom(data) => sort_view_by_replay_key(data, |item| DataRef::Custom(item)),
         DataBatch::BookDelta(data) => {
             sort_view_by_replay_key(data, |item| DataRef::BookDelta(item));
         }
         DataBatch::BookDeltas(data) => {
             sort_view_by_replay_key(data, |item| DataRef::BookDeltas(item));
         }
-        DataBatch::BookDepth10(data) => {
-            sort_view_by_replay_key(data, |item| DataRef::BookDepth10(item));
+        DataBatch::BookDepth(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::BookDepth(item));
         }
         DataBatch::Quote(data) => sort_view_by_replay_key(data, |item| DataRef::Quote(item)),
         DataBatch::Trade(data) => sort_view_by_replay_key(data, |item| DataRef::Trade(item)),
@@ -108,6 +113,12 @@ fn sort_by_replay_key(batch: &mut DataBatch) {
         }
         #[cfg(feature = "defi")]
         DataBatch::Defi(data) => sort_view_by_replay_key(data, |item| DataRef::Defi(item)),
+        #[cfg(not(feature = "defi"))]
+        #[allow(
+            unreachable_patterns,
+            reason = "DeFi variants can exist without this crate's defi feature"
+        )]
+        _ => {}
     }
 }
 
@@ -381,7 +392,7 @@ mod tests {
     use nautilus_model::{
         data::{
             Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-            MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+            MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth,
             QuoteTick, TradeTick,
             stubs::{
                 stub_bar, stub_delta, stub_deltas, stub_depth10, stub_instrument_close,
@@ -920,11 +931,11 @@ mod tests {
                 },
             ]),
             DataBatch::from(vec![
-                OrderBookDepth10 {
+                OrderBookDepth {
                     ts_init: late,
                     ..stub_depth10()
                 },
-                OrderBookDepth10 {
+                OrderBookDepth {
                     ts_init: early,
                     ..stub_depth10()
                 },

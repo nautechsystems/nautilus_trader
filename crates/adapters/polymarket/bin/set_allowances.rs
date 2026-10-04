@@ -27,6 +27,7 @@ use alloy::{
     network::{EthereumWallet, ReceiptResponse},
     providers::ProviderBuilder,
     signers::local::PrivateKeySigner,
+    transports::http::reqwest::{Client, redirect::Policy},
 };
 use nautilus_polymarket::{
     common::credential::EvmPrivateKey,
@@ -63,10 +64,11 @@ async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error:
     let private_key = EvmPrivateKey::new(private_key)?;
     let signer = PrivateKeySigner::from_str(private_key.as_hex())?;
     let wallet = EthereumWallet::from(signer);
+    let client = Client::builder().redirect(Policy::none()).build()?;
     let provider = ProviderBuilder::new()
         .with_chain_id(POLYGON_CHAIN_ID)
         .wallet(wallet)
-        .connect_http(rpc_url.parse()?);
+        .connect_reqwest(client, rpc_url.parse()?);
 
     for approval in approval_plan() {
         match approval {
@@ -102,4 +104,60 @@ async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error:
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use axum::{Router, http::StatusCode};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_allowance_requests_reject_redirects() {
+        let origin = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = origin.local_addr().unwrap();
+        let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = destination.local_addr().unwrap();
+        let destination_requests = Arc::new(AtomicUsize::new(0));
+        let requests = destination_requests.clone();
+        let destination_router = Router::new().fallback(move || {
+            let requests = requests.clone();
+            async move {
+                requests.fetch_add(1, Ordering::SeqCst);
+                StatusCode::BAD_REQUEST
+            }
+        });
+
+        let destination_task = tokio::spawn(async move {
+            axum::serve(destination, destination_router).await.unwrap();
+        });
+        let origin_router = Router::new().fallback(move || async move {
+            (
+                StatusCode::TEMPORARY_REDIRECT,
+                [("location", format!("http://{target}/rpc"))],
+            )
+        });
+
+        let origin_task = tokio::spawn(async move {
+            axum::serve(origin, origin_router).await.unwrap();
+        });
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            run(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                &format!("http://{addr}/rpc"),
+            ),
+        )
+        .await;
+        origin_task.abort();
+        destination_task.abort();
+
+        assert_eq!(destination_requests.load(Ordering::SeqCst), 0);
+        assert!(result.unwrap().unwrap_err().to_string().contains("307"));
+    }
 }

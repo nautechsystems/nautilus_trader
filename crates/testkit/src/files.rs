@@ -18,7 +18,7 @@ use std::{
     collections::BTreeMap,
     ffi::OsString,
     fmt::Display,
-    fs::{File, OpenOptions, remove_file},
+    fs::{File, remove_file},
     io::{BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::OnceLock,
@@ -26,9 +26,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use aws_lc_rs::digest::{self, Context};
+use anyhow::Context;
+use aws_lc_rs::digest;
 use nautilus_core::hex;
-use nautilus_network::{http::HttpClient, retry::RetryConfig};
+use nautilus_network::{
+    http::{HttpClient, HttpResponseStream},
+    retry::RetryConfig,
+};
 use parking_lot::Mutex;
 use rand::{RngExt, rng};
 use serde_json::Value;
@@ -148,8 +152,9 @@ fn prepare_test_data_file(filepath: &Path, url: &str, checksums: &Path) -> anyho
 /// the checksum is invalid or missing, the function updates the checksums file with the correct
 /// hash for the existing file without redownloading it.
 ///
-/// If the file does not exist, it downloads the file from the specified `url` and updates the
-/// checksums file (if provided) with the calculated SHA-256 checksum of the downloaded file.
+/// If the file does not exist, it downloads the file from the specified `url`. When a
+/// `checksums` file is provided, the download must match its entry for the file (retried once on
+/// mismatch), and a missing entry counts as a mismatch. Downloads never update the checksums file.
 ///
 /// The `timeout_secs` parameter specifies the timeout in seconds for the HTTP request.
 /// If `None` is provided, a default timeout of 30 seconds will be used.
@@ -339,6 +344,7 @@ fn download_file(
         }
     };
 
+    remove_stale_partials(filepath);
     let partial_path = partial_path_for(filepath);
 
     let op = || -> Result<(), DownloadError> {
@@ -353,37 +359,7 @@ fn download_file(
             Ok(mut response) => {
                 let status = response.status();
                 if status.is_success() {
-                    let mut out = File::create(&partial_path)
-                        .map_err(|e| DownloadError::NonRetryable(e.to_string()))?;
-                    // Stream body to a sibling .partial path so a truncated copy never reaches the final filepath,
-                    // body-stream errors (TCP reset, chunked-encoding decode, premature EOF) are typically transient,
-                    // so surface them as Retryable.
-                    let copied = runtime.block_on(async {
-                        while let Some(chunk) =
-                            tokio::time::timeout(timeout, response.chunk()).await??
-                        {
-                            out.write_all(&chunk)?;
-                        }
-                        Ok::<(), anyhow::Error>(())
-                    });
-
-                    if let Err(e) = copied {
-                        drop(out);
-                        let _ = remove_file(&partial_path);
-                        return Err(DownloadError::Retryable(format!("body stream error: {e}")));
-                    }
-                    drop(out);
-
-                    if let Err(e) = std::fs::rename(&partial_path, filepath) {
-                        let _ = remove_file(&partial_path);
-                        return Err(DownloadError::NonRetryable(format!(
-                            "rename {} -> {} failed: {e}",
-                            partial_path.display(),
-                            filepath.display(),
-                        )));
-                    }
-                    println!("File downloaded to {}", filepath.display());
-                    Ok(())
+                    store_response_body(&runtime, &mut response, timeout, &partial_path, filepath)
                 } else if status.is_server_error()
                     || status.as_u16() == 429
                     || status.as_u16() == 408
@@ -409,6 +385,120 @@ fn download_file(
     execute_with_retry_blocking(&cfg, op, should_retry).map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
+// Stream errors are transient (Retryable), local write errors like disk full are not
+fn store_response_body(
+    runtime: &tokio::runtime::Runtime,
+    response: &mut HttpResponseStream,
+    timeout: Duration,
+    partial_path: &Path,
+    filepath: &Path,
+) -> Result<(), DownloadError> {
+    let mut out =
+        File::create(partial_path).map_err(|e| DownloadError::NonRetryable(e.to_string()))?;
+
+    let copied = runtime.block_on(async {
+        while let Some(chunk) = tokio::time::timeout(timeout, response.chunk())
+            .await
+            .map_err(|e| DownloadError::Retryable(format!("body stream error: {e}")))?
+            .map_err(|e| DownloadError::Retryable(format!("body stream error: {e}")))?
+        {
+            out.write_all(&chunk).map_err(|e| {
+                DownloadError::NonRetryable(format!("write {} failed: {e}", partial_path.display()))
+            })?;
+        }
+
+        // Persist before the rename makes the file visible at `filepath`
+        out.sync_all().map_err(|e| {
+            DownloadError::NonRetryable(format!("sync {} failed: {e}", partial_path.display()))
+        })
+    });
+
+    drop(out);
+
+    if let Err(e) = copied {
+        let _ = remove_file(partial_path);
+        return Err(e);
+    }
+
+    if let Err(e) = std::fs::rename(partial_path, filepath) {
+        let _ = remove_file(partial_path);
+        return Err(DownloadError::NonRetryable(format!(
+            "rename {} -> {} failed: {e}",
+            partial_path.display(),
+            filepath.display(),
+        )));
+    }
+
+    println!("File downloaded to {}", filepath.display());
+    Ok(())
+}
+
+// Active downloads keep writing and time out well within this age, so old partials are orphaned
+fn remove_stale_partials(filepath: &Path) {
+    const STALE_PARTIAL_AGE: Duration = Duration::from_secs(3600);
+
+    let (Some(parent), Some(file_name)) = (filepath.parent(), filepath.file_name()) else {
+        return;
+    };
+
+    // A bare file name has an empty parent, which names the current directory
+    let parent = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
+
+    let prefix = format!("{}.partial.", file_name.to_string_lossy());
+
+    let entries = match std::fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(e) => {
+            println!(
+                "Failed to scan {} for stale partial downloads: {e}",
+                parent.display()
+            );
+            return;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+
+        let Some(suffix) = name.to_str().and_then(|name| name.strip_prefix(&prefix)) else {
+            continue;
+        };
+
+        // Only names produced by `partial_path_for`: `<pid>.<nanos>`
+        let is_partial_name = suffix.split_once('.').is_some_and(|(pid, nanos)| {
+            pid.parse::<u32>().is_ok() && nanos.parse::<u128>().is_ok()
+        });
+
+        if !is_partial_name {
+            continue;
+        }
+
+        let is_stale = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= STALE_PARTIAL_AGE);
+
+        if !is_stale {
+            continue;
+        }
+
+        let path = entry.path();
+        match remove_file(&path) {
+            Ok(()) => println!("Removed stale partial download {}", path.display()),
+            Err(e) => println!(
+                "Failed to remove stale partial download {}: {e}",
+                path.display()
+            ),
+        }
+    }
+}
+
 fn partial_path_for(filepath: &Path) -> PathBuf {
     // Suffix with pid + nanos so the staging path is unique per invocation,
     // preventing collision with a real user file or another concurrent downloader.
@@ -422,7 +512,7 @@ fn partial_path_for(filepath: &Path) -> PathBuf {
 
 fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
     let mut file = File::open(filepath)?;
-    let mut ctx = Context::new(&digest::SHA256);
+    let mut ctx = digest::Context::new(&digest::SHA256);
     let mut buffer = [0u8; 4096];
 
     loop {
@@ -440,11 +530,17 @@ fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
 fn verify_sha256_checksum(filepath: &Path, checksums: &Path) -> anyhow::Result<bool> {
     let file = File::open(checksums)?;
     let reader = BufReader::new(file);
-    let checksums: Value = serde_json::from_reader(reader)?;
+    let manifest: Value = serde_json::from_reader(reader)?;
 
-    let filename = filepath.file_name().unwrap().to_str().unwrap();
-    if let Some(expected_checksum) = checksums.get(filename) {
-        let expected_checksum_str = expected_checksum.as_str().unwrap();
+    let filename = checksum_key(filepath)?;
+    if let Some(expected_checksum) = manifest.get(filename) {
+        let expected_checksum_str = expected_checksum.as_str().with_context(|| {
+            format!(
+                "checksum for {filename} in {} is not a string",
+                checksums.display()
+            )
+        })?;
+
         let expected_hash = expected_checksum_str
             .strip_prefix("sha256:")
             .unwrap_or(expected_checksum_str);
@@ -462,30 +558,49 @@ fn update_sha256_checksums(
     checksums_file: &Path,
     new_checksum: &str,
 ) -> anyhow::Result<()> {
-    let checksums: Value = if checksums_file.exists() {
+    let mut checksums_map = if checksums_file.exists() {
         let file = File::open(checksums_file)?;
         let reader = BufReader::new(file);
-        serde_json::from_reader(reader)?
+        match serde_json::from_reader(reader)? {
+            Value::Object(map) => map,
+            _ => anyhow::bail!(
+                "checksums file {} is not a JSON object",
+                checksums_file.display()
+            ),
+        }
     } else {
-        serde_json::json!({})
+        serde_json::Map::new()
     };
 
-    let mut checksums_map = checksums.as_object().unwrap().clone();
-
     // Add or update the checksum
-    let filename = filepath.file_name().unwrap().to_str().unwrap().to_string();
+    let filename = checksum_key(filepath)?.to_string();
     let prefixed_checksum = format!("sha256:{new_checksum}");
     checksums_map.insert(filename, Value::String(prefixed_checksum));
 
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(checksums_file)?;
-    let writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(writer, &serde_json::Value::Object(checksums_map))?;
+    // Replace via a synced sibling file so a crash or full disk never truncates the manifest
+    let temp_path = partial_path_for(checksums_file);
+    let result = write_checksums(&temp_path, &Value::Object(checksums_map))
+        .and_then(|()| std::fs::rename(&temp_path, checksums_file).map_err(Into::into));
 
+    if result.is_err() {
+        let _ = remove_file(&temp_path);
+    }
+
+    result
+}
+
+fn write_checksums(path: &Path, checksums: &Value) -> anyhow::Result<()> {
+    let mut writer = BufWriter::new(File::create(path)?);
+    serde_json::to_writer_pretty(&mut writer, checksums)?;
+    writer.into_inner()?.sync_all()?;
     Ok(())
+}
+
+fn checksum_key(filepath: &Path) -> anyhow::Result<&str> {
+    filepath
+        .file_name()
+        .and_then(|name| name.to_str())
+        .with_context(|| format!("no UTF-8 file name in {}", filepath.display()))
 }
 
 #[cfg(test)]
@@ -1275,6 +1390,39 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_download_removes_stale_partial_downloads() {
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("testfile.txt");
+        let filepath_clone = filepath.clone();
+        let stale_partial = temp_dir.path().join("testfile.txt.partial.123.456");
+        File::create(&stale_partial)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - Duration::from_secs(7200))
+            .unwrap();
+
+        let server_content = "downloaded".to_string();
+        let addr = setup_test_server(Some(server_content.clone()), StatusCode::OK).await;
+        let url = format!("http://{addr}/testfile.txt");
+
+        let result = tokio::task::spawn_blocking(move || {
+            ensure_file_exists_or_download_http_with_config(
+                &filepath_clone,
+                &url,
+                None,
+                5,
+                Some(test_retry_config()),
+                Some(0),
+            )
+        })
+        .await
+        .unwrap();
+
+        result.unwrap();
+        assert_eq!(fs::read_to_string(&filepath).unwrap(), server_content);
+        assert!(!stale_partial.exists());
+    }
+
     fn calculate_sha256_bytes(data: &[u8]) -> String {
         let mut ctx = digest::Context::new(&digest::SHA256);
         ctx.update(data);
@@ -1320,5 +1468,117 @@ mod tests {
         let is_valid = verify_sha256_checksum(&test_file_path, &checksums_path)?;
         assert!(is_valid, "The checksum should be valid");
         Ok(())
+    }
+
+    #[rstest]
+    fn test_verify_sha256_checksum_rejects_non_string_entry() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_file_path = temp_dir.path().join("test_file.txt");
+        fs::write(&test_file_path, b"Hello, world!").unwrap();
+        let checksums_path = temp_dir.path().join("checksums.json");
+        fs::write(&checksums_path, r#"{"test_file.txt": 5}"#).unwrap();
+
+        let error = verify_sha256_checksum(&test_file_path, &checksums_path).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "checksum for test_file.txt in {} is not a string",
+                checksums_path.display()
+            )
+        );
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn test_verify_sha256_checksum_rejects_non_utf8_file_name() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_file_path = temp_dir
+            .path()
+            .join(std::ffi::OsStr::from_bytes(b"bad\xff.txt"));
+        let checksums_path = temp_dir.path().join("checksums.json");
+        fs::write(&checksums_path, "{}").unwrap();
+
+        let error = verify_sha256_checksum(&test_file_path, &checksums_path).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("no UTF-8 file name in {}", test_file_path.display())
+        );
+    }
+
+    #[rstest]
+    fn test_update_sha256_checksums_replaces_manifest_without_leftovers() {
+        let temp_dir = TempDir::new().unwrap();
+        let checksums_path = temp_dir.path().join("checksums.json");
+        fs::write(&checksums_path, r#"{"existing.txt": "sha256:aaa"}"#).unwrap();
+
+        update_sha256_checksums(&temp_dir.path().join("new.txt"), &checksums_path, "bbb").unwrap();
+
+        let manifest: Value =
+            serde_json::from_str(&fs::read_to_string(&checksums_path).unwrap()).unwrap();
+        assert_eq!(
+            manifest,
+            json!({"existing.txt": "sha256:aaa", "new.txt": "sha256:bbb"})
+        );
+        let entries: Vec<_> = fs::read_dir(temp_dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, vec![OsString::from("checksums.json")]);
+    }
+
+    #[rstest]
+    fn test_update_sha256_checksums_rejects_non_object_manifest() {
+        let temp_dir = TempDir::new().unwrap();
+        let checksums_path = temp_dir.path().join("checksums.json");
+        fs::write(&checksums_path, "[]").unwrap();
+
+        let error =
+            update_sha256_checksums(&temp_dir.path().join("new.txt"), &checksums_path, "bbb")
+                .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "checksums file {} is not a JSON object",
+                checksums_path.display()
+            )
+        );
+        assert_eq!(fs::read_to_string(&checksums_path).unwrap(), "[]");
+    }
+
+    #[rstest]
+    fn test_remove_stale_partials_only_removes_old_download_partials() {
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("testfile.txt");
+        let two_hours_ago = std::time::SystemTime::now() - Duration::from_secs(7200);
+
+        let write_file = |name: &str, stale: bool| {
+            let path = temp_dir.path().join(name);
+            let file = File::create(&path).unwrap();
+
+            if stale {
+                file.set_modified(two_hours_ago).unwrap();
+            }
+
+            path
+        };
+
+        let stale_partial = write_file("testfile.txt.partial.123.456", true);
+        let fresh_partial = write_file("testfile.txt.partial.124.457", false);
+        let bystander = write_file("testfile.txt.partial", true);
+        let non_numeric = write_file("testfile.txt.partial.abc.def", true);
+        let other_target = write_file("other.txt.partial.123.456", true);
+
+        remove_stale_partials(&filepath);
+
+        assert!(!stale_partial.exists());
+        assert!(fresh_partial.exists());
+        assert!(bystander.exists());
+        assert!(non_numeric.exists());
+        assert!(other_target.exists());
     }
 }

@@ -18,7 +18,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use nautilus_common::{
     actor::DataActor,
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     config::ConfigError,
 };
 use nautilus_core::UnixNanos;
@@ -53,8 +53,6 @@ fn pf_xbtusd() -> CryptoPerpetual {
         .size_increment(Quantity::from("0.0001"))
         .margin_init(dec!(0.02))
         .margin_maint(dec!(0.01))
-        .maker_fee(dec!(0.0002))
-        .taker_fee(dec!(0.0005))
         .ts_event(0.into())
         .ts_init(0.into())
         .build()
@@ -198,7 +196,7 @@ fn test_strategy_allocates_maximum_supported_windows() {
 
 fn register_strategy(strategy: &mut HurstVpinDirectional) {
     let trader_id = TraderId::from("TESTER-001");
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
         clock.clone(),

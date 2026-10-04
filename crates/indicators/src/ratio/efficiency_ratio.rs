@@ -26,7 +26,7 @@ use crate::indicator::Indicator;
 
 /// Calculates Kaufman's Efficiency Ratio (ER) across a rolling window.
 ///
-/// The period must be at least `2`.
+/// The period must be positive.
 ///
 /// For period `n`, the ratio is:
 ///
@@ -54,7 +54,7 @@ use crate::indicator::Indicator;
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
 )]
 pub struct EfficiencyRatio {
-    /// The rolling window period for the indicator (>= 2).
+    /// The rolling window period for the indicator (>= 1).
     pub period: usize,
     pub price_type: PriceType,
     pub value: f64,
@@ -107,7 +107,7 @@ impl EfficiencyRatio {
     ///
     /// # Panics
     ///
-    /// Panics if `period` is less than 2 or storage for its rolling windows cannot be reserved.
+    /// Panics if `period` is zero or storage for its rolling windows cannot be reserved.
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         Self::new_checked(period, price_type).expect(FAILED)
@@ -117,7 +117,7 @@ impl EfficiencyRatio {
         period: usize,
         price_type: Option<PriceType>,
     ) -> anyhow::Result<Self> {
-        check_predicate_true(period >= 2, "`period` must be at least 2")?;
+        check_predicate_true(period > 0, "`period` must be positive")?;
         check_predicate_true(
             period < usize::MAX,
             "`period` must be less than `usize::MAX`",
@@ -144,6 +144,10 @@ impl EfficiencyRatio {
     }
 
     pub fn update_raw(&mut self, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
+
         // A period of price changes requires one additional input
         if self.inputs.len() == Self::input_capacity(self.period) {
             self.inputs.remove(0);
@@ -200,9 +204,8 @@ mod tests {
 
     #[rstest]
     #[case(0)]
-    #[case(1)]
-    #[should_panic(expected = "`period` must be at least 2")]
-    fn test_new_rejects_period_below_two(#[case] period: usize) {
+    #[should_panic(expected = "`period` must be positive")]
+    fn test_new_rejects_zero_period(#[case] period: usize) {
         let _ = EfficiencyRatio::new(period, None);
     }
 

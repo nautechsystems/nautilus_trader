@@ -83,7 +83,7 @@ The platform integrates into larger distributed systems. The
 [external message bus](message_bus.md#encoding) supports JSON and MessagePack payloads, plus
 Cap'n Proto and Simple Binary Encoding (SBE) for schema-covered market data. Apache Arrow and
 Parquet provide columnar interchange and persistence through the
-[data catalog](data/index.md#data-catalog). Format support varies by payload type.
+[data catalog](data/catalog.md). Format support varies by payload type.
 
 ## Common core
 
@@ -155,7 +155,7 @@ historical requests and live subscriptions depends on the provider and adapter. 
 
 - `OrderBookDelta` (single order book change)
 - `OrderBookDeltas` (container type)
-- `OrderBookDepth10` (fixed depth of 10 levels per side)
+- `OrderBookDepth` (variable-depth snapshots; ten levels stay inline)
 - `QuoteTick`
 - `TradeTick`
 - `Bar`

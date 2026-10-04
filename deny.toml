@@ -132,96 +132,97 @@ deny = []
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
-# Last reviewed: 2026-09-10
+# Each entry covers only the older versions, so a new duplicate still fails.
+# Last reviewed: 2026-09-29
 skip = [
   # Crypto ecosystem - version-locked together, pulled by various blockchain crates
-  { crate = "block-buffer" },
-  { crate = "const-oid" },
-  { crate = "crypto-common" },
-  { crate = "digest" },
-  { crate = "hmac" },
-  { crate = "md-5" },
-  { crate = "sha1" },
-  { crate = "sha2" },
+  { crate = "block-buffer:<0.12" },
+  { crate = "const-oid:<0.10" },
+  { crate = "crypto-common:<0.2" },
+  { crate = "digest:<0.11" },
+  { crate = "hmac:<0.13" },
+  { crate = "md-5:<0.11" },
+  { crate = "sha1:<0.11" },
+  { crate = "sha2:<0.11" },
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
-  { crate = "getrandom" },
-  { crate = "r-efi" },
-  { crate = "rand" },
-  { crate = "rand_chacha" },
-  { crate = "rand_core" },
+  { crate = "getrandom:<0.4" },
+  { crate = "r-efi:<6" },
+  { crate = "rand:<0.10" },
+  { crate = "rand_chacha:<0.9" },
+  { crate = "rand_core:<0.10" },
 
   # Proc-macro support crates - transitive via derive macros in various crates
-  { crate = "darling" },
-  { crate = "darling_core" },
-  { crate = "darling_macro" },
-  { crate = "derive_more" },
-  { crate = "derive_more-impl" },
+  { crate = "darling:<0.24" },
+  { crate = "darling_core:<0.24" },
+  { crate = "darling_macro:<0.24" },
+  { crate = "derive_more:<2" },
+  { crate = "derive_more-impl:<2" },
 
   # syn 1 and strsim 0.10 - transitive via madsim -> darling 0.14 (dev-only simulator)
-  { crate = "syn" },
-  { crate = "strsim" },
+  { crate = "syn:<3" },
+  { crate = "strsim:<0.11" },
 
   # Enum derive macros - strum 0.27 (alloy, hypersync) vs 0.28 (nautilus)
-  { crate = "strum" },
-  { crate = "strum_macros" },
+  { crate = "strum:<0.28" },
+  { crate = "strum_macros:<0.28" },
 
   # Case conversion - version fragmentation via derive_more
-  { crate = "convert_case" },
+  { crate = "convert_case:<0.10" },
 
   # Arrow/Parquet compatibility facades - hypersync requires the 57.x package IDs
-  { crate = "arrow" },
-  { crate = "parquet" },
+  { crate = "arrow:<59" },
+  { crate = "parquet:<59" },
 
   # Common utility crates with version fragmentation across ecosystem
   # base64 0.23 is used directly; upstream dependencies still require 0.22
-  { crate = "base64" },
-  { crate = "hashbrown" },
-  { crate = "itertools" },
-  { crate = "foldhash" },
-  { crate = "num-bigint" },
-  { crate = "petgraph" },
-  { crate = "socket2" },
+  { crate = "base64:<0.23" },
+  { crate = "hashbrown:<0.17" },
+  { crate = "itertools:<0.15" },
+  { crate = "foldhash:<0.2" },
+  { crate = "num-bigint:<0.5" },
+  { crate = "petgraph:<0.8" },
+  { crate = "socket2:<0.6" },
 
   # Signature traits - v2 via cosmrs/tendermint, v3 via ed25519-dalek
-  { crate = "ed25519" },
-  { crate = "signature" },
+  { crate = "ed25519:<3" },
+  { crate = "signature:<3" },
 
   # Perfect hash function crates - transitive
-  { crate = "phf" },
-  { crate = "phf_shared" },
+  { crate = "phf:<0.14" },
+  { crate = "phf_shared:<0.14" },
 
   # Error handling - thiserror 1.x vs 2.x transition in progress
-  { crate = "thiserror" },
-  { crate = "thiserror-impl" },
+  { crate = "thiserror:<2" },
+  { crate = "thiserror-impl:<2" },
 
   # CPU feature detection - cpufeatures 0.2 vs 0.3 (const-hex vs chacha20/rand)
-  { crate = "cpufeatures" },
+  { crate = "cpufeatures:<0.3" },
 
   # HTTP client - reqwest 0.12 vs 0.13 transition (databento, hypersync, object_store on 0.12)
-  { crate = "reqwest" },
-  { crate = "wasm-streams" },
+  { crate = "reqwest:<0.13" },
+  { crate = "wasm-streams:<0.5" },
 
   # Reqwest requires tower-http 0.6; the direct HTTP transport uses 0.7
-  { crate = "tower-http@0.6.11" },
+  { crate = "tower-http:<0.7" },
 
   # Protobuf runtime - dYdX/cosmos/tonic use 0.13, ibapi uses 0.14
-  { crate = "prost" },
-  { crate = "prost-derive" },
+  { crate = "prost:<0.14" },
+  { crate = "prost-derive:<0.14" },
 
   # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.27.x
-  { crate = "capnp" },
+  { crate = "capnp:<0.27" },
 
   # TOML parser - cbindgen requires 0.9.x; the workspace and pyo3-stub-gen use 1.x
-  { crate = "toml" },
-  { crate = "toml_datetime" },
-  { crate = "winnow" },
+  { crate = "toml:<1" },
+  { crate = "toml_datetime:<1" },
+  { crate = "winnow:<1" },
 
   # TLS roots - version fragmentation in TLS ecosystem
-  { crate = "webpki-roots" },
+  { crate = "webpki-roots:<1" },
 
   # Windows platform crates - notoriously fragmented across Windows SDK versions
-  { crate = "windows-sys" },
+  { crate = "windows-sys:<0.61" },
 ]
 
 skip-tree = []

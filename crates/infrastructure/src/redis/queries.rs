@@ -950,7 +950,7 @@ impl DatabaseQueries {
 
         let mut position = Position::new(&instrument, first_fill.clone());
         for fill in remaining_fills {
-            if position.trade_ids().contains(&fill.trade_id) {
+            if position.trade_ids.contains(&fill.trade_id) {
                 anyhow::bail!(
                     "Duplicate fill event for position {position_id}: {}",
                     fill.trade_id

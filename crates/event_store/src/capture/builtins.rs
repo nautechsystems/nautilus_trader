@@ -51,7 +51,7 @@ use nautilus_common::{
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::DataType,
+    data::{DataType, InstrumentClose},
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
         OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
@@ -148,6 +148,8 @@ pub const PAYLOAD_TYPE_POSITION_CLOSED: &str = "PositionClosed";
 pub const PAYLOAD_TYPE_POSITION_ADJUSTED: &str = "PositionAdjusted";
 /// The canonical `payload_type` tag for [`AccountState`].
 pub const PAYLOAD_TYPE_ACCOUNT_STATE: &str = "AccountState";
+/// The canonical `payload_type` tag for [`InstrumentClose`].
+pub const PAYLOAD_TYPE_INSTRUMENT_CLOSE: &str = "InstrumentClose";
 /// The canonical `payload_type` tag for [`TimeEvent`].
 pub const PAYLOAD_TYPE_TIME_EVENT: &str = "TimeEvent";
 
@@ -245,6 +247,7 @@ pub(crate) const DEFAULT_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_POSITION_CLOSED,
     PAYLOAD_TYPE_POSITION_ADJUSTED,
     PAYLOAD_TYPE_ACCOUNT_STATE,
+    PAYLOAD_TYPE_INSTRUMENT_CLOSE,
     PAYLOAD_TYPE_TIME_EVENT,
     PAYLOAD_TYPE_REQUEST_COMMAND,
     PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
@@ -332,6 +335,10 @@ pub fn register_default(registry: &mut EncoderRegistry) {
     registry.register::<AccountState, _>(
         payload_type(PAYLOAD_TYPE_ACCOUNT_STATE),
         encode_account_state,
+    );
+    registry.register::<InstrumentClose, _>(
+        payload_type(PAYLOAD_TYPE_INSTRUMENT_CLOSE),
+        encode_instrument_close,
     );
     registry.register::<TimeEvent, _>(payload_type(PAYLOAD_TYPE_TIME_EVENT), encode_time_event);
     registry
@@ -1226,6 +1233,19 @@ pub fn encode_account_state(message: &AccountState) -> Result<EncodedPayload, En
     Ok(EncodedPayload::new(payload, Vec::new()))
 }
 
+/// Encodes an [`InstrumentClose`] into canonical bytes with no sidecar indices.
+///
+/// Cache replay applies a captured contract expiration through the same settlement as the live
+/// execution engine, so a restore keeps settled binary-option positions closed.
+///
+/// # Errors
+///
+/// Returns [`EncodeError::Serialize`] when MessagePack rejects the payload.
+pub fn encode_instrument_close(message: &InstrumentClose) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(message)?;
+    Ok(EncodedPayload::new(payload, Vec::new()))
+}
+
 #[derive(Serialize)]
 struct TimeEventPayload<'a> {
     name: &'a str,
@@ -1520,8 +1540,8 @@ mod tests {
     use nautilus_model::{
         data::{Bar, BarType, stubs::stub_depth10},
         enums::{
-            AccountType, BookType, LiquiditySide, OrderSide, OrderStatus, OrderType,
-            PositionAdjustmentType, PositionSide, TimeInForce,
+            AccountType, BookType, InstrumentCloseType, LiquiditySide, OrderSide, OrderStatus,
+            OrderType, PositionAdjustmentType, PositionSide, TimeInForce,
         },
         events::{
             PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
@@ -1712,6 +1732,10 @@ mod tests {
             (
                 "publish_account_state and send_account_state / AccountState",
                 registry.contains::<AccountState>(),
+            ),
+            (
+                "data.close.* publish_any / InstrumentClose",
+                registry.contains::<InstrumentClose>(),
             ),
             (
                 "time event handler firing / TimeEvent",
@@ -3087,6 +3111,29 @@ mod tests {
 
         assert_eq!(tag.as_str(), PAYLOAD_TYPE_ACCOUNT_STATE);
         assert!(encoded.index_keys.is_empty());
+    }
+
+    #[rstest]
+    fn instrument_close_registered_under_canonical_payload_type() {
+        let registry = default_registry();
+
+        let close = InstrumentClose::new(
+            InstrumentId::from("TOKEN-YES.POLYMARKET"),
+            Price::from("1.000"),
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(300),
+            UnixNanos::from(301),
+        );
+
+        let (tag, encoded) = registry
+            .encode(&close)
+            .expect("encode")
+            .expect("registered");
+        let decoded: InstrumentClose = rmp_serde::from_slice(&encoded.payload).expect("decode");
+
+        assert_eq!(tag.as_str(), PAYLOAD_TYPE_INSTRUMENT_CLOSE);
+        assert!(encoded.index_keys.is_empty());
+        assert_eq!(decoded, close);
     }
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]

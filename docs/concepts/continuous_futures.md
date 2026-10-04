@@ -171,15 +171,17 @@ next remaining transition.
 
 ## Request flow
 
-The request path dispatches one child request at a time. When a child response arrives, the engine
-aggregates its data and advances to the next segment.
+The request path dispatches one child request at a time through the engine's normal request
+handling, so a registered data catalog serves a segment before the client fills any gaps. When a
+child response arrives, the engine aggregates its data and advances to the next segment. A segment
+split across catalog and client data advances only after every part arrives.
 
 ```mermaid
 sequenceDiagram
     participant User
     participant Engine as DataEngine
     participant Agg as Primary aggregator
-    participant Client as DataClient
+    participant Client as Catalog or DataClient
 
     User->>Engine: RequestBars with transitions
     Engine->>Agg: initialize aggregators and cursor

@@ -39,6 +39,7 @@ from nautilus_trader.common import SocketStateChanged
 from nautilus_trader.common import SystemChannel
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
@@ -578,6 +579,10 @@ def test_strategy_order_factory_returns_registered_factory() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -689,6 +694,10 @@ def test_registered_strategy_order_factory_uses_configured_identity_and_id_forma
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -735,6 +744,10 @@ def test_strategy_can_recover_order_list_id_from_cache() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
 
@@ -796,6 +809,10 @@ def test_strategy_portfolio_returns_registered_kernel_portfolio() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -932,6 +949,10 @@ def test_strategy_portfolio_accepts_price_and_target_currency_queries() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -998,6 +1019,10 @@ def test_strategy_portfolio_flat_methods_net_hedged_positions() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
     engine.add_data(
@@ -1075,6 +1100,10 @@ def test_strategy_portfolio_price_overrides_and_currency_conversion_are_fresh() 
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
     engine.add_venue(
         venue=other_venue,
@@ -1082,6 +1111,10 @@ def test_strategy_portfolio_price_overrides_and_currency_conversion_are_fresh() 
         account_type=AccountType.MARGIN,
         starting_balances=[Money(500_000.0, eur)],
         base_currency=eur,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
     engine.add_instrument(conversion_instrument)
@@ -1344,6 +1377,10 @@ def test_strategy_portfolio_aggregates_multiple_venues_atomically() -> None:
             account_type=AccountType.MARGIN,
             starting_balances=[Money(1_000_000.0, usd)],
             base_currency=usd,
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.00002"),
+                taker_rate=Decimal("0.00002"),
+            ),
         )
 
     for instrument in (*instruments, *eurusd, usdjpy_sim):
@@ -1449,9 +1486,10 @@ BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
     "managed",
     "params",
 )
-BOOK_DEPTH10_SUBSCRIPTION_PARAMETERS = (
+BOOK_DEPTH_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
+    "depth",
     "client_id",
     "managed",
     "params",
@@ -1558,7 +1596,7 @@ DATA_SURFACE_SIGNATURES = [
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_book_depth10", BOOK_DEPTH10_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_book_depth", BOOK_DEPTH_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_at_interval", BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS),
     ("subscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -1577,7 +1615,7 @@ DATA_SURFACE_SIGNATURES = [
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
-    ("unsubscribe_book_depth10", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_book_depth", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_at_interval", BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -1799,7 +1837,7 @@ def _subscription_registration_cases() -> object:
         ("subscribe_instruments", (Venue("SIM"),)),
         ("subscribe_instrument", (instrument_id,)),
         ("subscribe_book_deltas", (instrument_id, BookType.L2_MBP)),
-        ("subscribe_book_depth10", (instrument_id, BookType.L2_MBP)),
+        ("subscribe_book_depth", (instrument_id, BookType.L2_MBP)),
         ("subscribe_book_at_interval", (instrument_id, BookType.L2_MBP, 100)),
         ("subscribe_quotes", (instrument_id,)),
         ("subscribe_trades", (instrument_id,)),
@@ -1818,7 +1856,7 @@ def _subscription_registration_cases() -> object:
         ("unsubscribe_instruments", (Venue("SIM"),)),
         ("unsubscribe_instrument", (instrument_id,)),
         ("unsubscribe_book_deltas", (instrument_id,)),
-        ("unsubscribe_book_depth10", (instrument_id,)),
+        ("unsubscribe_book_depth", (instrument_id,)),
         ("unsubscribe_book_at_interval", (instrument_id, 100)),
         ("unsubscribe_quotes", (instrument_id,)),
         ("unsubscribe_trades", (instrument_id,)),

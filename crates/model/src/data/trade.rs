@@ -22,11 +22,11 @@ use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::HasTsInit;
+use super::{ARROW_ENUM_DICTIONARY, ARROW_TIMESTAMP_NANOSECOND, HasTsInit};
 use crate::{
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{Price, Quantity, fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity},
+    types::{Price, Quantity, fixed::FIXED_DECIMAL, quantity::check_positive_quantity},
 };
 
 /// Represents a trade tick in a market.
@@ -135,12 +135,21 @@ impl TradeTick {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("price".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("size".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("aggressor_side".to_string(), "UInt8".to_string());
+        metadata.insert("price".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("size".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert(
+            "aggressor_side".to_string(),
+            ARROW_ENUM_DICTIONARY.to_string(),
+        );
         metadata.insert("trade_id".to_string(), "Utf8".to_string());
-        metadata.insert("ts_event".to_string(), "UInt64".to_string());
-        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata.insert(
+            "ts_event".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
+        metadata.insert(
+            "ts_init".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
         metadata
     }
 }
@@ -180,10 +189,13 @@ mod tests {
 
     use super::TradeTickBuilder;
     use crate::{
-        data::{HasTsInit, TradeTick, stubs::stub_trade_ethusdt_buy},
+        data::{
+            ARROW_ENUM_DICTIONARY, ARROW_TIMESTAMP_NANOSECOND, HasTsInit, TradeTick,
+            stubs::stub_trade_ethusdt_buy,
+        },
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
-        types::{Price, Quantity},
+        types::{Price, Quantity, fixed::FIXED_DECIMAL},
     };
 
     fn create_test_trade() -> TradeTick {
@@ -323,24 +335,23 @@ mod tests {
 
         assert_eq!(fields.len(), 6);
 
-        #[cfg(feature = "high-precision")]
-        {
-            assert_eq!(
-                fields.get("price"),
-                Some(&"FixedSizeBinary(16)".to_string())
-            );
-            assert_eq!(fields.get("size"), Some(&"FixedSizeBinary(16)".to_string()));
-        }
-        #[cfg(not(feature = "high-precision"))]
-        {
-            assert_eq!(fields.get("price"), Some(&"FixedSizeBinary(8)".to_string()));
-            assert_eq!(fields.get("size"), Some(&"FixedSizeBinary(8)".to_string()));
-        }
+        assert_eq!(fields.get("price"), Some(&FIXED_DECIMAL.to_string()));
+        assert_eq!(fields.get("size"), Some(&FIXED_DECIMAL.to_string()));
 
-        assert_eq!(fields.get("aggressor_side"), Some(&"UInt8".to_string()));
+        assert_eq!(
+            fields.get("aggressor_side"),
+            Some(&ARROW_ENUM_DICTIONARY.to_string())
+        );
         assert_eq!(fields.get("trade_id"), Some(&"Utf8".to_string()));
-        assert_eq!(fields.get("ts_event"), Some(&"UInt64".to_string()));
-        assert_eq!(fields.get("ts_init"), Some(&"UInt64".to_string()));
+        assert_eq!(
+            fields.get("ts_event"),
+            Some(&ARROW_TIMESTAMP_NANOSECOND.to_string())
+        );
+        assert_eq!(
+            fields.get("ts_init"),
+            Some(&ARROW_TIMESTAMP_NANOSECOND.to_string())
+        );
+        assert_eq!(fields.get("identifier"), None);
     }
 
     #[rstest]

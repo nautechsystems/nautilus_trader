@@ -19,19 +19,26 @@ use std::{
     any::Any,
     cell::{OnceCell, RefCell},
     rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
 use nautilus_common::{
     cache::Cache,
-    clock::TestClock,
+    clock::VirtualClock,
     factories::{ClientConfig, DataClientFactory},
     live::runner::set_data_event_sender,
     messages::DataEvent,
 };
 use nautilus_model::identifiers::ClientId;
 use nautilus_tardis::{
-    common::consts::TARDIS, config::TardisDataClientConfig, factories::TardisDataClientFactory,
+    common::{consts::TARDIS, enums::TardisExchange},
+    config::TardisDataClientConfig,
+    factories::TardisDataClientFactory,
+    machine::types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions},
 };
 use rstest::rstest;
 
@@ -84,7 +91,7 @@ fn test_tardis_data_client_factory_creates_client() {
     let config = TardisDataClientConfig::default();
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     let result = factory.create(TARDIS, &config, cache.into(), clock);
     assert!(result.is_ok());
@@ -101,7 +108,7 @@ fn test_client_initial_state() {
     let config = TardisDataClientConfig::default();
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     let client = factory
         .create(TARDIS, &config, cache.into(), clock)
@@ -119,7 +126,7 @@ fn test_factory_create_wrong_config_type_errors() {
     let config = WrongConfig;
 
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     let result = factory.create(TARDIS, &config, cache.into(), clock);
     assert!(result.is_err());
@@ -138,7 +145,7 @@ async fn test_stop_then_disconnect_completes() {
     let factory = TardisDataClientFactory::new();
     let config = TardisDataClientConfig::default();
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let mut client = factory
         .create(TARDIS, &config, cache.into(), clock)
         .unwrap();
@@ -156,4 +163,98 @@ async fn test_stop_then_disconnect_completes() {
     );
     assert!(result.unwrap().is_ok());
     assert!(client.is_disconnected());
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test]
+async fn test_connect_uses_tardis_http_url_override(#[case] with_stream_options: bool) {
+    use axum::{
+        Router,
+        extract::{
+            State,
+            ws::{WebSocket, WebSocketUpgrade},
+        },
+        response::Response,
+        routing::get,
+    };
+
+    #[derive(Clone, Default)]
+    struct HttpState {
+        instrument_hits: Arc<AtomicUsize>,
+    }
+
+    async fn handle_instruments(State(state): State<HttpState>) -> String {
+        state.instrument_hits.fetch_add(1, Ordering::Relaxed);
+        "[]".to_string()
+    }
+
+    async fn handle_replay_ws(ws: WebSocketUpgrade) -> Response {
+        ws.on_upgrade(|socket: WebSocket| async move {
+            drop(socket);
+        })
+    }
+
+    let http_state = HttpState::default();
+    let http_app = Router::new()
+        .route("/instruments/{exchange}", get(handle_instruments))
+        .with_state(http_state.clone());
+    let http_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let http_addr = http_listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(http_listener, http_app).await.unwrap();
+    });
+
+    let ws_app = Router::new().route("/ws-replay-normalized", get(handle_replay_ws));
+    let ws_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let ws_addr = ws_listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(ws_listener, ws_app).await.unwrap();
+    });
+
+    setup_test_env();
+
+    let config = TardisDataClientConfig {
+        api_key: Some("test-key".into()),
+        tardis_ws_url: Some(format!("ws://{ws_addr}").into()),
+        tardis_http_url: Some(format!("http://{http_addr}").into()),
+        options: vec![ReplayNormalizedRequestOptions {
+            exchange: TardisExchange::Bitmex,
+            symbols: Some(vec!["XBTUSD".to_string()]),
+            from: jiff::civil::Date::new(2024, 1, 1).unwrap(),
+            to: jiff::civil::Date::new(2024, 1, 2).unwrap(),
+            data_types: vec!["trade".to_string()],
+            with_disconnect_messages: Some(false),
+        }],
+        stream_options: if with_stream_options {
+            vec![StreamNormalizedRequestOptions {
+                exchange: TardisExchange::Bitmex,
+                symbols: Some(vec!["XBTUSD".to_string()]),
+                data_types: vec!["trade".to_string()],
+                with_disconnect_messages: None,
+                timeout_interval_ms: None,
+            }]
+        } else {
+            Vec::new()
+        },
+        ..Default::default()
+    };
+
+    let factory = TardisDataClientFactory::new();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut client = factory
+        .create(TARDIS, &config, cache.into(), clock)
+        .unwrap();
+
+    client.connect().await.unwrap();
+
+    // The instrument bootstrap must hit the configured HTTP override: with the
+    // override unset, requests would go to `api.tardis.dev` instead.
+    assert_eq!(http_state.instrument_hits.load(Ordering::Relaxed), 1);
+
+    client.disconnect().await.unwrap();
 }

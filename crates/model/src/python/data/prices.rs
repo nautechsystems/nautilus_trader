@@ -22,7 +22,7 @@ use std::{
 use nautilus_core::{
     UnixNanos,
     python::{
-        IntoPyObjectNautilusExt,
+        IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err,
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
@@ -67,10 +67,11 @@ impl MarkPriceUpdate {
         let ts_event = py_tuple.get_item(3)?.cast::<PyInt>()?.extract::<u64>()?;
         let ts_init = py_tuple.get_item(4)?.cast::<PyInt>()?.extract::<u64>()?;
 
-        self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
-        self.value = Price::from_raw(value_raw, value_prec);
-        self.ts_event = ts_event.into();
-        self.ts_init = ts_init.into();
+        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+        let value = Price::from_raw_checked(value_raw, value_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+
+        *self = Self::new(instrument_id, value, ts_event.into(), ts_init.into());
 
         Ok(())
     }
@@ -243,10 +244,11 @@ impl IndexPriceUpdate {
         let ts_event = py_tuple.get_item(3)?.cast::<PyInt>()?.extract::<u64>()?;
         let ts_init = py_tuple.get_item(4)?.cast::<PyInt>()?.extract::<u64>()?;
 
-        self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
-        self.value = Price::from_raw(value_raw, value_prec);
-        self.ts_event = ts_event.into();
-        self.ts_init = ts_init.into();
+        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+        let value = Price::from_raw_checked(value_raw, value_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+
+        *self = Self::new(instrument_id, value, ts_event.into(), ts_init.into());
 
         Ok(())
     }

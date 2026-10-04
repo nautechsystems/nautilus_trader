@@ -20,14 +20,15 @@ use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, DEPTH10_LEN, Data, FundingRateUpdate, IndexPriceUpdate,
-        MarkPriceUpdate, NULL_ORDER, OptionGreekValues, OptionGreeks, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        OptionGreekValues, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth,
+        QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BookAction, GreeksConvention, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 use super::{
     message::{
@@ -39,7 +40,6 @@ use super::{
 use crate::{
     common::parse::{
         derive_trade_id, normalize_amount, parse_aggressor_side, parse_bar_spec, parse_book_action,
-        validate_non_zero_amount,
     },
     config::BookSnapshotOutput,
 };
@@ -94,16 +94,16 @@ pub fn parse_tardis_ws_message(
                 }
             }
             _ => match book_snapshot_output {
-                BookSnapshotOutput::Depth10 => {
-                    match parse_book_snapshot_msg_as_depth10(
+                BookSnapshotOutput::Depth => {
+                    match parse_book_snapshot_msg_as_depth(
                         &msg,
                         info.price_precision,
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(depth10) => Some(Data::BookDepth10(Box::new(depth10))),
+                        Ok(depth) => Some(Data::BookDepth(Box::new(depth))),
                         Err(e) => {
-                            log::error!("Failed to parse book snapshot as depth10: {e}");
+                            log::error!("Failed to parse book snapshot as depth: {e}");
                             None
                         }
                     }
@@ -251,17 +251,13 @@ pub fn parse_option_summary_msg_as_quote(
         return Ok(None);
     };
 
-    let bid_price = Price::new_checked(best_bid_price, price_precision)
+    let bid_price = Price::from_decimal_dp(best_bid_price, price_precision)
         .with_context(|| format!("invalid option summary bid price for message: {msg:?}"))?;
-    let ask_price = Price::new_checked(best_ask_price, price_precision)
+    let ask_price = Price::from_decimal_dp(best_ask_price, price_precision)
         .with_context(|| format!("invalid option summary ask price for message: {msg:?}"))?;
-    validate_non_zero_amount(best_bid_amount, size_precision)
+    let bid_size = parse_non_zero_quantity(best_bid_amount, size_precision)
         .with_context(|| format!("invalid option summary bid size for message: {msg:?}"))?;
-    let bid_size = Quantity::new_checked(best_bid_amount, size_precision)
-        .with_context(|| format!("invalid option summary bid size for message: {msg:?}"))?;
-    validate_non_zero_amount(best_ask_amount, size_precision)
-        .with_context(|| format!("invalid option summary ask size for message: {msg:?}"))?;
-    let ask_size = Quantity::new_checked(best_ask_amount, size_precision)
+    let ask_size = parse_non_zero_quantity(best_ask_amount, size_precision)
         .with_context(|| format!("invalid option summary ask size for message: {msg:?}"))?;
 
     Ok(Some(QuoteTick::new(
@@ -344,46 +340,41 @@ pub fn parse_book_snapshot_msg_as_deltas(
     )
 }
 
-/// Parse a book snapshot message into an [`OrderBookDepth10`].
+/// Parse a book snapshot message into an [`OrderBookDepth`].
 ///
 /// # Errors
 ///
-/// Returns an error if timestamp fields cannot be converted to nanoseconds.
-pub fn parse_book_snapshot_msg_as_depth10(
+/// Returns an error if timestamp fields cannot be converted to nanoseconds, or a level
+/// price or amount is invalid.
+pub fn parse_book_snapshot_msg_as_depth(
     msg: &BookSnapshotMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let ts_event = timestamp_to_unix_nanos(msg.timestamp, "event timestamp")?;
     let ts_init = timestamp_to_unix_nanos(msg.local_timestamp, "init timestamp")?;
 
-    let mut bids = [NULL_ORDER; DEPTH10_LEN];
-    let mut asks = [NULL_ORDER; DEPTH10_LEN];
-    let mut bid_counts = [0u32; DEPTH10_LEN];
-    let mut ask_counts = [0u32; DEPTH10_LEN];
+    let mut bids = Vec::with_capacity(msg.bids.len());
+    let mut asks = Vec::with_capacity(msg.asks.len());
+    let mut bid_counts = Vec::with_capacity(msg.bids.len());
+    let mut ask_counts = Vec::with_capacity(msg.asks.len());
 
-    for (i, level) in msg.bids.iter().take(DEPTH10_LEN).enumerate() {
-        bids[i] = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(level.price, price_precision),
-            Quantity::new(level.amount, size_precision),
-            0,
-        );
-        bid_counts[i] = 1;
+    for level in &msg.bids {
+        let price = Price::from_decimal_dp(level.price, price_precision)?;
+        let size = Quantity::from_decimal_dp(level.amount, size_precision)?;
+        bids.push(BookOrder::new(OrderSide::Buy, price, size, 0));
+        bid_counts.push(1);
     }
 
-    for (i, level) in msg.asks.iter().take(DEPTH10_LEN).enumerate() {
-        asks[i] = BookOrder::new(
-            OrderSide::Sell,
-            Price::new(level.price, price_precision),
-            Quantity::new(level.amount, size_precision),
-            0,
-        );
-        ask_counts[i] = 1;
+    for level in &msg.asks {
+        let price = Price::from_decimal_dp(level.price, price_precision)?;
+        let size = Quantity::from_decimal_dp(level.amount, size_precision)?;
+        asks.push(BookOrder::new(OrderSide::Sell, price, size, 0));
+        ask_counts.push(1);
     }
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -470,7 +461,8 @@ pub fn parse_book_msg_as_deltas(
 ///
 /// # Errors
 ///
-/// Returns an error if a non-delete action has a zero size after normalization.
+/// Returns an error if the price or normalized amount is invalid, or a non-delete action
+/// has a zero size after normalization.
 #[expect(clippy::too_many_arguments)]
 pub fn parse_book_level(
     instrument_id: InstrumentId,
@@ -483,9 +475,9 @@ pub fn parse_book_level(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDelta> {
     let amount = normalize_amount(level.amount, size_precision);
-    let action = parse_book_action(is_snapshot, amount);
-    let price = Price::new(level.price, price_precision);
-    let size = Quantity::new(amount, size_precision);
+    let price = Price::from_decimal_dp(level.price, price_precision)?;
+    let size = Quantity::from_decimal_dp(amount, size_precision)?;
+    let action = parse_book_action(is_snapshot, size.as_f64());
     let order_id = 0; // Not applicable for L2 data
     let order = BookOrder::new(side, price, size, order_id);
     let flags = if is_snapshot {
@@ -516,7 +508,7 @@ pub fn parse_book_level(
 ///
 /// # Errors
 ///
-/// Returns an error if missing bid/ask levels or invalid sizes.
+/// Returns an error if missing bid/ask levels or invalid prices or sizes.
 pub fn parse_book_snapshot_msg_as_quote(
     msg: &BookSnapshotMsg,
     price_precision: u8,
@@ -530,20 +522,18 @@ pub fn parse_book_snapshot_msg_as_quote(
         .bids
         .first()
         .context("missing best bid level for quote message")?;
-    let bid_price = Price::new(best_bid.price, price_precision);
-    validate_non_zero_amount(best_bid.amount, size_precision)
-        .with_context(|| format!("Invalid bid size for message: {msg:?}"))?;
-    let bid_size = Quantity::new_checked(best_bid.amount, size_precision)
+    let bid_price = Price::from_decimal_dp(best_bid.price, price_precision)
+        .with_context(|| format!("invalid bid price for message: {msg:?}"))?;
+    let bid_size = parse_non_zero_quantity(best_bid.amount, size_precision)
         .with_context(|| format!("Invalid bid size for message: {msg:?}"))?;
 
     let best_ask = msg
         .asks
         .first()
         .context("missing best ask level for quote message")?;
-    let ask_price = Price::new(best_ask.price, price_precision);
-    validate_non_zero_amount(best_ask.amount, size_precision)
-        .with_context(|| format!("Invalid ask size for message: {msg:?}"))?;
-    let ask_size = Quantity::new_checked(best_ask.amount, size_precision)
+    let ask_price = Price::from_decimal_dp(best_ask.price, price_precision)
+        .with_context(|| format!("invalid ask price for message: {msg:?}"))?;
+    let ask_size = parse_non_zero_quantity(best_ask.amount, size_precision)
         .with_context(|| format!("Invalid ask size for message: {msg:?}"))?;
 
     Ok(QuoteTick::new(
@@ -562,30 +552,27 @@ pub fn parse_book_snapshot_msg_as_quote(
 ///
 /// # Errors
 ///
-/// Returns an error if invalid trade size is encountered.
+/// Returns an error if the trade price or size is invalid.
 pub fn parse_trade_msg(
     msg: &TradeMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
 ) -> anyhow::Result<TradeTick> {
-    let price = Price::new(msg.price, price_precision);
-    validate_non_zero_amount(msg.amount, size_precision)
-        .with_context(|| format!("Invalid trade size in message: {msg:?}"))?;
-    let size = Quantity::new_checked(msg.amount, size_precision)
+    let price = Price::from_decimal_dp(msg.price, price_precision)
+        .with_context(|| format!("invalid trade price in message: {msg:?}"))?;
+    let size = parse_non_zero_quantity(msg.amount, size_precision)
         .with_context(|| format!("Invalid trade size in message: {msg:?}"))?;
     let aggressor_side = parse_aggressor_side(&msg.side);
     let ts_event = UnixNanos::from(msg.timestamp);
     let ts_init = UnixNanos::from(msg.local_timestamp);
     let trade_id = match msg.id.as_deref() {
         Some(id) if !id.is_empty() => TradeId::new(id),
-        _ => derive_trade_id(
-            msg.symbol,
-            ts_event.as_u64(),
-            msg.price,
-            msg.amount,
-            &msg.side,
-        ),
+        _ => {
+            let price = msg.price.normalize().to_string();
+            let amount = msg.amount.normalize().to_string();
+            derive_trade_id(msg.symbol, ts_event.as_u64(), &price, &amount, &msg.side)
+        }
     };
 
     Ok(TradeTick::new(
@@ -603,8 +590,8 @@ pub fn parse_trade_msg(
 ///
 /// # Errors
 ///
-/// Returns an error if the bar specification cannot be parsed, the volume is invalid
-/// or rounds to zero, or the size precision is invalid.
+/// Returns an error if the bar specification cannot be parsed, a price is invalid, the
+/// volume is invalid or rounds to zero, or the size precision is invalid.
 pub fn parse_bar_msg(
     msg: &BarMsg,
     price_precision: u8,
@@ -614,12 +601,11 @@ pub fn parse_bar_msg(
     let spec = parse_bar_spec(&msg.name)?;
     let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
 
-    let open = Price::new(msg.open, price_precision);
-    let high = Price::new(msg.high, price_precision);
-    let low = Price::new(msg.low, price_precision);
-    let close = Price::new(msg.close, price_precision);
-    validate_non_zero_amount(msg.volume, size_precision)?;
-    let volume = Quantity::new_checked(msg.volume, size_precision)?;
+    let open = Price::from_decimal_dp(msg.open, price_precision)?;
+    let high = Price::from_decimal_dp(msg.high, price_precision)?;
+    let low = Price::from_decimal_dp(msg.low, price_precision)?;
+    let close = Price::from_decimal_dp(msg.close, price_precision)?;
+    let volume = parse_non_zero_quantity(msg.volume, size_precision)?;
     let ts_event = UnixNanos::from(msg.timestamp);
     let ts_init = UnixNanos::from(msg.local_timestamp);
 
@@ -642,19 +628,17 @@ fn parse_derivative_ticker_timestamps(
 ///
 /// # Errors
 ///
-/// Returns an error if timestamp conversion or decimal conversion fails.
+/// Returns an error if timestamp conversion fails.
 pub fn parse_derivative_ticker_msg(
     msg: &DerivativeTickerMsg,
     instrument_id: InstrumentId,
 ) -> anyhow::Result<Option<FundingRateUpdate>> {
-    let funding_rate = match msg.funding_rate {
+    let rate = match msg.funding_rate {
         Some(rate) => rate,
         None => return Ok(None),
     };
 
     let (ts_event, ts_init) = parse_derivative_ticker_timestamps(msg)?;
-    let rate = rust_decimal::Decimal::try_from(funding_rate)
-        .with_context(|| format!("failed to convert funding rate {funding_rate} to Decimal"))?;
     let next_funding_ns = msg
         .funding_timestamp
         .map(|ts| timestamp_to_unix_nanos(ts, "funding timestamp"))
@@ -674,7 +658,7 @@ pub fn parse_derivative_ticker_msg(
 ///
 /// # Errors
 ///
-/// Returns an error if timestamp conversion fails.
+/// Returns an error if timestamp conversion fails or the mark price is invalid.
 pub fn parse_derivative_ticker_mark_price(
     msg: &DerivativeTickerMsg,
     instrument_id: InstrumentId,
@@ -686,10 +670,11 @@ pub fn parse_derivative_ticker_mark_price(
     };
 
     let (ts_event, ts_init) = parse_derivative_ticker_timestamps(msg)?;
+    let price = Price::from_decimal_dp(mark_price, price_precision)?;
 
     Ok(Some(MarkPriceUpdate::new(
         instrument_id,
-        Price::new(mark_price, price_precision),
+        price,
         ts_event,
         ts_init,
     )))
@@ -699,7 +684,7 @@ pub fn parse_derivative_ticker_mark_price(
 ///
 /// # Errors
 ///
-/// Returns an error if timestamp conversion fails.
+/// Returns an error if timestamp conversion fails or the index price is invalid.
 pub fn parse_derivative_ticker_index_price(
     msg: &DerivativeTickerMsg,
     instrument_id: InstrumentId,
@@ -711,13 +696,24 @@ pub fn parse_derivative_ticker_index_price(
     };
 
     let (ts_event, ts_init) = parse_derivative_ticker_timestamps(msg)?;
+    let price = Price::from_decimal_dp(index_price, price_precision)?;
 
     Ok(Some(IndexPriceUpdate::new(
         instrument_id,
-        Price::new(index_price, price_precision),
+        price,
         ts_event,
         ts_init,
     )))
+}
+
+fn parse_non_zero_quantity(amount: Decimal, precision: u8) -> anyhow::Result<Quantity> {
+    anyhow::ensure!(!amount.is_zero(), "value was zero");
+    let quantity = Quantity::from_decimal_dp(amount, precision)?;
+    anyhow::ensure!(
+        !quantity.is_zero(),
+        "value {amount} was zero after rounding to precision {precision}"
+    );
+    Ok(quantity)
 }
 
 #[cfg(test)]
@@ -829,7 +825,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_book_snapshot_message_as_depth10() {
+    fn test_parse_book_snapshot_message_as_depth() {
         let json_data = load_test_json("book_snapshot.json");
         let msg: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
 
@@ -837,51 +833,90 @@ mod tests {
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
 
-        let depth10 = parse_book_snapshot_msg_as_depth10(
-            &msg,
-            price_precision,
-            size_precision,
-            instrument_id,
-        )
-        .unwrap();
+        let depth =
+            parse_book_snapshot_msg_as_depth(&msg, price_precision, size_precision, instrument_id)
+                .unwrap();
 
-        assert_eq!(depth10.instrument_id, instrument_id);
-        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
-        assert_eq!(depth10.sequence, 0);
-        assert_eq!(depth10.ts_event, UnixNanos::from(1572010786950000000));
-        assert_eq!(depth10.ts_init, UnixNanos::from(1572010786961000000));
+        assert_eq!(depth.instrument_id, instrument_id);
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.sequence, 0);
+        assert_eq!(depth.ts_event, UnixNanos::from(1572010786950000000));
+        assert_eq!(depth.ts_init, UnixNanos::from(1572010786961000000));
 
         // Check first bid level
-        assert_eq!(depth10.bids[0].side, OrderSide::Buy.into());
-        assert_eq!(depth10.bids[0].price, Price::from("7633.5"));
-        assert_eq!(depth10.bids[0].size, Quantity::from(1906067));
-        assert_eq!(depth10.bids[0].order_id, 0);
-        assert_eq!(depth10.bid_counts[0], 1);
+        assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
+        assert_eq!(depth.bids[0].price, Price::from("7633.5"));
+        assert_eq!(depth.bids[0].size, Quantity::from(1906067));
+        assert_eq!(depth.bids[0].order_id, 0);
+        assert_eq!(depth.bid_counts[0], 1);
 
         // Check second bid level
-        assert_eq!(depth10.bids[1].side, OrderSide::Buy.into());
-        assert_eq!(depth10.bids[1].price, Price::from("7633.0"));
-        assert_eq!(depth10.bids[1].size, Quantity::from(65319));
-        assert_eq!(depth10.bid_counts[1], 1);
+        assert_eq!(depth.bids[1].side, OrderSide::Buy.into());
+        assert_eq!(depth.bids[1].price, Price::from("7633.0"));
+        assert_eq!(depth.bids[1].size, Quantity::from(65319));
+        assert_eq!(depth.bid_counts[1], 1);
 
         // Check first ask level
-        assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
-        assert_eq!(depth10.asks[0].price, Price::from("7634.0"));
-        assert_eq!(depth10.asks[0].size, Quantity::from(1467849));
-        assert_eq!(depth10.asks[0].order_id, 0);
-        assert_eq!(depth10.ask_counts[0], 1);
+        assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
+        assert_eq!(depth.asks[0].price, Price::from("7634.0"));
+        assert_eq!(depth.asks[0].size, Quantity::from(1467849));
+        assert_eq!(depth.asks[0].order_id, 0);
+        assert_eq!(depth.ask_counts[0], 1);
 
         // Check second ask level
-        assert_eq!(depth10.asks[1].side, OrderSide::Sell.into());
-        assert_eq!(depth10.asks[1].price, Price::from("7634.5"));
-        assert_eq!(depth10.asks[1].size, Quantity::from(67939));
-        assert_eq!(depth10.ask_counts[1], 1);
+        assert_eq!(depth.asks[1].side, OrderSide::Sell.into());
+        assert_eq!(depth.asks[1].price, Price::from("7634.5"));
+        assert_eq!(depth.asks[1].size, Quantity::from(67939));
+        assert_eq!(depth.ask_counts[1], 1);
 
-        // Check empty levels are NULL_ORDER
-        assert_eq!(depth10.bids[2], NULL_ORDER);
-        assert_eq!(depth10.bid_counts[2], 0);
-        assert_eq!(depth10.asks[2], NULL_ORDER);
-        assert_eq!(depth10.ask_counts[2], 0);
+        assert_eq!(depth.bids.len(), 2);
+        assert_eq!(depth.asks.len(), 2);
+        assert_eq!(depth.bid_counts.as_slice(), &[1; 2]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1; 2]);
+        assert_eq!(depth.bids[1].order_id, 0);
+        assert_eq!(depth.asks[1].order_id, 0);
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_message_as_depth_keeps_all_levels() {
+        let bids: Vec<BookLevel> = (0..25)
+            .map(|i| BookLevel {
+                price: dec!(7633.5) - Decimal::from(i) * dec!(0.5),
+                amount: Decimal::from(1000 + i),
+            })
+            .collect();
+        let asks: Vec<BookLevel> = (0..25)
+            .map(|i| BookLevel {
+                price: dec!(7634.0) + Decimal::from(i) * dec!(0.5),
+                amount: Decimal::from(2000 + i),
+            })
+            .collect();
+        let msg = BookSnapshotMsg {
+            symbol: ustr::Ustr::from("XBTUSD"),
+            exchange: TardisExchange::Bitmex,
+            name: "book_snapshot_25_100ms".to_string(),
+            depth: 25,
+            interval: 100,
+            bids,
+            asks,
+            timestamp: "2019-10-25T13:39:46.950Z".parse::<Timestamp>().unwrap(),
+            local_timestamp: "2019-10-25T13:39:46.961Z".parse::<Timestamp>().unwrap(),
+        };
+
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+        let depth = parse_book_snapshot_msg_as_depth(&msg, 1, 0, instrument_id).unwrap();
+
+        assert_eq!(depth.instrument_id, instrument_id);
+        assert_eq!(depth.bids.len(), 25);
+        assert_eq!(depth.asks.len(), 25);
+        assert_eq!(depth.bid_counts.as_slice(), &[1; 25]);
+        assert_eq!(depth.ask_counts.as_slice(), &[1; 25]);
+        assert_eq!(depth.bids[0].price, Price::from("7633.5"));
+        assert_eq!(depth.bids[24].price, Price::from("7621.5"));
+        assert_eq!(depth.asks[0].price, Price::from("7634.0"));
+        assert_eq!(depth.asks[24].price, Price::from("7646.0"));
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.sequence, 0);
     }
 
     #[rstest]
@@ -942,7 +977,7 @@ mod tests {
         assert_eq!(first.trade_id.as_str().len(), 16);
 
         let mut altered = build_trade_msg_without_id();
-        altered.price = 7997.0;
+        altered.price = dec!(7997.0);
         let altered_trade = parse_trade_msg(&altered, 0, 0, instrument_id).unwrap();
         assert_ne!(first.trade_id, altered_trade.trade_id);
     }
@@ -983,7 +1018,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_tardis_ws_message_book_snapshot_routes_to_depth10() {
+    fn test_parse_tardis_ws_message_book_snapshot_routes_to_depth() {
         let json_data = load_test_json("book_snapshot.json");
         let msg: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
         let ws_msg = WsMessage::BookSnapshot(msg);
@@ -997,14 +1032,14 @@ mod tests {
             0,
         ));
 
-        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth(_)));
     }
 
     #[rstest]
-    fn test_parse_tardis_ws_message_sparse_book_snapshot_routes_to_depth10() {
+    fn test_parse_tardis_ws_message_sparse_book_snapshot_routes_to_depth() {
         let json_data = r#"{
             "type": "book_snapshot",
             "symbol": "ETC",
@@ -1029,10 +1064,10 @@ mod tests {
             2,
         ));
 
-        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
+        let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth(_)));
     }
 
     #[rstest]
@@ -1220,7 +1255,7 @@ mod tests {
         let mut msg: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
         let ts_event = UnixNanos::from(msg.timestamp);
         let ts_init = UnixNanos::from(msg.local_timestamp);
-        msg.best_bid_amount = Some(0.0);
+        msg.best_bid_amount = Some(Decimal::ZERO);
         let ws_msg = WsMessage::OptionSummary(msg);
 
         let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
@@ -1249,7 +1284,7 @@ mod tests {
         let mut msg: OptionSummaryMsg = serde_json::from_str(&json_data).unwrap();
         let ts_event = UnixNanos::from(msg.timestamp);
         let ts_init = UnixNanos::from(msg.local_timestamp);
-        msg.best_bid_price = Some(f64::MAX);
+        msg.best_bid_price = Some(Decimal::MAX);
         let ws_msg = WsMessage::OptionSummary(msg);
 
         let instrument_id = InstrumentId::from("BTC-28JUN24-70000-C.DERIBIT");
@@ -1497,5 +1532,199 @@ mod tests {
             post_funding.next_funding_ns,
             Some(UnixNanos::from("2023-05-01T16:00:00Z"))
         );
+    }
+
+    fn load_exact_decimal_messages() -> Vec<WsMessage> {
+        let json_data = load_test_json("exact_decimals.json");
+        serde_json::from_str(&json_data).unwrap()
+    }
+
+    #[rstest]
+    fn test_parse_trade_msg_keeps_decimals_that_collapse_in_f64() {
+        let messages = load_exact_decimal_messages();
+
+        let (WsMessage::Trade(first), WsMessage::Trade(second)) = (&messages[0], &messages[1])
+        else {
+            panic!("Expected trade messages, was {messages:?}");
+        };
+
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+
+        let first_trade = parse_trade_msg(first, 9, 9, instrument_id).unwrap();
+        let second_trade = parse_trade_msg(second, 9, 9, instrument_id).unwrap();
+
+        let first_f64 = "100000000.123456789".parse::<f64>().unwrap();
+        let second_f64 = "100000000.123456788".parse::<f64>().unwrap();
+        assert_eq!(first_f64.to_bits(), second_f64.to_bits());
+        assert_eq!(first_trade.price, Price::from("100000000.123456789"));
+        assert_eq!(first_trade.size, Quantity::from("100000000.123456789"));
+        assert_eq!(second_trade.price, Price::from("100000000.123456788"));
+        assert_eq!(second_trade.size, Quantity::from("100000000.123456788"));
+        assert_ne!(first_trade.trade_id, second_trade.trade_id);
+    }
+
+    #[rstest]
+    fn test_parse_trade_msg_rounds_exact_token_half_even() {
+        let messages = load_exact_decimal_messages();
+
+        let WsMessage::Trade(msg) = &messages[2] else {
+            panic!("Expected trade message, was {:?}", messages[2]);
+        };
+
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+
+        let trade = parse_trade_msg(msg, 2, 2, instrument_id).unwrap();
+
+        let token_f64 = "100000000.005000001".parse::<f64>().unwrap();
+        let via_f64 = Price::from_decimal_dp(Decimal::try_from(token_f64).unwrap(), 2).unwrap();
+        assert_eq!(via_f64, Price::from("100000000.00"));
+        assert_eq!(trade.price, Price::from("100000000.01"));
+        assert_eq!(trade.size, Quantity::from("100000000.01"));
+    }
+
+    #[rstest]
+    fn test_parse_book_change_msg_keeps_decimals_that_collapse_in_f64() {
+        let messages = load_exact_decimal_messages();
+
+        let WsMessage::BookChange(msg) = &messages[3] else {
+            panic!("Expected book change message, was {:?}", messages[3]);
+        };
+
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+
+        let deltas = parse_book_change_msg_as_deltas(msg, 9, 9, instrument_id).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 2);
+        assert_eq!(deltas.deltas[0].order.side, Some(OrderSide::Buy));
+        assert_eq!(
+            deltas.deltas[0].order.price,
+            Price::from("100000000.123456789")
+        );
+        assert_eq!(
+            deltas.deltas[0].order.size,
+            Quantity::from("100000000.123456789")
+        );
+        assert_eq!(deltas.deltas[1].order.side, Some(OrderSide::Sell));
+        assert_eq!(
+            deltas.deltas[1].order.price,
+            Price::from("100000000.123456788")
+        );
+        assert_eq!(
+            deltas.deltas[1].order.size,
+            Quantity::from("100000000.123456788")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_derivative_ticker_msg_keeps_exact_tokens() {
+        let messages = load_exact_decimal_messages();
+
+        let WsMessage::DerivativeTicker(msg) = &messages[4] else {
+            panic!("Expected derivative ticker message, was {:?}", messages[4]);
+        };
+
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+        let funding = parse_derivative_ticker_msg(msg, instrument_id)
+            .unwrap()
+            .unwrap();
+        let mark = parse_derivative_ticker_mark_price(msg, instrument_id, 9)
+            .unwrap()
+            .unwrap();
+        let index = parse_derivative_ticker_index_price(msg, instrument_id, 9)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(funding.rate, dec!(0.30000000000000004));
+        assert_eq!(mark.value, Price::from("100000000.123456788"));
+        assert_eq!(index.value, Price::from("100000000.123456789"));
+    }
+
+    #[rstest]
+    fn test_parse_book_change_msg_normalizes_float_noise_amount_to_delete() {
+        let messages = load_exact_decimal_messages();
+
+        let WsMessage::BookChange(msg) = &messages[5] else {
+            panic!("Expected book change message, was {:?}", messages[5]);
+        };
+
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+
+        let deltas = parse_book_change_msg_as_deltas(msg, 1, 0, instrument_id).unwrap();
+
+        assert_eq!(msg.bids[0].amount, dec!(0.0000000000000001110223024625));
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Delete);
+        assert_eq!(deltas.deltas[0].order.price, Price::from("7984.5"));
+        assert_eq!(deltas.deltas[0].order.size, Quantity::from("0"));
+    }
+
+    #[rstest]
+    fn test_parse_trade_msg_derives_trade_id_from_decimal_value() {
+        let messages = load_exact_decimal_messages();
+
+        let (WsMessage::Trade(padded), WsMessage::Trade(plain)) = (&messages[6], &messages[7])
+        else {
+            panic!("Expected trade messages, was {messages:?}");
+        };
+
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+
+        let padded_trade = parse_trade_msg(padded, 1, 0, instrument_id).unwrap();
+        let plain_trade = parse_trade_msg(plain, 1, 0, instrument_id).unwrap();
+        let csv_trade_id = derive_trade_id(
+            ustr::Ustr::from("XBTUSD"),
+            padded_trade.ts_event.as_u64(),
+            &7996.5_f64.to_string(),
+            &50.0_f64.to_string(),
+            "sell",
+        );
+
+        assert_eq!(padded.price.to_string(), "7996.50");
+        assert_eq!(padded.amount.to_string(), "50.0");
+        assert_eq!(padded_trade.trade_id, plain_trade.trade_id);
+        assert_eq!(padded_trade.trade_id, csv_trade_id);
+    }
+
+    #[rstest]
+    fn test_parse_book_change_msg_truncates_amounts_and_skips_invalid_price() {
+        let messages = load_exact_decimal_messages();
+
+        let WsMessage::BookChange(msg) = &messages[8] else {
+            panic!("Expected book change message, was {:?}", messages[8]);
+        };
+
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+
+        let deltas = parse_book_change_msg_as_deltas(msg, 1, 2, instrument_id).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 2);
+        assert_eq!(deltas.deltas[0].order.price, Price::from("7984.5"));
+        assert_eq!(deltas.deltas[0].order.size, Quantity::from("0.12"));
+        assert_eq!(deltas.deltas[1].order.price, Price::from("7984.0"));
+        assert_eq!(deltas.deltas[1].order.size, Quantity::from("3.00"));
+        assert_eq!(deltas.deltas[1].flags, RecordFlag::F_LAST as u8);
+    }
+
+    #[rstest]
+    #[case(dec!(0.015), "0.02")]
+    #[case(dec!(0.006), "0.01")]
+    fn test_parse_non_zero_quantity_rounds_half_even(
+        #[case] amount: Decimal,
+        #[case] expected: &str,
+    ) {
+        let quantity = parse_non_zero_quantity(amount, 2).unwrap();
+
+        assert_eq!(quantity, Quantity::from(expected));
+    }
+
+    #[rstest]
+    #[case(dec!(0), "value was zero")]
+    #[case(dec!(0.004), "value 0.004 was zero after rounding to precision 2")]
+    #[case(dec!(0.005), "value 0.005 was zero after rounding to precision 2")]
+    fn test_parse_non_zero_quantity_rejects_zero(#[case] amount: Decimal, #[case] expected: &str) {
+        let error = parse_non_zero_quantity(amount, 2).unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
     }
 }

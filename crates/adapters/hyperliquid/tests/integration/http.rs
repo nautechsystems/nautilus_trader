@@ -43,13 +43,17 @@ use nautilus_hyperliquid::{
             Cloid, HyperliquidExchangeResponse, HyperliquidFills, HyperliquidL2Book, OutcomeMeta,
             PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
         },
+        parse::get_usdh_currency,
         query::{InfoRequest, InfoRequestParams},
     },
 };
 use nautilus_model::{
+    accounts::{Account, MarginAccount},
     data::BarType,
-    enums::{OrderStatus, OrderType, PositionSide, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    reports::FillReport,
+    types::{Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
@@ -69,6 +73,7 @@ struct TestServerState {
     user_fills_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     historical_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     spot_fails: Arc<std::sync::atomic::AtomicBool>,
+    user_abstraction_response: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -86,6 +91,7 @@ impl Default for TestServerState {
             user_fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             historical_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             spot_fails: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            user_abstraction_response: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }
@@ -272,6 +278,10 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             let custom = state.spot_clearinghouse_response.lock().await.clone();
             let spot = custom.unwrap_or_else(|| load_json("http_spot_clearinghouse_state.json"));
             Json(spot).into_response()
+        }
+        "userAbstraction" => {
+            let custom = state.user_abstraction_response.lock().await.clone();
+            Json(custom.unwrap_or_else(|| json!("disabled"))).into_response()
         }
         "candleSnapshot" => Json(json!([
             {
@@ -1466,6 +1476,186 @@ async fn test_request_account_state_preserves_parsed_margins() {
     assert_eq!(margin.maintenance.as_f64(), 1250.0);
 }
 
+// Account holding longs on the default dex and a HIP-3 dex: the default-dex perp summary
+// carries a negative `totalRawUsd`, while spot USDC holds the collateral and its `hold` is the
+// margin used across both dexes.
+async fn set_open_positions_account_state(state: &TestServerState, mode: &str) {
+    *state.user_abstraction_response.lock().await = Some(json!(mode));
+    *state.clearinghouse_response.lock().await = Some(json!({
+        "marginSummary": {
+            "accountValue": "210.5",
+            "totalMarginUsed": "180.0",
+            "totalNtlPos": "900.0",
+            "totalRawUsd": "-689.5"
+        },
+        "crossMarginSummary": {
+            "accountValue": "210.5",
+            "totalMarginUsed": "180.0",
+            "totalNtlPos": "900.0",
+            "totalRawUsd": "-689.5"
+        },
+        "crossMaintenanceMarginUsed": "36.0",
+        "withdrawable": "30.5",
+        "assetPositions": []
+    }));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({
+        "balances": [
+            {"coin": "USDC", "token": 0, "total": "512.25", "hold": "420.0", "entryNtl": "0.0"}
+        ]
+    }));
+}
+
+#[rstest]
+#[case::unified("unifiedAccount")]
+#[case::portfolio_margin("portfolioMargin")]
+#[tokio::test]
+async fn test_request_account_state_spot_collateral_account_uses_spot_usdc(#[case] mode: &str) {
+    let state = TestServerState::default();
+    set_open_positions_account_state(&state, mode).await;
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .expect("request_account_state should succeed");
+
+    assert_eq!(account_state.balances.len(), 1);
+    let usdc = &account_state.balances[0];
+    assert_eq!(usdc.currency.code, "USDC");
+    assert_eq!(usdc.total.as_decimal(), rust_decimal_macros::dec!(512.25));
+    assert_eq!(usdc.free.as_decimal(), rust_decimal_macros::dec!(92.25));
+    assert_eq!(account_state.margins.len(), 1);
+    assert_eq!(
+        account_state.margins[0].initial.as_decimal(),
+        rust_decimal_macros::dec!(420.0),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_spot_collateral_clears_usdc_when_spot_drops_it(
+    #[values("unifiedAccount", "portfolioMargin")] mode: &str,
+    #[values(
+        json!({"balances": [{"coin": "USDC", "token": 0, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}]}),
+        json!({"balances": []})
+    )]
+    emptied_spot: Value,
+) {
+    // A funded account whose spot USDC later reads zero or disappears while the perp summary
+    // stays non-zero. Account updates keep any currency an update omits, so the follow-up
+    // snapshot must still carry USDC for the funded balance and margin to be cleared
+    let state = TestServerState::default();
+    set_open_positions_account_state(&state, mode).await;
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let user = "0x1234567890123456789012345678901234567890";
+
+    let funded = client
+        .request_account_state(user)
+        .await
+        .expect("funded request_account_state should succeed");
+    let mut account = MarginAccount::new(funded, true);
+    assert_eq!(
+        account
+            .balance_total(Some(Currency::USDC()))
+            .unwrap()
+            .as_decimal(),
+        rust_decimal_macros::dec!(512.25),
+    );
+    let funded_margin = account
+        .account_margin(&Currency::USDC())
+        .expect("funded snapshot must carry a USDC margin");
+    assert_eq!(
+        funded_margin.initial.as_decimal(),
+        rust_decimal_macros::dec!(420.0)
+    );
+
+    *state.spot_clearinghouse_response.lock().await = Some(emptied_spot);
+    let emptied = client
+        .request_account_state(user)
+        .await
+        .expect("emptied request_account_state should succeed");
+    account.apply(emptied).unwrap();
+
+    let usdc_total = account
+        .balance_total(Some(Currency::USDC()))
+        .expect("USDC balance must still be present");
+    assert!(usdc_total.is_zero(), "stale USDC total {usdc_total}");
+    assert!(
+        account
+            .balance_free(Some(Currency::USDC()))
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        account
+            .balance_locked(Some(Currency::USDC()))
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        account.account_margin(&Currency::USDC()).is_none(),
+        "stale USDC margin {:?}",
+        account.account_margin(&Currency::USDC()),
+    );
+}
+
+#[rstest]
+#[case::disabled("disabled")]
+#[case::default("default")]
+#[case::dex_abstraction("dexAbstraction")]
+#[case::unrecognized("someFutureMode")]
+#[tokio::test]
+async fn test_request_account_state_other_modes_keep_perp_summary_usdc(#[case] mode: &str) {
+    // Same venue state as the spot-collateral test: outside unified and portfolio margin the
+    // default-dex perp summary stays authoritative for USDC, and an unrecognized mode string
+    // must fall back to that logic rather than fail the request
+    let state = TestServerState::default();
+    set_open_positions_account_state(&state, mode).await;
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .expect("request_account_state should succeed");
+
+    assert_eq!(account_state.balances.len(), 1);
+    let usdc = &account_state.balances[0];
+    assert_eq!(usdc.currency.code, "USDC");
+    assert_eq!(usdc.total.as_decimal(), rust_decimal_macros::dec!(-689.5));
+    assert_eq!(usdc.free.as_decimal(), rust_decimal_macros::dec!(30.5));
+    assert_eq!(account_state.margins.len(), 1);
+    assert_eq!(
+        account_state.margins[0].initial.as_decimal(),
+        rust_decimal_macros::dec!(180.0),
+    );
+}
+
+#[rstest]
+#[case::object(json!({"unexpected": "shape"}))]
+#[case::null_valued_object(json!({"unexpected": null}))]
+#[case::null(json!(null))]
+#[case::number(json!(42))]
+#[tokio::test]
+async fn test_request_account_state_propagates_user_abstraction_failure(#[case] response: Value) {
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(response);
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let result = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await;
+
+    let err = result.expect_err("an unreadable account mode must not fall back silently");
+    assert!(
+        err.to_string().contains("user abstraction"),
+        "error must reference the failing abstraction fetch; got: {err}",
+    );
+}
+
 fn create_test_client(addr: &SocketAddr) -> TestHttpClient {
     TestHttpClient::new(format!("http://{addr}"))
 }
@@ -1991,6 +2181,47 @@ async fn test_request_order_status_report_triggered_order() {
 
 #[rstest]
 #[tokio::test]
+async fn test_request_order_status_report_frontend_trigger_label() {
+    let state = TestServerState::default();
+    // Venue shape: `frontendOpenOrders` rows carry `orderType` / `isTrigger`,
+    // not the WebSocket `tpsl` / `isMarket` fields
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "A",
+        "limitPx": "90000.0",
+        "sz": "0.1",
+        "oid": 77777,
+        "timestamp": 1700000000000u64,
+        "triggerCondition": "Price below 91000",
+        "isTrigger": true,
+        "triggerPx": "91000.0",
+        "children": [],
+        "isPositionTpsl": false,
+        "reduceOnly": true,
+        "orderType": "Stop Market",
+        "origSz": "0.1",
+        "tif": null,
+        "cloid": null
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 77777)
+        .await
+        .unwrap()
+        .expect("should find open stop order");
+
+    assert_eq!(report.order_type, OrderType::StopMarket);
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.trigger_price, Some(Price::from("91000.0")));
+    assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_order_status_report_closed_order_fallback() {
     let state = TestServerState::default();
     // frontendOpenOrders returns empty (order no longer open)
@@ -2026,6 +2257,50 @@ async fn test_request_order_status_report_closed_order_fallback() {
         report.ts_last.as_u64(),
         1700001000000u64 * 1_000_000,
         "ts_last should use statusTimestamp"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_filled_with_remainder_is_canceled() {
+    // The venue reports an IOC order `filled` once it stops executing, with `sz` holding the
+    // remainder it canceled
+    let state = TestServerState::default();
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "A",
+                "limitPx": "95000.0",
+                "sz": "0.02",
+                "oid": 55557,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1",
+                "tif": "Ioc"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 55557)
+        .await
+        .unwrap()
+        .expect("should find closed order via fallback");
+
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.quantity, Quantity::from("0.1"));
+    assert_eq!(report.filled_qty, Quantity::from("0.08"));
+    assert!(report.price.is_none());
+    assert_eq!(
+        report.cancel_reason.as_deref(),
+        Some("Unfilled remainder canceled")
     );
 }
 
@@ -2305,6 +2580,123 @@ async fn test_request_fill_reports_empty_snapshot_is_authoritative() {
         .expect("empty fill snapshot must stay authoritative");
 
     assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_resolves_settled_outcome_absent_from_outcome_meta() {
+    // `outcomeMeta` lists only live outcome 123; outcome 20 has settled, so its
+    // rows resolve from the coin encoding without another venue request
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "#200", "px": "0.62", "sz": "15.00", "side": "B",
+            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "dir": "Buy", "closedPnl": "0", "hash": "0xcccc",
+            "oid": 2001u64, "crossed": true, "fee": "0.0", "tid": 3u64,
+            "feeToken": "+200",
+        },
+        {
+            "coin": "#201", "px": "0.37", "sz": "8.00", "side": "A",
+            "time": 1_778_400_000_001u64, "startPosition": "8.00",
+            "dir": "Sell", "closedPnl": "0", "hash": "0xdddd",
+            "oid": 2002u64, "crossed": false, "fee": "0.0", "tid": 4u64,
+            "feeToken": "+201",
+        },
+    ]));
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    for instrument in client.request_instruments().await.unwrap() {
+        client.cache_instrument(&instrument);
+    }
+
+    let requests_before = *state.request_count.lock().await;
+    let reports = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect("settled outcome fills must form a complete snapshot");
+    let requests_for_fills = *state.request_count.lock().await - requests_before;
+
+    // A later instrument load still omits the settled outcome; its rows must
+    // keep resolving
+    for instrument in client.request_instruments().await.unwrap() {
+        client.cache_instrument(&instrument);
+    }
+
+    let reports_after_reload = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect("settled outcome fills must stay resolvable after a reload");
+
+    let usdh_zero = Money::zero(get_usdh_currency());
+
+    let summary = |reports: &[FillReport]| {
+        reports
+            .iter()
+            .map(|report| {
+                (
+                    report.instrument_id,
+                    report.venue_order_id,
+                    report.order_side,
+                    report.last_px,
+                    report.last_qty,
+                    report.commission,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let expected = vec![
+        (
+            InstrumentId::from("20-YES-OUTCOME.HYPERLIQUID"),
+            VenueOrderId::from("2001"),
+            OrderSide::Buy,
+            Price::from("0.6200"),
+            Quantity::from("15.00"),
+            usdh_zero,
+        ),
+        (
+            InstrumentId::from("20-NO-OUTCOME.HYPERLIQUID"),
+            VenueOrderId::from("2002"),
+            OrderSide::Sell,
+            Price::from("0.3700"),
+            Quantity::from("8.00"),
+            usdh_zero,
+        ),
+    ];
+    assert_eq!(summary(&reports), expected);
+    assert_eq!(summary(&reports_after_reload), expected);
+    assert_eq!(requests_for_fills, 1, "only the userFills request is sent");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_fails_closed_on_malformed_outcome_coin() {
+    // Side digit 2 is not a valid HIP-4 side, so the coin cannot resolve
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "#12", "px": "0.62", "sz": "15.00", "side": "B",
+            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "dir": "Buy", "closedPnl": "0", "hash": "0xeeee",
+            "oid": 2003u64, "crossed": true, "fee": "0.0", "tid": 5u64,
+            "feeToken": "+12",
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+
+    let err = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect_err("a malformed outcome coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Fill snapshot incomplete")),
+        "unexpected error: {err}",
+    );
 }
 
 #[rstest]

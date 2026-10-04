@@ -46,6 +46,10 @@ class DatabentoDataClientConfig:
     @property
     def publishers_filepath(self) -> pathlib.Path: ...
     @property
+    def historical_base_url(self) -> str | None: ...
+    @property
+    def live_gateway_addr(self) -> str | None: ...
+    @property
     def use_exchange_as_venue(self) -> bool: ...
     @property
     def bars_timestamp_on_close(self) -> bool: ...
@@ -58,6 +62,8 @@ class DatabentoDataClientConfig:
         use_exchange_as_venue: bool = False,
         bars_timestamp_on_close: bool = True,
         venue_dataset_map: typing.Mapping[str, str] | None = None,
+        historical_base_url: str | None = None,
+        live_gateway_addr: str | None = None,
     ) -> None: ...
 
 @typing.final
@@ -99,12 +105,12 @@ class DatabentoDataLoader:
         instrument_id: model.InstrumentId | None = None,
         price_precision: int | None = None,
     ) -> list[model.OrderBookDelta]: ...
-    def load_order_book_depth10(
+    def load_order_book_depth(
         self,
         filepath: str | os.PathLike | pathlib.Path,
         instrument_id: model.InstrumentId | None = None,
         price_precision: int | None = None,
-    ) -> list[model.OrderBookDepth10]: ...
+    ) -> list[model.OrderBookDepth]: ...
     def load_quotes(
         self,
         filepath: str | os.PathLike | pathlib.Path,
@@ -223,7 +229,7 @@ class DatabentoHistoricalClient:
         price_precision: int | None = None,
         timestamp_on_close: bool = True,
     ) -> typing.Any: ...
-    def get_order_book_depth10(
+    def get_order_book_depth(
         self,
         dataset: str,
         instrument_ids: typing.Sequence[model.InstrumentId],

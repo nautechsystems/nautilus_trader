@@ -27,8 +27,9 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth, QuoteTick, TradeTick,
     },
+    identifiers::InstrumentId,
     reports::{FillReport, OrderStatusReport},
 };
 use rust_decimal::Decimal;
@@ -547,6 +548,10 @@ pub struct WsBasicOrderData {
     /// Trailing stop parameters if applicable.
     #[serde(rename = "trailingStop")]
     pub trailing_stop: Option<WsTrailingStopData>,
+    /// Venue order type label (for example `"Stop Market"`), present on REST order rows
+    /// such as `frontendOpenOrders`, which omit `tpsl` and `isMarket`.
+    #[serde(rename = "orderType", default)]
+    pub order_type: Option<String>,
 }
 
 /// Trailing stop offset type.
@@ -1230,7 +1235,9 @@ pub enum NautilusWsMessage {
     /// Parsed order book deltas.
     Deltas(OrderBookDeltas),
     /// Parsed order book depth-10 snapshot.
-    Depth10(Box<OrderBookDepth10>),
+    Depth(Box<OrderBookDepth>),
+    /// An order book frame that failed to parse, leaving the instrument's book out of sync.
+    BookInvalid(InstrumentId),
     /// Parsed candle/bar.
     Candle(Bar),
     /// Mark price update.

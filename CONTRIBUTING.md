@@ -31,18 +31,20 @@ communication, and attribution.
 
 ## Start with an issue
 
-Before starting a substantial change, such as a new feature, integration, or design change,
-**open a GitHub issue or comment on a relevant existing issue, then wait for a maintainer to agree
-on the problem and approach**. **Small, self-contained fixes, such as typos, obvious documentation
-corrections, or narrowly scoped bug fixes with focused tests, do not need prior agreement.** Pull
-requests for substantial changes without prior discussion and agreement may be closed without
+**Before starting a substantial change, such as a new feature, integration, or design change,
+open a GitHub issue or comment on a relevant existing issue, then wait for a maintainer to agree
+on the problem and approach**. Small, self-contained fixes, such as typos, obvious documentation
+corrections, or narrowly scoped bug fixes with focused tests, do not need prior agreement. Pull
+requests for more substantial changes without prior discussion and agreement may be closed without
 review. Early agreement is the quickest way to avoid work that can't be merged.
 
-**Before starting work, check the issue and any open pull requests for an implementation already under
-review. Do not submit a competing implementation.** Instead, add useful context or an alternative
-approach to the existing issue so contributors and maintainers can coordinate. If an existing pull
-request appears inactive, ask on the pull request or its linked issue and wait for a maintainer to
-confirm that the work is available before starting.
+**Before opening a pull request, read the issue discussion and check for existing offers to implement
+the work, or other open pull requests.** Do not open a competing pull request when another contributor
+has already offered to implement the work or has one under review. Comment on the existing issue with
+useful context or an alternative approach so contributors and maintainers can coordinate. Pull
+requests opened without that coordination may be closed without review. If that offer or pull request
+appears inactive, ask there and wait for a maintainer to confirm that the work is available before
+opening.
 
 Check the [open-source scope](ROADMAP.md#open-source-scope) first so your idea fits what the project
 maintains, and read the [Code of Conduct](CODE_OF_CONDUCT.md).

@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod emitter;
 mod manager;
 mod node;
+#[cfg(feature = "streaming")]
+mod streaming;
 mod stress;

@@ -15,73 +15,21 @@
 
 use std::hint::black_box;
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use nautilus_common::cache::Cache;
-use nautilus_core::UnixNanos;
-use nautilus_model::{
-    data::{Bar, BarType, QuoteTick},
-    enums::PriceType,
-    identifiers::{InstrumentId, Symbol, Venue},
-    instruments::{CurrencyPair, InstrumentAny, stubs::default_fx_ccy},
-    types::{Currency, Price, Quantity},
-};
+use nautilus_model::{enums::PriceType, identifiers::Venue, types::Currency};
+use rust_decimal_macros::dec;
 
-const FX_BASES: [&str; 20] = [
-    "AUD", "EUR", "GBP", "NZD", "CAD", "CHF", "JPY", "SGD", "HKD", "SEK", "NOK", "DKK", "ZAR",
-    "MXN", "TRY", "KRW", "THB", "PLN", "HUF", "CZK",
-];
+mod xrate_workload;
 
-fn add_instruments(cache: &mut Cache, venue: Venue) -> Vec<CurrencyPair> {
-    FX_BASES
-        .iter()
-        .map(|base| default_fx_ccy(Symbol::from(format!("{base}/USD").as_str()), Some(venue)))
-        .inspect(|pair| {
-            cache
-                .add_instrument(InstrumentAny::CurrencyPair(pair.clone()))
-                .unwrap();
-        })
-        .collect()
-}
-
-fn make_quote(instrument_id: InstrumentId) -> QuoteTick {
-    QuoteTick {
-        instrument_id,
-        bid_price: Price::from("0.80000"),
-        ask_price: Price::from("0.80010"),
-        bid_size: Quantity::from(1),
-        ask_size: Quantity::from(1),
-        ..Default::default()
-    }
-}
-
-fn make_bar(bar_type: BarType, ts_init: u64) -> Bar {
-    Bar::new(
-        bar_type,
-        Price::from("0.80000"),
-        Price::from("0.80010"),
-        Price::from("0.79990"),
-        Price::from("0.80005"),
-        Quantity::from(100_000),
-        UnixNanos::from(ts_init),
-        UnixNanos::from(ts_init),
-    )
-}
-
-fn add_bar_types(cache: &mut Cache, instrument_id: InstrumentId, count: u64) {
-    for step in 1..=count {
-        let bid_type = BarType::from(format!("{instrument_id}-{step}-TICK-BID-EXTERNAL").as_str());
-        let ask_type = BarType::from(format!("{instrument_id}-{step}-TICK-ASK-EXTERNAL").as_str());
-        cache.add_bar(make_bar(bid_type, step)).unwrap();
-        cache.add_bar(make_bar(ask_type, step)).unwrap();
-    }
-}
+use xrate_workload::{FX_BASES, add_bar_types, add_instruments, make_quote};
 
 fn bench_get_xrate(c: &mut Criterion) {
     let venue = Venue::from("SIM");
 
     // Baseline: every instrument has quotes, so the bars map is never scanned
     let mut cache = Cache::default();
-    let pairs = add_instruments(&mut cache, venue);
+    let pairs = add_instruments(&mut cache, venue, FX_BASES.len());
     for pair in &pairs {
         cache.add_quote(make_quote(pair.id)).unwrap();
     }
@@ -101,7 +49,7 @@ fn bench_get_xrate(c: &mut Criterion) {
     // per step, so the map holds twice the step count)
     for bar_type_count in [10_u64, 100, 500] {
         let mut cache = Cache::default();
-        let pairs = add_instruments(&mut cache, venue);
+        let pairs = add_instruments(&mut cache, venue, FX_BASES.len());
         add_bar_types(&mut cache, pairs[0].id, bar_type_count);
 
         c.bench_function(
@@ -126,7 +74,7 @@ fn bench_get_xrate(c: &mut Criterion) {
     // Scan-and-miss: only the queried pair has quotes; unrelated bar types force a
     // full bars-map scan for every other instrument
     let mut cache = Cache::default();
-    let pairs = add_instruments(&mut cache, venue);
+    let pairs = add_instruments(&mut cache, venue, FX_BASES.len());
     cache.add_quote(make_quote(pairs[0].id)).unwrap();
     add_bar_types(&mut cache, pairs[0].id, 200);
 
@@ -142,5 +90,69 @@ fn bench_get_xrate(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_get_xrate);
+fn bench_get_xrate_mixed(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Cache try_get_xrate mixed");
+
+    for pair_count in [5, FX_BASES.len()] {
+        for bar_steps in [1, 25] {
+            for venue_count in [1, 4] {
+                let mut cache = Cache::default();
+                let venue = Venue::from("SIM0");
+
+                for venue_index in 0..venue_count {
+                    let current_venue = Venue::from(format!("SIM{venue_index}").as_str());
+                    let pairs = add_instruments(&mut cache, current_venue, pair_count);
+                    for (index, pair) in pairs.iter().enumerate() {
+                        add_bar_types(&mut cache, pair.id, bar_steps);
+                        if index % 2 == 0 {
+                            cache.add_quote(make_quote(pair.id)).unwrap();
+                        }
+                    }
+                }
+
+                // AUD uses its quote while EUR falls back to bars, both directions
+                // are checked before timing so a missing fallback cannot look faster.
+                for (currency, bid, ask) in [
+                    (Currency::AUD(), dec!(0.80000), dec!(0.80010)),
+                    (Currency::EUR(), dec!(0.80005), dec!(0.80005)),
+                ] {
+                    for (price_type, forward, reverse) in [
+                        (PriceType::Bid, bid, dec!(1) / ask),
+                        (PriceType::Ask, ask, dec!(1) / bid),
+                        (PriceType::Mid, (bid + ask) / dec!(2), dec!(2) / (bid + ask)),
+                    ] {
+                        assert_eq!(
+                            cache
+                                .try_get_xrate(venue, currency, Currency::USD(), price_type)
+                                .unwrap(),
+                            Some(forward),
+                        );
+                        assert_eq!(
+                            cache
+                                .try_get_xrate(venue, Currency::USD(), currency, price_type)
+                                .unwrap(),
+                            Some(reverse),
+                        );
+                    }
+                }
+
+                let id = format!("{pair_count} pairs/{bar_steps} steps/{venue_count} venues");
+                group.bench_with_input(BenchmarkId::new("EUR-USD", id), &cache, |b, cache| {
+                    b.iter(|| {
+                        black_box(cache.try_get_xrate(
+                            black_box(venue),
+                            black_box(Currency::EUR()),
+                            black_box(Currency::USD()),
+                            black_box(PriceType::Mid),
+                        ))
+                    });
+                });
+            }
+        }
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_get_xrate, bench_get_xrate_mixed);
 criterion_main!(benches);

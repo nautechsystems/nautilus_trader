@@ -299,9 +299,12 @@ impl ExecutionClient for BacktestExecutionClient {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::{clock::TestClock, messages::execution::QueryOrder};
+    use nautilus_common::{clock::VirtualClock, messages::execution::QueryOrder};
     use nautilus_core::{DurationNanos, UUID4};
-    use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
+    use nautilus_execution::models::{
+        fee::{FeeModelAny, MakerTakerFeeModel},
+        latency::{LatencyModelHandle, StaticLatencyModel},
+    };
     use nautilus_model::{
         enums::{AccountType, BookType, OmsType},
         identifiers::{InstrumentId, StrategyId},
@@ -315,7 +318,7 @@ mod tests {
 
     fn setup_client_with_latency() -> (BacktestExecutionClient, Rc<RefCell<SimulatedExchange>>) {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let latency_model = StaticLatencyModel::new(
             DurationNanos::default(),
             DurationNanos::default(),
@@ -329,6 +332,7 @@ mod tests {
             .book_type(BookType::L2_MBP)
             .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
             .latency_model(LatencyModelHandle::new(latency_model))
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         let exchange = Rc::new(RefCell::new(

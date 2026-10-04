@@ -38,7 +38,7 @@
 //!   `OrderMatchingCore` maintains passive order state while quote and trade ticks iterate.
 //! - `gtd_limit_expiry`: quote-driven strategy submitting passive GTD limit orders which expire
 //!   on following trade ticks.
-//! - `data_routes`: bar, L2 delta, depth10, mark/index price, funding, status, and close event
+//! - `data_routes`: bar, L2 delta, depth, mark/index price, funding, status, and close event
 //!   routing through the engine and simulated exchange.
 //! - `order_type_sweep`: one strategy submits market, limit, stop, touched, and trailing orders
 //!   while quote and trade ticks drive matching and trigger evaluation.
@@ -61,11 +61,12 @@ use nautilus_backtest::{
 };
 use nautilus_common::{actor::DataActor, logging::logger::LoggerConfig, throttler::RateLimit};
 use nautilus_core::{DurationNanos, UnixNanos};
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
+        OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookAction, BookType,
@@ -296,8 +297,8 @@ fn bench_data_routes(c: &mut Criterion) {
             },
         ),
         (
-            "depth10",
-            generate_depth10_data(instrument_id, DATA_ROUTE_COUNT),
+            "depth",
+            generate_depth_data(instrument_id, DATA_ROUTE_COUNT),
             EngineBuildConfig {
                 book_type: BookType::L2_MBP,
                 ..Default::default()
@@ -663,6 +664,7 @@ fn build_engine_with_data_streams(
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .reject_stop_orders(build_config.reject_stop_orders)
                 .queue_position(true)
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .expect("venue config should be valid"),
         )
@@ -878,7 +880,7 @@ fn order_book_delta(
     )
 }
 
-fn generate_depth10_data(instrument_id: InstrumentId, depth_count: usize) -> Vec<Data> {
+fn generate_depth_data(instrument_id: InstrumentId, depth_count: usize) -> Vec<Data> {
     (0..depth_count)
         .map(|i| {
             let sequence = u64::try_from(i + 1).expect("sequence should fit in u64");
@@ -904,7 +906,7 @@ fn generate_depth10_data(instrument_id: InstrumentId, depth_count: usize) -> Vec
                 );
             }
 
-            Data::BookDepth10(Box::new(OrderBookDepth10::new(
+            Data::BookDepth(Box::new(OrderBookDepth::new(
                 instrument_id,
                 bids,
                 asks,

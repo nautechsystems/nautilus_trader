@@ -179,7 +179,7 @@ impl ExecutionClientFactory for DeriveExecutionClientFactory {
 #[cfg(test)]
 mod tests {
     use nautilus_common::{
-        cache::Cache, clock::TestClock, live::runner::replace_data_event_sender,
+        cache::Cache, clock::VirtualClock, live::runner::replace_data_event_sender,
         messages::DataEvent,
     };
     use rstest::rstest;
@@ -207,7 +207,7 @@ mod tests {
     fn test_data_client_factory_creates_client() {
         let factory = DeriveDataClientFactory::new();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let config = DeriveDataClientConfig::default();
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
@@ -224,7 +224,7 @@ mod tests {
     fn test_data_client_factory_rejects_wrong_config_type() {
         let factory = DeriveDataClientFactory::new();
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let wrong_config = WrongConfig;
 
         let result = factory.create(DERIVE, &wrong_config, cache.into(), clock);
@@ -258,7 +258,7 @@ mod tests {
             DERIVE,
             &wrong_config,
             cache.into(),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
         );
 
         assert!(result.is_err());

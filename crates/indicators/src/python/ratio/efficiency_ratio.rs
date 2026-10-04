@@ -17,18 +17,20 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::Bar,
     enums::PriceType,
-    types::{Money, Price, Quantity, fixed::MAX_FLOAT_PRECISION},
+    types::{Money, Price, Quantity},
 };
 use pyo3::prelude::*;
 
-use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio};
+use crate::{
+    indicator::Indicator, python::float_precision, ratio::efficiency_ratio::EfficiencyRatio,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl EfficiencyRatio {
     /// Calculates Kaufman's Efficiency Ratio (ER) across a rolling window.
     ///
-    /// The period must be at least `2`.
+    /// The period must be positive.
     ///
     /// For period `n`, the ratio is:
     ///
@@ -97,7 +99,7 @@ impl EfficiencyRatio {
 
     #[pyo3(name = "handle_bar")]
     fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
-        check_float_precision(bar.close.precision)?;
+        float_precision::check_bar(bar)?;
 
         self.handle_bar(bar);
         Ok(())
@@ -112,31 +114,21 @@ impl EfficiencyRatio {
 fn extract_update_value(value: &Bound<'_, PyAny>) -> PyResult<f64> {
     if value.is_instance_of::<Price>() {
         let price = value.extract::<Price>()?;
-        check_float_precision(price.precision)?;
+        float_precision::check(price.precision)?;
         return Ok(price.as_f64());
     }
 
     if value.is_instance_of::<Quantity>() {
         let quantity = value.extract::<Quantity>()?;
-        check_float_precision(quantity.precision)?;
+        float_precision::check(quantity.precision)?;
         return Ok(quantity.as_f64());
     }
 
     if value.is_instance_of::<Money>() {
         let money = value.extract::<Money>()?;
-        check_float_precision(money.currency.precision)?;
+        float_precision::check(money.currency.precision)?;
         return Ok(money.as_f64());
     }
 
     value.extract()
-}
-
-fn check_float_precision(precision: u8) -> PyResult<()> {
-    if precision > MAX_FLOAT_PRECISION {
-        return Err(to_pyvalue_err(format!(
-            "Fixed-point precision {precision} exceeds maximum float precision {MAX_FLOAT_PRECISION}",
-        )));
-    }
-
-    Ok(())
 }

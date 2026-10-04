@@ -42,7 +42,7 @@ use nautilus_model::{
     data::{
         Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
         InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{AccountId, ActorId, ClientId, ExecAlgorithmId, InstrumentId, TraderId, Venue},
@@ -224,7 +224,12 @@ impl PyBacktestEngine {
         let fee_model = fee_model
             .map(|obj| Python::attach(|py| pyobject_to_fee_model_handle(obj.bind(py))))
             .transpose()?
-            .unwrap_or_default();
+            .ok_or_else(|| {
+                to_pyvalue_err(
+                    "Backtest venue requires an explicit fee_model, including an explicit zero-fee model",
+                )
+            })?;
+
         let latency_model = latency_model
             .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
             .transpose()?
@@ -1608,8 +1613,8 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
         return Ok(Data::Bar(bar));
     }
 
-    if let Ok(depth) = obj.extract::<OrderBookDepth10>() {
-        return Ok(Data::BookDepth10(Box::new(depth)));
+    if let Ok(depth) = obj.extract::<OrderBookDepth>() {
+        return Ok(Data::BookDepth(Box::new(depth)));
     }
 
     if let Ok(mark) = obj.extract::<MarkPriceUpdate>() {

@@ -15,12 +15,10 @@
 
 //! Arrow serialization for BinaryOption instruments.
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{borrow::Borrow, collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{
-        Array, BinaryArray, BinaryBuilder, StringArray, StringBuilder, UInt8Array, UInt64Array,
-    },
+    array::{Array, StringArray, StringBuilder, UInt8Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -35,11 +33,12 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
-    extract_optional_string_column_by_name, optional_ustr_value,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name,
+    extract_optional_string_column_by_name, json_string_field, metadata_with_type_name,
+    optional_ustr_value, record_batch_with_timestamps, record_batch_with_u64_timestamps,
+    timestamp_data_type,
 };
 
 impl ArrowSchemaProvider for BinaryOption {
@@ -53,8 +52,8 @@ impl ArrowSchemaProvider for BinaryOption {
             Field::new("size_precision", DataType::UInt8, false),
             Field::new("price_increment", DataType::Utf8, false),
             Field::new("size_increment", DataType::Utf8, false),
-            Field::new("activation_ns", DataType::UInt64, false),
-            Field::new("expiration_ns", DataType::UInt64, false),
+            Field::new("activation_ns", timestamp_data_type(), false),
+            Field::new("expiration_ns", timestamp_data_type(), false),
             Field::new("outcome", DataType::Utf8, true), // nullable
             Field::new("description", DataType::Utf8, true), // nullable
             Field::new("max_quantity", DataType::Utf8, true), // nullable
@@ -65,31 +64,25 @@ impl ArrowSchemaProvider for BinaryOption {
             Field::new("min_price", DataType::Utf8, true), // nullable
             Field::new("margin_init", DataType::Utf8, false),
             Field::new("margin_maint", DataType::Utf8, false),
-            Field::new("maker_fee", DataType::Utf8, false),
-            Field::new("taker_fee", DataType::Utf8, false),
             Field::new("tick_scheme", DataType::Utf8, true),
-            Field::new("info", DataType::Binary, true), // nullable
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            json_string_field("info", true),
+            Field::new("ts_event", timestamp_data_type(), false),
+            Field::new("ts_init", timestamp_data_type(), false),
             Field::new("event_id", DataType::Utf8, true),
         ];
 
-        let mut final_metadata = HashMap::new();
-        final_metadata.insert(KEY_CLASS.to_string(), "BinaryOption".to_string());
-
-        if let Some(meta) = metadata {
-            final_metadata.extend(meta);
-        }
-
-        Schema::new_with_metadata(fields, final_metadata)
+        Schema::new_with_metadata(fields, metadata_with_type_name("BinaryOption", metadata))
     }
 }
 
 impl EncodeToRecordBatch for BinaryOption {
-    fn encode_batch(
+    fn encode_batch<T>(
         #[allow(unused)] metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut id_builder = StringBuilder::new();
         let mut raw_symbol_builder = StringBuilder::new();
         let mut asset_class_builder = StringBuilder::new();
@@ -111,14 +104,12 @@ impl EncodeToRecordBatch for BinaryOption {
         let mut min_price_builder = StringBuilder::new();
         let mut margin_init_builder = StringBuilder::new();
         let mut margin_maint_builder = StringBuilder::new();
-        let mut maker_fee_builder = StringBuilder::new();
-        let mut taker_fee_builder = StringBuilder::new();
         let mut tick_scheme_builder = StringBuilder::new();
-        let mut info_builder = BinaryBuilder::new();
+        let mut info_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for bo in data {
+        for bo in data.iter().map(Borrow::borrow) {
             id_builder.append_value(bo.id.to_string());
             raw_symbol_builder.append_value(bo.raw_symbol);
             asset_class_builder.append_value(bo.asset_class);
@@ -180,8 +171,6 @@ impl EncodeToRecordBatch for BinaryOption {
 
             margin_init_builder.append_value(bo.margin_init.to_string());
             margin_maint_builder.append_value(bo.margin_maint.to_string());
-            maker_fee_builder.append_value(bo.maker_fee.to_string());
-            taker_fee_builder.append_value(bo.taker_fee.to_string());
 
             if let Some(tick_scheme) = bo.tick_scheme {
                 tick_scheme_builder.append_value(tick_scheme);
@@ -191,11 +180,10 @@ impl EncodeToRecordBatch for BinaryOption {
 
             event_id_builder.append_option(bo.event_id.as_ref().map(Ustr::as_str));
 
-            // Encode info dict as JSON bytes (matching Python's msgspec.json.encode)
             if let Some(ref info) = bo.info {
-                match serde_json::to_vec(info) {
-                    Ok(json_bytes) => {
-                        info_builder.append_value(json_bytes);
+                match serde_json::to_string(info) {
+                    Ok(json) => {
+                        info_builder.append_value(json);
                     }
                     Err(e) => {
                         return Err(ArrowError::InvalidArgumentError(format!(
@@ -211,11 +199,8 @@ impl EncodeToRecordBatch for BinaryOption {
             ts_init_builder.append_value(bo.ts_init.as_u64());
         }
 
-        let mut final_metadata = metadata.clone();
-        final_metadata.insert(KEY_CLASS.to_string(), "BinaryOption".to_string());
-
-        RecordBatch::try_new(
-            Self::get_schema(Some(final_metadata)).into(),
+        record_batch_with_timestamps(
+            Self::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(id_builder.finish()),
                 Arc::new(raw_symbol_builder.finish()),
@@ -237,8 +222,6 @@ impl EncodeToRecordBatch for BinaryOption {
                 Arc::new(min_price_builder.finish()),
                 Arc::new(margin_init_builder.finish()),
                 Arc::new(margin_maint_builder.finish()),
-                Arc::new(maker_fee_builder.finish()),
-                Arc::new(taker_fee_builder.finish()),
                 Arc::new(tick_scheme_builder.finish()),
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
@@ -276,6 +259,8 @@ pub fn decode_binary_option_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<BinaryOption>, EncodingError> {
+    let record_batch = record_batch_with_u64_timestamps(record_batch)?;
+    let record_batch = &record_batch;
     let event_id_values = extract_optional_string_column_by_name(record_batch, "event_id")?;
     let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
@@ -316,23 +301,12 @@ pub fn decode_binary_option_batch(
         extract_column::<StringArray>(cols, "margin_init", 18, DataType::Utf8)?;
     let margin_maint_values =
         extract_column::<StringArray>(cols, "margin_maint", 19, DataType::Utf8)?;
-    let maker_fee_values = extract_column::<StringArray>(cols, "maker_fee", 20, DataType::Utf8)?;
-    let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 21, DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
-    let info_values =
-        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 23, DataType::Binary)?;
-    let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
-        record_batch,
-        "ts_event",
-        24,
-        DataType::UInt64,
-    )?;
-    let ts_init_values = extract_column_by_name_or_index::<UInt64Array>(
-        record_batch,
-        "ts_init",
-        25,
-        DataType::UInt64,
-    )?;
+    let info_values = extract_column_by_name::<StringArray>(record_batch, "info", DataType::Utf8)?;
+    let ts_event_values =
+        extract_column_by_name::<UInt64Array>(record_batch, "ts_event", DataType::UInt64)?;
+    let ts_init_values =
+        extract_column_by_name::<UInt64Array>(record_batch, "ts_init", DataType::UInt64)?;
 
     let mut result = Vec::with_capacity(num_rows);
 
@@ -363,10 +337,6 @@ pub fn decode_binary_option_batch(
             .map_err(|e| EncodingError::ParseError("margin_init", format!("row {i}: {e}")))?;
         let margin_maint = Decimal::from_str(margin_maint_values.value(i))
             .map_err(|e| EncodingError::ParseError("margin_maint", format!("row {i}: {e}")))?;
-        let maker_fee = Decimal::from_str(maker_fee_values.value(i))
-            .map_err(|e| EncodingError::ParseError("maker_fee", format!("row {i}: {e}")))?;
-        let taker_fee = Decimal::from_str(taker_fee_values.value(i))
-            .map_err(|e| EncodingError::ParseError("taker_fee", format!("row {i}: {e}")))?;
 
         let max_quantity =
             if max_quantity_values.is_null(i) {
@@ -426,17 +396,16 @@ pub fn decode_binary_option_batch(
             Some(Ustr::from(desc_str))
         };
 
-        // Decode info dict from JSON bytes (matching Python's msgspec.json.decode)
         let info = if info_values.is_null(i) {
             None
         } else {
-            let info_bytes = info_values
+            let info_json = info_values
                 .as_any()
-                .downcast_ref::<BinaryArray>()
+                .downcast_ref::<StringArray>()
                 .ok_or_else(|| EncodingError::ParseError("info", format!("row {i}: invalid type")))?
                 .value(i);
 
-            match serde_json::from_slice::<Params>(info_bytes) {
+            match serde_json::from_str::<Params>(info_json) {
                 Ok(info_dict) => Some(info_dict),
                 Err(e) => {
                     return Err(EncodingError::ParseError(
@@ -499,8 +468,6 @@ pub fn decode_binary_option_batch(
             )?)
             .margin_init(margin_init)
             .margin_maint(margin_maint)
-            .maker_fee(maker_fee)
-            .taker_fee(taker_fee)
             .maybe_tick_scheme(tick_scheme)
             .maybe_event_id(optional_ustr_value(event_id_values, i))
             .maybe_info(info)

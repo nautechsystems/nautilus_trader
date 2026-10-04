@@ -1280,7 +1280,7 @@ mod tests {
 
     #[rstest]
     #[case(DataClass::BookDeltas)]
-    #[case(DataClass::BookDepth10)]
+    #[case(DataClass::BookDepth)]
     #[case(DataClass::Quote)]
     #[case(DataClass::Trade)]
     #[case(DataClass::Bar)]

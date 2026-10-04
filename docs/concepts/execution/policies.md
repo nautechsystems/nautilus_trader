@@ -14,7 +14,7 @@ primary state transitions, see [Orders](../orders/index.md#order-state-flow).
 | ----------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Order state             | Each applied event must satisfy the order state machine and identity checks.                    | A status alone does not identify whether venue evidence or reconciliation produced it.        |
 | Command outcome         | Adapters distinguish definitive local failures, definitive venue results, and unknown outcomes. | A transport result does not necessarily prove what the venue did.                             |
-| Command delivery        | Adapters retry state-changing commands only when repeating the same request is safe.            | NautilusTrader does not guarantee exactly-once delivery across the venue boundary.            |
+| Command delivery        | The contract retries a state-changing command only when repeating the same request is safe.     | Not every adapter follows that contract, and delivery is not exactly once.                    |
 | Event application       | Order identity and transition checks reject invalid events; fills reject a repeated `trade_id`. | No blanket exactly-once guarantee applies to every event type or across lost retained state.  |
 | Persistence before send | The cache enqueues the order and resolved execution-client origin before calling the client.    | The built-in cache backends do not wait for durable storage before the client can send.       |
 | Bounded recovery        | Reconciliation recovers reported order state without applying unsupported fill economics.       | Partial history does not prove historical position economics, realized PnL, or average price. |
@@ -86,6 +86,16 @@ The failure event depends on the command and when the failure becomes definitive
 | Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.                    |
 | Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
 
+A submit command is evaluated only against orders that are eligible for it. A cached order is
+ineligible once it has left `INITIALIZED` or `RELEASED`, and while the `ExecutionEngine` has dispatched
+it to an execution client but has not yet applied that client's first status event. A repeated
+`SubmitOrder` for an ineligible order is skipped, and a `SubmitOrderList` naming one is denied
+without reaching the client: `OrderDenied` (`ORDER_LIST_DENIED`) applies only to the list's
+eligible members, while the earlier submission keeps its lifecycle and its later client events
+apply normally. The dispatch record behind this rule is process-local: a reset clears it, and it
+is absent after a restart, where a still-`INITIALIZED` dispatched order is treated like any other
+unrouted order until it is resolved by the client's events or a venue cancel or expiry report.
+
 For modify or cancel preparation, NautilusTrader emits the matching rejection only when the
 failure is attributable to that command and proves it was not sent. Otherwise, it logs the failure
 without inventing an outcome.
@@ -108,17 +118,46 @@ An **in-flight order** is awaiting resolution:
 
 ### Delivery and retry limits
 
-A request can reach a venue even when its response is lost. NautilusTrader therefore does not make
-a broad exactly-once delivery claim for submit, modify, or cancel commands.
+A request can reach a venue even when its response is lost. NautilusTrader does not guarantee
+exactly-once delivery for submit, modify, or cancel commands.
 
-An adapter may retry a state-changing command only when the venue protocol makes repetition safe,
-such as through stable request identity and duplicate detection or idempotent semantics for the
-same target. Otherwise, the adapter sends once and uses stream updates, queries, polling, or
-reconciliation to resolve an unknown outcome.
+#### Safety test
 
-Retryability and command outcome are separate. A failure can be safe to retry while still leaving
-the earlier attempt ambiguous. Once an attempt may have reached the venue, a later failure remains
-ambiguous unless authoritative evidence resolves the same semantic command.
+An adapter retries a transient failure only when a repeat is safe. A repeat is safe when it cannot
+apply a state change twice, cannot change an order the first attempt did not name, and cannot
+report an earlier success as a rejection. A repeat that only mints an additional short-lived
+session token, and does not revoke an existing session or create a lasting credential, is safe.
+
+Only the venue protocol can make any other repeat safe, through stable request identity and
+duplicate detection, or through idempotent semantics for the same target. That guarantee must hold
+for the whole retry window, including after the targeted order fills or cancels, and until any
+venue deduplication clock expires.
+
+| Request                                                                                                                                 | Repeat effect                                | Attempts                            |
+| --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ----------------------------------- |
+| Submit, or submit order list.                                                                                                           | Can place a second live order.               | Once, unless the safety test holds. |
+| Modify.                                                                                                                                 | Can apply a second modification.             | Once, unless the safety test holds. |
+| Cancel, or batch cancel by explicit ID.                                                                                                 | Second response can report a rejection.      | Once, unless the safety test holds. |
+| Cancel-all.                                                                                                                             | Can cancel an order placed between attempts. | Once, unless the safety test holds. |
+| Other state-changing request.                                                                                                           | Can apply that change twice.                 | Once, unless the safety test holds. |
+| Session-token request that only mints an unused short-lived token, does not revoke a session, and does not create a lasting credential. | Mints another unused token.                  | On a transient failure.             |
+| Read or other idempotent request.                                                                                                       | No venue state change.                       | On a transient failure.             |
+
+When the safety test does not hold, the adapter sends the request once. The outcome stays unknown
+until stream updates, queries, polling, or reconciliation resolve the same semantic command.
+
+:::warning[Incomplete conformance]
+A transient failure can send some order commands twice, including on Bybit, OKX, and Kraken spot.
+That list is not a complete census. The
+[retry gate conformance](../../developer_guide/adapters.md#retry-gate-conformance) table records
+the checked HTTP gates.
+:::
+
+#### Outcome
+
+Whether a failure is safe to retry is separate from the venue outcome. A failure can be safe to
+retry while the earlier attempt remains ambiguous. Once an attempt may have reached the venue, a
+later failure remains ambiguous unless authoritative evidence resolves the same semantic command.
 
 ## Persistence before transport
 
@@ -166,11 +205,32 @@ Recovery means restoring available cached state, reconciling available venue rep
 the strategy-start barrier until startup reconciliation finishes. It does not prove that the venue
 returned complete history or that every unknown command outcome was resolved.
 
-An explicitly bounded report set changes NETTING position and portfolio economics only when the
-reports are complete and coherent, retained state is compatible, and replay matches one
-authoritative position report. Otherwise, NautilusTrader updates the reported order state without
-applying the unsupported fill to a position or portfolio. See
-[Bounded history safety](reconciliation.md#bounded-history-safety).
+:::info[Position reports are market exposure]
+**An explicit position report is authoritative. During startup reconciliation,
+the engine either aligns to that report within reconciliation tolerances or fails closed.**
+
+Authoritative position reports:
+
+- An explicit open report, including quantity and direction.
+- An explicit flat report.
+
+Not evidence of a flat position:
+
+- A missing report.
+- A null quantity.
+- A venue that does not publish positions.
+
+The fill window does not decide whether the report is authoritative. Missing reports do
+not mean flat.
+
+By default, `generate_missing_orders` is enabled. The engine generates the
+orders and fills needed to align local state to the report. Disabling generation
+does not allow an unresolved report through startup.
+
+This guarantee covers reports included by the position-report and instrument
+filters, with reconciliation enabled. Unresolved reports prevent actors and
+strategies from starting.
+:::
 
 Reports for orders absent from the cache can create external orders. Active claims assign an
 external order to a strategy; unclaimed orders use the `EXTERNAL` strategy. See
@@ -186,7 +246,9 @@ starting unless a documented compatibility path handles that specific condition.
 ### Terminal reconciliation provenance
 
 The `reconciliation` field identifies an event generated through reconciliation. It does not by
-itself distinguish a venue status report from a local policy resolution:
+itself distinguish a venue status report from a local policy resolution. The local policy resolutions
+below apply when submission retention does not require the order to remain unresolved; explicit venue
+status reports still reconcile retained orders:
 
 | Evidence path                                                       | Prior status                        | Terminal event                  | Available event provenance                                                                        |
 | ------------------------------------------------------------------- | ----------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -195,6 +257,13 @@ itself distinguish a venue status report from a local policy resolution:
 | In-flight retry exhaustion                                          | `PENDING_UPDATE`/`PENDING_CANCEL`   | `OrderCanceled`                 | `reconciliation=true`; the event has no reason field.                                             |
 | Full-history order remains missing after retries and targeted query | `SUBMITTED`/`ACCEPTED`              | `OrderRejected`                 | `reconciliation=true`, reason `NOT_FOUND_AT_VENUE`.                                               |
 | Full-history order remains missing after retries and targeted query | `PARTIALLY_FILLED`                  | `OrderCanceled`                 | `reconciliation=true`; the event has no reason field.                                             |
+
+The `submission_recovery_policy` setting defaults to `SubmissionRecoveryPolicy::ResolveLocally`.
+With `SubmissionRecoveryPolicy::RetainUnresolved`, orders that have never been accepted retain their
+unacknowledged state after recovery exhaustion, including a pending cancel or update. The Polymarket
+client requires this behavior regardless of the configured policy. Automatic per-order recovery
+queries stop, but later venue events and reports can still resolve the order. Already accepted orders
+continue to use the local resolution rules above.
 
 :::warning[Local terminal state is not venue confirmation]
 The first row is backed by an explicit venue status. The remaining rows restore a terminal local

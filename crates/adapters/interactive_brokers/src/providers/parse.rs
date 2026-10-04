@@ -729,8 +729,6 @@ pub fn parse_spread_instrument_id(
         .lot_size(lot_size)
         .margin_init(Decimal::ZERO)
         .margin_maint(Decimal::ZERO)
-        .maker_fee(Decimal::ZERO)
-        .taker_fee(Decimal::ZERO)
         .ts_event(timestamp)
         .ts_init(timestamp)
         .build()?;
@@ -792,8 +790,6 @@ pub fn parse_futures_spread_instrument_id(
         .lot_size(Quantity::new(1.0, 0))
         .margin_init(Decimal::ZERO)
         .margin_maint(Decimal::ZERO)
-        .maker_fee(Decimal::ZERO)
-        .taker_fee(Decimal::ZERO)
         .maybe_info(bag_contract.map(ib_contract_info_for_contract))
         .ts_event(timestamp)
         .ts_init(timestamp)

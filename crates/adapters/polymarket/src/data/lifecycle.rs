@@ -17,7 +17,10 @@ use std::time::Duration;
 
 use ahash::AHashSet;
 use dashmap::DashMap;
-use nautilus_common::msgbus::{self, TypedHandler};
+use nautilus_common::{
+    live::dst::time::Instant,
+    msgbus::{self, TypedHandler},
+};
 use nautilus_core::{AtomicMap, AtomicSet};
 use nautilus_live::task::TaskGroupGuard;
 use nautilus_model::events::PositionEvent;
@@ -114,7 +117,8 @@ impl PolymarketDataClient {
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_resolutions: self.pending_resolutions.clone(),
             deferred_resolutions: self.deferred_resolutions.clone(),
-            pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
+            book_sync: self.book_sync.clone(),
+            book_snapshot_timeout: Duration::from_secs(self.config.book_snapshot_timeout_secs),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             tasks: task_spawner,
@@ -174,7 +178,7 @@ impl PolymarketDataClient {
         let active_trade_subs = self.active_trade_subs.clone();
         let active_instrument_status_subs = self.active_instrument_status_subs.clone();
         let active_instrument_close_subs = self.active_instrument_close_subs.clone();
-        let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
+        let book_sync = self.book_sync.clone();
         let pending_auto_loads = self.pending_auto_loads.clone();
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
@@ -210,7 +214,8 @@ impl PolymarketDataClient {
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_resolutions: self.pending_resolutions.clone(),
             deferred_resolutions: self.deferred_resolutions.clone(),
-            pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
+            book_sync: self.book_sync.clone(),
+            book_snapshot_timeout: Duration::from_secs(self.config.book_snapshot_timeout_secs),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             tasks: task_spawner,
@@ -294,7 +299,7 @@ impl PolymarketDataClient {
                                 &active_instrument_status_subs,
                                 &active_instrument_close_subs,
                                 &watchlist,
-                                &pending_snapshot_after_tick_change,
+                                &book_sync,
                                 &pending_auto_loads,
                                 &ws_open_tokens,
                                 &ws_sub_mutex,
@@ -327,7 +332,7 @@ impl PolymarketDataClient {
                             &active_instrument_close_subs,
                             &closed_condition_ids,
                             &watchlist,
-                            &pending_snapshot_after_tick_change,
+                            &book_sync,
                             &pending_auto_loads,
                             &ws_open_tokens,
                             &ws_sub_mutex,
@@ -413,6 +418,47 @@ impl PolymarketDataClient {
         Ok(())
     }
 
+    fn register_book_health_monitor(&self) {
+        let interval_duration = Duration::from_secs(self.config.book_stale_check_interval_secs);
+        let threshold = Duration::from_secs(self.config.book_stale_threshold_secs);
+
+        if interval_duration.is_zero() || threshold.is_zero() {
+            return;
+        }
+
+        let book_sync = self.book_sync.clone();
+
+        let Ok(tasks) = self.tasks.spawner() else {
+            log::debug!("Skipping Polymarket book health monitor: task admission is closed");
+            return;
+        };
+
+        let cancel = tasks.cancellation_token();
+
+        let future = async move {
+            let mut interval = tokio::time::interval(interval_duration);
+
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => {
+                        log::debug!("Book health monitor task cancelled");
+                        break;
+                    }
+                    _ = interval.tick() => {
+                        for signal in book_sync.stale_books(threshold, Instant::now()) {
+                            signal.log();
+                        }
+                    }
+                }
+            }
+        };
+
+        if let Err(e) = tasks.spawn(future) {
+            log::debug!("Skipping Polymarket book health monitor after shutdown began: {e}");
+        }
+    }
+
     pub(super) async fn await_tasks_with_timeout(
         &self,
         timeout: tokio::time::Duration,
@@ -480,7 +526,7 @@ impl PolymarketDataClient {
         self.active_trade_subs = std::sync::Arc::new(AtomicSet::new());
         self.active_instrument_status_subs = std::sync::Arc::new(AtomicSet::new());
         self.active_instrument_close_subs = std::sync::Arc::new(AtomicSet::new());
-        self.pending_snapshot_after_tick_change = std::sync::Arc::new(AtomicSet::new());
+        self.book_sync = crate::book::sync::BookSyncTracker::default();
         self.new_market_inflight_keys = std::sync::Arc::new(DashMap::new());
         self.pending_resolutions = std::sync::Arc::new(DashMap::new());
         self.deferred_resolutions = std::sync::Arc::new(AtomicMap::new());
@@ -529,7 +575,12 @@ impl PolymarketDataClient {
             self.instruments.load().len(),
         );
 
-        self.ws_client.connect().await?;
+        // The venue closes a market socket that receives no subscription
+        if self.config.subscribe_new_markets {
+            self.ws_client.connect().await?;
+        } else {
+            self.ws_client.prepare().await?;
+        }
 
         let session_result = async {
             if self.config.subscribe_new_markets {
@@ -544,6 +595,7 @@ impl PolymarketDataClient {
             self.register_message_handler(rx)?;
             self.register_instrument_refresh_task()?;
             self.register_resolve_poll_task()?;
+            self.register_book_health_monitor();
 
             // Connect unconditionally: this clears the feed's closing latch from a prior
             // disconnect; without retained subscriptions no RTDS socket is opened.
@@ -596,6 +648,8 @@ impl PolymarketDataClient {
             self.shutdown_errors.push(e.to_string());
         }
 
+        self.book_sync.clear();
+
         if let Err(e) = self.rtds_feed.disconnect().await {
             self.shutdown_errors.push(e.to_string());
         }
@@ -646,8 +700,11 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clients::{DataClient, ExecutionClient},
-        clock::{Clock, TestClock},
-        live::runner::{replace_data_event_sender, replace_exec_event_sender},
+        clock::{Clock, VirtualClock},
+        live::{
+            dst::time::Instant,
+            runner::{replace_data_event_sender, replace_exec_event_sender},
+        },
         messages::{
             DataEvent, ExecutionEvent,
             data::{
@@ -660,7 +717,10 @@ mod tests {
     use nautilus_core::{
         Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND, string::secret::SecretString,
     };
-    use nautilus_execution::client::core::ExecutionClientCore;
+    use nautilus_execution::{
+        client::core::ExecutionClientCore,
+        models::fee::{FeeModelAny, MakerTakerFeeModel},
+    };
     use nautilus_model::{
         data::{DataType, QuoteTick},
         enums::BookType,
@@ -792,6 +852,13 @@ mod tests {
         )
     }
 
+    #[rstest]
+    fn test_data_client_wires_clob_client_for_fee_rate_fallback() {
+        let client = make_client_for_reset_test();
+
+        assert!(client.provider().http_client().clob_client().is_some());
+    }
+
     fn rtds_crypto_data_type(symbol: &str) -> DataType {
         let mut metadata = Params::new();
         metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
@@ -861,8 +928,8 @@ mod tests {
             .ws_open_tokens
             .insert(Ustr::from(inst.raw_symbol().as_str()));
         client
-            .pending_snapshot_after_tick_change
-            .insert(instrument_id);
+            .book_sync
+            .request_recovery(instrument_id, Instant::now());
         client.pending_auto_loads.lock().insert(instrument_id);
         client.order_books.insert(
             instrument_id,
@@ -898,8 +965,8 @@ mod tests {
             .new_market_inflight_keys
             .insert("btc-updown-5m-1".to_string(), ());
         client
-            .pending_snapshot_after_tick_change
-            .insert(instrument_id);
+            .book_sync
+            .request_recovery(instrument_id, Instant::now());
         client.pending_auto_loads.lock().insert(instrument_id);
         client.order_books.insert(
             instrument_id,
@@ -936,7 +1003,7 @@ mod tests {
         assert!(client.order_books.is_empty());
         assert!(client.last_quotes.is_empty());
         assert!(client.new_market_inflight_keys.is_empty());
-        assert!(client.pending_snapshot_after_tick_change.is_empty());
+        assert!(!client.book_sync.book_gated(instrument_id));
         assert!(client.pending_auto_loads.lock().is_empty());
         assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
     }
@@ -1423,11 +1490,7 @@ mod tests {
         );
         assert!(client.active_instrument_close_subs.contains(&instrument_id));
         assert!(!client.ws_open_tokens.contains(&token_id));
-        assert!(
-            !client
-                .pending_snapshot_after_tick_change
-                .contains(&instrument_id)
-        );
+        assert!(!client.book_sync.book_gated(instrument_id));
         assert!(client.pending_auto_loads.lock().is_empty());
         assert!(!client.order_books.contains_key(&instrument_id));
         assert!(!client.last_quotes.contains_key(&instrument_id));
@@ -1604,6 +1667,7 @@ mod tests {
 
         let watched_count = 8usize;
         let unwatched_count = 5usize;
+        let mut retired_ids = Vec::new();
 
         for index in 0..watched_count {
             let raw_symbol = format!("0xTOKEN_WATCHED_{index}");
@@ -1618,6 +1682,7 @@ mod tests {
             );
 
             seed_expired_runtime_state(&client, &inst);
+            retired_ids.push(inst.id());
         }
 
         for index in 0..unwatched_count {
@@ -1626,6 +1691,7 @@ mod tests {
             let inst = seed_expired_instrument(&client, &raw_symbol, &condition_id);
 
             seed_expired_runtime_state(&client, &inst);
+            retired_ids.push(inst.id());
         }
 
         client.register_resolve_poll_task().unwrap();
@@ -1641,7 +1707,9 @@ mod tests {
                     && client.active_instrument_status_subs.len() == watched_count
                     && client.active_instrument_close_subs.len() == watched_count
                     && client.ws_open_tokens.is_empty()
-                    && client.pending_snapshot_after_tick_change.is_empty()
+                    && retired_ids
+                        .iter()
+                        .all(|id| !client.book_sync.book_gated(*id))
                     && client.pending_auto_loads.lock().is_empty()
                     && client.instruments.load().len() == watched_count
                     && client.resolve_poll_watchlist.load().len() == watched_count
@@ -1665,7 +1733,11 @@ mod tests {
         assert_eq!(client.active_instrument_status_subs.len(), watched_count);
         assert_eq!(client.active_instrument_close_subs.len(), watched_count);
         assert!(client.ws_open_tokens.is_empty());
-        assert!(client.pending_snapshot_after_tick_change.is_empty());
+        assert!(
+            retired_ids
+                .iter()
+                .all(|id| !client.book_sync.book_gated(*id))
+        );
         assert!(client.pending_auto_loads.lock().is_empty());
         assert_eq!(client.instruments.load().len(), watched_count);
         assert_eq!(client.resolve_poll_watchlist.load().len(), watched_count);
@@ -1699,7 +1771,7 @@ mod tests {
             &client.active_instrument_close_subs,
             &client.closed_condition_ids,
             &client.resolve_poll_watchlist,
-            &client.pending_snapshot_after_tick_change,
+            &client.book_sync,
             &client.pending_auto_loads,
             &client.ws_open_tokens,
             &client.ws_sub_mutex,
@@ -1780,17 +1852,18 @@ mod tests {
     struct ChurnSandbox {
         client: SandboxExecutionClient,
         cache: Rc<RefCell<Cache>>,
-        test_clock: Rc<RefCell<TestClock>>,
+        test_clock: Rc<RefCell<VirtualClock>>,
         rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     }
 
     fn setup_churn_sandbox() -> ChurnSandbox {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let test_clock = Rc::new(RefCell::new(TestClock::new()));
+        let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
         let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
 
         let config = SandboxExecutionClientConfig::builder()
             .venue(*POLYMARKET_VENUE)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
             .build();
         let core = ExecutionClientCore::new(
             TraderId::from("TESTER-001"),
@@ -1802,7 +1875,7 @@ mod tests {
             config.base_currency,
             cache.clone(),
         );
-        let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+        let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         replace_exec_event_sender(tx);
@@ -1830,7 +1903,10 @@ mod tests {
 
     // The data-runtime maps and sets that a retired Polymarket instrument must vacate, labeled so
     // a count mismatch names the owner that retained state.
-    fn data_runtime_owner_counts(client: &PolymarketDataClient) -> Vec<(&'static str, usize)> {
+    fn data_runtime_owner_counts(
+        client: &PolymarketDataClient,
+        gated_ids: &[InstrumentId],
+    ) -> Vec<(&'static str, usize)> {
         vec![
             ("instruments", client.instruments.len()),
             ("token_meta", client.token_meta.len()),
@@ -1849,8 +1925,11 @@ mod tests {
             ),
             ("ws_open_tokens", client.ws_open_tokens.len()),
             (
-                "pending_snapshot_after_tick_change",
-                client.pending_snapshot_after_tick_change.len(),
+                "book_sync_gated",
+                gated_ids
+                    .iter()
+                    .filter(|id| client.book_sync.book_gated(**id))
+                    .count(),
             ),
             ("pending_auto_loads", client.pending_auto_loads.lock().len()),
         ]
@@ -1924,7 +2003,7 @@ mod tests {
                 );
             }
 
-            for (owner, count) in data_runtime_owner_counts(&client) {
+            for (owner, count) in data_runtime_owner_counts(&client, &cycle_ids) {
                 assert_eq!(
                     count, CHURN_INSTRUMENTS_PER_CYCLE,
                     "cycle {cycle} data-runtime {owner} should hold one entry per streamed instrument",
@@ -1980,7 +2059,7 @@ mod tests {
                 &client.active_instrument_close_subs,
                 &client.closed_condition_ids,
                 &client.resolve_poll_watchlist,
-                &client.pending_snapshot_after_tick_change,
+                &client.book_sync,
                 &client.pending_auto_loads,
                 &client.ws_open_tokens,
                 &client.ws_sub_mutex,
@@ -1991,7 +2070,7 @@ mod tests {
             )
             .await;
 
-            for (owner, count) in data_runtime_owner_counts(&client) {
+            for (owner, count) in data_runtime_owner_counts(&client, &cycle_ids) {
                 assert_eq!(
                     count, 0,
                     "cycle {cycle} retirement should release data-runtime {owner}",
@@ -2010,5 +2089,35 @@ mod tests {
         );
 
         sandbox.client.stop().expect("sandbox client should stop");
+    }
+
+    #[rstest]
+    #[case::zero_interval(0, 30)]
+    #[case::zero_threshold(5, 0)]
+    #[case::both_zero(0, 0)]
+    fn book_health_monitor_disabled_by_zero_config(
+        #[case] interval_secs: u64,
+        #[case] threshold_secs: u64,
+    ) {
+        let mut client = make_client_for_reset_test();
+        client.config.book_stale_check_interval_secs = interval_secs;
+        client.config.book_stale_threshold_secs = threshold_secs;
+        let before = client.tasks.len();
+
+        client.register_book_health_monitor();
+
+        assert_eq!(client.tasks.len(), before);
+    }
+
+    #[rstest]
+    fn book_health_monitor_spawns_when_enabled() {
+        let mut client = make_client_for_reset_test();
+        client.config.book_stale_check_interval_secs = 60;
+        client.config.book_stale_threshold_secs = 30;
+        let before = client.tasks.len();
+
+        client.register_book_health_monitor();
+
+        assert_eq!(client.tasks.len(), before + 1);
     }
 }

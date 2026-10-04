@@ -87,3 +87,8 @@ harness = false
 name = "matching_engine"
 path = "benches/matching_engine.rs"
 harness = false
+
+[[bench]]
+name = "position_replay"
+path = "benches/position_replay.rs"
+harness = false

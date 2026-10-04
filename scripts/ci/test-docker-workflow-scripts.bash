@@ -23,12 +23,20 @@ saved_digest="sha256:$(printf '%064d' 1)"
 RUNNER_TEMP="$case_root/runner" bash "$save_script" nautilus_trader "$saved_digest"
 test -f "$case_root/runner/digests/nautilus_trader/${saved_digest#sha256:}"
 
-if RUNNER_TEMP="$case_root/runner" bash "$save_script" '../invalid' "$saved_digest"; then
-  echo "Expected an invalid image artifact name to fail" >&2
+status=0
+diagnostic=$(RUNNER_TEMP="$case_root/runner" bash "$save_script" '../invalid' "$saved_digest" 2>&1) || status=$?
+expected='::error::Invalid image artifact name: ../invalid'
+if [ "$status" -ne 1 ] || [ "$diagnostic" != "$expected" ]; then
+  printf 'Expected status 1 and diagnostic: %s\n' "$expected" >&2
+  printf 'Actual status %s and diagnostic: %s\n' "$status" "$diagnostic" >&2
   exit 1
 fi
-if RUNNER_TEMP="$case_root/runner" bash "$save_script" jupyterlab invalid; then
-  echo "Expected an invalid image digest to fail" >&2
+status=0
+diagnostic=$(RUNNER_TEMP="$case_root/runner" bash "$save_script" jupyterlab invalid 2>&1) || status=$?
+expected='::error::Invalid image digest: invalid'
+if [ "$status" -ne 1 ] || [ "$diagnostic" != "$expected" ]; then
+  printf 'Expected status 1 and diagnostic: %s\n' "$expected" >&2
+  printf 'Actual status %s and diagnostic: %s\n' "$status" "$diagnostic" >&2
   exit 1
 fi
 
@@ -58,42 +66,57 @@ grep -Fq "ghcr.io/nautechsystems/nautilus_trader@sha256:$digest_two" "$docker_lo
 invalid_dir="$case_root/invalid-digest"
 mkdir -p "$invalid_dir"
 touch "$invalid_dir/not-a-digest"
-if (
+status=0
+diagnostic=$(
+  exec 2>&1
   cd "$invalid_dir"
   PATH="$fake_bin:$PATH" \
     DOCKER_LOG="$docker_log" \
     DOCKER_METADATA_OUTPUT_JSON="$metadata" \
     GITHUB_OUTPUT="$output" \
     bash "$create_script" ghcr.io/nautechsystems/nautilus_trader
-); then
-  echo "Expected an invalid digest file to fail" >&2
+) || status=$?
+expected='::error::Invalid image digest file: not-a-digest'
+if [ "$status" -ne 1 ] || [ "$diagnostic" != "$expected" ]; then
+  printf 'Expected status 1 and diagnostic: %s\n' "$expected" >&2
+  printf 'Actual status %s and diagnostic: %s\n' "$status" "$diagnostic" >&2
   exit 1
 fi
 
 mismatched_metadata='{"tags":["ghcr.io/other/image:nightly"]}'
-if (
+status=0
+diagnostic=$(
+  exec 2>&1
   cd "$manifest_dir"
   PATH="$fake_bin:$PATH" \
     DOCKER_LOG="$docker_log" \
     DOCKER_METADATA_OUTPUT_JSON="$mismatched_metadata" \
     GITHUB_OUTPUT="$output" \
     bash "$create_script" ghcr.io/nautechsystems/nautilus_trader
-); then
-  echo "Expected a mismatched metadata image to fail" >&2
+) || status=$?
+expected='::error::Invalid Docker metadata tag for ghcr.io/nautechsystems/nautilus_trader: ghcr.io/other/image:nightly'
+if [ "$status" -ne 1 ] || [ "$diagnostic" != "$expected" ]; then
+  printf 'Expected status 1 and diagnostic: %s\n' "$expected" >&2
+  printf 'Actual status %s and diagnostic: %s\n' "$status" "$diagnostic" >&2
   exit 1
 fi
 
 malformed_metadata='{"tags":["ghcr.io/nautechsystems/nautilus_trader:bad tag"]}'
 : > "$docker_log"
-if (
+status=0
+diagnostic=$(
+  exec 2>&1
   cd "$manifest_dir"
   PATH="$fake_bin:$PATH" \
     DOCKER_LOG="$docker_log" \
     DOCKER_METADATA_OUTPUT_JSON="$malformed_metadata" \
     GITHUB_OUTPUT="$output" \
     bash "$create_script" ghcr.io/nautechsystems/nautilus_trader
-); then
-  echo "Expected a malformed metadata tag to fail" >&2
+) || status=$?
+expected='::error::Invalid Docker metadata tag for ghcr.io/nautechsystems/nautilus_trader: ghcr.io/nautechsystems/nautilus_trader:bad tag'
+if [ "$status" -ne 1 ] || [ "$diagnostic" != "$expected" ]; then
+  printf 'Expected status 1 and diagnostic: %s\n' "$expected" >&2
+  printf 'Actual status %s and diagnostic: %s\n' "$status" "$diagnostic" >&2
   exit 1
 fi
 if [ -s "$docker_log" ]; then
@@ -103,15 +126,20 @@ fi
 
 empty_dir="$case_root/empty"
 mkdir -p "$empty_dir"
-if (
+status=0
+diagnostic=$(
+  exec 2>&1
   cd "$empty_dir"
   PATH="$fake_bin:$PATH" \
     DOCKER_LOG="$docker_log" \
     DOCKER_METADATA_OUTPUT_JSON="$metadata" \
     GITHUB_OUTPUT="$output" \
     bash "$create_script" ghcr.io/nautechsystems/nautilus_trader
-); then
-  echo "Expected a missing digest list to fail" >&2
+) || status=$?
+expected='::error::No image digest files found'
+if [ "$status" -ne 1 ] || [ "$diagnostic" != "$expected" ]; then
+  printf 'Expected status 1 and diagnostic: %s\n' "$expected" >&2
+  printf 'Actual status %s and diagnostic: %s\n' "$status" "$diagnostic" >&2
   exit 1
 fi
 

@@ -15,8 +15,9 @@
 # tutorial reads the daily ZIP into a DataFrame. The strategy is the same
 # `OrderBookImbalance` as in the Binance tutorial: when the smaller side of
 # the BBO drops below
-# `trigger_imbalance_ratio` of the larger, fire a single FOK limit order on
-# the thicker side.
+# `trigger_imbalance_ratio` of the larger, fire a single FOK limit order
+# against the thinner side: a buy at the best ask when bids are larger,
+# otherwise a sell at the best bid.
 #
 # `OrderBookImbalance` is a teaching strategy and has no edge.
 #
@@ -34,7 +35,7 @@
 #     end
 #
 #     subgraph Strategy ["OrderBookImbalance"]
-#         R{{"larger >= trigger_min_size<br/>AND smaller/larger < ratio<br/>AND cooldown elapsed"}}
+#         R{{"larger > trigger_min_size<br/>AND smaller/larger < ratio<br/>AND cooldown elapsed"}}
 #         D{{"bid_size > ask_size?"}}
 #         BUY["Submit FOK BUY at best ask"]
 #         SELL["Submit FOK SELL at best bid"]
@@ -54,18 +55,23 @@
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
 #   (`pip install -U --pre nautilus_trader`)
 # - pandas (`pip install pandas`). The wheel declares no runtime dependencies.
-# - The sibling [`orderbook_data.py`](./orderbook_data.py) and
-#   [`orderbook_imbalance.py`](./orderbook_imbalance.py) files. Keep them next
-#   to this tutorial when downloading or converting it with Jupytext.
+# - The sibling
+#   [`orderbook_data.py`](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/orderbook_data.py)
+#   and
+#   [`orderbook_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/orderbook_imbalance.py)
+#   files. Keep them next to this tutorial when downloading or converting it
+#   with Jupytext.
 # - Optionally, a daily Bybit `ob500` ZIP, e.g.
-#   `2024-12-01_XRPUSDT_ob500.data.zip` from
-#   [public.bybit.com](https://public.bybit.com). Without one the tutorial falls
-#   back to a bundled 50-message sample of that archive, which runs end to end
-#   over a few seconds of the book.
+#   [`2024-12-01_XRPUSDT_ob500.data.zip`](https://quote-saver.bycsi.com/orderbook/linear/XRPUSDT/2024-12-01_XRPUSDT_ob500.data.zip)
+#   (~377 MB) from Bybit's data CDN. Without one the tutorial falls back to a
+#   50-message sample of that archive from the NautilusTrader test data,
+#   downloaded from GitHub on first run outside a source checkout. The sample
+#   runs end to end over a few seconds of the book.
 
 # %%
 import os
 import shutil
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -80,12 +86,14 @@ from nautilus_trader.config import (
     LoggerConfig,
 )
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import (
     AccountType,
     BookType,
     CryptoPerpetual,
     Currency,
     InstrumentId,
+    NautilusDataType,
     OmsType,
     Price,
     Quantity,
@@ -103,8 +111,9 @@ from orderbook_data import (
 # %% [markdown]
 # ## Loading data
 #
-# Place the daily archive under `NAUTILUS_DATA_DIR/Bybit/` to replay a full day.
-# The tutorial otherwise reads the bundled sample so it runs without a download.
+# Place the daily archive under `NAUTILUS_DATA_DIR/Bybit/` (default
+# `~/Downloads/Data/Bybit/`) to replay a full day. The tutorial otherwise reads
+# the test data sample.
 
 # %%
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "Bybit"
@@ -147,6 +156,9 @@ deltas[:10]
 
 # %% [markdown]
 # ### Set up the data catalog
+#
+# The tutorial writes the catalog to `catalog/` under the working directory
+# and replaces that directory on each run.
 
 # %%
 CATALOG_PATH = Path.cwd() / "catalog"
@@ -185,7 +197,7 @@ book_type = BookType.L2_MBP
 data_configs = [
     BacktestDataConfig(
         catalog_path=str(CATALOG_PATH),
-        data_type="OrderBookDelta",
+        data_type=NautilusDataType.OrderBookDelta,
         instrument_id=instrument.id,
     ),
 ]
@@ -198,6 +210,10 @@ venues_configs = [
         base_currency=None,
         starting_balances=["200000 XRP", "100000 USDT"],
         book_type=book_type,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.0002"),
+            taker_rate=Decimal("0.00055"),
+        ),
     ),
 ]
 
@@ -248,7 +264,7 @@ node.generate_account_report(config.id, venue=Venue("BYBIT"))
 # %% [markdown]
 # ## What the run produces
 #
-# The figures below come from a full-day `ob500` archive. The bundled sample
+# The figures below come from a full-day `ob500` archive. The test data sample
 # replays 3,967 deltas and fires 2 of these orders.
 #
 # The Bybit `ob500` archive sometimes starts a minute before the file's

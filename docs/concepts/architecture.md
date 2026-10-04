@@ -714,8 +714,9 @@ supported because their runtime state is not isolated:
 - **Process-wide runtime state**: The Tokio runtime and logging worker are shared by the process.
 
 Sequential execution of multiple nodes is supported when each node is disposed before the next
-one starts. Focused tests exercise sequential node construction and cache-backed state recovery
-across disposed nodes.
+one starts. Before constructing a replacement `LiveNode` on the same thread, also drop the previous
+node, or release all references to it in Python. Disposal alone does not release its construction
+guard. Focused tests exercise sequential node construction and cache-backed state recovery.
 
 For production deployments, add multiple strategies to one `LiveNode` within a process.
 For parallel execution or workload isolation, run each node in its own separate process.

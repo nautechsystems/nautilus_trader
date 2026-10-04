@@ -40,8 +40,8 @@ from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
+from nautilus_trader.adapters.polymarket import PolymarketSignatureType
 from nautilus_trader.adapters.polymarket import PolymarketUpDownEventSlugConfig
-from nautilus_trader.adapters.polymarket import SignatureType
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
@@ -69,7 +69,7 @@ PERIODS = 3
 START_OFFSET_PERIODS = 0
 OUTCOME = "up"
 QUANTITY = "5"
-SIGNATURE_TYPE = SignatureType.PolyGnosisSafe
+SIGNATURE_TYPE = PolymarketSignatureType.PolyGnosisSafe
 BASE_URL_GAMMA = None
 HTTP_TIMEOUT_SECS = 10
 UPDATE_INSTRUMENTS_INTERVAL_MINS = 1

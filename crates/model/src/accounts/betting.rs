@@ -22,6 +22,7 @@ use std::{
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
+use nautilus_core::correctness::{CorrectnessError, CorrectnessResult};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -133,23 +134,34 @@ impl BettingAccount {
     /// For `Sell` (back) the impact is the negative stake (quantity).
     /// For `Buy` (lay) the impact is the negative liability (quantity * (price - 1)).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the impact cannot be represented in the quote currency.
-    #[must_use]
+    /// Returns an error if the impact cannot be represented in the quote currency.
     pub fn balance_impact(
         &self,
         instrument: &InstrumentAny,
         quantity: Quantity,
         price: Price,
         order_side: OrderSide,
-    ) -> Money {
+    ) -> CorrectnessResult<Money> {
         let currency = instrument.quote_currency();
         let impact = match order_side {
             OrderSide::Sell => -quantity.as_decimal(),
-            OrderSide::Buy => -(quantity.as_decimal() * (price.as_decimal() - Decimal::ONE)),
+            OrderSide::Buy => {
+                let liability = quantity
+                    .as_decimal()
+                    .checked_mul(price.as_decimal() - Decimal::ONE)
+                    .ok_or_else(|| CorrectnessError::PredicateViolation {
+                        message: format!(
+                            "Betting liability for quantity {quantity} at price {price} exceeds `Decimal` range"
+                        ),
+                    })?;
+
+                -liability
+            }
         };
-        Money::from_decimal(impact, currency).expect("invalid betting balance impact")
+
+        Money::from_decimal(impact, currency)
     }
 
     /// Recalculates the account balance for the specified currency based on per-instrument locks.
@@ -313,17 +325,38 @@ mod tests {
     use indexmap::IndexMap;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use crate::{
         accounts::{Account, BettingAccount, stubs::*},
         enums::{AccountType, CurrencyType, LiquiditySide, OrderSide},
         events::{AccountState, account::stubs::*},
+        fees::MakerTakerFeeRates,
         identifiers::{AccountId, InstrumentId},
         instruments::{Instrument, stubs::betting},
         orders::stubs::TestOrderEventStubs,
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
+
+    #[rstest]
+    fn test_account_type_predicates(betting_account: BettingAccount) {
+        assert!(betting_account.is_unleveraged());
+        assert!(Account::is_cash_account(&betting_account));
+        assert!(!Account::is_margin_account(&betting_account));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(betting_account_state: AccountState) {
+        let account = BettingAccount::new(betting_account_state.clone(), true);
+        let same = BettingAccount::new(betting_account_state.clone(), true);
+        let mut other_state = betting_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = BettingAccount::new(other_state, true);
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
+    }
 
     #[rstest]
     fn test_display(betting_account: BettingAccount) {
@@ -459,6 +492,57 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_pnls_does_not_clamp_when_fill_extends_position(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+    ) {
+        let order1 = crate::orders::builder::OrderTestBuilder::new(crate::enums::OrderType::Market)
+            .instrument_id(betting.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .build();
+        let betting_any = betting.clone().into_any();
+        let fill1 = TestOrderEventStubs::filled(
+            &order1,
+            &betting_any,
+            None,
+            None,
+            Some(Price::from("0.5")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let order2 = crate::orders::builder::OrderTestBuilder::new(crate::enums::OrderType::Market)
+            .instrument_id(betting.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("200"))
+            .build();
+        let fill2 = TestOrderEventStubs::filled(
+            &order2,
+            &betting_any,
+            None,
+            None,
+            Some(Price::from("0.8")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let position = Position::new(&betting_any, fill1.into());
+        let fill2_owned: crate::events::OrderFilled = fill2.into();
+        let result = betting_account
+            .calculate_pnls(&betting_any, &fill2_owned, Some(position))
+            .unwrap();
+
+        assert_eq!(result, vec![Money::from("-160 GBP")]);
+    }
+
+    #[rstest]
     fn test_calculate_pnls_partially_closed(
         betting_account: BettingAccount,
         betting: crate::instruments::BettingInstrument,
@@ -519,6 +603,7 @@ mod tests {
             Quantity::from("1"),
             Price::from("1"),
             LiquiditySide::NoLiquiditySide,
+            MakerTakerFeeRates::zero(),
             None,
         );
         assert!(
@@ -542,14 +627,60 @@ mod tests {
         #[case] quantity: &str,
         #[case] expected: &str,
     ) {
-        let impact = betting_account.balance_impact(
-            &betting.into_any(),
-            Quantity::from(quantity),
-            Price::from(price),
-            side,
-        );
+        let impact = betting_account
+            .balance_impact(
+                &betting.into_any(),
+                Quantity::from(quantity),
+                Price::from(price),
+                side,
+            )
+            .unwrap();
 
         assert_eq!(impact, Money::from(expected));
+    }
+
+    #[rstest]
+    fn test_balance_impact_rejects_unrepresentable_liability(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+    ) {
+        let currency = betting.quote_currency();
+        let expected = Money::from_decimal(dec!(-99_999_000_000_000), currency).unwrap_err();
+
+        let error = betting_account
+            .balance_impact(
+                &betting.into_any(),
+                Quantity::from("1000000000"),
+                Price::from("100000"),
+                OrderSide::Buy,
+            )
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), expected.to_string());
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(crate::types::price::PRICE_ERROR)]
+    #[case(crate::types::price::PRICE_UNDEF)]
+    fn test_balance_impact_rejects_liability_overflow(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+        #[case] raw: crate::types::price::PriceRaw,
+    ) {
+        let quantity = Quantity::from("10000000");
+        let price = Price::from_raw(raw, 0);
+
+        let error = betting_account
+            .balance_impact(&betting.into_any(), quantity, price, OrderSide::Buy)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Betting liability for quantity {quantity} at price {price} exceeds `Decimal` range"
+            )
+        );
     }
 
     #[rstest]

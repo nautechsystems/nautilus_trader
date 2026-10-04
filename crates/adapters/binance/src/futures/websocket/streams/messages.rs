@@ -122,10 +122,6 @@ pub enum BinanceFuturesWsStreamsCommand {
 
 /// Handler command for execution client-handler communication.
 #[derive(Debug)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "Commands are ephemeral and immediately consumed"
-)]
 pub enum ExecHandlerCommand {
     /// Set the WebSocket client reference.
     SetClient(WebSocketClient),

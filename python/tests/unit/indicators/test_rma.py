@@ -99,7 +99,7 @@ def test_handle_quote_tick_updates_indicator() -> None:
     Test handle quote tick updates indicator.
     """
     # Arrange
-    indicator = WilderMovingAverage(10, PriceType.MID)
+    indicator = WilderMovingAverage(1, PriceType.MID)
 
     tick = TestDataProviderPyo3.quote_tick()
 
@@ -111,10 +111,11 @@ def test_handle_quote_tick_updates_indicator() -> None:
     assert indicator.value == 1987.5
 
 
-def test_handle_trade_tick_updates_indicator(rma: WilderMovingAverage) -> None:
+def test_handle_trade_tick_updates_indicator() -> None:
     """
     Test handle trade tick updates indicator.
     """
+    rma = WilderMovingAverage(1)
     # Arrange
 
     tick = TestDataProviderPyo3.trade_tick()
@@ -127,10 +128,11 @@ def test_handle_trade_tick_updates_indicator(rma: WilderMovingAverage) -> None:
     assert rma.value == 1987.0
 
 
-def test_handle_bar_updates_indicator(rma: WilderMovingAverage) -> None:
+def test_handle_bar_updates_indicator() -> None:
     """
     Test handle bar updates indicator.
     """
+    rma = WilderMovingAverage(1)
     # Arrange
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -150,20 +152,22 @@ def test_value_with_one_input_returns_expected_value(rma: WilderMovingAverage) -
     rma.update_raw(1.00000)
 
     # Act, Assert
-    assert rma.value == 1.0
+    assert not rma.initialized
+    assert rma.value == 0.0
 
 
-def test_value_with_three_inputs_returns_expected_value(rma: WilderMovingAverage) -> None:
+def test_value_with_three_inputs_returns_expected_value() -> None:
     """
     Test value with three inputs returns expected value.
     """
+    rma = WilderMovingAverage(3)
     # Arrange
     rma.update_raw(1.00000)
     rma.update_raw(2.00000)
     rma.update_raw(3.00000)
 
     # Act, Assert
-    assert rma.value == 1.29
+    assert rma.value == 2.0
 
 
 def test_value_with_ten_inputs_returns_expected_value(rma: WilderMovingAverage) -> None:
@@ -183,7 +187,7 @@ def test_value_with_ten_inputs_returns_expected_value(rma: WilderMovingAverage) 
     rma.update_raw(10.0)
 
     # Act, Assert
-    assert rma.value == 4.486784401
+    assert rma.value == 5.5
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(rma: WilderMovingAverage) -> None:

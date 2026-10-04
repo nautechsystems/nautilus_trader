@@ -39,7 +39,6 @@ use nautilus_architect_ax::{
 };
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_network::websocket::TransportBackend;
-use rust_decimal::Decimal;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -124,14 +123,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .find(|inst| inst.symbol.as_str() == test_symbol)
         .ok_or_else(|| format!("Instrument {test_symbol} not found in /instruments response"))?;
 
-    let _instrument = parse_instrument(
-        maybe_instrument,
-        Decimal::ZERO,
-        Decimal::ZERO,
-        ts_init,
-        ts_init,
-    )
-    .map_err(|e| format!("Failed to parse instrument {test_symbol}: {e}"))?;
+    let _instrument = parse_instrument(maybe_instrument, ts_init, ts_init)
+        .map_err(|e| format!("Failed to parse instrument {test_symbol}: {e}"))?;
     log::info!("Parsed instrument {test_symbol}");
 
     log::info!("Establishing WebSocket connection...");

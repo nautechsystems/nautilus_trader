@@ -25,6 +25,7 @@ use crate::{
     data::order::BookOrder,
     enums::OrderSide,
     orderbook::BookLevel,
+    python::types::fixed::FloatArithmetic,
     types::{price::Price, quantity::QuantityRaw},
 };
 
@@ -85,8 +86,9 @@ impl BookLevel {
 
     /// Returns the total size of all orders at this price level as a float.
     #[pyo3(name = "size")]
-    fn py_size(&self) -> f64 {
-        self.size()
+    fn py_size(&self) -> PyResult<f64> {
+        check_sizes_float_precision(self)?;
+        Ok(self.size())
     }
 
     /// Returns the total size of all orders at this price level as raw integer units.
@@ -97,8 +99,13 @@ impl BookLevel {
 
     /// Returns the total exposure (price * size) of all orders at this price level as a float.
     #[pyo3(name = "exposure")]
-    fn py_exposure(&self) -> f64 {
-        self.exposure()
+    fn py_exposure(&self) -> PyResult<f64> {
+        for order in self.orders.values() {
+            order.price.check_float_precision()?;
+            order.size.check_float_precision()?;
+        }
+
+        Ok(self.exposure())
     }
 
     /// Returns the total exposure (price * size) of all orders at this price level as raw integer units.
@@ -123,4 +130,12 @@ impl BookLevel {
     fn py_get_orders(&self) -> Vec<BookOrder> {
         self.get_orders()
     }
+}
+
+pub(super) fn check_sizes_float_precision(level: &BookLevel) -> PyResult<()> {
+    for order in level.orders.values() {
+        order.size.check_float_precision()?;
+    }
+
+    Ok(())
 }

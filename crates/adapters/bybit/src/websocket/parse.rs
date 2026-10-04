@@ -249,10 +249,12 @@ pub fn parse_orderbook_deltas(
         .context("received negative sequence in Bybit order book message")?;
 
     let total_levels = depth.b.len() + depth.a.len();
-    let capacity = if is_snapshot {
-        total_levels + 1
+    let capacity = total_levels + usize::from(is_snapshot);
+
+    let snapshot_flag = if is_snapshot {
+        RecordFlag::F_SNAPSHOT as u8
     } else {
-        total_levels
+        0
     };
     let mut deltas = Vec::with_capacity(capacity);
 
@@ -277,7 +279,7 @@ pub fn parse_orderbook_deltas(
         };
 
         processed += 1;
-        let mut flags = RecordFlag::F_MBP as u8;
+        let mut flags = RecordFlag::F_MBP as u8 | snapshot_flag;
 
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
@@ -661,19 +663,22 @@ pub fn parse_ws_kline_bar(
     let close = parse_price_with_precision(&kline.close, price_precision, "kline.close")?;
     let volume = parse_quantity_with_precision(&kline.volume, size_precision, "kline.volume")?;
 
-    let mut ts_event = parse_millis_i64(kline.start, "kline.start")?;
+    let ts_open = parse_millis_i64(kline.start, "kline.start")?;
+    let interval_ns = bar_type.spec().timedelta().as_nanos();
+    let interval_ns = u64::try_from(interval_ns)
+        .context("bar interval overflowed the u64 range for nanoseconds")?;
+    let ts_close = ts_open
+        .as_u64()
+        .checked_add(interval_ns)
+        .map(UnixNanos::from)
+        .context("bar timestamp overflowed when adjusting to close time")?;
 
-    if timestamp_on_close {
-        let interval_ns = bar_type.spec().timedelta().as_nanos();
-        let interval_ns = u64::try_from(interval_ns)
-            .context("bar interval overflowed the u64 range for nanoseconds")?;
-        let updated = ts_event
-            .as_u64()
-            .checked_add(interval_ns)
-            .context("bar timestamp overflowed when adjusting to close time")?;
-        ts_event = UnixNanos::from(updated);
-    }
-    let ts_init = if ts_init.is_zero() { ts_event } else { ts_init };
+    let ts_event = if timestamp_on_close {
+        ts_close
+    } else {
+        ts_open
+    };
+    let ts_init = if ts_init.is_zero() { ts_close } else { ts_init };
 
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_init)
         .context("failed to construct Bar from Bybit WebSocket kline")
@@ -1110,35 +1115,18 @@ mod tests {
 
     use ustr::Ustr;
 
-    use crate::http::models::BybitFeeRate;
-
-    fn sample_fee_rate(
-        symbol: &str,
-        taker: &str,
-        maker: &str,
-        base_coin: Option<&str>,
-    ) -> BybitFeeRate {
-        BybitFeeRate {
-            symbol: Ustr::from(symbol),
-            taker_fee_rate: taker.to_string(),
-            maker_fee_rate: maker.to_string(),
-            base_coin: base_coin.map(Ustr::from),
-        }
-    }
-
     fn linear_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_linear.json");
         let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
-        let fee_rate = sample_fee_rate("BTCUSDT", "0.00055", "0.0001", Some("BTC"));
-        parse_linear_instrument(instrument, &fee_rate, TS, TS).unwrap()
+        parse_linear_instrument(instrument, TS, TS).unwrap()
     }
 
     fn option_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_option.json");
         let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
-        parse_option_instrument(instrument, None, TS, TS).unwrap()
+        parse_option_instrument(instrument, TS, TS).unwrap()
     }
 
     #[rstest]
@@ -1172,6 +1160,12 @@ mod tests {
         assert_eq!(deltas.instrument_id, instrument.id());
         assert_eq!(deltas.deltas.len(), 5);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert!(
+            deltas
+                .deltas
+                .iter()
+                .all(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags))
+        );
         assert_eq!(
             deltas.deltas[1].order.price,
             instrument.make_price(27450.00)
@@ -1204,6 +1198,12 @@ mod tests {
         assert_eq!(bid.order.size, instrument.make_qty(0.400, None));
 
         let ask = &deltas.deltas[1];
+        assert!(
+            deltas
+                .deltas
+                .iter()
+                .all(|delta| !RecordFlag::F_SNAPSHOT.matches(delta.flags))
+        );
         assert_eq!(ask.action, BookAction::Delete);
         assert_eq!(ask.order.side, OrderSide::Sell.into());
         assert_eq!(ask.order.size, instrument.make_qty(0.0, None));
@@ -1330,6 +1330,36 @@ mod tests {
         assert_eq!(bar.volume, instrument.make_qty(2.081, None));
         assert_eq!(bar.ts_event, UnixNanos::new(expected_ts_event));
         assert_eq!(bar.ts_init, TS);
+    }
+
+    #[rstest]
+    #[case::timestamp_on_open(false)]
+    #[case::timestamp_on_close(true)]
+    fn parse_ws_kline_zero_ts_init_falls_back_to_close(#[case] timestamp_on_close: bool) {
+        use std::num::NonZero;
+
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_kline.json");
+        let msg: crate::websocket::messages::BybitWsKlineMsg = serde_json::from_str(&json).unwrap();
+        let kline = &msg.data[0];
+
+        let bar_spec = BarSpecification {
+            step: NonZero::new(5).unwrap(),
+            aggregation: BarAggregation::Minute,
+            price_type: PriceType::Last,
+        };
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::External);
+
+        let bar = parse_ws_kline_bar(
+            kline,
+            &instrument,
+            bar_type,
+            timestamp_on_close,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(bar.ts_init, UnixNanos::new(1_672_325_100_000_000_000));
     }
 
     #[rstest]
@@ -1746,14 +1776,7 @@ mod tests {
         let instruments_response: crate::http::models::BybitInstrumentLinearResponse =
             serde_json::from_str(&instruments_json).unwrap();
         let eth_def = &instruments_response.result.list[1]; // ETHUSDT is second in the list
-        let fee_rate = crate::http::models::BybitFeeRate {
-            symbol: Ustr::from("ETHUSDT"),
-            taker_fee_rate: "0.00055".to_string(),
-            maker_fee_rate: "0.0001".to_string(),
-            base_coin: Some(Ustr::from("ETH")),
-        };
-        let instrument =
-            crate::common::parse::parse_linear_instrument(eth_def, &fee_rate, TS, TS).unwrap();
+        let instrument = crate::common::parse::parse_linear_instrument(eth_def, TS, TS).unwrap();
 
         let json = load_test_json("ws_account_position_short.json");
         let msg: crate::websocket::messages::BybitWsAccountPositionMsg =

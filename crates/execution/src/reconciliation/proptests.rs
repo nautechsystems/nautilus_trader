@@ -31,7 +31,10 @@
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    enums::{
+        AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce,
+    },
     events::OrderEventAny,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
@@ -44,7 +47,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use super::{ids::*, orders::*, positions::*, types::*};
+use super::{ids::*, orders::*, positions::*, tests::venue_position_snapshot, types::*};
 
 fn instrument() -> InstrumentAny {
     InstrumentAny::CurrencyPair(audusd_sim())
@@ -240,7 +243,12 @@ proptest! {
         px in (1i64..=100_000i64).prop_map(|v| Decimal::new(v, 2)),
     ) {
         let value = qty.abs() * px;
-        prop_assert!(check_position_match(qty, value, qty, px, dec!(0.0001)));
+        prop_assert!(check_position_match(
+            qty,
+            value,
+            &venue_position_snapshot(qty, px),
+            dec!(0.0001)
+        ));
     }
 
     #[rstest]
@@ -250,7 +258,12 @@ proptest! {
         px in px_decimal(),
     ) {
         prop_assume!(qty1 != qty2);
-        prop_assert!(!check_position_match(qty1, qty1.abs() * px, qty2, px, dec!(0.0001)));
+        prop_assert!(!check_position_match(
+            qty1,
+            qty1.abs() * px,
+            &venue_position_snapshot(qty2, px),
+            dec!(0.0001)
+        ));
     }
 
     #[rstest]
@@ -258,7 +271,7 @@ proptest! {
         qty in (1i64..=1_000i64).prop_map(Decimal::from),
         px in px_decimal(),
     ) {
-        let result = calculate_reconciliation_price(qty, Some(px), qty, Some(px));
+        let result = calculate_reconciliation_price(qty, Some(px), qty, Some(px), AvgPxReconciliation::Match, None);
         prop_assert_eq!(result, None);
     }
 
@@ -272,6 +285,8 @@ proptest! {
             None,
             target_qty,
             Some(target_px),
+            AvgPxReconciliation::Match,
+            None,
         );
         prop_assert_eq!(result, Some(target_px));
     }
@@ -281,7 +296,7 @@ proptest! {
         qty in (1i64..=1_000i64).prop_map(Decimal::from),
         px in px_decimal(),
     ) {
-        let result = calculate_reconciliation_price(qty, Some(px), Decimal::ZERO, None);
+        let result = calculate_reconciliation_price(qty, Some(px), Decimal::ZERO, None, AvgPxReconciliation::Match, None);
         prop_assert_eq!(result, Some(px));
     }
 
@@ -298,6 +313,8 @@ proptest! {
             Some(current_px),
             target_qty,
             Some(target_px),
+            AvgPxReconciliation::Match,
+            None,
         );
 
         if let Some(px) = recon_px {
@@ -349,7 +366,13 @@ proptest! {
         qty in qty_decimal(),
         px in px_decimal(),
     ) {
-        let venue = VenuePositionSnapshot { side, qty, avg_px: px };
+        let venue = VenuePositionSnapshot {
+            side,
+            qty,
+            avg_px: px,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
+        };
         let result = adjust_fills_for_partial_window(&[], &venue, dec!(0.0001));
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
@@ -360,6 +383,8 @@ proptest! {
             side: PositionSide::Long,
             qty: Decimal::ZERO,
             avg_px: Decimal::ZERO,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
         };
         let result = adjust_fills_for_partial_window(&fills, &venue, dec!(0.0001));
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
@@ -388,6 +413,8 @@ proptest! {
             side: PositionSide::Long,
             qty: sim_qty,
             avg_px: sim_avg,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
         };
         let result = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001));
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
@@ -433,6 +460,8 @@ proptest! {
             side: PositionSide::Long,
             qty: target_qty,
             avg_px: target_avg,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
         };
 
         let adjustment = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001));
@@ -469,6 +498,8 @@ proptest! {
             Some(current_px),
             target_qty,
             Some(target_px),
+            AvgPxReconciliation::Match,
+            None,
         );
         prop_assert_eq!(recon_px, Some(target_px));
 
@@ -935,6 +966,7 @@ proptest! {
             ts_last,
         );
         prop_assert_eq!(a, b);
+        prop_assert!(is_inferred_reconciliation_trade_id_format(&a));
     }
 
     #[rstest]

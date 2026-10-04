@@ -48,6 +48,8 @@ With an L1 book, the recorded market exposes only the best bid and ask:
 
 The one-tick residual fill applies after the eligible market-style orders exhaust displayed L1
 size. Price protection can prevent that residual fill if it would cross the configured boundary.
+The residual fill also does not occur when one tick worse would cross the instrument's `min_price`
+or `max_price`, or reach a zero or negative price where the instrument does not allow one.
 This deterministic residual rule is separate from probabilistic fill-model slippage.
 
 Trade-driven matching has one additional rule. If a trade provides fill evidence at a price absent
@@ -82,7 +84,10 @@ the strategy requires more precise gap and path behavior.
 offset as a number of instrument price increments:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -94,6 +99,10 @@ venue = BacktestVenueConfig(
     book_type=BookType.L2_MBP,
     starting_balances=["100_000 USDT"],
     price_protection_points=100,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
@@ -114,7 +123,10 @@ A simulated fill never decrements the historical book. By default, each matching
 the full recorded size:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OmsType
@@ -126,6 +138,10 @@ venue = BacktestVenueConfig(
     book_type=BookType.L1_MBP,
     starting_balances=["100_000 USD"],
     liquidity_consumption=True,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
@@ -173,10 +189,23 @@ that it remained available after the recorded trade.
 
 ## Precision requirements
 
-Prices and quantities must use the instrument's configured `price_precision` and `size_precision`.
-The outcome of a mismatch depends on where it enters the matching engine:
+The matching engine accepts lower or equal precision on new orders and order updates when the
+instrument's configured precision does not exceed the build's `FIXED_PRECISION`. For example,
+quantity `1` is valid for size precision 3, and price `100` is valid for price precision 2.
+Higher precision is rejected even when the extra decimals are zeros: `1.0000` is invalid for
+size precision 3.
 
-| Input            | Validated fields                                     | Mismatch outcome                                             |
+Fractional fills and quantity reductions retain exact values. A quantity `1` order partially filled
+for `0.500` reports `0.500` filled and `0.500` remaining.
+
+DeFi builds can use instrument precisions above `FIXED_PRECISION`. For those instruments, the
+validated order fields listed below require exact precision: both precision 17 and precision 0
+are rejected when the instrument requires 18. The listed market-data fields must match the
+instrument's configured `price_precision` and `size_precision` exactly.
+
+The outcome of invalid precision depends on where it enters the matching engine:
+
+| Input            | Validated fields                                     | Invalid precision outcome                                    |
 | ---------------- | ---------------------------------------------------- | ------------------------------------------------------------ |
 | `QuoteTick`      | Bid and ask prices and sizes                         | Log a warning and skip the tick.                             |
 | `TradeTick`      | Price and size                                       | Log a warning and skip the tick.                             |

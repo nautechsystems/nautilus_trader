@@ -33,7 +33,7 @@ use nautilus_model::defi::{
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -48,7 +48,7 @@ use ustr::Ustr;
 pub use super::external::{process_external_typed_message, republish_external_message};
 use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, BusPayloadType,
-    DELTAS_HANDLERS, DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
+    DELTAS_HANDLERS, DEPTH_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
     INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS,
     OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS,
     POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
@@ -66,9 +66,12 @@ use super::{
     DEFI_BLOCK_HANDLERS, DEFI_COLLECT_HANDLERS, DEFI_FLASH_HANDLERS, DEFI_LIQUIDITY_HANDLERS,
     DEFI_POOL_HANDLERS, DEFI_SWAP_HANDLERS,
 };
-use crate::messages::{
-    data::{DataCommand, DataResponse},
-    execution::{ExecutionReport, TradingCommand},
+use crate::{
+    actor::PublicationScope,
+    messages::{
+        data::{DataCommand, DataResponse},
+        execution::{ExecutionReport, TradingCommand},
+    },
 };
 
 /// Registers a handler for an endpoint using runtime type dispatch (Any).
@@ -305,17 +308,16 @@ pub fn subscribe_book_deltas(
         .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
-/// Subscribes a handler to order book depth10 snapshots matching a pattern.
-pub fn subscribe_book_depth10(
+/// Subscribes a handler to order book depth snapshots matching a pattern.
+pub fn subscribe_book_depth(
     pattern: MStr<Pattern>,
-    handler: TypedHandler<OrderBookDepth10>,
+    handler: TypedHandler<OrderBookDepth>,
     priority: Option<u32>,
 ) {
-    get_message_bus().borrow_mut().router_depth10.subscribe(
-        pattern,
-        handler,
-        priority.unwrap_or(0),
-    );
+    get_message_bus()
+        .borrow_mut()
+        .router_depth
+        .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
 /// Subscribes a handler to order book snapshots matching a pattern.
@@ -600,11 +602,11 @@ pub fn unsubscribe_book_deltas(pattern: MStr<Pattern>, handler: &TypedHandler<Or
         .unsubscribe(pattern, handler);
 }
 
-/// Unsubscribes a handler from order book depth10 snapshots.
-pub fn unsubscribe_book_depth10(pattern: MStr<Pattern>, handler: &TypedHandler<OrderBookDepth10>) {
+/// Unsubscribes a handler from order book depth snapshots.
+pub fn unsubscribe_book_depth(pattern: MStr<Pattern>, handler: &TypedHandler<OrderBookDepth>) {
     get_message_bus()
         .borrow_mut()
-        .router_depth10
+        .router_depth
         .unsubscribe(pattern, handler);
 }
 
@@ -846,11 +848,11 @@ pub fn subscriber_count_deltas(topic: MStr<Topic>) -> usize {
         .subscriber_count(topic)
 }
 
-/// Returns the subscriber count for order book depth10 on a topic.
-pub fn subscriber_count_depth10(topic: MStr<Topic>) -> usize {
+/// Returns the subscriber count for order book depth on a topic.
+pub fn subscriber_count_depth(topic: MStr<Topic>) -> usize {
     get_message_bus()
         .borrow()
-        .router_depth10
+        .router_depth
         .subscriber_count(topic)
 }
 
@@ -936,6 +938,7 @@ pub fn exact_subscriber_count_bars(topic: MStr<Topic>) -> usize {
 
 /// Publishes a message to the topic using runtime type dispatch (Any).
 pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
+    let _publication = PublicationScope::enter();
     dispatch_tap_publish(topic, message);
 
     // Take buffer (re-entrancy safe)
@@ -970,6 +973,7 @@ pub fn try_publish_any(topic: MStr<Topic>, message: &dyn Any) -> bool {
         return false;
     }
 
+    let _publication = PublicationScope::enter();
     dispatch_tap_publish(topic, message);
 
     let Ok(mut bus) = bus_rc.try_borrow_mut() else {
@@ -1016,16 +1020,16 @@ pub fn publish_deltas(topic: MStr<Topic>, deltas: &OrderBookDeltas) {
     forward_to_external_egress(topic, BusPayloadType::OrderBookDeltas, deltas);
 }
 
-/// Publishes order book depth10 to subscribers on a topic.
-pub fn publish_depth10(topic: MStr<Topic>, depth: &OrderBookDepth10) {
+/// Publishes order book depth to subscribers on a topic.
+pub fn publish_depth(topic: MStr<Topic>, depth: &OrderBookDepth) {
     publish_typed(
         topic,
-        &DEPTH10_HANDLERS,
-        |bus, h| bus.router_depth10.fill_matching_handlers(topic, h),
+        &DEPTH_HANDLERS,
+        |bus, h| bus.router_depth.fill_matching_handlers(topic, h),
         depth,
     );
 
-    forward_to_external_egress(topic, BusPayloadType::OrderBookDepth10, depth);
+    forward_to_external_egress(topic, BusPayloadType::OrderBookDepth, depth);
 }
 
 /// Publishes an order book snapshot to subscribers on a topic.
@@ -1288,6 +1292,7 @@ fn publish_typed<T: 'static>(
     fill_fn: impl FnOnce(&mut MessageBus, &mut SmallVec<[TypedHandler<T>; HANDLER_BUFFER_CAP]>),
     message: &T,
 ) {
+    let _publication = PublicationScope::enter();
     dispatch_tap_publish(topic, message);
 
     // Take buffer (re-entrancy safe)
@@ -1597,7 +1602,7 @@ mod tests {
     use nautilus_model::{
         data::{
             Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate,
-            MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+            MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth,
             QuoteTick, TradeTick,
             stubs::{stub_custom_data, stub_deltas, stub_depth10},
         },
@@ -1947,7 +1952,7 @@ mod tests {
         );
     }
 
-    fn assert_depth10_market_eq(actual: &OrderBookDepth10, expected: &OrderBookDepth10) {
+    fn assert_depth_market_eq(actual: &OrderBookDepth, expected: &OrderBookDepth) {
         assert_eq!(actual.instrument_id, expected.instrument_id);
         assert_eq!(actual.bid_counts, expected.bid_counts);
         assert_eq!(actual.ask_counts, expected.ask_counts);
@@ -2236,12 +2241,12 @@ mod tests {
         );
         assert_typed_external_round_trips(
             encoding,
-            BusPayloadType::OrderBookDepth10,
-            "data.book.depth10.AAPL.XNAS",
+            BusPayloadType::OrderBookDepth,
+            "data.book.depth.AAPL.XNAS",
             stub_depth10(),
-            publish_depth10,
-            subscribe_book_depth10,
-            assert_depth10_market_eq,
+            publish_depth,
+            subscribe_book_depth,
+            assert_depth_market_eq,
         );
         assert_typed_external_round_trips(
             encoding,
@@ -2926,12 +2931,12 @@ mod tests {
         );
         assert_typed_external_round_trips(
             encoding,
-            BusPayloadType::OrderBookDepth10,
-            "data.book.depth10.AAPL.XNAS",
+            BusPayloadType::OrderBookDepth,
+            "data.book.depth.AAPL.XNAS",
             stub_depth10(),
-            publish_depth10,
-            subscribe_book_depth10,
-            assert_depth10_market_eq,
+            publish_depth,
+            subscribe_book_depth,
+            assert_depth_market_eq,
         );
         assert_typed_external_round_trips(
             encoding,

@@ -79,6 +79,7 @@ pub const BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN: usize = 32;
 
 // Betting API JSON-RPC methods
 pub const METHOD_LIST_MARKET_CATALOGUE: &str = "SportsAPING/v1.0/listMarketCatalogue";
+pub const METHOD_LIST_EVENTS: &str = "SportsAPING/v1.0/listEvents";
 pub const METHOD_LIST_CURRENT_ORDERS: &str = "SportsAPING/v1.0/listCurrentOrders";
 pub const METHOD_PLACE_ORDERS: &str = "SportsAPING/v1.0/placeOrders";
 pub const METHOD_CANCEL_ORDERS: &str = "SportsAPING/v1.0/cancelOrders";

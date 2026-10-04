@@ -8,7 +8,7 @@ This crate references third-party material for action-signing equivalence testin
     The upstream Python SDK serves as the behavioral reference for the signing
     pipeline and generates the oracle vectors recorded under
     `test_data/common/signing_trade_action_vectors.json` via
-    `tests/oracle-py/generate_oracle.py`. The vectors are generated outputs for
+    `scripts/oracle-py/derive/generate_oracle.py`. The vectors are generated outputs for
     equivalence verification and record the pinned upstream revision in their
     metadata.
   - Pinned revision: `d1914d61985e33559244da242892c7255b6fd0ca` (version 0.0.13,

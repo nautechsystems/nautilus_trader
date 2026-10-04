@@ -97,7 +97,7 @@ repos:
         description: Lint Dockerfiles for best practices and errors
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.50.1
+    rev: v1.50.3
     hooks:
       - id: typos
         description: Enforces American English spelling and checks for common typos
@@ -454,7 +454,9 @@ repos:
       - id: cargo-cooldown
         name: cargo cooldown
         description: Blocks crate versions published inside the cooldown window
-        entry: bash scripts/check-cargo-cooldown.sh --all
+        entry: >-
+          bash -c 'bash scripts/check-cargo-cooldown.sh --all
+          --cache "${CARGO_TARGET_DIR:-target}/.cargo-cooldown.json"'
         language: system
         files: >-
           (?x)^(
@@ -481,7 +483,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.7
+    rev: v0.16.9
     hooks:
       - id: ruff
         name: ruff
@@ -510,7 +512,7 @@ repos:
           - "--in-place"
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.12.13 # Must match [uv] in .nautilus-engineering/tools.toml
+    rev: 0.12.19 # Must match [uv] in .nautilus-engineering/tools.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]
@@ -542,7 +544,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.23.2
+    rev: v0.23.3
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

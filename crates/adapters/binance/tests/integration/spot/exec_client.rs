@@ -36,7 +36,7 @@ use axum::{
     },
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{delete, get, post},
+    routing::{get, post},
 };
 use nautilus_binance::{
     common::{
@@ -81,7 +81,7 @@ use nautilus_model::{
         any::InstrumentAny,
         stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt},
     },
-    orders::{LimitOrder, Order, OrderAny, OrderList, StopLimitOrder},
+    orders::{LimitOrder, Order, OrderAny, OrderList, StopLimitOrder, stubs::TestOrderEventStubs},
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -555,9 +555,6 @@ fn command_response(response: CommandResponse, success: impl IntoResponse) -> Re
             Body::from(vec![0_u8; 4]),
         )
             .into_response(),
-        CommandResponse::BatchPerOrderReject { code, msg } => {
-            json_response(&json!([{"code": code, "msg": msg}]))
-        }
         CommandResponse::VenueReject { code, msg } => venue_reject_response(code, msg),
     }
 }
@@ -567,7 +564,6 @@ enum CommandResponse {
     Success,
     AmbiguousFailure,
     MalformedSuccess,
-    BatchPerOrderReject { code: i64, msg: &'static str },
     VenueReject { code: i64, msg: &'static str },
 }
 
@@ -576,7 +572,6 @@ struct CommandResponses {
     submit: CommandResponse,
     cancel: CommandResponse,
     modify: CommandResponse,
-    batch_cancel: CommandResponse,
 }
 
 impl Default for CommandResponses {
@@ -585,7 +580,6 @@ impl Default for CommandResponses {
             submit: CommandResponse::Success,
             cancel: CommandResponse::Success,
             modify: CommandResponse::Success,
-            batch_cancel: CommandResponse::Success,
         }
     }
 }
@@ -1043,7 +1037,6 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
                 .delete(handle_order_cancel),
         )
         .route("/api/v3/orderList/oco", post(handle_oco_order_list_submit))
-        .route("/api/v3/batchOrders", delete(handle_batch_cancel))
         .with_state(state)
 }
 
@@ -1187,17 +1180,6 @@ async fn handle_order_modify(
         state.responses.modify,
         sbe_response(build_cancel_replace_response(&symbol, &client_order_id)),
     )
-}
-
-async fn handle_batch_cancel(
-    State(state): State<CommandResponseState>,
-    headers: HeaderMap,
-) -> Response {
-    if !has_auth_headers(&headers) {
-        return unauthorized_response().into_response();
-    }
-    state.request_count.fetch_add(1, Ordering::Relaxed);
-    command_response(state.responses.batch_cancel, json_response(&json!([])))
 }
 
 async fn handle_oco_order_list_submit(
@@ -3554,26 +3536,180 @@ async fn test_local_modify_failure_emits_modify_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_whole_batch_cancel_failure_does_not_emit_per_order_cancel_rejected() {
+async fn test_batch_cancel_failure_preserves_owning_strategies() {
     let (client, mut rx, _cache, request_count) =
         connected_client_with_command_responses(CommandResponses {
-            batch_cancel: CommandResponse::AmbiguousFailure,
+            cancel: CommandResponse::VenueReject {
+                code: -2011,
+                msg: "Unknown order sent",
+            },
             ..Default::default()
         })
         .await;
 
-    let first_client_order_id = ClientOrderId::new("batch-cancel-fail-test-001");
-    let second_client_order_id = ClientOrderId::new("batch-cancel-fail-test-002");
+    while rx.try_recv().is_ok() {}
+
+    let cancels = ["S-001", "S-002"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, owner)| {
+            CancelOrder::new(
+                test_trader_id(),
+                Some(*BINANCE_CLIENT_ID),
+                StrategyId::from(owner),
+                test_instrument_id(),
+                ClientOrderId::from(format!("O-SPOT-BATCH-{index}")),
+                Some(VenueOrderId::from(format!("{}", 3000 + index))),
+                nautilus_core::UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
 
     client
-        .batch_cancel_orders(batch_cancel_order_command(vec![
-            first_client_order_id,
-            second_client_order_id,
-        ]))
+        .batch_cancel_orders(BatchCancelOrders::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            StrategyId::from("S-001"),
+            test_instrument_id(),
+            cancels.clone(),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
         .unwrap();
 
-    wait_for_command_requests(&request_count, 1).await;
+    // Spot has no batch cancel endpoint, so each cancel goes out individually.
+    wait_for_command_requests(&request_count, 2).await;
 
+    let mut actual = Vec::new();
+
+    for _ in &cancels {
+        match recv_until(&mut rx, |event| {
+            matches!(
+                event,
+                ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+            )
+        })
+        .await
+        {
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                actual.push((rejected.client_order_id, rejected.strategy_id));
+            }
+            other => panic!("Expected CancelRejected event, was {other:?}"),
+        }
+    }
+
+    let mut expected = cancels
+        .iter()
+        .map(|cancel| (cancel.client_order_id, cancel.strategy_id))
+        .collect::<Vec<_>>();
+
+    actual.sort();
+    expected.sort();
+
+    assert_eq!(actual, expected);
+    assert_eq!(request_count.load(Ordering::Relaxed), 2);
+}
+
+#[rstest]
+#[case::buy(Some(OrderSide::Buy), vec![0, 2])]
+#[case::sell(Some(OrderSide::Sell), vec![1, 3])]
+#[tokio::test]
+async fn test_sided_cancel_all_cancels_matching_side_individually(
+    #[case] order_side: Option<OrderSide>,
+    #[case] expected_indices: Vec<usize>,
+) {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            cancel: CommandResponse::VenueReject {
+                code: -2011,
+                msg: "Unknown order sent",
+            },
+            ..Default::default()
+        })
+        .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = test_instrument_id();
+    let other_instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+    let mut orders = Vec::new();
+
+    for (index, (instrument, owner, side, open)) in [
+        (instrument_id, "S-001", OrderSide::Buy, true),
+        (instrument_id, "S-001", OrderSide::Sell, true),
+        (instrument_id, "S-002", OrderSide::Buy, true),
+        (instrument_id, "S-002", OrderSide::Sell, true),
+        (other_instrument_id, "S-001", OrderSide::Buy, true),
+        (other_instrument_id, "S-002", OrderSide::Sell, true),
+        (instrument_id, "S-001", OrderSide::Buy, false),
+        (instrument_id, "S-002", OrderSide::Sell, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        orders.push(add_accepted_limit_order_to_cache(
+            &cache,
+            instrument,
+            ClientOrderId::from(format!("O-SPOT-SIDED-{index}")),
+            StrategyId::from(owner),
+            side,
+            VenueOrderId::from(format!("{}", 4000 + index)),
+            open,
+        ));
+    }
+
+    client
+        .cancel_all_orders(CancelAllOrders::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            order_side,
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 2).await;
+
+    let mut actual = Vec::new();
+
+    for _ in &expected_indices {
+        match recv_until(&mut rx, |event| {
+            matches!(
+                event,
+                ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+            )
+        })
+        .await
+        {
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                actual.push((rejected.client_order_id, rejected.strategy_id));
+            }
+            other => panic!("Expected CancelRejected event, was {other:?}"),
+        }
+    }
+
+    let mut expected = expected_indices
+        .iter()
+        .map(|&index| {
+            let (client_order_id, strategy_id) = &orders[index];
+            (*client_order_id, *strategy_id)
+        })
+        .collect::<Vec<_>>();
+
+    actual.sort();
+    expected.sort();
+
+    assert_eq!(actual, expected);
+    assert_eq!(request_count.load(Ordering::Relaxed), 2);
     assert_no_order_event_matching(&mut rx, |event| {
         matches!(event, OrderEventAny::CancelRejected(_))
     })
@@ -3582,39 +3718,95 @@ async fn test_whole_batch_cancel_failure_does_not_emit_per_order_cancel_rejected
 
 #[rstest]
 #[tokio::test]
-async fn test_per_order_batch_cancel_rejection_emits_cancel_rejected() {
-    let (client, mut rx, _cache, _request_count) =
-        connected_client_with_command_responses(CommandResponses {
-            batch_cancel: CommandResponse::BatchPerOrderReject {
-                code: -2011,
-                msg: "Unknown order sent",
-            },
-            ..Default::default()
-        })
-        .await;
+async fn test_sided_cancel_all_with_empty_cache_sends_nothing() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
 
-    let client_order_id = ClientOrderId::new("batch-cancel-reject-test-001");
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = test_instrument_id();
+    assert!(
+        cache
+            .borrow()
+            .orders_open(None, Some(&instrument_id), None, None, None)
+            .is_empty()
+    );
 
     client
-        .batch_cancel_orders(batch_cancel_order_command(vec![client_order_id]))
+        .cancel_all_orders(CancelAllOrders::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            Some(OrderSide::Buy),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
         .unwrap();
 
-    match recv_until(&mut rx, |event| {
-        matches!(
-            event,
-            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
-                if event.client_order_id == client_order_id
-        )
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::CancelRejected(_))
     })
-    .await
-    {
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
-            assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.contains("code=-2011"));
-            assert!(event.reason.contains("Unknown order sent"));
-        }
-        other => panic!("Expected CancelRejected event, was {other:?}"),
+    .await;
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+    assert!(rx.try_recv().is_err());
+}
+
+fn add_accepted_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    strategy_id: StrategyId,
+    side: OrderSide,
+    venue_order_id: VenueOrderId,
+    open: bool,
+) -> (ClientOrderId, StrategyId) {
+    let order = LimitOrder::new(
+        test_trader_id(),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        side,
+        Quantity::from("0.001"),
+        Price::from("50000.00"),
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    let order_any = OrderAny::Limit(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+
+    let account_id = AccountId::from("BINANCE-001");
+    let accepted = TestOrderEventStubs::accepted(&order_any, account_id, venue_order_id);
+    let order_any = cache.borrow_mut().update_order(&accepted).unwrap();
+
+    if !open {
+        let canceled = TestOrderEventStubs::canceled(&order_any, account_id, Some(venue_order_id));
+        cache.borrow_mut().update_order(&canceled).unwrap();
     }
+
+    (client_order_id, strategy_id)
 }
 
 #[rstest]
@@ -4061,25 +4253,6 @@ fn modify_order_command(client_order_id: ClientOrderId) -> ModifyOrder {
     )
 }
 
-fn batch_cancel_order_command(client_order_ids: Vec<ClientOrderId>) -> BatchCancelOrders {
-    let cancels = client_order_ids
-        .into_iter()
-        .map(cancel_order_command)
-        .collect();
-
-    BatchCancelOrders::new(
-        test_trader_id(),
-        Some(*BINANCE_CLIENT_ID),
-        test_strategy_id(),
-        test_instrument_id(),
-        cancels,
-        nautilus_core::UUID4::new(),
-        UnixNanos::default(),
-        None,
-        None,
-    )
-}
-
 async fn wait_for_command_requests(request_count: &AtomicUsize, expected: usize) {
     wait_until_async(
         || async { request_count.load(Ordering::Relaxed) >= expected },
@@ -4253,4 +4426,104 @@ fn test_strategy_id() -> StrategyId {
 
 fn test_instrument_id() -> InstrumentId {
     InstrumentId::from("BTCUSDT.BINANCE")
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_tagged_lookup_failure_is_rejected_before_submission(
+    #[values(false, true)] websocket: bool,
+    #[values(false, true)] modify: bool,
+    #[values(false, true)] invalid_response: bool,
+) {
+    let mutations = Arc::new(AtomicUsize::new(0));
+    let captured = mutations.clone();
+
+    let app = create_exec_test_router(None).layer(axum::middleware::from_fn(
+        move |request: axum::extract::Request, next: axum::middleware::Next| {
+            let captured = captured.clone();
+            async move {
+                if request.uri().path() == "/api/v3/order"
+                    && request.method() == axum::http::Method::GET
+                {
+                    return if invalid_response {
+                        axum::Json(serde_json::json!({"invalid": "order response"})).into_response()
+                    } else {
+                        unauthorized_response().into_response()
+                    };
+                }
+
+                if request.uri().path() == "/api/v3/order/cancelReplace"
+                    || (request.uri().path() == "/api/v3/order"
+                        && request.method() == axum::http::Method::DELETE)
+                {
+                    captured.fetch_add(1, Ordering::Relaxed);
+                }
+
+                next.run(request).await
+            }
+        },
+    ));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let (ws_addr, ws_state) = start_ws_setup_test_server(WsSetupBehavior::CompleteSetup).await;
+
+    let (mut client, mut rx, cache) = if websocket {
+        create_test_execution_client_with_ws_trading(base_url, format!("ws://{ws_addr}/ws-api/v3"))
+    } else {
+        create_test_execution_client(base_url)
+    };
+
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let client_order_id = ClientOrderId::new("O-20260922-160119-V2-000-8");
+    add_limit_order_to_cache(&cache, client_order_id);
+
+    if modify {
+        client
+            .modify_order(modify_order_command(client_order_id))
+            .unwrap();
+    } else {
+        let mut command = cancel_order_command(client_order_id);
+        command.venue_order_id = None;
+        client.cancel_order(command).unwrap();
+    }
+
+    let event = recv_until(&mut rx, |event| match event {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            modify && event.client_order_id == client_order_id
+        }
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            !modify && event.client_order_id == client_order_id
+        }
+        _ => false,
+    })
+    .await;
+
+    client.disconnect().await.unwrap();
+    server.abort();
+
+    let (actual_id, reason) = match event {
+        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            (event.client_order_id, event.reason)
+        }
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            (event.client_order_id, event.reason)
+        }
+        _ => panic!("Expected rejection"),
+    };
+
+    assert_eq!(actual_id, client_order_id);
+    assert!(reason.contains("before submission"));
+    assert_eq!(mutations.load(Ordering::Relaxed), 0);
+    assert!(
+        !ws_state
+            .received_methods()
+            .await
+            .iter()
+            .any(|method| method == "order.cancelReplace" || method == "order.cancel")
+    );
 }

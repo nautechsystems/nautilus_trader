@@ -39,14 +39,14 @@ Subscriptions and handlers are part of the Python strategy/actor layer:
 from nautilus_trader.model import BookType
 from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderBookDeltas
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderBookDepth
 
 
 # Incremental book deltas
 self.subscribe_book_deltas(instrument_id, BookType.L2_MBP)
 
-# Aggregated depth snapshots (up to 10 levels)
-self.subscribe_book_depth10(instrument_id, BookType.L2_MBP)
+# Depth snapshots (adapter default; venue limits apply)
+self.subscribe_book_depth(instrument_id, BookType.L2_MBP, managed=False)
 
 # Full book snapshots at a timed interval
 self.subscribe_book_at_interval(instrument_id, BookType.L2_MBP, interval_ms=1000)
@@ -58,11 +58,33 @@ Each subscription type delivers data to the corresponding handler:
 def on_book_deltas(self, deltas: OrderBookDeltas) -> None: ...
 
 
-def on_book_depth(self, depth: OrderBookDepth10) -> None: ...
+def on_book_depth(self, depth: OrderBookDepth) -> None: ...
 
 
 def on_book(self, order_book: OrderBook) -> None: ...
 ```
+
+### Managed books and shared subscriptions
+
+The data engine maintains one cached `OrderBook` per instrument. A managed subscription selects
+its update source: `OrderBookDeltas` or `OrderBookDepth`. Delta and interval subscriptions can
+share a delta-managed book. A managed depth subscription cannot coexist with managed deltas or
+an interval subscription for the same instrument; the engine rejects the conflicting request.
+
+To receive depth callbacks alongside managed deltas or interval books, set `managed=False` on
+the depth subscription, as shown above. Those callbacks do not update the cached book. With a
+depth-only subscription, use `managed=True` to maintain the cached book from depth snapshots.
+
+Consumers sharing a source must agree on client, book type, depth, and subscription parameters.
+`depth=None` selects the adapter default; it does not match an explicit depth as a wildcard.
+Different clients may use different configurations when all consumers of that source are unmanaged.
+Unsubscribing one consumer preserves the source while other consumers still need it.
+
+Interval delivery subscribes to deltas and publishes the cached book on a timer. `OrderBookDepth`
+events do not update that delta-managed book, including during backtests. For depth-only replay,
+use `subscribe_book_depth` and `on_book_depth`. To use interval delivery, supply `OrderBookDeltas`,
+converting depth snapshots to snapshot-flagged deltas before replay when needed. During a feed outage
+or recovery, the interval timer can continue publishing the last cached book.
 
 ## Accessing the book
 
@@ -121,15 +143,22 @@ or `Delete` is skipped. If the ID exists on both sides, an `Add` returns
 
 Out-of-order deltas and depth snapshots are **applied rather than rejected**, so a venue that replays
 or reorders events still reaches the state those events describe. Only the book metadata is
-protected: `sequence` and `ts_last` are high-water marks and never regress. A stale update logs one
-warning for each field that regressed, `sequence` and `ts_event` independently, and how often it
-logs depends on how the update arrives:
+protected: `ts_last` never regresses, and `sequence` never regresses except across the full clears
+described below. A stale update logs one warning for each field that regressed, `sequence` and
+`ts_event` independently, and how often it logs depends on how the update arrives:
 
 - **Incremental deltas**: Once per stale delta.
 - **Snapshot deltas**: Once per snapshot, whether it arrives as an `F_SNAPSHOT` batch or as a
   single `F_SNAPSHOT` delta, since every delta in a rebuild shares the snapshot's sequence and
   timestamp.
-- **Depth snapshots**: Once, since an `OrderBookDepth10` replaces the book in a single update.
+- **Depth snapshots**: Once, since an `OrderBookDepth` replaces the book in a single update.
+
+Some venue feeds restart their sequence counter when they clear the book. A full book clear
+**without** the `F_SNAPSHOT` flag is checked against the old sequence high-water, then the clear's
+sequence becomes the new high-water. Later deltas are compared from that value rather than from a
+value received before the clear. Snapshot-flagged clears preserve the current high-water. The public
+`clear()` method uses the new behavior, while `clear_bids()` and `clear_asks()` preserve the current
+high-water.
 
 A snapshot report describes the incoming snapshot, so it does not depend on whether each of its
 deltas reaches the book. An `L1_MBP` book driven by quotes or trades is the exception to all of
@@ -156,18 +185,20 @@ making and other quoting strategies use it to estimate available liquidity at ea
 level after subtracting their own orders.
 
 Execution engines maintain own books when `manage_own_order_books` is enabled. The cache
-updates an existing own book as order events change state. Eligible orders have a price and
-do not use `IOC` or `FOK` time in force. Terminal events may still clean up an existing own
-book entry, even when the order would not otherwise be eligible for tracking.
+updates an existing own book as order events change state. Eligible orders have a price, do not
+use `IOC` or `FOK` time in force, and are not held by the order emulator. Emulated orders never rest
+in the public book, so they join only when released. Quote-quantity orders join once an update
+converts their quantity to base units. Terminal events may still clean up an existing own book
+entry, even when the order would not otherwise be eligible for tracking.
 
 ### Order lifecycle
 
 The `OwnOrderBook` tracks orders through their lifecycle. Orders are added during submission or
-materialized from reconciliation. Nonterminal states such as `OrderStatus::Accepted`,
-`OrderStatus::PendingUpdate`, `OrderStatus::PendingCancel`, and `OrderStatus::PartiallyFilled`
-update the entry. The closed states `OrderStatus::Denied`, `OrderStatus::Rejected`,
-`OrderStatus::Canceled`, `OrderStatus::Expired`, `OrderStatus::Filled`, and `OrderStatus::Voided`
-remove it.
+materialized from reconciliation. Orders sent to an external execution client join on their first
+order event. Nonterminal states such as `OrderStatus::Accepted`, `OrderStatus::PendingUpdate`,
+`OrderStatus::PendingCancel`, and `OrderStatus::PartiallyFilled` update the entry. The closed
+states `OrderStatus::Denied`, `OrderStatus::Rejected`, `OrderStatus::Canceled`,
+`OrderStatus::Expired`, `OrderStatus::Filled`, and `OrderStatus::Voided` remove it.
 
 Each `OwnBookOrder` carries:
 
@@ -188,7 +219,7 @@ The `status` and `ts_accepted` fields drive the optional filters described in
 ### Auditing
 
 The `audit_open_orders` method reconciles an own book against a set of valid client order
-IDs. Any own-book order not in the provided set is removed and logged as an audit error.
+IDs. Any own-book order not in the provided set is removed with a warning.
 `Cache::audit_own_order_books` builds this set from open, in-flight, and active-local orders so
 non-terminal entries remain during normal event-processing and venue-latency windows. Live systems
 can run this audit periodically through the own-books audit interval.

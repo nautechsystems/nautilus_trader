@@ -157,6 +157,12 @@ Valuation asks `Cache` for a price in this order, stopping at the first match:
 
 Set `use_mark_prices=false` to skip the mark tier and begin with the side-appropriate quote.
 
+A price at or below zero counts as a current price only for instruments that allow negative prices
+(option, futures spread and option spread instruments, and spot commodities), except inverse
+instruments whose notional divides by price because they are not premium based. A quote side at or
+below zero also needs a non-zero size, since an empty side can arrive as a zero price with zero
+size. Otherwise the Portfolio skips the price and moves to the next source.
+
 If none of the four yield a current price, the Portfolio carries the last valid price
 for that instrument and position side. The next snapshot lists the instrument in
 `stale_instruments`. If the position has never had a valid price, it goes into the
@@ -225,6 +231,10 @@ earlier unfiltered result resolved. It has two observable behaviors:
 - When a venue goes flat (no open positions), its tracker entry is cleared so stale
   instruments do not remain flagged.
 
+`build_snapshot(account_id)` updates that account's scope. Snapshots recorded by the equity
+curve or `snapshot_interval_ms` do not update the tracker; they report unpriced positions in
+`unpriced_instruments`.
+
 Call `missing_price_instruments(venue)` to inspect the current set.
 
 :::tip
@@ -236,8 +246,12 @@ price is excluded from the total and appears in the missing-price tracker.
 ### Venue and account scope
 
 Python collection queries accept optional `venue` and `account_id` scopes. If both are provided,
-they must resolve to the same account or the query raises `ValueError`. With `account_id=None`, a
-venue query aggregates across every account on that venue.
+the account must be issued under the venue or hold a position there, or the query raises
+`ValueError`. With `account_id=None`, a venue query aggregates across every account on that venue.
+
+`balances_locked`, `instrument_initial_margins`, and `instrument_maintenance_margins` read a single
+account instead. Without `account_id`, they resolve only when exactly one account is issued under
+the venue and return `None` otherwise.
 
 An account-filtered valuation reconciles only that account's observation, so
 flags raised by other accounts on the same venue survive.

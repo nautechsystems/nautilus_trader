@@ -22,11 +22,11 @@ pub mod runtime;
 
 use nautilus_common::messages::{
     data::{
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData,
+        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
         SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
         SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
         SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
         UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
         UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
         UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
@@ -58,7 +58,7 @@ pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SubscribeInstruments>()?;
     m.add_class::<SubscribeInstrument>()?;
     m.add_class::<SubscribeBookDeltas>()?;
-    m.add_class::<SubscribeBookDepth10>()?;
+    m.add_class::<SubscribeBookDepth>()?;
     m.add_class::<SubscribeQuotes>()?;
     m.add_class::<SubscribeTrades>()?;
     m.add_class::<SubscribeMarkPrices>()?;
@@ -72,7 +72,7 @@ pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<UnsubscribeInstruments>()?;
     m.add_class::<UnsubscribeInstrument>()?;
     m.add_class::<UnsubscribeBookDeltas>()?;
-    m.add_class::<UnsubscribeBookDepth10>()?;
+    m.add_class::<UnsubscribeBookDepth>()?;
     m.add_class::<UnsubscribeQuotes>()?;
     m.add_class::<UnsubscribeTrades>()?;
     m.add_class::<UnsubscribeMarkPrices>()?;
@@ -107,6 +107,7 @@ pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::config::LiveDataEngineConfig>()?;
     m.add_class::<crate::config::LiveRiskEngineConfig>()?;
     m.add_class::<crate::config::LiveExecutionEngineConfig>()?;
+    m.add_class::<crate::config::SubmissionRecoveryPolicy>()?;
     m.add_class::<crate::config::PluginConfig>()?;
     m.add_class::<crate::config::QueueMonitorConfig>()?;
     m.add_class::<crate::config::RoutingConfig>()?;

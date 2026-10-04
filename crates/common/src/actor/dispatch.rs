@@ -24,7 +24,11 @@ use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
     rc::Rc,
+    sync::mpsc,
+    thread::{self, ThreadId},
 };
+
+use ahash::AHashMap;
 
 const MAX_PENDING: usize = 65_536;
 const MAX_KNOWN_BYTES: usize = 64 * 1024 * 1024;
@@ -32,27 +36,47 @@ const MAX_CHAIN: usize = 1_048_576;
 const CHAIN_BYTES: usize = size_of::<Chain>() + 2 * size_of::<usize>();
 
 thread_local! {
+    static COMMAND_CONTEXTS: RefCell<Option<CommandContexts>> = const { RefCell::new(None) };
     static DISPATCH: RefCell<Dispatcher> = RefCell::new(Dispatcher::default());
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DispatchError {
+/// A callback admission, delivery, or boundary failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum DispatchError {
+    #[error("Callback storage limit exceeded")]
     Overflow,
+    #[error("Invalid callback destination")]
     InvalidDestination,
+    #[error("Callback publication sequence exhausted")]
     SequenceExhausted,
+    #[error("Callback publication unwound")]
     PublicationUnwound,
+    #[error("Callback delivery unwound")]
     DeliveryUnwound,
+    #[error("Callback chain delivery limit exceeded")]
     Runaway,
+    #[error("Callback delivery stalled at a safe boundary")]
+    Stalled,
+    #[error("Callback work or access is still active")]
     Active,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct DrainResult {
+    pub(super) status: DrainStatus,
     pub(super) delivered: usize,
-    pub(super) pending: bool,
 }
 
-pub(super) struct PublicationScope {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DrainStatus {
+    Empty,
+    BudgetExhausted,
+    Deferred,
+    Reserved,
+    Busy,
+}
+
+pub(crate) struct PublicationScope {
     active: bool,
     previous: Option<u64>,
     previous_chain: Option<Rc<Chain>>,
@@ -60,7 +84,7 @@ pub(super) struct PublicationScope {
 }
 
 impl PublicationScope {
-    pub(super) fn enter() -> Self {
+    pub(crate) fn enter() -> Self {
         let previous = DISPATCH.try_with(|state| {
             let mut state = state.borrow_mut();
             let ordinal = state.sequence();
@@ -188,8 +212,21 @@ impl<T> Drop for Admission<T> {
     }
 }
 
+// Callers must release enclosing component, engine, and cache borrows before entering
+pub(super) fn drain_at_boundary(budget: usize) -> Result<DrainResult, DispatchError> {
+    let result = drain(budget)?;
+    match result.status {
+        DrainStatus::Deferred | DrainStatus::Reserved => Err(DispatchError::Active),
+        DrainStatus::Busy => {
+            record_failure(DispatchError::Stalled);
+            Err(DispatchError::Stalled)
+        }
+        DrainStatus::Empty | DrainStatus::BudgetExhausted => Ok(result),
+    }
+}
+
 pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
-    let entered = DISPATCH
+    let status = DISPATCH
         .try_with(|state| {
             let mut state = state.borrow_mut();
             if let Some(e) = state.error {
@@ -197,24 +234,31 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
             }
 
             if state.draining || state.clearing || state.depth != 0 || super::access::is_active() {
-                return Ok(false);
+                return Ok(Some(DrainStatus::Deferred));
+            }
+
+            // Keep the guard's failure tracking when called during unwinding
+            if state.pending.is_empty() && !std::thread::panicking() {
+                return Ok(Some(DrainStatus::Empty));
             }
 
             state.draining = true;
-            Ok(true)
+            Ok(None)
         })
-        .unwrap_or(Ok(false))?;
+        .unwrap_or(Ok(Some(DrainStatus::Deferred)))?;
 
-    if !entered {
+    if let Some(status) = status {
         return Ok(DrainResult {
+            status,
             delivered: 0,
-            pending: has_pending(),
         });
     }
 
     let _scope = DrainScope;
     let mut delivered = 0;
     let mut processed = 0;
+    let mut status = DrainStatus::BudgetExhausted;
+
     while processed < budget {
         let slot = DISPATCH.with_borrow_mut(|state| {
             if let Some(e) = state.error {
@@ -231,7 +275,10 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
         let _chain = ChainScope::enter(Some(slot.chain.clone()));
         let pending = std::mem::replace(&mut *slot.state.borrow_mut(), SlotState::Reserved);
         match pending {
-            SlotState::Reserved => break,
+            SlotState::Reserved => {
+                status = DrainStatus::Reserved;
+                break;
+            }
             SlotState::Cancelled => {}
             SlotState::Ready(mut delivery) => {
                 if slot.chain.delivered.get() >= MAX_CHAIN {
@@ -242,6 +289,7 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
 
                 if !delivery.run() {
                     *slot.state.borrow_mut() = SlotState::Ready(delivery);
+                    status = DrainStatus::Busy;
                     break;
                 }
 
@@ -264,8 +312,12 @@ pub(super) fn drain(budget: usize) -> Result<DrainResult, DispatchError> {
         }
 
         Ok(DrainResult {
+            status: if state.pending.is_empty() {
+                DrainStatus::Empty
+            } else {
+                status
+            },
             delivered,
-            pending: !state.pending.is_empty(),
         })
     })
 }
@@ -343,6 +395,8 @@ pub(super) fn failure() -> Option<DispatchError> {
 }
 
 pub(super) fn has_pending() -> bool {
+    collect_command_contexts();
+
     DISPATCH
         .try_with(|state| {
             let state = state.borrow();
@@ -354,6 +408,8 @@ pub(super) fn has_pending() -> bool {
 }
 
 pub(super) fn clear() -> Result<(), DispatchError> {
+    collect_command_contexts();
+
     let previous = DISPATCH
         .try_with(|state| {
             let mut state = state.borrow_mut();
@@ -525,6 +581,10 @@ pub(crate) struct ChainContext {
 }
 
 impl ChainContext {
+    pub(crate) const fn independent() -> Self {
+        Self { chain: None }
+    }
+
     pub(crate) fn capture() -> Self {
         let chain = DISPATCH
             .try_with(|state| {
@@ -568,6 +628,106 @@ impl Drop for ChainContext {
                 .set(chain.accounting.contexts.get() - 1);
         }
     }
+}
+
+#[derive(Debug)]
+pub(crate) struct SendChainContext {
+    id: u64,
+    owner: ThreadId,
+    released: mpsc::Sender<u64>,
+}
+
+impl SendChainContext {
+    pub(crate) fn capture() -> Option<Self> {
+        collect_command_contexts();
+        let context = ChainContext::capture();
+        context.chain.as_ref()?;
+
+        COMMAND_CONTEXTS
+            .try_with(|contexts| {
+                let mut contexts = contexts.borrow_mut();
+                let contexts = contexts.get_or_insert_with(CommandContexts::default);
+                contexts.next = contexts
+                    .next
+                    .checked_add(1)
+                    .expect("command context IDs exhausted");
+                let id = contexts.next;
+                contexts.pending.insert(id, context);
+
+                Self {
+                    id,
+                    owner: thread::current().id(),
+                    released: contexts.released.clone(),
+                }
+            })
+            .ok()
+    }
+
+    pub(crate) fn take(&self) -> Option<ChainContext> {
+        assert_eq!(
+            self.owner,
+            thread::current().id(),
+            "command context dispatched outside its owner thread"
+        );
+        COMMAND_CONTEXTS
+            .try_with(|contexts| {
+                contexts
+                    .borrow_mut()
+                    .as_mut()
+                    .and_then(|contexts| contexts.pending.remove(&self.id))
+            })
+            .ok()
+            .flatten()
+    }
+
+    pub(crate) fn is_owner(&self) -> bool {
+        self.owner == thread::current().id()
+    }
+}
+
+impl Drop for SendChainContext {
+    fn drop(&mut self) {
+        if self.is_owner() {
+            drop(self.take());
+        } else {
+            // Foreign receivers release only an ID; the owner retains every Rc access
+            let _ = self.released.send(self.id);
+        }
+    }
+}
+
+struct CommandContexts {
+    next: u64,
+    pending: AHashMap<u64, ChainContext>,
+    released: mpsc::Sender<u64>,
+    releases: mpsc::Receiver<u64>,
+}
+
+impl Default for CommandContexts {
+    fn default() -> Self {
+        let (released, releases) = mpsc::channel();
+
+        Self {
+            next: 0,
+            pending: AHashMap::new(),
+            released,
+            releases,
+        }
+    }
+}
+
+pub(crate) fn collect_command_contexts() {
+    let _ = COMMAND_CONTEXTS.try_with(|contexts| {
+        let mut contexts = contexts.borrow_mut();
+
+        let Some(contexts) = contexts.as_mut() else {
+            return;
+        };
+
+        while let Ok(id) = contexts.releases.try_recv() {
+            contexts.pending.remove(&id);
+        }
+    });
 }
 
 struct ChainScope {
@@ -630,6 +790,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        actor::{callback_failure, clear_callbacks, drain_callbacks},
         messages::{
             data::{DataCommand, SubscribeCommand, SubscribeQuotes},
             execution::{QueryAccount, TradingCommand},
@@ -637,7 +798,7 @@ mod tests {
         msgbus::{self, MessagingSwitchboard, TypedIntoHandler},
         runner::{
             DataCommandSender, SyncDataCommandSender, SyncTradingCommandSender,
-            TradingCommandMessage, TradingCommandSender, capture_trading_cmd,
+            TradingCommandMessage, TradingCommandSender, capture_trading_cmd, clear_command_queues,
             data_cmd_queue_is_empty, drain_data_cmd_queue, drain_trading_cmd_queue,
             trading_cmd_is_dispatching, trading_cmd_queue_is_empty,
         },
@@ -646,6 +807,504 @@ mod tests {
     fn record(value: &mut (Rc<RefCell<Vec<u32>>>, u32)) -> bool {
         value.0.borrow_mut().push(value.1);
         true
+    }
+
+    #[rstest]
+    #[case::publish(false)]
+    #[case::try_publish(true)]
+    fn any_publication_orders_admissions_before_nested_raw_delivery(#[case] try_publish: bool) {
+        clear().unwrap();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let synchronous = Rc::new(RefCell::new(Vec::new()));
+
+        let publish = move |value: u32| {
+            if try_publish {
+                assert!(msgbus::try_publish_any("dispatch.outer".into(), &value));
+            } else {
+                msgbus::publish_any("dispatch.outer".into(), &value);
+            }
+        };
+
+        let observed = synchronous.clone();
+        msgbus::subscribe_any(
+            "dispatch.*".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                observed.borrow_mut().push(*value);
+                if *value == 1 {
+                    publish(2);
+                    observed.borrow_mut().push(3);
+                }
+
+                assert_eq!(drain_callbacks(1), Err(DispatchError::Active));
+            }),
+            Some(100),
+        );
+
+        for recipient in [10, 20] {
+            let received = received.clone();
+            msgbus::subscribe_any(
+                "dispatch.*".into(),
+                msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                    reserve(0)
+                        .unwrap()
+                        .commit((received.clone(), recipient + value), record);
+                }),
+                Some(30 - recipient),
+            );
+        }
+
+        publish(1);
+
+        assert_eq!(*synchronous.borrow(), [1, 2, 3]);
+        assert!(received.borrow().is_empty());
+        assert_eq!(drain_callbacks(1), Ok(true));
+        assert_eq!(*received.borrow(), [11]);
+        assert_eq!(drain_callbacks(2), Ok(true));
+        assert_eq!(*received.borrow(), [11, 21, 12]);
+        assert_eq!(drain_callbacks(1), Ok(false));
+        assert_eq!(*received.borrow(), [11, 21, 12, 22]);
+        assert_eq!(failure(), None);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case::publish(false)]
+    #[case::try_publish(true)]
+    fn any_publication_roots_cover_tap_and_generated_commands(
+        #[case] try_publish: bool,
+        #[values(false, true)] with_tap: bool,
+    ) {
+        use std::any::Any;
+
+        use crate::msgbus::{BusTap, Endpoint, MStr, Topic};
+
+        struct RootTap(Rc<RefCell<Vec<ChainContext>>>);
+
+        impl BusTap for RootTap {
+            fn on_publish(&self, _: MStr<Topic>, _: &dyn Any) {
+                self.0.borrow_mut().push(ChainContext::capture());
+            }
+
+            fn on_send(&self, _: MStr<Endpoint>, _: &dyn Any) {}
+        }
+
+        clear().unwrap();
+        clear_command_queues();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let tapped = Rc::new(RefCell::new(Vec::new()));
+        if with_tap {
+            msgbus::set_bus_tap(Rc::new(RootTap(tapped.clone())));
+        }
+
+        let publish = move |value: u8| {
+            if try_publish {
+                assert!(msgbus::try_publish_any("dispatch.roots".into(), &value));
+            } else {
+                msgbus::publish_any("dispatch.roots".into(), &value);
+            }
+        };
+
+        msgbus::subscribe_any(
+            "dispatch.roots".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |value: &u8| {
+                SyncDataCommandSender.execute(data_command(*value));
+                if *value == 1 {
+                    publish(2);
+                }
+            }),
+            None,
+        );
+
+        let commands = Rc::new(RefCell::new(Vec::new()));
+        let received = commands.clone();
+        msgbus::register_data_command_endpoint(
+            MessagingSwitchboard::data_engine_execute(),
+            TypedIntoHandler::from(move |command| {
+                received
+                    .borrow_mut()
+                    .push((command, ChainContext::capture()));
+            }),
+        );
+
+        publish(1);
+        publish(3);
+        assert!(commands.borrow().is_empty());
+        assert!(ChainContext::capture().chain.is_none());
+        drain_data_cmd_queue();
+        msgbus::clear_bus_tap();
+
+        {
+            let tapped = tapped.borrow();
+            let commands = commands.borrow();
+            assert_eq!(tapped.len(), if with_tap { 3 } else { 0 });
+            assert_eq!(commands.len(), 3);
+            let outer = commands[0]
+                .1
+                .chain
+                .as_ref()
+                .expect("command has a publication root");
+            let nested = commands[1].1.chain.as_ref().unwrap();
+            let independent = commands[2].1.chain.as_ref().unwrap();
+            assert!(Rc::ptr_eq(outer, nested));
+            assert!(!Rc::ptr_eq(outer, independent));
+
+            for (index, (command, context)) in commands.iter().enumerate() {
+                assert_eq!(*command, data_command((index + 1) as u8));
+
+                if with_tap {
+                    assert!(Rc::ptr_eq(
+                        context.chain.as_ref().unwrap(),
+                        tapped[index].chain.as_ref().unwrap(),
+                    ));
+                }
+            }
+        }
+
+        assert!(data_cmd_queue_is_empty());
+        assert_eq!(clear(), Err(DispatchError::Active));
+        tapped.borrow_mut().clear();
+        commands.borrow_mut().clear();
+        assert_eq!(clear(), Ok(()));
+    }
+
+    #[rstest]
+    #[case::publish(false)]
+    #[case::try_publish(true)]
+    fn any_publication_unwind_retains_work_until_safe_cleanup(
+        #[case] try_publish: bool,
+        #[values(false, true)] queued: bool,
+    ) {
+        clear().unwrap();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let captured = received.clone();
+        msgbus::subscribe_any(
+            "dispatch.unwind".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                if queued {
+                    reserve(0)
+                        .unwrap()
+                        .commit((captured.clone(), *value), record);
+                }
+
+                panic!("subscriber failed");
+            }),
+            None,
+        );
+
+        let result = std::panic::catch_unwind(|| {
+            if try_publish {
+                msgbus::try_publish_any("dispatch.unwind".into(), &17_u32);
+            } else {
+                msgbus::publish_any("dispatch.unwind".into(), &17_u32);
+            }
+        });
+
+        assert!(result.is_err());
+        assert_eq!(failure(), Some(DispatchError::PublicationUnwound));
+        assert_eq!(drain_callbacks(1), Err(DispatchError::PublicationUnwound));
+        assert!(received.borrow().is_empty());
+        assert!(has_pending());
+        DISPATCH.with_borrow(|state| assert_eq!(state.pending.len(), usize::from(queued)));
+        clear().unwrap();
+        assert!(!has_pending());
+        assert_eq!(failure(), None);
+    }
+
+    #[rstest]
+    #[case::missing(false)]
+    #[case::borrowed(true)]
+    fn rejected_any_publication_preserves_dispatch_state(#[case] borrowed: bool) {
+        std::thread::spawn(move || {
+            let bus = borrowed.then(msgbus::get_message_bus);
+            let _borrow = bus.as_ref().map(|bus| bus.borrow_mut());
+            let _publication = PublicationScope::enter();
+            let root = ChainContext::capture();
+            let before =
+                DISPATCH.with_borrow(|state| (state.sequence, state.publication, state.depth));
+
+            assert!(!msgbus::try_publish_any(
+                "dispatch.rejected".into(),
+                &17_u32
+            ));
+
+            DISPATCH.with_borrow(|state| {
+                assert_eq!((state.sequence, state.publication, state.depth), before);
+                assert!(Rc::ptr_eq(
+                    state.current.as_ref().unwrap(),
+                    root.chain.as_ref().unwrap()
+                ));
+                assert_eq!(state.error, None);
+                assert!(state.pending.is_empty());
+            });
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[rstest]
+    #[case::typed_outer(true)]
+    #[case::any_outer(false)]
+    fn mixed_publications_preserve_outer_recipient_order(#[case] typed_outer: bool) {
+        use std::any::Any;
+
+        use nautilus_model::data::QuoteTick;
+
+        use crate::msgbus::{BusTap, Endpoint, MStr, Topic, TypedHandler};
+
+        struct PublicationTap(Rc<RefCell<Vec<u64>>>);
+
+        impl BusTap for PublicationTap {
+            fn on_publish(&self, _: MStr<Topic>, _: &dyn Any) {
+                self.0.borrow_mut().push(DISPATCH.with_borrow(|state| {
+                    state
+                        .publication
+                        .expect("tap runs within publication scope")
+                }));
+
+                assert_eq!(drain_callbacks(1), Err(DispatchError::Active));
+            }
+
+            fn on_send(&self, _: MStr<Endpoint>, _: &dyn Any) {}
+        }
+
+        clear().unwrap();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let publications = Rc::new(RefCell::new(Vec::new()));
+        msgbus::set_bus_tap(Rc::new(PublicationTap(publications.clone())));
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let synchronous = Rc::new(RefCell::new(Vec::new()));
+        let observed = synchronous.clone();
+        msgbus::subscribe_quotes(
+            "dispatch.typed".into(),
+            TypedHandler::from(move |_: &QuoteTick| {
+                observed.borrow_mut().push(1);
+
+                if typed_outer {
+                    msgbus::publish_any("dispatch.any".into(), &2_u32);
+                    observed.borrow_mut().push(3);
+                }
+            }),
+            Some(100),
+        );
+
+        let observed = synchronous.clone();
+        msgbus::subscribe_any(
+            "dispatch.any".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |_: &u32| {
+                observed.borrow_mut().push(2);
+
+                if !typed_outer {
+                    msgbus::publish_quote("dispatch.typed".into(), &QuoteTick::default());
+                    observed.borrow_mut().push(3);
+                }
+            }),
+            Some(100),
+        );
+
+        for recipient in [10, 20] {
+            let captured = received.clone();
+            msgbus::subscribe_quotes(
+                "dispatch.typed".into(),
+                TypedHandler::from(move |_: &QuoteTick| {
+                    reserve(0)
+                        .unwrap()
+                        .commit((captured.clone(), recipient + 1), record);
+                }),
+                Some(30 - recipient),
+            );
+
+            let captured = received.clone();
+            msgbus::subscribe_any(
+                "dispatch.any".into(),
+                msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                    reserve(0)
+                        .unwrap()
+                        .commit((captured.clone(), recipient + value), record);
+                }),
+                Some(30 - recipient),
+            );
+        }
+
+        let sequence = DISPATCH.with_borrow(|state| state.sequence);
+
+        if typed_outer {
+            msgbus::publish_quote("dispatch.typed".into(), &QuoteTick::default());
+        } else {
+            msgbus::publish_any("dispatch.any".into(), &2_u32);
+        }
+
+        msgbus::clear_bus_tap();
+
+        assert!(received.borrow().is_empty());
+        assert_eq!(*publications.borrow(), [sequence + 1, sequence + 2]);
+        assert_eq!(
+            *synchronous.borrow(),
+            if typed_outer { [1, 2, 3] } else { [2, 1, 3] }
+        );
+        assert_eq!(drain_callbacks(4), Ok(false));
+        assert_eq!(
+            *received.borrow(),
+            if typed_outer {
+                [11, 21, 12, 22]
+            } else {
+                [12, 22, 11, 21]
+            }
+        );
+        assert_eq!(failure(), None);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    fn any_publication_failure_preserves_synchronous_fanout() {
+        clear().unwrap();
+        *msgbus::get_message_bus().borrow_mut() = msgbus::MessageBus::default();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let captured = received.clone();
+        msgbus::subscribe_any(
+            "dispatch.failure".into(),
+            msgbus::ShareableMessageHandler::from_typed(|_: &u32| {
+                assert!(reserve::<u32>(usize::MAX).is_none());
+            }),
+            Some(100),
+        );
+
+        msgbus::subscribe_any(
+            "dispatch.failure".into(),
+            msgbus::ShareableMessageHandler::from_typed(move |value: &u32| {
+                captured.borrow_mut().push(*value);
+            }),
+            None,
+        );
+
+        msgbus::publish_any("dispatch.failure".into(), &17_u32);
+        msgbus::publish_any("dispatch.failure".into(), &23_u32);
+
+        assert_eq!(*received.borrow(), [17, 23]);
+        assert_eq!(failure(), Some(DispatchError::Overflow));
+        assert_eq!(drain_callbacks(1), Err(DispatchError::Overflow));
+        clear().unwrap();
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn python_publication_orders_admissions_after_raw_republication() {
+        use nautilus_model::identifiers::TraderId;
+        use pyo3::{ffi::c_str, prelude::*, types::PyDict};
+
+        use crate::python::msgbus::{PyMessage, PyMessageBus};
+
+        clear().unwrap();
+        Python::initialize();
+        Python::attach(|py| {
+            let bus = py
+                .get_type::<PyMessageBus>()
+                .call1((TraderId::from("TRADER-001"),))
+                .unwrap();
+            let globals = PyDict::new(py);
+            globals.set_item("bus", &bus).unwrap();
+            py.run(
+                c_str!(
+                    r#"
+trace = []
+def raw(value):
+    trace.append(value)
+    if value == 1:
+        bus.publish('dispatch.inner', 2, external_pub=False)
+        trace.append(3)
+bus.subscribe('dispatch.*', raw, priority=100)
+"#
+                ),
+                Some(&globals),
+                None,
+            )
+            .unwrap();
+            let received = Rc::new(RefCell::new(Vec::new()));
+            let captured = received.clone();
+            msgbus::subscribe_any(
+                "dispatch.*".into(),
+                msgbus::ShareableMessageHandler::from_typed(move |message: &PyMessage| {
+                    let value = Python::attach(|py| message.0.extract::<u32>(py).unwrap());
+                    reserve(0)
+                        .unwrap()
+                        .commit((captured.clone(), value), record);
+                }),
+                None,
+            );
+
+            py.run(
+                c_str!("bus.publish('dispatch.outer', 1, external_pub=False)"),
+                Some(&globals),
+                None,
+            )
+            .unwrap();
+
+            assert_eq!(
+                globals
+                    .get_item("trace")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<Vec<u32>>()
+                    .unwrap(),
+                [1, 2, 3]
+            );
+            assert!(received.borrow().is_empty());
+            assert_eq!(drain_callbacks(1), Ok(true));
+            assert_eq!(*received.borrow(), [1]);
+            assert_eq!(drain_callbacks(1), Ok(false));
+            assert_eq!(*received.borrow(), [1, 2]);
+        });
+
+        clear().unwrap();
+    }
+
+    #[rstest]
+    fn runtime_drain_reports_queued_slots_without_counting_retained_roots() {
+        clear_callbacks().unwrap();
+        let retained = retain(17).unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        drop(reserve::<()>(0).unwrap());
+        reserve(0).unwrap().commit((received.clone(), 23), record);
+
+        assert_eq!(drain_callbacks(0), Ok(true));
+        assert_eq!(drain_callbacks(1), Ok(true));
+        assert!(received.borrow().is_empty());
+        assert_eq!(drain_callbacks(1), Ok(false));
+        assert_eq!(*received.borrow(), [23]);
+        assert!(has_pending());
+        assert_eq!(drain_callbacks(1), Ok(false));
+        assert_eq!(clear_callbacks(), Err(DispatchError::Active));
+        drop(retained);
+        assert_eq!(clear_callbacks(), Ok(()));
+    }
+
+    #[rstest]
+    fn runtime_cleanup_releases_command_roots_before_clearing_failure() {
+        clear_callbacks().unwrap();
+        let storage = retain(17).unwrap();
+        let chain = Rc::downgrade(&storage.chain);
+        storage.with_chain(|| {
+            SyncDataCommandSender.execute(data_command(1));
+            SyncTradingCommandSender.execute(trading_message(2));
+        });
+        drop(storage);
+        reserve(0).unwrap().commit((), |()| false);
+
+        assert_eq!(drain_callbacks(1), Err(DispatchError::Stalled));
+        assert_eq!(callback_failure(), Some(DispatchError::Stalled));
+        assert_eq!(clear_callbacks(), Err(DispatchError::Active));
+        assert!(!data_cmd_queue_is_empty());
+        assert!(!trading_cmd_queue_is_empty());
+        assert_eq!(chain.strong_count(), 2);
+        clear_command_queues();
+        assert!(data_cmd_queue_is_empty());
+        assert!(trading_cmd_queue_is_empty());
+        assert_eq!(chain.strong_count(), 0);
+        assert_eq!(callback_failure(), Some(DispatchError::Stalled));
+        assert_eq!(clear_callbacks(), Ok(()));
+        assert_eq!(callback_failure(), None);
+        assert_eq!(drain_callbacks(1), Ok(false));
     }
 
     #[rstest]
@@ -677,11 +1336,13 @@ mod tests {
             }
 
             reserve(0).unwrap().commit((received.clone(), 12), record);
+            assert_eq!(drain_at_boundary(10), Err(DispatchError::Active));
+            assert_eq!(failure(), None);
             assert_eq!(
                 drain(10),
                 Ok(DrainResult {
-                    delivered: 0,
-                    pending: true
+                    status: DrainStatus::Deferred,
+                    delivered: 0
                 })
             );
         }
@@ -689,36 +1350,71 @@ mod tests {
         assert_eq!(
             drain(10),
             Ok(DrainResult {
-                delivered: 3,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 3
             })
         );
         assert_eq!(*received.borrow(), [11, 12, 21]);
     }
 
     #[rstest]
-    fn reserved_head_blocks_delivery_and_teardown() {
+    #[case(false, false)]
+    #[case(false, true)]
+    #[case(true, false)]
+    #[case(true, true)]
+    fn reserved_head_blocks_delivery_and_teardown(
+        #[case] preceding_delivery: bool,
+        #[case] at_boundary: bool,
+    ) {
         clear().unwrap();
         let received = Rc::new(RefCell::new(Vec::new()));
+
+        if preceding_delivery {
+            reserve(0).unwrap().commit((received.clone(), 7), record);
+        }
+
         let head = reserve(0).unwrap();
         reserve(0).unwrap().commit((received.clone(), 22), record);
-        assert_eq!(
-            drain(2),
+
+        let result = if at_boundary {
+            drain_at_boundary(3)
+        } else {
+            drain(3)
+        };
+
+        let expected = if at_boundary {
+            Err(DispatchError::Active)
+        } else {
             Ok(DrainResult {
-                delivered: 0,
-                pending: true
+                status: DrainStatus::Reserved,
+                delivered: usize::from(preceding_delivery),
             })
+        };
+
+        assert_eq!(result, expected);
+        assert_eq!(
+            *received.borrow(),
+            if preceding_delivery { vec![7] } else { vec![] }
         );
+        assert_eq!(drain_at_boundary(2), Err(DispatchError::Active));
+        assert_eq!(failure(), None);
         assert_eq!(clear(), Err(DispatchError::Active));
         head.commit((received.clone(), 11), record);
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 2,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 2
             })
         );
-        assert_eq!(*received.borrow(), [11, 22]);
+        assert_eq!(
+            *received.borrow(),
+            if preceding_delivery {
+                vec![7, 11, 22]
+            } else {
+                vec![11, 22]
+            }
+        );
     }
 
     #[rstest]
@@ -755,7 +1451,6 @@ mod tests {
                         .unwrap()
                         .commit((received.clone(), value * 10 + recipient), record);
                     if *value == 1 && recipient == 1 {
-                        let _nested = PublicationScope::enter();
                         msgbus::publish_any(nested_topic.into(), &2_u32);
                     }
                 }),
@@ -763,16 +1458,13 @@ mod tests {
             );
         }
 
-        {
-            let _publication = PublicationScope::enter();
-            msgbus::publish_any("outer".into(), &1_u32);
-        }
+        msgbus::publish_any("outer".into(), &1_u32);
 
         assert_eq!(
             drain(10),
             Ok(DrainResult {
-                delivered: 4,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 4
             })
         );
         assert_eq!(*received.borrow(), [11, 12, 21, 22]);
@@ -787,8 +1479,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 0,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 0
             })
         );
         assert_eq!(
@@ -821,11 +1513,13 @@ mod tests {
         clear().unwrap();
         let busy = Rc::new(Cell::new(true));
         reserve(0).unwrap().commit(busy.clone(), |busy| {
+            assert_eq!(drain_at_boundary(1), Err(DispatchError::Active));
+            assert_eq!(failure(), None);
             assert_eq!(
                 drain(1),
                 Ok(DrainResult {
-                    delivered: 0,
-                    pending: true
+                    status: DrainStatus::Deferred,
+                    delivered: 0
                 })
             );
             !busy.get()
@@ -836,8 +1530,8 @@ mod tests {
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 0,
-                pending: true
+                status: DrainStatus::Busy,
+                delivered: 0
             })
         );
         assert!(received.borrow().is_empty());
@@ -845,18 +1539,266 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1
             })
         );
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(*received.borrow(), [22]);
+    }
+
+    #[rstest]
+    fn empty_drain_preserves_unwind_failure() {
+        struct DrainOnDrop(Rc<Cell<bool>>);
+
+        impl Drop for DrainOnDrop {
+            fn drop(&mut self) {
+                assert_eq!(
+                    drain_at_boundary(1),
+                    Ok(DrainResult {
+                        status: DrainStatus::Empty,
+                        delivered: 0,
+                    })
+                );
+                assert_eq!(failure(), Some(DispatchError::DeliveryUnwound));
+                self.0.set(true);
+            }
+        }
+
+        clear().unwrap();
+        let dropped = Rc::new(Cell::new(false));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _probe = DrainOnDrop(dropped.clone());
+            panic!("outer callback failed");
+        }));
+
+        assert!(result.is_err());
+        assert!(dropped.get());
+        assert_eq!(failure(), Some(DispatchError::DeliveryUnwound));
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case(false, false, 0)]
+    #[case(true, false, 0)]
+    #[case(false, true, 0)]
+    #[case(false, false, 1)]
+    fn empty_drain_preserves_failure_and_boundary_checks(
+        #[case] draining: bool,
+        #[case] clearing: bool,
+        #[case] depth: usize,
+        #[values(None, Some(DispatchError::InvalidDestination))] error: Option<DispatchError>,
+        #[values(0, 1)] budget: usize,
+    ) {
+        clear().unwrap();
+        DISPATCH.with_borrow_mut(|state| {
+            state.draining = draining;
+            state.clearing = clearing;
+            state.depth = depth;
+            state.error = error;
+        });
+
+        let result = drain(budget);
+        let boundary = drain_at_boundary(budget);
+        let observed_error = failure();
+        let observed_state =
+            DISPATCH.with_borrow(|state| (state.draining, state.clearing, state.depth));
+        DISPATCH.with_borrow_mut(|state| {
+            state.draining = false;
+            state.clearing = false;
+            state.depth = 0;
+        });
+        clear().unwrap();
+
+        let expected_status = if draining || clearing || depth != 0 {
+            DrainStatus::Deferred
+        } else {
+            DrainStatus::Empty
+        };
+        let expected = error.map_or(
+            Ok(DrainResult {
+                status: expected_status,
+                delivered: 0,
+            }),
+            Err,
+        );
+        assert_eq!(result, expected);
+        assert_eq!(
+            boundary,
+            if expected_status == DrainStatus::Deferred {
+                Err(error.unwrap_or(DispatchError::Active))
+            } else {
+                expected
+            }
+        );
+        assert_eq!(observed_error, error);
+        assert_eq!(observed_state, (draining, clearing, depth));
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    fn boundary_drain_ignores_retained_ownership_without_slots(#[case] budget: usize) {
+        clear().unwrap();
+        let storage = retain(17).unwrap();
+        let context = storage.with_chain(ChainContext::capture);
+
+        let expected = Ok(DrainResult {
+            status: DrainStatus::Empty,
+            delivered: 0,
+        });
+
+        assert!(has_pending());
+        assert_eq!(drain_at_boundary(budget), expected);
+        drop(storage);
+        assert!(has_pending());
+        assert_eq!(drain_at_boundary(budget), expected);
+        drop(context);
+        assert!(!has_pending());
+        assert_eq!(failure(), None);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case(0, 0, DrainStatus::BudgetExhausted)]
+    #[case(1, 0, DrainStatus::BudgetExhausted)]
+    #[case(2, 1, DrainStatus::Empty)]
+    fn boundary_drain_counts_cancelled_slots_toward_budget(
+        #[case] budget: usize,
+        #[case] delivered: usize,
+        #[case] status: DrainStatus,
+    ) {
+        clear().unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        drop(reserve::<()>(0).unwrap());
+        reserve(0).unwrap().commit((received.clone(), 17), record);
+        assert_eq!(
+            drain_at_boundary(budget),
+            Ok(DrainResult { status, delivered })
+        );
+        assert_eq!(
+            drain_at_boundary(2),
+            Ok(DrainResult {
+                status: DrainStatus::Empty,
+                delivered: 1 - delivered,
+            })
+        );
+        assert_eq!(*received.borrow(), [17]);
+        assert_eq!(failure(), None);
+        clear().unwrap();
+    }
+
+    #[rstest]
+    fn boundary_drain_leaves_busy_head_beyond_budget_unattempted() {
+        clear().unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let attempts = Rc::new(Cell::new(0));
+        reserve(0).unwrap().commit((received.clone(), 11), record);
+        reserve(0).unwrap().commit(attempts.clone(), |attempts| {
+            attempts.set(attempts.get() + 1);
+            false
+        });
+
+        assert_eq!(
+            drain_at_boundary(1),
+            Ok(DrainResult {
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1,
+            })
+        );
+        assert_eq!(*received.borrow(), [11]);
+        assert_eq!(attempts.get(), 0);
+        assert_eq!(failure(), None);
+        assert_eq!(drain_at_boundary(1), Err(DispatchError::Stalled));
+        assert_eq!(attempts.get(), 1);
+        assert_eq!(failure(), Some(DispatchError::Stalled));
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn boundary_drain_rejects_active_access_without_latching_failure(#[case] queued: bool) {
+        clear().unwrap();
+        let allocation = Rc::new(std::cell::UnsafeCell::new(()));
+        let guard = super::super::access::AllocationGuard::acquire(allocation).unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        if queued {
+            reserve(0).unwrap().commit((received.clone(), 23), record);
+        }
+
+        assert_eq!(
+            drain(1),
+            Ok(DrainResult {
+                status: DrainStatus::Deferred,
+                delivered: 0
+            })
+        );
+        assert_eq!(drain_at_boundary(1), Err(DispatchError::Active));
+        assert_eq!(failure(), None);
+        assert!(received.borrow().is_empty());
+        drop(guard);
+        assert_eq!(
+            drain_at_boundary(1),
+            Ok(DrainResult {
+                status: DrainStatus::Empty,
+                delivered: usize::from(queued)
+            })
+        );
+        assert_eq!(*received.borrow(), if queued { vec![23] } else { vec![] });
+        clear().unwrap();
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn boundary_drain_latches_busy_head_after_progress(#[case] preceding_delivery: bool) {
+        clear().unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+
+        if preceding_delivery {
+            reserve(0).unwrap().commit((received.clone(), 11), record);
+        }
+
+        let busy = reserve(0).unwrap();
+        let chain = Rc::downgrade(&busy.slot.chain);
+        busy.commit((), |()| false);
+        reserve(0).unwrap().commit((received.clone(), 23), record);
+
+        assert_eq!(drain_at_boundary(3), Err(DispatchError::Stalled));
+        assert_eq!(failure(), Some(DispatchError::Stalled));
+        assert_eq!(drain_at_boundary(3), Err(DispatchError::Stalled));
+        assert_eq!(drain(3), Err(DispatchError::Stalled));
+        assert!(reserve::<()>(0).is_none());
+        assert_eq!(chain.upgrade().unwrap().delivered.get(), 0);
+        assert_eq!(
+            *received.borrow(),
+            if preceding_delivery { vec![11] } else { vec![] }
+        );
+        assert_eq!(DISPATCH.with_borrow(|state| state.pending.len()), 2);
+        clear().unwrap();
+        assert_eq!(chain.strong_count(), 0);
+        assert!(!has_pending());
+        assert_eq!(failure(), None);
+    }
+
+    #[rstest]
+    fn boundary_drain_preserves_first_delivery_failure() {
+        clear().unwrap();
+        reserve(0).unwrap().commit((), |()| {
+            record_failure(DispatchError::InvalidDestination);
+            false
+        });
+
+        assert_eq!(drain_at_boundary(1), Err(DispatchError::InvalidDestination));
+        assert_eq!(failure(), Some(DispatchError::InvalidDestination));
+        clear().unwrap();
     }
 
     struct DropProbe {
@@ -869,7 +1811,13 @@ mod tests {
             let _guard =
                 super::super::access::AllocationGuard::acquire(self.allocation.clone()).unwrap();
             self.dropped.set(self.dropped.get() + 1);
-            assert_eq!(drain(1).unwrap().delivered, 0);
+            assert_eq!(
+                drain(1),
+                Ok(DrainResult {
+                    status: DrainStatus::Deferred,
+                    delivered: 0,
+                })
+            );
         }
     }
 
@@ -969,8 +1917,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1
             })
         );
         assert_eq!(drain(1), Err(DispatchError::Runaway));
@@ -996,8 +1944,8 @@ mod tests {
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 2,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 2
             })
         );
         assert_eq!(second_chain.delivered.get(), 1);
@@ -1028,8 +1976,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1
             })
         );
         assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(&state.pending[0].1.chain, &chain)));
@@ -1059,8 +2007,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert!(has_pending());
@@ -1069,8 +2017,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         let mut continuation = continuation.borrow_mut().take().unwrap();
@@ -1094,8 +2042,8 @@ mod tests {
             Err(DispatchError::Runaway)
         } else {
             Ok(DrainResult {
+                status: DrainStatus::Empty,
                 delivered: 1,
-                pending: false,
             })
         };
 
@@ -1123,8 +2071,8 @@ mod tests {
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 0,
-                pending: true
+                status: DrainStatus::Busy,
+                delivered: 0
             })
         );
         assert_eq!(cancelled_chain.strong_count(), 0);
@@ -1133,8 +2081,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(chain.delivered.get(), 1);
@@ -1211,8 +2159,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 1
             })
         );
         assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(&state.pending[0].1.chain, &chain)));
@@ -1243,6 +2191,80 @@ mod tests {
         assert_eq!(drain(1), Err(DispatchError::Runaway));
         clear().unwrap();
         assert!(!has_pending());
+    }
+
+    #[rstest]
+    fn invocation_batch_keeps_independent_and_continued_roots_separate() {
+        clear().unwrap();
+        let parent = retain(17).unwrap();
+        parent.chain.delivered.set(37);
+        let ingress = ChainContext::independent();
+        let mut roots = Vec::new();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        parent.with_chain(|| {
+            super::super::invocation::run(
+                |batch| {
+                    for value in [11, 23, 31, 47] {
+                        if value == 23 || value == 47 {
+                            ingress.with_chain(|| batch.reserve(0).unwrap().commit(value));
+                        } else {
+                            batch.reserve(0).unwrap().commit(value);
+                        }
+                    }
+                },
+                |value| {
+                    roots.push(ChainContext::capture());
+                    reserve(0)
+                        .unwrap()
+                        .commit((received.clone(), value), record);
+                },
+            );
+
+            assert!(
+                DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                    state.current.as_ref().unwrap(),
+                    &parent.chain,
+                ))
+            );
+        });
+
+        assert_eq!(roots.len(), 4);
+        let chains = roots
+            .iter()
+            .map(|root| root.chain.as_ref().unwrap())
+            .collect::<Vec<_>>();
+        assert!(Rc::ptr_eq(chains[0], &parent.chain));
+        assert!(Rc::ptr_eq(chains[2], &parent.chain));
+        assert!(!Rc::ptr_eq(chains[1], &parent.chain));
+        assert!(!Rc::ptr_eq(chains[3], &parent.chain));
+        assert!(!Rc::ptr_eq(chains[1], chains[3]));
+        assert_eq!(
+            chains
+                .iter()
+                .map(|chain| chain.delivered.get())
+                .collect::<Vec<_>>(),
+            [37, 0, 37, 0]
+        );
+        assert_eq!(
+            drain(4),
+            Ok(DrainResult {
+                status: DrainStatus::Empty,
+                delivered: 4
+            })
+        );
+        assert_eq!(*received.borrow(), [11, 23, 31, 47]);
+        assert_eq!(
+            chains
+                .iter()
+                .map(|chain| chain.delivered.get())
+                .collect::<Vec<_>>(),
+            [39, 1, 39, 1]
+        );
+        drop(chains);
+        drop(roots);
+        drop(parent);
+        assert!(!has_pending());
+        clear().unwrap();
     }
 
     #[rstest]
@@ -1326,15 +2348,15 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 0,
-                pending: true
+                status: DrainStatus::BudgetExhausted,
+                delivered: 0
             })
         );
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
     }
@@ -1362,8 +2384,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(
@@ -1415,8 +2437,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(accounting.contexts.get(), 1);
@@ -1427,8 +2449,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         drain_data_cmd_queue();
@@ -1441,8 +2463,8 @@ mod tests {
                 Err(DispatchError::Runaway)
             } else {
                 Ok(DrainResult {
+                    status: DrainStatus::Empty,
                     delivered: 1,
-                    pending: false,
                 })
             },
         );
@@ -1520,8 +2542,8 @@ mod tests {
         assert_eq!(
             drain(2),
             Ok(DrainResult {
-                delivered: 2,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 2
             })
         );
         let roots = roots.borrow();
@@ -1576,8 +2598,8 @@ mod tests {
         assert_eq!(
             drain(3),
             Ok(DrainResult {
-                delivered: 3,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 3
             })
         );
         let roots = roots.borrow();
@@ -2047,8 +3069,8 @@ mod tests {
                 assert_eq!(
                     drain(1),
                     Ok(DrainResult {
-                        delivered: 0,
-                        pending: false
+                        status: DrainStatus::Deferred,
+                        delivered: 0
                     })
                 );
                 self.0.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -2103,8 +3125,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(accounting.contexts.get(), 1);
@@ -2114,8 +3136,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
 
@@ -2132,8 +3154,8 @@ mod tests {
                 Err(DispatchError::Runaway)
             } else {
                 Ok(DrainResult {
+                    status: DrainStatus::Empty,
                     delivered: 1,
-                    pending: false,
                 })
             }
         );
@@ -2204,8 +3226,8 @@ mod tests {
         assert_eq!(
             drain(7),
             Ok(DrainResult {
-                delivered: 7,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 7
             })
         );
         let roots = roots.borrow();
@@ -2563,8 +3585,8 @@ mod tests {
         assert_eq!(
             drain(1),
             Ok(DrainResult {
-                delivered: 1,
-                pending: false
+                status: DrainStatus::Empty,
+                delivered: 1
             })
         );
         assert_eq!(root.delivered.get(), 1);
@@ -2703,11 +3725,11 @@ mod tests {
                     assert_eq!(accounting.contexts.get(), *queued);
                     let remaining = visited.len() - delivered;
                     let count = remaining.min(budgets[i % budgets.len()]);
-                    assert_eq!(drain(budgets[i % budgets.len()]), Ok(DrainResult { delivered: count, pending: remaining > count }));
+                    assert_eq!(drain(budgets[i % budgets.len()]), Ok(DrainResult { status: if remaining > count { DrainStatus::BudgetExhausted } else { DrainStatus::Empty }, delivered: count }));
                     delivered += count;
                     assert_eq!(accounting.count.get(), 1 + visited.len() - delivered);
                 }
-                assert_eq!(drain(usize::MAX), Ok(DrainResult { delivered: expected.len() - delivered, pending: false }));
+                assert_eq!(drain(usize::MAX), Ok(DrainResult { status: DrainStatus::Empty, delivered: expected.len() - delivered }));
                 let chains = roots.borrow();
                 for (i, root) in chains.iter().enumerate() {
                     assert_eq!(root.is_some(), expected.contains(&i));
@@ -2909,5 +3931,649 @@ mod tests {
             trading_command(id)
         );
         id
+    }
+    #[cfg(feature = "live")]
+    mod live_commands {
+        use super::*;
+        use crate::{
+            live::{
+                dispatch::DispatchMessage,
+                sender::{DispatchSender, EventSender},
+            },
+            runner::{TimeEventMessage, register_time_event_callback},
+            timer::{TimeEvent, TimeEventCallback},
+        };
+
+        #[rstest]
+        fn independent_trading_leaf_allocates_no_root() {
+            clear().unwrap();
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_execute(),
+                TypedIntoHandler::from(|command| {
+                    assert_eq!(command, trading_command(1));
+                    assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                    assert_eq!(
+                        DISPATCH.with_borrow(|state| state.accounting.bytes.get()),
+                        0
+                    );
+                }),
+            );
+
+            DispatchMessage::new(trading_message(1), thread::current().id())
+                .dispatch_trading(|_| {});
+            assert!(!has_pending());
+            clear().unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn channel_command_keeps_budget_through_children(#[case] exhausted: bool) {
+            clear().unwrap();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let root = reserve(0).unwrap();
+            root.slot
+                .chain
+                .delivered
+                .set(MAX_CHAIN - if exhausted { 1 } else { 2 });
+            let chain = Rc::downgrade(&root.slot.chain);
+            let accounting = root.slot.accounting.clone();
+            root.commit(tx, |tx| {
+                tx.send(DispatchMessage::new(
+                    trading_message(1),
+                    thread::current().id(),
+                ))
+                .unwrap();
+                true
+            });
+
+            drain(1).unwrap();
+            assert_eq!(accounting.contexts.get(), 1);
+            assert_eq!(clear(), Err(DispatchError::Active));
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_execute(),
+                TypedIntoHandler::from(|command| {
+                    assert_eq!(command, trading_command(1));
+                    capture_trading_cmd(trading_message(2));
+                }),
+            );
+
+            let observed = Rc::new(Cell::new(false));
+            let value = observed.clone();
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_execute(),
+                TypedIntoHandler::from(move |command| {
+                    assert_eq!(command, trading_command(2));
+                    reserve(0).unwrap().commit(value.clone(), |value| {
+                        value.set(true);
+                        true
+                    });
+                }),
+            );
+
+            rx.try_recv().unwrap().dispatch_trading(|_| {});
+            let result = drain(1);
+            assert_eq!(
+                result,
+                if exhausted {
+                    Err(DispatchError::Runaway)
+                } else {
+                    Ok(DrainResult {
+                        status: DrainStatus::Empty,
+                        delivered: 1,
+                    })
+                }
+            );
+            assert_eq!(observed.get(), !exhausted);
+            assert_eq!(accounting.contexts.get(), 0);
+            clear().unwrap();
+            assert_eq!(chain.strong_count(), 0);
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn foreign_receiver_drop_releases_on_owner(#[case] closed: bool) {
+            clear().unwrap();
+            let storage = retain(0).unwrap();
+            let accounting = storage.accounting.clone();
+            let chain = Rc::downgrade(&storage.chain);
+            let (tx, rx) = std::sync::mpsc::channel();
+            if closed {
+                drop(rx);
+                storage.with_chain(|| {
+                    drop(tx.send(DispatchMessage::new(17u32, thread::current().id())));
+                });
+            } else {
+                storage.with_chain(|| {
+                    tx.send(DispatchMessage::new(17u32, thread::current().id()))
+                        .unwrap();
+                });
+
+                thread::spawn(move || drop(rx)).join().unwrap();
+            }
+
+            drop(storage);
+            assert!(!has_pending());
+            assert_eq!(accounting.contexts.get(), 0);
+            assert_eq!(accounting.bytes.get(), 0);
+            assert_eq!(chain.strong_count(), 0);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        fn external_sender_does_not_capture_foreign_root() {
+            clear().unwrap();
+            let owner = thread::current().id();
+
+            let message = thread::spawn(move || {
+                let storage = retain(0).unwrap();
+                let message = storage.with_chain(|| DispatchMessage::new(23u32, owner));
+                assert_eq!(storage.accounting.contexts.get(), 0);
+                message
+            })
+            .join()
+            .unwrap();
+
+            let enclosing = retain(0).unwrap();
+            enclosing.with_chain(|| {
+                message.dispatch(|command| {
+                    assert_eq!(command, 23);
+                    assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                    let next = reserve::<()>(0).unwrap();
+                    assert!(!Rc::ptr_eq(&next.slot.chain, &enclosing.chain));
+                });
+            });
+
+            drop(enclosing);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        fn foreign_dispatch_panics_and_releases_context() {
+            clear().unwrap();
+            let storage = retain(0).unwrap();
+            let accounting = storage.accounting.clone();
+            let message =
+                storage.with_chain(|| DispatchMessage::new(31u32, thread::current().id()));
+            let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let observed = called.clone();
+            let result = thread::spawn(move || {
+                message.dispatch(|_| observed.store(true, std::sync::atomic::Ordering::SeqCst));
+            })
+            .join();
+            assert!(result.is_err());
+            drop(storage);
+            assert!(!has_pending());
+            assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+            assert_eq!(accounting.contexts.get(), 0);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        fn data_channel_resumes_root_and_nested_send() {
+            clear().unwrap();
+            let owner = thread::current().id();
+            let root = retain(0).unwrap();
+            let chain = root.chain.clone();
+            let accounting = root.accounting.clone();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            root.with_chain(|| {
+                tx.send(DispatchMessage::new(data_command(3), owner))
+                    .unwrap();
+            });
+
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_execute(),
+                TypedIntoHandler::from(move |command| {
+                    assert!(
+                        DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                            state.current.as_ref().unwrap(),
+                            &chain
+                        ))
+                    );
+
+                    if command == data_command(3) {
+                        tx.send(DispatchMessage::new(data_command(5), owner))
+                            .unwrap();
+                    } else {
+                        assert_eq!(command, data_command(5));
+                    }
+                }),
+            );
+
+            drop(root);
+
+            for remaining in [1, 0] {
+                rx.try_recv().unwrap().dispatch(|command| {
+                    msgbus::send_data_command(MessagingSwitchboard::data_engine_execute(), command);
+                });
+
+                assert_eq!(rx.len(), remaining);
+                assert_eq!(accounting.contexts.get(), remaining);
+            }
+
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_execute(),
+                TypedIntoHandler::from(|_: DataCommand| {}),
+            );
+            assert_eq!(accounting.bytes.get(), 0);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn payload_drop_resumes_root_outside_registry_borrow(#[case] unwind: bool) {
+            struct Payload {
+                chain: Rc<Chain>,
+                dropped: Rc<Cell<bool>>,
+            }
+            impl Drop for Payload {
+                fn drop(&mut self) {
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &self.chain
+                    )));
+                    let nested = DispatchMessage::new(17u32, thread::current().id());
+                    drop(nested);
+                    self.dropped.set(true);
+                }
+            }
+            clear().unwrap();
+            let root = retain(0).unwrap();
+            let accounting = root.accounting.clone();
+            let dropped = Rc::new(Cell::new(false));
+
+            let message = root.with_chain(|| {
+                DispatchMessage::new(
+                    Payload {
+                        chain: root.chain.clone(),
+                        dropped: dropped.clone(),
+                    },
+                    thread::current().id(),
+                )
+            });
+
+            drop(root);
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if unwind {
+                    message.dispatch(|_payload| panic!("injected handler panic"));
+                } else {
+                    drop(message);
+                }
+            }));
+
+            assert_eq!(result.is_err(), unwind);
+            assert!(dropped.get());
+            assert_eq!(accounting.contexts.get(), 0);
+            assert_eq!(accounting.bytes.get(), 0);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn message_outlives_owner_thread(#[case] registry_first: bool) {
+            let message = thread::spawn(move || {
+                if registry_first {
+                    collect_command_contexts();
+                }
+
+                let root = retain(0).unwrap();
+                root.with_chain(|| DispatchMessage::new(29u32, thread::current().id()))
+            })
+            .join()
+            .unwrap();
+
+            drop(message);
+        }
+
+        #[rstest]
+        fn thread_teardown_can_capture_after_command_registry_drops() {
+            struct Retained(Option<RetainedStorage>);
+            impl Drop for Retained {
+                fn drop(&mut self) {
+                    self.0.as_ref().unwrap().with_chain(|| {
+                        drop(DispatchMessage::new(41u32, thread::current().id()));
+                    });
+                }
+            }
+            thread_local! {
+                static RETAINED: RefCell<Retained> = const { RefCell::new(Retained(None)) };
+            }
+
+            thread::spawn(|| {
+                let storage = retain(0).unwrap();
+                RETAINED.with_borrow_mut(|retained| retained.0 = Some(storage));
+                RETAINED.with_borrow(|retained| {
+                    retained
+                        .0
+                        .as_ref()
+                        .unwrap()
+                        .with_chain(|| drop(DispatchMessage::new(43u32, thread::current().id())));
+                });
+            })
+            .join()
+            .unwrap();
+        }
+
+        #[rstest]
+        fn time_event_dispatch_preserves_root_and_budget() {
+            clear().unwrap();
+            let root = retain(0).unwrap();
+            let chain = root.chain.clone();
+            chain.delivered.set(37);
+            let expected = chain.clone();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = DispatchSender::new(tx);
+            let event = TimeEvent::new("rooted-time".into(), UUID4::new(), 17.into(), 19.into());
+            let expected_event = event.clone();
+
+            let callback = TimeEventCallback::RustLocal(Rc::new(move |received| {
+                assert_eq!(received, expected_event);
+                DISPATCH.with_borrow(|state| {
+                    assert!(Rc::ptr_eq(state.current.as_ref().unwrap(), &expected));
+                    assert_eq!(expected.delivered.get(), 37);
+                });
+            }));
+
+            root.with_chain(|| sender.send(TimeEventMessage::new(event, callback)).unwrap());
+            let enclosing = retain(0).unwrap();
+            enclosing.with_chain(|| {
+                assert!(rx.try_recv().unwrap().dispatch(TimeEventMessage::dispatch));
+                DISPATCH.with_borrow(|state| {
+                    assert!(Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &enclosing.chain
+                    ));
+                });
+            });
+
+            assert_eq!(chain.delivered.get(), 37);
+            assert_eq!(root.accounting.contexts.get(), 0);
+            drop(enclosing);
+            drop(root);
+            drop(chain);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        fn repeated_time_events_start_independent_roots() {
+            clear().unwrap();
+            let enclosing = retain(0).unwrap();
+            enclosing.chain.delivered.set(MAX_CHAIN);
+            let roots = Rc::new(RefCell::new(Vec::new()));
+            let observed = roots.clone();
+            let received = Rc::new(RefCell::new(Vec::new()));
+            let delivered = received.clone();
+
+            let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
+                let storage = retain(0).unwrap();
+                observed.borrow_mut().push(storage.chain.clone());
+                reserve(0)
+                    .unwrap()
+                    .commit((delivered.clone(), event), |(received, event)| {
+                        received.borrow_mut().push(event.clone());
+                        true
+                    });
+            }));
+
+            let token = enclosing.with_chain(|| register_time_event_callback(callback));
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = DispatchSender::new(tx);
+            let mut expected = Vec::new();
+
+            for timestamp in [17, 23] {
+                let event = TimeEvent::new(
+                    "repeated-time".into(),
+                    UUID4::new(),
+                    timestamp.into(),
+                    29.into(),
+                );
+                expected.push(event.clone());
+                sender
+                    .send(TimeEventMessage::registered(
+                        event,
+                        token.acquire().unwrap(),
+                    ))
+                    .unwrap();
+                enclosing.with_chain(|| {
+                    let message = rx.try_recv().unwrap();
+                    assert!(!message.is_rooted());
+                    assert!(message.dispatch(TimeEventMessage::dispatch));
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &enclosing.chain,
+                    )));
+                });
+
+                assert_eq!(
+                    drain(1),
+                    Ok(DrainResult {
+                        status: DrainStatus::Empty,
+                        delivered: 1
+                    })
+                );
+            }
+
+            token.close();
+
+            let captured = roots.borrow();
+            assert_eq!(captured.len(), 2);
+            assert!(!Rc::ptr_eq(&captured[0], &captured[1]));
+
+            for root in captured.iter() {
+                assert!(!Rc::ptr_eq(root, &enclosing.chain));
+                assert_eq!(root.delivered.get(), 1);
+            }
+
+            assert_eq!(*received.borrow(), expected);
+            assert_eq!(enclosing.chain.delivered.get(), MAX_CHAIN);
+            assert!(rx.is_empty());
+            drop(captured);
+            roots.borrow_mut().clear();
+            drop(enclosing);
+            assert!(!has_pending());
+            clear().unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn event_sender_keeps_command_budget(#[case] exhausted: bool) {
+            clear().unwrap();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = EventSender::new(tx);
+            let root = reserve(0).unwrap();
+            root.slot
+                .chain
+                .delivered
+                .set(MAX_CHAIN - if exhausted { 1 } else { 2 });
+            let chain = Rc::downgrade(&root.slot.chain);
+            let accounting = root.slot.accounting.clone();
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::exec_engine_execute(),
+                TypedIntoHandler::from(move |command| {
+                    assert_eq!(command, trading_command(1));
+                    sender.send(17u32).unwrap();
+                }),
+            );
+
+            root.commit((), |()| {
+                SyncTradingCommandSender.execute(trading_message(1));
+                true
+            });
+
+            drain(1).unwrap();
+            drain_trading_cmd_queue();
+            assert_eq!(clear(), Err(DispatchError::Active));
+
+            let observed = Rc::new(Cell::new(0));
+            let value = observed.clone();
+            rx.try_recv().unwrap().dispatch(|event| {
+                reserve(0)
+                    .unwrap()
+                    .commit((value, event), |(value, event)| {
+                        value.set(*event);
+                        true
+                    });
+            });
+
+            let result = drain(1);
+
+            assert_eq!(observed.get(), if exhausted { 0 } else { 17 });
+            assert_eq!(
+                result,
+                if exhausted {
+                    Err(DispatchError::Runaway)
+                } else {
+                    Ok(DrainResult {
+                        status: DrainStatus::Empty,
+                        delivered: 1,
+                    })
+                }
+            );
+            assert_eq!(accounting.contexts.get(), 0);
+            clear().unwrap();
+            assert_eq!(chain.strong_count(), 0);
+        }
+
+        #[rstest]
+        fn event_sender_foreign_ingress_is_independent() {
+            clear().unwrap();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = EventSender::new(tx);
+
+            thread::spawn(move || {
+                let foreign = retain(0).unwrap();
+                foreign.with_chain(|| sender.send(23u32).unwrap());
+                drop(foreign);
+                clear().unwrap();
+            })
+            .join()
+            .unwrap();
+
+            let enclosing = retain(0).unwrap();
+            enclosing.with_chain(|| {
+                rx.try_recv().unwrap().dispatch(|event| {
+                    assert_eq!(event, 23);
+                    assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                });
+            });
+
+            drop(enclosing);
+            clear().unwrap();
+        }
+
+        #[rstest]
+        #[case(false)]
+        #[case(true)]
+        fn event_sender_releases_abandoned_roots(#[case] closed: bool) {
+            clear().unwrap();
+            let root = retain(0).unwrap();
+            let accounting = root.accounting.clone();
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender = EventSender::new(tx);
+
+            if closed {
+                drop(rx);
+                let error = root.with_chain(|| sender.send(29u32).unwrap_err());
+                assert!(error.0.is_rooted());
+                assert_eq!(accounting.contexts.get(), 1);
+                error.0.dispatch(|event| {
+                    assert_eq!(event, 29);
+                    assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                        state.current.as_ref().unwrap(),
+                        &root.chain
+                    )));
+                });
+            } else {
+                root.with_chain(|| sender.send(29u32).unwrap());
+                assert_eq!(accounting.contexts.get(), 1);
+
+                thread::spawn(move || drop(rx)).join().unwrap();
+            }
+
+            drop(root);
+            assert!(!has_pending());
+            assert_eq!(accounting.contexts.get(), 0);
+            assert_eq!(accounting.bytes.get(), 0);
+            clear().unwrap();
+        }
+
+        proptest::proptest! {
+            #[rstest]
+            fn prop_mixed_channel_hops_preserve_root(kinds in proptest::collection::vec(proptest::bool::ANY, 1..32)) {
+                clear().unwrap();
+                let root = retain(0).unwrap();
+                let chain = Rc::downgrade(&root.chain);
+                let accounting = root.accounting.clone();
+                let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+                let sender = EventSender::new(event_tx);
+                let owner = thread::current().id();
+                let mut message = root.with_chain(|| DispatchMessage::new(0usize, owner));
+                drop(root);
+
+                for (index, event) in kinds.iter().enumerate() {
+                    message = message.dispatch(|value| {
+                        assert_eq!(value, index);
+                        assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(state.current.as_ref().unwrap(), &chain.upgrade().unwrap())));
+                        if *event {
+                            sender.send(index + 1).unwrap();
+                            event_rx.try_recv().unwrap()
+                        } else {
+                            DispatchMessage::new(index + 1, owner)
+                        }
+                    });
+                    assert!(DISPATCH.with_borrow(|state| state.current.is_none()));
+                    assert_eq!(accounting.contexts.get(), 1);
+                    assert_eq!(clear(), Err(DispatchError::Active));
+                }
+                assert_eq!(message.dispatch(|value| value), kinds.len());
+                assert_eq!(chain.strong_count(), 0);
+                assert_eq!(accounting.contexts.get(), 0);
+                assert_eq!(accounting.bytes.get(), 0);
+                clear().unwrap();
+            }
+        }
+
+        proptest::proptest! {
+            #[rstest]
+            fn channel_contexts_restore_and_release(actions in proptest::collection::vec((0u8..4, proptest::bool::ANY), 0..64)) {
+                clear().unwrap();
+                let owner = thread::current().id();
+                let roots = [retain(0).unwrap(), retain(0).unwrap()];
+                let accounting = roots[0].accounting.clone();
+                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+                for (i, &(root, _)) in actions.iter().enumerate() {
+                    let message = if root < 2 {
+                        roots[usize::from(root)].with_chain(|| DispatchMessage::new(i, owner))
+                    } else { DispatchMessage::from(i) };
+                    tx.send(message).unwrap();
+                }
+
+                for (i, &(root, unwind)) in actions.iter().enumerate() {
+                    let message = rx.try_recv().unwrap();
+                    roots[1].with_chain(|| {
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| message.dispatch(|value| {
+                            assert_eq!(value, i);
+                            let current = DISPATCH.with_borrow(|state| state.current.clone());
+                            if root < 2 { assert!(Rc::ptr_eq(current.as_ref().unwrap(), &roots[usize::from(root)].chain)); }
+                            else { assert!(current.is_none()); }
+                            assert!(!unwind, "injected handler panic");
+                        })));
+                        assert_eq!(result.is_err(), unwind);
+                        assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(state.current.as_ref().unwrap(), &roots[1].chain)));
+                    });
+                }
+                assert_eq!(accounting.contexts.get(), 0);
+                drop(roots);
+                assert_eq!(accounting.bytes.get(), 0);
+                clear().unwrap();
+            }
+        }
     }
 }

@@ -537,13 +537,7 @@ fn create_btc_instrument() -> InstrumentAny {
         is_reduce_only: false,
     };
 
-    parse_instrument_any(
-        &market,
-        Some(dec!(0.0002)),
-        Some(dec!(0.0005)),
-        UnixNanos::default(),
-    )
-    .unwrap()
+    parse_instrument_any(&market, UnixNanos::default()).unwrap()
 }
 
 fn create_test_router(state: TestServerState) -> Router {

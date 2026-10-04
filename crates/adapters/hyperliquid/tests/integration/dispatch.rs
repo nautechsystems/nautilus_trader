@@ -390,6 +390,32 @@ fn test_dispatch_triggered_per_order_type(
     assert_event_types(&events, expected);
 }
 
+/// A recovery read replays a trigger the stream already delivered, so only the first `TRIGGERED`
+/// emits `OrderTriggered`.
+#[rstest]
+fn test_dispatch_repeated_triggered_emits_once() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-006");
+    state.register_context(context(cid, OrderType::StopLimit));
+    let report = make_status_report(
+        Some("O-006"),
+        "v-600",
+        OrderStatus::Triggered,
+        Some("56730.0"),
+        "0.00020",
+    )
+    .with_trigger_price(Price::from("56700.0"));
+
+    let first = dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
+    let repeat = dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
+
+    let events = drain_events(&mut rx);
+    assert_eq!(first, DispatchOutcome::Tracked);
+    assert_eq!(repeat, DispatchOutcome::Skip);
+    assert_event_types(&events, &["Accepted", "Triggered"]);
+}
+
 #[rstest]
 fn test_dispatch_fill_tracked_synthesizes_accepted_then_filled() {
     let (emitter, mut rx) = test_emitter();
@@ -1167,6 +1193,90 @@ fn test_fill_on_cached_voi_passes_through_during_pending_modify() {
     let events = drain_events(&mut rx);
     assert_event_types(&events, &["Filled"]);
     assert_eq!(state.buffered_fill_count(&cid), 0);
+}
+
+#[rstest]
+fn test_accepted_for_older_leg_keeps_newer_binding() {
+    // Recovery can bind a newer leg before the stream replays an older leg's accept; promoting
+    // that accept would move the order back to a leg the venue has already replaced
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-CR-OLDER");
+    state.register_context(context(cid, OrderType::Limit));
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("375273716475"));
+    let accepted_older = make_status_report(
+        Some("O-CR-OLDER"),
+        "375273716474",
+        OrderStatus::Accepted,
+        Some("53893.0"),
+        "0.00020",
+    );
+    let canceled_older = make_status_report(
+        Some("O-CR-OLDER"),
+        "375273716474",
+        OrderStatus::Canceled,
+        Some("53893.0"),
+        "0.00020",
+    );
+
+    let accepted_outcome =
+        dispatch_order_event(&accepted_older, &state, &emitter, UnixNanos::default());
+    let canceled_outcome =
+        dispatch_order_event(&canceled_older, &state, &emitter, UnixNanos::default());
+
+    assert_eq!(accepted_outcome, DispatchOutcome::Skip);
+    assert_eq!(canceled_outcome, DispatchOutcome::Skip);
+    assert!(drain_events(&mut rx).is_empty());
+    assert_eq!(
+        state.cached_venue_order_id(&cid),
+        Some(VenueOrderId::new("375273716475")),
+    );
+    assert!(state.lookup_context(&cid).is_some());
+}
+
+#[rstest]
+fn test_fill_on_older_leg_does_not_promote_during_pending_modify() {
+    // A late fill on a replaced leg arrives while a newer modify is in flight: it must apply as a
+    // fill without moving the binding back to the replaced leg or consuming the modify
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-FR-OLDER");
+    state.register_context(context(cid, OrderType::Limit));
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("375273716475"));
+    state.mark_pending_modify(
+        cid,
+        VenueOrderId::new("375273716475"),
+        Quantity::from("0.00020"),
+    );
+    let fill = make_fill_report(
+        Some("O-FR-OLDER"),
+        "375273716474",
+        "T-OLDER-1",
+        "0.00010",
+        "56730.0",
+    );
+
+    let outcome = dispatch_order_fill(&fill, &state, &emitter, UnixNanos::default());
+
+    let events = drain_events(&mut rx);
+    assert_eq!(outcome, DispatchOutcome::Tracked);
+    assert_event_types(&events, &["Filled"]);
+
+    let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = &events[0] else {
+        panic!("expected OrderEventAny::Filled");
+    };
+
+    assert_eq!(filled.venue_order_id, VenueOrderId::new("375273716474"));
+    assert_eq!(
+        state.cached_venue_order_id(&cid),
+        Some(VenueOrderId::new("375273716475")),
+    );
+    assert_eq!(
+        state.pending_modify(&cid),
+        Some(VenueOrderId::new("375273716475"))
+    );
 }
 
 /// GH-3972: a stale old-leg fill arriving after the cancel-replace promotion

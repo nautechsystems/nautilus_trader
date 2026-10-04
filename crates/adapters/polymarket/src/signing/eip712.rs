@@ -40,7 +40,7 @@ use rust_decimal::Decimal;
 use crate::{
     common::{
         credential::EvmPrivateKey,
-        enums::{PolymarketOrderSide, SignatureType},
+        enums::{PolymarketOrderSide, PolymarketSignatureType, PolymarketSignerType},
     },
     http::{
         error::{Error, Result},
@@ -201,6 +201,7 @@ alloy::sol! {
 #[derive(Debug)]
 pub struct OrderSigner {
     signer: PrivateKeySigner,
+    signer_type: PolymarketSignerType,
 }
 
 impl OrderSigner {
@@ -212,7 +213,17 @@ impl OrderSigner {
             .unwrap_or(private_key.as_hex());
         let signer = PrivateKeySigner::from_str(key_hex)
             .map_err(|e| Error::bad_request(format!("Failed to create signer: {e}")))?;
-        Ok(Self { signer })
+        Ok(Self {
+            signer,
+            signer_type: PolymarketSignerType::Owner,
+        })
+    }
+
+    /// Selects the signer role. Session signing requires `POLY_1271` orders.
+    #[must_use]
+    pub fn with_signer_type(mut self, signer_type: PolymarketSignerType) -> Self {
+        self.signer_type = signer_type;
+        self
     }
 
     /// Returns the signer's Ethereum address.
@@ -232,9 +243,17 @@ impl OrderSigner {
     /// signer's address, or if a `POLY_1271` order does not use the deposit
     /// wallet for both `maker` and `signer`.
     pub fn sign_order(&self, order: &PolymarketOrder, neg_risk: bool) -> Result<String> {
+        if self.signer_type == PolymarketSignerType::Session
+            && order.signature_type != PolymarketSignatureType::Poly1271
+        {
+            return Err(Error::bad_request(
+                "Session signers require POLY_1271 orders",
+            ));
+        }
+
         let order_signer = parse_address(&order.signer, "signer")?;
         let order_maker = parse_address(&order.maker, "maker")?;
-        if order.signature_type == SignatureType::Poly1271 {
+        if order.signature_type == PolymarketSignatureType::Poly1271 {
             if order_signer != order_maker {
                 return Err(Error::bad_request(format!(
                     "POLY_1271 orders require maker and signer to both be the deposit wallet, maker was {order_maker}, signer was {order_signer}",
@@ -250,7 +269,7 @@ impl OrderSigner {
         let eip712_order = build_eip712_order(order)?;
         let contract = exchange_contract(neg_risk);
 
-        if order.signature_type == SignatureType::Poly1271 {
+        if order.signature_type == PolymarketSignatureType::Poly1271 {
             return self.sign_poly_1271_order(&eip712_order, contract);
         }
 
@@ -279,6 +298,13 @@ impl OrderSigner {
         encoded.extend_from_slice(contents_hash.as_slice());
         encoded.extend_from_slice(ORDER_TYPE_STRING.as_bytes());
         encoded.extend_from_slice(&(ORDER_TYPE_STRING.len() as u16).to_be_bytes());
+
+        if self.signer_type == PolymarketSignerType::Session {
+            // The session envelope wraps the complete Deposit Wallet signature.
+            let signer_id = B256::left_padding_from(self.address().as_slice());
+            encoded = (signer_id, B256::ZERO, Bytes::from(encoded)).abi_encode_params();
+            encoded.extend_from_slice(&[0x64, 0x92].repeat(16));
+        }
 
         Ok(format!(
             "0x{}",
@@ -566,7 +592,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::enums::SignatureType;
+    use crate::common::enums::PolymarketSignatureType;
 
     const TEST_PRIVATE_KEY: &str =
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -589,7 +615,7 @@ mod tests {
             maker_amount: dec!(100000000),
             taker_amount: dec!(50000000),
             side: PolymarketOrderSide::Buy,
-            signature_type: SignatureType::Eoa,
+            signature_type: PolymarketSignatureType::Eoa,
             expiration: "0".to_string(),
             timestamp: "1713398400000".to_string(),
             metadata: ZERO_BYTES32.to_string(),
@@ -657,7 +683,7 @@ mod tests {
         let mut order = test_order();
         order.maker = "0x1111111111111111111111111111111111111111".to_string();
         order.signer = order.maker.clone();
-        order.signature_type = SignatureType::Poly1271;
+        order.signature_type = PolymarketSignatureType::Poly1271;
 
         let sig = signer.sign_order(&order, false).unwrap();
 
@@ -670,7 +696,7 @@ mod tests {
         let signer = test_signer();
         let mut order = test_order();
         order.maker = "0x1111111111111111111111111111111111111111".to_string();
-        order.signature_type = SignatureType::Poly1271;
+        order.signature_type = PolymarketSignatureType::Poly1271;
 
         let err = signer.sign_order(&order, false).unwrap_err();
 
@@ -991,7 +1017,7 @@ mod tests {
     fn parity_order(
         salt: u64,
         side: PolymarketOrderSide,
-        signature_type: SignatureType,
+        signature_type: PolymarketSignatureType,
         maker_amount: Decimal,
         taker_amount: Decimal,
         timestamp: &str,
@@ -1019,7 +1045,7 @@ mod tests {
         parity_order(
             123456789,
             PolymarketOrderSide::Buy,
-            SignatureType::Eoa,
+            PolymarketSignatureType::Eoa,
             dec!(100000000),
             dec!(50000000),
             "1713398400000",
@@ -1033,7 +1059,7 @@ mod tests {
         parity_order(
             987654321,
             PolymarketOrderSide::Sell,
-            SignatureType::Eoa,
+            PolymarketSignatureType::Eoa,
             dec!(50000000),
             dec!(100000000),
             "1713398400000",
@@ -1047,7 +1073,7 @@ mod tests {
         parity_order(
             1,
             PolymarketOrderSide::Buy,
-            SignatureType::Eoa,
+            PolymarketSignatureType::Eoa,
             dec!(100000000),
             dec!(50000000),
             "1713398500000",
@@ -1065,7 +1091,7 @@ mod tests {
         parity_order(
             111_111_111,
             PolymarketOrderSide::Buy,
-            SignatureType::PolyProxy,
+            PolymarketSignatureType::PolyProxy,
             dec!(100000000),
             dec!(50000000),
             "1713398400000",
@@ -1079,7 +1105,7 @@ mod tests {
         parity_order(
             222_222_222,
             PolymarketOrderSide::Sell,
-            SignatureType::PolyGnosisSafe,
+            PolymarketSignatureType::PolyGnosisSafe,
             dec!(50000000),
             dec!(100000000),
             "1713398400000",
@@ -1148,7 +1174,7 @@ mod tests {
         let mut order = parity_order(
             333_333_333,
             PolymarketOrderSide::Buy,
-            SignatureType::Poly1271,
+            PolymarketSignatureType::Poly1271,
             dec!(100000000),
             dec!(50000000),
             "1713398400000",
@@ -1162,5 +1188,78 @@ mod tests {
 
         let signature = signer.sign_order(&order, neg_risk).unwrap();
         assert_eq!(signature, expected_signature, "signature");
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_session_signature_envelope(#[case] neg_risk: bool) {
+        let mut order = test_order();
+        order.signature_type = PolymarketSignatureType::Poly1271;
+        order.maker = "0x1111111111111111111111111111111111111111".to_string();
+        order.signer = order.maker.clone();
+        let owner = test_signer();
+        let inner = owner.sign_order(&order, neg_risk).unwrap();
+        let session = test_signer().with_signer_type(PolymarketSignerType::Session);
+        let signature = session.sign_order(&order, neg_risk).unwrap();
+        let bytes = alloy_primitives::hex::decode(&signature[2..]).unwrap();
+        let (payload, magic) = bytes.split_at(bytes.len() - 32);
+        let (signer_id, validator, wrapped) =
+            <(B256, B256, Bytes)>::abi_decode_params(payload).unwrap();
+        assert_eq!(
+            signer_id,
+            B256::left_padding_from(owner.address().as_slice())
+        );
+        assert_eq!(validator, B256::ZERO);
+        assert_eq!(
+            format!("0x{}", alloy_primitives::hex::encode(wrapped)),
+            inner
+        );
+        assert_eq!(magic, &[0x64, 0x92].repeat(16));
+    }
+
+    #[rstest]
+    #[case(PolymarketSignatureType::Eoa)]
+    #[case(PolymarketSignatureType::PolyProxy)]
+    #[case(PolymarketSignatureType::PolyGnosisSafe)]
+    fn test_session_rejects_other_wallets(#[case] signature_type: PolymarketSignatureType) {
+        let mut order = test_order();
+        order.signature_type = signature_type;
+        let signer = test_signer().with_signer_type(PolymarketSignerType::Session);
+        assert_eq!(
+            signer.sign_order(&order, false).unwrap_err().to_string(),
+            "bad request: Session signers require POLY_1271 orders"
+        );
+    }
+
+    #[rstest]
+    fn test_session_signatures_match_official_sdk() {
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            private_key: String,
+            order: PolymarketOrder,
+            vectors: Vec<Vector>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct Vector {
+            neg_risk: bool,
+            signature_chunks: Vec<String>,
+        }
+
+        let fixture: Fixture =
+            serde_json::from_str(include_str!("../../test_data/session_signatures.json")).unwrap();
+        let key = EvmPrivateKey::new(&fixture.private_key).unwrap();
+        let signer = OrderSigner::new(&key)
+            .unwrap()
+            .with_signer_type(PolymarketSignerType::Session);
+        assert_eq!(fixture.vectors.len(), 2);
+
+        for vector in fixture.vectors {
+            assert_eq!(
+                signer.sign_order(&fixture.order, vector.neg_risk).unwrap(),
+                vector.signature_chunks.concat()
+            );
+        }
     }
 }

@@ -32,6 +32,7 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AssetClass
 from nautilus_trader.model import BarType
@@ -70,8 +71,8 @@ GRID = COLORS["grid"]
 BB_PERIOD = 20
 BB_STD = 2.0
 RSI_PERIOD = 14
-RSI_BUY = 0.30
-RSI_SELL = 0.70
+RSI_BUY = 30.0
+RSI_SELL = 70.0
 
 ZOOM_HOURS = 12
 
@@ -110,8 +111,6 @@ def run_backtest() -> object:
         lot_size=Quantity.from_int(1),
         margin_init=Decimal("0.05"),
         margin_maint=Decimal("0.025"),
-        maker_fee=Decimal("0.0002"),
-        taker_fee=Decimal("0.0005"),
         ts_event=0,
         ts_init=0,
     )
@@ -159,6 +158,10 @@ def run_backtest() -> object:
         account_type=AccountType.MARGIN,
         base_currency=USD,
         starting_balances=[Money(100_000, USD)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.0002"),
+            taker_rate=Decimal("0.0005"),
+        ),
     )
     engine.add_instrument(EURUSD_PERP)
     engine.add_data(ticks)
@@ -217,8 +220,8 @@ def add_indicators(bars: pd.DataFrame) -> pd.DataFrame:
     avg_gain = gain.ewm(alpha=1.0 / RSI_PERIOD, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1.0 / RSI_PERIOD, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0.0, np.nan)
-    df["rsi"] = 1.0 - 1.0 / (1.0 + rs)
-    df["rsi"] = df["rsi"].fillna(0.5)
+    df["rsi"] = 100.0 - 100.0 / (1.0 + rs)
+    df["rsi"] = df["rsi"].fillna(50.0)
     return df
 
 
@@ -477,7 +480,7 @@ def panel_b_zoom(bars: pd.DataFrame, entries, closes) -> go.Figure:
     )
     fig.update_layout(legend={"y": 1.06})
     fig.update_yaxes(title_text="USD", row=1, col=1)
-    fig.update_yaxes(title_text="RSI", range=[0, 1], row=2, col=1)
+    fig.update_yaxes(title_text="RSI", range=[0, 100], row=2, col=1)
     return fig
 
 
@@ -507,7 +510,7 @@ def panel_c_decision_scatter(bars: pd.DataFrame) -> go.Figure:
         x0=1.0,
         x1=3.0,
         y0=RSI_SELL,
-        y1=1.0,
+        y1=100.0,
         fillcolor=NEGATIVE,
         opacity=0.15,
         line_width=0,
@@ -546,7 +549,7 @@ def panel_c_decision_scatter(bars: pd.DataFrame) -> go.Figure:
         height=520,
     )
     fig.update_xaxes(title_text="z = (close - mid) / sd", range=[-3.0, 3.0])
-    fig.update_yaxes(title_text="RSI", range=[0.0, 1.0])
+    fig.update_yaxes(title_text="RSI", range=[0.0, 100.0])
     return fig
 
 

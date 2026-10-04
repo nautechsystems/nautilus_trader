@@ -314,7 +314,7 @@ the default selection rules described under
 | Instruments           | `instrument.state.{kind}.{currency}`                                      | `kind` and `currency` params both default to `any`.                        |
 | Instrument status     | `instrument.state.{kind}.{currency}`                                      | Channel derived from the instrument ID; every instrument on it is emitted. |
 | Book deltas           | `book.{instrument}.raw` or `book.{instrument}.{group}.{depth}.{interval}` | `L2_MBP` only; see [Order book subscriptions](#order-book-subscriptions).  |
-| Book depth10          | `book.{instrument}.{group}.10.{interval}`                                 | Always the grouped channel, fixed at depth 10.                             |
+| Book depth            | `book.{instrument}.{group}.10.{interval}`                                 | Always the grouped channel, fixed at depth 10.                             |
 | Quotes                | `quote.{instrument}`                                                      | Top of book; this channel takes no interval.                               |
 | Trades                | `trades.{instrument}.{interval}`                                          | See [Trade publishing](#trade-publishing) for combo behavior.              |
 | Bars                  | `chart.trades.{instrument}.{resolution}`                                  | See [Bars](#bars).                                                         |
@@ -356,7 +356,7 @@ spreads flagged inverse. This keeps `Bar.volume` and `TradeTick.size` on one uni
 ## Order book subscriptions
 
 Deribit publishes L2 (market-by-price) book data only, so `subscribe_book_deltas` and
-`subscribe_book_depth10` reject any book type other than `BookType.L2_MBP`. Two feed families
+`subscribe_book_depth` reject any book type other than `BookType.L2_MBP`. Two feed families
 are available, each suited to different use cases.
 
 ### Raw feeds (tick-by-tick)
@@ -434,19 +434,35 @@ tick-by-tick book updates.
 
 ### Sequence gap recovery
 
-The adapter records the `change_id` of every book message and checks the `prev_change_id` of
-each incremental update against it. Only raw-channel updates carry `prev_change_id`; aggregated
-messages are self-contained snapshots and need no sequence check.
+The adapter records the `change_id` of every book message it applies and checks the
+`prev_change_id` of each incremental update against it. Only raw-channel updates carry
+`prev_change_id`; aggregated messages are self-contained snapshots and need no sequence check.
 
-When a gap is detected (a missed message), the adapter automatically:
+When a gap is detected (a missed message), or a level in a book message fails conversion to `Price`
+or `Quantity` (for example, a value beyond their range), the adapter automatically:
 
-1. Drops the delta that exposed the gap, and every further delta for the affected instrument.
-2. Unsubscribes from that instrument's book channels.
+1. Drops that message, and every further delta for the affected instrument.
+2. Unsubscribes from that instrument's delta book channels.
 3. Resubscribes once the unsubscribe is acknowledged, to obtain a fresh snapshot.
-4. Resumes normal processing once the snapshot arrives, reseeding the sequence from it.
+4. Resumes normal processing once each resubscribed channel delivers a snapshot that converts,
+   reseeding the sequence from it.
 
 During resync, the strategy will not receive stale or incomplete book updates. A user-initiated
 unsubscribe while a resync is pending cancels the resubscribe instead of reopening the channel.
+
+A grouped book channel (`book.{instrument}.{group}.{depth}.{interval}`) sends a full snapshot every
+interval, so the adapter never resyncs it: it drops a snapshot that fails conversion, and the next
+snapshot replaces the book.
+
+:::warning[Subscribe each instrument to one delta book channel]
+Book channels for the same instrument share one sequence and resync state. If an instrument has more
+than one delta book channel (for example `raw` and `100ms`) and a resync starts while one of them
+still awaits its initial snapshot, that channel can stay unsubscribed until the next reconnect.
+:::
+
+The adapter logs a warning and skips a malformed level, including a value that does not parse as a
+decimal. A level whose amount rounds to zero at the instrument's size precision is treated as
+absent: snapshots skip it, incremental updates delete it, and the adapter logs a warning.
 
 ## Funding rates
 

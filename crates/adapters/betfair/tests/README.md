@@ -36,7 +36,7 @@ The two layers are complementary: each asserts something the other structurally 
 
 - `live.rs` (seam) is the sharp, deterministic regression net. It taps each `ExecutionEvent` before the
   routing fork consumes it, so it can assert the routing contract (order events, never reports) that a
-  node test can't observe (the `AsyncRunner` owns that channel internally). A `TestClock` makes ordering
+  node test can't observe (the `AsyncRunner` owns that channel internally). A `VirtualClock` makes ordering
   exact, so it covers the edge cases (modify, reconcile, venue errors) cheaply.
 - `node.rs` (full-node) is the production-fidelity check. It boots a real `LiveNode` (builder ->
   `ExecutionClientFactory` -> connect -> run -> stop), exercising the `ExecutionManager` bookkeeping and
@@ -137,7 +137,7 @@ the sensitive guard.
 `node.rs` is the phase 2 counterpart to the seam harness. It boots a real `LiveNode` via the
 builder, registers a real `BetfairExecutionClient` through an `ExecutionClientFactory`, and runs the
 node's event loop against the same mock venue. Where the seam harness drives the routing fork
-directly on a `TestClock` with manual pumping, this exercises the same fork wrapped in the
+directly on a `VirtualClock` with manual pumping, this exercises the same fork wrapped in the
 `ExecutionManager` bookkeeping that `LiveNode::run` adds (fill-dedup, post-dispatch close handling),
 at the cost of a wall-clock run loop.
 

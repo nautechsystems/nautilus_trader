@@ -1,9 +1,10 @@
 # Runtime Conformance Contract
 
 Use this reference to locate implementation boundaries and representative checks for selected
-[design principles](design_principles.md). The source baseline is commit
-`46f87cd1b7af576495418761bbf11db23e89124c`. Source links are relative to this document's revision;
-use that baseline when reproducing this snapshot.
+[design principles](design_principles.md). Each section records its source baseline separately.
+Source links resolve relative to this document's revision. A baseline identifies the revision used
+for that section's evidence unless labeled historical; later behavior uses the linked source and
+tests at this document's revision. Neither establishes a guarantee about future changes.
 
 The entries describe Rust source and test coverage. They do not certify every adapter, Python
 entry point, configuration, or failure mode. The named tests are source references, not a record
@@ -11,16 +12,25 @@ of a test run.
 
 ## Evidence and outcome provenance
 
+Historical source baseline: [46f87cd1b7af576495418761bbf11db23e89124c](https://github.com/nautechsystems/nautilus_trader/commit/46f87cd1b7af576495418761bbf11db23e89124c).
+The submission-retention behavior below is covered by the linked source and tests at this document's revision.
+
 The [execution policies](../concepts/execution/policies.md#terminal-reconciliation-provenance)
 distinguish venue evidence from local policy resolution. In the Rust live execution manager,
 `check_inflight_orders` generates a rejection with reason `INFLIGHT_TIMEOUT` for a submitted order
-when the configured retry limit expires. Pending updates and cancellations instead generate
-`OrderCanceled`. These events carry `reconciliation=true`.
+when the configured retry limit expires and submission retention does not apply. Pending updates and
+cancellations instead generate `OrderCanceled` unless they belong to an order that was never accepted
+and requires retention. These events carry `reconciliation=true`. The manager retains unacknowledged
+orders under `SubmissionRecoveryPolicy::RetainUnresolved` or when the order's client returns `true`
+from `retain_unresolved_submissions`.
 
 - **Implementation**: [Execution manager](../../crates/live/src/execution/manager.rs),
-  `check_inflight_orders`.
+  `check_inflight_orders`, `register_submission_retention`, `submission_is_retained`, and
+  `resolve_missing_order`.
 - **Representative checks**: [Manager integration tests](../../crates/live/tests/integration/manager.rs),
   `test_inflight_order_generates_rejection_after_max_retries`,
+  `test_retained_submission_survives_recovery_and_accepts_late_evidence`,
+  `test_check_open_orders_submitted_missing_at_venue_obeys_recovery_policy`,
   `test_inflight_pending_update_generates_canceled`, and
   `test_inflight_pending_cancel_generates_canceled`.
 - **Limit**: Retry exhaustion does not establish a venue outcome. The reconciliation flag alone
@@ -29,21 +39,54 @@ when the configured retry limit expires. Pending updates and cancellations inste
 
 ## Callback ordering and ownership
 
+Source reviewed at: [16f2163a3cefd5ae212cbddda7dc5253f8fe0bbc](https://github.com/nautechsystems/nautilus_trader/commit/16f2163a3cefd5ae212cbddda7dc5253f8fe0bbc).
+
 The [callback dispatch contract](callback_dispatch.md) requires publication order across recipients
 and exclusive component access. Private Rust primitives reserve publication order and reject
-overlapping checked access to an allocation. Production dispatch does not use these primitives.
+overlapping checked access to an allocation. Production callback delivery does not use these
+primitives; backtests use the boundary drain and callback teardown. Live running loops use bounded
+drains before selecting another event, with yielding and stop checks between pending batches.
+
+The runtime owns scheduling at a small set of explicit ownership boundaries. Startup and shutdown
+paths still need ownership and scheduling coverage before activation; this does not require a drain
+in each lifecycle or flush method. After successful live startup, the first running-loop drain is
+the existing delivery boundary. Live disposal releases the retained runner after kernel disposal,
+then attempts callback cleanup; external roots can still block clearing. Standalone `start`/`stop`
+has no continuous queued callback delivery schedule and retains its existing synchronous behavior.
+The [live lifecycle contract](callback_dispatch.md#live-startup-and-standalone-lifecycle) restricts initial
+queued activation to Rust `run`/`run_with_mode` and Python `run`/`run_async`. Activation must reject
+queued delivery with standalone startup before admitting callbacks. That rejection is not implemented.
 
 - **Implementation**: [Dispatch](../../crates/common/src/actor/dispatch.rs), `PublicationScope` and
-  `drain`; [allocation access](../../crates/common/src/actor/access.rs), `AllocationGuard`.
+  `drain`; [allocation access](../../crates/common/src/actor/access.rs), `AllocationGuard`;
+  [live bounded drain](../../crates/live/src/dispatch.rs), `drain_callbacks` wrapping `actor::drain_callbacks`;
+  [runner](../../crates/live/src/runner.rs), `AsyncRunner::run`; and
+  [live node](../../crates/live/src/node/mod.rs), `run_with_mode` and `dispose`.
 - **Representative checks**: `nested_publication_reserves_all_outer_recipients` in the dispatch
   module checks outer-recipient ordering across a nested publication.
   `test_actor_and_component_views_share_access` in the access module checks exclusion across views.
+  In the runner module, `test_runner_callback_failure_stops_before_next_command` checks failure
+  propagation and retention of pending messages and the fatal latch;
+  `test_runner_stop_preserves_messages_and_channel_only_scheduling` checks ordered reuse after stop
+  without an added yield for channel-only work. In the live node module,
+  `test_callback_failure_stops_later_live_events` checks that failure stops later event dispatch,
+  stops the trader, and preserves the latch until disposal.
+  `test_dispose_releases_retained_callback_roots` checks runner ownership release, fatal latch
+  cleanup, rejection while external roots remain, and disposal error diagnostics.
+  `test_dispose_releases_stop_generated_callback_roots`
+  checks that disposal releases stop-generated rooted messages without delivering them.
 - **Limit**: These checks do not establish production callback ordering or ownership safety.
   Runtime integration must end enclosing mutable borrows before draining and preserve native,
   Python, and dynamic-backend lifecycle eligibility. Unchecked access remains outside the private
-  allocation guards.
+  allocation guards. Before activation, exact callback sequence tests through real native and Python
+  components must establish deterministic order in the synchronous core and backtesting, including
+  nested publication, fan-out, callback-generated commands, same-timestamp work, and continuation
+  across bounded passes. Final counts and balances alone do not prove ordering. See the
+  [activation requirements](callback_dispatch.md#activation-requirements).
 
 ## Recovery
+
+Source baseline: [46f87cd1b7af576495418761bbf11db23e89124c](https://github.com/nautechsystems/nautilus_trader/commit/46f87cd1b7af576495418761bbf11db23e89124c).
 
 For a Rust live node with execution reconciliation enabled, startup performs reconciliation before
 starting trader components. A reconciliation error aborts startup. The startup integration test
@@ -61,6 +104,8 @@ recovered quantity, price, trade identity, commission, position quantity, and te
 
 ## Overload handling
 
+Source reviewed at: [16f2163a3cefd5ae212cbddda7dc5253f8fe0bbc](https://github.com/nautechsystems/nautilus_trader/commit/16f2163a3cefd5ae212cbddda7dc5253f8fe0bbc).
+
 The [live runner](../concepts/live.md#dispatch-priority-and-overload-behavior) uses unbounded message
 channels. Polling priority does not impose producer backpressure or a queue-depth limit. The private
 callback dispatcher separately enforces retained-count, known-storage, and callback-chain limits.
@@ -72,5 +117,6 @@ callback dispatcher separately enforces retained-count, known-storage, and callb
   and `progress_limit_persists_between_bounded_drains` in the dispatch module check private limits.
 - **Limit**: A polling-order test does not prove bounded latency or progress under sustained load.
   Private callback limits do not bound live runner queues or total process memory. Production
-  overflow handling and safe drain boundaries remain integration requirements; queue monitoring
-  supplies operational signals without automatically throttling feeds or stopping trading.
+  callback activation and live lifecycle ownership coverage remain integration requirements despite
+  the implemented running-loop drains. Queue monitoring supplies operational signals without
+  automatically throttling feeds or stopping trading.

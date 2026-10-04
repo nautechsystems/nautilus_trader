@@ -64,9 +64,9 @@ use crate::{
 };
 
 /// Default GTC / Day order lifetime when the caller did not specify an
-/// explicit expire-time. Lighter rejects `OrderExpiry = -1` for GTC limits
-/// with `21711 invalid expiry`, so the adapter substitutes a 28-day window
-/// (matches the upstream venue convention).
+/// explicit expire-time. The adapter uses an explicit 28-day window because
+/// the venue has rejected `OrderExpiry = -1` in this path with
+/// `21711 invalid expiry`; this matches the upstream venue convention.
 pub(crate) const ORDER_EXPIRY_DEFAULT_GTC_MS: i64 = 28 * 24 * 60 * 60 * 1_000;
 
 /// Venue minimum GTD lifetime plus one second for signing and transport.
@@ -269,6 +269,7 @@ impl OrderIdentity {
 /// order event on a venue rejection.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingSendTx {
+    pub(crate) batch_id: Option<String>,
     pub(crate) connection_epoch: u64,
     pub(crate) kind: PendingSendTxKind,
     pub(crate) submitted_at: UnixNanos,
@@ -400,7 +401,8 @@ impl RetiredOrderCache {
                 if remove_index {
                     inner.by_index.remove(&old_index);
                 }
-                log::warn!(
+
+                log::debug!(
                     "Evicting retired Lighter order identity at replay-cache capacity: cloid={old_cloid}, client_order_index={old_index}",
                 );
             }
@@ -453,6 +455,12 @@ pub(crate) enum PendingOrderAction {
 }
 
 #[derive(Debug)]
+struct PendingOrderActionState {
+    action: PendingOrderAction,
+    submission: Option<(u64, i64)>,
+}
+
+#[derive(Debug)]
 pub(crate) struct TradeDedupCache {
     inner: Mutex<TradeDedupCacheInner>,
     capacity: usize,
@@ -492,7 +500,7 @@ impl TradeDedupCache {
         {
             if inner.entries.get(&old_trade_id).map(|(_, seq)| *seq) == Some(old_seq) {
                 inner.entries.remove(&old_trade_id);
-                log::warn!(
+                log::debug!(
                     "Evicting Lighter trade id at replay-cache capacity: trade_id={old_trade_id}",
                 );
             }
@@ -513,7 +521,7 @@ impl TradeDedupCache {
 #[derive(Debug, Default)]
 struct PositionSnapshot {
     reports: AHashMap<InstrumentId, PositionStatusReport>,
-    skipped_market_ids: Option<AHashSet<i16>>,
+    skipped_market_ids: Option<AHashSet<i64>>,
 }
 
 /// Per-client WebSocket dispatch state.
@@ -546,7 +554,7 @@ pub(crate) struct WsDispatchState {
     /// iterates over this set because Lighter's `accountActiveOrders` is
     /// per-market and the venue's REST quota would make a full-market
     /// fan-out prohibitively slow.
-    pub(crate) active_markets: Arc<DashSet<i16>>,
+    pub(crate) active_markets: Arc<DashSet<i64>>,
     /// WS-driven position reports and their coverage state. Lighter has no REST
     /// equivalent, so both values share one lock to keep reconciliation from
     /// pairing reports from one frame with completeness from another.
@@ -579,7 +587,7 @@ pub(crate) struct WsDispatchState {
     pub(crate) order_snapshots: Arc<DashMap<ClientOrderId, OrderShapeSnapshot>>,
     /// Local lifecycle action that a venue frame or reconciliation report
     /// must not bypass before its confirming event or rejection arrives.
-    pending_order_actions: Arc<DashMap<ClientOrderId, PendingOrderAction>>,
+    pending_order_actions: Arc<DashMap<ClientOrderId, PendingOrderActionState>>,
     /// FIFO queue of submits awaiting a venue response. The consumption loop
     /// pops on every `SendTxAck` / `SendTxRejected` so it can attribute a
     /// rejection back to the originating order (sendTx error frames carry no
@@ -844,8 +852,8 @@ impl WsDispatchState {
             .iter()
             .enumerate()
             .filter(|(_, pending)| pending.connection_epoch == connection_epoch);
-        let (position, _) = matches.next()?;
-        if matches.next().is_some() {
+        let (position, pending) = matches.next()?;
+        if pending.batch_id.is_some() || matches.next().is_some() {
             return None;
         }
         queue.remove(position)
@@ -867,7 +875,7 @@ impl WsDispatchState {
             .filter(|(_, pending)| pending.connection_epoch == connection_epoch);
         let (position, pending) = matches.next()?;
         let fresh = pending.submitted_at.as_u64() >= cutoff_ns;
-        if matches.next().is_some() || !fresh {
+        if pending.batch_id.is_some() || matches.next().is_some() || !fresh {
             return None;
         }
         queue.remove(position)
@@ -952,13 +960,19 @@ impl WsDispatchState {
         cloid: ClientOrderId,
         action: PendingOrderAction,
     ) {
-        self.pending_order_actions.insert(cloid, action);
+        self.pending_order_actions.insert(
+            cloid,
+            PendingOrderActionState {
+                action,
+                submission: None,
+            },
+        );
     }
 
     pub(crate) fn pending_order_action(&self, cloid: &ClientOrderId) -> Option<PendingOrderAction> {
         self.pending_order_actions
             .get(cloid)
-            .map(|entry| *entry.value())
+            .map(|entry| entry.action)
     }
 
     pub(crate) fn clear_pending_order_action_if(
@@ -967,7 +981,41 @@ impl WsDispatchState {
         action: PendingOrderAction,
     ) -> bool {
         self.pending_order_actions
-            .remove_if(cloid, |_, current| *current == action)
+            .remove_if(cloid, |_, current| current.action == action)
+            .is_some()
+    }
+
+    pub(crate) fn set_pending_cancel_nonce(
+        &self,
+        cloid: &ClientOrderId,
+        connection_epoch: u64,
+        nonce: i64,
+    ) {
+        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
+            && state.action == PendingOrderAction::Cancel
+        {
+            state.submission = Some((connection_epoch, nonce));
+        }
+    }
+
+    pub(crate) fn pending_cancel_nonce(&self, cloid: &ClientOrderId) -> Option<(u64, i64)> {
+        self.pending_order_actions
+            .get(cloid)
+            .filter(|state| state.action == PendingOrderAction::Cancel)
+            .and_then(|state| state.submission)
+    }
+
+    pub(crate) fn clear_pending_cancel_if_nonce(
+        &self,
+        cloid: &ClientOrderId,
+        connection_epoch: u64,
+        nonce: i64,
+    ) -> bool {
+        self.pending_order_actions
+            .remove_if(cloid, |_, state| {
+                state.action == PendingOrderAction::Cancel
+                    && state.submission == Some((connection_epoch, nonce))
+            })
             .is_some()
     }
 
@@ -1194,13 +1242,13 @@ impl WsDispatchState {
     }
 
     /// Record a market_index as having reported account activity.
-    pub(crate) fn note_active_market(&self, market_index: i16) {
+    pub(crate) fn note_active_market(&self, market_index: i64) {
         self.active_markets.insert(market_index);
     }
 
     /// Snapshot account-active markets for fan-out at reconciliation time.
-    pub(crate) fn active_markets_snapshot(&self) -> Vec<i16> {
-        let mut markets: Vec<i16> = self.active_markets.iter().map(|m| *m).collect();
+    pub(crate) fn active_markets_snapshot(&self) -> Vec<i64> {
+        let mut markets: Vec<i64> = self.active_markets.iter().map(|m| *m).collect();
         markets.sort_unstable();
         markets
     }
@@ -1555,7 +1603,7 @@ impl WsDispatchState {
         &self,
         reports: &[PositionStatusReport],
         retained: &[InstrumentId],
-        skipped_market_ids: &[i16],
+        skipped_market_ids: &[i64],
     ) -> Vec<InstrumentId> {
         let mut snapshot = self.position_snapshot.lock();
         let removed = replace_position_reports(&mut snapshot.reports, reports, retained);
@@ -1569,8 +1617,8 @@ impl WsDispatchState {
         &self,
         reports: &[PositionStatusReport],
         closed: &[InstrumentId],
-        covered_market_ids: &[i16],
-        skipped_market_ids: &[i16],
+        covered_market_ids: &[i64],
+        skipped_market_ids: &[i64],
     ) -> Vec<InstrumentId> {
         let mut snapshot = self.position_snapshot.lock();
         let removed = update_position_reports(&mut snapshot.reports, reports, closed);
@@ -1586,7 +1634,7 @@ impl WsDispatchState {
     /// Snapshot cached position reports and their coverage under one lock.
     pub(crate) fn snapshot_positions_with_coverage(
         &self,
-    ) -> (Vec<PositionStatusReport>, Option<AHashSet<i16>>) {
+    ) -> (Vec<PositionStatusReport>, Option<AHashSet<i64>>) {
         let snapshot = self.position_snapshot.lock();
         (
             snapshot.reports.values().cloned().collect(),
@@ -2044,16 +2092,22 @@ pub(crate) fn nautilus_to_lighter_order_type(
 ///   Lighter uses `TimeInForce` as the post-trigger execution instruction,
 ///   while `OrderExpiry` controls how long the trigger can rest.
 /// - `Gtd` with an explicit expire_time: the millisecond timestamp, provided
-///   it is within the venue's 5-minute to 30-day lifetime range.
+///   it is within the venue's 5-minute to 30-day lifetime range. When
+///   `use_gtd` is false, the strategy expiry must fit within the venue's
+///   default 28-day fallback window; the strategy's local GTD manager
+///   (`manage_gtd_expiry`) sends the cancel. The native 5-minute lower bound
+///   is intentionally not applied in this mode.
 /// - `Ioc` / `Fok`: `ORDER_EXPIRY_IOC` (`0`): Lighter requires this exact
 ///   value for IOC semantics; any other value is rejected by the sequencer.
 /// - `Gtc` / `Day` / `Gtd` without expiry: `now_ms + ORDER_EXPIRY_DEFAULT_GTC_MS`.
-///   The venue rejects `-1` for these TIFs with `21711 invalid expiry`.
+///   The adapter uses an explicit 28-day expiry for these TIFs because the
+///   venue has rejected `-1` with `21711 invalid expiry`.
 pub(crate) fn order_expiry_for(
     order_type: OrderType,
     tif: &TimeInForce,
     expire_time: Option<UnixNanos>,
     now_ms: i64,
+    use_gtd: bool,
 ) -> anyhow::Result<i64> {
     if order_type == OrderType::Market {
         return Ok(ORDER_EXPIRY_IOC);
@@ -2063,6 +2117,24 @@ pub(crate) fn order_expiry_for(
         && let Some(ts) = expire_time
     {
         let expiry_ms = (ts.as_u64() / 1_000_000) as i64;
+
+        if !use_gtd {
+            // Lighter has no GTC wire discriminant for resting limit orders: the
+            // venue TIF stays `GoodTillTime`. The strategy expiry must fit in
+            // the fallback window so the venue cannot cancel it first. The
+            // local manager still owns the actual strategy expiry, including
+            // expiries shorter than the venue's native minimum.
+            let default_expiry_ms = now_ms.saturating_add(ORDER_EXPIRY_DEFAULT_GTC_MS);
+            anyhow::ensure!(
+                expiry_ms <= default_expiry_ms,
+                "Lighter locally managed GTD expire_time must be no more than 28 days from now; use native GTD for longer expiries",
+            );
+            log::warn!(
+                "Lighter GTD submitted with default expiry because use_gtd=false. Enable manage_gtd_expiry on the submitting strategy"
+            );
+            return Ok(default_expiry_ms);
+        }
+
         let min_expiry_ms = now_ms.saturating_add(ORDER_EXPIRY_MIN_GTD_MS);
         let max_expiry_ms = now_ms.saturating_add(ORDER_EXPIRY_MAX_GTD_MS);
         anyhow::ensure!(
@@ -3311,7 +3383,7 @@ mod tests {
         let expiry_ms = NOW_MS + ORDER_EXPIRY_MIN_GTD_MS + 123;
         let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
         assert_eq!(
-            order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS).unwrap(),
+            order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS, true).unwrap(),
             expiry_ms,
         );
     }
@@ -3324,10 +3396,65 @@ mod tests {
         #[case] expected: &str,
     ) {
         let ts = UnixNanos::from(((NOW_MS + offset_ms) as u64) * 1_000_000);
-        let error =
-            order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS).unwrap_err();
+        let error = order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS, true)
+            .unwrap_err();
 
         assert!(error.to_string().contains(expected));
+    }
+
+    #[rstest]
+    fn order_expiry_for_managed_gtd_ignores_short_strategy_expiry() {
+        // With use_gtd=false the strategy's short expire_time must not be used as
+        // the venue expiry: the order rests on the default 28-day window and the
+        // strategy's manage_gtd_expiry timer cancels it locally.
+        let expiry_ms = NOW_MS + 60_000; // 1 minute: below the venue minimum
+        let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
+
+        assert_eq!(
+            order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS, false).unwrap(),
+            NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
+        );
+    }
+
+    #[rstest]
+    fn order_expiry_for_managed_gtd_rejects_expiry_beyond_fallback_window() {
+        // A local timer cannot preserve an expiry after the venue has already
+        // removed the order, so an expiry beyond the 28-day fallback is denied.
+        let expiry_ms = NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS + 1;
+        let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
+
+        let error = order_expiry_for(OrderType::Limit, &TimeInForce::Gtd, Some(ts), NOW_MS, false)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("locally managed GTD"));
+        assert!(error.to_string().contains("28 days"));
+    }
+
+    #[rstest]
+    #[case(OrderType::StopMarket)]
+    #[case(OrderType::MarketIfTouched)]
+    fn order_expiry_for_managed_gtd_applies_to_conditional_orders(#[case] order_type: OrderType) {
+        let expiry_ms = NOW_MS + 60_000;
+        let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
+
+        assert_eq!(
+            order_expiry_for(order_type, &TimeInForce::Gtd, Some(ts), NOW_MS, false).unwrap(),
+            NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
+        );
+    }
+
+    #[rstest]
+    fn order_expiry_for_managed_gtd_leaves_other_tifs_unchanged() {
+        // The opt-out only rewrites the explicit GTD expiry path; GTC and IOC
+        // never carried a strategy expiry and must keep their existing values.
+        assert_eq!(
+            order_expiry_for(OrderType::Limit, &TimeInForce::Gtc, None, NOW_MS, false).unwrap(),
+            NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
+        );
+        assert_eq!(
+            order_expiry_for(OrderType::Limit, &TimeInForce::Ioc, None, NOW_MS, false).unwrap(),
+            ORDER_EXPIRY_IOC,
+        );
     }
 
     #[rstest]
@@ -3339,7 +3466,7 @@ mod tests {
         #[case] expire: Option<UnixNanos>,
     ) {
         assert_eq!(
-            order_expiry_for(OrderType::Limit, &tif, expire, NOW_MS).unwrap(),
+            order_expiry_for(OrderType::Limit, &tif, expire, NOW_MS, true).unwrap(),
             NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
         );
     }
@@ -3351,7 +3478,7 @@ mod tests {
         // Lighter requires `0` for IOC semantics; -1 is rejected as an
         // invalid expiry timestamp by the sequencer.
         assert_eq!(
-            order_expiry_for(OrderType::Limit, &tif, None, NOW_MS).unwrap(),
+            order_expiry_for(OrderType::Limit, &tif, None, NOW_MS, true).unwrap(),
             ORDER_EXPIRY_IOC
         );
     }
@@ -3359,7 +3486,7 @@ mod tests {
     #[rstest]
     fn order_expiry_for_market_orders_returns_zero() {
         assert_eq!(
-            order_expiry_for(OrderType::Market, &TimeInForce::Gtc, None, NOW_MS).unwrap(),
+            order_expiry_for(OrderType::Market, &TimeInForce::Gtc, None, NOW_MS, true).unwrap(),
             ORDER_EXPIRY_IOC
         );
     }
@@ -3371,7 +3498,7 @@ mod tests {
         #[case] order_type: OrderType,
     ) {
         assert_eq!(
-            order_expiry_for(order_type, &TimeInForce::Gtc, None, NOW_MS).unwrap(),
+            order_expiry_for(order_type, &TimeInForce::Gtc, None, NOW_MS, true).unwrap(),
             NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
         );
     }
@@ -3385,7 +3512,7 @@ mod tests {
         let expiry_ms = NOW_MS + ORDER_EXPIRY_MIN_GTD_MS + 456;
         let ts = UnixNanos::from((expiry_ms as u64) * 1_000_000);
         assert_eq!(
-            order_expiry_for(order_type, &TimeInForce::Gtd, Some(ts), NOW_MS).unwrap(),
+            order_expiry_for(order_type, &TimeInForce::Gtd, Some(ts), NOW_MS, true).unwrap(),
             expiry_ms,
         );
     }
@@ -3395,7 +3522,7 @@ mod tests {
     #[case(OrderType::LimitIfTouched)]
     fn order_expiry_for_conditional_limit_ioc_uses_positive_expiry(#[case] order_type: OrderType) {
         assert_eq!(
-            order_expiry_for(order_type, &TimeInForce::Ioc, None, NOW_MS).unwrap(),
+            order_expiry_for(order_type, &TimeInForce::Ioc, None, NOW_MS, true).unwrap(),
             NOW_MS + ORDER_EXPIRY_DEFAULT_GTC_MS,
         );
     }
@@ -3573,6 +3700,7 @@ mod tests {
             .quantity(Quantity::from("0.01"))
             .build();
         PendingSendTx {
+            batch_id: None,
             connection_epoch: 0,
             kind: PendingSendTxKind::Create {
                 order: Box::new(order),
@@ -3587,6 +3715,7 @@ mod tests {
 
     fn stub_pending_other(nonce: i64, submitted_at_ns: u64) -> PendingSendTx {
         PendingSendTx {
+            batch_id: None,
             connection_epoch: 0,
             kind: PendingSendTxKind::Other,
             submitted_at: UnixNanos::from(submitted_at_ns),
@@ -3629,6 +3758,32 @@ mod tests {
         let third = state.pop_pending_sendtx_head().expect("third present");
         assert_eq!(pending_cloid(&third), Some(cloid("B")));
         assert!(state.pop_pending_sendtx_head().is_none());
+    }
+
+    #[rstest]
+    #[case::ack(false)]
+    #[case::rejection(true)]
+    fn hashless_response_preserves_single_batch_member(#[case] within_window: bool) {
+        let state = WsDispatchState::new();
+        let mut pending = stub_pending_other(17, 1_000_000_000);
+        pending.batch_id = Some("cancel-batch:member".to_string());
+        state.enqueue_pending_sendtx(pending);
+
+        let popped = if within_window {
+            state.pop_pending_sendtx_if_only_within(0, UnixNanos::from(1_500_000_000), 1_000)
+        } else {
+            state.pop_pending_sendtx_if_only(0)
+        };
+
+        assert!(popped.is_none());
+        let remaining = state.drain_pending_sendtx(0);
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].nonce, 17);
+        assert_eq!(
+            remaining[0].batch_id.as_deref(),
+            Some("cancel-batch:member")
+        );
+        assert_eq!(remaining[0].tx_hash, "hash11");
     }
 
     #[rstest]
@@ -3997,6 +4152,30 @@ mod tests {
         assert_eq!(
             ready.pending(),
             vec!["orders", "trades", "positions", "assets", "user_stats"]
+        );
+    }
+    #[rstest]
+    fn pending_cancel_nonce_does_not_clear_a_newer_action() {
+        let state = WsDispatchState::new();
+        let id = ClientOrderId::from("CANCEL-GENERATION");
+        state.set_pending_order_action(id, PendingOrderAction::Cancel);
+        state.set_pending_cancel_nonce(&id, 3, 41);
+        assert_eq!(state.pending_cancel_nonce(&id), Some((3, 41)));
+        state.set_pending_order_action(id, PendingOrderAction::Cancel);
+        assert_eq!(state.pending_cancel_nonce(&id), None);
+        state.set_pending_cancel_nonce(&id, 3, 42);
+        assert!(!state.clear_pending_cancel_if_nonce(&id, 3, 41));
+        assert!(!state.clear_pending_cancel_if_nonce(&id, 2, 42));
+        assert_eq!(state.pending_cancel_nonce(&id), Some((3, 42)));
+        assert!(state.clear_pending_cancel_if_nonce(&id, 3, 42));
+        assert_eq!(state.pending_order_action(&id), None);
+        state.set_pending_order_action(id, PendingOrderAction::Modify);
+        state.set_pending_cancel_nonce(&id, 3, 43);
+        assert_eq!(state.pending_cancel_nonce(&id), None);
+        assert!(!state.clear_pending_cancel_if_nonce(&id, 3, 43));
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::Modify)
         );
     }
 }

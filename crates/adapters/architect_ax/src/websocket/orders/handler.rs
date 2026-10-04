@@ -347,7 +347,7 @@ impl AxOrdersWsFeedHandler {
         match raw_msg {
             AxOrdersWsFrame::Error(err) => {
                 log::warn!(
-                    "Order error response: rid={} code={} msg={}",
+                    "Order error response: rid={} code={:?} msg={:?}",
                     err.rid,
                     err.err.code,
                     err.err.msg
@@ -567,8 +567,8 @@ mod tests {
             .handle_raw_message(AxOrdersWsFrame::Error(AxWsOrderErrorResponse {
                 rid: request_id,
                 err: AxWsOrderError {
-                    code: 400,
-                    msg: "invalid order".to_string(),
+                    code: Some(400),
+                    msg: Some("invalid order".to_string()),
                 },
             }))
             .unwrap();

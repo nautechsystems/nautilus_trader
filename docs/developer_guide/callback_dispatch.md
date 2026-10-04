@@ -4,24 +4,95 @@ This page defines the ownership, ordering, and progress requirements for queued 
 callbacks. The [design principles](design_principles.md#queued-callback-dispatch-requirements) explain
 the policy.
 
-:::info
+:::info Queued delivery is not yet active
 These requirements are design constraints for queued actor and strategy callback delivery, not
 guarantees of the existing synchronous dispatch paths.
 Support for synchronous message-bus reentry does not activate queued actor or strategy callbacks.
 :::
 
+Read this page by purpose:
+
+- **Normative contract**: [Ordering](#ordering-and-reentrancy), observable state, bounded progress,
+  and [drain boundary design](#drain-boundary-design) define requirements for activation.
+- **Current implementation**: [Implementation limits](#implementation-limits) and
+  [runtime integration](#runtime-integration) distinguish existing machinery from activation gaps.
+  [Runtime Conformance Contract](runtime_conformance.md) maps source and representative checks.
+- **Private implementation details**: [Dispatch primitives](#private-dispatch-primitives), command
+  transports, and storage accounting describe how the machinery enforces those requirements.
+
+For failure messages and corrective action, see [reentrancy and dispatch diagnostics](#reentrancy-and-dispatch-diagnostics).
+
+## Worked callback sequence
+
+This example illustrates the queued contract; production canonical callbacks remain synchronous.
+Assume event A has two eligible recipients, strategies S1 and S2, and event B has recipient S3.
+There is no unrelated pending work, and all required access is available at each drain boundary.
+
+```text
+Publication A
+  |  Reserve publication ordinal before synchronous subscribers run
+  |  Admit S1(A), creating root R; admit S2(A) under the same root
+  v
+Callback queue: [ S1(A) | S2(A) ]                         root R
+  |
+  |  Enclosing runtime borrows end
+  v
+Safe boundary: drain callbacks
+  |
+  +-- S1(A) runs                                          root R
+  |     |
+  |     +-- publish B --> queue S3(B) after S2(A)          root R
+  |     |                (no recursive S3 invocation)
+  |     |
+  |     +-- send C -----> command transport retains C     root R
+  |                      (owner thread; context preserved)
+  |
+  +-- S2(A) runs                                          root R
+  |
+  +-- S3(B) runs                                          root R
+
+Callback order: S1(A) --> S2(A) --> S3(B), even across bounded drain passes
+Budget:         three completed deliveries charged to R,
+                even across bounded drain passes
+
+When the runtime processes C (timing depends on the runtime):
+  restore R --> handle C --> any resulting callbacks retain R
+                            and queue by publication/admission order
+  C itself consumes no callback delivery budget
+```
+
+Nested publication B waits behind A's pending recipient; callbacks and the command retain root R.
+
+The callback order above does not specify when C executes relative to S2(A) and S3(B).
+[Backtest settlement and live scheduling](#runtime-integration) determine command processing between
+callback passes. R remains alive while C or other retained descendants own it; yielding does not
+reset its budget. Sending from a foreign thread or an unrelated task does not inherit R automatically.
+
+## Terminology
+
+| Term          | Meaning                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| Publication   | One event publication whose ordinal is reserved before synchronous subscriber work.           |
+| Admission     | Reservation of callback count, known storage, and queue position before capture construction. |
+| Slot          | One ordered queue entry, whether reserved, ready, or cancelled.                               |
+| Capture       | Owned values retained for a callback or invocation.                                           |
+| Root          | Causal ownership and cumulative delivery accounting shared by descendant work; no rollback.   |
+| Retained work | Queued or suspended work that keeps its root alive beyond the current call or drain.          |
+| Drain         | One bounded pass over callback slots in order.                                                |
+| Safe boundary | Runtime-owned point where enclosing borrows have ended and callback invocation is permitted.  |
+
 ## Implementation limits
 
-| Area                                                  | Implemented behavior                                                                        | Limit                                                                                                                                                                                             |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Actor delivery                                        | Private primitives support ordered, owned callback delivery.                                | **Queued actor and strategy delivery is inactive.** Existing synchronous paths do not gain these guarantees.                                                                                      |
-| [Root propagation](#synchronous-commands)             | Retained work and synchronous data and trading commands preserve causal roots.              | Live channels and locally emitted data and execution events do not have complete root propagation.                                                                                                |
-| [Drain safety](#draining-and-progress)                | Explicit drains respect slot budgets and checked access; a busy head blocks later delivery. | Callers must end enclosing mutable borrows. Automatic safe drains and detection of a head that cannot progress require runtime integration.                                                       |
-| [Progress budgets](#callback-roots-and-budgets)       | Completed callbacks consume a per-root delivery budget.                                     | Commands do not consume that budget. Command-only loops and the duration of an individual callback are not bounded.                                                                               |
-| [Memory accounting](#storage-limits)                  | Private limits cover retained units and known callback storage.                             | Command payloads, command-queue capacity, and the listed opaque storage are excluded. This is not a total-process memory cap; limits have no user configuration.                                  |
-| [Failure handling](#failure-cleanup)                  | Contexts restore on unwind; retained roots block premature teardown.                        | Fatal callback errors halt the dispatcher across roots. Command-handler panics propagate and discard pending children and the unprocessed collected batch; completed effects are not rolled back. |
-| [Access and backends](#backend-compatibility)         | Private allocation guards reject overlapping checked access.                                | Unchecked access and enclosing engine/cache borrows remain outside those guards. Native, Python, and dynamic-backend parity is not established.                                                   |
-| [Observable state](#maintenance-and-observable-state) | Event payloads describe their event; cache mutations and facade effects stay synchronous.   | Callbacks observe current cache state, not an event-time snapshot. Queued delivery does not defer or undo facade effects.                                                                         |
+| Area                                                  | Implemented                                                   | Limit                                                                   |
+| ----------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Actor delivery                                        | Private ordered-delivery primitives                           | Queued actor and strategy delivery inactive                             |
+| [Root propagation](#callback-roots-and-budgets)       | Causal roots through retained work and command/event channels | Owner-thread ancestry; independent scheduled firings                    |
+| [Drain safety](#draining-and-progress)                | Backtest and live running-loop boundaries                     | Live lifecycle integration and activation incomplete                    |
+| [Progress budgets](#callback-roots-and-budgets)       | Completed callback deliveries charged per root                | No bound on callback duration or command-only loops                     |
+| [Memory accounting](#storage-limits)                  | Retained-unit and known-storage limits                        | Not a total-process memory cap; no user configuration                   |
+| [Failure handling](#failure-cleanup)                  | Unwind restoration and guarded teardown                       | Fatal errors stop all roots; no rollback of completed effects           |
+| [Access and backends](#backend-compatibility)         | Private checked-access guards                                 | Unchecked access and native/Python/dynamic parity outside the guarantee |
+| [Observable state](#maintenance-and-observable-state) | Synchronous cache and facade effects                          | Current cache state, not an event-time snapshot                         |
 
 ## Ordering and reentrancy
 
@@ -40,6 +111,8 @@ Callbacks require **exclusive access** to their component and a delivery boundar
 mutable runtime borrows have ended. Native and Python components must follow the same ordering
 contract.
 
+### Raw Python subscribers
+
 Raw Python [topic messaging](../concepts/message_bus.md) delivers the original object synchronously to subscribed callables,
 including during nested publication. It shares the runtime bus and topic space with canonical
 custom-data subscriptions. The queued ordering requirement applies to canonical callbacks; raw
@@ -48,15 +121,25 @@ publication order of pending canonical deliveries.
 
 ## Maintenance and observable state
 
-Component maintenance runs with each queued event, before that event's author callbacks. This
-includes indicator updates, timer cleanup, and contingent-order handling. Maintenance retains its
-applicable lifecycle rules when author callbacks are suppressed. Events emitted by maintenance
-enter the same ordered dispatch mechanism.
+Component maintenance runs with each queued event, **before that event's author callbacks**. This includes:
+
+- Indicator updates.
+- Timer cleanup.
+- Contingent-order handling.
+
+Maintenance retains its applicable lifecycle rules when author callbacks are suppressed. Events
+emitted by maintenance enter the same ordered dispatch mechanism.
+
+### Cache state and eligibility
 
 Engine [cache](../concepts/architecture.md#cache) mutations and direct facade effects remain synchronous. Callbacks observe
 **current cache state**; ordered delivery does not provide an event-time cache snapshot. The immutable event
 payload records the event, while the cache may already reflect later changes. Keeping indicator
 updates with event delivery preserves their ordering relative to the corresponding callbacks.
+
+For example, the engine can apply order update E1, queue its callback, and apply E2 before
+that callback drains. The E1 callback receives E1's immutable payload, but a cache lookup can return
+the order state after E2. Use the payload for facts about E1 and the cache for current runtime state.
 
 Author callbacks require eligibility at **both event arrival and delivery**. Stop, reset, or retirement
 must not carry old callbacks into a new registration or [lifecycle](../concepts/actors.md#lifecycle) generation.
@@ -72,38 +155,309 @@ Queue overflow records a fatal error and halts execution at a safe boundary. It 
 silently discard callbacks nor interrupt an operation midway through its synchronous effects.
 Already completed effects are not rolled back by callback dispatch.
 
+## Drain boundary design
+
+Runtime integration must concentrate callback draining at a small set of explicit ownership
+boundaries. **The runtime owns drain scheduling**; individual dispatch and flush methods must not each
+acquire their own draining policy. This keeps borrow release, callback ordering, and failure handling
+in a small number of places and limits repeated drain calls, async propagation, and error plumbing.
+
+Each boundary must identify:
+
+- Which component, engine, and cache borrows have ended.
+- Which callbacks may run next.
+- Which existing lifecycle path handles failure.
+
+Keep shutdown and ownership cleanup under that lifecycle owner. Callback dispatch must not introduce
+a parallel lifecycle or recovery state machine. On failure, stop further dispatch, preserve the error,
+and release retained ownership in the order required by the cleanup contract.
+
+Use the smallest set of boundaries that satisfies ordering, progress, and ownership requirements.
+Moving a drain outward is valid only when it preserves those requirements. Verify boundary placement
+with exact callback sequence tests, including continuation across bounded drain passes; fewer drain
+sites alone do not establish correctness. In the synchronous core and backtesting, deterministic
+callback order remains a required activation criterion.
+
+### Scheduling and ownership boundaries
+
+Keep `actor::drain_callbacks(budget)` as the common operation: it processes a bounded batch and
+returns whether callbacks remain or dispatch failed. Backtest settlement and live scheduling own
+the repetition around that operation. Prefer these small runtime-specific loops over a shared
+scheduler with runtime modes, lifecycle state, or policy objects. Share more code only when doing
+so removes duplication without adding those mechanisms.
+
+The boundary map separates existing integration and ownership rules from evidence required for
+queued callback activation. The last column states test requirements, not completed validation.
+
+| Runtime and boundary            | Existing integration                                                                    | Retained ownership and release                                                            | Required activation evidence                                                                                |
+| ------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Backtest startup                | Settles data commands and callbacks; leaves trading commands queued                     | Startup engine borrows end before settlement                                              | Startup callback sequence before the first input; trading commands remain queued                            |
+| Backtest event settlement       | `drain_command_queues` after engine work and each timer handler                         | Enclosing engine and venue borrows end before settlement                                  | Callback-generated commands settle before the next timer or time advance                                    |
+| Backtest normal stop            | Settles due work, stops trader, settles stop-generated commands, then stops engines     | Trader and engine borrows end before callback delivery                                    | Exact stop-generated command and callback sequence                                                          |
+| Backtest failure and teardown   | Abort cleanup and guarded callback clearing                                             | Owned synchronous work releases before captures are cleared                               | Fatal-abort discard and rejection while external roots remain                                               |
+| Live startup                    | First running-loop drain after successful startup                                       | Connection and mass-status futures retain engine borrows until completion or cancellation | Instruments precede execution connection; native and Python callbacks run after enclosing borrows end       |
+| Live event settlement           | Bounded running-loop passes with yield and stop checks                                  | Synchronous event-handler borrows end before the next drain                               | Exact callback sequence, batch continuation, stop eligibility, and unchanged channel-only scheduling        |
+| Live report requests            | Serializes report families; commands use shared client access; instrument updates defer | Shared client borrows span loop iterations and end before deferred instruments flush      | Hold a report pending while exercising the real callback route; prove access safety and subsequent progress |
+| Live normal stop                | Residual deadline and final buffered dispatch; standalone runner retains channels       | Report futures drop before deferred-instrument flush and client disconnection             | Pending-report completion, timeout, and shutdown cancellation preserve ordering                             |
+| Live fatal failure and disposal | Existing shutdown handles failure; disposal clears without delivery                     | Kernel disposal precedes retained-runner release and guarded clearing                     | Stop-generated work is discarded; external roots still reject clearing                                      |
+| Live hosted-run abandonment     | Dropping the run future can leave shutdown incomplete                                   | Report futures drop before the node returns; later disposal attempts cleanup              | Distinguish awaited cancellation from abandonment; verify capture release and guarded cleanup               |
+
+Live ownership is implemented by the [execution-client facade](../../crates/live/src/execution/client.rs),
+[report-task lifecycle](../../crates/live/src/node/reconciliation.rs),
+[node lifecycle](../../crates/live/src/node/mod.rs), and
+[Python hosted-run owner](../../crates/live/src/python/node.rs).
+
+### Backtest boundaries
+
+Backtest settlement is the reference for concentrated scheduling, not a single end-of-timestamp
+drain. Timer handlers settle their work before the next handler, including at the same timestamp;
+venue processing releases its borrow before settlement. Moving all drains to the outermost loop
+would change these boundaries. Startup's data-command and callback pass also cannot use unrestricted
+settlement without changing when trading commands execute.
+
+### Live startup and standalone lifecycle
+
+#### Startup ordering
+
+Preserve startup ordering: instrument events reach the cache before execution clients connect and
+before subscription commands are handled.
+
+After successful live startup, `run_with_mode` reaches its first running-loop drain after trader
+start, plug-in start, and startup system dispatch, before selecting another channel message. Use
+that existing boundary unless an identified producer and ordering requirement establish a need for
+an earlier drain.
+
+Connection futures hold mutable engine borrows across their awaits, as does the
+mass-status request during startup reconciliation. Their completion alone does not justify another
+drain site. Replay and startup failures take separate exits and require their own ownership proof.
+
+#### Standalone lifecycle restrictions
+
+Standalone calls to `LiveNode::start` and `stop` do not run a continuous event loop: `start` returns
+with the runner retained, and stop or abort processes its pending messages. This path remains
+supported as a building block for tests and embedding, with its existing synchronous callbacks.
+A lone drain in `finish_startup_trader` cannot provide queued callback continuation.
+
+Initial queued callback activation for `LiveNode` is restricted to Rust `run`/`run_with_mode` and
+Python `run`/`run_async`, which own the node's event loop. Queued delivery through standalone
+`start`/`stop` is deferred. Activation must reject the combination of queued delivery and standalone
+startup with a clear error before queued callbacks can be admitted; it must not silently fall back
+to synchronous delivery or leave callbacks undelivered. This restriction concerns standalone startup,
+not a stop request through the handle of a node running its event loop.
+
+Queued actor delivery and this rejection are not implemented. Enforcing the lifecycle restriction
+is an activation requirement; it does not change the existing standalone APIs.
+
+#### Hosted-run cancellation and abandonment
+
+Awaited cancellation of a hosted run drives graceful shutdown. Discarding that run while the host
+loop is running can instead drop its future before shutdown completes; callback delivery is not
+guaranteed on that path. Activation coverage must verify ownership release and guarded disposal
+cleanup after abandonment separately from graceful shutdown.
+
+Dropping the run future releases report borrows but does not itself run report-task cancellation
+cleanup: it does not flush deferred instrument updates or remove targeted-query markers.
+
+### Live stop and terminal cleanup
+
+`LiveNode::finalize_stop` cannot alone own callback teardown: callers still hold channel receivers
+and normal shutdown processes buffered events afterward. The `start`/`stop` path retains its runner,
+whereas `run_with_mode` owns receivers locally. The terminal cleanup owner is `LiveNode::dispose`,
+not normal stop or the end of the running loop.
+
+:::info Terminal ownership cleanup
+`LiveNode::dispose` performs callback cleanup in this order:
+
+1. Dispose the kernel. Ensure no engine or component borrow remains before releasing the runner.
+1. Release the retained runner and discard its pending messages, including work queued by stop
+   callbacks during disposal.
+1. Log any latched callback failure, then attempt to clear callback state. Log cleanup rejection
+   without forcing a reset.
+
+Disposal must not become another callback delivery loop. Preserve normal stop and runner reuse.
+Do not close channels in normal stop or at the end of the running loop to make clearing succeed;
+releasing the retained runner belongs to disposal.
+:::
+
+Dropping the runner does not prove that all roots are released. Clearing must still reject active
+scopes or externally retained roots and report failure without forcing a reset. A rejected clear
+leaves callback state intact; disposal can be retried after the blocking ownership is released.
+Verify that:
+
+- A rooted message in the retained runner blocks clearing before disposal and is released by disposal.
+- Stop-generated rooted messages are discarded by disposal without callback delivery.
+- A fatal running-loop latch clears on disposal when ownership permits.
+- External ownership continues to block clearing.
+
+### Required boundary verification
+
+#### Sequence requirements
+
+Boundary changes require exact sequence assertions for:
+
+- Backtest startup data commands and callbacks before the first input, with trading commands queued.
+- Live instrument processing before execution connection, plus any ordering required by an activated route.
+- Same-timestamp timers and callback-generated commands before the next timer or time advance.
+- Continuation across bounded passes, live stop eligibility, and unchanged channel-only scheduling.
+- Normal stop-generated work versus fatal-abort discard, plus cleanup rejection while roots remain.
+- Rejection of queued delivery with standalone live startup before callback admission, while
+  preserving synchronous standalone behavior and handle-driven shutdown of a running node.
+
+These sequence checks are activation requirements, not evidence of implemented live queued delivery.
+Exercise activated routes through real native and Python components. Private dispatcher tests alone
+do not establish that runtime borrows end at the selected boundary.
+
+#### Access enforcement
+
+For each activated route, reserve through the existing admission mechanism and acquire checked
+component access for invocation. Identify every engine, client, and cache access the callback can
+reach: the actor allocation guard does not protect those separate borrows or unchecked handles.
+The implementation must establish compatible access before invoking the callback; a successful
+actor guard alone is insufficient.
+
+#### Pending-report tests
+
+Hold a report request pending with an explicit test synchronization point, then exercise the real
+callback route and assert its exact event and command sequence before and after releasing the report.
+Cover successful completion, timeout, shutdown cancellation, and hosted-run abandonment where the
+route is reachable. Shared command access may proceed while the report is pending; mutable client
+access must wait until conflicting borrows end. Preserve publication order and report-future progress
+if the route needs deferral. Do not turn a busy head at a declared safe drain boundary into an
+unbounded retry: the [fatal stalled-delivery rule](#draining-and-progress) still applies.
+
+Existing [live-node tests](../../crates/live/tests/integration/node.rs) cover report serialization,
+deferred instrument updates, and timeout and shutdown cleanup. They do not exercise production queued
+actor delivery and cannot substitute for these route-specific activation tests.
+
+## Runtime integration
+
+The [root propagation tests](../../crates/common/src/actor/dispatch.rs) cover retained continuations
+and data and trading commands in synchronous and live runtimes, including deferred trading children.
+Live data and execution event channels also preserve roots through mixed channel hops and
+[startup buffering](../../crates/live/src/node/mod.rs).
+
+### Backtests
+
+Backtests call the boundary drain after startup data-command batches, command and execution-event
+settlement, and timer handlers. Each callback pass processes a bounded number of slots; settlement
+continues while callbacks or synchronous commands remain before simulated time advances. Retained
+roots alone do not keep settlement running. Startup continues to leave trading commands queued until
+normal settlement.
+
+Dispatch errors propagate out of backtest execution and trigger abort cleanup. Failed trader startup
+also stops the engines and discards pending synchronous commands. Abort (`abort_run`), reset, and disposal release
+synchronous command batches before clearing callback captures; externally retained work can still
+prevent callback cleanup. A normal end (`end_impl`) drains residual work before clearing the dispatcher.
+
+### Live running loops
+
+Live running loops drain one bounded callback batch before selecting the next event and yield when
+callbacks remain. Pending callbacks resume without another channel message; stop signals remain
+eligible between batches. Existing channel priorities and channel-only yielding remain unchanged.
+
+On callback failure:
+
+- **Standalone runner**: Return the error without closing channels or discarding their messages.
+- **Live node**: Trigger existing shutdown and skip both the residual event window and final buffered
+  dispatch. Discard pending channel messages, including commands queued by stop callbacks, when the
+  receivers drop.
+
+Both paths retain the fatal callback latch; they do not clear callback ownership.
+
+Startup and residual flushes do not integrate callback drains. Disposal releases owned work before
+attempting callback cleanup, without delivering callbacks. Activation still requires explicit
+scheduling and ownership coverage for live lifecycle paths, without assuming that each lifecycle
+method needs a drain.
+Live report futures can retain shared client borrows across loop iterations. A loop-top drain alone
+does not establish safety for callbacks that require mutable client access; queued callback
+activation must account for those retained borrows.
+
+### Activation requirements
+
+These boundaries do not activate queued actor delivery. Before activation, runtime integration must:
+
+- Preserve the [independent ingress boundaries](#sender-types-and-ingress) when activating additional callback routes or
+  introducing reusable invocation storage.
+- Complete live lifecycle drain boundaries and ownership coverage outside terminal disposal.
+- Enforce the [live lifecycle restriction](#live-startup-and-standalone-lifecycle) before admitting queued callbacks.
+- Establish native and Python ownership safety for every activated callback route.
+- Validate queued callbacks through complete backtest and live runtime lifecycles.
+- Prove deterministic callback sequences through native and Python components in the synchronous core
+  and backtests, including nested publication, fan-out, callback-generated commands, same-timestamp
+  work, and continuation across drain batches. Final counts and balances alone do not prove ordering.
+
+Public trading messages and their direct `dispatch()` path carry no callback context across threads.
+The synchronous queue owns its contexts privately; live command channels use the envelopes described below.
+Runtime drains alone do not establish complete live lifecycle integration or backend parity.
+
 ## Private dispatch primitives
 
 The actor module contains private access, admission, publication, invocation, and storage primitives.
-The synchronous data and trading command queues preserve [callback roots](#callback-roots-and-budgets). Production actor
-lookups, component access, and message-bus routes do not use queued callback delivery. Activating that
-delivery requires explicit native and Python runtime boundaries; the primitives alone do not establish
-runtime ownership safety or native, direct, and dynamic callback parity.
+Data and trading commands preserve [callback roots](#callback-roots-and-budgets) in synchronous and live runtimes.
+Locally emitted live data, execution, and system messages and time events preserve roots through their channels.
+Production actor lookups, component access, and message-bus routes do not use queued callback delivery. Activating that
+delivery requires native and Python ownership support at runtime boundaries; the primitives and runtime
+drains alone do not establish runtime ownership safety or native, direct, and dynamic callback parity.
 
 ### Publication and admission
 
 A publication scope reserves an **ordinal** (a sequence number) before synchronous subscribers run. Callback reservations
 sort by publication ordinal and then admission ordinal, so nested publications follow every pending
-recipient of their enclosing publication. Scopes nest and drop in stack order. Dropping a scope
+recipient of their enclosing publication.
+
+Scopes nest and drop in stack order. Dropping a scope
 restores publication state without delivering callbacks. A publication unwind latches a fatal error.
-The message bus does not install these scopes automatically.
+`publish_any` and the shared typed publication path enter a scope before the bus tap and synchronous
+subscribers run. `try_publish_any` does the same after its initial bus-access check. Scopes preserve
+reservation order across nested typed and `Any` publications. Unwinding through these paths latches
+a fatal dispatch error even when no callbacks are queued or the caller subsequently catches the panic.
+Publication scopes order reservations but do not admit canonical callbacks or drain them.
 
 Admission reserves count, known storage, and a queue slot **before the caller constructs owned
-captures**. A successful reservation accepts its capture even if another operation subsequently
-latches a failure. An unfinished reservation blocks later deliveries and teardown; cancellation
-leaves a slot that an explicit drain or teardown releases. Actor reservations retain registration
-identity, so replacement or re-registration of the same allocation cancels stale delivery.
+captures**:
+
+- A successful reservation accepts its capture even if another operation subsequently latches a failure.
+- An unfinished reservation blocks later deliveries and teardown.
+- Cancellation leaves a slot that an explicit drain or teardown releases.
+- Actor reservations retain registration identity, so replacement or re-registration of the same
+  allocation skips the stale handler. The skipped delivery still counts as completed against its root's budget.
 
 ### Draining and progress
 
-A drain processes at most its supplied slot budget, including cancelled slots. The queue has a
-**busy head** when its first callback cannot acquire exclusive access to its component. This blocks later delivery.
-Drains do no work during publication, recursive draining, teardown, or checked allocation access.
+A drain processes at most its supplied **slot budget**, including cancelled slots. The queue has a
+**busy head** when its first callback cannot acquire exclusive access to its component; this blocks
+later delivery.
 
-:::warning
+The private boundary drain adds a stricter contract to an explicit drain. Its caller must establish
+a safe delivery point:
+
+| Explicit drain outcome      | Meaning                                                                  | Boundary drain behavior                    |
+| --------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ |
+| Empty queue                 | No queued slots remain                                                   | Return normally                            |
+| Exhausted slot budget       | Slots remain after the pass                                              | Return normally; not a stall               |
+| Deferred entry              | Publication, recursive drain, teardown, or checked access prevents entry | Report active work; do not latch a failure |
+| Unfinished head reservation | The first reservation has no capture yet                                 | Report active work; do not latch a failure |
+| Busy head                   | Exclusive component access is unavailable                                | Latch a fatal stalled-delivery error       |
+
+Deferred entry does no work. An unfinished head reservation or busy head can occur after earlier
+deliveries in the same pass. **Error results do not return a delivery count.** A busy head at a
+boundary is fatal even if earlier callbacks made progress. Exhausting a slot budget, including on
+cancelled slots, is not stalled delivery.
+
+An empty queue does not imply that all retained roots have released. Ownership accounting alone is
+not a reason to keep draining. The boundary drain preserves the first fatal error and leaves queued
+captures owned until explicit teardown.
+
+:::warning Release enclosing borrows before draining
 Guard destruction only releases access; it does not drain callbacks. The caller must also end enclosing
 engine, cache, and other untracked borrows before draining.
 :::
+
+#### Draining during unwind
+
+An otherwise successful drain entered during panic unwinding latches a fatal delivery failure on
+exit, even when its queue is empty. Its returned result remains successful; the failure is available
+through the callback failure check and stops the next boundary drain.
 
 ### Callback roots and budgets
 
@@ -114,6 +468,8 @@ it causes. Publication order does not depend on which root owns the work.
 - A publication with no active root starts one on its first callback admission or command send.
   An empty scope allocates none.
 - Outside a publication scope, each admission starts a separate root unless a root is already active.
+
+#### Delivery budget versus slot budget
 
 Each completed delivery counts once against its root's budget. Busy attempts and cancelled slots do
 not count, though cancelled slots still consume the drain's slot budget.
@@ -128,9 +484,22 @@ Queued slots, active scopes, and retained invocation work keep their root alive.
 does not reset a surviving root's budget.** Retained storage captures the active root, or starts one
 when none is active. Growing that storage preserves its root.
 
+#### Resumption and storage reuse
+
 Resuming retained work through `with_chain` makes its root active for the call. Return or unwind
 restores the enclosing root. Invocation batches use this mechanism for each retained value;
-resuming work does not itself count as a delivery.
+resuming work does not itself count as a delivery. Each invocation batch is local to one preparation
+and invocation call. Its backing allocation does not choose the roots of later values: each value
+captures the context active at its own admission.
+
+#### Independent timer firings
+
+Callback registration and causal ownership have separate lifetimes. Reusing a registered timer callback
+does not reuse a firing's budget. Each independent live time-event envelope establishes its own scope
+before callback lookup and invocation, even when delivery occurs inside another active scope. Retained continuations
+keep their original root; storage reuse alone does not make an unrelated event a continuation.
+
+#### Destruction and release
 
 A delivered capture's destructor runs with the delivery's root active, including during unwind.
 Uninvoked batch values also restore their root when destroyed.
@@ -139,14 +508,121 @@ The root and its storage charge release when the last owner drops. Cancellation,
 and explicit teardown use the same ownership cleanup as other retained storage. Retained work
 prevents teardown until released.
 
-### Synchronous commands
+### Failure cleanup
 
-Commands capture any root active when they are sent, including during callback delivery and retained-work
-resumption. A send inside a publication or command-processing scope starts that scope's root if needed.
-A send with no active root outside those scopes carries no root; processing then creates an independent
-root when it first admits callback work or sends a nested command. Commands in
-the same drain batch do not share a root merely because they run together. Processing and destruction
-restore the enclosing root on return or unwind.
+Overflow latches the first fatal failure and rejects further reservations without constructing
+captures. Synchronous facade effects can finish before the runtime reports the failure at a safe
+boundary. Queued slots remain owned for explicit teardown. Failed invocation batches release their
+captures after preparation exits and its guards release.
+
+The teardown order is mandatory:
+
+1. Report the fatal error before clearing resets the latch; this is the caller's responsibility.
+1. End all active publication, reservation, invocation, chain, drain, and access scopes before
+   teardown begins. Clearing rejects active scopes and externally retained roots.
+1. Detach storage before releasing captures.
+1. Release captures.
+
+Teardown rejects destructor-driven admission throughout clearing.
+
+#### Preparation and destructor safety
+
+Invocation preparation keeps the batch owner outside the call that acquires guards. On rejection or
+unwind, previously transferred captures survive until those guards release. The caller reserves
+before constructing each capture and acquires preparation guards inside that call. The primitives
+cannot control arbitrary locals that author code constructs or explicitly destroys while holding a
+borrow. Destructors must not panic during an existing unwind.
+
+## Reentrancy and dispatch diagnostics
+
+### Component access conflicts
+
+[ComponentAccessError](../../crates/common/src/component.rs) describes the resource and attempted
+operation when checked component-state access fails. These diagnostics already apply to synchronous
+paths; they do not imply queued delivery is active. A conflict can result from callback reentry or
+from an ordinary borrow held too long. The message does not identify the holder or its call stack.
+
+| Variant         | Message prefix                                                              | Meaning and action                                                                |
+| --------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `NotRegistered` | `Cannot access {resource} during {operation}: the actor is not registered`  | Registration has not supplied the resource; register the component before access. |
+| `ReadConflict`  | `Cannot read {resource} during {operation}: it is already mutably borrowed` | Release the existing exclusive borrow before reading.                             |
+| `WriteConflict` | `Cannot modify {resource} during {operation}: it is already borrowed`       | Release existing shared or exclusive borrows before mutation.                     |
+
+Native `try_cache_ref()` and `try_clock_mut()` return these errors. Their `cache_ref()` and
+`clock_mut()` counterparts panic with the same diagnostic. See the
+[native access methods](../concepts/rust.md#dataactornative-methods).
+
+The portable Rust facades also report access conflicts:
+
+- [CacheApi](../../crates/common/src/cache/api.rs) infallible read methods panic with `ReadConflict`
+  and operation `cache read`; `get()` returns the conflict through `anyhow::Result` with operation
+  `get`. Fallible `try_*` lookups return it through the lookup error's `Access` variant, with the
+  method name as the operation, such as `try_position`.
+- [ClockApi](../../crates/common/src/clock/api.rs), with native backing, panics with `ReadConflict`
+  on conflicting reads. Timer and alert setters return `WriteConflict` through `anyhow::Result`;
+  `cancel_timer()` and `cancel_timers()` panic on that conflict. Clock diagnostics name the attempted
+  method. Handler-backed clocks delegate to their handlers instead of these native borrow checks.
+
+Python actor signal subscription and unsubscription map a conflicting actor borrow to `RuntimeError`,
+with resource `Python actor` and operation `subscribe_signal` or `unsubscribe_signal`.
+This does not cover every Python or native access path.
+
+When diagnosing a conflict, locate the attempted operation in the traceback and trace the enclosing
+borrow through any synchronous publication, command dispatch, or lifecycle call. End that borrow
+before code can reenter the same resource. In native code, read or copy the required state in a short
+scope, release the guard, then publish or dispatch. Do not bypass borrow checks or repeatedly retry
+while the conflicting scope is still active. Moving callback drains requires the ownership and
+sequence proof in [drain boundary design](#drain-boundary-design).
+
+Component lifecycle registry operations separately reject overlapping access with
+`Component '{id}' is already mutably borrowed`. That ID-based check is distinct from both resource
+borrows and the private callback allocation guards; none establishes safety for unchecked access.
+
+### Callback dispatcher failures
+
+[CallbackDispatchError](../../crates/common/src/actor/dispatch.rs) exposes the following diagnostics.
+`InvalidDestination`, `Stalled`, and `Runaway` describe queued-delivery failures; current production
+routes do not admit those callbacks, so these variants remain private integration and test behavior.
+Other diagnostics can already occur through publication scopes, command-root accounting, runtime
+drains, or cleanup while queued actor delivery is inactive.
+
+The dispatcher retains the first fatal failure; later boundary drains report it without delivering
+more callbacks. Completed synchronous effects and callback effects are not rolled back.
+
+| Variant              | Message                                        | Meaning and action                                                                                                                   |
+| -------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `Overflow`           | `Callback storage limit exceeded`              | Callback admission, retained storage, or command-root allocation exceeds capacity; inspect captures and retained work.               |
+| `InvalidDestination` | `Invalid callback destination`                 | Checked actor delivery finds a type mismatch; verify the registered actor type and handler destination.                              |
+| `SequenceExhausted`  | `Callback publication sequence exhausted`      | The ordering counter cannot advance; stop dispatch and follow teardown.                                                              |
+| `PublicationUnwound` | `Callback publication unwound`                 | A publication scope unwinds; inspect the original panic, even if a caller catches it.                                                |
+| `DeliveryUnwound`    | `Callback delivery unwound`                    | A drain scope exits during unwind; inspect the original panic.                                                                       |
+| `Runaway`            | `Callback chain delivery limit exceeded`       | One root exhausts its cumulative delivery budget; inspect feedback loops across callbacks and commands.                              |
+| `Stalled`            | `Callback delivery stalled at a safe boundary` | The queue head cannot run at a declared safe boundary; correct access ownership or boundary placement.                               |
+| `Active`             | `Callback work or access is still active`      | Drain entry, an unfinished reservation, or teardown ownership prevents the operation; release the blocking scopes or retained roots. |
+
+`Active` is an operation rejection and does not itself latch a fatal failure. The live running loops
+still exit on this drain error; the node initiates shutdown if it is running. A busy head at a safe
+boundary does latch `Stalled`; repeated draining is not a recovery strategy. An unfinished reservation
+can reject a drain after earlier callbacks have run, and error results carry no delivery count.
+
+Preserve the original failure before following [failure cleanup](#failure-cleanup). During live
+disposal, `Callback dispatch failed before disposal cleanup: ...` reports the existing latch;
+`Failed to clear callback dispatch during disposal: ...` reports cleanup rejection. Release externally
+retained work before retrying disposal. Do not force-clear ownership or treat cleanup as rollback.
+
+## Synchronous commands
+
+Command ancestry depends on the context at send time:
+
+- With an active root, commands capture it, including during callback delivery and retained-work resumption.
+- Inside a publication or command-processing scope, a send starts that scope's root if needed.
+- Outside those scopes and without an active root, a send carries no root. Processing then creates
+  an independent root when it first admits callback work or sends a nested command.
+
+Commands in the same drain batch do not share a root merely because they run together. Processing
+and destruction restore the enclosing root on return or unwind.
+
+### Batch and child ordering
 
 A command drain processes the batch collected at entry, in order. Commands enqueued through a synchronous
 sender by its handlers remain queued for a subsequent drain. Trading handlers can also capture deferred
@@ -157,6 +633,8 @@ the parent's context after its handler returns. Direct endpoint routing stays un
 Queue and dispatch-frame borrows end before handlers run or abandoned commands are destroyed. Command
 processing does not count as callback delivery and does not automatically drain callbacks.
 
+### Panic and overflow
+
 If a handler panics, the panic propagates. Unprocessed commands in the collected batch and pending
 deferred children are destroyed under their own contexts; newly enqueued commands remain queued. Captured
 roots keep callback accounting alive and prevent explicit dispatcher teardown until those commands release them.
@@ -165,26 +643,67 @@ Abandoned commands also release their captured ownership at thread teardown.
 Callback storage limits do not reject command sends. If a send needs a root and its allocation exceeds
 those limits, it latches callback overflow while the command is still queued. Command entries do not
 consume the callback retained-unit limit, and command payloads and queue capacity are excluded from
-known callback storage. Each root allocation is charged once. **This does not bound command-queue memory
-or loops that generate only commands.**
+known callback storage. Each root allocation is charged once.
 
-### Runtime integration
+:::warning Command transport is not callback budgeting
+These limits do not bound command-queue memory or loops that generate only commands.
+:::
 
-The [root propagation tests](../../crates/common/src/actor/dispatch.rs) cover retained continuations
-and synchronous data and trading commands, including deferred trading children.
-Before queued callback activation, runtime integration must:
+## Live command and event channels
 
-- Extend root propagation to live channels and locally emitted data and execution events.
-- Preserve independent ingress boundaries when reusing long-lived storage, so unrelated events do not
-  accumulate against one root's budget.
-- Provide safe drain boundaries.
-- Detect a busy head that cannot make progress.
+Live data and trading command senders capture roots only on the thread where the sender is constructed.
+Construct senders on the runtime thread. Sends from other threads are independent ingress, even when
+another runtime has an active root there. Dispatch envelopes carry send-safe tokens; callback roots and
+accounting remain thread-local. Processing a rooted envelope on another thread panics before dispatch.
 
-Public trading messages and their direct `dispatch()` path carry no callback context across threads.
-The synchronous queue owns its contexts privately; live-channel propagation remains outside this scope.
-These primitives do not establish runtime integration or backend parity.
+### Dispatch and buffering
 
-### Storage limits
+Envelopes retain ancestry through startup buffers, runner polling, and shutdown drains. Trading children
+capture their own active roots and retain depth-first order. On the node's polled command path, the
+execution observer runs before each matching endpoint dispatch, including children. Processing an
+unrooted envelope starts an independent, lazy root scope.
+This does not activate queued callbacks or drain them automatically.
+
+Startup buffering preserves each event's root when splitting execution batches into individual orders.
+Independent batches remain independent until dispatch. Reports still drain before buffered order events,
+and account events still process immediately. Node execution observation and fill bookkeeping run under
+the received event's context. Event transport does not itself consume the callback delivery budget.
+
+### Sender types and ingress
+
+Live data, execution, and system event senders use `EventSender<T>`, an alias for
+`DispatchSender<T>`, with the same `DispatchMessage<T>` envelope as commands. System commands and
+time events also use this sender. Runtime binding establishes the owner thread. Events emitted synchronously on
+that thread inherit the active root; foreign-thread sends and sends without an active scope remain
+independent. Context does not propagate across arbitrary spawned tasks or await points.
+
+### System and time events
+
+System events and commands retain their envelopes through startup buffering, polling, and shutdown.
+Time event delivery restores the envelope context before resolving and invoking the callback.
+Timer registration does not capture a root: scheduled firings enter independently, and reusing a
+callback does not share budgets between firings. A time event sent synchronously from an active
+callback scope inherits that scope instead. Callback leases, cancellation, and cleanup retain their
+existing behavior; callback transport does not itself consume the delivery budget.
+
+### Standalone senders
+
+Standalone clients can convert a plain Tokio sender into `EventSender<T>` to keep direct domain-event
+receivers. That mode carries no callback context and is not used by the live runner's channel binding.
+Event payloads and channel capacity remain outside callback storage accounting, as do command payloads and queues.
+
+### Destruction across threads
+
+| Destruction thread | Payload context                                       | Root release                                                                |
+| ------------------ | ----------------------------------------------------- | --------------------------------------------------------------------------- |
+| Owner thread       | Restore the message's root while dropping its payload | Release ownership on the owner thread                                       |
+| Foreign thread     | Cannot resume the owner-thread context                | Release a token through a cleanup queue without accessing the owner's roots |
+
+The owner reclaims foreign-thread releases at its next channel capture or dispatch, callback
+quiescence check, or dispatcher clear. Thread teardown also releases them. Dispatch envelopes,
+thread-local context registry capacity, and cleanup-queue storage remain outside callback storage limits.
+
+## Storage limits
 
 The private limits are:
 
@@ -193,44 +712,44 @@ The private limits are:
 - **Known storage**: At most 64 MiB.
 - **Callback chain**: At most 1,048,576 completed deliveries per root.
 
-These limits are internal and expose no user configuration.
+These limits are defensive safety fuses, not workload-sizing recommendations. They stop excessive
+retention or callback chains; they do not establish a sustainable event rate or safe process-memory
+budget. The limits are internal and expose no user configuration.
 
-Known storage includes callback values, queue slots and visible queue capacity, chain allocations,
-invocation vector capacity, and the caller-supplied heap charge. Payload measurements include accessible
-string and vector capacities, recursive JSON contents, metadata entries, order-event collections, visible book
-entries, option-chain entries, and, with the `defi` feature, directly owned blockchain strings.
+### Included storage
+
+Known storage includes:
+
+- Callback values, queue slots, and visible queue capacity.
+- Chain allocations and invocation vector capacity.
+- The caller-supplied heap charge.
+
+Payload measurements cover accessible string and vector capacities, recursive JSON contents,
+metadata entries, order-event collections, visible book entries, and option-chain entries. With
+`defi`, they also cover directly owned blockchain strings.
+
 Shared payload storage may be charged more than once. Data-type names, topics, and identifiers expose
 string slices, so their charges cover lengths and exclude inaccessible spare capacity. Charges remain
 held while delivery is in flight and while batches retain captures.
 
-:::warning
-This accounting is not a bound on total process memory. It excludes allocator bookkeeping,
-collection internals whose capacity is not exposed by these measurements, intern-pool storage,
-registered actor allocations, opaque custom-data payloads, Python object graphs, and dynamic-module
-storage.
+:::warning Not a total-process memory cap
+This accounting is not a bound on total process memory. It excludes:
+
+- Allocator bookkeeping.
+- Collection internals whose capacity is not exposed by these measurements.
+- Intern-pool storage and registered actor allocations.
+- Opaque custom-data payloads.
+- Python object graphs and dynamic-module storage.
 :::
 
 Callers must supply the known heap charge for their capture type; the generic reservation cannot
 inspect arbitrary owned fields.
 
-### Failure cleanup
+## Backend compatibility
 
-Overflow latches the first fatal failure and rejects further reservations without constructing
-captures. Synchronous facade effects can finish before the runtime reports the failure at a safe
-boundary. Queued slots remain owned for explicit teardown. Failed invocation batches release their
-captures after preparation exits and its guards release.
-
-Teardown must follow reporting of the fatal error and must run after active publication, reservation,
-invocation, chain, drain, and access scopes end.
-It detaches storage before releasing captures and rejects destructor-driven admission while clearing.
-
-Invocation preparation keeps the batch owner outside the call that acquires guards. On rejection or
-unwind, previously transferred captures survive until those guards release. The caller reserves
-before constructing each capture and acquires preparation guards inside that call. The primitives
-cannot control arbitrary locals that author code constructs or explicitly destroys while holding a
-borrow. Destructors must not panic during an existing unwind.
-
-### Backend compatibility
+Private allocation guards reject overlapping checked access. **Unchecked access and enclosing
+engine/cache borrows remain outside those guards.** Native, Python, and dynamic-backend parity is
+not established.
 
 Direct and dynamic backends must preserve the same callback ordering, exclusive component access,
 and lifecycle eligibility requirements. Facade effects remain synchronous. The

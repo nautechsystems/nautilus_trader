@@ -1,0 +1,20 @@
+{
+  "id": "fee-zero-rate-1",
+  "conditionId": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "question": "Zero-rate crypto market",
+  "clobTokenIds": "[\"12121212121212121212121212121212121212121212121212121212121212121212121212121\", \"13131313131313131313131313131313131313131313131313131313131313131313131313131\"]",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "feesEnabled": true,
+  "feeType": "crypto_fees",
+  "feeSchedule": {
+    "exponent": 1,
+    "rate": 0,
+    "takerOnly": true,
+    "rebateRate": 0
+  }
+}

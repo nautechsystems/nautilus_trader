@@ -23,7 +23,7 @@
 use std::{cell::RefCell, hint::black_box, rc::Rc};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_common::{cache::Cache, clock::TestClock};
+use nautilus_common::{cache::Cache, clock::VirtualClock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
@@ -163,7 +163,7 @@ fn make_opened(position: &Position) -> PositionOpened {
 // `mark_values`. Quotes are cached for every instrument so price lookups succeed.
 fn build_portfolio(account_type: AccountType, n: usize) -> Portfolio {
     let mut cache = Cache::new(None, None);
-    let clock = TestClock::new();
+    let clock = VirtualClock::new();
     let account_id = AccountId::new("SIM-001");
 
     let instruments = make_instruments(n);

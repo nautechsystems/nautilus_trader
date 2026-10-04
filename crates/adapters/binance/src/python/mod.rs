@@ -15,11 +15,13 @@
 
 //! Python bindings for the Binance adapter.
 
-pub mod arrow;
 pub mod config;
 pub mod enums;
 pub mod factories;
 pub mod types;
+
+#[cfg(feature = "arrow")]
+pub mod arrow;
 
 mod data;
 mod instruments;
@@ -27,7 +29,6 @@ mod instruments;
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::data::ensure_rust_extractor_registered;
-use nautilus_serialization::ensure_custom_data_registered;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
@@ -157,15 +158,20 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BinanceFuturesOpenInterest>()?;
     m.add_class::<BinanceFuturesOpenInterestHistPoint>()?;
     m.add_class::<BinanceFuturesOpenInterestHist>()?;
-    m.add_function(wrap_pyfunction!(arrow::get_binance_arrow_schema_map, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        arrow::py_binance_bar_to_arrow_record_batch_bytes,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        arrow::py_binance_bar_from_arrow_record_batch_bytes,
-        m
-    )?)?;
+
+    #[cfg(feature = "arrow")]
+    {
+        m.add_function(wrap_pyfunction!(arrow::get_binance_arrow_schema_map, m)?)?;
+        m.add_function(wrap_pyfunction!(
+            arrow::py_binance_bar_to_arrow_record_batch_bytes,
+            m
+        )?)?;
+        m.add_function(wrap_pyfunction!(
+            arrow::py_binance_bar_from_arrow_record_batch_bytes,
+            m
+        )?)?;
+    }
+
     m.add_class::<BinanceDataClientConfig>()?;
     m.add_class::<BinanceDataClientFactory>()?;
     m.add_class::<BinanceExecutionClientConfig>()?;
@@ -186,10 +192,8 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
 
-    // Register BinanceBar for Arrow/JSON serialization and Python extraction
-    ensure_custom_data_registered::<BinanceBar>();
-    let _result = ensure_rust_extractor_registered::<BinanceBar>();
     register_binance_custom_data();
+    let _result = ensure_rust_extractor_registered::<BinanceBar>();
     let _result = ensure_rust_extractor_registered::<BinanceFuturesLiquidation>();
     let _result = ensure_rust_extractor_registered::<BinanceFuturesTicker>();
     let _result = ensure_rust_extractor_registered::<BinanceSpotTicker>();

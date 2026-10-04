@@ -49,7 +49,14 @@ pub fn parse_current_order_report(
 
     let order_side = OrderSide::from(order.side);
     let order_type = OrderType::from(order.order_type);
-    let time_in_force = TimeInForce::from(order.persistence_type);
+
+    // The venue can report a non-BSP persistence type on SP bets; the
+    // on-close instruction defines the time in force
+    let time_in_force = if uses_liability_based_quantity(order) {
+        TimeInForce::AtTheClose
+    } else {
+        TimeInForce::from(order.persistence_type)
+    };
 
     let size_matched = order.size_matched.unwrap_or(Decimal::ZERO);
     let size_remaining = order.size_remaining.unwrap_or(Decimal::ZERO);
@@ -65,6 +72,8 @@ pub fn parse_current_order_report(
         && size_lapsed.is_zero()
     {
         OrderStatus::Voided
+    } else if is_resting_sp_bet(order) {
+        OrderStatus::Accepted
     } else {
         resolve_order_status(order.status, size_matched, size_closed)
     };
@@ -147,6 +156,17 @@ fn uses_liability_based_quantity(order: &CurrentOrderSummary) -> bool {
             | BetfairOrderType::MarketOnClose
             | BetfairOrderType::MarketAtTheClose
     )
+}
+
+// An SP bet rests as execution-complete with no matched, cancelled, lapsed,
+// or voided quantity, and cannot be cancelled until BSP reconciliation.
+fn is_resting_sp_bet(order: &CurrentOrderSummary) -> bool {
+    order.status == BetfairOrderStatus::ExecutionComplete
+        && uses_liability_based_quantity(order)
+        && order.size_matched.unwrap_or(Decimal::ZERO) <= Decimal::ZERO
+        && order.size_cancelled.unwrap_or(Decimal::ZERO) <= Decimal::ZERO
+        && order.size_lapsed.unwrap_or(Decimal::ZERO) <= Decimal::ZERO
+        && order.size_voided.unwrap_or(Decimal::ZERO) <= Decimal::ZERO
 }
 
 /// Parses a Betfair [`CurrentOrderSummary`] into a Nautilus [`FillReport`].
@@ -309,6 +329,43 @@ mod tests {
         assert_eq!(report.filled_qty, Quantity::from("0.00"));
         assert_eq!(report.quantity, Quantity::from("20.00"));
         assert_eq!(report.venue_order_id, VenueOrderId::from("229430281400"));
+    }
+
+    #[rstest]
+    fn test_parse_current_order_sp_resting() {
+        let data = load_test_json("rest/list_current_orders_sp_resting.json");
+        let resp: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let order = &resp.current_orders[0];
+
+        let report =
+            parse_current_order_report(order, AccountId::from("BETFAIR-001"), UnixNanos::default())
+                .unwrap();
+
+        // A resting SP bet reports execution-complete with zero size fields,
+        // but cannot be cancelled and is still open until BSP reconciliation
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        // SP identity survives the report despite persistenceType LAPSE
+        assert_eq!(report.time_in_force, TimeInForce::AtTheClose);
+        assert_eq!(report.quantity, Quantity::from("2.00"));
+        assert_eq!(report.filled_qty, Quantity::from("0.00"));
+        assert_eq!(report.venue_order_id, VenueOrderId::from("442849719274"));
+    }
+
+    #[rstest]
+    fn test_parse_current_order_sp_matched() {
+        let data = load_test_json("rest/list_current_orders_sp_matched.json");
+        let resp: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let order = &resp.current_orders[0];
+
+        let report =
+            parse_current_order_report(order, AccountId::from("BETFAIR-001"), UnixNanos::default())
+                .unwrap();
+
+        // Once matched at BSP reconciliation the same bet resolves Filled
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.time_in_force, TimeInForce::AtTheClose);
+        assert_eq!(report.quantity, Quantity::from("2.00"));
+        assert_eq!(report.filled_qty, Quantity::from("2.00"));
     }
 
     #[rstest]

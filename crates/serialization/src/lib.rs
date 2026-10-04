@@ -56,6 +56,7 @@
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
+#![warn(clippy::clone_on_ref_ptr)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -177,3 +178,7 @@ include_capnp_module!(instruments_capnp, "/data/instruments_capnp.rs");
 
 #[cfg(feature = "python")]
 pub mod python;
+
+/// Generates typed Arrow encoding for custom data.
+#[cfg(feature = "arrow")]
+pub use nautilus_macros::arrow_custom_data;

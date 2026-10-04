@@ -33,6 +33,7 @@ use std::collections::HashMap;
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::{
+    Params,
     serialization::{deserialize_decimal, deserialize_optional_decimal},
     string::secret::SecretString,
 };
@@ -177,6 +178,7 @@ pub struct DerivePerpPublicDetails {
 
 /// Instrument definition returned by `public/get_instruments`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub struct DeriveInstrument {
     /// Minimum increment of the `amount` field for orders.
     #[serde(deserialize_with = "deserialize_decimal")]
@@ -205,7 +207,8 @@ pub struct DeriveInstrument {
     /// Maximum allowed order amount.
     #[serde(deserialize_with = "deserialize_decimal")]
     pub maximum_amount: Decimal,
-    /// Minimum allowed order amount.
+    /// Venue-reported minimum contracts or tokens per trade.
+    /// Taker orders can fill below this value.
     #[serde(deserialize_with = "deserialize_decimal")]
     pub minimum_amount: Decimal,
     /// Option-specific details (populated when `instrument_type == option`).
@@ -226,6 +229,26 @@ pub struct DeriveInstrument {
     /// Minimum price increment.
     #[serde(deserialize_with = "deserialize_decimal")]
     pub tick_size: Decimal,
+    /// Original instrument response fields, before typed decoding or normalization.
+    #[serde(skip)]
+    pub raw: Option<Params>,
+}
+
+impl<'de> Deserialize<'de> for DeriveInstrument {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+
+        // The remote derive decodes the typed fields without calling this implementation
+        let mut instrument = Self::deserialize(&value).map_err(serde::de::Error::custom)?;
+        instrument.raw = Some(serde_json::from_value(value).map_err(serde::de::Error::custom)?);
+        Ok(instrument)
+    }
+}
+
+impl Serialize for DeriveInstrument {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        Self::serialize(self, serializer)
+    }
 }
 
 /// 24-hour rolling trading statistics embedded in ticker payloads.

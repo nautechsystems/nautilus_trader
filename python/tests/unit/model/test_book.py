@@ -33,7 +33,7 @@ from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDeltas
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderBookDepth
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
 from nautilus_trader.model import OrderType
@@ -838,117 +838,117 @@ def test_order_book_repr(audusd_id: InstrumentId) -> None:
 
 
 @pytest.fixture
-def depth10() -> object:
+def depth() -> object:
     """
-    Depth10.
+    Depth.
     """
-    return OrderBookDepth10.get_stub()
+    return OrderBookDepth.get_stub()
 
 
-def test_depth10_get_stub(depth10: object) -> None:
+def test_depth_get_stub(depth: object) -> None:
     """
-    Test depth10 get stub.
+    Test depth get stub.
     """
-    assert depth10.instrument_id == InstrumentId.from_str("AAPL.XNAS")
-    assert len(depth10.bids) == 10
-    assert len(depth10.asks) == 10
-    assert len(depth10.bid_counts) == 10
-    assert len(depth10.ask_counts) == 10
+    assert depth.instrument_id == InstrumentId.from_str("AAPL.XNAS")
+    assert len(depth.bids) == 10
+    assert len(depth.asks) == 10
+    assert len(depth.bid_counts) == 10
+    assert len(depth.ask_counts) == 10
 
 
-def test_depth10_properties(depth10: object) -> None:
+def test_depth_properties(depth: object) -> None:
     """
-    Test depth10 properties.
+    Test depth properties.
     """
-    assert depth10.flags == 0
-    assert depth10.sequence == 0
-    assert depth10.ts_event == 1
-    assert depth10.ts_init == 2
+    assert depth.flags == 0
+    assert depth.sequence == 0
+    assert depth.ts_event == 1
+    assert depth.ts_init == 2
 
 
-def test_depth10_bid_ask_structure(depth10: object) -> None:
+def test_depth_bid_ask_structure(depth: object) -> None:
     """
-    Test depth10 bid ask structure.
+    Test depth bid ask structure.
     """
-    for bid in depth10.bids:
+    for bid in depth.bids:
         assert bid.side == OrderSide.BUY
-    for ask in depth10.asks:
+    for ask in depth.asks:
         assert ask.side == OrderSide.SELL
 
-    assert depth10.bids[0].price > depth10.bids[1].price
-    assert depth10.asks[0].price < depth10.asks[1].price
+    assert depth.bids[0].price > depth.bids[1].price
+    assert depth.asks[0].price < depth.asks[1].price
 
 
-def test_depth10_hash(depth10: object) -> None:
+def test_depth_hash(depth: object) -> None:
     """
-    Test depth10 hash.
+    Test depth hash.
     """
-    assert isinstance(hash(depth10), int)
+    assert isinstance(hash(depth), int)
 
 
-def test_depth10_str_and_repr(depth10: object) -> None:
+def test_depth_str_and_repr(depth: object) -> None:
     """
-    Test depth10 str and repr.
+    Test depth str and repr.
     """
-    assert "AAPL.XNAS" in str(depth10)
-    assert "OrderBookDepth10" in repr(depth10)
+    assert "AAPL.XNAS" in str(depth)
+    assert "OrderBookDepth" in repr(depth)
 
 
-def test_depth10_to_dict_and_from_dict_roundtrip(depth10: object) -> None:
+def test_depth_to_dict_and_from_dict_roundtrip(depth: object) -> None:
     """
-    Test depth10 to dict and from dict roundtrip.
+    Test depth to dict and from dict roundtrip.
     """
-    d = depth10.to_dict()
-    restored = OrderBookDepth10.from_dict(d)
+    d = depth.to_dict()
+    restored = OrderBookDepth.from_dict(d)
 
     assert d["instrument_id"] == "AAPL.XNAS"
     assert len(d["bids"]) == 10
     assert len(d["asks"]) == 10
-    assert restored == depth10
+    assert restored == depth
 
 
-def test_depth10_fully_qualified_name() -> None:
+def test_depth_fully_qualified_name() -> None:
     """
-    Test depth10 fully qualified name.
+    Test depth fully qualified name.
     """
-    assert OrderBookDepth10.fully_qualified_name() == "nautilus_trader.model:OrderBookDepth10"
+    assert OrderBookDepth.fully_qualified_name() == "nautilus_trader.model:OrderBookDepth"
 
 
-def test_depth10_json_roundtrip(depth10: object) -> None:
+def test_depth_json_roundtrip(depth: object) -> None:
     """
-    Test depth10 json roundtrip.
+    Test depth json roundtrip.
     """
-    json_bytes = depth10.to_json_bytes()
-    restored = OrderBookDepth10.from_json(json_bytes)
+    json_bytes = depth.to_json_bytes()
+    restored = OrderBookDepth.from_json(json_bytes)
 
-    assert restored == depth10
+    assert restored == depth
 
 
-def test_depth10_msgpack_roundtrip(depth10: object) -> None:
+def test_depth_msgpack_roundtrip(depth: object) -> None:
     """
-    Test depth10 msgpack roundtrip.
+    Test depth msgpack roundtrip.
     """
-    msgpack_bytes = depth10.to_msgpack_bytes()
-    restored = OrderBookDepth10.from_msgpack(msgpack_bytes)
+    msgpack_bytes = depth.to_msgpack_bytes()
+    restored = OrderBookDepth.from_msgpack(msgpack_bytes)
 
-    assert restored == depth10
+    assert restored == depth
 
 
-def test_depth10_get_metadata() -> None:
+def test_depth_get_metadata() -> None:
     """
-    Test depth10 get metadata.
+    Test depth get metadata.
     """
     instrument_id = InstrumentId.from_str("AAPL.XNAS")
-    metadata = OrderBookDepth10.get_metadata(instrument_id, 2, 0)
+    metadata = OrderBookDepth.get_metadata(instrument_id, 2, 0)
 
     assert metadata["instrument_id"] == "AAPL.XNAS"
 
 
-def test_depth10_get_fields() -> None:
+def test_depth_get_fields() -> None:
     """
-    Test depth10 get fields.
+    Test depth get fields.
     """
-    fields = OrderBookDepth10.get_fields()
+    fields = OrderBookDepth.get_fields()
 
     assert "flags" in fields
     assert "sequence" in fields
@@ -956,13 +956,13 @@ def test_depth10_get_fields() -> None:
     assert "ts_init" in fields
 
 
-def test_order_book_apply_depth_updates_best_prices(depth10: object) -> None:
+def test_order_book_apply_depth_updates_best_prices(depth: object) -> None:
     """
     Test order book apply depth updates best prices.
     """
-    book = OrderBook(instrument_id=depth10.instrument_id, book_type=BookType.L2_MBP)
+    book = OrderBook(instrument_id=depth.instrument_id, book_type=BookType.L2_MBP)
 
-    book.apply_depth(depth10)
+    book.apply_depth(depth)
 
     assert book.best_bid_price() == Price.from_str("99.00")
     assert book.best_ask_price() == Price.from_str("100.00")
@@ -1438,13 +1438,13 @@ def test_order_book_to_deltas_marks_empty_snapshot_final(audusd_id: InstrumentId
     assert snapshot.deltas[0].ts_init == 2_000
 
 
-def test_order_book_get_avg_px_qty_for_exposure(depth10: object) -> None:
+def test_order_book_get_avg_px_qty_for_exposure(depth: object) -> None:
     """
     Test order book get avg px qty for exposure.
     """
-    book = OrderBook(instrument_id=depth10.instrument_id, book_type=BookType.L2_MBP)
+    book = OrderBook(instrument_id=depth.instrument_id, book_type=BookType.L2_MBP)
 
-    book.apply_depth(depth10)
+    book.apply_depth(depth)
 
     avg_px, filled_qty, worst_px = book.get_avg_px_qty_for_exposure(
         Quantity.from_int(1),

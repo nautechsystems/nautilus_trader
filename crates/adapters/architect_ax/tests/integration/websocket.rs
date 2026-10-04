@@ -850,6 +850,73 @@ async fn test_md_reconnect_replays_failed_subscription() {
 
 #[rstest]
 #[tokio::test]
+async fn test_md_close_connect_replays_subscriptions() {
+    let (addr, state) = start_test_server().await.unwrap();
+
+    let mut client = AxMdWebSocketClient::new(
+        format!("ws://{addr}/md/ws"),
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+
+    client.connect().await.unwrap();
+    client
+        .subscribe_book_deltas("GBPUSD-PERP", AxMarketDataLevel::Level2)
+        .await
+        .unwrap();
+    client
+        .subscribe_candles("EURUSD-PERP", AxCandleWidth::Seconds1)
+        .await
+        .unwrap();
+    wait_until_async(
+        || async { client.subscription_count() == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let mut expected = state.get_messages().await;
+    expected.retain(|message| {
+        matches!(
+            message["type"].as_str(),
+            Some("subscribe" | "subscribe_candles")
+        )
+    });
+
+    for message in &mut expected {
+        message.as_object_mut().unwrap().remove("rid");
+    }
+
+    expected.sort_by_key(serde_json::Value::to_string);
+    assert_eq!(expected.len(), 2);
+
+    client.close().await.unwrap();
+    wait_until_async(
+        || async { *state.connection_count.lock().await == 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+    state.reset().await;
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { state.get_messages().await.len() == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let mut actual = state.get_messages().await;
+    for message in &mut actual {
+        message.as_object_mut().unwrap().remove("rid");
+    }
+
+    actual.sort_by_key(serde_json::Value::to_string);
+    assert_eq!(actual, expected);
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_md_rapid_subscribe_unsubscribe() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");

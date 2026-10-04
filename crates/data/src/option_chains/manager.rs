@@ -529,8 +529,8 @@ impl OptionChainManager {
 
     /// Adds a dynamically discovered instrument to this option chain.
     ///
-    /// Registers msgbus handlers when the instrument falls in the active
-    /// range and forwards wire-level subscriptions via `client`.
+    /// Registers msgbus handlers and forwards wire-level subscriptions via
+    /// `client` when the instrument falls in the active range.
     /// Returns `true` if the instrument was newly inserted.
     pub fn add_instrument(
         &mut self,
@@ -546,10 +546,9 @@ impl OptionChainManager {
 
         if self.aggregator.active_ids().contains(&instrument_id) {
             self.register_handlers_for_instrument(instrument_id);
+            let venue = self.aggregator.series_id().venue;
+            Self::forward_instrument_subscriptions(client, instrument_id, venue, clock);
         }
-
-        let venue = self.aggregator.series_id().venue;
-        Self::forward_instrument_subscriptions(client, instrument_id, venue, clock);
 
         log::info!(
             "Added instrument {instrument_id} to option chain {} (active={})",
@@ -833,7 +832,7 @@ impl OptionChainManager {
 mod tests {
     use std::collections::VecDeque;
 
-    use nautilus_common::clock::TestClock;
+    use nautilus_common::clock::VirtualClock;
     use nautilus_core::UnixNanos;
     use nautilus_model::{data::option_chain::StrikeRange, identifiers::Venue, types::Quantity};
     use rstest::*;
@@ -863,7 +862,7 @@ mod tests {
             tracker,
             HashMap::new(),
         );
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let queue = make_test_queue();
 
         let manager = OptionChainManager {
@@ -908,7 +907,7 @@ mod tests {
 
     #[rstest]
     fn test_manager_teardown_no_handlers() {
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let (mut manager, _queue) = make_manager();
         // Should not panic - no handlers to unregister
         manager.teardown(&clock);
@@ -940,7 +939,7 @@ mod tests {
             tracker,
             instruments,
         );
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let queue = make_test_queue();
 
         let manager = OptionChainManager {
@@ -991,7 +990,7 @@ mod tests {
     #[rstest]
     fn test_manager_add_instrument_new() {
         let (mut manager, _queue) = make_option_chain_manager();
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let new_id = InstrumentId::from("BTC-20240101-57500-C.DERIBIT");
         let strike = Price::from("57500");
         let count_before = manager.aggregator.instruments().len();
@@ -1005,7 +1004,7 @@ mod tests {
     #[rstest]
     fn test_manager_add_instrument_already_known() {
         let (mut manager, _queue) = make_option_chain_manager();
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let existing_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
         let strike = Price::from("50000");
         let count_before = manager.aggregator.instruments().len();
@@ -1212,7 +1211,7 @@ mod tests {
             tracker,
             instruments,
         );
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let queue = make_test_queue();
 
         let mut manager = OptionChainManager {

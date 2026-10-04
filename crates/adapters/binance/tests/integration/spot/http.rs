@@ -51,7 +51,6 @@ use nautilus_model::{
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
-use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 const PING_TEMPLATE_ID: u16 = 101;
@@ -1697,8 +1696,6 @@ async fn test_domain_client_applies_instrument_selection_fallback_fees_and_cache
 
     assert_eq!(instruments.len(), 1);
     assert_eq!(instruments[0].id(), InstrumentId::from("ETHUSDT.BINANCE"));
-    assert_eq!(instruments[0].maker_fee(), dec!(0.001));
-    assert_eq!(instruments[0].taker_fee(), dec!(0.001));
     assert!(client.get_instrument(&Ustr::from("ETHUSDT")).is_some());
     assert!(client.get_instrument(&Ustr::from("BTCUSDT")).is_none());
 
@@ -1747,8 +1744,6 @@ async fn test_domain_client_uses_exact_spot_commission_rates_when_enabled() {
 
     assert_eq!(instruments.len(), 1);
     assert_eq!(instruments[0].id(), InstrumentId::from("BTCUSDT.BINANCE"));
-    assert_eq!(instruments[0].maker_fee(), dec!(0.000123));
-    assert_eq!(instruments[0].taker_fee(), dec!(0.000456));
 }
 
 #[rstest]

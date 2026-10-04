@@ -28,7 +28,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
-use rust_decimal::Decimal;
 
 use crate::{
     common::{
@@ -234,27 +233,15 @@ impl AxHttpClient {
 
     /// Requests all instruments from Ax.
     ///
-    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
-    /// rates have been resolved.
-    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (maker_fee=None, taker_fee=None))]
-    fn py_request_instruments<'py>(
-        &self,
-        py: Python<'py>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let instruments = client
-                .request_instruments(maker_fee, taker_fee)
-                .await
-                .map_err(to_pyvalue_err)?;
+            let instruments = client.request_instruments().await.map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
                 let py_instruments: PyResult<Vec<_>> = instruments
@@ -444,12 +431,15 @@ impl AxHttpClient {
     ///
     /// The caller must supply `order_side`, `order_type`, and `time_in_force`
     /// because the endpoint does not return these fields.
+    /// Canceled, expired, and rejected orders with no remaining quantity use `/orders`
+    /// to recover their original quantity.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - Neither `venue_order_id` nor `client_order_id` is provided.
     /// - The HTTP request fails.
+    /// - The original quantity is unavailable in order history.
     #[pyo3(name = "request_order_status")]
     #[pyo3(signature = (
         account_id,
@@ -504,10 +494,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - An order's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Order parsing failures are skipped with a warning.
+    /// - An order cannot be mapped to a complete status report.
     #[pyo3(name = "request_order_status_reports", signature = (account_id, client_order_ids=None))]
     fn py_request_order_status_reports<'py>(
         &self,

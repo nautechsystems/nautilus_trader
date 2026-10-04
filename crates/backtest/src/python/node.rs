@@ -48,7 +48,7 @@ use crate::{
 impl BacktestNode {
     /// Orchestrates catalog-driven backtests from run configurations.
     ///
-    /// `BacktestNode` connects the `ParquetDataCatalog` with `BacktestEngine` to load
+    /// `BacktestNode` connects the catalog with `BacktestEngine` to load
     /// historical data and run backtests. Supports both oneshot and streaming modes.
     #[new]
     fn py_new(configs: Vec<BacktestRunConfig>) -> PyResult<Self> {
@@ -68,11 +68,14 @@ impl BacktestNode {
     /// instruments from the catalog. If building a config fails with
     /// `BacktestRunConfig.raise_exception` disabled, logs the error and skips that config;
     /// successful return does not guarantee an engine for every config.
+    /// A disposed node cannot be built again; create a new node instead.
     ///
     /// # Errors
     ///
-    /// Returns an error if building an engine from a config fails and
-    /// `BacktestRunConfig.raise_exception` is enabled for that config.
+    /// Returns an error if:
+    /// - This node has been disposed.
+    /// - Building an engine from a config fails and
+    ///   `BacktestRunConfig.raise_exception` is enabled for that config.
     #[pyo3(name = "build")]
     fn py_build(&mut self) -> PyResult<()> {
         self.build().map_err(to_pyruntime_err)
@@ -86,17 +89,23 @@ impl BacktestNode {
     /// Configs without a built engine are skipped. If a run fails with
     /// `BacktestRunConfig.raise_exception` disabled, logs the error, clears its loaded data,
     /// leaves the engine undisposed, and omits its result.
+    /// A node disposed by a completed run or by `dispose()`
+    /// cannot run again; create a new node instead.
     ///
     /// # Errors
     ///
-    /// Returns an error if building, data loading, or engine execution fails and
-    /// `BacktestRunConfig.raise_exception` is enabled for the run config.
+    /// Returns an error if:
+    /// - This node has been disposed.
+    /// - Building, data loading, or engine execution fails and
+    ///   `BacktestRunConfig.raise_exception` is enabled for the run config.
     #[pyo3(name = "run")]
     fn py_run(&mut self) -> PyResult<Vec<BacktestResult>> {
         self.run().map_err(to_pyruntime_err)
     }
 
     /// Disposes all engines and releases resources.
+    /// Subsequent calls to `run()` or `build()`
+    /// return an error; create a new node to run again.
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) {
         self.dispose();
@@ -314,9 +323,7 @@ impl BacktestNode {
     ) -> PyResult<()> {
         #[cfg(feature = "examples")]
         {
-            let engine = self.get_engine_mut(run_config_id).ok_or_else(|| {
-                to_pyruntime_err(format!("No engine for run config '{run_config_id}'"))
-            })?;
+            let engine = self.require_engine_mut(run_config_id)?;
 
             let register = builtin_strategy_register(type_name).ok_or_else(|| {
                 to_pytype_err(format!("Unsupported built-in strategy type: {type_name}"))
@@ -341,12 +348,33 @@ impl BacktestNode {
 impl BacktestNode {
     fn require_engine(&self, run_config_id: &str) -> PyResult<&BacktestEngine> {
         self.get_engine(run_config_id)
-            .ok_or_else(|| to_pyruntime_err(format!("No engine for run config '{run_config_id}'")))
+            .ok_or_else(|| self.missing_engine_err(run_config_id))
     }
 
     fn require_engine_mut(&mut self, run_config_id: &str) -> PyResult<&mut BacktestEngine> {
-        self.get_engine_mut(run_config_id)
-            .ok_or_else(|| to_pyruntime_err(format!("No engine for run config '{run_config_id}'")))
+        if self.get_engine(run_config_id).is_none() {
+            return Err(self.missing_engine_err(run_config_id));
+        }
+
+        Ok(self.get_engine_mut(run_config_id).expect("checked above"))
+    }
+
+    fn missing_engine_err(&self, run_config_id: &str) -> PyErr {
+        let known = self
+            .configs()
+            .iter()
+            .any(|config| config.id() == run_config_id);
+        let reason = if known {
+            "call build() before accessing the engine; if build() already ran, \
+             it may have failed (check the log) or the engine was disposed"
+                .to_string()
+        } else {
+            let ids: Vec<&str> = self.configs().iter().map(BacktestRunConfig::id).collect();
+            format!("unknown run config ID (known IDs: {ids:?})")
+        };
+        to_pyruntime_err(format!(
+            "No engine for run config '{run_config_id}': {reason}"
+        ))
     }
 }
 

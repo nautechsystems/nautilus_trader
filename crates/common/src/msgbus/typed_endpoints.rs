@@ -233,6 +233,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -324,5 +325,174 @@ mod tests {
         // Only second handler should receive (replaced first)
         assert!(!*first_received.borrow());
         assert!(*second_received.borrow());
+    }
+
+    #[rstest]
+    fn test_endpoint_map_tracks_registered_endpoints() {
+        let mut endpoints = EndpointMap::<i32>::new();
+        let first: MStr<Endpoint> = "First.endpoint".into();
+        let second: MStr<Endpoint> = "Second.endpoint".into();
+
+        assert_eq!(endpoints.len(), 0);
+        assert!(endpoints.is_empty());
+        assert!(endpoints.endpoints().is_empty());
+        assert!(endpoints.get(first).is_none());
+
+        endpoints.register(first, TypedHandler::from_with_id("first", |_: &i32| {}));
+        endpoints.register(second, TypedHandler::from_with_id("second", |_: &i32| {}));
+
+        assert_eq!(endpoints.len(), 2);
+        assert!(!endpoints.is_empty());
+        assert_eq!(
+            endpoints.endpoints(),
+            vec!["First.endpoint", "Second.endpoint"]
+        );
+        assert_eq!(endpoints.get(first).unwrap().id(), Ustr::from("first"));
+        assert_eq!(endpoints.get(second).unwrap().id(), Ustr::from("second"));
+
+        endpoints.deregister(first);
+
+        assert_eq!(endpoints.endpoints(), vec!["Second.endpoint"]);
+
+        endpoints.clear();
+
+        assert_eq!(endpoints.len(), 0);
+        assert!(endpoints.get(second).is_none());
+    }
+
+    #[rstest]
+    fn test_into_endpoint_map_register_and_send_transfers_ownership() {
+        let mut endpoints = IntoEndpointMap::<String>::new();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let received_clone = received.clone();
+
+        let handler = TypedIntoHandler::from(move |msg: String| {
+            received_clone.borrow_mut().push(msg);
+        });
+
+        let endpoint: MStr<Endpoint> = "ExecEngine.execute".into();
+        endpoints.register(endpoint, handler);
+
+        endpoints.send(endpoint, "command1".to_string());
+        endpoints.send(endpoint, "command2".to_string());
+
+        assert_eq!(*received.borrow(), vec!["command1", "command2"]);
+    }
+
+    #[rstest]
+    fn test_into_endpoint_map_send_to_unregistered_endpoint_drops_the_message() {
+        let mut endpoints = IntoEndpointMap::<i32>::new();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let received_clone = received.clone();
+
+        let endpoint: MStr<Endpoint> = "Test.endpoint".into();
+        endpoints.register(
+            endpoint,
+            TypedIntoHandler::from(move |msg: i32| received_clone.borrow_mut().push(msg)),
+        );
+        endpoints.deregister(endpoint);
+
+        endpoints.send(endpoint, 42);
+
+        assert!(received.borrow().is_empty());
+        assert!(!endpoints.is_registered(endpoint));
+    }
+
+    #[rstest]
+    fn test_into_endpoint_map_try_send_returns_the_message_when_unregistered() {
+        let mut endpoints = IntoEndpointMap::<String>::new();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let received_clone = received.clone();
+
+        let registered: MStr<Endpoint> = "Registered.endpoint".into();
+        let unregistered: MStr<Endpoint> = "Unregistered.endpoint".into();
+        endpoints.register(
+            registered,
+            TypedIntoHandler::from(move |msg: String| received_clone.borrow_mut().push(msg)),
+        );
+
+        assert_eq!(
+            endpoints.try_send(registered, "delivered".to_string()),
+            Ok(())
+        );
+        assert_eq!(
+            endpoints.try_send(unregistered, "recovered".to_string()),
+            Err("recovered".to_string()),
+            "an unregistered endpoint must hand the message back intact"
+        );
+
+        assert_eq!(*received.borrow(), vec!["delivered"]);
+    }
+
+    #[rstest]
+    fn test_into_endpoint_map_register_replaces_the_existing_handler() {
+        let mut endpoints = IntoEndpointMap::<i32>::new();
+        let received = Rc::new(RefCell::new(Vec::new()));
+
+        let first_clone = received.clone();
+        let second_clone = received.clone();
+        let endpoint: MStr<Endpoint> = "Test.endpoint".into();
+
+        endpoints.register(
+            endpoint,
+            TypedIntoHandler::from_with_id("first", move |_: i32| {
+                first_clone.borrow_mut().push("first");
+            }),
+        );
+
+        endpoints.register(
+            endpoint,
+            TypedIntoHandler::from_with_id("second", move |_: i32| {
+                second_clone.borrow_mut().push("second");
+            }),
+        );
+
+        endpoints.send(endpoint, 1);
+
+        assert_eq!(endpoints.len(), 1);
+        assert_eq!(endpoints.get(endpoint).unwrap().id(), Ustr::from("second"));
+        assert_eq!(*received.borrow(), vec!["second"]);
+    }
+
+    #[rstest]
+    fn test_into_endpoint_map_tracks_registered_endpoints() {
+        let mut endpoints = IntoEndpointMap::<i32>::new();
+        let first: MStr<Endpoint> = "First.endpoint".into();
+        let second: MStr<Endpoint> = "Second.endpoint".into();
+
+        assert_eq!(endpoints.len(), 0);
+        assert!(endpoints.is_empty());
+        assert!(endpoints.endpoints().is_empty());
+        assert!(endpoints.get(first).is_none());
+
+        endpoints.register(first, TypedIntoHandler::from_with_id("first", |_: i32| {}));
+        endpoints.register(
+            second,
+            TypedIntoHandler::from_with_id("second", |_: i32| {}),
+        );
+
+        assert_eq!(endpoints.len(), 2);
+        assert!(!endpoints.is_empty());
+        assert_eq!(
+            endpoints.endpoints(),
+            vec!["First.endpoint", "Second.endpoint"]
+        );
+        assert!(endpoints.is_registered(first));
+
+        endpoints.deregister(first);
+
+        assert!(!endpoints.is_registered(first));
+        assert_eq!(endpoints.endpoints(), vec!["Second.endpoint"]);
+
+        endpoints.clear();
+
+        assert!(endpoints.is_empty());
+        assert!(endpoints.get(second).is_none());
+    }
+
+    #[rstest]
+    fn test_endpoint_maps_default_to_empty() {
+        assert!(EndpointMap::<i32>::default().is_empty());
+        assert!(IntoEndpointMap::<i32>::default().is_empty());
     }
 }

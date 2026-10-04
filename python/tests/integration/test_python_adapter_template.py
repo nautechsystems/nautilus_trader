@@ -60,6 +60,9 @@ from tests.unit.model.factories import make_order_status_report
 from tests.unit.model.factories import make_position_status_report
 
 
+pytestmark = pytest.mark.usefixtures("collect_node_cycles")
+
+
 constants = load_example_module("_template", "constants")
 data = load_example_module("_template", "data")
 execution = load_example_module("_template", "execution")

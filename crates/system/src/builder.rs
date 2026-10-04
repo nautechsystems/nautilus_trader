@@ -370,6 +370,7 @@ impl NautilusKernelBuilder {
             risk_engine: self.risk_engine,
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
+            #[cfg(feature = "streaming")]
             streaming: None,
             #[cfg(feature = "streaming")]
             catalogs: Vec::new(),
@@ -676,7 +677,7 @@ mod tests {
     #[cfg(feature = "live")]
     #[rstest]
     fn test_builder_with_clock_factory_drives_kernel_and_component_clocks() {
-        use nautilus_common::clock::TestClock;
+        use nautilus_common::clock::VirtualClock;
 
         let calls = Rc::new(Cell::new(0usize));
         let calls_in_closure = calls.clone();
@@ -688,7 +689,7 @@ mod tests {
         )
         .with_clock_factory(move || {
             calls_in_closure.set(calls_in_closure.get() + 1);
-            Rc::new(RefCell::new(TestClock::new())) as Rc<RefCell<dyn Clock>>
+            Rc::new(RefCell::new(VirtualClock::new())) as Rc<RefCell<dyn Clock>>
         })
         .build()
         .expect("kernel builds with clock factory");
@@ -699,8 +700,8 @@ mod tests {
             "kernel clock must consume exactly one factory call"
         );
         assert!(
-            (*kernel.clock().borrow()).as_any().is::<TestClock>(),
-            "kernel clock must be the factory-produced TestClock"
+            (*kernel.clock().borrow()).as_any().is::<VirtualClock>(),
+            "kernel clock must be the factory-produced VirtualClock"
         );
 
         let c1 = kernel
@@ -717,8 +718,8 @@ mod tests {
             3,
             "factory must back kernel clock and each component clock"
         );
-        assert!((*c1.borrow()).as_any().is::<TestClock>());
-        assert!((*c2.borrow()).as_any().is::<TestClock>());
+        assert!((*c1.borrow()).as_any().is::<VirtualClock>());
+        assert!((*c2.borrow()).as_any().is::<VirtualClock>());
     }
 
     #[cfg(feature = "live")]

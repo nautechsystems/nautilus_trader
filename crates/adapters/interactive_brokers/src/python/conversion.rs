@@ -176,8 +176,6 @@ pub fn contract_details_to_pyobject(
     py: Python<'_>,
     details: &ContractDetails,
 ) -> PyResult<Py<PyAny>> {
-    let common = py.import("nautilus_trader.adapters.interactive_brokers.common")?;
-    let dict_to_contract_details = common.getattr("dict_to_contract_details")?;
     let details_dict = PyDict::new(py);
 
     details_dict.set_item("contract", contract_to_pydict(py, &details.contract)?)?;
@@ -261,6 +259,5 @@ pub fn contract_details_to_pyobject(
         details_dict.set_item("secIdList", sec_id_list)?;
     }
 
-    let result = dict_to_contract_details.call1((details_dict,))?;
-    Ok(result.unbind())
+    Ok(details_dict.into_any().unbind())
 }

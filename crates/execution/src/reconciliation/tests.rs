@@ -16,11 +16,13 @@
 #![cfg(test)]
 #![expect(clippy::too_many_arguments)]
 
+use std::cmp::Ordering;
+
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{
-        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-        TrailingOffsetType,
+        AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TrailingOffsetType,
     },
     events::{
         OrderAccepted, OrderEvent, OrderEventAny, OrderFilled, OrderPendingCancel,
@@ -36,7 +38,10 @@ use nautilus_model::{
     },
     instruments::{
         Instrument, InstrumentAny,
-        stubs::{audusd_sim, binary_option, crypto_perpetual_ethusdt, futures_spread_es},
+        stubs::{
+            audusd_sim, binary_option, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            futures_spread_es,
+        },
     },
     orders::{
         Order, OrderAny, OrderTestBuilder,
@@ -437,9 +442,33 @@ fn test_detect_zero_crossings() {
     assert_eq!(crossings[1], 4000);
 }
 
+pub(super) fn venue_position_snapshot(
+    signed_qty: Decimal,
+    avg_px: Decimal,
+) -> VenuePositionSnapshot {
+    let side = match signed_qty.cmp(&Decimal::ZERO) {
+        Ordering::Greater => PositionSide::Long,
+        Ordering::Less => PositionSide::Short,
+        Ordering::Equal => PositionSide::Flat,
+    };
+
+    VenuePositionSnapshot {
+        side,
+        qty: signed_qty.abs(),
+        avg_px,
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
+    }
+}
+
 #[rstest]
 fn test_check_position_match_exact() {
-    let result = check_position_match(dec!(10), dec!(1000), dec!(10), dec!(100), dec!(0.0001));
+    let result = check_position_match(
+        dec!(10),
+        dec!(1000),
+        &venue_position_snapshot(dec!(10), dec!(100)),
+        dec!(0.0001),
+    );
     assert!(result);
 }
 
@@ -447,13 +476,23 @@ fn test_check_position_match_exact() {
 fn test_check_position_match_within_tolerance() {
     // Simulated avg px = 1000/10 = 100, venue = 100.005
     // Relative diff = 0.005 / 100.005 = 0.00004999 < 0.0001
-    let result = check_position_match(dec!(10), dec!(1000), dec!(10), dec!(100.005), dec!(0.0001));
+    let result = check_position_match(
+        dec!(10),
+        dec!(1000),
+        &venue_position_snapshot(dec!(10), dec!(100.005)),
+        dec!(0.0001),
+    );
     assert!(result);
 }
 
 #[rstest]
 fn test_check_position_match_qty_mismatch() {
-    let result = check_position_match(dec!(10), dec!(1000), dec!(11), dec!(100), dec!(0.0001));
+    let result = check_position_match(
+        dec!(10),
+        dec!(1000),
+        &venue_position_snapshot(dec!(11), dec!(100)),
+        dec!(0.0001),
+    );
     assert!(!result);
 }
 
@@ -463,8 +502,7 @@ fn test_check_position_match_negative_venue_avg_px() {
     assert!(check_position_match(
         dec!(10),
         dec!(-1000),
-        dec!(10),
-        dec!(-100.005),
+        &venue_position_snapshot(dec!(10), dec!(-100.005)),
         dec!(0.0001)
     ));
     // Simulated avg px = -100, venue = -110: ~9% divergence must not match
@@ -472,42 +510,278 @@ fn test_check_position_match_negative_venue_avg_px() {
     assert!(!check_position_match(
         dec!(10),
         dec!(-1000),
-        dec!(10),
-        dec!(-110),
+        &venue_position_snapshot(dec!(10), dec!(-110)),
         dec!(0.0001)
     ));
 }
 
 #[rstest]
 fn test_check_position_match_both_flat() {
-    let result = check_position_match(dec!(0), dec!(0), dec!(0), dec!(0), dec!(0.0001));
+    let result = check_position_match(
+        dec!(0),
+        dec!(0),
+        &venue_position_snapshot(dec!(0), dec!(0)),
+        dec!(0.0001),
+    );
     assert!(result);
 }
 
 #[rstest]
+#[case::coarse_without_precision(dec!(0.56), dec!(0.5599), None, false)]
+#[case::one_unit(dec!(0.56), dec!(0.5599), Some(4), true)]
+#[case::one_unit_plus_relative(dec!(0.56005), dec!(0.5599), Some(4), true)]
+#[case::beyond_allowance(dec!(0.56006), dec!(0.5599), Some(4), false)]
+#[case::whole_unit(dec!(2), dec!(1), Some(0), true)]
+#[case::above_decimal_scale(dec!(0.56), dec!(0.5599), Some(29), false)]
+#[case::zero_venue_price(dec!(0.0001), dec!(0), Some(4), false)]
+fn test_position_prices_match_with_venue_precision(
+    #[case] cached_avg_px: Decimal,
+    #[case] venue_avg_px: Decimal,
+    #[case] venue_precision: Option<u8>,
+    #[case] expected: bool,
+) {
+    assert_eq!(
+        position_prices_match(cached_avg_px, venue_avg_px, None, venue_precision),
+        expected
+    );
+}
+
+#[rstest]
+#[case::match_compares_price(AvgPxReconciliation::Match, dec!(1), false)]
+#[case::opening_only_ignores_price(AvgPxReconciliation::OpeningOnly, dec!(1), true)]
+#[case::opening_only_checks_qty(AvgPxReconciliation::OpeningOnly, dec!(2), false)]
+fn test_check_position_match_avg_px_reconciliation(
+    #[case] avg_px_reconciliation: AvgPxReconciliation,
+    #[case] venue_qty: Decimal,
+    #[case] expected: bool,
+) {
+    let venue_position = VenuePositionSnapshot {
+        avg_px_reconciliation,
+        ..venue_position_snapshot(venue_qty, dec!(60000))
+    };
+
+    assert_eq!(
+        check_position_match(dec!(1), dec!(55000), &venue_position, dec!(0.0001)),
+        expected
+    );
+}
+
+#[rstest]
+#[case::increase(dec!(1), Some(dec!(55000)), dec!(2), Some(dec!(65000)), Some(dec!(55000)))]
+#[case::reduction(dec!(2), Some(dec!(55000)), dec!(1), Some(dec!(60000)), Some(dec!(55000)))]
+#[case::short_increase(dec!(-1), Some(dec!(55000)), dec!(-2), Some(dec!(65000)), Some(dec!(55000)))]
+#[case::open_from_flat(dec!(0), None, dec!(1), Some(dec!(60000)), Some(dec!(60000)))]
+#[case::reversal(dec!(1), Some(dec!(55000)), dec!(-1), Some(dec!(70000)), Some(dec!(70000)))]
+#[case::close_to_flat(dec!(1), Some(dec!(55000)), dec!(0), None, Some(dec!(55000)))]
+#[case::unknown_current_average(dec!(1), None, dec!(2), Some(dec!(65000)), Some(dec!(65000)))]
+fn test_reconciliation_price_opening_only_average(
+    #[case] current_qty: Decimal,
+    #[case] current_avg_px: Option<Decimal>,
+    #[case] target_qty: Decimal,
+    #[case] target_avg_px: Option<Decimal>,
+    #[case] expected: Option<Decimal>,
+) {
+    let result = calculate_reconciliation_price(
+        current_qty,
+        current_avg_px,
+        target_qty,
+        target_avg_px,
+        AvgPxReconciliation::OpeningOnly,
+        None,
+    );
+
+    assert_eq!(result, expected);
+}
+
+#[rstest]
+#[case::matching_coarse_average(dec!(0.5599), Some(4), dec!(0.56))]
+#[case::exact_average_solves(dec!(0.5599), None, dec!(0.0599))]
+#[case::exact_matching_average_solves(dec!(0.56003), None, dec!(0.71003))]
+#[case::mismatched_coarse_average_solves(dec!(0.5602), Some(4), dec!(1.5602))]
+fn test_reconciliation_price_increase_with_venue_precision(
+    #[case] target_avg_px: Decimal,
+    #[case] target_avg_px_precision: Option<u8>,
+    #[case] expected: Decimal,
+) {
+    let result = calculate_reconciliation_price(
+        dec!(100),
+        Some(dec!(0.56)),
+        dec!(100.02),
+        Some(target_avg_px),
+        AvgPxReconciliation::Match,
+        target_avg_px_precision,
+    );
+
+    assert_eq!(result, Some(expected));
+}
+
+#[rstest]
+#[case::match_replaces_lifecycle(AvgPxReconciliation::Match)]
+#[case::opening_only_keeps_fills(AvgPxReconciliation::OpeningOnly)]
+fn test_adjust_fills_price_only_mismatch_after_flat_crossing(
+    #[case] avg_px_reconciliation: AvgPxReconciliation,
+) {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = vec![
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(1), dec!(40000), 1000),
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(1), dec!(45000), 2000),
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(1), dec!(50000), 3000),
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(1), dec!(60000), 4000),
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(1), dec!(65000), 5000),
+    ];
+
+    let venue_position = VenuePositionSnapshot {
+        avg_px_reconciliation,
+        ..venue_position_snapshot(dec!(1), dec!(60000))
+    };
+
+    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+
+    let expected = match avg_px_reconciliation {
+        AvgPxReconciliation::Match => FillAdjustmentResult::ReplaceCurrentLifecycle {
+            synthetic_fill: FillSnapshot::new(
+                venue_order_id,
+                OrderSide::Buy,
+                dec!(1),
+                dec!(60000),
+                2999,
+            ),
+        },
+        AvgPxReconciliation::OpeningOnly => FillAdjustmentResult::FilterToCurrentLifecycle {
+            last_zero_crossing_ts: 2000,
+            current_lifecycle_fills: fills[2..].to_vec(),
+        },
+    };
+
+    assert_eq!(result, expected);
+}
+
+#[rstest]
+#[case::marked_keeps_window_average(Some(4), dec!(0.56))]
+#[case::unmarked_solves_weighted_average(None, dec!(0.0599))]
+fn test_adjust_fills_partial_window_synthetic_opening_with_venue_precision(
+    #[case] avg_px_precision: Option<u8>,
+    #[case] expected_px: Decimal,
+) {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = vec![FillSnapshot::new(
+        venue_order_id,
+        OrderSide::Buy,
+        dec!(100),
+        dec!(0.56),
+        2000,
+    )];
+
+    let venue_position = VenuePositionSnapshot {
+        avg_px_precision,
+        ..venue_position_snapshot(dec!(100.02), dec!(0.5599))
+    };
+
+    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+
+    assert_eq!(
+        result,
+        FillAdjustmentResult::AddSyntheticOpening {
+            synthetic_fill: FillSnapshot::new(
+                venue_order_id,
+                OrderSide::Buy,
+                dec!(0.02),
+                expected_px,
+                1999,
+            ),
+            existing_fills: fills,
+        }
+    );
+}
+
+#[rstest]
+#[case::match_solves_weighted_average(AvgPxReconciliation::Match, dec!(60000))]
+#[case::opening_only_uses_reported_average(AvgPxReconciliation::OpeningOnly, dec!(70000))]
+fn test_adjust_fills_partial_window_synthetic_opening_price(
+    #[case] avg_px_reconciliation: AvgPxReconciliation,
+    #[case] expected_px: Decimal,
+) {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = vec![FillSnapshot::new(
+        venue_order_id,
+        OrderSide::Buy,
+        dec!(1),
+        dec!(80000),
+        2000,
+    )];
+
+    let venue_position = VenuePositionSnapshot {
+        avg_px_reconciliation,
+        ..venue_position_snapshot(dec!(2), dec!(70000))
+    };
+
+    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+
+    assert_eq!(
+        result,
+        FillAdjustmentResult::AddSyntheticOpening {
+            synthetic_fill: FillSnapshot::new(
+                venue_order_id,
+                OrderSide::Buy,
+                dec!(1),
+                expected_px,
+                1999,
+            ),
+            existing_fills: fills,
+        }
+    );
+}
+
+#[rstest]
 fn test_reconciliation_price_flat_to_long(_instrument: InstrumentAny) {
-    let result = calculate_reconciliation_price(dec!(0), None, dec!(10), Some(dec!(100)));
+    let result = calculate_reconciliation_price(
+        dec!(0),
+        None,
+        dec!(10),
+        Some(dec!(100)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(100));
 }
 
 #[rstest]
 fn test_reconciliation_price_no_target_avg_px(_instrument: InstrumentAny) {
-    let result = calculate_reconciliation_price(dec!(5), Some(dec!(100)), dec!(10), None);
+    let result = calculate_reconciliation_price(
+        dec!(5),
+        Some(dec!(100)),
+        dec!(10),
+        None,
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_none());
 }
 
 #[rstest]
 fn test_reconciliation_price_no_quantity_change(_instrument: InstrumentAny) {
-    let result =
-        calculate_reconciliation_price(dec!(10), Some(dec!(100)), dec!(10), Some(dec!(105)));
+    let result = calculate_reconciliation_price(
+        dec!(10),
+        Some(dec!(100)),
+        dec!(10),
+        Some(dec!(105)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_none());
 }
 
 #[rstest]
 fn test_reconciliation_price_long_position_increase(_instrument: InstrumentAny) {
-    let result =
-        calculate_reconciliation_price(dec!(10), Some(dec!(100)), dec!(15), Some(dec!(102)));
+    let result = calculate_reconciliation_price(
+        dec!(10),
+        Some(dec!(100)),
+        dec!(15),
+        Some(dec!(102)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_some());
     // Expected: (15 * 102 - 10 * 100) / 5 = (1530 - 1000) / 5 = 106
     assert_eq!(result.unwrap(), dec!(106));
@@ -515,7 +789,14 @@ fn test_reconciliation_price_long_position_increase(_instrument: InstrumentAny) 
 
 #[rstest]
 fn test_reconciliation_price_flat_to_short(_instrument: InstrumentAny) {
-    let result = calculate_reconciliation_price(dec!(0), None, dec!(-10), Some(dec!(100)));
+    let result = calculate_reconciliation_price(
+        dec!(0),
+        None,
+        dec!(-10),
+        Some(dec!(100)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(100));
 }
@@ -524,8 +805,14 @@ fn test_reconciliation_price_flat_to_short(_instrument: InstrumentAny) {
 fn test_reconciliation_price_long_to_flat(_instrument: InstrumentAny) {
     // Close long position to flat: 100 @ 1.20 to 0
     // When closing to flat, reconciliation price equals current average price
-    let result =
-        calculate_reconciliation_price(dec!(100), Some(dec!(1.20)), dec!(0), Some(dec!(0)));
+    let result = calculate_reconciliation_price(
+        dec!(100),
+        Some(dec!(1.20)),
+        dec!(0),
+        Some(dec!(0)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.20));
 }
@@ -534,7 +821,14 @@ fn test_reconciliation_price_long_to_flat(_instrument: InstrumentAny) {
 fn test_reconciliation_price_short_to_flat(_instrument: InstrumentAny) {
     // Close short position to flat: -50 @ 2.50 to 0
     // When closing to flat, reconciliation price equals current average price
-    let result = calculate_reconciliation_price(dec!(-50), Some(dec!(2.50)), dec!(0), None);
+    let result = calculate_reconciliation_price(
+        dec!(-50),
+        Some(dec!(2.50)),
+        dec!(0),
+        None,
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(2.50));
 }
@@ -545,8 +839,14 @@ fn test_reconciliation_price_short_position_increase(_instrument: InstrumentAny)
     // (−200 × 1.28) = (−100 × 1.30) + (−100 × reconciliation_px)
     // −256 = −130 + (−100 × reconciliation_px)
     // reconciliation_px = 1.26
-    let result =
-        calculate_reconciliation_price(dec!(-100), Some(dec!(1.30)), dec!(-200), Some(dec!(1.28)));
+    let result = calculate_reconciliation_price(
+        dec!(-100),
+        Some(dec!(1.30)),
+        dec!(-200),
+        Some(dec!(1.28)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.26));
 }
@@ -554,8 +854,14 @@ fn test_reconciliation_price_short_position_increase(_instrument: InstrumentAny)
 #[rstest]
 fn test_reconciliation_price_long_position_decrease(_instrument: InstrumentAny) {
     // Long position decrease: 200 @ 1.20 to 100 @ 1.20
-    let result =
-        calculate_reconciliation_price(dec!(200), Some(dec!(1.20)), dec!(100), Some(dec!(1.20)));
+    let result = calculate_reconciliation_price(
+        dec!(200),
+        Some(dec!(1.20)),
+        dec!(100),
+        Some(dec!(1.20)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.20));
 }
@@ -564,8 +870,14 @@ fn test_reconciliation_price_long_position_decrease(_instrument: InstrumentAny) 
 fn test_reconciliation_price_long_to_short_flip(_instrument: InstrumentAny) {
     // Long to short flip: 100 @ 1.20 to -100 @ 1.25
     // Due to netting simulation resetting value on flip, reconciliation_px = target_avg_px
-    let result =
-        calculate_reconciliation_price(dec!(100), Some(dec!(1.20)), dec!(-100), Some(dec!(1.25)));
+    let result = calculate_reconciliation_price(
+        dec!(100),
+        Some(dec!(1.20)),
+        dec!(-100),
+        Some(dec!(1.25)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.25));
 }
@@ -574,8 +886,14 @@ fn test_reconciliation_price_long_to_short_flip(_instrument: InstrumentAny) {
 fn test_reconciliation_price_short_to_long_flip(_instrument: InstrumentAny) {
     // Short to long flip: -100 @ 1.30 to 100 @ 1.25
     // Due to netting simulation resetting value on flip, reconciliation_px = target_avg_px
-    let result =
-        calculate_reconciliation_price(dec!(-100), Some(dec!(1.30)), dec!(100), Some(dec!(1.25)));
+    let result = calculate_reconciliation_price(
+        dec!(-100),
+        Some(dec!(1.30)),
+        dec!(100),
+        Some(dec!(1.25)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.25));
 }
@@ -591,6 +909,8 @@ fn test_reconciliation_price_complex_scenario(_instrument: InstrumentAny) {
         Some(dec!(1.23456)),
         dec!(250),
         Some(dec!(1.24567)),
+        AvgPxReconciliation::Match,
+        None,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.262335));
@@ -598,8 +918,14 @@ fn test_reconciliation_price_complex_scenario(_instrument: InstrumentAny) {
 
 #[rstest]
 fn test_reconciliation_price_zero_target_avg_px(_instrument: InstrumentAny) {
-    let result =
-        calculate_reconciliation_price(dec!(100), Some(dec!(1.20)), dec!(200), Some(dec!(0)));
+    let result = calculate_reconciliation_price(
+        dec!(100),
+        Some(dec!(1.20)),
+        dec!(200),
+        Some(dec!(0)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_none());
 }
 
@@ -609,8 +935,14 @@ fn test_reconciliation_price_negative_price(_instrument: InstrumentAny) {
     // (200 × 1.00) = (100 × 2.00) + (100 × reconciliation_px)
     // 200 = 200 + (100 × reconciliation_px)
     // reconciliation_px = 0 (should return None as price must be positive)
-    let result =
-        calculate_reconciliation_price(dec!(100), Some(dec!(2.00)), dec!(200), Some(dec!(1.00)));
+    let result = calculate_reconciliation_price(
+        dec!(100),
+        Some(dec!(2.00)),
+        dec!(200),
+        Some(dec!(1.00)),
+        AvgPxReconciliation::Match,
+        None,
+    );
     assert!(result.is_none());
 }
 
@@ -620,9 +952,15 @@ fn test_reconciliation_price_flip_simulation_compatibility() {
     // Start with long position: 100 @ 1.20
     // Target: -100 @ 1.25
     // Calculate reconciliation price
-    let recon_px =
-        calculate_reconciliation_price(dec!(100), Some(dec!(1.20)), dec!(-100), Some(dec!(1.25)))
-            .expect("reconciliation price");
+    let recon_px = calculate_reconciliation_price(
+        dec!(100),
+        Some(dec!(1.20)),
+        dec!(-100),
+        Some(dec!(1.25)),
+        AvgPxReconciliation::Match,
+        None,
+    )
+    .expect("reconciliation price");
 
     assert_eq!(recon_px, dec!(1.25));
 
@@ -643,9 +981,15 @@ fn test_reconciliation_price_accumulation_simulation_compatibility() {
     let venue_order_id = create_test_venue_order_id("ORDER1");
     // Start with long position: 100 @ 1.20
     // Target: 200 @ 1.22
-    let recon_px =
-        calculate_reconciliation_price(dec!(100), Some(dec!(1.20)), dec!(200), Some(dec!(1.22)))
-            .expect("reconciliation price");
+    let recon_px = calculate_reconciliation_price(
+        dec!(100),
+        Some(dec!(1.20)),
+        dec!(200),
+        Some(dec!(1.22)),
+        AvgPxReconciliation::Match,
+        None,
+    )
+    .expect("reconciliation price");
 
     // Simulate accumulation with reconciliation fill
     let fills = vec![
@@ -787,7 +1131,12 @@ fn test_detect_zero_crossings_multiple_flips() {
 fn test_check_position_match_outside_tolerance() {
     // Simulated avg px = 1000/10 = 100, venue = 101
     // Relative diff = 1 / 101 = 0.0099 > 0.0001
-    let result = check_position_match(dec!(10), dec!(1000), dec!(10), dec!(101), dec!(0.0001));
+    let result = check_position_match(
+        dec!(10),
+        dec!(1000),
+        &venue_position_snapshot(dec!(10), dec!(101)),
+        dec!(0.0001),
+    );
     assert!(!result);
 }
 
@@ -795,13 +1144,23 @@ fn test_check_position_match_outside_tolerance() {
 fn test_check_position_match_edge_of_tolerance() {
     // Simulated avg px = 1000/10 = 100, venue = 100.01
     // Relative diff = 0.01 / 100.01 = 0.00009999 < 0.0001
-    let result = check_position_match(dec!(10), dec!(1000), dec!(10), dec!(100.01), dec!(0.0001));
+    let result = check_position_match(
+        dec!(10),
+        dec!(1000),
+        &venue_position_snapshot(dec!(10), dec!(100.01)),
+        dec!(0.0001),
+    );
     assert!(result);
 }
 
 #[rstest]
 fn test_check_position_match_zero_venue_avg_px() {
-    let result = check_position_match(dec!(10), dec!(1000), dec!(10), dec!(0), dec!(0.0001));
+    let result = check_position_match(
+        dec!(10),
+        dec!(1000),
+        &venue_position_snapshot(dec!(10), dec!(0)),
+        dec!(0.0001),
+    );
     assert!(!result); // Should fail because relative diff calculation with zero denominator
 }
 
@@ -811,6 +1170,8 @@ fn test_adjust_fills_no_fills() {
         side: PositionSide::Long,
         qty: dec!(0.02),
         avg_px: dec!(4100.00),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
     let result = adjust_fills_for_partial_window(&[], &venue_position, dec!(0.0001));
     assert!(matches!(result, FillAdjustmentResult::NoAdjustment));
@@ -830,6 +1191,8 @@ fn test_adjust_fills_flat_position() {
         side: PositionSide::Long,
         qty: dec!(0),
         avg_px: dec!(0),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
     assert!(matches!(result, FillAdjustmentResult::NoAdjustment));
@@ -859,6 +1222,8 @@ fn test_adjust_fills_complete_lifecycle_no_adjustment() {
         side: PositionSide::Long,
         qty: dec!(0.02),
         avg_px: dec!(4100.00),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
     assert!(matches!(result, FillAdjustmentResult::NoAdjustment));
@@ -879,6 +1244,8 @@ fn test_adjust_fills_incomplete_lifecycle_adds_synthetic() {
         side: PositionSide::Long,
         qty: dec!(0.04),
         avg_px: dec!(4100.00),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
 
@@ -931,6 +1298,8 @@ fn test_adjust_fills_with_zero_crossings() {
         side: PositionSide::Long,
         qty: dec!(0.03),
         avg_px: dec!(4200.00),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
 
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
@@ -994,41 +1363,38 @@ fn test_adjust_fills_multiple_zero_crossings_mismatch() {
         side: PositionSide::Long,
         qty: dec!(0.05),
         avg_px: dec!(4142.04),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
 
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
 
     // Should replace current lifecycle with synthetic
     match result {
-        FillAdjustmentResult::ReplaceCurrentLifecycle {
-            synthetic_fill,
-            first_venue_order_id,
-        } => {
+        FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill } => {
             assert_eq!(synthetic_fill.qty, dec!(0.05));
             assert_eq!(synthetic_fill.px, dec!(4142.04));
             assert_eq!(synthetic_fill.side, OrderSide::Buy);
-            assert_eq!(first_venue_order_id, venue_order_id4);
+            assert_eq!(synthetic_fill.venue_order_id, venue_order_id4);
         }
         _ => panic!("Expected ReplaceCurrentLifecycle, was {result:?}"),
     }
 }
 
-#[rstest]
-fn test_process_mass_status_without_synthetic_reports_preserves_mismatched_lifecycle(
-    instrument: InstrumentAny,
-) {
+fn create_two_lifecycle_mass_status(
+    instrument: &InstrumentAny,
+    order_reports: Vec<OrderStatusReport>,
+    venue_qty: Quantity,
+    venue_avg_px: Decimal,
+) -> ExecutionMassStatus {
     let account_id = AccountId::from("TEST-001");
     let instrument_id = instrument.id();
-    let venue_order_id1 = VenueOrderId::from("ORDER1");
-    let venue_order_id2 = VenueOrderId::from("ORDER2");
-    let venue_order_id4 = VenueOrderId::from("ORDER4");
-    let venue_order_id5 = VenueOrderId::from("ORDER5");
     let make_fill =
-        |venue_order_id: VenueOrderId, trade_id: &str, side: OrderSide, px: &str, ts_event: u64| {
+        |venue_order_id: &str, trade_id: &str, side: OrderSide, px: &str, ts_event: u64| {
             FillReport::new(
                 account_id,
                 instrument_id,
-                venue_order_id,
+                VenueOrderId::from(venue_order_id),
                 TradeId::from(trade_id),
                 side,
                 Quantity::from("0.05"),
@@ -1051,22 +1417,86 @@ fn test_process_mass_status_without_synthetic_reports_preserves_mismatched_lifec
         Some(UUID4::new()),
     );
     mass_status.add_fill_reports(vec![
-        make_fill(venue_order_id1, "TRADE1", OrderSide::Buy, "4000.00", 1_000),
-        make_fill(venue_order_id2, "TRADE2", OrderSide::Sell, "4050.00", 2_000),
-        make_fill(venue_order_id4, "TRADE4", OrderSide::Buy, "4000.00", 3_000),
-        make_fill(venue_order_id5, "TRADE5", OrderSide::Buy, "4100.00", 4_000),
+        make_fill("ORDER1", "TRADE1", OrderSide::Buy, "4000.00", 1_000),
+        make_fill("ORDER2", "TRADE2", OrderSide::Sell, "4050.00", 2_000),
+        make_fill("ORDER4", "TRADE4", OrderSide::Buy, "4000.00", 3_000),
+        make_fill("ORDER5", "TRADE5", OrderSide::Buy, "4100.00", 4_000),
     ]);
+    mass_status.add_order_reports(order_reports);
     mass_status.add_position_reports(vec![PositionStatusReport::new(
         account_id,
         instrument_id,
         PositionSide::Long,
-        Quantity::from("0.05"),
+        venue_qty,
         UnixNanos::from(5_000),
         UnixNanos::from(5_000),
         None,
         None,
-        Some(dec!(4142.04)),
+        Some(venue_avg_px),
     )]);
+    mass_status
+}
+
+fn create_limit_order_report(
+    instrument: &InstrumentAny,
+    venue_order_id: &str,
+    status: OrderStatus,
+    filled_qty: &str,
+) -> OrderStatusReport {
+    OrderStatusReport::new(
+        AccountId::from("TEST-001"),
+        instrument.id(),
+        Some(ClientOrderId::from(format!("O-{venue_order_id}").as_str())),
+        VenueOrderId::from(venue_order_id),
+        OrderSide::Buy.into(),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        status,
+        Quantity::from("0.05"),
+        Quantity::from(filled_qty),
+        UnixNanos::from(4_500),
+        UnixNanos::from(4_500),
+        UnixNanos::from(4_500),
+        None,
+    )
+}
+
+#[rstest]
+fn test_process_mass_status_without_entry_price_preserves_real_history() {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let original =
+        create_two_lifecycle_mass_status(&instrument, vec![], Quantity::from("0.10"), dec!(4050));
+    let mut report = original.position_reports()[&instrument.id()][0].clone();
+    report.avg_px_open = None;
+
+    let mut mass_status = ExecutionMassStatus::new(
+        original.client_id,
+        original.account_id,
+        original.venue,
+        original.ts_init,
+        None,
+    );
+    mass_status.add_fill_reports(original.fill_reports().into_values().flatten().collect());
+    mass_status.add_position_reports(vec![report]);
+    mass_status.set_report_window(Some(UnixNanos::from(500)), true);
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert_eq!(result.orders, mass_status.order_reports());
+    assert_eq!(result.fills, mass_status.fill_reports());
+    assert!(result.order_only_ids.is_empty());
+}
+
+#[rstest]
+fn test_process_mass_status_without_synthetic_reports_preserves_mismatched_lifecycle(
+    instrument: InstrumentAny,
+) {
+    let mass_status = create_two_lifecycle_mass_status(
+        &instrument,
+        vec![],
+        Quantity::from("0.05"),
+        dec!(4142.04),
+    );
     let raw_fills = mass_status.fill_reports();
 
     let generated =
@@ -1079,17 +1509,151 @@ fn test_process_mass_status_without_synthetic_reports_preserves_mismatched_lifec
     .unwrap();
 
     assert_eq!(generated.orders.len(), 1);
-    assert!(generated.orders.contains_key(&venue_order_id4));
+    let synthetic_id = *generated.orders.first().unwrap().0;
+    assert!(synthetic_id.as_str().starts_with("S-"));
     assert_eq!(generated.fills.len(), 1);
-    assert_eq!(generated.fills[&venue_order_id4].len(), 1);
+    assert_eq!(generated.fills[&synthetic_id].len(), 1);
     assert!(
-        generated.fills[&venue_order_id4][0]
+        generated.fills[&synthetic_id][0]
             .trade_id
             .as_str()
             .starts_with("S-")
     );
     assert!(preserved.orders.is_empty());
     assert_eq!(preserved.fills, raw_fills);
+}
+
+#[rstest]
+#[case::matches(Quantity::from("0.10"), dec!(4050.00), false)]
+#[case::mismatches(Quantity::from("0.05"), dec!(4142.04), true)]
+fn test_process_mass_status_keeps_working_order_for_either_lifecycle_outcome(
+    #[case] venue_qty: Quantity,
+    #[case] venue_avg_px: Decimal,
+    #[case] synthetic: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let working_venue_order_id = VenueOrderId::from("ORDER9");
+    let report = create_limit_order_report(&instrument, "ORDER9", OrderStatus::Accepted, "0.00");
+    let mass_status = create_two_lifecycle_mass_status(
+        &instrument,
+        vec![report.clone()],
+        venue_qty,
+        venue_avg_px,
+    );
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert_eq!(result.orders.get(&working_venue_order_id), Some(&report));
+
+    if synthetic {
+        assert_eq!(result.orders.len(), 2);
+        assert_eq!(result.fills.len(), 1);
+        let (id, fills) = result.fills.first().unwrap();
+        assert!(id.as_str().starts_with("S-"));
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].last_qty, venue_qty);
+        assert_eq!(fills[0].last_px.as_decimal(), venue_avg_px);
+        assert_eq!(result.orders[id].order_status, OrderStatus::Filled);
+    } else {
+        assert_eq!(result.orders.len(), 1);
+        assert_eq!(
+            result.fills.keys().copied().collect::<Vec<_>>(),
+            vec![VenueOrderId::from("ORDER4"), VenueOrderId::from("ORDER5")]
+        );
+    }
+}
+
+#[rstest]
+#[case::accepted(OrderStatus::Accepted, "0.00")]
+#[case::submitted(OrderStatus::Submitted, "0.00")]
+#[case::triggered(OrderStatus::Triggered, "0.00")]
+#[case::pending_update(OrderStatus::PendingUpdate, "0.00")]
+#[case::pending_cancel(OrderStatus::PendingCancel, "0.00")]
+#[case::partially_filled(OrderStatus::PartiallyFilled, "0.05")]
+#[case::accepted_with_filled_qty(OrderStatus::Accepted, "0.05")]
+#[case::canceled(OrderStatus::Canceled, "0.00")]
+#[case::expired(OrderStatus::Expired, "0.00")]
+#[case::rejected(OrderStatus::Rejected, "0.00")]
+#[case::filled(OrderStatus::Filled, "0.05")]
+#[case::voided(OrderStatus::Voided, "0.00")]
+fn test_replace_current_lifecycle_preserves_reported_orders(
+    instrument: InstrumentAny,
+    #[case] status: OrderStatus,
+    #[case] filled_qty: &str,
+) {
+    let venue_order_id = VenueOrderId::from("ORDER9");
+    let report = create_limit_order_report(&instrument, "ORDER9", status, filled_qty);
+    let mass_status = create_two_lifecycle_mass_status(
+        &instrument,
+        vec![report.clone()],
+        Quantity::from("0.05"),
+        dec!(4142.04),
+    );
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert_eq!(result.fills.len(), 1);
+    assert!(
+        result.fills.first().unwrap().1[0]
+            .trade_id
+            .as_str()
+            .starts_with("S-")
+    );
+    assert_eq!(
+        result.orders.get(&venue_order_id),
+        Some(&report),
+        "orders: {:?}",
+        result.orders.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(result.orders.len(), 2);
+}
+
+#[rstest]
+#[case::unfilled(OrderStatus::Accepted, "0.00")]
+#[case::partially_filled(OrderStatus::PartiallyFilled, "0.05")]
+fn test_replace_current_lifecycle_synthetic_report_preserves_first_fill_order(
+    instrument: InstrumentAny,
+    #[case] status: OrderStatus,
+    #[case] filled_qty: &str,
+) {
+    let venue_order_id = VenueOrderId::from("ORDER4");
+    let mass_status = create_two_lifecycle_mass_status(
+        &instrument,
+        vec![create_limit_order_report(
+            &instrument,
+            "ORDER4",
+            status,
+            filled_qty,
+        )],
+        Quantity::from("0.05"),
+        dec!(4142.04),
+    );
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert_eq!(result.orders.len(), 2);
+    assert_eq!(
+        result.orders[&venue_order_id],
+        mass_status.order_reports()[&venue_order_id]
+    );
+    assert_eq!(
+        result.fills[&venue_order_id],
+        mass_status.fill_reports()[&venue_order_id]
+    );
+    assert_eq!(
+        result.order_only_ids.iter().copied().collect::<Vec<_>>(),
+        vec![venue_order_id]
+    );
+    let synthetic = result
+        .orders
+        .values()
+        .find(|order| order.venue_order_id != venue_order_id)
+        .unwrap();
+    assert!(synthetic.venue_order_id.as_str().starts_with("S-"));
+    assert_eq!(synthetic.order_type, OrderType::Market);
+    assert_eq!(synthetic.order_status, OrderStatus::Filled);
+    assert_eq!(synthetic.filled_qty, synthetic.quantity);
+    assert_eq!(synthetic.client_order_id, None);
 }
 
 #[rstest]
@@ -1109,6 +1673,8 @@ fn test_adjust_fills_short_position() {
         side: PositionSide::Short,
         qty: dec!(0.05),
         avg_px: dec!(4100.00),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
 
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
@@ -1144,6 +1710,8 @@ fn test_adjust_fills_timestamp_underflow_protection() {
         side: PositionSide::Long,
         qty: dec!(0.02),
         avg_px: dec!(4100.00),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
 
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
@@ -1172,6 +1740,8 @@ fn test_adjust_fills_with_flip_scenario() {
         side: PositionSide::Short,
         qty: dec!(10),
         avg_px: dec!(105),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
 
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
@@ -1213,9 +1783,15 @@ fn test_detect_zero_crossings_complex_lifecycle() {
 fn test_reconciliation_price_partial_close() {
     let venue_order_id = create_test_venue_order_id("ORDER1");
     // Partial close scenario: 100 @ 1.20 to 50 @ 1.20
-    let recon_px =
-        calculate_reconciliation_price(dec!(100), Some(dec!(1.20)), dec!(50), Some(dec!(1.20)))
-            .expect("reconciliation price");
+    let recon_px = calculate_reconciliation_price(
+        dec!(100),
+        Some(dec!(1.20)),
+        dec!(50),
+        Some(dec!(1.20)),
+        AvgPxReconciliation::Match,
+        None,
+    )
+    .expect("reconciliation price");
 
     // Simulate partial close
     let fills = vec![
@@ -1311,6 +1887,8 @@ fn test_adjust_fills_five_zero_crossings() {
         side: PositionSide::Long,
         qty: dec!(30),
         avg_px: dec!(106),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
 
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
@@ -1349,6 +1927,8 @@ fn test_adjust_fills_alternating_long_short_positions() {
         side: PositionSide::Long,
         qty: dec!(10),
         avg_px: dec!(102),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
 
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
@@ -1380,6 +1960,8 @@ fn test_adjust_fills_with_flat_crossings() {
         side: PositionSide::Long,
         qty: dec!(10),
         avg_px: dec!(98),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
 
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
@@ -1401,7 +1983,7 @@ fn test_adjust_fills_with_flat_crossings() {
 }
 
 #[rstest]
-fn test_replace_current_lifecycle_uses_first_venue_order_id() {
+fn test_replace_current_lifecycle_seeds_synthetic_id_from_first_fill() {
     let order_id_1 = create_test_venue_order_id("ORDER1");
     let order_id_2 = create_test_venue_order_id("ORDER2");
     let order_id_3 = create_test_venue_order_id("ORDER3");
@@ -1420,17 +2002,15 @@ fn test_replace_current_lifecycle_uses_first_venue_order_id() {
         side: PositionSide::Long,
         qty: dec!(15),
         avg_px: dec!(105),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: None,
     };
 
     let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
 
     // Should replace with synthetic fill using first fill's venue_order_id (order_id_2)
     match result {
-        FillAdjustmentResult::ReplaceCurrentLifecycle {
-            synthetic_fill,
-            first_venue_order_id,
-        } => {
-            assert_eq!(first_venue_order_id, order_id_2);
+        FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill } => {
             assert_eq!(synthetic_fill.venue_order_id, order_id_2);
             assert_eq!(synthetic_fill.qty, dec!(15));
             assert_eq!(synthetic_fill.px, dec!(105));
@@ -2849,7 +3429,7 @@ fn test_is_within_single_unit_tolerance_high_precision() {
     ));
 }
 
-fn create_test_order_status_report(
+fn create_test_order_report(
     client_order_id: ClientOrderId,
     venue_order_id: VenueOrderId,
     instrument_id: InstrumentId,
@@ -3048,7 +3628,7 @@ fn test_should_reconciliation_update(
     );
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3102,7 +3682,7 @@ fn test_reconcile_order_report_already_in_sync(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3156,7 +3736,7 @@ fn test_reconcile_order_report_generates_canceled(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3236,7 +3816,7 @@ fn test_reconcile_canceled_forwarded_while_mid_command(
     }
     assert_eq!(order.status(), pending_status);
 
-    let report = create_test_order_status_report(
+    let report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3272,7 +3852,7 @@ fn test_reconcile_canceled_suppressed_for_previously_promoted_venue_order_id(
     assert_eq!(order.venue_order_id(), Some(new_venue_order_id));
     assert_eq!(order.status(), OrderStatus::Accepted);
 
-    let report = create_test_order_status_report(
+    let report = create_test_order_report(
         client_order_id,
         old_venue_order_id,
         instrument.id(),
@@ -3301,7 +3881,7 @@ fn test_reconcile_terminal_replaced_leg_ignores_price_drift(instrument: Instrume
     );
     let canceled = TestOrderEventStubs::canceled(&order, account_id, Some(new_venue_order_id));
     order.apply(canceled).unwrap();
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         old_venue_order_id,
         instrument.id(),
@@ -3337,7 +3917,7 @@ fn test_reconcile_canceled_forwarded_for_current_venue_order_id(instrument: Inst
         account_id,
     );
 
-    let report = create_test_order_status_report(
+    let report = create_test_order_report(
         client_order_id,
         new_venue_order_id,
         instrument.id(),
@@ -3370,7 +3950,7 @@ fn test_reconcile_canceled_forwarded_for_untracked_venue_order_id(instrument: In
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let report = create_test_order_status_report(
+    let report = create_test_order_report(
         client_order_id,
         untracked_venue_order_id,
         instrument.id(),
@@ -3409,7 +3989,7 @@ fn test_generate_reconciliation_order_events_accepts_before_cancel(instrument: I
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let report = create_test_order_status_report(
+    let report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3492,7 +4072,7 @@ fn test_generate_reconciliation_order_events_fills_before_partial_terminal(
         _ => unreachable!(),
     }
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3543,7 +4123,7 @@ fn test_generate_reconciliation_order_events_full_fill_supersedes_terminal_statu
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3593,7 +4173,7 @@ fn test_generate_reconciliation_order_events_accepts_before_fill(instrument: Ins
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3643,7 +4223,7 @@ fn test_generate_reconciliation_order_events_does_not_accept_before_reject(
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3704,7 +4284,7 @@ fn test_reconcile_order_report_generates_expired(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
-    let report = create_test_order_status_report(
+    let report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3744,7 +4324,7 @@ fn test_reconcile_order_report_generates_rejected(instrument: InstrumentAny) {
     );
     order.apply(OrderEventAny::Submitted(submitted)).unwrap();
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3805,7 +4385,7 @@ fn test_reconcile_order_report_generates_updated(instrument: InstrumentAny) {
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
     // Report with changed price - same status, same filled_qty
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -3861,7 +4441,7 @@ fn test_reconcile_order_report_generates_fill_for_qty_mismatch(instrument: Instr
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
 
     // Report shows 50 filled but order has 0
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -4014,7 +4594,7 @@ fn test_create_reconciliation_accepted_no_account_id() {
         .quantity(Quantity::from(100))
         .price(Price::from("1.00000"))
         .build();
-    let report = create_test_order_status_report(
+    let report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -4041,7 +4621,7 @@ fn test_reconcile_order_report_accepted_no_account_id_returns_none() {
         .quantity(Quantity::from(100))
         .price(Price::from("1.00000"))
         .build();
-    let report = create_test_order_status_report(
+    let report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -4205,6 +4785,15 @@ fn test_create_inferred_reconciliation_trade_id_differs_across_instruments() {
     );
 
     assert_ne!(first, second);
+}
+
+#[rstest]
+#[case::venue_trade_id("T-000001")]
+#[case::uuid_v4("2d89666b-1a1e-4a75-b193-4eb3b454c757")]
+fn test_is_inferred_reconciliation_trade_id_format_rejects_other_formats(#[case] value: &str) {
+    let trade_id = TradeId::from(value);
+
+    assert!(!is_inferred_reconciliation_trade_id_format(&trade_id));
 }
 
 #[rstest]
@@ -5639,7 +6228,7 @@ fn test_incremental_fill_zero_cost_incremental_no_panic(instrument: InstrumentAn
         Price::from("0.00000"),
     );
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -5693,21 +6282,31 @@ fn test_is_within_single_unit_tolerance_float_bleed(
 }
 
 #[rstest]
-fn test_status_vs_qty_mismatch_emits_updated(instrument: InstrumentAny) {
-    // Venue has reduced the order quantity (partial cancel) so it reports
-    // Filled with qty=10 while the local cache holds PartiallyFilled with 10
-    // of 20 filled; reconciliation must emit OrderUpdated to shrink the local
-    // quantity to 10 and must not synthesize a duplicate fill since filled_qty
-    // already matches.
+#[case::limit(OrderType::Limit, "20", "10")]
+#[case::market_1(OrderType::Market, "0.00296487", "0.00296475")]
+#[case::market_2(OrderType::Market, "0.00312500", "0.00312458")]
+#[case::market_3(OrderType::Market, "0.00312353", "0.00312344")]
+#[case::market_4(OrderType::Market, "0.00312426", "0.00312422")]
+fn test_status_vs_qty_mismatch_emits_updated(
+    #[case] order_type: OrderType,
+    #[case] requested: &str,
+    #[case] filled: &str,
+) {
+    let mut pair = currency_pair_btcusdt();
+    pair.size_precision = 8;
+    pair.size_increment = Quantity::from("0.00000001");
+    let instrument = InstrumentAny::CurrencyPair(pair);
+
+    // Matching fills require only a quantity correction, never another fill
     let client_order_id = ClientOrderId::from("O-001");
     let venue_order_id = VenueOrderId::from("V-001");
     let account_id = AccountId::from("SIM-001");
 
-    let mut order = OrderTestBuilder::new(OrderType::Limit)
+    let mut order = OrderTestBuilder::new(order_type)
         .instrument_id(instrument.id())
         .client_order_id(client_order_id)
         .side(OrderSide::Buy)
-        .quantity(Quantity::from(20))
+        .quantity(Quantity::from(requested))
         .price(Price::from("1.00000"))
         .build();
 
@@ -5716,21 +6315,21 @@ fn test_status_vs_qty_mismatch_emits_updated(instrument: InstrumentAny) {
         &mut order,
         &instrument,
         TradeId::from("T-001"),
-        Quantity::from(10),
+        Quantity::from(filled),
         Price::from("1.00000"),
     );
     assert_eq!(order.status(), OrderStatus::PartiallyFilled);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
-        OrderType::Limit,
+        order_type,
         OrderStatus::Filled,
-        Quantity::from(10),
-        Quantity::from(10),
+        Quantity::from(filled),
+        Quantity::from(filled),
     );
-    report.price = Some(Price::from("1.00000"));
+    report.price = order.price();
 
     let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
 
@@ -5739,14 +6338,25 @@ fn test_status_vs_qty_mismatch_emits_updated(instrument: InstrumentAny) {
         OrderEventAny::Updated(u) => u,
         other => panic!("expected OrderUpdated, was {other:?}"),
     };
-    assert_eq!(updated.quantity, Quantity::from(10));
+
+    assert_eq!(updated.quantity, Quantity::from(filled));
     assert!(updated.reconciliation);
 
     order.apply(event).unwrap();
-    assert_eq!(order.quantity(), Quantity::from(10));
-    assert_eq!(order.filled_qty(), Quantity::from(10));
+    assert_eq!(order.quantity(), Quantity::from(filled));
+    assert_eq!(order.filled_qty(), Quantity::from(filled));
     assert_eq!(order.status(), OrderStatus::Filled);
-    assert!(order.ts_closed().is_some());
+    assert_eq!(order.leaves_qty(), Quantity::zero(8));
+    assert_eq!(order.ts_closed(), Some(report.ts_last));
+    assert_eq!(
+        reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default()),
+        None
+    );
+    let replayed = OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+    assert_eq!(replayed.status(), OrderStatus::Filled);
+    assert_eq!(replayed.quantity(), Quantity::from(filled));
+    assert_eq!(replayed.filled_qty(), Quantity::from(filled));
+    assert_eq!(replayed.leaves_qty(), Quantity::zero(8));
 }
 
 #[rstest]
@@ -5776,7 +6386,7 @@ fn test_status_vs_qty_mismatch_no_qty_change_returns_none(instrument: Instrument
         Price::from("1.00000"),
     );
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -5861,7 +6471,7 @@ fn test_should_reconciliation_update_rejects_shrink_below_filled(instrument: Ins
         Price::from("1.00000"),
     );
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -5896,7 +6506,7 @@ fn test_reconciliation_updated_strips_trigger_price_for_limit(instrument: Instru
 
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -5946,7 +6556,7 @@ fn test_reconcile_closed_order_within_tolerance_is_noop(instrument: InstrumentAn
     );
     assert!(order.is_closed());
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6013,7 +6623,8 @@ fn test_reconciliation_fill_decrease_carries_terminal_disposition(
             ))
             .unwrap();
     }
-    let mut report = create_test_order_status_report(
+
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6079,7 +6690,7 @@ fn test_reconciliation_fill_void_carries_proportional_commission(instrument: Ins
                 .build(),
         ))
         .unwrap();
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6140,7 +6751,7 @@ fn test_terminal_fill_void_uses_remaining_leaves_after_fill_correction(instrumen
                 .build(),
         ))
         .unwrap();
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6208,7 +6819,7 @@ fn test_terminal_fill_void_survives_unusable_venue_average(instrument: Instrumen
                 .build(),
         ))
         .unwrap();
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6274,7 +6885,7 @@ fn test_standalone_working_report_does_not_void_fill_without_explicit_evidence(
                 .build(),
         ))
         .unwrap();
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6318,7 +6929,7 @@ fn test_continuous_reconciliation_converges_quantity_with_partial_fill(instrumen
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6365,7 +6976,7 @@ fn test_continuous_reconciliation_converges_price_with_partial_fill(instrument: 
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6411,7 +7022,7 @@ fn test_continuous_reconciliation_idempotent_after_drift_recovery(instrument: In
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6463,7 +7074,7 @@ fn test_continuous_reconciliation_amend_before_closing_fill(instrument: Instrume
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6528,7 +7139,7 @@ fn test_continuous_reconciliation_skips_pre_emit_when_local_pending_cancel(
         .unwrap();
     assert_eq!(order.status(), OrderStatus::PendingCancel);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6595,7 +7206,7 @@ fn test_continuous_reconciliation_skips_update_when_local_pending_update(
         .unwrap();
     assert_eq!(order.status(), OrderStatus::PendingUpdate);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6637,7 +7248,7 @@ fn test_continuous_reconciliation_keeps_pending_command_on_stale_accepted_snapsh
         pending_status,
     );
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6687,7 +7298,7 @@ fn test_continuous_reconciliation_does_not_suppress_changed_accepted_snapshot(
         OrderStatus::PendingUpdate,
     );
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         report_venue_order_id,
         instrument.id(),
@@ -6741,7 +7352,7 @@ fn test_continuous_reconciliation_skips_update_for_pending_status(instrument: In
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),
@@ -6782,7 +7393,7 @@ fn test_continuous_reconciliation_detects_drift_on_if_touched_orders(instrument:
         .trigger_price(Price::from("0.99000"))
         .build();
     submit_accept(&mut limit_if_touched, account_id, venue_order_id);
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         ClientOrderId::from("O-LIT"),
         venue_order_id,
         instrument.id(),
@@ -6803,7 +7414,7 @@ fn test_continuous_reconciliation_detects_drift_on_if_touched_orders(instrument:
         .trigger_price(Price::from("0.99000"))
         .build();
     submit_accept(&mut market_if_touched, account_id, venue_order_id);
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         ClientOrderId::from("O-MIT"),
         venue_order_id,
         instrument.id(),
@@ -6835,7 +7446,7 @@ fn test_continuous_reconciliation_converges_quantity_on_working_order(instrument
         .build();
     submit_accept(&mut order, account_id, venue_order_id);
 
-    let mut report = create_test_order_status_report(
+    let mut report = create_test_order_report(
         client_order_id,
         venue_order_id,
         instrument.id(),

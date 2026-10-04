@@ -19,8 +19,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use jiff::Timestamp;
 use nautilus_core::{
-    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, string::secret::SecretString,
-    time::get_atomic_clock_realtime,
+    AtomicTime, UnixNanos, string::secret::SecretString, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
@@ -28,7 +27,9 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method, USER_AGENT},
+    http::{
+        HttpClient, HttpRedirectPolicy, HttpResponse, Method, create_standard_nautilus_headers,
+    },
     ratelimiter::quota::Quota,
     retry::{RetryManager, create_http_retry_manager},
 };
@@ -221,6 +222,7 @@ impl LighterRawHttpClient {
             base_url,
             environment,
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .default_quota(default_quota)
                 .timeout_secs(timeout_secs)
@@ -678,7 +680,7 @@ impl LighterRawHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
+        create_standard_nautilus_headers().into_iter().collect()
     }
 }
 
@@ -1515,7 +1517,7 @@ impl LighterHttpClient {
             .collect()
     }
 
-    fn market_index(&self, instrument: &InstrumentAny) -> LighterHttpResult<i16> {
+    fn market_index(&self, instrument: &InstrumentAny) -> LighterHttpResult<i64> {
         self.market_registry
             .market_index(&instrument.id())
             .ok_or_else(|| {
@@ -1540,9 +1542,26 @@ fn venue_error(code: i32, message: Option<&str>, default_message: &str) -> Light
 
 #[cfg(test)]
 mod tests {
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = LighterRawHttpClient::new(LighterEnvironment::Testnet, None, 3, None)
+            .unwrap()
+            .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     #[case(ENDPOINT_TRADES, "lighter:trades")]

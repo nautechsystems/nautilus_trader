@@ -56,9 +56,12 @@
 #![allow(clippy::clone_on_copy)]
 
 pub mod backend;
+pub mod catalog;
+pub mod common;
 pub mod config;
-pub mod parquet;
+pub mod errors;
 pub mod test_data;
+pub mod writer;
 
 #[cfg(feature = "python")]
 pub mod python;

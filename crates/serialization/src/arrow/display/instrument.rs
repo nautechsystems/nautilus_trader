@@ -26,7 +26,7 @@
 //! `BettingInstrument::market_id`, `BinaryOption::outcome`,
 //! `FuturesSpread::strategy_type`) is intentionally not emitted. Consumers
 //! that need those fields should encode the concrete variant through the
-//! FixedSizeBinary encoders in the parent [`crate::arrow`] module.
+//! open storage encoders in the parent [`crate::arrow`] module.
 
 use std::sync::Arc;
 
@@ -45,6 +45,7 @@ use super::{
     bool_field, float64_field, money_to_f64, price_to_f64, quantity_to_f64, timestamp_field,
     uint8_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`InstrumentAny`].
 #[must_use]
@@ -85,8 +86,6 @@ pub fn instrument_schema() -> Schema {
         float64_field("min_price", true),
         float64_field("margin_init", false),
         float64_field("margin_maint", false),
-        float64_field("maker_fee", false),
-        float64_field("taker_fee", false),
         timestamp_field("ts_event", false),
         timestamp_field("ts_init", false),
     ])
@@ -120,7 +119,7 @@ fn instrument_type_name(instrument: &InstrumentAny) -> &'static str {
 ///
 /// Emits a single schema built from the common [`Instrument`] trait surface.
 /// `Utf8` columns carry identifiers and enum names, `Float64` columns carry
-/// prices/quantities/fees, `Timestamp(Nanosecond)` columns carry activation,
+/// prices and quantities, `Timestamp(Nanosecond)` columns carry activation,
 /// expiration, and bookkeeping timestamps, and `Boolean` columns carry
 /// `is_inverse`/`is_quanto`. Trait accessors that are not applicable to a
 /// row (e.g. `strike_price` on a spot pair) emit as nulls, so mixed-type
@@ -148,8 +147,10 @@ pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowEr
     let mut option_kind = StringBuilder::new();
     let mut exchange = StringBuilder::new();
     let mut strike_price = Float64Builder::with_capacity(data.len());
-    let mut activation_ns = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut expiration_ns = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut activation_ns =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut expiration_ns =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
     let mut is_inverse = BooleanBuilder::with_capacity(data.len());
     let mut is_quanto = BooleanBuilder::with_capacity(data.len());
     let mut price_precision = UInt8Builder::with_capacity(data.len());
@@ -168,10 +169,10 @@ pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowEr
     let mut min_price = Float64Builder::with_capacity(data.len());
     let mut margin_init = Float64Builder::with_capacity(data.len());
     let mut margin_maint = Float64Builder::with_capacity(data.len());
-    let mut maker_fee = Float64Builder::with_capacity(data.len());
-    let mut taker_fee = Float64Builder::with_capacity(data.len());
-    let mut ts_event = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for instrument in data {
         instrument_id.append_value(instrument.id().to_string());
@@ -219,8 +220,6 @@ pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowEr
         min_price.append_option(instrument.min_price().map(|v| price_to_f64(&v)));
         margin_init.append_value(instrument.margin_init().to_f64().unwrap_or(f64::NAN));
         margin_maint.append_value(instrument.margin_maint().to_f64().unwrap_or(f64::NAN));
-        maker_fee.append_value(instrument.maker_fee().to_f64().unwrap_or(f64::NAN));
-        taker_fee.append_value(instrument.taker_fee().to_f64().unwrap_or(f64::NAN));
         ts_event.append_value(unix_nanos_to_i64(instrument.ts_event().as_u64()));
         ts_init.append_value(unix_nanos_to_i64(instrument.ts_init().as_u64()));
     }
@@ -263,8 +262,6 @@ pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowEr
             Arc::new(min_price.finish()),
             Arc::new(margin_init.finish()),
             Arc::new(margin_maint.finish()),
-            Arc::new(maker_fee.finish()),
-            Arc::new(taker_fee.finish()),
             Arc::new(ts_event.finish()),
             Arc::new(ts_init.finish()),
         ],
@@ -281,11 +278,11 @@ mod tests {
         instruments::{
             InstrumentAny,
             stubs::{
-                betting, binary_option, cfd_gold, commodity_gold, crypto_future_btcusdt,
-                crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt,
-                equity_aapl, futures_contract_es, futures_spread_es, index_instrument_spx,
-                option_contract_appl, option_spread, perpetual_contract_eurusd,
-                tokenized_asset_aaplx, xbtusd_bitmex,
+                betting, binary_option, btcusd_bybit, cfd_gold, commodity_gold,
+                crypto_future_btcusdt, crypto_option_btc_deribit, crypto_perpetual_ethusdt,
+                currency_pair_btcusdt, equity_aapl, futures_contract_es, futures_spread_es,
+                index_instrument_spx, option_contract_appl, option_spread,
+                perpetual_contract_eurusd, tokenized_asset_aaplx,
             },
         },
         types::{Price, Quantity},
@@ -364,7 +361,7 @@ mod tests {
         let batch = encode_instruments(&[]).unwrap();
         let schema = batch.schema();
         let fields = schema.fields();
-        assert_eq!(fields.len(), 39);
+        assert_eq!(fields.len(), 37);
         assert_eq!(fields[0].name(), "instrument_id");
         assert_eq!(fields[0].data_type(), &DataType::Utf8);
         assert_eq!(fields[14].name(), "strike_price");
@@ -375,11 +372,10 @@ mod tests {
         assert_eq!(fields[19].data_type(), &DataType::UInt8);
         assert_eq!(fields[33].name(), "margin_init");
         assert_eq!(fields[33].data_type(), &DataType::Float64);
-        assert_eq!(fields[36].name(), "taker_fee");
-        assert_eq!(fields[37].name(), "ts_event");
+        assert_eq!(fields[35].name(), "ts_event");
         assert_eq!(
-            fields[37].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            fields[35].data_type(),
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
     }
 
@@ -387,7 +383,7 @@ mod tests {
     fn test_encode_instruments_empty() {
         let batch = encode_instruments(&[]).unwrap();
         assert_eq!(batch.num_rows(), 0);
-        assert_eq!(batch.schema().fields().len(), 39);
+        assert_eq!(batch.schema().fields().len(), 37);
     }
 
     #[rstest]
@@ -512,7 +508,7 @@ mod tests {
 
     #[rstest]
     fn test_encode_instruments_inverse_perpetual() {
-        let instruments = vec![InstrumentAny::CryptoPerpetual(xbtusd_bitmex())];
+        let instruments = vec![InstrumentAny::CryptoPerpetual(btcusd_bybit())];
         let batch = encode_instruments(&instruments).unwrap();
 
         let instrument_type_col = batch
@@ -569,20 +565,7 @@ mod tests {
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap();
-        let maker_fee_col = batch
-            .column(35)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-        let taker_fee_col = batch
-            .column(36)
-            .as_any()
-            .downcast_ref::<Float64Array>()
-            .unwrap();
-
         assert!((margin_init_col.value(0) - 0.01).abs() < 1e-9);
         assert!((margin_maint_col.value(0) - 0.0035).abs() < 1e-9);
-        assert!((maker_fee_col.value(0) - (-0.00025)).abs() < 1e-9);
-        assert!((taker_fee_col.value(0) - 0.00075).abs() < 1e-9);
     }
 }

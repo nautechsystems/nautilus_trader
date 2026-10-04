@@ -19,7 +19,7 @@ use std::{cell::RefCell, hint::black_box, rc::Rc};
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::{
-    clock::TestClock,
+    clock::VirtualClock,
     throttler::{RateLimit, Throttler},
 };
 use nautilus_core::DurationNanos;
@@ -37,7 +37,7 @@ fn consume_message(msg: u64) {
 }
 
 fn make_throttler(limit: usize, buffered: bool, actor_id: &str) -> BenchThrottler {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     make_throttler_with_clock(limit, buffered, actor_id, clock)
 }
 
@@ -45,7 +45,7 @@ fn make_throttler_with_clock(
     limit: usize,
     buffered: bool,
     actor_id: &str,
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
 ) -> BenchThrottler {
     let output_drop = (!buffered).then_some(consume_message as fn(u64));
 
@@ -66,7 +66,7 @@ fn fill_window(throttler: &mut BenchThrottler, limit: usize) {
 }
 
 fn make_full_slid_window(limit: usize) -> BenchThrottler {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let mut throttler =
         make_throttler_with_clock(limit, true, "throttler-bench-full-slid", Rc::clone(&clock));
 

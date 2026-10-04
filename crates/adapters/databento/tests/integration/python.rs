@@ -19,7 +19,7 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use indexmap::IndexMap;
 use nautilus_common::{
-    cache::Cache, clock::TestClock, live::runner::replace_data_event_sender, messages::DataEvent,
+    cache::Cache, clock::VirtualClock, live::runner::replace_data_event_sender, messages::DataEvent,
 };
 use nautilus_databento::{
     common::DATABENTO,
@@ -149,7 +149,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         .downcast_ref::<DatabentoDataClientConfig>()
         .expect("data config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let client = extracted_factory
         .create(
             "DATABENTO-DATA-EXTRACTED",

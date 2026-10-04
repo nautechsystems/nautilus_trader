@@ -54,3 +54,7 @@ reason = "quick-xml DoS via DataFusion-aligned object_store 0.13.2"
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0195"
 reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0306"
+reason = "faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller"

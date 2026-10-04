@@ -29,17 +29,17 @@ use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
             BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
             InstrumentsResponse, RequestBars, RequestBookDepth, RequestBookSnapshot,
             RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
             SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
             SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstrumentStatus, UnsubscribeMarkPrices, UnsubscribeQuotes,
             UnsubscribeTrades,
@@ -112,7 +112,7 @@ pub struct LighterDataClient {
     ws_disconnect_handle: TaskSlot<Result<(), LighterWsError>>,
     ws_handler_retained: Arc<RetainedTaskSlot>,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_statuses: Arc<DashMap<InstrumentId, LighterMarketStatus>>,
     instrument_status_subscriptions: Arc<DashSet<InstrumentId>>,
@@ -226,6 +226,7 @@ impl LighterDataClient {
             registry,
             config.transport_backend,
             config.ws_timeout_secs,
+            Duration::from_secs(config.book_snapshot_timeout_secs),
             config
                 .proxy_url
                 .as_ref()
@@ -353,7 +354,7 @@ impl LighterDataClient {
             .map(|(instrument, _)| instrument.clone())
             .collect();
 
-        let mut ws_cache: Vec<(i16, InstrumentAny)> = Vec::with_capacity(instruments.len());
+        let mut ws_cache: Vec<(i64, InstrumentAny)> = Vec::with_capacity(instruments.len());
         self.instruments.rcu(|m| {
             for instrument in &instruments {
                 m.insert(instrument.id(), instrument.clone());
@@ -469,11 +470,11 @@ impl LighterDataClient {
                                     log::error!("Failed to send order book deltas: {e}");
                                 }
                             }
-                            Some(NautilusWsMessage::Depth10(depth)) => {
+                            Some(NautilusWsMessage::Depth(depth)) => {
                                 if let Err(e) =
-                                    data_sender.send(DataEvent::Data(Data::BookDepth10(depth)))
+                                    data_sender.send(DataEvent::Data(Data::BookDepth(depth)))
                                 {
-                                    log::error!("Failed to send order book depth10: {e}");
+                                    log::error!("Failed to send order book depth: {e}");
                                 }
                             }
                             Some(NautilusWsMessage::Bar(bar)) => {
@@ -504,6 +505,7 @@ impl LighterDataClient {
                                 | NautilusWsMessage::AccountState(_)
                                 | NautilusWsMessage::SendTxAck { .. }
                                 | NautilusWsMessage::SendTxRejected { .. }
+                                | NautilusWsMessage::SendTxBatchResult { .. }
                                 | NautilusWsMessage::AccountStreamFirstFrame(_),
                             ) => {}
                             Some(NautilusWsMessage::Reconnected { .. }) => {
@@ -582,7 +584,7 @@ impl LighterDataClient {
                                     }
                                 });
 
-                                let ws_cache: Vec<(i16, InstrumentAny)> = items
+                                let ws_cache: Vec<(i64, InstrumentAny)> = items
                                     .iter()
                                     .filter_map(|(instrument, _)| {
                                         registry
@@ -864,7 +866,7 @@ fn rollback_market_stats_subscription(
 }
 
 fn emit_lighter_instrument_status_if_subscribed(
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     subscriptions: &DashSet<InstrumentId>,
     instrument_id: InstrumentId,
     status: LighterMarketStatus,
@@ -877,7 +879,7 @@ fn emit_lighter_instrument_status_if_subscribed(
 }
 
 fn emit_lighter_instrument_status(
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     instrument_id: InstrumentId,
     status: LighterMarketStatus,
     ts_event: UnixNanos,
@@ -1160,20 +1162,17 @@ impl DataClient for LighterDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, subscription: SubscribeBookDepth10) -> anyhow::Result<()> {
-        log::debug!(
-            "Subscribing to book depth10: {}",
-            subscription.instrument_id
-        );
+    fn subscribe_book_depth(&mut self, subscription: SubscribeBookDepth) -> anyhow::Result<()> {
+        log::debug!("Subscribing to book depth: {}", subscription.instrument_id);
 
-        validate_book_depth10_subscription(subscription.book_type)?;
+        validate_book_depth_subscription(subscription.book_type)?;
 
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
         self.spawn_task(async move {
-            if let Err(e) = ws.subscribe_book_depth10(instrument_id).await {
-                log::error!("Failed to subscribe to Lighter book depth10: {e:?}");
+            if let Err(e) = ws.subscribe_book_depth(instrument_id).await {
+                log::error!("Failed to subscribe to Lighter book depth: {e:?}");
             }
         });
 
@@ -1296,12 +1295,12 @@ impl DataClient for LighterDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depth10(
+    fn unsubscribe_book_depth(
         &mut self,
-        unsubscription: &UnsubscribeBookDepth10,
+        unsubscription: &UnsubscribeBookDepth,
     ) -> anyhow::Result<()> {
         log::debug!(
-            "Unsubscribing from book depth10: {}",
+            "Unsubscribing from book depth: {}",
             unsubscription.instrument_id
         );
 
@@ -1309,8 +1308,8 @@ impl DataClient for LighterDataClient {
         let instrument_id = unsubscription.instrument_id;
 
         self.spawn_task(async move {
-            if let Err(e) = ws.unsubscribe_book_depth10(instrument_id).await {
-                log::error!("Failed to unsubscribe from Lighter book depth10: {e:?}");
+            if let Err(e) = ws.unsubscribe_book_depth(instrument_id).await {
+                log::error!("Failed to unsubscribe from Lighter book depth: {e:?}");
             }
         });
 
@@ -1463,7 +1462,7 @@ impl DataClient for LighterDataClient {
                         }
                     });
 
-                    let ws_cache: Vec<(i16, InstrumentAny)> = instruments
+                    let ws_cache: Vec<(i64, InstrumentAny)> = instruments
                         .iter()
                         .filter_map(|i| registry.market_index(&i.id()).map(|idx| (idx, i.clone())))
                         .collect();
@@ -1807,7 +1806,7 @@ impl DataClient for LighterDataClient {
     fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
         anyhow::bail!(
             "Lighter does not support historical order book depth requests for {}; \
-             use request_book_snapshot for an L2 snapshot or subscribe_book_depth10 for live depth10",
+             use request_book_snapshot for an L2 snapshot or subscribe_book_depth for live depth",
             request.instrument_id,
         )
     }
@@ -1838,8 +1837,8 @@ fn validate_book_deltas_subscription(book_type: BookType) -> anyhow::Result<()> 
     validate_l2_mbp_book_type(book_type, "deltas")
 }
 
-fn validate_book_depth10_subscription(book_type: BookType) -> anyhow::Result<()> {
-    validate_l2_mbp_book_type(book_type, "depth10")
+fn validate_book_depth_subscription(book_type: BookType) -> anyhow::Result<()> {
+    validate_l2_mbp_book_type(book_type, "depth")
 }
 
 fn validate_l2_mbp_book_type(book_type: BookType, label: &str) -> anyhow::Result<()> {
@@ -1966,18 +1965,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_book_depth10_accepts_l2_mbp() {
-        assert!(validate_book_depth10_subscription(BookType::L2_MBP).is_ok());
+    fn test_validate_book_depth_accepts_l2_mbp() {
+        assert!(validate_book_depth_subscription(BookType::L2_MBP).is_ok());
     }
 
     #[rstest]
     #[case(BookType::L1_MBP)]
     #[case(BookType::L3_MBO)]
-    fn test_validate_book_depth10_rejects_other_book_types(#[case] book_type: BookType) {
-        let err = validate_book_depth10_subscription(book_type).unwrap_err();
+    fn test_validate_book_depth_rejects_other_book_types(#[case] book_type: BookType) {
+        let err = validate_book_depth_subscription(book_type).unwrap_err();
         assert!(
-            err.to_string().contains("depth10"),
-            "expected error to cite depth10, was: {err}",
+            err.to_string().contains("depth"),
+            "expected error to cite depth, was: {err}",
         );
     }
 
@@ -2243,7 +2242,7 @@ mod tests {
         );
 
         assert!(emit_market_stats_ws_message(
-            &sender,
+            &sender.clone().into(),
             &subscriptions,
             &NautilusWsMessage::MarkPrice(MarkPriceUpdate::new(
                 instrument_id,
@@ -2253,7 +2252,7 @@ mod tests {
             )),
         ));
         assert!(emit_market_stats_ws_message(
-            &sender,
+            &sender.clone().into(),
             &subscriptions,
             &NautilusWsMessage::IndexPrice(IndexPriceUpdate::new(
                 instrument_id,
@@ -2263,7 +2262,7 @@ mod tests {
             )),
         ));
         assert!(emit_market_stats_ws_message(
-            &sender,
+            &sender.clone().into(),
             &subscriptions,
             &NautilusWsMessage::FundingRate(FundingRateUpdate::new(
                 instrument_id,
@@ -2300,7 +2299,7 @@ mod tests {
         }
 
         assert!(!emit_market_stats_ws_message(
-            &sender,
+            &sender.into(),
             &subscriptions,
             &NautilusWsMessage::MarkPrice(MarkPriceUpdate::new(
                 other_instrument_id,
@@ -2322,6 +2321,25 @@ mod tests {
         assert!(matches!(
             channel,
             LighterWsChannel::SpotMarketStats(LighterMarketSelection::Market(2048)),
+        ));
+    }
+
+    #[rstest]
+    fn test_index_market_stats_channel_routes_widened_ids_by_instrument_type() {
+        let client = create_data_client_for_test();
+        let perp_id = cache_test_instrument(&client, 40_000, "ETH", LighterProductType::Perp);
+        let spot_id = cache_test_instrument(&client, 50_000, "ETH", LighterProductType::Spot);
+
+        let perp_channel = client.index_market_stats_channel(perp_id).unwrap();
+        let spot_channel = client.index_market_stats_channel(spot_id).unwrap();
+
+        assert!(matches!(
+            perp_channel,
+            LighterWsChannel::MarketStats(LighterMarketSelection::Market(40_000)),
+        ));
+        assert!(matches!(
+            spot_channel,
+            LighterWsChannel::SpotMarketStats(LighterMarketSelection::Market(50_000)),
         ));
     }
 
@@ -2471,10 +2489,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_subscribe_book_depth10_rejects_unsupported_book_type() {
+    fn test_subscribe_book_depth_rejects_unsupported_book_type() {
         let mut client = create_data_client_for_test();
         let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), *LIGHTER_VENUE);
-        let subscription = SubscribeBookDepth10::new(
+        let subscription = SubscribeBookDepth::new(
             instrument_id,
             BookType::L1_MBP,
             Some(ClientId::new("LIGHTER")),
@@ -2487,7 +2505,7 @@ mod tests {
             None,
         );
 
-        let err = DataClient::subscribe_book_depth10(&mut client, subscription).unwrap_err();
+        let err = DataClient::subscribe_book_depth(&mut client, subscription).unwrap_err();
 
         assert!(err.to_string().contains("L2_MBP"));
     }
@@ -3192,7 +3210,7 @@ mod tests {
 
     fn cache_test_instrument(
         client: &LighterDataClient,
-        market_index: i16,
+        market_index: i64,
         venue_symbol: &str,
         product_type: LighterProductType,
     ) -> InstrumentId {

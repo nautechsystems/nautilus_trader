@@ -22,6 +22,7 @@ from . import serialization
 from . import testkit
 from . import trading
 
+__version__: str
 __all__ = [
     "adapters",
     "analysis",

@@ -42,6 +42,7 @@ pub mod bridge;
 use std::{
     collections::HashMap,
     env,
+    io::{self, Write},
     str::FromStr,
     sync::{
         OnceLock,
@@ -92,7 +93,9 @@ pub fn logging_is_initialized() -> bool {
 /// kernel initialization.
 ///
 /// Returns `true` if logging is available (either already initialized or
-/// successfully lazy-initialized), `false` otherwise.
+/// successfully lazy-initialized), `false` otherwise. If `NAUTILUS_LOG` enables file
+/// logging and the log file cannot be opened, the error is reported on stderr and
+/// logging continues to the console only.
 pub fn ensure_logging_initialized() -> bool {
     if crate::logging::logger::is_running() {
         return true;
@@ -104,13 +107,39 @@ pub fn ensure_logging_initialized() -> bool {
             .and_then(|spec| LoggerConfig::from_spec(&spec).ok())
             .unwrap_or_default();
 
-        Logger::init_with_config(
+        let file_logging = config.fileout_level != LevelFilter::Off;
+        let result = Logger::init_with_config(
             TraderId::default(),
             UUID4::default(),
-            config,
+            config.clone(),
             FileWriterConfig::default(),
-        )
-        .ok()
+        );
+
+        // Callers ignore the return value, so keep console logging rather than run with no logger
+        let result = match result {
+            Err(e) if file_logging => {
+                let _ = writeln!(io::stderr(), "Continuing without file logging: {e:#}");
+
+                let console_config = LoggerConfig {
+                    fileout_level: LevelFilter::Off,
+                    ..config
+                };
+
+                Logger::init_with_config(
+                    TraderId::default(),
+                    UUID4::default(),
+                    console_config,
+                    FileWriterConfig::default(),
+                )
+            }
+            result => result,
+        };
+
+        result
+            .inspect_err(|e| {
+                let _ = writeln!(io::stderr(), "Failed to initialize logging: {e:#}");
+            })
+            .ok()
     });
 
     crate::logging::logger::is_running()

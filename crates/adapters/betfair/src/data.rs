@@ -17,7 +17,7 @@
 
 use std::{
     sync::{
-        Arc,
+        Arc, OnceLock, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -27,7 +27,7 @@ use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -40,16 +40,20 @@ use nautilus_common::{
     providers::InstrumentProvider,
 };
 use nautilus_core::{
-    AtomicMap, Params,
+    AtomicMap, Params, UnixNanos,
     string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
     SocketControl,
-    task::{TaskGroup, TaskGroupGuard},
+    book::snapshot::SnapshotGate,
+    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
 };
 use nautilus_model::{
-    data::{CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas, TradeTick},
+    data::{
+        CustomData, CustomDataTrait, Data, DataType, OrderBookDelta, OrderBookDeltas, TradeTick,
+    },
+    enums::RecordFlag,
     identifiers::{ClientId, InstrumentId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money},
@@ -58,10 +62,15 @@ use parking_lot::Mutex;
 use rust_decimal::Decimal;
 
 use crate::{
+    book::{
+        BookSequenceOutcome,
+        recovery::{spawn_subscription_task, start_recovery},
+        sync::BookSyncTracker,
+    },
     common::{
         consts::{BETFAIR_RACE_STREAM_HOST, BETFAIR_VENUE},
         credential::BetfairCredential,
-        enums::{MarketDataFilterField, MarketStatus, SegmentType},
+        enums::{ChangeType, MarketDataFilterField, MarketStatus, SegmentType},
         parse::{
             extract_market_id, make_instrument_id, parse_betfair_price, parse_betfair_quantity,
             parse_market_definition, parse_millis_timestamp,
@@ -78,7 +87,8 @@ use crate::{
             StreamMessageHandler,
         },
         config::BetfairStreamConfig,
-        messages::{MarketDataFilter, StreamMarketFilter, StreamMessage},
+        error::BetfairStreamError,
+        messages::{MarketChange, MarketDataFilter, StreamMarketFilter, StreamMessage},
         parse::{
             make_trade_tick, parse_betfair_starting_prices, parse_betfair_ticker,
             parse_bsp_book_deltas, parse_cricket_match, parse_instrument_closes,
@@ -109,9 +119,10 @@ pub struct BetfairDataClient {
     config: BetfairDataClientConfig,
     currency: Currency,
     is_connected: AtomicBool,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     subscribed_market_ids: AHashSet<String>,
+    book_sync: BookSyncTracker,
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     stream_shutdowns: Arc<Mutex<Vec<BetfairStreamShutdown>>>,
@@ -201,19 +212,11 @@ impl BetfairDataClient {
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             subscribed_market_ids: AHashSet::new(),
+            book_sync: BookSyncTracker::default(),
             session_tasks,
             command_tasks,
             stream_shutdowns: Arc::new(Mutex::new(Vec::new())),
             shutdown_errors: Vec::new(),
-        }
-    }
-
-    fn spawn_command<F>(&self, future: F)
-    where
-        F: std::future::Future<Output = ()> + Send + 'static,
-    {
-        if let Err(e) = self.command_tasks.spawn(future) {
-            log::warn!("Skipping Betfair data command after shutdown began: {e}");
         }
     }
 
@@ -298,12 +301,17 @@ impl BetfairDataClient {
         }
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn create_stream_handler(
-        data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: EventSender<DataEvent>,
         instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         currency: Currency,
         min_notional: Option<Money>,
         reconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
+        book_sync: BookSyncTracker,
+        stream_client: Arc<OnceLock<Weak<BetfairStreamClient>>>,
+        snapshot_timeout: Duration,
+        tasks: TaskSpawner,
         clock: &'static AtomicTime,
     ) -> StreamMessageHandler {
         // Track cumulative traded volumes per (instrument_id, price) to compute
@@ -319,6 +327,14 @@ impl BetfairDataClient {
                 StreamMessage::MarketChange(mcm) => {
                     if mcm.is_heartbeat() {
                         return;
+                    }
+
+                    // A new image replaces every subscribed market, so each book awaits its own
+                    // image and no recovery waits on an earlier image request
+                    if mcm.ct == Some(ChangeType::SubImage)
+                        && matches!(mcm.segment_type, None | Some(SegmentType::SegStart))
+                    {
+                        book_sync.begin_image();
                     }
 
                     let sequence_complete = mcm
@@ -406,6 +422,20 @@ impl BetfairDataClient {
                             }
                         }
 
+                        let accepted_books = accept_market_change(
+                            mc,
+                            is_snapshot,
+                            mcm.pt,
+                            ts_event,
+                            ts_init,
+                            &book_sync,
+                            &stream_client,
+                            snapshot_timeout,
+                            &tasks,
+                        );
+                        let accepted = accepted_books.is_some();
+                        let mut runner_books = accepted_books.unwrap_or_default().into_iter();
+
                         // Non-snapshot deltas and BSP deltas are buffered and flushed after
                         // trades/tickers to mirror the Python `market_change_to_updates`
                         // ordering (book deltas first, then BSP). Snapshots go inline.
@@ -417,31 +447,13 @@ impl BetfairDataClient {
                                 let handicap = rc.hc.unwrap_or(Decimal::ZERO);
                                 let instrument_id = make_instrument_id(&mc.id, rc.id, handicap);
 
-                                match parse_runner_book_deltas(
-                                    instrument_id,
-                                    rc,
-                                    is_snapshot,
-                                    mcm.pt,
-                                    ts_event,
-                                    ts_init,
-                                ) {
-                                    Ok(Some(deltas)) => {
-                                        if is_snapshot {
-                                            if let Err(e) = data_sender.send(DataEvent::Data(
-                                                Data::BookDeltas(Box::new(deltas)),
-                                            )) {
-                                                log::warn!("Failed to send book deltas: {e}");
-                                            }
-                                        } else {
-                                            buffered_deltas.push(deltas);
-                                        }
-                                    }
-                                    Ok(None) => {}
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Failed to parse book deltas for {instrument_id}: {e}"
-                                        );
-                                    }
+                                if let Some(deltas) = runner_books.next().flatten() {
+                                    route_runner_book(
+                                        deltas,
+                                        is_snapshot,
+                                        &data_sender,
+                                        &mut buffered_deltas,
+                                    );
                                 }
 
                                 if let Some(trades) = &rc.trd {
@@ -525,12 +537,18 @@ impl BetfairDataClient {
                             }
                         }
 
+                        if accepted && is_snapshot {
+                            send_omitted_runner_snapshots(
+                                mc,
+                                mcm.pt,
+                                ts_event,
+                                ts_init,
+                                &data_sender,
+                            );
+                        }
+
                         for deltas in buffered_deltas {
-                            if let Err(e) = data_sender
-                                .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
-                            {
-                                log::warn!("Failed to send book deltas: {e}");
-                            }
+                            send_book_deltas(&data_sender, deltas);
                         }
 
                         for custom in buffered_bsp_customs {
@@ -546,6 +564,9 @@ impl BetfairDataClient {
                             traded_volumes
                                 .lock()
                                 .retain(|k, _| !k.0.symbol.as_str().starts_with(&prefix));
+
+                            // A closed market streams no further book changes or images
+                            book_sync.remove(&mc.id);
                         }
                     }
 
@@ -560,6 +581,7 @@ impl BetfairDataClient {
                 StreamMessage::Connection(_) => {
                     if has_initial_connection.swap(true, Ordering::SeqCst) {
                         log::info!("Betfair data stream reconnected");
+                        book_sync.reset_on_reconnect();
                         let _ = reconnect_tx.send(());
                     } else {
                         log::debug!("Betfair data stream connected");
@@ -703,6 +725,7 @@ impl DataClient for BetfairDataClient {
 
         self.provider.store_mut().clear();
         self.subscribed_market_ids.clear();
+        self.book_sync.clear();
 
         self.instruments.store(AHashMap::new());
         Ok(())
@@ -780,6 +803,11 @@ impl DataClient for BetfairDataClient {
             .ok_or_else(|| anyhow::anyhow!("No session token after login"))?;
 
         let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+        let book_tasks = self
+            .command_tasks
+            .spawner()
+            .map_err(|e| anyhow::anyhow!("Betfair data command task admission is closed: {e}"))?;
+        let book_stream_client = Arc::new(OnceLock::new());
 
         let handler = Self::create_stream_handler(
             self.data_sender.clone(),
@@ -787,6 +815,10 @@ impl DataClient for BetfairDataClient {
             self.currency,
             self.provider.min_notional(),
             reconnect_tx.clone(),
+            self.book_sync.clone(),
+            Arc::clone(&book_stream_client),
+            Duration::from_secs(self.config.book_snapshot_timeout_secs),
+            book_tasks.clone(),
             self.clock,
         );
 
@@ -803,6 +835,8 @@ impl DataClient for BetfairDataClient {
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let stream_client = Arc::new(stream_client);
+        let _ = book_stream_client.set(Arc::downgrade(&stream_client));
+
         if let Some(control) = &self.socket_control {
             let reconnect_stream = Arc::clone(&stream_client);
             control.register(move || reconnect_stream.request_reconnect_outcome());
@@ -827,12 +861,17 @@ impl DataClient for BetfairDataClient {
                     .await
                     .ok_or_else(|| anyhow::anyhow!("No session token for race stream"))?;
 
+                // Only the exchange stream carries market changes, so its books stay separate
                 let race_handler = Self::create_stream_handler(
                     self.data_sender.clone(),
                     Arc::clone(&self.instruments),
                     self.currency,
                     self.provider.min_notional(),
                     reconnect_tx.clone(),
+                    BookSyncTracker::default(),
+                    Arc::new(OnceLock::new()),
+                    Duration::ZERO,
+                    book_tasks.clone(),
                     self.clock,
                 );
 
@@ -908,12 +947,17 @@ impl DataClient for BetfairDataClient {
                     .await
                     .ok_or_else(|| anyhow::anyhow!("No session token for cricket stream"))?;
 
+                // Only the exchange stream carries market changes, so its books stay separate
                 let cricket_handler = Self::create_stream_handler(
                     self.data_sender.clone(),
                     Arc::clone(&self.instruments),
                     self.currency,
                     self.provider.min_notional(),
                     reconnect_tx.clone(),
+                    BookSyncTracker::default(),
+                    Arc::new(OnceLock::new()),
+                    Duration::ZERO,
+                    book_tasks.clone(),
                     self.clock,
                 );
 
@@ -1101,6 +1145,7 @@ impl DataClient for BetfairDataClient {
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         self.teardown_partial_connect().await?;
         self.subscribed_market_ids.clear();
+        self.book_sync.clear();
 
         log::info!("Betfair data client disconnected: {}", self.client_id);
         Ok(())
@@ -1110,7 +1155,7 @@ impl DataClient for BetfairDataClient {
         let instrument_id = cmd.instrument_id;
         let market_id = extract_market_id(&instrument_id)?;
 
-        if !self.subscribed_market_ids.insert(market_id.clone()) {
+        if self.subscribed_market_ids.contains(&market_id) {
             log::debug!("Book deltas already subscribed for market {market_id}");
             return Ok(());
         }
@@ -1121,36 +1166,39 @@ impl DataClient for BetfairDataClient {
                 .ok_or_else(|| anyhow::anyhow!("Stream client not connected"))?,
         );
 
-        let all_ids: Vec<String> = self.subscribed_market_ids.iter().cloned().collect();
-
-        let market_filter = StreamMarketFilter {
-            market_ids: Some(all_ids),
-            ..Default::default()
+        let tasks = match self.command_tasks.spawner() {
+            Ok(tasks) => tasks,
+            Err(e) => {
+                log::warn!("Skipping Betfair data command after shutdown began: {e}");
+                return Ok(());
+            }
         };
 
-        let data_filter = MarketDataFilter {
-            fields: Some(vec![
-                MarketDataFilterField::ExAllOffers,
-                MarketDataFilterField::ExTraded,
-                MarketDataFilterField::ExTradedVol,
-                MarketDataFilterField::ExLtp,
-                MarketDataFilterField::ExMarketDef,
-                MarketDataFilterField::SpTraded,
-                MarketDataFilterField::SpProjected,
-            ]),
-            ladder_levels: None,
-        };
+        self.subscribed_market_ids.insert(market_id.clone());
 
+        // Betfair keeps one market subscription per connection, so each write carries every
+        // subscribed market, and writing at once keeps the latest write last
+        let market_filter = market_subscription_filter(&self.subscribed_market_ids);
         let conflate_ms = self.config.stream_conflate_ms;
 
-        self.spawn_command(async move {
-            if let Err(e) = stream_client
-                .subscribe_markets(market_filter, data_filter, None, conflate_ms)
-                .await
-            {
-                log::warn!("Failed to subscribe to market data: {e}");
-            }
-        });
+        let subscribe = |gate: &SnapshotGate| {
+            stream_client.write_market_subscription(
+                market_filter,
+                market_data_filter(),
+                None,
+                conflate_ms,
+                gate,
+            )
+        };
+
+        spawn_subscription_task(
+            market_id,
+            subscribe,
+            self.book_sync.clone(),
+            Arc::clone(&stream_client),
+            Duration::from_secs(self.config.book_snapshot_timeout_secs),
+            &tasks,
+        );
 
         Ok(())
     }
@@ -1285,6 +1333,151 @@ impl BetfairStreamShutdown {
     }
 }
 
+fn market_subscription_filter(market_ids: &AHashSet<String>) -> StreamMarketFilter {
+    let market_ids = market_ids.iter().cloned().collect();
+
+    StreamMarketFilter {
+        market_ids: Some(market_ids),
+        ..Default::default()
+    }
+}
+
+fn market_data_filter() -> MarketDataFilter {
+    MarketDataFilter {
+        fields: Some(vec![
+            MarketDataFilterField::ExAllOffers,
+            MarketDataFilterField::ExTraded,
+            MarketDataFilterField::ExTradedVol,
+            MarketDataFilterField::ExLtp,
+            MarketDataFilterField::ExMarketDef,
+            MarketDataFilterField::SpTraded,
+            MarketDataFilterField::SpProjected,
+        ]),
+        ladder_levels: None,
+    }
+}
+
+// Returns each runner's book deltas in runner order when the market accepts the change, starting
+// recovery when the market needs a fresh image. Parsing comes first, so an unparsable image fails
+// the recovery waiting on it rather than completing it
+#[expect(clippy::too_many_arguments)]
+fn accept_market_change(
+    mc: &MarketChange,
+    is_image: bool,
+    publish_time: u64,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    book_sync: &BookSyncTracker,
+    stream_client: &OnceLock<Weak<BetfairStreamClient>>,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) -> Option<Vec<Option<OrderBookDeltas>>> {
+    let parsed = mc
+        .rc
+        .iter()
+        .flatten()
+        .map(|rc| {
+            let instrument_id = make_instrument_id(&mc.id, rc.id, rc.hc.unwrap_or(Decimal::ZERO));
+            parse_runner_book_deltas(instrument_id, rc, is_image, publish_time, ts_event, ts_init)
+        })
+        .collect::<anyhow::Result<Vec<_>>>();
+
+    let outcome = match &parsed {
+        Ok(_) => book_sync.validate(&mc.id, is_image, Instant::now()),
+        Err(e) => {
+            log::warn!(
+                "Failed to parse book deltas for market {}: {e}; requesting a fresh image",
+                mc.id
+            );
+            let error = BetfairStreamError::ProtocolError(e.to_string());
+            book_sync.reject_change(&mc.id, is_image, error)
+        }
+    };
+
+    match outcome {
+        BookSequenceOutcome::Accept => parsed.ok(),
+        BookSequenceOutcome::Suppress => None,
+        BookSequenceOutcome::Recover => {
+            recover_market_book(&mc.id, book_sync, stream_client, snapshot_timeout, tasks);
+            None
+        }
+    }
+}
+
+// Recovery needs the stream client, which connects after its handler is built
+fn recover_market_book(
+    market_id: &str,
+    book_sync: &BookSyncTracker,
+    stream_client: &OnceLock<Weak<BetfairStreamClient>>,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) {
+    let Some(stream_client) = stream_client.get().and_then(Weak::upgrade) else {
+        return;
+    };
+
+    start_recovery(market_id, book_sync, stream_client, snapshot_timeout, tasks);
+}
+
+// Sends an image's runner deltas at once and buffers update deltas behind the runner's trades
+fn route_runner_book(
+    deltas: OrderBookDeltas,
+    is_image: bool,
+    data_sender: &EventSender<DataEvent>,
+    buffered_deltas: &mut Vec<OrderBookDeltas>,
+) {
+    if is_image {
+        send_book_deltas(data_sender, deltas);
+    } else {
+        buffered_deltas.push(deltas);
+    }
+}
+
+// An image replaces its whole market, so a runner its definition lists but its changes omit has
+// no prices
+fn send_omitted_runner_snapshots(
+    mc: &MarketChange,
+    publish_time: u64,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    data_sender: &EventSender<DataEvent>,
+) {
+    let Some(runners) = mc
+        .market_definition
+        .as_ref()
+        .and_then(|def| def.runners.as_ref())
+    else {
+        return;
+    };
+
+    for runner in runners {
+        let handicap = runner.hc.unwrap_or(Decimal::ZERO);
+        let imaged = mc
+            .rc
+            .iter()
+            .flatten()
+            .any(|rc| rc.id == runner.id && rc.hc.unwrap_or(Decimal::ZERO) == handicap);
+
+        if imaged {
+            continue;
+        }
+
+        let instrument_id = make_instrument_id(&mc.id, runner.id, handicap);
+        let mut clear = OrderBookDelta::clear(instrument_id, publish_time, ts_event, ts_init);
+        clear.flags |= RecordFlag::F_LAST as u8;
+        send_book_deltas(
+            data_sender,
+            OrderBookDeltas::new(instrument_id, vec![clear]),
+        );
+    }
+}
+
+fn send_book_deltas(data_sender: &EventSender<DataEvent>, deltas: OrderBookDeltas) {
+    if let Err(e) = data_sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas)))) {
+        log::warn!("Failed to send book deltas: {e}");
+    }
+}
+
 fn refresh_stream_sessions(
     stream: &BetfairStreamClient,
     race_stream: Option<&BetfairRaceStreamClient>,
@@ -1321,6 +1514,7 @@ fn refresh_stream_sessions(
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
+    use nautilus_model::enums::BookAction;
     use rstest::rstest;
 
     use super::*;
@@ -1336,19 +1530,51 @@ mod tests {
         StreamMessageHandler,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) {
+        stream_handler_with_books(ts_init, BookSyncTracker::default())
+    }
+
+    fn stream_handler_with_books(
+        ts_init: UnixNanos,
+        book_sync: BookSyncTracker,
+    ) -> (
+        StreamMessageHandler,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel();
         let (reconnect_tx, _reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
+        let tasks = TaskGroup::new().spawner().unwrap();
         let handler = BetfairDataClient::create_stream_handler(
-            data_tx,
+            data_tx.into(),
             Arc::new(AtomicMap::new()),
             Currency::GBP(),
             None,
             reconnect_tx,
+            book_sync,
+            Arc::new(OnceLock::new()),
+            Duration::ZERO,
+            tasks,
             clock,
         );
 
         (handler, data_rx)
+    }
+
+    fn count_books_and_trades(
+        data_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) -> (usize, usize) {
+        let mut books = 0;
+        let mut trades = 0;
+
+        while let Ok(event) = data_rx.try_recv() {
+            match event {
+                DataEvent::Data(Data::BookDeltas(_)) => books += 1,
+                DataEvent::Data(Data::Trade(_)) => trades += 1,
+                _ => {}
+            }
+        }
+
+        (books, trades)
     }
 
     fn receive_custom<T: 'static>(
@@ -1527,5 +1753,165 @@ mod tests {
             data_rx.try_recv().is_err(),
             "CCM fixture must emit exactly one event"
         );
+    }
+
+    #[rstest]
+    fn test_stream_handler_suppresses_books_of_untracked_market() {
+        let (handler, mut data_rx) =
+            stream_handler_with_books(UnixNanos::default(), BookSyncTracker::default());
+        let data = load_test_json("stream/mcm_live_IMAGE.json");
+
+        handler(stream_decode(data.as_bytes()).unwrap());
+
+        assert_eq!(count_books_and_trades(&mut data_rx), (0, 10));
+    }
+
+    #[rstest]
+    fn test_stream_handler_closed_market_stops_tracking_book() {
+        let market_id = "1.185781465";
+        let book_sync = BookSyncTracker::default();
+        book_sync.record_subscription(market_id, Instant::now(), SnapshotGate::default());
+        let (handler, _data_rx) =
+            stream_handler_with_books(UnixNanos::default(), book_sync.clone());
+        let frames: serde_json::Value =
+            serde_json::from_str(&load_test_json("stream/mcm_BSP.json")).unwrap();
+        let image = frames[0].to_string();
+        let settled = load_test_json("stream/mcm_BSP_settled.json");
+
+        handler(stream_decode(image.as_bytes()).unwrap());
+        let synced = book_sync.validate(market_id, false, Instant::now());
+        handler(stream_decode(settled.as_bytes()).unwrap());
+        let closed = book_sync.validate(market_id, false, Instant::now());
+
+        assert_eq!(synced, BookSequenceOutcome::Accept);
+        assert_eq!(closed, BookSequenceOutcome::Suppress);
+    }
+
+    #[rstest]
+    fn test_stream_handler_image_start_clears_image_request() {
+        let book_sync = BookSyncTracker::default();
+        let now = Instant::now();
+        book_sync
+            .request_image(Duration::ZERO, now, &SnapshotGate::default(), || Ok(()))
+            .unwrap();
+        let (handler, _data_rx) =
+            stream_handler_with_books(UnixNanos::default(), book_sync.clone());
+        let update = load_test_json("stream/mcm_live_UPDATE.json");
+        let image = load_test_json("stream/mcm_live_IMAGE.json");
+        let mut writes = Vec::new();
+
+        handler(stream_decode(update.as_bytes()).unwrap());
+        book_sync
+            .request_image(
+                Duration::from_secs(10),
+                now,
+                &SnapshotGate::default(),
+                || {
+                    writes.push("after update");
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        handler(stream_decode(image.as_bytes()).unwrap());
+        book_sync
+            .request_image(
+                Duration::from_secs(10),
+                now,
+                &SnapshotGate::default(),
+                || {
+                    writes.push("after image");
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        assert_eq!(writes, ["after image"]);
+    }
+
+    // An Asian handicap market lists one selection at several handicaps, so a handicap the image
+    // omits has no prices even when the selection appears at another
+    #[rstest]
+    #[case::selection(false, Decimal::ZERO, 7)]
+    #[case::handicap(true, Decimal::new(5, 1), 8)]
+    fn test_stream_handler_image_clears_runner_it_omits(
+        #[case] omit_by_handicap: bool,
+        #[case] omitted_handicap: Decimal,
+        #[case] expected_books: usize,
+    ) {
+        let market_id = "1.180737206";
+        let omitted = make_instrument_id(market_id, 10_147_870, omitted_handicap);
+        let book_sync = BookSyncTracker::default();
+        book_sync.record_subscription(market_id, Instant::now(), SnapshotGate::default());
+        let (handler, mut data_rx) = stream_handler_with_books(UnixNanos::default(), book_sync);
+        let mut image: serde_json::Value =
+            serde_json::from_str(&load_test_json("stream/mcm_SUB_IMAGE.json")).unwrap();
+
+        if omit_by_handicap {
+            let runners = image["mc"][0]["marketDefinition"]["runners"]
+                .as_array_mut()
+                .unwrap();
+            let mut handicapped = runners
+                .iter()
+                .find(|runner| runner["id"] == "10147870")
+                .unwrap()
+                .clone();
+            handicapped["hc"] = serde_json::json!(0.5);
+            runners.push(handicapped);
+        } else {
+            image["mc"][0]["rc"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|rc| rc["id"] != "10147870");
+        }
+
+        handler(stream_decode(image.to_string().as_bytes()).unwrap());
+
+        let mut books = Vec::new();
+
+        while let Ok(event) = data_rx.try_recv() {
+            if let DataEvent::Data(Data::BookDeltas(deltas)) = event {
+                books.push(*deltas);
+            }
+        }
+
+        let cleared = books
+            .iter()
+            .find(|deltas| deltas.instrument_id == omitted)
+            .unwrap();
+        assert_eq!(books.len(), expected_books);
+        assert_eq!(cleared.deltas.len(), 1);
+        assert_eq!(cleared.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            cleared.deltas[0].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
+    }
+
+    #[rstest]
+    fn test_stream_handler_image_without_market_suspends_its_book() {
+        let imaged_market = "1.176621195";
+        let omitted_market = "1.180727728";
+        let book_sync = BookSyncTracker::default();
+
+        for market_id in [imaged_market, omitted_market] {
+            book_sync.record_subscription(market_id, Instant::now(), SnapshotGate::default());
+            assert_eq!(
+                book_sync.validate(market_id, true, Instant::now()),
+                BookSequenceOutcome::Accept
+            );
+        }
+
+        let (handler, mut data_rx) = stream_handler_with_books(UnixNanos::default(), book_sync);
+        let image = load_test_json("stream/mcm_live_IMAGE.json");
+        let update = load_test_json("stream/mcm_UPDATE.json");
+
+        handler(stream_decode(image.as_bytes()).unwrap());
+        let (imaged_books, _) = count_books_and_trades(&mut data_rx);
+        handler(stream_decode(update.as_bytes()).unwrap());
+        let (omitted_books, _) = count_books_and_trades(&mut data_rx);
+
+        assert_eq!(imaged_books, 2);
+        assert_eq!(omitted_books, 0);
     }
 }

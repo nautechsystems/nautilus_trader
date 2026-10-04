@@ -16,19 +16,19 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, StringBuilder, UInt64Array},
+    array::{Array, Decimal128Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
 };
-use nautilus_model::{
-    data::{Data, bar::BarType, custom::CustomData},
-    types::fixed::PRECISION_BYTES,
-};
+use nautilus_model::data::{Data, bar::BarType, custom::CustomData};
 use nautilus_serialization::arrow::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column,
-    extract_column_string, validate_precision_bytes,
+    FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    StringColumnRef, decimal_to_arrow, decode_decimal, decode_decimal_price,
+    decode_decimal_quantity, extract_column, extract_decimal_column, fixed_decimal_data_type,
+    price_decimal_array, quantity_decimal_array, record_batch_with_timestamps,
+    record_batch_with_u64_timestamps, timestamp_data_type,
 };
 use rust_decimal::Decimal;
 
@@ -60,20 +60,18 @@ fn parse_metadata(metadata: &HashMap<String, String>) -> Result<(BarType, u8, u8
 
 impl ArrowSchemaProvider for BinanceBar {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        // Uses FixedSizeBinary for Price/Quantity (consistent with core Bar),
-        // and Utf8 for Decimal fields (no binary convention for rust_decimal::Decimal).
         let fields = vec![
-            Field::new("open", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("high", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("low", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("close", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("volume", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("quote_volume", DataType::Utf8, false),
+            Field::new("open", fixed_decimal_data_type(), true),
+            Field::new("high", fixed_decimal_data_type(), true),
+            Field::new("low", fixed_decimal_data_type(), true),
+            Field::new("close", fixed_decimal_data_type(), true),
+            Field::new("volume", fixed_decimal_data_type(), true),
+            Field::new("quote_volume", fixed_decimal_data_type(), false),
             Field::new("count", DataType::UInt64, false),
-            Field::new("taker_buy_base_volume", DataType::Utf8, false),
-            Field::new("taker_buy_quote_volume", DataType::Utf8, false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("taker_buy_base_volume", fixed_decimal_data_type(), false),
+            Field::new("taker_buy_quote_volume", fixed_decimal_data_type(), false),
+            Field::new("ts_event", timestamp_data_type(), false),
+            Field::new("ts_init", timestamp_data_type(), false),
         ];
 
         match metadata {
@@ -84,60 +82,75 @@ impl ArrowSchemaProvider for BinanceBar {
 }
 
 impl EncodeToRecordBatch for BinanceBar {
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        let mut open_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut high_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut low_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut close_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut volume_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
-        let mut quote_volume_builder = StringBuilder::with_capacity(data.len(), data.len() * 20);
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut count_builder = UInt64Array::builder(data.len());
-        let mut taker_buy_base_volume_builder =
-            StringBuilder::with_capacity(data.len(), data.len() * 20);
-        let mut taker_buy_quote_volume_builder =
-            StringBuilder::with_capacity(data.len(), data.len() * 20);
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for bar in data {
-            open_builder
-                .append_value(bar.open.raw().to_le_bytes())
-                .unwrap();
-            high_builder
-                .append_value(bar.high.raw().to_le_bytes())
-                .unwrap();
-            low_builder
-                .append_value(bar.low.raw().to_le_bytes())
-                .unwrap();
-            close_builder
-                .append_value(bar.close.raw().to_le_bytes())
-                .unwrap();
-            volume_builder
-                .append_value(bar.volume.raw().to_le_bytes())
-                .unwrap();
-            quote_volume_builder.append_value(bar.quote_volume.to_string());
+        for bar in data.iter().map(std::borrow::Borrow::borrow) {
             count_builder.append_value(bar.count);
-            taker_buy_base_volume_builder.append_value(bar.taker_buy_base_volume.to_string());
-            taker_buy_quote_volume_builder.append_value(bar.taker_buy_quote_volume.to_string());
             ts_event_builder.append_value(bar.ts_event.as_u64());
             ts_init_builder.append_value(bar.ts_init.as_u64());
         }
 
-        RecordBatch::try_new(
+        record_batch_with_timestamps(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
-                Arc::new(open_builder.finish()),
-                Arc::new(high_builder.finish()),
-                Arc::new(low_builder.finish()),
-                Arc::new(close_builder.finish()),
-                Arc::new(volume_builder.finish()),
-                Arc::new(quote_volume_builder.finish()),
+                Arc::new(price_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.open.raw()),
+                    "open",
+                )?),
+                Arc::new(price_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.high.raw()),
+                    "high",
+                )?),
+                Arc::new(price_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.low.raw()),
+                    "low",
+                )?),
+                Arc::new(price_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.close.raw()),
+                    "close",
+                )?),
+                Arc::new(quantity_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| bar.volume.raw()),
+                    "volume",
+                )?),
+                Arc::new(decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| &bar.quote_volume),
+                    "quote_volume",
+                )?),
                 Arc::new(count_builder.finish()),
-                Arc::new(taker_buy_base_volume_builder.finish()),
-                Arc::new(taker_buy_quote_volume_builder.finish()),
+                Arc::new(decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| &bar.taker_buy_base_volume),
+                    "taker_buy_base_volume",
+                )?),
+                Arc::new(decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|bar| &bar.taker_buy_quote_volume),
+                    "taker_buy_quote_volume",
+                )?),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
             ],
@@ -188,67 +201,34 @@ pub fn decode_binance_bar_batch(
     record_batch: &RecordBatch,
 ) -> Result<Vec<BinanceBar>, EncodingError> {
     let (bar_type, price_precision, size_precision) = parse_metadata(metadata)?;
+    let record_batch = record_batch_with_u64_timestamps(record_batch)?;
     let cols = record_batch.columns();
 
-    let open_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "open",
-        0,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let high_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "high",
-        1,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let low_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "low",
-        2,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let close_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "close",
-        3,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let volume_values = extract_column::<FixedSizeBinaryArray>(
-        cols,
-        "volume",
-        4,
-        DataType::FixedSizeBinary(PRECISION_BYTES),
-    )?;
-    let quote_volume_values = extract_column_string(cols, "quote_volume", 5)?;
+    let open_values =
+        extract_column::<Decimal128Array>(cols, "open", 0, fixed_decimal_data_type())?;
+    let high_values =
+        extract_column::<Decimal128Array>(cols, "high", 1, fixed_decimal_data_type())?;
+    let low_values = extract_column::<Decimal128Array>(cols, "low", 2, fixed_decimal_data_type())?;
+    let close_values =
+        extract_column::<Decimal128Array>(cols, "close", 3, fixed_decimal_data_type())?;
+    let volume_values =
+        extract_column::<Decimal128Array>(cols, "volume", 4, fixed_decimal_data_type())?;
     let count_values = extract_column::<UInt64Array>(cols, "count", 6, DataType::UInt64)?;
-    let taker_buy_base_volume_values = extract_column_string(cols, "taker_buy_base_volume", 7)?;
-    let taker_buy_quote_volume_values = extract_column_string(cols, "taker_buy_quote_volume", 8)?;
     let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 9, DataType::UInt64)?;
     let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 10, DataType::UInt64)?;
 
-    validate_precision_bytes(open_values, "open")?;
-    validate_precision_bytes(high_values, "high")?;
-    validate_precision_bytes(low_values, "low")?;
-    validate_precision_bytes(close_values, "close")?;
-    validate_precision_bytes(volume_values, "volume")?;
-
     (0..record_batch.num_rows())
         .map(|row| {
-            let open = decode_price(open_values.value(row), price_precision, "open", row)?;
-            let high = decode_price(high_values.value(row), price_precision, "high", row)?;
-            let low = decode_price(low_values.value(row), price_precision, "low", row)?;
-            let close = decode_price(close_values.value(row), price_precision, "close", row)?;
-            let volume = decode_quantity(volume_values.value(row), size_precision, "volume", row)?;
-
-            let quote_volume = Decimal::from_str(quote_volume_values.value(row))
-                .map_err(|e| EncodingError::ParseError("quote_volume", e.to_string()))?;
-            let taker_buy_base_volume = Decimal::from_str(taker_buy_base_volume_values.value(row))
-                .map_err(|e| EncodingError::ParseError("taker_buy_base_volume", e.to_string()))?;
+            let open = decode_decimal_price(open_values, price_precision, "open", row)?;
+            let high = decode_decimal_price(high_values, price_precision, "high", row)?;
+            let low = decode_decimal_price(low_values, price_precision, "low", row)?;
+            let close = decode_decimal_price(close_values, price_precision, "close", row)?;
+            let volume = decode_decimal_quantity(volume_values, size_precision, "volume", row)?;
+            let quote_volume = decode_decimal_column(&record_batch, "quote_volume", row)?;
+            let taker_buy_base_volume =
+                decode_decimal_column(&record_batch, "taker_buy_base_volume", row)?;
             let taker_buy_quote_volume =
-                Decimal::from_str(taker_buy_quote_volume_values.value(row)).map_err(|e| {
-                    EncodingError::ParseError("taker_buy_quote_volume", e.to_string())
-                })?;
+                decode_decimal_column(&record_batch, "taker_buy_quote_volume", row)?;
 
             Ok(BinanceBar::new(
                 bar_type,
@@ -268,6 +248,52 @@ pub fn decode_binance_bar_batch(
         .collect()
 }
 
+fn decimal_array<'a>(
+    values: impl IntoIterator<Item = &'a Decimal>,
+    field: &'static str,
+) -> Result<Decimal128Array, ArrowError> {
+    let values = values
+        .into_iter()
+        .map(|value| decimal_to_arrow(value, field))
+        .collect::<Result<Vec<_>, _>>()?;
+    Decimal128Array::from(values)
+        .with_precision_and_scale(FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE)
+}
+
+fn decode_decimal_column(
+    record_batch: &RecordBatch,
+    field: &'static str,
+    row: usize,
+) -> Result<Decimal, EncodingError> {
+    let index = record_batch.schema().index_of(field)?;
+    let column = record_batch
+        .columns()
+        .get(index)
+        .ok_or(EncodingError::MissingColumn(field, index))?;
+    if column.data_type() == &fixed_decimal_data_type() {
+        let values = extract_decimal_column(record_batch, field)?;
+        return decode_decimal(values, field, row);
+    }
+    let values = StringColumnRef::try_from_array(column.as_ref()).ok_or_else(|| {
+        EncodingError::ParseError(
+            field,
+            format!(
+                "expected Decimal128(38, 16) or legacy string, was {}",
+                column.data_type()
+            ),
+        )
+    })?;
+
+    if values.is_null(row) {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: required decimal is null"),
+        ));
+    }
+    Decimal::from_str(values.value(row))
+        .map_err(|e| EncodingError::ParseError(field, format!("row {row}: {e}")))
+}
+
 impl DecodeDataFromRecordBatch for BinanceBar {
     fn decode_data_batch(
         metadata: &HashMap<String, String>,
@@ -283,6 +309,7 @@ impl DecodeDataFromRecordBatch for BinanceBar {
 
 #[cfg(test)]
 mod tests {
+    use arrow::array::StringArray;
     use nautilus_model::types::{Price, Quantity};
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -311,10 +338,13 @@ mod tests {
         let schema = BinanceBar::get_schema(None);
         assert_eq!(schema.fields().len(), 11);
         assert_eq!(schema.field(0).name(), "open");
+        assert_eq!(schema.field(0).data_type(), &fixed_decimal_data_type());
         assert_eq!(schema.field(5).name(), "quote_volume");
-        assert_eq!(schema.field(5).data_type(), &DataType::Utf8);
+        assert_eq!(schema.field(5).data_type(), &fixed_decimal_data_type());
         assert_eq!(schema.field(6).name(), "count");
         assert_eq!(schema.field(6).data_type(), &DataType::UInt64);
+        assert_eq!(schema.field(9).data_type(), &timestamp_data_type());
+        assert_eq!(schema.field(10).data_type(), &timestamp_data_type());
     }
 
     #[rstest]
@@ -370,5 +400,51 @@ mod tests {
 
         assert_eq!(decoded.len(), 1);
         assert!(matches!(decoded[0], Data::Custom(_)));
+    }
+
+    #[rstest]
+    fn test_decode_legacy_string_decimal_columns() {
+        let bar = stub_binance_bar();
+        let metadata = bar.metadata();
+        let batch = legacy_string_batch(&bar, Some("2434.19055334"));
+
+        let decoded = decode_binance_bar_batch(&metadata, &batch).unwrap();
+
+        assert_eq!(decoded, vec![bar]);
+    }
+
+    #[rstest]
+    fn test_decode_legacy_string_decimal_rejects_null() {
+        let bar = stub_binance_bar();
+        let metadata = bar.metadata();
+        let batch = legacy_string_batch(&bar, None);
+
+        let error = decode_binance_bar_batch(&metadata, &batch).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Error parsing `quote_volume`: row 0: required decimal is null",
+        );
+    }
+
+    fn legacy_string_batch(bar: &BinanceBar, quote_volume: Option<&str>) -> RecordBatch {
+        let metadata = bar.metadata();
+        let batch = BinanceBar::encode_batch(&metadata, &[bar]).unwrap();
+        let mut fields = batch
+            .schema()
+            .fields()
+            .iter()
+            .map(|field| field.as_ref().clone())
+            .collect::<Vec<_>>();
+        fields[5] = Field::new("quote_volume", DataType::Utf8, true);
+        fields[7] = Field::new("taker_buy_base_volume", DataType::Utf8, false);
+        fields[8] = Field::new("taker_buy_quote_volume", DataType::Utf8, false);
+        let schema = Schema::new_with_metadata(fields, metadata);
+        let mut columns = batch.columns().to_vec();
+        columns[5] = Arc::new(StringArray::from(vec![quote_volume]));
+        columns[7] = Arc::new(StringArray::from(vec![Some("1756.87402397")]));
+        columns[8] = Arc::new(StringArray::from(vec![Some("28.46694368")]));
+
+        RecordBatch::try_new(Arc::new(schema), columns).unwrap()
     }
 }

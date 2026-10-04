@@ -23,7 +23,7 @@ mod ticks;
 
 use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-    OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+    OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
 };
 
 use self::common::{HEADER_LENGTH, decode_header, encode_header, validate_header};
@@ -35,7 +35,7 @@ pub const MARKET_SCHEMA_VERSION: u16 = 0;
 pub(super) mod data_any_variant {
     pub(crate) const ORDER_BOOK_DELTA: u16 = 0;
     pub(crate) const ORDER_BOOK_DELTAS: u16 = 1;
-    pub(crate) const ORDER_BOOK_DEPTH10: u16 = 2;
+    pub(crate) const ORDER_BOOK_DEPTH: u16 = 2;
     pub(crate) const QUOTE: u16 = 3;
     pub(crate) const TRADE: u16 = 4;
     pub(crate) const BAR: u16 = 5;
@@ -51,7 +51,7 @@ pub(super) mod template_id {
     pub(crate) const BOOK_ORDER: u16 = 30_001;
     pub(crate) const ORDER_BOOK_DELTA: u16 = 30_002;
     pub(crate) const ORDER_BOOK_DELTAS: u16 = 30_003;
-    pub(crate) const ORDER_BOOK_DEPTH10: u16 = 30_004;
+    pub(crate) const ORDER_BOOK_DEPTH: u16 = 30_004;
     pub(crate) const QUOTE_TICK: u16 = 30_005;
     pub(crate) const TRADE_TICK: u16 = 30_006;
     pub(crate) const BAR_TYPE: u16 = 30_007;
@@ -70,7 +70,7 @@ pub(super) mod template_id {
 pub enum DataAny {
     BookDelta(OrderBookDelta),
     BookDeltas(OrderBookDeltas),
-    BookDepth10(OrderBookDepth10),
+    BookDepth(OrderBookDepth),
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),

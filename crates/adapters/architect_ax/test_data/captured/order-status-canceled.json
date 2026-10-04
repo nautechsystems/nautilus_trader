@@ -1,0 +1,10 @@
+{
+  "status": {
+    "symbol": "EURUSD-PERP",
+    "order_id": "fixture-live-0050",
+    "clord_id": 10006,
+    "state": "CANCELED",
+    "filled_quantity": 0,
+    "remaining_quantity": 0
+  }
+}

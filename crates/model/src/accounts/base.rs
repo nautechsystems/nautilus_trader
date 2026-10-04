@@ -22,10 +22,7 @@ use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::{
     DurationNanos, UnixNanos,
-    correctness::{
-        CorrectnessError, CorrectnessResult, FAILED, check_equal, check_predicate_false,
-        check_predicate_true,
-    },
+    correctness::{CorrectnessError, CorrectnessResult, FAILED, check_equal},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -33,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
+    fees::{MakerTakerFeeRates, calculate_maker_taker_commission},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     position::Position,
@@ -305,30 +303,26 @@ impl BaseAccount {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        let base_currency = instrument
-            .base_currency()
-            .unwrap_or(instrument.quote_currency());
-        let quote_currency = instrument.quote_currency();
-        let amount = match side {
+        let (amount, currency) = match side {
             // A buy at a negative price settles as a credit rather than a debit, so it
             // reserves nothing. Clamping per order rather than after aggregation keeps a
             // negative-price buy from financing a positive-price one before either fills.
-            OrderSide::Buy => instrument
-                .try_calculate_notional_value(quantity, price, use_quote_for_inverse)?
-                .as_decimal()
-                .max(Decimal::ZERO),
-            OrderSide::Sell => quantity.as_decimal(),
+            OrderSide::Buy => {
+                let notional = instrument.try_calculate_notional_value(
+                    quantity,
+                    price,
+                    use_quote_for_inverse,
+                )?;
+                (notional.as_decimal().max(Decimal::ZERO), notional.currency)
+            }
+            // No modeled base asset means nothing to reserve; inventory is venue-enforced.
+            OrderSide::Sell => match instrument.base_currency() {
+                Some(base_currency) => (quantity.as_decimal(), base_currency),
+                None => (Decimal::ZERO, instrument.quote_currency()),
+            },
         };
 
-        if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
-            Ok(Money::from_decimal(amount, base_currency)?)
-        } else {
-            let currency = match side {
-                OrderSide::Buy => quote_currency,
-                OrderSide::Sell => base_currency,
-            };
-            Ok(Money::from_decimal(amount, currency)?)
-        }
+        Ok(Money::from_decimal(amount, currency)?)
     }
 
     /// Calculates profit and loss amounts for a filled order.
@@ -376,7 +370,10 @@ impl BaseAccount {
         Ok(pnls.into_values().collect())
     }
 
-    /// Calculates commission fees for a filled order.
+    /// Calculates commission fees for a filled order from explicitly resolved fee rates.
+    ///
+    /// Fee policy belongs to the account-owned schedule, not the instrument. Callers must
+    /// resolve `fee_rates` for the instrument (including any exact override) before calling.
     ///
     /// # Errors
     ///
@@ -388,27 +385,11 @@ impl BaseAccount {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        fee_rates: MakerTakerFeeRates,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        anyhow::ensure!(
-            liquidity_side != LiquiditySide::NoLiquiditySide,
-            "Invalid `LiquiditySide`: {liquidity_side}"
-        );
-        let notional =
-            instrument.try_calculate_notional_value(last_qty, last_px, use_quote_for_inverse)?;
-        let rate = match liquidity_side {
-            LiquiditySide::Maker => instrument.maker_fee(),
-            LiquiditySide::Taker => instrument.taker_fee(),
-            LiquiditySide::NoLiquiditySide => {
-                anyhow::bail!("Invalid `LiquiditySide`: {liquidity_side}")
-            }
-        };
-        let commission = notional
-            .as_decimal()
-            .checked_mul(rate)
-            .ok_or_else(|| anyhow::anyhow!("commission calculation overflow"))?;
-
-        Ok(Money::from_decimal(commission, notional.currency)?)
+        let rate = fee_rates.rate_for(liquidity_side)?;
+        calculate_maker_taker_commission(instrument, last_qty, last_px, rate, use_quote_for_inverse)
     }
 }
 
@@ -534,17 +515,20 @@ pub(crate) fn balance_from_locks(
         .values()
         .filter(|locked| locked.currency == currency)
     {
-        check_predicate_false(
-            locked.is_negative(),
-            &format!("locked balance was negative: {locked}"),
-        )?;
-        check_predicate_true(
-            locked.currency.precision == currency.precision,
-            &format!(
-                "locked balance precision {} differed from balance precision {} for {currency}",
-                locked.currency.precision, currency.precision
-            ),
-        )?;
+        if locked.is_negative() {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!("locked balance was negative: {locked}"),
+            });
+        }
+
+        if locked.currency.precision != currency.precision {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "locked balance precision {} differed from balance precision {} for {currency}",
+                    locked.currency.precision, currency.precision
+                ),
+            });
+        }
 
         let reservation = if current_balance.total.is_negative() {
             *locked
@@ -668,6 +652,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_base_purge_account_events_drops_event_exactly_at_cutoff() {
+        let mut account = BaseAccount::new(cash_account_state(), true);
+        let mut at_cutoff = cash_account_state();
+        at_cutoff.ts_event = UnixNanos::from(200_000_000_000);
+        account.base_apply(at_cutoff);
+        let mut after_cutoff = cash_account_state();
+        after_cutoff.ts_event = UnixNanos::from(200_000_000_001);
+        account.base_apply(after_cutoff);
+
+        account.base_purge_account_events(UnixNanos::from(300_000_000_000), 100);
+
+        assert_eq!(account.events.len(), 1);
+        assert_eq!(account.events[0].ts_event, UnixNanos::from(200_000_000_001));
+    }
+
+    #[rstest]
     fn test_base_purge_account_events_retains_future_event_without_overflow() {
         let mut event = cash_account_state();
         event.ts_event = UnixNanos::from(u64::MAX - 1);
@@ -763,6 +763,28 @@ mod tests {
     }
 
     #[rstest]
+    fn test_balance_from_locks_clamps_reservations_to_total() {
+        let usd = Currency::USD();
+        let total = Money::from("100 USD");
+        let current = AccountBalance::new(total, Money::zero(usd), total);
+        let mut balances_locked = AHashMap::new();
+        balances_locked.insert(
+            (InstrumentId::from("AUD/USD.SIM"), usd),
+            Money::from("60 USD"),
+        );
+        balances_locked.insert(
+            (InstrumentId::from("EUR/USD.SIM"), usd),
+            Money::from("60 USD"),
+        );
+
+        let balance = balance_from_locks(current, &balances_locked).unwrap();
+
+        assert_eq!(balance.total, total);
+        assert_eq!(balance.locked, total);
+        assert_eq!(balance.free, Money::zero(usd));
+    }
+
+    #[rstest]
     #[case::positive_total("1000 USD", "1000 USD", "0 USD")]
     #[case::negative_total("-1000 USD", "0 USD", "-1000 USD")]
     fn test_recalculate_balance_degrades_to_non_spendable_for_invalid_reservation(
@@ -812,6 +834,25 @@ mod tests {
         account.update_commissions(Money::from_raw(1, usd));
 
         assert!(account.commission(&usd).is_none());
+    }
+
+    #[rstest]
+    fn test_commissions_returns_every_currency() {
+        let mut account = BaseAccount::new(cash_account_state(), true);
+        account.update_commissions(Money::from("2.50 USD"));
+        account.update_commissions(Money::from("1.25 AUD"));
+
+        let commissions = account.commissions();
+
+        assert_eq!(commissions.len(), 2);
+        assert_eq!(
+            commissions.get(&Currency::USD()),
+            Some(&Money::from("2.50 USD"))
+        );
+        assert_eq!(
+            commissions.get(&Currency::AUD()),
+            Some(&Money::from("1.25 AUD"))
+        );
     }
 
     #[rstest]

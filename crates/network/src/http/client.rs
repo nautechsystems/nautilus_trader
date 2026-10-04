@@ -47,6 +47,18 @@ const DEFAULT_POOL_IDLE_TIMEOUT_SECS: u64 = 60;
 #[cfg(not(all(feature = "simulation", madsim)))]
 const DEFAULT_HTTP2_KEEP_ALIVE_SECS: u64 = 30;
 
+/// Default HTTP/2 stream flow-control window in bytes (16 MiB).
+#[cfg(not(all(feature = "simulation", madsim)))]
+const DEFAULT_HTTP2_STREAM_WINDOW_BYTES: u32 = 16 * 1024 * 1024;
+
+/// Default HTTP/2 connection flow-control window in bytes (32 MiB).
+#[cfg(not(all(feature = "simulation", madsim)))]
+const DEFAULT_HTTP2_CONNECTION_WINDOW_BYTES: u32 = 32 * 1024 * 1024;
+
+/// Environment variable that enables adaptive HTTP/2 flow-control windows when set to `true`.
+#[cfg(not(all(feature = "simulation", madsim)))]
+const NAUTILUS_HTTP2_ADAPTIVE_WINDOW: &str = "NAUTILUS_HTTP2_ADAPTIVE_WINDOW";
+
 /// Default maximum HTTP response body size in bytes (100 MiB).
 ///
 /// Bounds peak memory per response so a hostile or malfunctioning endpoint
@@ -75,6 +87,10 @@ pub enum HttpRedirectPolicy {
 /// clients can share the same rate limiter when their requests consume one quota budget.
 /// With `simulation` and `cfg(madsim)`, plaintext HTTP/1.1 uses simulated byte streams;
 /// HTTPS, explicit proxies, and redirect following are unsupported.
+///
+/// Transport error messages carry the request URL without its query string or fragment, so
+/// credentials passed as query parameters cannot reach logs through errors. Use the
+/// `_url_redacted` request variants to omit the URL entirely.
 #[derive(Clone, Debug)]
 pub struct HttpClient {
     pub(crate) client: InnerHttpClient,
@@ -96,6 +112,7 @@ impl HttpClient {
     /// Returns an error if:
     /// - Shared rate limiters are combined with quota configuration.
     /// - The proxy URL is malformed.
+    /// - `NAUTILUS_HTTP2_ADAPTIVE_WINDOW` is set to a value other than `true` or `false`.
     /// - Building the underlying HTTP transport fails.
     #[allow(
         clippy::needless_pass_by_value,
@@ -111,7 +128,9 @@ impl HttpClient {
         proxy_url: Option<String>,
         rate_limiters: Option<Vec<Arc<RateLimiter<Ustr, MonotonicClock>>>>,
         #[builder(default)] redirect_policy: HttpRedirectPolicy,
-        #[builder(default = true)] use_system_proxy: bool,
+        /// Whether to honor ambient proxy configuration when `proxy_url` is not set.
+        #[builder(default = true)]
+        use_system_proxy: bool,
     ) -> Result<Self, HttpClientError> {
         let rate_limiters = if let Some(rate_limiters) = rate_limiters {
             if default_quota.is_some() || !keyed_quotas.is_empty() {
@@ -171,11 +190,14 @@ impl HttpClient {
         let client = super::transport::Client::new(
             proxy_url,
             use_system_proxy,
+            header_map.get(http::header::USER_AGENT).cloned(),
             super::transport::Settings {
                 pool_max_idle_per_host: DEFAULT_POOL_MAX_IDLE_PER_HOST,
                 pool_idle_timeout: Duration::from_secs(DEFAULT_POOL_IDLE_TIMEOUT_SECS),
                 keep_alive_interval: Some(Duration::from_secs(DEFAULT_HTTP2_KEEP_ALIVE_SECS)),
-                adaptive_window: true,
+                stream_window: Some(DEFAULT_HTTP2_STREAM_WINDOW_BYTES),
+                connection_window: Some(DEFAULT_HTTP2_CONNECTION_WINDOW_BYTES),
+                adaptive_window: http2_adaptive_window()?,
             },
         )?;
         #[cfg(all(feature = "simulation", madsim))]
@@ -266,7 +288,7 @@ impl HttpClient {
             .await
     }
 
-    /// Sends an HTTP request while redacting the URL from logs and transport errors.
+    /// Sends an HTTP request while omitting the URL from transport errors.
     ///
     /// Use this for endpoints whose path or other URL components can carry credentials.
     ///
@@ -319,8 +341,8 @@ impl HttpClient {
             .await
     }
 
-    /// Sends an HTTP request with serializable query parameters while redacting the URL from logs
-    /// and transport errors.
+    /// Sends an HTTP request with serializable query parameters while omitting the URL from
+    /// transport errors.
     ///
     /// Use this for query parameters that can carry credentials.
     ///
@@ -763,6 +785,13 @@ impl InnerHttpClient {
             request.method(),
         );
 
+        let error_url = (!redact_url).then(|| {
+            let mut error_url = url.clone();
+            error_url.set_query(None);
+            error_url.set_fragment(None);
+            error_url
+        });
+
         let duration = timeout_secs.map(Duration::from_secs).or(self.timeout);
         let deadline = duration.map(|duration| crate::dst::time::Instant::now() + duration);
         let operation = async {
@@ -773,7 +802,7 @@ impl InnerHttpClient {
             Ok(HttpResponseStream {
                 response,
                 deadline,
-                url: (!redact_url).then(|| url.clone()),
+                url: error_url.clone(),
                 #[cfg(all(feature = "simulation", madsim))]
                 _connection: connection,
             })
@@ -787,7 +816,8 @@ impl InnerHttpClient {
             },
             None => operation.await,
         };
-        result.map_err(|e| response_error(e, (!redact_url).then_some(&url)))
+
+        result.map_err(|e| response_error(e, error_url.as_ref()))
     }
 
     async fn consume_response<B>(
@@ -867,34 +897,18 @@ impl AsRef<[u8]> for SecretBody {
     }
 }
 
-impl Default for InnerHttpClient {
-    /// Creates a new default [`InnerHttpClient`] instance.
-    ///
-    /// The default client has an empty list of response header keys. Production clients reuse a
-    /// connection pool; simulated clients open a connection per request.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the production HTTP transport cannot be initialized.
-    fn default() -> Self {
-        install_cryptographic_provider();
-        #[cfg(not(all(feature = "simulation", madsim)))]
-        let client =
-            super::transport::Client::new(None, true, super::transport::Settings::default())
-                .expect("failed to build default HTTP client");
-        Self {
-            #[cfg(not(all(feature = "simulation", madsim)))]
-            client,
-            headers: HeaderMap::new(),
-            timeout: None,
-            #[cfg(not(all(feature = "simulation", madsim)))]
-            redirect_policy: HttpRedirectPolicy::default(),
-            #[cfg(all(feature = "simulation", madsim))]
-            simulation: super::simulation::Client::default(),
-            response_headers: Arc::default(),
-            max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
-        }
-    }
+#[cfg(not(all(feature = "simulation", madsim)))]
+fn http2_adaptive_window() -> Result<bool, HttpClientError> {
+    let Some(value) = std::env::var_os(NAUTILUS_HTTP2_ADAPTIVE_WINDOW) else {
+        return Ok(false);
+    };
+
+    value.to_str().and_then(|v| v.parse().ok()).ok_or_else(|| {
+        HttpClientError::ClientBuildError(format!(
+            "{NAUTILUS_HTTP2_ADAPTIVE_WINDOW} must be 'true' or 'false', was '{}'",
+            value.display()
+        ))
+    })
 }
 
 /// Encodes URL parameters into the query string.
@@ -1021,6 +1035,98 @@ mod tests {
     use super::*;
     use crate::logging::tests::capture_logs;
 
+    #[rstest]
+    #[case("ftp://127.0.0.1:1/resource")]
+    #[case("file:///resource")]
+    #[tokio::test]
+    async fn test_request_rejects_unsupported_url(#[case] url: &str) {
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap();
+
+        let error = client
+            .request(Method::GET, url.to_string(), None, None, None, None, None)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(error, HttpClientError::Error(ref message) if message == "unsupported HTTP URL scheme or hostname")
+        );
+    }
+
+    #[rstest]
+    #[case::username_only("user%2F17@", "Basic dXNlci8xNzo=")]
+    #[case::password_only(":secret%2F29@", "Basic OnNlY3JldC8yOQ==")]
+    #[tokio::test]
+    async fn test_request_url_credentials_allow_missing_username_or_password(
+        #[case] userinfo: &str,
+        #[case] expected: &str,
+    ) {
+        let addr = start_test_server().await.unwrap();
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap();
+
+        let response = client
+            .request(
+                Method::GET,
+                format!("http://{userinfo}{addr}/headers"),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status.as_u16(), 200);
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(
+            response.body.as_ref(),
+            format!("{expected}\n*/*").as_bytes()
+        );
+    }
+
+    #[rstest]
+    #[case::default(None, "*/*")]
+    #[case::explicit(Some("application/octet-stream"), "application/octet-stream")]
+    #[tokio::test]
+    async fn test_request_accept_header_preserves_explicit_value(
+        #[case] accept: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let addr = start_test_server().await.unwrap();
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap();
+        let headers =
+            accept.map(|value| HashMap::from([("accept".to_string(), value.to_string())]));
+
+        let response = client
+            .request(
+                Method::GET,
+                format!("http://{addr}/headers"),
+                None,
+                headers,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status.as_u16(), 200);
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(
+            response.body.as_ref(),
+            format!("absent\n{expected}").as_bytes()
+        );
+    }
+
     async fn capture_request(request: Request) -> impl IntoResponse {
         let (parts, body) = request.into_parts();
         let body = to_bytes(body, usize::MAX).await.unwrap();
@@ -1044,6 +1150,21 @@ mod tests {
             .route("/patch", patch(|body: Bytes| async move { body }))
             .route("/delete", delete(|| async { StatusCode::OK }))
             .route("/capture", any(capture_request))
+            .route(
+                "/headers",
+                get(|request: Request| async move {
+                    let headers = request.headers();
+                    format!(
+                        "{}\n{}",
+                        headers
+                            .get(http::header::AUTHORIZATION)
+                            .map_or("absent", |v| v.to_str().unwrap()),
+                        headers
+                            .get(http::header::ACCEPT)
+                            .map_or("absent", |v| v.to_str().unwrap()),
+                    )
+                }),
+            )
             .route("/notfound", get(|| async { StatusCode::NOT_FOUND }))
             .route(
                 "/redirect",
@@ -1152,9 +1273,17 @@ mod tests {
         (addr, request_rx)
     }
 
+    fn inner_client() -> InnerHttpClient {
+        HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap()
+            .client
+    }
+
     #[tokio::test(start_paused = true)]
     async fn test_body_ready_at_deadline_is_rejected() {
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = http::Response::new(Full::new(Bytes::from_static(b"ready")));
         let result = client
             .consume_response(response, Some(crate::dst::time::Instant::now()))
@@ -1169,7 +1298,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = client
             .send_request(Method::GET, format!("{url}/get"), None, None, None, None)
             .await
@@ -1355,7 +1484,7 @@ mod tests {
     ) {
         let client = InnerHttpClient {
             max_response_bytes,
-            ..Default::default()
+            ..inner_client()
         };
         let response = http::Response::new(Full::new(Bytes::from_static(bytes)));
 
@@ -1374,7 +1503,7 @@ mod tests {
         // Cap above the 1 MiB payload: body should be returned intact.
         let client = InnerHttpClient {
             max_response_bytes: 4 * 1024 * 1024,
-            ..Default::default()
+            ..inner_client()
         };
 
         let response = client
@@ -1395,7 +1524,7 @@ mod tests {
         // Cap below the 1 MiB payload: the request must fail rather than buffer it.
         let client = InnerHttpClient {
             max_response_bytes: 16 * 1024,
-            ..Default::default()
+            ..inner_client()
         };
 
         let result = client
@@ -1422,7 +1551,7 @@ mod tests {
         let (addr, server_task) = spawn_chunked_response_server().await;
         let client = InnerHttpClient {
             max_response_bytes,
-            ..Default::default()
+            ..inner_client()
         };
 
         let response = client
@@ -1449,7 +1578,7 @@ mod tests {
         let max_response_bytes = 8;
         let client = InnerHttpClient {
             max_response_bytes,
-            ..Default::default()
+            ..inner_client()
         };
 
         let error = client
@@ -1479,7 +1608,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = client
             .send_request(Method::POST, format!("{url}/post"), None, None, None, None)
             .await
@@ -1495,7 +1624,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
 
         let mut body = HashMap::new();
         body.insert(
@@ -1532,7 +1661,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = client
             .send_request(
                 Method::PATCH,
@@ -1555,7 +1684,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}");
 
-        let client = InnerHttpClient::default();
+        let client = inner_client();
         let response = client
             .send_request(
                 Method::DELETE,
@@ -1577,7 +1706,7 @@ mod tests {
     async fn test_not_found() {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}/notfound");
-        let client = InnerHttpClient::default();
+        let client = inner_client();
 
         let response = client
             .send_request(Method::GET, url, None, None, None, None)
@@ -1594,7 +1723,7 @@ mod tests {
     async fn test_timeout() {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}/slow");
-        let client = InnerHttpClient::default();
+        let client = inner_client();
 
         // We'll set a 1-second timeout for a route that sleeps 2 seconds
         let result = client
@@ -1793,6 +1922,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_request_removes_query_string_from_transport_error_by_default() {
+        const QUERY_SECRET: &str = "default-query-secret";
+        const FRAGMENT_MARKER: &str = "default-fragment-marker";
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades?api_key={QUERY_SECRET}#{FRAGMENT_MARKER}");
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request(Method::GET, url, None, None, None, None, None)
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                rendered.contains(&format!("for url (http://{addr}/trades)")),
+                "default error omitted the queryless URL: {rendered}"
+            );
+            assert!(!rendered.contains("api_key="), "{rendered}");
+            assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+            assert!(!rendered.contains(FRAGMENT_MARKER), "{rendered}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_with_secret_body_removes_query_from_transport_error_by_default() {
+        const QUERY_SECRET: &str = "secret-body-query-secret";
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades?api_key={QUERY_SECRET}");
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request_with_secret_body(
+                Method::POST,
+                url,
+                None,
+                None,
+                SecretString::from("credential-body"),
+                None,
+                None,
+            )
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                rendered.contains(&format!("for url (http://{addr}/trades)")),
+                "default error omitted the queryless URL: {rendered}"
+            );
+            assert!(!rendered.contains("api_key="), "{rendered}");
+            assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_with_params_removes_query_from_transport_error_by_default() {
+        const QUERY_SECRET: &str = "default-params-query-secret";
+        #[derive(serde::Serialize)]
+        struct Query<'a> {
+            auth: &'a str,
+        }
+
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades");
+        let params = Query { auth: QUERY_SECRET };
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(
+                rendered.contains(&format!("for url (http://{addr}/trades)")),
+                "default error omitted the queryless URL: {rendered}"
+            );
+            assert!(!rendered.contains("auth="), "{rendered}");
+            assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+        }
+    }
+
+    #[tokio::test]
     async fn test_http_client_redacted_url_request_removes_endpoint_from_trace_logs() {
         const USERINFO_SECRET: &str = "trace-userinfo-secret";
         const PATH_SECRET: &str = "trace-path-secret";
@@ -1827,12 +2056,25 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case::without_user_agent(None)]
+    #[case::with_user_agent(Some("NautilusTrader/proxy-test-73"))]
     #[tokio::test]
-    async fn test_http_client_uses_connect_and_proxy_authorization_for_https() {
+    async fn test_http_client_uses_connect_and_proxy_authorization_for_https(
+        #[case] user_agent: Option<&str>,
+    ) {
         const USERNAME: &str = "proxytest";
         const PASSWORD: &str = "fixture42";
+        let mut headers =
+            HashMap::from([("authorization".into(), "Bearer origin-secret-19".into())]);
+
+        if let Some(user_agent) = user_agent {
+            headers.insert("user-agent".into(), user_agent.into());
+        }
+
         let (proxy_addr, request_rx) = spawn_rejecting_connect_proxy().await;
         let client = HttpClient::builder()
+            .headers(headers)
             .timeout_secs(2)
             .proxy_url(format!("http://{USERNAME}:{PASSWORD}@{proxy_addr}"))
             .build()
@@ -1852,20 +2094,166 @@ mod tests {
         let request = request_rx.await.expect("captured CONNECT request");
         let mut lines = request.split("\r\n");
         let request_line = lines.next().expect("CONNECT request line");
-        let auth_value = lines
-            .find_map(|line| {
+
+        let headers: HashMap<_, _> = lines
+            .filter_map(|line| {
                 let (name, value) = line.split_once(':')?;
-                name.eq_ignore_ascii_case("proxy-authorization")
-                    .then_some(value.trim())
+                Some((name.to_ascii_lowercase(), value.trim()))
             })
-            .expect("Proxy-Authorization header");
+            .collect();
+
         let expected_auth = format!("Basic {}", BASE64.encode(format!("{USERNAME}:{PASSWORD}")));
+        let mut expected_headers = HashMap::from([
+            ("host".into(), "fixture.example.test:443"),
+            ("proxy-authorization".into(), expected_auth.as_str()),
+        ]);
+
+        if let Some(user_agent) = user_agent {
+            expected_headers.insert("user-agent".into(), user_agent);
+        }
 
         assert_eq!(request_line, "CONNECT fixture.example.test:443 HTTP/1.1");
-        assert_eq!(auth_value, expected_auth);
+        assert_eq!(headers, expected_headers);
         assert!(!error.to_string().contains(PASSWORD));
         assert!(!error.to_string().contains(&BASE64.encode(PASSWORD)));
         assert!(!error.to_string().contains(&expected_auth));
+    }
+
+    #[rstest]
+    #[case::cross_origin("http://127.0.0.1:2/final", None, false)]
+    #[case::cross_origin_override("http://127.0.0.1:2/final", Some("Basic b3ZlcnJpZGU="), false)]
+    #[case::same_origin("http://127.0.0.1:1/final", None, true)]
+    #[case::same_origin_override("http://127.0.0.1:1/final", Some("Basic b3ZlcnJpZGU="), true)]
+    #[case::https_connect("https://127.0.0.1:2/final", None, false)]
+    #[tokio::test]
+    async fn test_proxy_authentication_per_redirect_hop(
+        #[case] destination: &'static str,
+        #[case] initial_auth: Option<&'static str>,
+        #[case] same_origin: bool,
+    ) {
+        const PROXY_AUTH: &str = "Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg==";
+
+        let expected_initial_auth = initial_auth.unwrap_or(PROXY_AUTH);
+
+        let expected_redirect_auth = if same_origin {
+            expected_initial_auth
+        } else {
+            PROXY_AUTH
+        };
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(2);
+
+        let router = Router::new().fallback(any(move |request: Request| {
+            let request_tx = request_tx.clone();
+
+            async move {
+                let (parts, _) = request.into_parts();
+                let first = parts.uri.path() == "/start";
+
+                let expected_auth = if first {
+                    expected_initial_auth
+                } else {
+                    expected_redirect_auth
+                };
+
+                let authenticated = parts.headers.get(http::header::PROXY_AUTHORIZATION)
+                    == Some(&http::HeaderValue::from_static(expected_auth));
+                let connect = parts.method == http::Method::CONNECT;
+                request_tx.send(parts).await.unwrap();
+
+                if !authenticated || connect {
+                    return StatusCode::PROXY_AUTHENTICATION_REQUIRED.into_response();
+                }
+
+                if first {
+                    return (StatusCode::TEMPORARY_REDIRECT, [("location", destination)])
+                        .into_response();
+                }
+
+                "accepted".into_response()
+            }
+        }));
+
+        let server = tokio::spawn(async move { serve(listener, router).await.unwrap() });
+        let origin_headers = HashMap::from([
+            ("authorization".to_string(), "Bearer origin-19".to_string()),
+            ("cookie".to_string(), "session=origin-23".to_string()),
+            ("cookie2".to_string(), "legacy=origin-29".to_string()),
+            (
+                "www-authenticate".to_string(),
+                "Basic realm=origin-31".to_string(),
+            ),
+        ]);
+        let mut headers = origin_headers.clone();
+
+        if let Some(initial_auth) = initial_auth {
+            headers.insert("proxy-authorization".to_string(), initial_auth.to_string());
+        }
+
+        let client = HttpClient::builder()
+            .headers(headers)
+            .timeout_secs(2)
+            .use_system_proxy(false)
+            .proxy_url(format!("http://proxytest:fixture42@{addr}"))
+            .build()
+            .unwrap();
+        let result = client
+            .request(
+                Method::GET,
+                "http://127.0.0.1:1/start".to_string(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+        let first = tokio::time::timeout(Duration::from_secs(2), request_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let redirected = tokio::time::timeout(Duration::from_secs(2), request_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        server.abort();
+        let connect = destination.starts_with("https:");
+
+        assert_eq!(first.method, http::Method::GET);
+        assert_eq!(first.uri.to_string(), "http://127.0.0.1:1/start");
+        assert_eq!(
+            first.headers[http::header::PROXY_AUTHORIZATION],
+            expected_initial_auth
+        );
+        assert_eq!(
+            redirected.headers[http::header::PROXY_AUTHORIZATION],
+            expected_redirect_auth
+        );
+
+        for (name, value) in origin_headers {
+            assert_eq!(first.headers.get(&name).unwrap(), value.as_str());
+            assert_eq!(
+                redirected
+                    .headers
+                    .get(&name)
+                    .map(|value| value.to_str().unwrap()),
+                same_origin.then_some(value.as_str())
+            );
+        }
+
+        if connect {
+            assert_eq!(redirected.method, http::Method::CONNECT);
+            assert_eq!(redirected.uri.to_string(), "127.0.0.1:2");
+            assert!(result.is_err());
+        } else {
+            let response = result.unwrap();
+            assert_eq!(redirected.method, http::Method::GET);
+            assert_eq!(redirected.uri.to_string(), destination);
+            assert_eq!(response.status.as_u16(), 200);
+            assert_eq!(response.body.as_ref(), b"accepted");
+        }
     }
 
     #[tokio::test]
@@ -2103,7 +2491,6 @@ mod rate_limit_tests {
         assert!(!request.is_finished());
 
         advance_test_clock(Duration::from_millis(9_999)).await;
-        global_limiter.until_key_ready(&global_key).await;
         global_limiter.until_key_ready(&global_key).await;
         advance_test_clock(Duration::from_millis(1)).await;
         test_task::yield_now().await;

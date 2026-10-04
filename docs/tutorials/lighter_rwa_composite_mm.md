@@ -161,8 +161,10 @@ the Databento US Equities product line, so this tutorial uses the consolidated
 tutorial wiring, not as a full depth Nasdaq TotalView book.
 
 The example starts at `trade_size=0.05`, which aligns with the Lighter NVDA
-minimum base amount observed during tutorial validation. Check the
-[market details endpoint] before increasing size or changing instruments.
+minimum base amount observed during tutorial validation. Check the market
+details endpoint for the configured environment ([testnet][testnet market details],
+the example default, or [mainnet][market details endpoint]) before increasing
+size or changing instruments.
 
 ## Session constraint
 
@@ -203,7 +205,10 @@ Databento is a multi-venue data client without a fixed venue route, so the engin
 uses it as the default route for `NVDA.EQUS`. Lighter registers with the `LIGHTER`
 venue route and receives `NVDA-PERP.LIGHTER` subscriptions.
 
-The core of the setup is the three-client node plus `CompositeMarketMaker`:
+The core of the setup is the three-client node plus `CompositeMarketMaker`. This
+excerpt is abridged: among other lines, it omits the source constants, the
+`publishers_filepath`, `max_position`, and `trade_size` definitions, and the final
+`node.run().await?` call. The [example source][example-script] has the complete `main`:
 
 ```rust
 let lighter_environment = LIGHTER_ENVIRONMENT;
@@ -375,6 +380,7 @@ the Lighter BBO only for post-only and basis limits.
 [RWA docs]: https://docs.lighter.xyz/trading/real-world-assets-rwas
 [market specifications]: https://docs.lighter.xyz/trading/real-world-assets-rwas/market-specifications
 [market details endpoint]: https://mainnet.zklighter.elliot.ai/api/v1/orderBookDetails
+[testnet market details]: https://testnet.zklighter.elliot.ai/api/v1/orderBookDetails
 [Databento US Equities]: https://databento.com/blog/introducing-databento-us-equities
 [example-script]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/tutorials/src/bin/lighter_nvda_composite_mm.rs
 [python-example-script]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/lighter/nvda_composite_mm.py

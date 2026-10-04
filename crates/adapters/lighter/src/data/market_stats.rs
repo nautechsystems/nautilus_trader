@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use dashmap::DashMap;
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_model::{data::Data, identifiers::InstrumentId};
 
 use crate::websocket::{
@@ -117,7 +117,7 @@ pub(super) async fn unsubscribe_channel(
 }
 
 pub(super) fn emit_ws_message(
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     subscriptions: &DashMap<InstrumentId, MarketStatsSubscription>,
     message: &NautilusWsMessage,
 ) -> bool {

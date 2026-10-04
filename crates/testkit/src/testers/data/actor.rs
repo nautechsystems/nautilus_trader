@@ -27,7 +27,7 @@ use nautilus_common::{
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         option_chain::OptionGreeks,
     },
     identifiers::InstrumentId,
@@ -85,6 +85,15 @@ impl DataActor for DataTester {
             }
         }
 
+        let book_depth = self
+            .config
+            .book_depth
+            .map(|depth| {
+                NonZeroUsize::new(depth)
+                    .ok_or_else(|| ConfigError::range("book_depth", "must be positive, was 0"))
+            })
+            .transpose()?;
+
         // Subscribe to data for each instrument
         for instrument_id in instrument_ids {
             if self.config.subscribe_instrument {
@@ -95,7 +104,7 @@ impl DataActor for DataTester {
                 self.subscribe_book_deltas(
                     instrument_id,
                     self.config.book_type,
-                    None,
+                    book_depth,
                     client_id,
                     self.config.manage_book,
                     subscribe_params.clone(),
@@ -111,14 +120,7 @@ impl DataActor for DataTester {
                 self.subscribe_book_at_interval(
                     instrument_id,
                     self.config.book_type,
-                    self.config
-                        .book_depth
-                        .map(|depth| {
-                            NonZeroUsize::new(depth).ok_or_else(|| {
-                                ConfigError::range("book_depth", "must be positive, was 0")
-                            })
-                        })
-                        .transpose()?,
+                    book_depth,
                     NonZeroUsize::new(self.config.book_interval_ms).ok_or_else(|| {
                         ConfigError::range("book_interval_ms", "must be positive, was 0")
                     })?,
@@ -128,11 +130,14 @@ impl DataActor for DataTester {
             }
 
             if self.config.subscribe_book_depth {
-                self.subscribe_book_depth10(
+                self.subscribe_book_depth(
                     instrument_id,
                     self.config.book_type,
+                    book_depth,
                     client_id,
-                    self.config.manage_book,
+                    self.config.manage_book
+                        && !self.config.subscribe_book_deltas
+                        && !self.config.subscribe_book_at_interval,
                     subscribe_params.clone(),
                 );
             }
@@ -312,7 +317,7 @@ impl DataActor for DataTester {
             }
 
             if self.config.subscribe_book_depth {
-                self.unsubscribe_book_depth10(instrument_id, client_id, subscribe_params.clone());
+                self.unsubscribe_book_depth(instrument_id, client_id, subscribe_params.clone());
             }
 
             if self.config.subscribe_quotes {
@@ -412,7 +417,7 @@ impl DataActor for DataTester {
         Ok(())
     }
 
-    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+    fn on_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
         warn_if_implausible_unix_nanos("book depth", depth.ts_event, depth.ts_init);
 
         if self.config.log_data {

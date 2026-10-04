@@ -960,8 +960,6 @@ mod tests {
                 .min_price(Price::new(0.01, 2))
                 .margin_init(rust_decimal_macros::dec!(0.05))
                 .margin_maint(rust_decimal_macros::dec!(0.03))
-                .maker_fee(rust_decimal_macros::dec!(0.0002))
-                .taker_fee(rust_decimal_macros::dec!(0.0005))
                 .ts_event(UnixNanos::default())
                 .ts_init(UnixNanos::default())
                 .build()

@@ -47,11 +47,13 @@ mod types;
 
 #[cfg(test)]
 mod proptests;
+
 #[cfg(test)]
 mod tests;
 
 pub use ids::{
     create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
+    inferred_reconciliation_trade_ids, is_inferred_reconciliation_trade_id_format,
 };
 pub use orders::{
     create_incremental_inferred_fill, create_inferred_fill_for_qty, create_reconciliation_rejected,
@@ -65,7 +67,11 @@ pub use orders::{
 };
 pub use positions::{
     calculate_reconciliation_price, check_position_reconciliation,
+    fill_precedes_snapshot_reconciled_position, position_prices_match,
     process_mass_status_for_reconciliation,
     process_mass_status_for_reconciliation_without_synthetic_reports,
 };
 pub use types::ReconciliationResult;
+
+/// Order tag marking a synthetic order that reconciliation creates to align a position.
+pub const RECONCILIATION_ORDER_TAG: &str = "RECONCILIATION";

@@ -41,7 +41,7 @@ pub struct LighterTxQuery {
 #[builder(setter(strip_option), default)]
 pub struct LighterOrderBooksQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_id: Option<i16>,
+    pub market_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<LighterOrderBookFilter>,
 }
@@ -50,27 +50,27 @@ pub struct LighterOrderBooksQuery {
 #[builder(setter(strip_option), default)]
 pub struct LighterOrderBookDetailsQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_id: Option<i16>,
+    pub market_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<LighterOrderBookFilter>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
 pub struct LighterOrderBookOrdersQuery {
-    pub market_id: i16,
+    pub market_id: i64,
     pub limit: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
 pub struct LighterRecentTradesQuery {
-    pub market_id: i16,
+    pub market_id: i64,
     pub limit: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
 #[builder(setter(strip_option))]
 pub struct LighterCandlesQuery {
-    pub market_id: i16,
+    pub market_id: i64,
     pub resolution: LighterCandleResolution,
     pub start_timestamp: i64,
     pub end_timestamp: i64,
@@ -83,7 +83,7 @@ pub struct LighterCandlesQuery {
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
 #[builder(setter(strip_option))]
 pub struct LighterFundingsQuery {
-    pub market_id: i16,
+    pub market_id: i64,
     pub resolution: LighterFundingResolution,
     pub start_timestamp: i64,
     pub end_timestamp: i64,
@@ -103,7 +103,7 @@ pub struct LighterTradesQuery {
     pub auth: Option<SecretString>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_id: Option<i16>,
+    pub market_id: Option<i64>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_index: Option<i64>,
@@ -186,7 +186,7 @@ pub struct LighterAccountActiveOrdersQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth: Option<SecretString>,
     pub account_index: i64,
-    pub market_id: i16,
+    pub market_id: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
@@ -203,7 +203,7 @@ pub struct LighterAccountInactiveOrdersQuery {
     pub account_index: i64,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_id: Option<i16>,
+    pub market_id: Option<i64>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ask_filter: Option<i8>,
@@ -320,6 +320,20 @@ mod tests {
 
         assert_eq!(value["market_id"], 0);
         assert_eq!(value["filter"], "perp");
+    }
+
+    #[rstest]
+    fn test_order_book_orders_query_serializes_widened_market_id() {
+        let query = LighterOrderBookOrdersQueryBuilder::default()
+            .market_id(40_000)
+            .limit(10)
+            .build()
+            .unwrap();
+
+        let value = serde_json::to_value(query).unwrap();
+
+        assert_eq!(value["market_id"], 40_000);
+        assert_eq!(value["limit"], 10);
     }
 
     #[rstest]

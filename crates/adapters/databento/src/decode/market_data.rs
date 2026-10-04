@@ -22,7 +22,7 @@ use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, Data, InstrumentStatus,
-        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BarAggregation, FromU16, MarketStatusAction, OrderSide, PriceType},
     identifiers::{InstrumentId, TradeId},
@@ -460,7 +460,7 @@ pub fn decode_bbo_msg(
     Ok(Some(quote))
 }
 
-/// Decodes a Databento MBP10 (Market by Price 10 levels) message into an `OrderBookDepth10`.
+/// Decodes a Databento MBP10 (Market by Price 10 levels) message into an `OrderBookDepth`.
 ///
 /// # Errors
 ///
@@ -470,7 +470,7 @@ pub fn decode_mbp10_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let mut bids = [BookOrder::default(); DEPTH10_LEN];
     let mut asks = [BookOrder::default(); DEPTH10_LEN];
     let mut bid_counts = [0u32; DEPTH10_LEN];
@@ -504,7 +504,7 @@ pub fn decode_mbp10_msg(
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    let depth = OrderBookDepth10::new(
+    let depth = OrderBookDepth::new(
         instrument_id,
         bids,
         asks,

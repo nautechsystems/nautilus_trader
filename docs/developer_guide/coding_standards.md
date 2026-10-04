@@ -61,12 +61,12 @@ documentation feel natural to end-users.
 4. **Execution terminology**: Use `Execution` in public, project-owned PascalCase type names, such
    as `BinanceExecutionClientConfig`. Internal implementation types may retain established `Exec`
    names. Also reserve `Exec` for the `ExecAlgorithmId` and `ExecTester` families, established
-   `exec_*` names, and venue or protocol terms such as `BitmexExecType`. Name protocol-specific
+   `exec_*` names, and venue or protocol terms such as `OkxExecType`. Name protocol-specific
    wire models after the venue concept, such as `HyperliquidExchangeAction`. Preserve established
    public names, historical release entries, and source names in migration tables.
 
 5. **Runtime qualifiers**: Use `Live` when a type selects or configures real-time runtime semantics,
-   such as `LiveNode` versus `BacktestNode`, `LiveClock` versus `TestClock`, and the
+   such as `LiveNode` versus `BacktestNode`, `LiveClock` versus `VirtualClock`, and the
    `LiveDataEngineConfig`, `LiveRiskEngineConfig`, and `LiveExecutionEngineConfig` family versus
    reusable core engine configs. Omit `Live` from the ordinary adapter client family because a
    connected client is the default. Qualify alternate implementations by their behavior, such as

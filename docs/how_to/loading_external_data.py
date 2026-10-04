@@ -18,17 +18,22 @@
 # %%
 import os
 import shutil
+from decimal import Decimal
 from pathlib import Path
 
 from nautilus_trader.backtest import BacktestNode
+from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import Quantity
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
@@ -42,9 +47,12 @@ from nautilus_trader.trading import EmaCrossConfig
 # into `~/Downloads/Data/HISTDATA/`. Set the `NAUTILUS_DATA_DIR` environment
 # variable to the parent directory if your data lives elsewhere.
 # `TestDataProvider.quotes_from_histdata_csv` converts the rows into Nautilus
-# `QuoteTick` objects.
+# `QuoteTick` objects. It expects the histdata ASCII tick format extracted from
+# the downloaded ZIP (`.csv` or `.csv.gz`). The how-to loads only the first
+# file in sorted order and labels it EUR/USD, so use a EUR/USD file or change
+# the instrument.
 #
-# Without a download, the how-to falls back to 20,000 bundled AUD/USD quote
+# Without a download, the how-to falls back to 20,000 sample AUD/USD quote
 # ticks so it still runs end to end.
 
 # %%
@@ -81,7 +89,8 @@ ticks.sort(key=lambda tick: tick.ts_init)
 #
 # Create a `ParquetDataCatalog` and write the instrument definition and tick
 # data. The catalog stores data in Parquet format for efficient querying across
-# backtest runs.
+# backtest runs. The how-to writes the catalog to `catalog/` under the working
+# directory and replaces that directory on each run.
 
 # %%
 CATALOG_PATH = Path.cwd() / "catalog"
@@ -125,13 +134,17 @@ venue_configs = [
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=["1000000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     ),
 ]
 
 data_configs = [
     BacktestDataConfig(
         catalog_path=str(CATALOG_PATH),
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         instrument_id=instrument.id,
         start_time=start,
         end_time=end,
@@ -139,7 +152,9 @@ data_configs = [
 ]
 
 config = BacktestRunConfig(
-    engine=BacktestEngineConfig(),
+    engine=BacktestEngineConfig(
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
+    ),
     data=data_configs,
     venues=venue_configs,
 )

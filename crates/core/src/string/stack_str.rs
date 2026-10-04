@@ -303,7 +303,7 @@ impl Hash for StackStr {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Only hash actual content, not padding
-        self.value[..self.len as usize].hash(state);
+        self.as_str().hash(state);
     }
 }
 
@@ -407,7 +407,7 @@ impl TryFrom<&[u8]> for StackStr {
 mod tests {
     use std::hash::{DefaultHasher, Hasher};
 
-    use ahash::AHashMap;
+    use ahash::{AHashMap, AHashSet};
     use rstest::rstest;
 
     use super::*;
@@ -490,12 +490,44 @@ mod tests {
     }
 
     #[rstest]
+    fn test_from_c_ptr_valid() {
+        let cstring = std::ffi::CString::new("hello").unwrap();
+        let s = unsafe { StackStr::from_c_ptr(cstring.as_ptr()) };
+        assert_eq!(s.as_str(), "hello");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Invalid UTF-8 in C string")]
+    fn test_from_c_ptr_invalid_utf8_panics() {
+        let bytes = vec![0xFF];
+        let cstring = unsafe { std::ffi::CString::from_vec_unchecked(bytes) };
+        let _ = unsafe { StackStr::from_c_ptr(cstring.as_ptr()) };
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Condition failed: String exceeds maximum length of 36 characters, was 37"
+    )]
+    fn test_from_c_ptr_too_long_panics() {
+        let long = "x".repeat(37);
+        let cstring = std::ffi::CString::new(long).unwrap();
+        let _ = unsafe { StackStr::from_c_ptr(cstring.as_ptr()) };
+    }
+
+    #[rstest]
     fn test_equality() {
         let a = StackStr::new("test");
         let b = StackStr::new("test");
         let c = StackStr::new("other");
         assert_eq!(a, b);
         assert_ne!(a, c);
+    }
+
+    #[rstest]
+    fn test_inequality_same_length() {
+        let a = StackStr::new("test");
+        let b = StackStr::new("tent");
+        assert_ne!(a, b);
     }
 
     #[rstest]
@@ -520,6 +552,20 @@ mod tests {
     }
 
     #[rstest]
+    #[case("key1")]
+    #[case("ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")]
+    fn test_hash_matches_borrowed_str(#[case] text: &str) {
+        let value = StackStr::new(text);
+        let mut owned_hasher = DefaultHasher::new();
+        let mut borrowed_hasher = DefaultHasher::new();
+
+        value.hash(&mut owned_hasher);
+        text.hash(&mut borrowed_hasher);
+
+        assert_eq!(owned_hasher.finish(), borrowed_hasher.finish());
+    }
+
+    #[rstest]
     fn test_hashmap_usage() {
         let mut map = AHashMap::new();
         map.insert(StackStr::new("key1"), 1);
@@ -528,6 +574,18 @@ mod tests {
         assert_eq!(map.get(&StackStr::new("key1")), Some(&1));
         assert_eq!(map.get(&StackStr::new("key2")), Some(&2));
         assert_eq!(map.get(&StackStr::new("key3")), None);
+        assert_eq!(map.get("key1"), Some(&1));
+        assert_eq!(map.get("key2"), Some(&2));
+        assert_eq!(map.get("key3"), None);
+    }
+
+    #[rstest]
+    fn test_hashset_borrowed_lookup() {
+        let set = AHashSet::from([StackStr::new("key1"), StackStr::new("key2")]);
+
+        assert!(set.contains("key1"));
+        assert!(set.contains("key2"));
+        assert!(!set.contains("key3"));
     }
 
     #[rstest]
@@ -869,6 +927,13 @@ mod tests {
         let s = StackStr::new("hello");
         assert_eq!(s, "hello");
         assert!(s != "world");
+    }
+
+    #[rstest]
+    fn test_partial_eq_str_unsized() {
+        let s = StackStr::new("hello");
+        assert_eq!(s, *"hello");
+        assert!(s != *"world");
     }
 
     #[rstest]

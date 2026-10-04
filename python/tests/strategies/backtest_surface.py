@@ -317,7 +317,7 @@ class BookChurn(Strategy):
         """
         On start.
         """
-        self.subscribe_book_deltas(self._instrument_id, BookType.L2_MBP, depth=10)
+        self.subscribe_book_deltas(self._instrument_id, BookType.L2_MBP)
         self.subscribe_book_at_interval(self._instrument_id, BookType.L2_MBP, interval_ms=1_000)
 
     def on_book_deltas(self, _deltas: OrderBookDeltas) -> None:

@@ -117,10 +117,10 @@ stable Nautilus instrument ID. The token pair, fee tier, tick spacing, and creat
 pool metadata.
 
 When the data engine processes a pool definition, it caches and publishes a `CurrencyPair` under
-the same pool instrument ID. The instrument keeps the raw pool `token0`/`token1` order as base/quote,
-derives price and size precision from token decimals up to `FIXED_PRECISION`, and exposes the fee
-tier divided by 1,000,000 as `taker_fee`. Distinct pool identifiers let same-token pools coexist in
-the cache and on the message bus.
+the same pool instrument ID. The instrument takes its base and quote from `Pool::get_base_token`
+and `Pool::get_quote_token`, the token-priority orientation that swap trade info and execution use,
+and derives price and size precision from token decimals up to `FIXED_PRECISION`. Distinct pool
+identifiers let same-token pools coexist in the cache and on the message bus.
 
 Uniswap V3 and compatible concentrated-liquidity pools also use:
 
@@ -314,9 +314,15 @@ The public data client supports these DeFi subscriptions and requests:
 | Flash events      | `SubscribePoolFlashEvents`, `UnsubscribePoolFlashEvents`           | Selects flash events for one pool instrument.                                                      |
 | Pool snapshot     | `RequestPoolSnapshot`                                              | Publishes the pool definition, then a usable snapshot when cache bootstrap and validation succeed. |
 
-Subscriptions share the underlying block and DEX event feeds. Removing one subscription does not
-stop a feed that another subscription still owns. Pool snapshot requests require Postgres because
-bootstrap reads stored pool and event state through the cache database.
+Subscriptions share the underlying block and DEX event feeds. The client counts owners for each
+pool address and event type, so removing one subscription does not stop a feed that another
+subscription still owns. This holds when a complete pool subscription overlaps a narrower one: the
+narrower event types stay active after `UnsubscribePool`, and the reverse. The data engine keeps a
+pool's profiler updater until no data client has a remaining pool subscription for it.
+
+A pool snapshot response carries the ID of its request. The data engine discards a response whose
+bootstrap was canceled by a final unsubscribe, a reset, or a disconnect. Pool snapshot requests
+require Postgres because bootstrap reads stored pool and event state through the cache database.
 
 :::warning
 DeFi pool definitions and account-state updates publish on typed message-bus routers. A
@@ -792,9 +798,12 @@ startup reconciliation logs and continues. Order, fill, and position report prob
 so LiveNode does not treat an empty answer as absence. These paths never sign, broadcast, or persist
 an intent.
 
-A swap stays `Submitted` until finality, and venue status queries cannot resolve it. Set
-`inflight_check_interval_ms = 0` and leave open-order checks off. The engine's default in-flight
-timeout would otherwise reject a live swap.
+A swap stays `Submitted` until finality, and venue status queries cannot resolve it. The client
+requires submission retention: when the in-flight check exhausts its retries, LiveNode logs a
+warning and keeps the swap `Submitted` instead of rejecting it, so the finalized fill or rejection
+still applies to that order. If the node stops before finality, shutdown reports incomplete
+submission recovery for each swap submitted during that run, and the persisted intent reconciles on
+the next connect. Leave open-order checks off.
 
 Execution routing follows Nautilus's multi-venue broker pattern because the client represents a
 wallet and RPC connection for one chain while each instrument venue identifies both its chain and
@@ -1390,9 +1399,8 @@ Execution validation on public networks must remain read-only and must not load 
 - Order submission supports BUY and SELL market orders through a registered Uniswap V3 deployment
   on the client's chain. Order lists are denied, modify and cancel operations are rejected, and
   venue report probes return an error except mass status, which returns `Ok(None)`; all fail closed
-  with no on-chain or durable side effects. LiveNode must disable in-flight checks and leave
-  open-order checks off. Quote-denominated and multi-hop orders are not supported. See
-  [Execution](#execution).
+  with no on-chain or durable side effects. LiveNode must leave open-order checks off.
+  Quote-denominated and multi-hop orders are not supported. See [Execution](#execution).
 - Postgres-backed execution requires authenticated signed-transaction envelopes. Disconnected
   rollback can restore plaintext for incident work, but the adapter rejects execution until the
   database is protected and passes a full check again. Treat database storage, replicas, backups,

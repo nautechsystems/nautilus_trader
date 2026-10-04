@@ -240,7 +240,7 @@ of trading state.
 `_handle_data` accepts these types from `nautilus_trader.model`:
 
 - **Quotes, trades, and bars**: `QuoteTick`, `TradeTick`, `Bar`.
-- **Order books**: `OrderBookDelta`, `OrderBookDeltas`, `OrderBookDepth10`.
+- **Order books**: `OrderBookDelta`, `OrderBookDeltas`, `OrderBookDepth`.
 - **Prices and funding**: `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`.
 - **Options and instrument events**: `OptionGreeks`, `InstrumentStatus`, `InstrumentClose`.
 - **Custom data**: `CustomData`.
@@ -263,7 +263,7 @@ in adapter-local state.
 | ----------------- | --------------------------------------- | -------------------------------------------- |
 | Custom data       | No suffix                               | `data`                                       |
 | Instruments       | `instruments`, `instrument`             | `instruments`, `instrument`                  |
-| Order books       | `book_deltas`, `book_depth10`           | `book_snapshot`, `book_deltas`, `book_depth` |
+| Order books       | `book_deltas`, `book_depth`             | `book_snapshot`, `book_deltas`, `book_depth` |
 | Quotes and trades | `quotes`, `trades`                      | `quotes`, `trades`                           |
 | Reference prices  | `mark_prices`, `index_prices`           | *Not supported*                              |
 | Funding           | `funding_rates`                         | `funding_rates`                              |
@@ -368,7 +368,7 @@ make an unchanged Cython adapter source-compatible.
 | `LiveMarketDataClient`              | `MarketDataClient`                  | Same module.                                |
 | `LiveExecutionClient`               | `ExecutionClient`                   | Same module.                                |
 | `quote_ticks` / `trade_ticks` hooks | `quotes` / `trades` hooks           | Typed v2 commands.                          |
-| `order_book_*` hooks                | `book_*` hooks                      | Depth subscription uses `book_depth10`.     |
+| `order_book_*` hooks                | `book_*` hooks                      | Depth subscription uses `book_depth`.       |
 | `_request`                          | `_request_data`                     | Custom-data request.                        |
 | `_handle_*` history methods         | `_handle_response(typed_response)`  | Preserve correlation and bounds.            |
 | `_send_*` execution methods         | `_handle_event` / `_handle_report`  | Validates owner identity.                   |
@@ -389,8 +389,10 @@ make an unchanged Cython adapter source-compatible.
   subscription methods.
 - **Database cache backing**: unsupported with custom Python clients in either launch mode. See
   [startup](#startup-scheduling-and-shutdown) and [hosted event loops](../concepts/live.md#hosted-event-loops).
-- **Revised bars**: config retains `handle_revised_bars`, but the v2 core lacks the v1 bar revision
-  marker and revision overwrite behavior.
+- **Revised bars**: config retains `handle_revised_bars`, and the v2 core cache now replaces a
+  cached time bar when a later bar arrives with an equal `ts_event`, skipping older bars. The v1
+  `Bar.is_revision` marker is still absent, so whether revised bars are emitted at all remains
+  adapter-level filtering.
 - **Networking**: this interface does not restore removed HTTP/WebSocket bindings.
 
 ## Independent Rust/PyO3 packages

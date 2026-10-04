@@ -26,6 +26,7 @@ pub mod emitter;
 pub mod failure;
 pub mod manager;
 pub mod reports;
+pub mod submission;
 
 #[cfg(feature = "node")]
 pub(crate) mod client;

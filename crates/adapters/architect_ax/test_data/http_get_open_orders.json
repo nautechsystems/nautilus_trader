@@ -1,7 +1,7 @@
 {
   "orders": [
     {
-      "tn": 1704067200,
+      "tn": 123456789,
       "ts": 1704067200,
       "d": "B",
       "o": "ACCEPTED",
@@ -13,11 +13,14 @@
       "tif": "GTC",
       "u": "test_user@example.com",
       "xq": 0,
+      "po": true,
+      "rb": "rej",
       "cid": 12345,
-      "tag": "strategy-1"
+      "tag": "strategy-1",
+      "aid": "fixture-account"
     },
     {
-      "tn": 1704067201,
+      "tn": 234567890,
       "ts": 1704067201,
       "d": "S",
       "o": "PARTIALLY_FILLED",
@@ -30,7 +33,9 @@
       "u": "test_user@example.com",
       "xq": 300,
       "cid": null,
-      "tag": null
+      "tag": null,
+      "aid": "fixture-account",
+      "po": false
     }
   ],
   "total_count": 2,

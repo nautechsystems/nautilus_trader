@@ -88,8 +88,11 @@ pub(crate) fn prefer_rpi_response_fields(value: &mut serde_json::Value) {
                 }
             }
 
-            for nested in fields.values_mut() {
-                prefer_rpi_response_fields(nested);
+            for (name, nested) in fields.iter_mut() {
+                // Fee groups expose current and legacy rates independently
+                if name != "feeGroup" {
+                    prefer_rpi_response_fields(nested);
+                }
             }
         }
         serde_json::Value::Array(items) => {
@@ -820,15 +823,11 @@ pub fn parse_order_status_report(
         (quantity_dec, filled_qty_dec)
     };
 
-    // For quote-quantity orders marked as FILLED, adjust quantity to match filled_qty
-    // to avoid precision mismatches from quote-to-base conversion
-    let (quantity, filled_qty) = if (is_quote_qty_explicit || is_quote_qty_heuristic)
-        && order.state == OKXOrderStatus::Filled
-        && filled_qty.is_positive()
-    {
-        (filled_qty, filled_qty)
+    // Normalize quote conversion and base shortfalls to the venue's terminal filled size
+    let quantity = if order.state == OKXOrderStatus::Filled && filled_qty.is_positive() {
+        filled_qty
     } else {
-        (quantity, filled_qty)
+        quantity
     };
 
     let order_side = OrderSide::from(order.side);
@@ -908,7 +907,7 @@ pub fn parse_order_status_report(
     );
 
     // Optional fields
-    if !order.px.is_empty()
+    if !is_market_price(&order.px)
         && let Ok(decimal) = Decimal::from_str(&order.px)
         && let Ok(price) = Price::from_decimal_dp(decimal, price_precision)
     {
@@ -1565,65 +1564,28 @@ pub fn parse_instrument_any(
     instrument: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<InstrumentAny>> {
     match instrument.inst_type {
-        OKXInstrumentType::Spot => parse_spot_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Margin => parse_spot_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Swap => parse_swap_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Futures => parse_futures_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Option => parse_option_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
-        OKXInstrumentType::Events => parse_event_contract_instrument(
-            instrument,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            ts_init,
-        )
-        .map(Some),
+        OKXInstrumentType::Spot => {
+            parse_spot_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Margin => {
+            parse_spot_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Swap => {
+            parse_swap_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Futures => {
+            parse_futures_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Option => {
+            parse_option_instrument(instrument, margin_init, margin_maint, ts_init).map(Some)
+        }
+        OKXInstrumentType::Events => {
+            parse_event_contract_instrument(instrument, margin_init, margin_maint, ts_init)
+                .map(Some)
+        }
         OKXInstrumentType::Any => Ok(None),
     }
 }
@@ -1641,8 +1603,6 @@ pub fn parse_spread_instrument(
     definition: &OKXSpread,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     if definition.tick_sz.is_empty() {
@@ -1721,8 +1681,6 @@ pub fn parse_spread_instrument(
             .maybe_min_quantity(min_quantity)
             .maybe_margin_init(margin_init)
             .maybe_margin_maint(margin_maint)
-            .maybe_maker_fee(maker_fee)
-            .maybe_taker_fee(taker_fee)
             .maybe_info(info)
             .ts_event(ts_event)
             .ts_init(ts_init)
@@ -1750,8 +1708,6 @@ pub fn parse_spread_instrument(
         .maybe_min_quantity(min_quantity)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .maybe_info(info)
         .ts_event(ts_event)
         .ts_init(ts_init)
@@ -1883,12 +1839,10 @@ struct CommonInstrumentData {
     min_price: Option<Price>,
 }
 
-/// Margin and fee configuration for an instrument.
-struct MarginAndFees {
+/// Margin rates for an instrument.
+struct MarginRates {
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
 }
 
 /// Parses the multiplier as the product of `ct_mult` and `ct_val`.
@@ -1935,7 +1889,7 @@ trait InstrumentParser {
         &self,
         definition: &OKXInstrument,
         common: CommonInstrumentData,
-        margin_fees: MarginAndFees,
+        margin: MarginRates,
         ts_init: UnixNanos,
     ) -> anyhow::Result<InstrumentAny>;
 }
@@ -2019,19 +1973,15 @@ fn parse_instrument_with_parser<P: InstrumentParser>(
     parser: &P,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let common = parse_common_instrument_data(definition)?;
     parser.parse_specific_fields(
         definition,
         common,
-        MarginAndFees {
+        MarginRates {
             margin_init,
             margin_maint,
-            maker_fee,
-            taker_fee,
         },
         ts_init,
     )
@@ -2045,7 +1995,7 @@ impl InstrumentParser for SpotInstrumentParser {
         &self,
         definition: &OKXInstrument,
         common: CommonInstrumentData,
-        margin_fees: MarginAndFees,
+        margin: MarginRates,
         ts_init: UnixNanos,
     ) -> anyhow::Result<InstrumentAny> {
         let context = format!("{} instrument {}", definition.inst_type, definition.inst_id);
@@ -2075,10 +2025,8 @@ impl InstrumentParser for SpotInstrumentParser {
             .maybe_min_notional(common.min_notional)
             .maybe_max_price(common.max_price)
             .maybe_min_price(common.min_price)
-            .maybe_margin_init(margin_fees.margin_init)
-            .maybe_margin_maint(margin_fees.margin_maint)
-            .maybe_maker_fee(margin_fees.maker_fee)
-            .maybe_taker_fee(margin_fees.taker_fee)
+            .maybe_margin_init(margin.margin_init)
+            .maybe_margin_maint(margin.margin_maint)
             .maybe_info(info)
             .ts_event(ts_init)
             .ts_init(ts_init)
@@ -2098,8 +2046,6 @@ pub fn parse_spot_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     parse_instrument_with_parser(
@@ -2107,8 +2053,6 @@ pub fn parse_spot_instrument(
         &SpotInstrumentParser,
         margin_init,
         margin_maint,
-        maker_fee,
-        taker_fee,
         ts_init,
     )
 }
@@ -2141,8 +2085,6 @@ pub fn parse_swap_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     validate_underlying(definition.inst_id, definition.uly)?;
@@ -2248,8 +2190,6 @@ pub fn parse_swap_instrument(
         .maybe_min_price(min_price)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .maybe_info(info)
         // No ts_event for response
         .ts_event(ts_init)
@@ -2273,8 +2213,6 @@ pub fn parse_futures_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     validate_underlying(definition.inst_id, definition.uly)?;
@@ -2391,8 +2329,6 @@ pub fn parse_futures_instrument(
         .maybe_min_price(min_price)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .maybe_info(info)
         // No ts_event for response
         .ts_event(ts_init)
@@ -2491,8 +2427,6 @@ pub fn parse_option_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     validate_underlying(definition.inst_id, definition.uly)?;
@@ -2617,8 +2551,6 @@ pub fn parse_option_instrument(
         .maybe_min_price(min_price)
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()
@@ -2705,8 +2637,6 @@ pub fn parse_event_contract_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
     margin_maint: Option<Decimal>,
-    maker_fee: Option<Decimal>,
-    taker_fee: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let common = parse_common_instrument_data(definition)?;
@@ -2743,8 +2673,6 @@ pub fn parse_event_contract_instrument(
         .min_price(Price::from("0"))
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
-        .maybe_maker_fee(maker_fee)
-        .maybe_taker_fee(taker_fee)
         .info(info)
         .ts_event(ts_init)
         .ts_init(ts_init)
@@ -2766,12 +2694,19 @@ fn parse_balance_field(value_str: &str, field_name: &str, ccy_str: &str) -> Opti
     }
 }
 
+/// Parses an OKX balance snapshot into a Nautilus [`AccountState`].
+///
+/// Pass the execution client's configured account type: the OKX balance payload carries no
+/// account-mode field, and the emitted type decides which account the engine materializes for
+/// this venue.
+///
 /// # Errors
 ///
 /// Returns an error if the data cannot be parsed.
 pub fn parse_account_state(
     okx_account: &OKXAccount,
     account_id: AccountId,
+    account_type: AccountType,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
@@ -2857,7 +2792,6 @@ pub fn parse_account_state(
         }
     }
 
-    let account_type = AccountType::Margin;
     let is_reported = true;
     let event_id = UUID4::new();
     let ts_event = parse_millisecond_timestamp(okx_account.u_time);
@@ -3314,8 +3248,7 @@ mod tests {
             .first()
             .expect("Test data must have an instrument");
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USD.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-USD"));
@@ -3355,8 +3288,7 @@ mod tests {
             vec![Ustr::from("USD"), Ustr::from("USDC")]
         );
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USDC.OKX"));
         assert_eq!(instrument.quote_currency(), Currency::USDC());
@@ -3385,8 +3317,7 @@ mod tests {
         assert_eq!(okx_inst.float_px_lmt_pct, "0.03");
         assert_eq!(okx_inst.max_px_lmt_pct, "0.15");
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CurrencyPair(pair) = instrument else {
             panic!("expected CurrencyPair");
@@ -3409,8 +3340,7 @@ mod tests {
             .first()
             .expect("Test data must have an instrument");
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USDT.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-USDT"));
@@ -3443,8 +3373,7 @@ mod tests {
         }
 
         let okx_inst = response.data.first().unwrap();
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         // Should parse the multiplier as product of ctMult * ctVal (0.01 * 1 = 0.01)
         if let InstrumentAny::CurrencyPair(pair) = instrument {
@@ -3465,7 +3394,7 @@ mod tests {
         }
 
         let okx_inst = response.data.first().unwrap();
-        let result = parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default());
+        let result = parse_spot_instrument(okx_inst, None, None, UnixNanos::default());
 
         // Should error instead of silently defaulting to 1.0
         assert!(result.is_err());
@@ -3478,66 +3407,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_spot_instrument_with_fees() {
-        let json_data = load_test_json("http_get_instruments_spot.json");
-        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
-        let okx_inst = response.data.first().unwrap();
-
-        let maker_fee = Some(dec!(0.0008));
-        let taker_fee = Some(dec!(0.0010));
-
-        let instrument = parse_spot_instrument(
-            okx_inst,
-            None,
-            None,
-            maker_fee,
-            taker_fee,
-            UnixNanos::default(),
-        )
-        .unwrap();
-
-        // Should apply the provided fees to the instrument
-        if let InstrumentAny::CurrencyPair(pair) = instrument {
-            assert_eq!(pair.maker_fee, dec!(0.0008));
-            assert_eq!(pair.taker_fee, dec!(0.0010));
-        } else {
-            panic!("Expected CurrencyPair instrument");
-        }
-    }
-
-    #[rstest]
-    fn test_parse_instrument_any_passes_through_fees() {
-        // parse_instrument_any receives fees already converted to Nautilus format
-        // (negation happens in HTTP client when parsing OKX API values)
-        let json_data = load_test_json("http_get_instruments_spot.json");
-        let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
-        let okx_inst = response.data.first().unwrap();
-
-        // Fees are already in Nautilus convention (negated by HTTP client)
-        let maker_fee = Some(dec!(-0.00025)); // Nautilus: rebate (negative)
-        let taker_fee = Some(dec!(0.00050)); // Nautilus: commission (positive)
-
-        let instrument = parse_instrument_any(
-            okx_inst,
-            None,
-            None,
-            maker_fee,
-            taker_fee,
-            UnixNanos::default(),
-        )
-        .unwrap()
-        .expect("Should parse spot instrument");
-
-        // Fees should pass through unchanged
-        if let InstrumentAny::CurrencyPair(pair) = instrument {
-            assert_eq!(pair.maker_fee, dec!(-0.00025));
-            assert_eq!(pair.taker_fee, dec!(0.00050));
-        } else {
-            panic!("Expected CurrencyPair instrument");
-        }
-    }
-
-    #[rstest]
     fn test_parse_swap_instrument() {
         let json_data = load_test_json("http_get_instruments_swap.json");
         let response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
@@ -3546,8 +3415,7 @@ mod tests {
             .first()
             .expect("Test data must have an instrument");
 
-        let instrument =
-            parse_swap_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_swap_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USD-SWAP.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-USD-SWAP"));
@@ -3582,8 +3450,7 @@ mod tests {
         okx_inst.float_px_lmt_pct = "0.03".to_string();
         okx_inst.max_px_lmt_pct = "0.15".to_string();
 
-        let instrument =
-            parse_swap_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_swap_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CryptoPerpetual(perpetual) = instrument else {
             panic!("expected CryptoPerpetual");
@@ -3615,8 +3482,7 @@ mod tests {
         let okx_spread = response.data.first().expect("Test data must have a spread");
 
         let instrument =
-            parse_spread_instrument(okx_spread, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_spread_instrument(okx_spread, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CryptoFuturesSpread(spread) = instrument else {
             panic!("Expected CryptoFuturesSpread");
@@ -3667,8 +3533,7 @@ mod tests {
             .expect("Test data must have a linear spread");
 
         let instrument =
-            parse_spread_instrument(okx_spread, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_spread_instrument(okx_spread, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CryptoFuturesSpread(spread) = instrument else {
             panic!("Expected CryptoFuturesSpread");
@@ -3715,8 +3580,6 @@ mod tests {
         let response: OKXResponse<OKXSpread> = serde_json::from_value(payload).unwrap();
         let instrument = parse_spread_instrument(
             response.data.first().expect("Test data must have a spread"),
-            None,
-            None,
             None,
             None,
             UnixNanos::default(),
@@ -3772,8 +3635,6 @@ mod tests {
             response.data.first().expect("Test data must have a spread"),
             None,
             None,
-            None,
-            None,
             UnixNanos::default(),
         );
 
@@ -3794,6 +3655,7 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: Some(Ustr::from("BTC-ABOVE-DAILY")),
             inst_category: Some(OKXInstrumentCategory::Crypto),
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -3828,15 +3690,8 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let parsed = parse_event_contract_instrument(
-            &instrument,
-            None,
-            None,
-            Some(dec!(-0.0002)),
-            Some(dec!(-0.0005)),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let parsed =
+            parse_event_contract_instrument(&instrument, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::BinaryOption(binary) = parsed else {
             panic!("Expected BinaryOption");
@@ -3851,8 +3706,6 @@ mod tests {
         assert_eq!(binary.price_increment, Price::from("0.001"));
         assert_eq!(binary.size_increment, Quantity::from(1));
         assert_eq!(binary.description, Some(Ustr::from("BTC-ABOVE-DAILY")));
-        assert_eq!(binary.maker_fee, dec!(-0.0002));
-        assert_eq!(binary.taker_fee, dec!(-0.0005));
     }
 
     #[rstest]
@@ -3866,8 +3719,7 @@ mod tests {
             .find(|i| i.inst_id == "ETH-USDT-SWAP")
             .expect("ETH-USDT-SWAP must be in test data");
 
-        let instrument =
-            parse_swap_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_swap_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("ETH-USDT-SWAP.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("ETH-USDT-SWAP"));
@@ -3968,8 +3820,7 @@ mod tests {
             .expect("Test data must have an instrument");
 
         let instrument =
-            parse_futures_instrument(okx_inst, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_futures_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(instrument.id(), InstrumentId::from("BTC-USD-241220.OKX"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-USD-241220"));
@@ -4006,8 +3857,7 @@ mod tests {
         okx_inst.max_px_lmt_pct = "0.12".to_string();
 
         let instrument =
-            parse_futures_instrument(okx_inst, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_futures_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         let InstrumentAny::CryptoFuture(crypto_future) = instrument else {
             panic!("expected CryptoFuture");
@@ -4034,6 +3884,7 @@ mod tests {
             inst_family: Ustr::from("BTC-USDT"),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -4069,9 +3920,8 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let parsed =
-            parse_futures_instrument(&instrument, None, None, None, None, UnixNanos::default())
-                .expect("parses synthetic X-Perp instrument");
+        let parsed = parse_futures_instrument(&instrument, None, None, UnixNanos::default())
+            .expect("parses synthetic X-Perp instrument");
 
         let InstrumentAny::CryptoFuture(crypto_future) = parsed else {
             panic!("expected CryptoFuture for X-Perp");
@@ -4093,8 +3943,7 @@ mod tests {
             .expect("Test data must have an instrument");
 
         let instrument =
-            parse_option_instrument(okx_inst, None, None, None, None, UnixNanos::default())
-                .unwrap();
+            parse_option_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
 
         assert_eq!(
             instrument.id(),
@@ -4123,7 +3972,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_account_state() {
+    #[case::margin(AccountType::Margin)]
+    #[case::cash(AccountType::Cash)]
+    fn test_parse_account_state(#[case] account_type: AccountType) {
         let json_data = load_test_json("http_get_account_balance.json");
         let response: OKXResponse<OKXAccount> = serde_json::from_str(&json_data).unwrap();
         let okx_account = response
@@ -4133,10 +3984,11 @@ mod tests {
 
         let account_id = AccountId::new("OKX-001");
         let account_state =
-            parse_account_state(okx_account, account_id, UnixNanos::default()).unwrap();
+            parse_account_state(okx_account, account_id, account_type, UnixNanos::default())
+                .unwrap();
 
         assert_eq!(account_state.account_id, account_id);
-        assert_eq!(account_state.account_type, AccountType::Margin);
+        assert_eq!(account_state.account_type, account_type);
         assert_eq!(account_state.balances.len(), 1);
         assert_eq!(account_state.margins.len(), 0); // No margins in this test data (spot account)
         assert!(account_state.is_reported);
@@ -4224,8 +4076,13 @@ mod tests {
 
         let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
         let account_id = AccountId::new("OKX-001");
-        let account_state =
-            parse_account_state(&okx_account, account_id, UnixNanos::default()).unwrap();
+        let account_state = parse_account_state(
+            &okx_account,
+            account_id,
+            AccountType::Margin,
+            UnixNanos::default(),
+        )
+        .unwrap();
 
         // Verify account details
         assert_eq!(account_state.account_id, account_id);
@@ -4319,8 +4176,13 @@ mod tests {
 
         let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
         let account_id = AccountId::new("OKX-SPOT");
-        let account_state =
-            parse_account_state(&okx_account, account_id, UnixNanos::default()).unwrap();
+        let account_state = parse_account_state(
+            &okx_account,
+            account_id,
+            AccountType::Margin,
+            UnixNanos::default(),
+        )
+        .unwrap();
 
         // Verify no margins are created when fields are empty
         assert_eq!(account_state.margins.len(), 0);
@@ -4356,8 +4218,13 @@ mod tests {
 
         let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
         let account_id = AccountId::new("OKX-001");
-        let account_state =
-            parse_account_state(&okx_account, account_id, UnixNanos::default()).unwrap();
+        let account_state = parse_account_state(
+            &okx_account,
+            account_id,
+            AccountType::Margin,
+            UnixNanos::default(),
+        )
+        .unwrap();
 
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.account_type, AccountType::Margin);
@@ -4399,6 +4266,79 @@ mod tests {
         assert_eq!(order_report.order_side, OrderSide::Buy.into());
         assert_eq!(order_report.order_type, OrderType::Market);
         assert_eq!(order_report.order_status, OrderStatus::Filled);
+    }
+
+    #[rstest]
+    #[case::base_filled(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296475"
+    )]
+    #[case::base_partial(
+        OKXOrderStatus::PartiallyFilled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296487"
+    )]
+    #[case::base_canceled(
+        OKXOrderStatus::Canceled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296487"
+    )]
+    #[case::base_zero_fill(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0",
+        "0.00296487"
+    )]
+    #[case::quote_filled(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::QuoteCcy,
+        "296.487",
+        "0.00296475",
+        "0.00296475"
+    )]
+    fn test_parse_order_status_report_terminal_quantity(
+        #[values("", "0")] price: &str,
+        #[case] state: OKXOrderStatus,
+        #[case] target: OKXTargetCurrency,
+        #[case] size: &str,
+        #[case] filled: &str,
+        #[case] expected_quantity: &str,
+    ) {
+        let response: OKXResponse<OKXOrderHistory> =
+            serde_json::from_str(&load_test_json("http_get_orders_history.json")).unwrap();
+        let mut order = response.data[0].clone();
+        order.inst_type = OKXInstrumentType::Spot;
+        order.ord_type = OKXOrderType::Market;
+        order.side = OKXSide::Buy;
+        order.tgt_ccy = Some(target);
+        order.state = state;
+        order.sz = size.to_string();
+        order.acc_fill_sz = filled.to_string();
+        order.px = price.to_string();
+        order.avg_px = "100000".to_string();
+
+        let report = parse_order_status_report(
+            &order,
+            AccountId::from("OKX-001"),
+            InstrumentId::from("BTC-USDC.OKX"),
+            2,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.price, None);
+        assert_eq!(report.order_status, OrderStatus::try_from(state).unwrap());
+        assert_eq!(report.quantity, Quantity::from(expected_quantity));
+        assert_eq!(report.filled_qty, Quantity::from(filled));
     }
 
     #[rstest]
@@ -4930,6 +4870,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5002,6 +4943,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5074,6 +5016,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5146,6 +5089,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5222,6 +5166,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5298,6 +5243,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5370,6 +5316,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5443,6 +5390,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let report = parse_position_status_report(
@@ -5521,6 +5469,7 @@ mod tests {
             gamma_bs: String::new(),
             theta_bs: String::new(),
             vega_bs: String::new(),
+            close_order_algo: Vec::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -5550,6 +5499,7 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -5585,8 +5535,7 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let result =
-            parse_swap_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        let result = parse_swap_instrument(&instrument, None, None, UnixNanos::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Empty underlying"));
     }
@@ -5600,6 +5549,7 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -5635,8 +5585,7 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let result =
-            parse_futures_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        let result = parse_futures_instrument(&instrument, None, None, UnixNanos::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Empty underlying"));
     }
@@ -5650,6 +5599,7 @@ mod tests {
             inst_family: Ustr::from("BTC-USD"),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -5687,8 +5637,7 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let result =
-            parse_option_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        let result = parse_option_instrument(&instrument, None, None, UnixNanos::default());
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -5706,6 +5655,7 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -5741,8 +5691,7 @@ mod tests {
             trade_quote_ccy_list: Vec::new(),
         };
 
-        let result =
-            parse_option_instrument(&instrument, None, None, None, None, UnixNanos::default());
+        let result = parse_option_instrument(&instrument, None, None, UnixNanos::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Empty underlying"));
     }
@@ -6406,6 +6355,56 @@ mod tests {
     }
 
     #[rstest]
+    fn test_okx_instrument_documented_fee_group_id() {
+        let response: OKXResponse<OKXInstrument> = serde_json::from_str(include_str!(
+            "../../test_data/http_get_instruments_spot_group_id.json"
+        ))
+        .unwrap();
+
+        assert_eq!(response.code, "0");
+        assert!(response.msg.is_empty());
+        assert_eq!(response.data.len(), 1);
+        let instrument = &response.data[0];
+        assert_eq!(instrument.inst_id, Ustr::from("BTC-USDT"));
+        assert_eq!(instrument.inst_type, OKXInstrumentType::Spot);
+        assert_eq!(instrument.group_id, Some(Ustr::from("1")));
+        assert_eq!(
+            instrument.inst_category,
+            Some(OKXInstrumentCategory::Crypto)
+        );
+    }
+
+    #[rstest]
+    #[case::missing(None, None)]
+    #[case::empty(Some(""), None)]
+    #[case::zero(Some("0"), Some("0"))]
+    #[case::group(Some("101"), Some("101"))]
+    fn test_okx_instrument_preserves_raw_fee_group_id(
+        #[case] group_id: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let mut payload: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/http_get_instruments_spot_group_id.json"
+        ))
+        .unwrap();
+        let item = &mut payload["data"][0];
+        item.as_object_mut().unwrap().remove("groupId");
+        if let Some(value) = group_id {
+            item["groupId"] = serde_json::json!(value);
+        }
+        item["instCategory"] = serde_json::json!("3");
+
+        let instrument: OKXInstrument = serde_json::from_value(item.clone()).unwrap();
+
+        assert_eq!(instrument.group_id, expected.map(Ustr::from));
+        assert_eq!(
+            instrument.inst_category,
+            Some(OKXInstrumentCategory::Equity)
+        );
+        assert_eq!(instrument.inst_type, OKXInstrumentType::Spot);
+    }
+
+    #[rstest]
     fn test_okx_instrument_reads_inst_category_and_ignores_legacy_category() {
         // OKX sends both `category` (deprecated) and `instCategory`; the model
         // must read `instCategory` and ignore `category`.
@@ -6460,8 +6459,7 @@ mod tests {
         assert_eq!(okx_inst.rpi_min_level, Some(5));
         assert_eq!(okx_inst.rpi_min_px_band, Some(Decimal::from(20)));
 
-        let instrument =
-            parse_spot_instrument(okx_inst, None, None, None, None, UnixNanos::default()).unwrap();
+        let instrument = parse_spot_instrument(okx_inst, None, None, UnixNanos::default()).unwrap();
         let InstrumentAny::CurrencyPair(pair) = instrument else {
             panic!("expected CurrencyPair");
         };

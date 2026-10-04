@@ -41,9 +41,49 @@ pub(crate) mod tests;
 
 // Re-exports
 pub use data_actor::{DataActor, DataActorConfig, DataActorCore, DataActorNative};
-pub(crate) use dispatch::ChainContext;
+#[doc(hidden)]
+pub use dispatch::DispatchError as CallbackDispatchError;
+pub(crate) use dispatch::{ChainContext, PublicationScope};
+#[cfg(feature = "live")]
+pub(crate) use dispatch::{SendChainContext, collect_command_contexts};
 
 pub use crate::component::Component;
+
+/// Drains at most `budget` callback slots at a caller-established safe boundary.
+///
+/// Returns whether queued slots remain after exhausting the budget. Retained roots alone do not
+/// require another drain. Callers must release component, engine, and cache borrows before entry.
+///
+/// # Errors
+///
+/// Returns the first fatal dispatch error, or an active-work error if delivery cannot safely enter
+/// or encounters an unfinished reservation. A busy head latches a fatal stalled-delivery error.
+/// An otherwise successful drain entered during panic unwinding latches a fatal error on exit;
+/// its result remains successful, and [`callback_failure`] reports the failure.
+#[doc(hidden)]
+pub fn drain_callbacks(budget: usize) -> Result<bool, CallbackDispatchError> {
+    let result = dispatch::drain_at_boundary(budget)?;
+    Ok(result.status == dispatch::DrainStatus::BudgetExhausted)
+}
+
+/// Returns the first fatal callback dispatch error on this thread.
+#[doc(hidden)]
+#[must_use]
+pub fn callback_failure() -> Option<CallbackDispatchError> {
+    dispatch::failure()
+}
+
+/// Releases queued callback captures and resets dispatch accounting at a safe boundary.
+/// Clearing also resets the latched fatal failure.
+///
+/// # Errors
+///
+/// Returns an active-work error while access, reservations, or externally retained roots remain.
+/// Callers must release queued commands and other retained work before clearing callbacks.
+#[doc(hidden)]
+pub fn clear_callbacks() -> Result<(), CallbackDispatchError> {
+    dispatch::clear()
+}
 
 pub trait Actor: Any + Debug {
     /// The unique identifier for the actor.

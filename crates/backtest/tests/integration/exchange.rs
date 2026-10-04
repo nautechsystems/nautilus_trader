@@ -37,7 +37,7 @@ use nautilus_backtest::{
 };
 use nautilus_common::{
     cache::Cache,
-    clock::TestClock,
+    clock::VirtualClock,
     messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
     msgbus::{
         self, MessagingSwitchboard,
@@ -75,8 +75,8 @@ use nautilus_model::{
     instruments::{
         CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
         stubs::{
-            audusd_sim, cfd_gold, crypto_perpetual_ethusdt, futures_contract_es, gbpusd_sim,
-            xbtusd_bitmex,
+            audusd_sim, btcusd_bybit, cfd_gold, crypto_perpetual_ethusdt, futures_contract_es,
+            gbpusd_sim,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -109,7 +109,7 @@ fn get_exchange_with_oms(
     cache: Option<Rc<RefCell<Cache>>>,
 ) -> Rc<RefCell<SimulatedExchange>> {
     let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(venue)
         .oms_type(oms_type)
@@ -117,7 +117,7 @@ fn get_exchange_with_oms(
         .book_type(book_type)
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     let exchange = Rc::new(RefCell::new(
@@ -125,7 +125,7 @@ fn get_exchange_with_oms(
     ));
     SimulatedExchange::register_spread_quote_endpoint(&exchange);
 
-    let clock = TestClock::new();
+    let clock = VirtualClock::new();
     let execution_client = BacktestExecutionClient::new(
         TraderId::test_default(),
         AccountId::test_default(),
@@ -305,7 +305,7 @@ fn test_liquidation_closes_all_breached_currencies_in_one_pass(
         "200.00000",
     );
     let cache = Rc::new(RefCell::new(raw_cache));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(Venue::new("SIM"))
         .oms_type(OmsType::Netting)
@@ -319,7 +319,7 @@ fn test_liquidation_closes_all_breached_currencies_in_one_pass(
         )
         .default_leverage(Decimal::ONE)
         .liquidation_enabled(true)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     let exchange = Rc::new(RefCell::new(
@@ -1964,11 +1964,11 @@ fn test_process_funding_rate_returns_instrument_boundary() {
 
 #[rstest]
 fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
-    let inverse = xbtusd_bitmex();
+    let inverse = btcusd_bybit();
     let instrument = InstrumentAny::CryptoPerpetual(inverse.clone());
-    let account_id = AccountId::from("BITMEX-001");
+    let account_id = AccountId::from("BYBIT-001");
     let mut cache = Cache::default();
-    pre_populate_margin_account_with_balance(&mut cache, "BITMEX-001", Money::from("100 BTC"));
+    pre_populate_margin_account_with_balance(&mut cache, "BYBIT-001", Money::from("100 BTC"));
     cache.add_instrument(instrument.clone()).unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -2007,7 +2007,7 @@ fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
         None,
     );
     let exchange = build_exchange_with_options(
-        Venue::new("BITMEX"),
+        Venue::new("BYBIT"),
         AccountType::Margin,
         false,
         false,
@@ -2423,7 +2423,7 @@ fn build_exchange_with_options(
     allow_cash_borrowing: bool,
     cache: Rc<RefCell<Cache>>,
 ) -> Rc<RefCell<SimulatedExchange>> {
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(venue)
         .oms_type(OmsType::Netting)
@@ -2431,7 +2431,7 @@ fn build_exchange_with_options(
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .defer_option_settlement(false)
         .frozen_account(frozen_account)
         .allow_cash_borrowing(allow_cash_borrowing)
@@ -3637,7 +3637,7 @@ fn get_exchange_with_modules(
     modules: Vec<SimulationModuleHandle>,
 ) -> Rc<RefCell<SimulatedExchange>> {
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
     // Register msgbus handler so generate_account_state works during reset
     let (handler, _saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
@@ -3651,14 +3651,14 @@ fn get_exchange_with_modules(
         .starting_balances(vec![Money::new(1000.0, Currency::USD())])
         .default_leverage(Decimal::ONE)
         .modules(modules)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()
         .unwrap();
     let exchange = Rc::new(RefCell::new(
         SimulatedExchange::new(config, cache.clone(), clock).unwrap(),
     ));
 
-    let exec_clock = TestClock::new();
+    let exec_clock = VirtualClock::new();
     let execution_client = BacktestExecutionClient::new(
         TraderId::test_default(),
         AccountId::test_default(),
@@ -3830,7 +3830,7 @@ fn test_process_modules_skips_when_account_adjustments_are_unavailable(
         sequence: sequence.clone(),
     })];
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let config = SimulatedVenueConfig::builder()
         .venue(Venue::new("SIM"))
         .oms_type(OmsType::Netting)
@@ -3839,7 +3839,7 @@ fn test_process_modules_skips_when_account_adjustments_are_unavailable(
         .starting_balances(vec![Money::from("1000 USD")])
         .default_leverage(Decimal::ONE)
         .modules(modules)
-        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel).into())
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .frozen_account(frozen_account)
         .build()
         .unwrap();

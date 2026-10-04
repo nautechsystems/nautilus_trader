@@ -23,6 +23,37 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::{Display as StrumDisplay, EnumString};
 use ustr::Ustr;
 
+/// Role of the private key used to sign orders, independent of the wallet signature format.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.adapters.polymarket",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.polymarket")
+)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PolymarketSignerType {
+    #[default]
+    Owner,
+    Session,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl PolymarketSignerType {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
 /// EIP-712 signature type for order signing.
 ///
 /// Serialized as a numeric value (0/1/2/3) on the wire.
@@ -43,7 +74,7 @@ use ustr::Ustr;
 )]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
-pub enum SignatureType {
+pub enum PolymarketSignatureType {
     Eoa = 0,
     PolyProxy = 1,
     PolyGnosisSafe = 2,
@@ -234,6 +265,9 @@ pub enum PolymarketTradeStatus {
     /// Sent to the executor service for on-chain submission.
     #[serde(alias = "TRADE_STATUS_MATCHED")]
     Matched,
+    /// Matched before the on-chain transaction was broadcast.
+    #[serde(alias = "TRADE_STATUS_MATCHED_NOT_BROADCASTED")]
+    MatchedNotBroadcasted,
     /// Mined on-chain, no finality threshold yet.
     #[serde(alias = "TRADE_STATUS_MINED")]
     Mined,
@@ -258,7 +292,10 @@ impl PolymarketTradeStatus {
     /// Returns `true` while settlement can still succeed or fail.
     #[must_use]
     pub const fn is_pending_settlement(&self) -> bool {
-        matches!(self, Self::Matched | Self::Mined | Self::Retrying)
+        matches!(
+            self,
+            Self::Matched | Self::MatchedNotBroadcasted | Self::Mined | Self::Retrying
+        )
     }
 }
 
@@ -349,17 +386,20 @@ mod tests {
 
     #[rstest]
     fn test_signature_type_serializes_as_u8() {
-        assert_eq!(serde_json::to_string(&SignatureType::Eoa).unwrap(), "0");
         assert_eq!(
-            serde_json::to_string(&SignatureType::PolyProxy).unwrap(),
+            serde_json::to_string(&PolymarketSignatureType::Eoa).unwrap(),
+            "0"
+        );
+        assert_eq!(
+            serde_json::to_string(&PolymarketSignatureType::PolyProxy).unwrap(),
             "1"
         );
         assert_eq!(
-            serde_json::to_string(&SignatureType::PolyGnosisSafe).unwrap(),
+            serde_json::to_string(&PolymarketSignatureType::PolyGnosisSafe).unwrap(),
             "2"
         );
         assert_eq!(
-            serde_json::to_string(&SignatureType::Poly1271).unwrap(),
+            serde_json::to_string(&PolymarketSignatureType::Poly1271).unwrap(),
             "3"
         );
     }
@@ -367,20 +407,20 @@ mod tests {
     #[rstest]
     fn test_signature_type_deserializes_from_u8() {
         assert_eq!(
-            serde_json::from_str::<SignatureType>("0").unwrap(),
-            SignatureType::Eoa
+            serde_json::from_str::<PolymarketSignatureType>("0").unwrap(),
+            PolymarketSignatureType::Eoa
         );
         assert_eq!(
-            serde_json::from_str::<SignatureType>("1").unwrap(),
-            SignatureType::PolyProxy
+            serde_json::from_str::<PolymarketSignatureType>("1").unwrap(),
+            PolymarketSignatureType::PolyProxy
         );
         assert_eq!(
-            serde_json::from_str::<SignatureType>("2").unwrap(),
-            SignatureType::PolyGnosisSafe
+            serde_json::from_str::<PolymarketSignatureType>("2").unwrap(),
+            PolymarketSignatureType::PolyGnosisSafe
         );
         assert_eq!(
-            serde_json::from_str::<SignatureType>("3").unwrap(),
-            SignatureType::Poly1271
+            serde_json::from_str::<PolymarketSignatureType>("3").unwrap(),
+            PolymarketSignatureType::Poly1271
         );
     }
 
@@ -484,6 +524,16 @@ mod tests {
     }
 
     #[rstest]
+    #[case("\"MATCHED_NOT_BROADCASTED\"")]
+    #[case("\"TRADE_STATUS_MATCHED_NOT_BROADCASTED\"")]
+    fn test_trade_status_deserializes_matched_not_broadcasted(#[case] wire: &str) {
+        assert_eq!(
+            serde_json::from_str::<PolymarketTradeStatus>(wire).unwrap(),
+            PolymarketTradeStatus::MatchedNotBroadcasted
+        );
+    }
+
+    #[rstest]
     #[case(PolymarketOrderSide::Buy, OrderSide::Buy)]
     #[case(PolymarketOrderSide::Sell, OrderSide::Sell)]
     fn test_order_side_to_nautilus(#[case] poly: PolymarketOrderSide, #[case] expected: OrderSide) {
@@ -581,6 +631,7 @@ mod tests {
     #[rstest]
     fn test_trade_status_is_pending_settlement() {
         assert!(PolymarketTradeStatus::Matched.is_pending_settlement());
+        assert!(PolymarketTradeStatus::MatchedNotBroadcasted.is_pending_settlement());
         assert!(PolymarketTradeStatus::Mined.is_pending_settlement());
         assert!(PolymarketTradeStatus::Retrying.is_pending_settlement());
         assert!(!PolymarketTradeStatus::Confirmed.is_pending_settlement());

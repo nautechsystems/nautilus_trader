@@ -54,3 +54,96 @@ def test_fixed_point_boundaries_do_not_abort_subprocess() -> None:
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "fixed-point boundaries passed"
     assert result.stderr == ""
+
+
+def test_float_precision_boundaries_do_not_abort_subprocess() -> None:
+    """
+    Test float precision boundary errors do not abort a subprocess.
+    """
+    code = (
+        "from nautilus_trader.indicators import ExponentialMovingAverage\n"
+        "from nautilus_trader.model import AccountBalance, Bar, BarType, BookOrder, Currency\n"
+        "from nautilus_trader.model import CurrencyType, Money, OrderSide, Price, Quantity\n"
+        "currency = Currency('TST18', 18, 0, 'Test 18dp', CurrencyType.CRYPTO)\n"
+        "price = Price.from_str('1.500000000000000000')\n"
+        "quantity = Quantity.from_str('2.000000000000000000')\n"
+        "money = Money.from_raw(1, currency)\n"
+        "balance = AccountBalance(total=money, locked=Money.zero(currency), free=money)\n"
+        "assert balance.to_dict()['total'] == '0.000000000000000001'\n"
+        "bar_type = BarType.from_str('AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL')\n"
+        "bar = Bar(bar_type, price, price, price, price, quantity, 0, 0)\n"
+        "calls = (\n"
+        "    lambda: float(price),\n"
+        "    lambda: quantity.as_double(),\n"
+        "    lambda: float(money),\n"
+        "    lambda: BookOrder(OrderSide.BUY, price, quantity, 1).exposure(),\n"
+        "    lambda: ExponentialMovingAverage(10).handle_bar(bar),\n"
+        ")\n"
+        "for call in calls:\n"
+        "    try:\n"
+        "        call()\n"
+        "    except ValueError:\n"
+        "        pass\n"
+        "    else:\n"
+        "        raise AssertionError('expected ValueError')\n"
+        "print('float precision boundaries passed')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "float precision boundaries passed"
+    assert result.stderr == ""
+
+
+def test_raw_data_reconstruction_boundaries_do_not_abort_subprocess() -> None:
+    """
+    Test raw data reconstruction errors do not abort a subprocess.
+    """
+    code = (
+        "from nautilus_trader.model import AggressorSide, InstrumentId, Price, Quantity\n"
+        "from nautilus_trader.model import QuoteTick, TradeId, TradeTick\n"
+        "instrument_id = InstrumentId.from_str('AUD/USD.SIM')\n"
+        "price = Price.from_str('1.00001')\n"
+        "size = Quantity.from_int(1)\n"
+        "quote = QuoteTick(instrument_id, price, price, size, size, 1, 2)\n"
+        "trade = TradeTick(instrument_id, price, size, AggressorSide.BUY, TradeId('1'), 1, 2)\n"
+        "quote_state = list(quote.__getstate__())\n"
+        "quote_state[3] = 255\n"
+        "trade_state = list(trade.__getstate__())\n"
+        "trade_state[6] = ''\n"
+        "calls = (\n"
+        "    lambda: QuoteTick.from_raw(\n"
+        "        instrument_id, price.raw, price.raw, 255, 5, size.raw, size.raw, 0, 0, 1, 2\n"
+        "    ),\n"
+        "    lambda: TradeTick.from_raw(\n"
+        "        instrument_id, price.raw, 255, size.raw, 0, AggressorSide.BUY, TradeId('1'), 1, 2\n"
+        "    ),\n"
+        "    lambda: quote.__setstate__(tuple(quote_state)),\n"
+        "    lambda: trade.__setstate__(tuple(trade_state)),\n"
+        ")\n"
+        "for call in calls:\n"
+        "    try:\n"
+        "        call()\n"
+        "    except ValueError:\n"
+        "        pass\n"
+        "    else:\n"
+        "        raise AssertionError('expected ValueError')\n"
+        "print('raw data reconstruction boundaries passed')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "raw data reconstruction boundaries passed"
+    assert result.stderr == ""

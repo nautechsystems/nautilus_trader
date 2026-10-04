@@ -713,6 +713,16 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(
+        clippy::float_cmp,
+        reason = "1e18 ns and 1e9 s are exactly representable, the division is exact"
+    )]
+    fn test_get_time_static_mode_returns_exact_seconds() {
+        let time = AtomicTime::new(false, UnixNanos::from(1_000_000_000_000_000_000));
+        assert_eq!(time.get_time(), 1_000_000_000.0);
+    }
+
+    #[rstest]
     fn test_acquire_release_contract_static_mode() {
         // This test explicitly proves the Acquire/Release memory ordering contract:
         // - Writer thread uses set_time() which does Release store (see AtomicTime::set_time)

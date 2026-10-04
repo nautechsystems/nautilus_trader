@@ -80,6 +80,7 @@ pub fn classify_okx_ws_failure(error: &OKXWsError) -> CommandFailure {
         | OKXWsError::HandlerUnavailable(_)
         | OKXWsError::TransportSend(
             SendError::InvalidInput(_)
+            | SendError::BufferFull
             | SendError::Closed
             | SendError::Timeout
             | SendError::ConnectionChanged,
@@ -107,6 +108,8 @@ mod tests {
     #[case::request_timeout("50004", "API endpoint request timeout", false)]
     #[case::order_timeout("51149", "Order timed out. Please try again.", false)]
     #[case::rate_limit("50011", "Request too frequent", false)]
+    #[case::ws_rate_limit("60014", "WebSocket requests too frequent", true)]
+    #[case::ws_internal_error("64007", "WebSocket internal error", true)]
     #[case::invalid_signature("50113", "Invalid signature", true)]
     #[case::missing_code("", "All operations failed", false)]
     fn test_classify_okx_venue_code(
@@ -310,8 +313,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_classify_okx_ws_pre_write_timeout_is_not_sent() {
-        let error = OKXWsError::TransportSend(SendError::Timeout);
+    #[case(SendError::Timeout)]
+    #[case(SendError::BufferFull)]
+    fn test_classify_okx_ws_pre_write_failure_is_not_sent(#[case] error: SendError) {
+        let error = OKXWsError::TransportSend(error);
 
         assert_eq!(
             classify_okx_ws_failure(&error),

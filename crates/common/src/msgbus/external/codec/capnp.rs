@@ -19,7 +19,7 @@ use anyhow::Context;
 use bytes::Bytes;
 use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks, OrderBookDeltas,
-    OrderBookDepth10, QuoteTick, TradeTick,
+    OrderBookDepth, QuoteTick, TradeTick,
 };
 use nautilus_serialization::{
     capnp::{FromCapnp, ToCapnp},
@@ -59,10 +59,10 @@ define_deserializer!(
     market_capnp::order_book_deltas::Reader
 );
 define_deserializer!(
-    deserialize_order_book_depth10,
-    OrderBookDepth10,
-    "OrderBookDepth10",
-    market_capnp::order_book_depth10::Reader
+    deserialize_order_book_depth,
+    OrderBookDepth,
+    "OrderBookDepth",
+    market_capnp::order_book_depth::Reader
 );
 define_deserializer!(
     deserialize_quote,
@@ -138,11 +138,11 @@ pub(super) fn serialize_payload(
             OrderBookDeltas,
             market_capnp::order_book_deltas::Builder
         ),
-        BusPayloadType::OrderBookDepth10 => serialize_payload_as!(
+        BusPayloadType::OrderBookDepth => serialize_payload_as!(
             message,
             type_name,
-            OrderBookDepth10,
-            market_capnp::order_book_depth10::Builder
+            OrderBookDepth,
+            market_capnp::order_book_depth::Builder
         ),
         BusPayloadType::QuoteTick => serialize_payload_as!(
             message,

@@ -18,6 +18,7 @@ directory using the ``nautilus_dark`` tearsheet theme.
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 from pathlib import Path
 import sys
 
@@ -34,6 +35,7 @@ from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import DataActorConfig
 from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import CryptoPerpetual
@@ -177,6 +179,10 @@ def run_backtest(nrows: int = 1_000_000) -> object:
         base_currency=None,
         starting_balances=[Money.from_str("200000 XRP"), Money.from_str("100000 USDT")],
         book_type=BookType.L2_MBP,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.0002"),
+            taker_rate=Decimal("0.00055"),
+        ),
     )
     engine.add_instrument(XRPUSDT_BYBIT)
     engine.add_data(deltas)

@@ -525,6 +525,7 @@ mod tests {
 
     use indexmap::IndexMap;
     use nautilus_common::cache::Cache;
+    use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
     use nautilus_model::{
         data::Data,
         enums::{AccountType, BookType, OmsType},
@@ -747,6 +748,7 @@ mod tests {
                     .book_type(BookType::L1_MBP)
                     .starting_balances(vec![Money::from("1000 USD")])
                     .modules(vec![module])
+                    .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                     .build()
                     .unwrap(),
             )

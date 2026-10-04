@@ -15,7 +15,7 @@
 
 //! Integration tests for Tardis Machine WebSocket client using mock servers.
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, path::Path, process::Command, sync::Arc};
 
 use axum::{
     Router,
@@ -24,15 +24,20 @@ use axum::{
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt};
-use nautilus_model::{data::Data, identifiers::InstrumentId};
+use nautilus_model::{
+    data::Data, enums::BookType, identifiers::InstrumentId, orderbook::OrderBook,
+};
 use nautilus_tardis::{
     common::enums::TardisExchange,
     config::BookSnapshotOutput,
-    machine::types::{
-        ReplayNormalizedRequestOptions, TardisInstrumentMiniInfo, TardisMachineClient,
+    machine::{
+        message::WsMessage,
+        parse::parse_tardis_ws_message_data,
+        types::{ReplayNormalizedRequestOptions, TardisInstrumentMiniInfo, TardisMachineClient},
     },
 };
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 const TRADE_FIXTURE: &str = include_str!("../../test_data/trade.json");
@@ -40,6 +45,60 @@ const BOOK_CHANGE_FIXTURE: &str = include_str!("../../test_data/book_change.json
 const BAR_FIXTURE: &str = include_str!("../../test_data/bar.json");
 const DISCONNECT_FIXTURE: &str = include_str!("../../test_data/disconnect.json");
 const OPTION_SUMMARY_FIXTURE: &str = include_str!("../../test_data/option_summary.json");
+
+#[rstest]
+#[ignore = "Requires Node.js and TARDIS_NODE_MODULE pointing to an installed tardis-dev package"]
+fn test_deribit_snapshot_queued_updates_with_tardis_node() {
+    let package = std::env::var("TARDIS_NODE_MODULE").expect("TARDIS_NODE_MODULE must be set");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("node")
+        .arg(root.join("tests/integration/normalize_deribit.mjs"))
+        .arg(package)
+        .arg(root.join("test_data/deribit_queued_book_updates.json"))
+        .output()
+        .expect("Node.js must be installed");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+    let info = Arc::new(TardisInstrumentMiniInfo::new(
+        instrument_id,
+        Some(Ustr::from("BTC-PERPETUAL")),
+        TardisExchange::Deribit,
+        1,
+        0,
+    ));
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let normalized = String::from_utf8(output.stdout).unwrap();
+    let mut batches = 0;
+
+    for line in normalized.lines() {
+        let message: WsMessage = serde_json::from_str(line).unwrap();
+        for data in parse_tardis_ws_message_data(message, &info, &BookSnapshotOutput::Deltas, false)
+        {
+            let Data::BookDeltas(deltas) = data else {
+                panic!("Expected book deltas, received {data:?}");
+            };
+
+            book.apply_deltas(&deltas).unwrap();
+            batches += 1;
+        }
+    }
+
+    assert_eq!(
+        book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+        vec![(dec!(100), dec!(7)), (dec!(99), dec!(2))],
+    );
+    assert_eq!(
+        book.asks_as_map(None).into_iter().collect::<Vec<_>>(),
+        vec![(dec!(102), dec!(5))],
+    );
+    assert_eq!(batches, 2);
+}
 
 async fn start_mock_ws_server(app: Router) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

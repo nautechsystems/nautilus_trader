@@ -200,12 +200,20 @@ pub struct AssetPairInfo {
 pub type AssetPairsResponse = IndexMap<String, AssetPairInfo>;
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(
+    dead_code,
+    reason = "TradeVolume response retained for account fee-rate follow-up"
+)]
 pub(crate) struct SpotTradeVolumeFee {
     #[serde(with = "decimal")]
     pub fee: Decimal,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(
+    dead_code,
+    reason = "TradeVolume response retained for account fee-rate follow-up"
+)]
 pub(crate) struct SpotTradeVolumeResponse {
     pub fees: IndexMap<String, SpotTradeVolumeFee>,
     #[serde(default)]

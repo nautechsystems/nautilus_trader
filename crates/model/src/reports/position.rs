@@ -17,15 +17,18 @@ use std::fmt::{Debug, Display};
 
 use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{
-    enums::PositionSide,
+    enums::{AvgPxReconciliation, PositionSide},
     identifiers::{AccountId, InstrumentId, PositionId},
     types::Quantity,
 };
 
 /// Represents a position status at a point in time.
+///
+/// When `avg_px_open_precision` is set, reconciliation accepts `avg_px_open` within one unit at
+/// that precision on top of its relative tolerance. A precision above 28 adds no allowance.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -57,6 +60,11 @@ pub struct PositionStatusReport {
     pub venue_position_id: Option<PositionId>,
     /// The reported average open price for the position.
     pub avg_px_open: Option<Decimal>,
+    /// How position reconciliation may use `avg_px_open`.
+    #[serde(default, deserialize_with = "deserialize_avg_px_open_reconciliation")]
+    pub avg_px_open_reconciliation: AvgPxReconciliation,
+    /// The decimal places the venue kept for `avg_px_open`, when it rounds or truncates the average.
+    pub avg_px_open_precision: Option<u8>,
 }
 
 impl PositionStatusReport {
@@ -92,7 +100,26 @@ impl PositionStatusReport {
             ts_init,
             venue_position_id,
             avg_px_open,
+            avg_px_open_reconciliation: AvgPxReconciliation::default(),
+            avg_px_open_precision: None,
         }
+    }
+
+    /// Sets how position reconciliation may use the reported average open price.
+    #[must_use]
+    pub const fn with_avg_px_open_reconciliation(
+        mut self,
+        avg_px_open_reconciliation: AvgPxReconciliation,
+    ) -> Self {
+        self.avg_px_open_reconciliation = avg_px_open_reconciliation;
+        self
+    }
+
+    /// Sets the decimal places the venue kept for the reported average open price.
+    #[must_use]
+    pub const fn with_avg_px_open_precision(mut self, avg_px_open_precision: u8) -> Self {
+        self.avg_px_open_precision = Some(avg_px_open_precision);
+        self
     }
 
     /// Checks if the position has a venue position ID.
@@ -124,17 +151,29 @@ impl Display for PositionStatusReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "PositionStatusReport(account={}, instrument={}, side={}, qty={}, venue_pos_id={:?}, avg_px_open={:?}, ts_last={}, ts_init={})",
+            "PositionStatusReport(account={}, instrument={}, side={}, qty={}, venue_pos_id={:?}, avg_px_open={:?}, avg_px_open_reconciliation={}, avg_px_open_precision={:?}, ts_last={}, ts_init={})",
             self.account_id,
             self.instrument_id,
             self.position_side,
             self.signed_decimal_qty,
             self.venue_position_id,
             self.avg_px_open,
+            self.avg_px_open_reconciliation,
+            self.avg_px_open_precision,
             self.ts_last,
             self.ts_init
         )
     }
+}
+
+// Arrow decoding yields null for rows from files written before the field existed
+fn deserialize_avg_px_open_reconciliation<'de, D>(
+    deserializer: D,
+) -> Result<AvgPxReconciliation, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<AvgPxReconciliation>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 #[cfg(test)]
@@ -152,7 +191,7 @@ mod tests {
         types::Quantity,
     };
 
-    fn test_position_status_report_long() -> PositionStatusReport {
+    fn test_position_report_long() -> PositionStatusReport {
         PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
@@ -166,7 +205,7 @@ mod tests {
         )
     }
 
-    fn test_position_status_report_short() -> PositionStatusReport {
+    fn test_position_report_short() -> PositionStatusReport {
         PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
@@ -180,7 +219,7 @@ mod tests {
         )
     }
 
-    fn test_position_status_report_flat() -> PositionStatusReport {
+    fn test_position_report_flat() -> PositionStatusReport {
         PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
@@ -196,7 +235,7 @@ mod tests {
 
     #[rstest]
     fn test_position_status_report_new_long() {
-        let report = test_position_status_report_long();
+        let report = test_position_report_long();
 
         assert_eq!(report.account_id, AccountId::from("SIM-001"));
         assert_eq!(report.instrument_id, InstrumentId::from("AUDUSD.SIM"));
@@ -206,11 +245,17 @@ mod tests {
         assert_eq!(report.venue_position_id, Some(PositionId::from("P-001")));
         assert_eq!(report.ts_last, UnixNanos::from(1_000_000_000));
         assert_eq!(report.ts_init, UnixNanos::from(2_000_000_000));
+        assert_eq!(report.avg_px_open, None);
+        assert_eq!(
+            report.avg_px_open_reconciliation,
+            AvgPxReconciliation::Match
+        );
+        assert_eq!(report.avg_px_open_precision, None);
     }
 
     #[rstest]
     fn test_position_status_report_new_short() {
-        let report = test_position_status_report_short();
+        let report = test_position_report_short();
 
         assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from("50"));
@@ -220,7 +265,7 @@ mod tests {
 
     #[rstest]
     fn test_position_status_report_new_flat() {
-        let report = test_position_status_report_flat();
+        let report = test_position_report_flat();
 
         assert_eq!(report.position_side, PositionSide::Flat);
         assert_eq!(report.quantity, Quantity::from("0"));
@@ -250,7 +295,7 @@ mod tests {
 
     #[rstest]
     fn test_has_venue_position_id() {
-        let mut report = test_position_status_report_long();
+        let mut report = test_position_report_long();
         assert!(report.has_venue_position_id());
 
         report.venue_position_id = None;
@@ -259,9 +304,9 @@ mod tests {
 
     #[rstest]
     fn test_is_flat() {
-        let long_report = test_position_status_report_long();
-        let short_report = test_position_status_report_short();
-        let flat_report = test_position_status_report_flat();
+        let long_report = test_position_report_long();
+        let short_report = test_position_report_short();
+        let flat_report = test_position_report_flat();
 
         let no_position_report = PositionStatusReport::new(
             AccountId::from("SIM-001"),
@@ -283,9 +328,9 @@ mod tests {
 
     #[rstest]
     fn test_is_long() {
-        let long_report = test_position_status_report_long();
-        let short_report = test_position_status_report_short();
-        let flat_report = test_position_status_report_flat();
+        let long_report = test_position_report_long();
+        let short_report = test_position_report_short();
+        let flat_report = test_position_report_flat();
 
         assert!(long_report.is_long());
         assert!(!short_report.is_long());
@@ -294,9 +339,9 @@ mod tests {
 
     #[rstest]
     fn test_is_short() {
-        let long_report = test_position_status_report_long();
-        let short_report = test_position_status_report_short();
-        let flat_report = test_position_status_report_flat();
+        let long_report = test_position_report_long();
+        let short_report = test_position_report_short();
+        let flat_report = test_position_report_flat();
 
         assert!(!long_report.is_short());
         assert!(short_report.is_short());
@@ -305,7 +350,7 @@ mod tests {
 
     #[rstest]
     fn test_display() {
-        let report = test_position_status_report_long();
+        let report = test_position_report_long();
         let display_str = format!("{report}");
 
         assert!(display_str.contains("PositionStatusReport"));
@@ -315,11 +360,13 @@ mod tests {
         assert!(display_str.contains("100"));
         assert!(display_str.contains("P-001"));
         assert!(display_str.contains("avg_px_open=None"));
+        assert!(display_str.contains("avg_px_open_reconciliation=MATCH"));
+        assert!(display_str.contains("avg_px_open_precision=None"));
     }
 
     #[rstest]
     fn test_clone_and_equality() {
-        let report1 = test_position_status_report_long();
+        let report1 = test_position_report_long();
         let report2 = report1.clone();
 
         assert_eq!(report1, report2);
@@ -327,7 +374,7 @@ mod tests {
 
     #[rstest]
     fn test_serialization_roundtrip() {
-        let original = test_position_status_report_long();
+        let original = test_position_report_long();
 
         // Test JSON serialization
         let json = serde_json::to_string(&original).unwrap();
@@ -368,7 +415,8 @@ mod tests {
 
     #[rstest]
     fn test_different_position_sides_not_equal() {
-        let long_report = test_position_status_report_long();
+        let long_report = test_position_report_long();
+
         let short_report = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
@@ -480,5 +528,72 @@ mod tests {
         let deserialized: PositionStatusReport = serde_json::from_str(&json).unwrap();
 
         assert_eq!(report.avg_px_open, deserialized.avg_px_open);
+    }
+
+    #[rstest]
+    fn test_with_avg_px_open_metadata() {
+        let report = test_position_report_long()
+            .with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly)
+            .with_avg_px_open_precision(4);
+
+        assert_eq!(
+            report.avg_px_open_reconciliation,
+            AvgPxReconciliation::OpeningOnly
+        );
+        assert_eq!(report.avg_px_open_precision, Some(4));
+        assert!(
+            format!("{report}")
+                .contains("avg_px_open_reconciliation=OPENING_ONLY, avg_px_open_precision=Some(4)")
+        );
+    }
+
+    #[rstest]
+    fn test_avg_px_open_metadata_serialization_roundtrip() {
+        let report = test_position_report_long()
+            .with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly)
+            .with_avg_px_open_precision(4);
+
+        let json = serde_json::to_string(&report).unwrap();
+        let deserialized: PositionStatusReport = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized, report);
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::null(Some(serde_json::Value::Null))]
+    fn test_deserialize_without_avg_px_open_metadata_uses_defaults(
+        #[case] value: Option<serde_json::Value>,
+    ) {
+        let report = test_position_report_long();
+        let mut json = serde_json::to_value(&report).unwrap();
+        let object = json.as_object_mut().unwrap();
+        object.remove("avg_px_open_reconciliation");
+        object.remove("avg_px_open_precision");
+
+        if let Some(value) = value {
+            object.insert("avg_px_open_reconciliation".to_string(), value.clone());
+            object.insert("avg_px_open_precision".to_string(), value);
+        }
+
+        let deserialized: PositionStatusReport = serde_json::from_value(json).unwrap();
+
+        assert_eq!(deserialized, report);
+    }
+
+    #[rstest]
+    fn test_deserialize_rejects_unknown_avg_px_open_reconciliation() {
+        let mut json = serde_json::to_value(test_position_report_long()).unwrap();
+        json.as_object_mut().unwrap().insert(
+            "avg_px_open_reconciliation".to_string(),
+            serde_json::Value::String("FIFO".to_string()),
+        );
+
+        let result = serde_json::from_value::<PositionStatusReport>(json);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Matching variant not found"
+        );
     }
 }

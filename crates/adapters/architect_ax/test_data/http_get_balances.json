@@ -2,15 +2,18 @@
   "balances": [
     {
       "symbol": "USD",
-      "amount": "100000.50"
+      "amount": "100000.50",
+      "account_id": "fixture-account"
     },
     {
       "symbol": "BTC",
-      "amount": "1.25"
+      "amount": "1.25",
+      "account_id": "fixture-account"
     },
     {
       "symbol": "ETH",
-      "amount": "15.5"
+      "amount": "15.5",
+      "account_id": "fixture-account"
     }
   ]
 }

@@ -26,7 +26,7 @@ use nautilus_model::{
     instruments::{CryptoOption, InstrumentAny},
     types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use rust_decimal::Decimal;
 
 use crate::{
@@ -70,13 +70,20 @@ pub struct TardisOptionsChainCSVConverterConfig {
 ///
 /// # Errors
 ///
-/// Returns an error if a CSV file cannot be read, a row cannot be parsed, a complete best
-/// bid/offer row contains invalid values, instrument derivation fails, or catalog writes fail.
+/// Returns an error if the catalog cannot be opened, a CSV file cannot be read, a row cannot be
+/// parsed, a complete best bid/offer row contains invalid values, instrument derivation fails, or
+/// catalog writes fail.
 pub fn convert_options_chain_csv(
     config: &TardisOptionsChainCSVConverterConfig,
 ) -> anyhow::Result<()> {
     let underlyings = normalize_underlying_filters(config.underlyings.clone());
-    let catalog = ParquetDataCatalog::new(&config.catalog_path, None, None, None, None);
+    let catalog = ParquetDataCatalog::from_uri(
+        &config.catalog_path.to_string_lossy(),
+        None,
+        None,
+        None,
+        None,
+    )?;
     let mut precision_by_instrument: AHashMap<InstrumentId, OptionsChainPrecision> =
         AHashMap::new();
     let mut instrument_states: AHashMap<InstrumentId, InstrumentBuildState> = AHashMap::new();
@@ -461,7 +468,7 @@ mod tests {
         enums::OptionKind,
         instruments::Instrument,
     };
-    use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     use rstest::rstest;
     use tempfile::TempDir;
     use ustr::Ustr;
@@ -478,6 +485,28 @@ mod tests {
 
         assert!(config.extract_bbo_as_quotes);
         assert!(config.write_instruments);
+    }
+
+    #[rstest]
+    fn test_convert_options_chain_csv_returns_error_for_missing_catalog_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let catalog_path = temp_dir.path().join("missing");
+        let config = TardisOptionsChainCSVConverterConfig::builder()
+            .filepaths(vec![get_test_data_path("options_chain.csv")])
+            .catalog_path(catalog_path.clone())
+            .build();
+
+        let error = convert_options_chain_csv(&config).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "failed to open local storage directory '{}'; create it if it does not exist \
+                 and check access permissions",
+                catalog_path.display()
+            )
+        );
+        assert!(!catalog_path.exists());
     }
 
     #[rstest]
@@ -500,7 +529,7 @@ mod tests {
         let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
         let instrument_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let quotes = catalog
-            .query_typed_data::<QuoteTick>(
+            .query::<QuoteTick>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -510,7 +539,7 @@ mod tests {
             )
             .unwrap();
         let greeks = catalog
-            .query_typed_data::<OptionGreeks>(
+            .query::<OptionGreeks>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -576,17 +605,10 @@ mod tests {
         let call_id = "BTC-9JUN20-10000-C.DERIBIT".to_string();
         let next_expiry_id = "BTC-10JUN20-10000-C.DERIBIT".to_string();
         let call_quotes = catalog
-            .query_typed_data::<QuoteTick>(
-                Some(vec![call_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<QuoteTick>(Some(vec![call_id.clone()]), None, None, None, None, true)
             .unwrap();
         let next_expiry_greeks = catalog
-            .query_typed_data::<OptionGreeks>(
+            .query::<OptionGreeks>(
                 Some(vec![next_expiry_id.clone()]),
                 None,
                 None,
@@ -627,7 +649,7 @@ mod tests {
         let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
         let instrument_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let quotes = catalog
-            .query_typed_data::<QuoteTick>(
+            .query::<QuoteTick>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -637,7 +659,7 @@ mod tests {
             )
             .unwrap();
         let greeks = catalog
-            .query_typed_data::<OptionGreeks>(
+            .query::<OptionGreeks>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -681,7 +703,7 @@ mod tests {
         let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
         let instrument_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let quotes = catalog
-            .query_typed_data::<QuoteTick>(
+            .query::<QuoteTick>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -691,7 +713,7 @@ mod tests {
             )
             .unwrap();
         let greeks = catalog
-            .query_typed_data::<OptionGreeks>(
+            .query::<OptionGreeks>(
                 Some(vec![instrument_id.clone()]),
                 None,
                 None,
@@ -739,20 +761,13 @@ mod tests {
         let btc_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let eth_id = "ETH-9JUN20-250-P.DERIBIT".to_string();
         let btc_quotes = catalog
-            .query_typed_data::<QuoteTick>(Some(vec![btc_id.clone()]), None, None, None, None, true)
+            .query::<QuoteTick>(Some(vec![btc_id.clone()]), None, None, None, None, true)
             .unwrap();
         let eth_quotes = catalog
-            .query_typed_data::<QuoteTick>(Some(vec![eth_id.clone()]), None, None, None, None, true)
+            .query::<QuoteTick>(Some(vec![eth_id.clone()]), None, None, None, None, true)
             .unwrap();
         let eth_greeks = catalog
-            .query_typed_data::<OptionGreeks>(
-                Some(vec![eth_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<OptionGreeks>(Some(vec![eth_id.clone()]), None, None, None, None, true)
             .unwrap();
 
         assert_eq!(btc_quotes.len(), 1);

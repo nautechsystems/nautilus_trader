@@ -132,3 +132,61 @@ pub struct HttpResponse {
     /// The raw response body.
     pub body: Bytes,
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(100, [true, false, false, false, false])]
+    #[case(199, [true, false, false, false, false])]
+    #[case(200, [false, true, false, false, false])]
+    #[case(299, [false, true, false, false, false])]
+    #[case(300, [false, false, true, false, false])]
+    #[case(399, [false, false, true, false, false])]
+    #[case(400, [false, false, false, true, false])]
+    #[case(499, [false, false, false, true, false])]
+    #[case(500, [false, false, false, false, true])]
+    #[case(599, [false, false, false, false, true])]
+    #[case(600, [false; 5])]
+    #[case(999, [false; 5])]
+    fn status_classifies_boundaries(#[case] code: u16, #[case] expected: [bool; 5]) {
+        let status = HttpStatus::try_from(code).unwrap();
+
+        assert_eq!(status.as_u16(), code);
+        assert_eq!(status.as_str(), code.to_string());
+        assert_eq!(
+            [
+                status.is_informational(),
+                status.is_success(),
+                status.is_redirection(),
+                status.is_client_error(),
+                status.is_server_error()
+            ],
+            expected,
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(99)]
+    #[case(1000)]
+    #[case(u16::MAX)]
+    fn status_rejects_invalid_code(#[case] code: u16) {
+        let error = HttpStatus::try_from(code).unwrap_err();
+
+        assert_eq!(error.to_string(), "invalid status code");
+    }
+
+    #[rstest]
+    #[case(HttpMethod::GET, Method::GET)]
+    #[case(HttpMethod::POST, Method::POST)]
+    #[case(HttpMethod::PUT, Method::PUT)]
+    #[case(HttpMethod::DELETE, Method::DELETE)]
+    #[case(HttpMethod::PATCH, Method::PATCH)]
+    fn method_conversion_preserves_verb(#[case] input: HttpMethod, #[case] expected: Method) {
+        assert_eq!(Method::from(input), expected);
+    }
+}

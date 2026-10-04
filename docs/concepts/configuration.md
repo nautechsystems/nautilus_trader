@@ -175,6 +175,7 @@ finite values of at least one nanosecond.
 The separate `reconciliation` field enables startup reconciliation and defaults to `True`; the
 interval fields control periodic checks independently. When startup reconciliation is enabled,
 `reconciliation_startup_delay_secs` also delays the first periodic check after startup.
+The delay must be finite and in [0, 86400] seconds.
 
 For the full set of live engine options, see
 [ExecutionEngine configuration](../how_to/configure_live_trading.md#executionengine-configuration).

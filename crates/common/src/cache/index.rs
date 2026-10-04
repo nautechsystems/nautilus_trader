@@ -25,7 +25,7 @@ use nautilus_model::{
 /// A key-value lookup index for a `Cache`.
 #[derive(Debug)]
 pub(super) struct CacheIndex {
-    pub(crate) venue_account: AHashMap<Venue, AccountId>,
+    pub(crate) venue_accounts: AHashMap<Venue, AHashSet<AccountId>>,
     pub(crate) venue_orders: AHashMap<Venue, AHashSet<ClientOrderId>>,
     pub(crate) venue_positions: AHashMap<Venue, AHashSet<PositionId>>,
     pub(crate) venue_order_ids: AHashMap<VenueOrderId, ClientOrderId>,
@@ -62,7 +62,7 @@ impl Default for CacheIndex {
     /// Creates a new default [`CacheIndex`] instance.
     fn default() -> Self {
         Self {
-            venue_account: AHashMap::new(),
+            venue_accounts: AHashMap::new(),
             venue_orders: AHashMap::new(),
             venue_positions: AHashMap::new(),
             venue_order_ids: AHashMap::new(),
@@ -100,7 +100,7 @@ impl Default for CacheIndex {
 impl CacheIndex {
     /// Clears the index which will clear/reset all internal state.
     pub(super) fn clear(&mut self) {
-        self.venue_account.clear();
+        self.venue_accounts.clear();
         self.venue_orders.clear();
         self.venue_positions.clear();
         self.venue_order_ids.clear();
@@ -131,5 +131,16 @@ impl CacheIndex {
         self.positions_closed.clear();
         self.strategies.clear();
         self.exec_algorithms.clear();
+    }
+
+    pub(super) fn add_venue_account(&mut self, account_id: AccountId) {
+        let venue = account_id.get_issuer();
+        let account_ids = self.venue_accounts.entry(venue).or_default();
+
+        if account_ids.insert(account_id) && account_ids.len() > 1 {
+            log::warn!(
+                "Account {account_id} shares issuer {venue} with another account; venue-only account lookups for {venue} no longer resolve"
+            );
+        }
     }
 }

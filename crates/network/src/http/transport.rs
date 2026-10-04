@@ -26,7 +26,7 @@ use std::{
 
 use bytes::Bytes;
 use http::{
-    Request, Response,
+    HeaderValue, Request, Response,
     header::{AUTHORIZATION, COOKIE, PROXY_AUTHORIZATION, REFERER, WWW_AUTHENTICATE},
 };
 use http_body_util::Full;
@@ -36,6 +36,7 @@ use hyper_util::{
     client::{legacy::Client as HyperClient, proxy::matcher::Matcher},
     rt::{TokioExecutor, TokioTimer},
 };
+use parking_lot::Mutex;
 use tower_http::follow_redirect::{
     FollowRedirect,
     policy::{Action, Attempt, Policy},
@@ -55,6 +56,7 @@ impl Client {
     pub(super) fn new(
         proxy: Option<&str>,
         use_system_proxy: bool,
+        user_agent: Option<HeaderValue>,
         settings: Settings,
     ) -> Result<Self, HttpClientError> {
         let provider = rustls::crypto::CryptoProvider::get_default()
@@ -62,15 +64,15 @@ impl Client {
             .ok_or_else(|| {
                 HttpClientError::ClientBuildError("TLS provider is unavailable".into())
             })?;
-        let verifier = rustls_platform_verifier::Verifier::new(provider.clone())
-            .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
+
+        let verifier = platform_verifier(&provider)?;
         let mut tls = rustls::ClientConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()
             .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(verifier))
+            .with_custom_certificate_verifier(verifier)
             .with_no_client_auth();
-        let connector = Connector::new(tls.clone(), proxy, use_system_proxy)?;
+        let connector = Connector::new(tls.clone(), proxy, use_system_proxy, user_agent)?;
         let proxies = connector.proxies.clone();
         tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         let connector = HttpsConnector::from((connector, tls));
@@ -82,6 +84,9 @@ impl Client {
             .pool_idle_timeout(settings.pool_idle_timeout)
             .http2_keep_alive_interval(settings.keep_alive_interval)
             .http2_keep_alive_while_idle(settings.keep_alive_interval.is_some())
+            .http2_initial_stream_window_size(settings.stream_window)
+            .http2_initial_connection_window_size(settings.connection_window)
+            // Keep after the window sizes: setting a window size turns adaptive windows off
             .http2_adaptive_window(settings.adaptive_window)
             .build(connector);
         Ok(Self { client, proxies })
@@ -89,19 +94,9 @@ impl Client {
 
     pub(super) async fn send(
         &self,
-        mut request: Request<Full<Bytes>>,
+        request: Request<Full<Bytes>>,
         redirects: HttpRedirectPolicy,
     ) -> Result<Response<Incoming>, HttpClientError> {
-        if request.uri().scheme_str() == Some("http")
-            && !request.headers().contains_key(PROXY_AUTHORIZATION)
-            && let Some(proxy) = self.proxies.intercept(request.uri())
-            && let Some(auth) = proxy.basic_auth()
-        {
-            request
-                .headers_mut()
-                .insert(PROXY_AUTHORIZATION, auth.clone());
-        }
-
         let policy = Redirects {
             policy: redirects,
             count: 0,
@@ -123,7 +118,17 @@ impl Service<Request<Full<Bytes>>> for Client {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, request: Request<Full<Bytes>>) -> Self::Future {
+    fn call(&mut self, mut request: Request<Full<Bytes>>) -> Self::Future {
+        if request.uri().scheme_str() == Some("http")
+            && !request.headers().contains_key(PROXY_AUTHORIZATION)
+            && let Some(proxy) = self.proxies.intercept(request.uri())
+            && let Some(auth) = proxy.basic_auth()
+        {
+            request
+                .headers_mut()
+                .insert(PROXY_AUTHORIZATION, auth.clone());
+        }
+
         let client = self.client.clone();
         Box::pin(async move {
             let mut retries = 0;
@@ -144,18 +149,9 @@ pub(super) struct Settings {
     pub(super) pool_max_idle_per_host: usize,
     pub(super) pool_idle_timeout: Duration,
     pub(super) keep_alive_interval: Option<Duration>,
+    pub(super) stream_window: Option<u32>,
+    pub(super) connection_window: Option<u32>,
     pub(super) adaptive_window: bool,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            pool_max_idle_per_host: usize::MAX,
-            pool_idle_timeout: Duration::from_secs(90),
-            keep_alive_interval: None,
-            adaptive_window: false,
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -215,6 +211,24 @@ impl Policy<Full<Bytes>, HttpClientError> for Redirects {
     fn clone_body(&self, body: &Full<Bytes>) -> Option<Full<Bytes>> {
         Some(body.clone())
     }
+}
+
+// Each `Verifier::new` reloads the platform roots, which on Linux reads the CA bundle from disk,
+// so concurrent first builds share one load under the lock, and a failed load is not cached.
+fn platform_verifier(
+    provider: &Arc<rustls::crypto::CryptoProvider>,
+) -> Result<Arc<rustls_platform_verifier::Verifier>, HttpClientError> {
+    static VERIFIER: Mutex<Option<Arc<rustls_platform_verifier::Verifier>>> = Mutex::new(None);
+
+    let mut cached = VERIFIER.lock();
+
+    if let Some(verifier) = &*cached {
+        return Ok(verifier.clone());
+    }
+
+    let verifier = rustls_platform_verifier::Verifier::new(provider.clone())
+        .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
+    Ok(cached.insert(Arc::new(verifier)).clone())
 }
 
 fn retryable(e: &(dyn Error + 'static)) -> bool {

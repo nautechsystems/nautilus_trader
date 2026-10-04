@@ -11,12 +11,11 @@ The strategy combines two indicators on 1-minute mid bars:
 - **Bollinger Bands** (`BBMeanReversion`'s `BB(20, 2.0sd)`): a rolling
   20-bar mean and a +/-2sd envelope. The bands flag price as overextended
   relative to recent volatility.
-- **Relative Strength Index** (`RSI(14)`): a 14-bar momentum oscillator.
-  NautilusTrader RSI is on `[0, 1]`, so the conventional 30/70 thresholds
-  become `0.30` / `0.70`.
+- **Relative Strength Index** (`RSI(14)`): a 14-bar momentum oscillator on
+  `[0, 100]`, used with the conventional 30/70 thresholds.
 
-Entry needs both signals at once: a touch of the lower band with `RSI < 0.30`
-opens a long; a touch of the upper band with `RSI > 0.70` opens a short.
+Entry needs both signals at once: a touch of the lower band with `RSI < 30`
+opens a long; a touch of the upper band with `RSI > 70` opens a short.
 Exit is one-sided: any open position closes when the close crosses back
 through the BB middle. Existing positions on the opposite side are flattened
 before a new entry.
@@ -43,8 +42,8 @@ flowchart LR
 
     subgraph Decision ["Decision"]
         EX{{"Net long AND close >= mid<br/>OR<br/>net short AND close <= mid"}}
-        ENL{{"close <= lower<br/>AND RSI < 0.30"}}
-        ENS{{"close >= upper<br/>AND RSI > 0.70"}}
+        ENL{{"close <= lower<br/>AND RSI < 30"}}
+        ENS{{"close >= upper<br/>AND RSI > 70"}}
     end
 
     subgraph Orders
@@ -78,7 +77,12 @@ for AX EURUSD-PERP backtests.
 ## Prerequisites
 
 - Python 3.12+
-- [NautilusTrader installed](../getting_started/installation.md).
+- [NautilusTrader installed](../getting_started/installation.md) with the
+  [`visualization` extra](../getting_started/installation.md#extras), which
+  provides pandas.
+- A source checkout of the repository. The backtest imports
+  `BBMeanReversion` from `examples/live/architect_ax/strategies.py`, which
+  the installed package does not include.
 - A free TrueFX account, used to download a monthly tick archive.
 
 ## Data preparation
@@ -171,8 +175,6 @@ EURUSD_PERP = PerpetualContract(
     lot_size=Quantity.from_int(1),
     margin_init=Decimal("0.05"),
     margin_maint=Decimal("0.025"),
-    maker_fee=Decimal("0.0002"),
-    taker_fee=Decimal("0.0005"),
     ts_event=0,
     ts_init=0,
 )
@@ -189,14 +191,9 @@ rates.
 | `bb_period`          | `20`   | Rolling window for the BB mean and the standard deviation. |
 | `bb_std`             | `2.0`  | Band width in standard deviations.                         |
 | `rsi_period`         | `14`   | RSI lookback in bars.                                      |
-| `rsi_buy_threshold`  | `0.30` | Long entry confirmation (NautilusTrader RSI is `[0, 1]`).  |
-| `rsi_sell_threshold` | `0.70` | Short entry confirmation.                                  |
+| `rsi_buy_threshold`  | `30.0` | Long entry confirmation (RSI is on `[0, 100]`).            |
+| `rsi_sell_threshold` | `70.0` | Short entry confirmation.                                  |
 | `trade_size`         | `1`    | One contract per trade (1,000 EUR notional).               |
-
-:::note
-NautilusTrader RSI returns values in `[0.0, 1.0]`, not `[0, 100]`. The
-`0.30` / `0.70` thresholds correspond to the textbook 30 / 70 levels.
-:::
 
 ## Backtest setup
 
@@ -204,12 +201,14 @@ From the repository root:
 
 ```python
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
 from nautilus_trader.model import Money
@@ -236,6 +235,10 @@ engine.add_venue(
     account_type=AccountType.MARGIN,
     base_currency=USD,
     starting_balances=[Money.from_str("100000 USD")],
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0.0002"),
+        taker_rate=Decimal("0.0005"),
+    ),
 )
 
 engine.add_instrument(EURUSD_PERP)
@@ -249,8 +252,8 @@ strategy = BBMeanReversion(
         bb_period=20,
         bb_std=2.0,
         rsi_period=14,
-        rsi_buy_threshold=0.30,
-        rsi_sell_threshold=0.70,
+        rsi_buy_threshold=30.0,
+        rsi_sell_threshold=70.0,
     ),
 )
 engine.add_strategy(strategy)
@@ -292,7 +295,7 @@ feed.*
 
 **Figure 2.** *Twelve-hour zoom around the dataset midpoint. Top: mid with
 BB envelope, long entries (triangles up), short entries (triangles down),
-and closing fills (crosses). Bottom: RSI(14) with the 0.30 buy / 0.70 sell
+and closing fills (crosses). Bottom: RSI(14) with the 30 buy / 70 sell
 thresholds.*
 
 ![Decision space scatter](./assets/fx_mean_reversion_ax/panel_c_decision_scatter.png)
@@ -331,7 +334,7 @@ Set `TRUEFX_CSV` to wherever you saved the EUR/USD archive.
   Suppress entries when realized range or a slower trend filter says the
   market is directional.
 - **Tune thresholds**. A wider band (`bb_std=2.5`) or stricter RSI cutoffs
-  (`0.25` / `0.75`) cut entries but raise the bar for confirmation.
+  (`25` / `75`) cut entries but raise the bar for confirmation.
 - **Add stops**. Hard stop-loss orders cap downside per cycle and prevent
   carrying a losing position to the BB middle reversion.
 - **Go live on the AX sandbox**. Connect to the AX sandbox for paper
@@ -345,6 +348,10 @@ The same `BBMeanReversion` strategy runs live against AX Exchange. The
 launch script swaps the `BacktestEngine` for a `LiveNode` with the AX
 data and execution clients configured. See the live example:
 [`ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_mean_reversion.py).
+The script targets the AX sandbox (`AxEnvironment.SANDBOX` on both client
+configs) and places live sandbox orders. It also sets
+`LiveRiskEngineConfig(bypass=True)`, which skips pre-trade risk checks and
+order rate limits.
 
 For connection setup and API key configuration, see the
 [AX Exchange integration guide](../integrations/architect_ax.md).

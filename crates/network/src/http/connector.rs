@@ -24,7 +24,7 @@ use std::{
     time::Duration,
 };
 
-use http::Uri;
+use http::{HeaderMap, HeaderValue, Uri, header::USER_AGENT};
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper_rustls::{HttpsConnector, MaybeHttpsStream};
 use hyper_util::{
@@ -44,6 +44,7 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 pub(super) struct Connector {
     http: HttpConnector,
     proxy_tls: HttpsConnector<HttpConnector>,
+    user_agent: Option<HeaderValue>,
     pub(super) proxies: Arc<Matcher>,
 }
 
@@ -52,6 +53,7 @@ impl Connector {
         tls: rustls::ClientConfig,
         proxy: Option<&str>,
         use_system_proxy: bool,
+        user_agent: Option<HeaderValue>,
     ) -> Result<Self, HttpClientError> {
         let proxies = if let Some(proxy) = proxy {
             let mut url = match url::Url::parse(proxy) {
@@ -100,6 +102,7 @@ impl Connector {
         Ok(Self {
             proxy_tls: HttpsConnector::from((http.clone(), tls)),
             http,
+            user_agent,
             proxies: Arc::new(proxies),
         })
     }
@@ -118,6 +121,7 @@ impl Service<Uri> for Connector {
         let proxy = self.proxies.intercept(&dst);
         let mut http = self.http.clone();
         let mut proxy_tls = self.proxy_tls.clone();
+        let user_agent = self.user_agent.clone();
 
         Box::pin(async move {
             let Some(proxy) = proxy else {
@@ -132,6 +136,11 @@ impl Service<Uri> for Connector {
                 if let Some(auth) = proxy.basic_auth() {
                     tunnel = tunnel.with_auth(auth.clone());
                 }
+
+                if let Some(user_agent) = user_agent {
+                    tunnel = tunnel.with_headers(HeaderMap::from_iter([(USER_AGENT, user_agent)]));
+                }
+
                 Ok(Stream {
                     inner: tunnel.call(dst).await?,
                     proxied: false,

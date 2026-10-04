@@ -24,3 +24,15 @@ pub mod vidya;
 pub mod vwap;
 pub mod wma;
 pub mod zscore;
+
+use pyo3::prelude::*;
+
+use crate::average::MovingAverageType;
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl MovingAverageType {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}

@@ -28,6 +28,8 @@ use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 #[cfg(feature = "defi")]
+use nautilus_model::defi::WEI_PRECISION;
+#[cfg(feature = "defi")]
 use nautilus_model::defi::{
     AmmType, Dex, DexType, Pool, PoolIdentifier, PoolProfiler, Token, chain::chains,
 };
@@ -69,7 +71,11 @@ use nautilus_model::{
     },
     position::{Position, PositionReplayEvent},
     stubs::TestDefault,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{
+        AccountBalance, Currency, Money, Price, Quantity,
+        fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION},
+        price::PriceRaw,
+    },
 };
 use parking_lot::Mutex;
 use rstest::{fixture, rstest};
@@ -86,6 +92,7 @@ use crate::{
         SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError, VenueOrderIdOwnershipError,
         database::{CacheDatabaseAdapter, CacheMap},
     },
+    component::ComponentAccessError,
     signal::Signal,
 };
 
@@ -436,6 +443,24 @@ fn test_register_external_order_claims_is_additive_strict_and_atomic(mut cache: 
     assert_eq!(cache.external_order_claim(&audusd), Some(strategy_id));
     assert_eq!(cache.external_order_claim(&gbpusd), Some(strategy_id));
     assert_eq!(cache.external_order_claim(&usdjpy), None);
+}
+
+#[rstest]
+fn test_register_external_order_claims_rejects_a_repeated_instrument(mut cache: Cache) {
+    let strategy_id = StrategyId::from("CLAIMS-001");
+    let audusd = InstrumentId::from("AUD/USD.SIM");
+    let gbpusd = InstrumentId::from("GBP/USD.SIM");
+
+    let error = cache
+        .register_external_order_claims(strategy_id, &[gbpusd, audusd, audusd])
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "External order claim for AUD/USD.SIM appears more than once for CLAIMS-001"
+    );
+    assert_eq!(cache.external_order_claim(&audusd), None);
+    assert_eq!(cache.external_order_claim(&gbpusd), None);
 }
 
 #[rstest]
@@ -1174,7 +1199,7 @@ fn test_check_integrity_detects_missing_or_stale_index_entries(
 
     match corruption {
         IntegrityCorruption::AccountForward => {
-            cache.index.venue_account.remove(&account_venue);
+            cache.index.venue_accounts.remove(&account_venue);
         }
         IntegrityCorruption::OrderForward => {
             cache.index.order_strategy.remove(&client_order_id);
@@ -1250,14 +1275,19 @@ fn test_reset_honors_drop_instruments_on_reset(
 }
 
 #[rstest]
-fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair) {
+#[case(2000)]
+#[case(1000)]
+fn test_get_xrate_from_bars_selects_latest_bar_per_side(
+    audusd_sim: CurrencyPair,
+    #[case] ts_newer: u64,
+) {
     let mut cache = Cache::default();
     let instrument = InstrumentAny::CurrencyPair(audusd_sim.clone());
     cache.add_instrument(instrument).unwrap();
 
     let instrument_id = audusd_sim.id;
     let ts_older = UnixNanos::from(1000);
-    let ts_newer = UnixNanos::from(2000);
+    let ts_newer = UnixNanos::from(ts_newer);
 
     let make_bar = |bar_type: BarType, close: &str, ts_init: UnixNanos| {
         Bar::new(
@@ -1272,7 +1302,7 @@ fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair
         )
     };
 
-    // Older 1-MINUTE bars must not shadow the newer 5-MINUTE bars regardless of map order
+    // Newer timestamps win, with the bar type breaking timestamp ties
     let bid_type_old = BarType::from(format!("{instrument_id}-1-MINUTE-BID-EXTERNAL").as_str());
     let bid_type_new = BarType::from(format!("{instrument_id}-5-MINUTE-BID-EXTERNAL").as_str());
     let ask_type_old = BarType::from(format!("{instrument_id}-1-MINUTE-ASK-EXTERNAL").as_str());
@@ -1298,7 +1328,101 @@ fn test_get_xrate_from_bars_selects_latest_bar_per_side(audusd_sim: CurrencyPair
         PriceType::Mid,
     );
 
+    let bid_rate = cache.get_xrate(
+        instrument_id.venue,
+        Currency::AUD(),
+        Currency::USD(),
+        PriceType::Bid,
+    );
+    let ask_rate = cache.get_xrate(
+        instrument_id.venue,
+        Currency::AUD(),
+        Currency::USD(),
+        PriceType::Ask,
+    );
+
     assert_eq!(rate, Some(dec!(0.80005)));
+    assert_eq!(bid_rate, Some(dec!(0.80000)));
+    assert_eq!(ask_rate, Some(dec!(0.80010)));
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_get_xrate_from_bars_keeps_instruments_and_sides_separate(#[case] reverse: bool) {
+    let mut cache = Cache::default();
+    let venue = Venue::from("SIM");
+    let other_venue = Venue::from("OTHER");
+
+    let [aud, eur, gbp, other_aud] = [
+        ("AUD/USD", venue),
+        ("EUR/USD", venue),
+        ("GBP/USD", venue),
+        ("AUD/USD", other_venue),
+    ]
+    .map(|(symbol, venue)| {
+        let instrument = default_fx_ccy(Symbol::from(symbol), Some(venue));
+        let id = instrument.id;
+        cache
+            .add_instrument(InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+        id
+    });
+
+    let mut bars = [
+        (aud, "BID", "0.80000"),
+        (aud, "ASK", "0.82000"),
+        (eur, "BID", "1.10000"),
+        (eur, "ASK", "1.14000"),
+        (gbp, "BID", "1.30000"),
+        (gbp, "LAST", "1.32000"),
+        (other_aud, "BID", "0.90000"),
+        (other_aud, "ASK", "0.94000"),
+    ];
+
+    if reverse {
+        bars.reverse();
+    }
+
+    for (instrument_id, price_type, close) in bars {
+        let bar_type =
+            BarType::from(format!("{instrument_id}-1-MINUTE-{price_type}-EXTERNAL").as_str());
+        let close = Price::from(close);
+        cache
+            .add_bar(Bar::new(
+                bar_type,
+                close,
+                close,
+                close,
+                close,
+                Quantity::from(100_000),
+                UnixNanos::from(1000),
+                UnixNanos::from(1000),
+            ))
+            .unwrap();
+    }
+
+    assert_eq!(
+        cache.get_xrate(venue, Currency::AUD(), Currency::USD(), PriceType::Mid),
+        Some(dec!(0.81)),
+    );
+    assert_eq!(
+        cache.get_xrate(venue, Currency::EUR(), Currency::USD(), PriceType::Mid),
+        Some(dec!(1.12)),
+    );
+    assert_eq!(
+        cache.get_xrate(venue, Currency::GBP(), Currency::USD(), PriceType::Bid),
+        None,
+    );
+    assert_eq!(
+        cache.get_xrate(
+            other_venue,
+            Currency::AUD(),
+            Currency::USD(),
+            PriceType::Mid
+        ),
+        Some(dec!(0.92)),
+    );
 }
 
 #[rstest]
@@ -1574,7 +1698,16 @@ fn test_dispose_when_empty(mut cache: Cache) {
 
 #[rstest]
 fn test_flush_db_when_empty(mut cache: Cache) {
-    cache.flush_db();
+    cache.flush_db().unwrap();
+}
+
+#[rstest]
+fn test_flush_db_returns_database_error() {
+    let mut cache = Cache::new(None, Some(Box::new(SnapshotBlobTestDatabase::fail_flush())));
+
+    let error = cache.flush_db().unwrap_err();
+
+    assert_eq!(error.to_string(), "flush failed");
 }
 
 #[rstest]
@@ -3154,6 +3287,16 @@ fn test_add_general_when_value(mut cache: Cache) {
     assert_eq!(result, Some(&value));
 }
 
+// Snapshot keys embed the position ID, so general keys must accept UTF-8
+#[rstest]
+fn test_add_and_get_general_when_key_is_non_ascii(mut cache: Cache) {
+    let key = "cache://position-snapshots/\u{9f99}\u{867e}USDT-PERP.BINANCE-ALEX-000/0";
+    let value = Bytes::from_static(&[0_u8]);
+    cache.add(key, value.clone()).unwrap();
+    let result = cache.get(key).unwrap();
+    assert_eq!(result, Some(&value));
+}
+
 #[rstest]
 fn test_orders_for_position(mut cache: Cache, audusd_sim: CurrencyPair) {
     let order = OrderTestBuilder::new(OrderType::Limit)
@@ -3220,22 +3363,28 @@ fn test_correct_order_indexing(mut cache: Cache) {
 }
 
 #[rstest]
+#[case(3)]
+#[case(64)]
 fn test_cache_orders_returned_sorted_by_client_order_id(
     mut cache: Cache,
     audusd_sim: CurrencyPair,
+    #[case] count: usize,
 ) {
     // The cache index is AHash-backed for fast lookup, so it iterates in
     // hasher-randomized order. The public Vec returns sort by client_order_id
     // so callers (e.g. own-book replay, cancel-all cascades) see the same
     // sequence across runs.
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let expected: Vec<_> = (0..count)
+        .map(|i| ClientOrderId::from(format!("O-{i:03}").as_str()))
+        .collect();
 
-    for raw in ["O-303", "O-101", "O-202"] {
+    for client_order_id in expected.iter().rev() {
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
-            .client_order_id(ClientOrderId::from(raw))
+            .client_order_id(*client_order_id)
             .build();
         cache.add_order(order, None, None, false).unwrap();
     }
@@ -3246,14 +3395,131 @@ fn test_cache_orders_returned_sorted_by_client_order_id(
         .map(|o| o.client_order_id())
         .collect();
 
-    assert_eq!(
-        returned,
-        vec![
-            ClientOrderId::from("O-101"),
-            ClientOrderId::from("O-202"),
-            ClientOrderId::from("O-303"),
-        ],
-    );
+    assert_eq!(returned, expected);
+}
+
+#[rstest]
+#[case(None, None, None, None, None, &["O-A", "O-B", "O-C", "O-D", "O-E", "O-Z"])]
+#[case(Some("VENUE-A"), None, None, None, None, &["O-A", "O-B", "O-C", "O-E", "O-Z"])]
+#[case(None, Some("SYMBOL-1.VENUE-A"), None, None, None, &["O-A", "O-B", "O-E", "O-Z"])]
+#[case(None, None, Some("S-001"), None, None, &["O-A", "O-B", "O-C", "O-D", "O-Z"])]
+#[case(None, None, None, Some("SIM-002"), None, &["O-E"])]
+#[case(None, None, None, None, Some(OrderSide::Sell), &["O-B"])]
+#[case(Some("VENUE-A"), Some("SYMBOL-1.VENUE-A"), Some("S-001"), Some("SIM-001"), Some(OrderSide::Buy), &["O-A", "O-Z"])]
+#[case(Some("VENUE-B"), Some("SYMBOL-1.VENUE-A"), None, None, None, &[])]
+#[case(None, None, Some("S-001"), Some("SIM-002"), None, &[])]
+#[case(Some("UNKNOWN"), None, None, None, None, &[])]
+#[case(None, Some("UNKNOWN.VENUE-A"), None, None, None, &[])]
+#[case(None, None, Some("UNKNOWN-001"), None, None, &[])]
+#[case(None, None, None, Some("UNKNOWN-001"), None, &[])]
+fn test_orders_filtered_results_and_borrows(
+    #[case] venue: Option<&str>,
+    #[case] instrument: Option<&str>,
+    #[case] strategy: Option<&str>,
+    #[case] account: Option<&str>,
+    #[case] side: Option<OrderSide>,
+    #[case] expected: &[&str],
+    #[values(false, true)] refs: bool,
+) {
+    let mut cache = cache();
+
+    for (id, instrument, side, strategy, account) in [
+        (
+            "O-Z",
+            "SYMBOL-1.VENUE-A",
+            OrderSide::Buy,
+            "S-001",
+            "SIM-001",
+        ),
+        (
+            "O-E",
+            "SYMBOL-1.VENUE-A",
+            OrderSide::Buy,
+            "S-002",
+            "SIM-002",
+        ),
+        (
+            "O-D",
+            "SYMBOL-1.VENUE-B",
+            OrderSide::Buy,
+            "S-001",
+            "SIM-001",
+        ),
+        (
+            "O-C",
+            "SYMBOL-2.VENUE-A",
+            OrderSide::Buy,
+            "S-001",
+            "SIM-001",
+        ),
+        (
+            "O-B",
+            "SYMBOL-1.VENUE-A",
+            OrderSide::Sell,
+            "S-001",
+            "SIM-001",
+        ),
+        (
+            "O-A",
+            "SYMBOL-1.VENUE-A",
+            OrderSide::Buy,
+            "S-001",
+            "SIM-001",
+        ),
+    ] {
+        let mut order = build_filter_order(
+            InstrumentId::from(instrument),
+            side,
+            ClientOrderId::from(id),
+            Some(StrategyId::from(strategy)),
+            None,
+        );
+        cache.add_order(order.clone(), None, None, false).unwrap();
+        promote_to_open(
+            &mut cache,
+            &mut order,
+            AccountId::from(account),
+            VenueOrderId::from(id),
+        );
+    }
+
+    let venue = venue.map(Venue::from);
+    let instrument = instrument.map(InstrumentId::from);
+    let strategy = strategy.map(StrategyId::from);
+    let account = account.map(AccountId::from);
+    let expected: Vec<_> = expected.iter().map(|id| ClientOrderId::from(*id)).collect();
+
+    let orders = if refs {
+        cache.orders_refs(
+            venue.as_ref(),
+            instrument.as_ref(),
+            strategy.as_ref(),
+            account.as_ref(),
+            side,
+        )
+    } else {
+        cache.orders(
+            venue.as_ref(),
+            instrument.as_ref(),
+            strategy.as_ref(),
+            account.as_ref(),
+            side,
+        )
+    };
+
+    let actual: Vec<_> = orders.iter().map(|order| order.client_order_id()).collect();
+
+    assert_eq!(actual, expected);
+
+    for (id, cell) in &cache.orders {
+        assert_eq!(cell.try_borrow_mut().is_err(), expected.contains(id));
+    }
+
+    drop(orders);
+
+    for cell in cache.orders.values() {
+        assert!(cell.try_borrow_mut().is_ok());
+    }
 }
 
 #[rstest]
@@ -3303,6 +3569,44 @@ fn test_cache_positions_returned_sorted_by_position_id(mut cache: Cache, audusd_
             PositionId::new("POS-303"),
         ],
     );
+}
+
+#[rstest]
+fn test_add_position_with_non_ascii_symbol(mut cache: Cache) {
+    // The OMS key embeds the instrument ID, so an ASCII check rejected these symbols
+    let mut perp = crypto_perpetual_ethusdt();
+    perp.id = InstrumentId::from("\u{9f99}\u{867e}USDT-PERP.BINANCE");
+    let instrument = InstrumentAny::CryptoPerpetual(perp);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let position_id = PositionId::new(format!("{}-{}", instrument.id(), StrategyId::from("S-001")));
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let fill_event = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-OPEN-1")),
+        Some(position_id),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        Some(UnixNanos::from(1_000_000_000)),
+        None,
+    );
+
+    let fill = match fill_event {
+        OrderEventAny::Filled(f) => f,
+        _ => unreachable!(),
+    };
+
+    let position = Position::new(&instrument, fill);
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    assert!(cache.position(&position_id).is_some());
 }
 
 #[rstest]
@@ -4561,6 +4865,250 @@ fn test_price_mid_uses_exact_decimal_midpoint(mut cache: Cache, audusd_sim: Curr
 }
 
 #[rstest]
+fn test_price_mid_at_precision_ceiling(mut cache: Cache, audusd_sim: CurrencyPair) {
+    #[cfg(feature = "defi")]
+    let ceiling = WEI_PRECISION;
+    #[cfg(not(feature = "defi"))]
+    let ceiling = FIXED_PRECISION;
+
+    for (bid_raw, ask_raw, expected_raw) in [
+        (0, 1, 0),
+        (1, 2, 2),
+        (-1, 0, 0),
+        (-2, -1, -2),
+        (-3, -2, -2),
+        (0, 2, 1),
+    ] {
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            bid_raw,
+            ask_raw,
+            ceiling,
+            Some((expected_raw, ceiling)),
+        );
+    }
+
+    let max = Price::max(ceiling).raw();
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        max - 2,
+        max,
+        ceiling,
+        Some((max - 1, ceiling)),
+    );
+}
+
+#[rstest]
+#[case(0, 1)]
+#[case(1, 2)]
+#[case(-1, 0)]
+#[case(-2, -1)]
+#[case(-3, -2)]
+#[case(0, 2)]
+fn test_price_mid_matches_decimal(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] bid_raw: PriceRaw,
+    #[case] ask_raw: PriceRaw,
+) {
+    #[cfg(feature = "defi")]
+    let ceiling = WEI_PRECISION;
+    #[cfg(not(feature = "defi"))]
+    let ceiling = FIXED_PRECISION;
+
+    for precision in [FIXED_PRECISION - 1, FIXED_PRECISION, ceiling] {
+        let bid = Price::from_raw(bid_raw, precision);
+        let ask = Price::from_raw(ask_raw, precision);
+
+        let expected_precision = if precision < ceiling && precision != MAX_FLOAT_PRECISION {
+            precision + 1
+        } else {
+            precision
+        };
+        let midpoint = (bid.as_decimal() + ask.as_decimal()) / dec!(2);
+        let expected = Price::from_decimal_dp(midpoint, expected_precision).unwrap();
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            bid_raw,
+            ask_raw,
+            precision,
+            Some((expected.raw(), expected.precision)),
+        );
+    }
+}
+
+fn assert_mid_raw(
+    cache: &mut Cache,
+    instrument_id: InstrumentId,
+    bid_raw: PriceRaw,
+    ask_raw: PriceRaw,
+    precision: u8,
+    expected: Option<(PriceRaw, u8)>,
+) {
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from_raw(bid_raw, precision),
+        Price::from_raw(ask_raw, precision),
+        Quantity::from(1),
+        Quantity::from(1),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+    cache.add_quote(quote).unwrap();
+
+    // `Price` equality is numeric across precisions, so compare raw and precision directly
+    let result = cache.price(&instrument_id, PriceType::Mid);
+    assert_eq!(result.map(|price| (price.raw(), price.precision)), expected);
+}
+
+#[rstest]
+fn test_price_mid_truncates_noncanonical_raw(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let precision = FIXED_PRECISION - 2;
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        101,
+        299,
+        precision,
+        Some((150, precision + 1)),
+    );
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        100,
+        200,
+        precision,
+        Some((150, precision + 1)),
+    );
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        -101,
+        -299,
+        precision,
+        Some((-150, precision + 1)),
+    );
+}
+
+#[rstest]
+fn test_price_mid_rejects_sentinel(mut cache: Cache, audusd_sim: CurrencyPair) {
+    use nautilus_model::types::price::{ERROR_PRICE, PRICE_ERROR, PRICE_UNDEF};
+
+    for (bid, ask) in [
+        (Price::from_raw(PRICE_ERROR, 0), Price::from_raw(0, 0)),
+        (Price::from_raw(PRICE_UNDEF, 0), Price::from_raw(0, 0)),
+        (Price::from_raw(0, 0), Price::from_raw(PRICE_ERROR, 0)),
+        (Price::from_raw(0, 0), Price::from_raw(PRICE_UNDEF, 0)),
+        (ERROR_PRICE, ERROR_PRICE),
+    ] {
+        let quote = QuoteTick::new(
+            audusd_sim.id,
+            bid,
+            ask,
+            Quantity::from(1),
+            Quantity::from(1),
+            UnixNanos::from(5),
+            UnixNanos::from(10),
+        );
+        cache.add_quote(quote).unwrap();
+        assert_eq!(cache.price(&audusd_sim.id, PriceType::Mid), None);
+    }
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_price_mid_defi_precisions(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let precision = FIXED_PRECISION + 1;
+    let max = Price::max(precision).raw();
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        0,
+        1,
+        precision,
+        Some((5, precision + 1)),
+    );
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        0,
+        2,
+        precision,
+        Some((10, precision + 1)),
+    );
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        max / 10,
+        max / 10,
+        precision,
+        Some((max, precision + 1)),
+    );
+
+    for precision in [FIXED_PRECISION, FIXED_PRECISION + 1] {
+        let max = Price::max(precision).raw();
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            max - 2,
+            max,
+            precision,
+            Some((max - 1, precision)),
+        );
+        assert_eq!(max % 10, 0);
+        for (bid_raw, ask_raw, expected_raw) in [
+            (max - 1, max, max),
+            (max - 2, max - 1, max - 2),
+            (-max, -max + 1, -max),
+            (-max + 1, -max + 2, -max + 2),
+            (-max, -max + 2, -max + 1),
+        ] {
+            assert_mid_raw(
+                &mut cache,
+                audusd_sim.id,
+                bid_raw,
+                ask_raw,
+                precision,
+                Some((expected_raw, precision)),
+            );
+        }
+
+        assert_mid_raw(
+            &mut cache,
+            audusd_sim.id,
+            max / 10,
+            max / 10 + 1,
+            precision,
+            Some((max / 10, precision)),
+        );
+    }
+}
+
+#[rstest]
+fn test_price_mid_large_high_precision_raw(mut cache: Cache, audusd_sim: CurrencyPair) {
+    // The midpoint exceeds the `Decimal` mantissa; only a 128-bit `PriceRaw` can hold these
+    #[allow(
+        clippy::useless_conversion,
+        reason = "PriceRaw is i64 or i128 depending on nautilus-model's high-precision feature"
+    )]
+    let Some(raw) = PriceRaw::try_from(80_000_000_000_000_000_000_000_000_000_i128).ok() else {
+        return;
+    };
+    let precision = FIXED_PRECISION - 1;
+    assert_mid_raw(
+        &mut cache,
+        audusd_sim.id,
+        raw,
+        raw + 10,
+        precision,
+        Some((raw + 5, precision + 1)),
+    );
+}
+
+#[rstest]
 fn test_quote_tick_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
     let result = cache.quote(&audusd_sim.id);
     assert!(result.is_none());
@@ -4817,10 +5365,16 @@ fn test_bars_when_empty(cache: Cache) {
 
 #[rstest]
 fn test_bars_when_some(mut cache: Cache) {
-    let bars = vec![Bar::default(), Bar::default(), Bar::default()];
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let bars = vec![
+        bar(bar_type, UnixNanos::from(1), "1.00001"),
+        bar(bar_type, UnixNanos::from(2), "1.00002"),
+        bar(bar_type, UnixNanos::from(3), "1.00003"),
+    ];
     cache.add_bars(&bars).unwrap();
-    let result = cache.bars(&bars[0].bar_type);
-    assert_eq!(result, Some(bars));
+    let result = cache.bars(&bar_type);
+    // newest first
+    assert_eq!(result, Some(bars.into_iter().rev().collect()));
 }
 
 fn cache_with_data_capacity(tick_capacity: usize, bar_capacity: usize) -> Cache {
@@ -5225,6 +5779,59 @@ fn test_cache_account_for_venue_return_correct(mut cache: Cache) {
 }
 
 #[rstest]
+#[case::first_added_first(false)]
+#[case::second_added_first(true)]
+fn test_cache_account_for_venue_when_accounts_share_issuer_returns_none(
+    mut cache: Cache,
+    #[case] reversed: bool,
+) {
+    let venue = Venue::from("SIM");
+    let account_a = AccountId::from("SIM-001");
+    let account_b = AccountId::from("SIM-002");
+    let state_a = make_cash_account_state(account_a, "100");
+    let state_b = make_cash_account_state(account_b, "200");
+    let mut states = vec![state_a, state_b];
+
+    if reversed {
+        states.reverse();
+    }
+
+    for state in states {
+        let account = AccountAny::from_events(&[state]).unwrap();
+        cache.add_account(account).unwrap();
+    }
+
+    let venue_lookup = |cache: &Cache| {
+        (
+            cache.account_id(&venue).copied(),
+            cache.account_for_venue(&venue).map(|account| account.id()),
+            cache
+                .account_for_venue_owned(&venue)
+                .map(|account| account.id()),
+        )
+    };
+
+    let usd_total = |cache: &Cache, account_id: &AccountId| {
+        cache.account(account_id).and_then(|account| {
+            account
+                .balance(Some(Currency::USD()))
+                .map(|balance| balance.total)
+        })
+    };
+
+    let added = venue_lookup(&cache);
+    cache.clear_index();
+    cache.build_index();
+    let rebuilt = venue_lookup(&cache);
+
+    assert_eq!(added, (None, None, None));
+    assert_eq!(rebuilt, (None, None, None));
+    assert_eq!(usd_total(&cache, &account_a), Some(Money::from("100 USD")));
+    assert_eq!(usd_total(&cache, &account_b), Some(Money::from("200 USD")));
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
 fn test_cache_take_account_returns_none_for_unknown(mut cache: Cache) {
     let result = cache.take_account(&AccountId::test_default());
     assert!(result.is_none());
@@ -5312,6 +5919,99 @@ fn make_cash_account_state(account_id: AccountId, total_usd: &str) -> AccountSta
         UnixNanos::default(),
         Some(Currency::USD()),
     )
+}
+
+#[rstest]
+#[case::alpha_first(false)]
+#[case::bravo_first(true)]
+fn test_cache_client_accounts_survive_index_rebuild_and_reset(
+    mut cache: Cache,
+    #[case] reversed: bool,
+) {
+    let alpha_id = ClientId::from("ALPHA");
+    let bravo_id = ClientId::from("BRAVO");
+    let alpha_account_id = AccountId::from("SIM-001");
+    let bravo_account_id = AccountId::from("SIM-002");
+    let replacement_account_id = AccountId::from("SIM-003");
+    let mut registrations = vec![(alpha_id, alpha_account_id), (bravo_id, bravo_account_id)];
+
+    if reversed {
+        registrations.reverse();
+    }
+
+    for (client_id, account_id) in registrations {
+        cache.add_client_account(client_id, account_id);
+    }
+
+    let resolve = |cache: &Cache| {
+        (
+            cache.account_id_for_client(&alpha_id).copied(),
+            cache.account_id_for_client(&bravo_id).copied(),
+        )
+    };
+
+    cache.clear_index();
+    cache.build_index();
+    let after_rebuild = resolve(&cache);
+    cache.reset();
+    let after_reset = resolve(&cache);
+    cache.add_client_account(alpha_id, replacement_account_id);
+    let after_replace = resolve(&cache);
+    cache.remove_client_account(&alpha_id);
+    let after_remove = resolve(&cache);
+
+    assert_eq!(
+        after_rebuild,
+        (Some(alpha_account_id), Some(bravo_account_id))
+    );
+    assert_eq!(
+        after_reset,
+        (Some(alpha_account_id), Some(bravo_account_id))
+    );
+    assert_eq!(
+        after_replace,
+        (Some(replacement_account_id), Some(bravo_account_id))
+    );
+    assert_eq!(after_remove, (None, Some(bravo_account_id)));
+}
+
+#[rstest]
+fn test_cache_client_routes_survive_index_rebuild_and_reset(mut cache: Cache) {
+    let alpha_id = ClientId::from("ALPHA");
+    let bravo_id = ClientId::from("BRAVO");
+    let external_id = ClientId::from("EXTERNAL");
+    let sim = Venue::from("SIM");
+    let xnas = Venue::from("XNAS");
+    cache.add_client_route(alpha_id, sim);
+    cache.set_default_client(bravo_id);
+    cache.add_external_client(external_id);
+
+    let resolve = |cache: &Cache| {
+        (
+            cache.client_id_for_venue(&sim).copied(),
+            cache.client_id_for_venue(&xnas).copied(),
+            cache.is_external_client(&external_id),
+            cache.is_external_client(&alpha_id),
+        )
+    };
+
+    cache.clear_index();
+    cache.build_index();
+    let after_rebuild = resolve(&cache);
+    cache.reset();
+    let after_reset = resolve(&cache);
+    cache.remove_client_routes(&alpha_id);
+    let after_remove_route = resolve(&cache);
+    cache.remove_client_routes(&bravo_id);
+    let after_remove_default = resolve(&cache);
+
+    assert_eq!(after_rebuild, (Some(alpha_id), Some(bravo_id), true, false));
+    assert_eq!(after_reset, (Some(alpha_id), Some(bravo_id), true, false));
+    assert_eq!(
+        after_remove_route,
+        (Some(bravo_id), Some(bravo_id), true, false)
+    );
+    assert_eq!(after_remove_default, (None, None, true, false));
 }
 
 #[rstest]
@@ -7945,7 +8645,14 @@ fn test_update_order_removes_closed_ioc_from_existing_own_book(mut cache: Cache)
     update_order_with_event(&mut cache, &mut live_order, accepted);
 
     let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
-    assert!(own_book.bids().count() > 0);
+    assert_eq!(
+        own_book.bid_client_order_ids(),
+        vec![live_order.client_order_id()]
+    );
+    assert_eq!(
+        own_book.bid_quantity(None, None, None, None, None),
+        IndexMap::from([(dec!(1.00000), dec!(100_000))])
+    );
 
     let canceled = TestOrderEventStubs::canceled(
         &live_order,
@@ -7955,7 +8662,157 @@ fn test_update_order_removes_closed_ioc_from_existing_own_book(mut cache: Cache)
     update_order_with_event(&mut cache, &mut live_order, canceled);
 
     let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert!(own_book.bid_client_order_ids().is_empty());
     assert_eq!(own_book.bids().count(), 0);
+}
+
+#[rstest]
+#[case::ioc(TimeInForce::Ioc)]
+#[case::fok(TimeInForce::Fok)]
+fn test_update_order_keeps_immediate_order_out_of_existing_own_book(
+    mut cache: Cache,
+    #[case] time_in_force: TimeInForce,
+) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+    cache
+        .add_own_order_book(OwnOrderBook::new(audusd_sim.id()))
+        .unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .time_in_force(time_in_force)
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::new("SIM-001"));
+    update_order_with_event(&mut cache, &mut order, submitted);
+    let accepted = TestOrderEventStubs::accepted(
+        &order,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-IMMEDIATE"),
+    );
+    update_order_with_event(&mut cache, &mut order, accepted);
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert!(own_book.bid_client_order_ids().is_empty());
+    assert_eq!(own_book.update_count, 0);
+}
+
+#[rstest]
+fn test_update_order_adds_emulated_order_to_existing_own_book_on_release(mut cache: Cache) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+    cache
+        .add_own_order_book(OwnOrderBook::new(audusd_sim.id()))
+        .unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let emulated = build_order_emulated(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        client_order_id,
+    );
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Emulated(emulated));
+    let emulated_ids = cache
+        .own_order_book(&audusd_sim.id())
+        .unwrap()
+        .bid_client_order_ids();
+
+    let released = build_order_released(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        client_order_id,
+        Price::from("1.00000"),
+    );
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Released(released));
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    let own_order = own_book.bids().next().unwrap().orders[&client_order_id];
+    assert!(emulated_ids.is_empty());
+    assert_eq!(order.status(), OrderStatus::Released);
+    assert_eq!(own_book.bid_client_order_ids(), vec![client_order_id]);
+    assert_eq!(own_order.status, OrderStatus::Released);
+    assert_eq!(own_order.price, Price::from("1.00000"));
+    assert_eq!(own_order.size, Quantity::from(100_000));
+}
+
+#[rstest]
+fn test_update_order_adds_quote_quantity_order_to_existing_own_book_after_conversion(
+    mut cache: Cache,
+) {
+    let audusd_sim = audusd_sim();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+        .unwrap();
+    cache
+        .add_own_order_book(OwnOrderBook::new(audusd_sim.id()))
+        .unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("0.80000"))
+        .quote_quantity(true)
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::new("SIM-001"));
+    update_order_with_event(&mut cache, &mut order, submitted);
+    let accepted = TestOrderEventStubs::accepted(
+        &order,
+        AccountId::new("SIM-001"),
+        VenueOrderId::new("V-QUOTE"),
+    );
+    update_order_with_event(&mut cache, &mut order, accepted);
+    let accepted_ids = cache
+        .own_order_book(&audusd_sim.id())
+        .unwrap()
+        .bid_client_order_ids();
+
+    let converted = build_order_updated(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        client_order_id,
+        Quantity::from(125_000),
+        order.venue_order_id(),
+        order.account_id(),
+        order.price(),
+        None,
+        None,
+    );
+    update_order_with_event(&mut cache, &mut order, OrderEventAny::Updated(converted));
+
+    let own_book = cache.own_order_book(&audusd_sim.id()).unwrap();
+    let own_order = own_book.bids().next().unwrap().orders[&client_order_id];
+    assert!(accepted_ids.is_empty());
+    assert!(!order.is_quote_quantity());
+    assert_eq!(own_book.bid_client_order_ids(), vec![client_order_id]);
+    assert_eq!(own_order.status, OrderStatus::Accepted);
+    assert_eq!(own_order.price, Price::from("0.80000"));
+    assert_eq!(own_order.size, Quantity::from(125_000));
 }
 
 #[rstest]
@@ -8361,7 +9218,22 @@ fn test_update_own_order_book_reinserts_missing_levels(mut cache: Cache) {
     cache.update_own_order_book(&live_order);
 
     let own_book = cache.own_order_book(&instrument.id()).unwrap();
-    assert!(own_book.bids().count() > 0);
+    let bids = own_book.bids_as_map(None, None, None);
+    let reinserted = &bids[&dec!(1.00000)];
+    assert_eq!(bids.len(), 1);
+    assert_eq!(reinserted.len(), 1);
+    assert_eq!(reinserted[0].client_order_id, live_order.client_order_id());
+    assert_eq!(
+        reinserted[0].venue_order_id,
+        Some(VenueOrderId::new("V-REINSERT"))
+    );
+    assert_eq!(reinserted[0].price, Price::from("1.00000"));
+    assert_eq!(reinserted[0].size, Quantity::from(100_000));
+    assert_eq!(reinserted[0].status, OrderStatus::Accepted);
+    assert_eq!(
+        own_book.bid_client_order_ids(),
+        vec![live_order.client_order_id()]
+    );
 }
 
 #[rstest]
@@ -8648,6 +9520,7 @@ struct SnapshotBlobTestDatabase {
     strategy_state: AHashMap<String, Bytes>,
     database_calls: CacheDatabaseCalls,
     fail_add: bool,
+    fail_flush: bool,
     fail_add_instrument_close: bool,
     fail_add_order: bool,
     fail_add_position: bool,
@@ -8742,6 +9615,13 @@ impl SnapshotBlobTestDatabase {
         )
     }
 
+    fn fail_flush() -> Self {
+        Self {
+            fail_flush: true,
+            ..Default::default()
+        }
+    }
+
     fn fail_persistence_io() -> Self {
         Self {
             fail_persistence_io: true,
@@ -8771,6 +9651,9 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn flush(&mut self) -> anyhow::Result<()> {
+        if self.fail_flush {
+            anyhow::bail!("flush failed");
+        }
         Ok(())
     }
 
@@ -9842,6 +10725,41 @@ fn test_update_position_commits_canonical_state_when_database_update_fails() {
 }
 
 #[rstest]
+fn test_update_position_from_instrument_close_returns_position_when_database_update_fails() {
+    let database = SnapshotBlobTestDatabase::fail_update_position();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let instrument = InstrumentAny::BinaryOption(binary_option());
+    cache.add_instrument(instrument.clone()).unwrap();
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .trade_id(TradeId::new("T-SETTLE"))
+        .last_qty(Quantity::from("10.00"))
+        .last_px(Price::from("0.400"))
+        .currency(Currency::USDC())
+        .position_id(PositionId::new("P-SETTLE"))
+        .build();
+    let position = Position::new(&instrument, fill);
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let close = InstrumentClose::new(
+        instrument.id(),
+        Price::from("1.000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(300),
+        UnixNanos::from(301),
+    );
+
+    let settled = cache
+        .update_position_from_instrument_close(position.id, close)
+        .unwrap();
+
+    assert_eq!(settled.id, position.id);
+    assert_eq!(settled.realized_pnl, Some(Money::from("6.00 USDC")));
+    assert!(cache.position(&position.id).unwrap().is_settled());
+    assert!(cache.is_position_closed(&position.id));
+}
+
+#[rstest]
 fn test_update_position_from_fill_commits_canonical_state_when_database_update_fails() {
     let database = SnapshotBlobTestDatabase::fail_update_position();
     let mut cache = Cache::new(None, Some(Box::new(database)));
@@ -10487,8 +11405,8 @@ fn test_add_quotes_same_timestamp_adds_all(mut cache: Cache) {
 }
 
 #[rstest]
-fn test_add_bars_same_timestamp_adds_all(mut cache: Cache) {
-    // multiple bars at same timestamp
+fn test_add_time_bars_same_timestamp_replaces_front(mut cache: Cache) {
+    // for time bars, a bar with the same ts_event replaces the cached bar
     let ts = UnixNanos::from(1000);
     let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
 
@@ -10528,13 +11446,340 @@ fn test_add_bars_same_timestamp_adds_all(mut cache: Cache) {
     cache.add_bar(bar1).unwrap();
     cache.add_bars(&[bar2, bar3]).unwrap();
 
-    // all three bars should be in cache
+    // one bar remains; the last bar added at the same timestamp wins
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(
+        result.len(),
+        1,
+        "Bars with same ts_event should not accumulate"
+    );
+    assert_eq!(result[0].close, Price::from("1.00002"));
+}
+
+#[rstest]
+fn test_add_renko_bars_same_timestamp_adds_all(mut cache: Cache) {
+    // mirrors `test_renko_bar_aggregator_multiple_bricks_in_one_update`: a 25-pip
+    // move with a 10-pip brick size emits two distinct bricks stamped with the
+    // update's ts
+    let ts = UnixNanos::from(1000);
+    let bar_type = BarType::from("AUDUSD.SIM-10-RENKO-MID-INTERNAL");
+
+    let brick1 = Bar::new(
+        bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from(1),
+        ts,
+        ts,
+    );
+
+    let brick2 = Bar::new(
+        bar_type,
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Quantity::from(1),
+        ts,
+        ts,
+    );
+
+    // a subsequent update at a later ts emits a further brick
+    let brick3 = Bar::new(
+        bar_type,
+        Price::from("1.00020"),
+        Price::from("1.00030"),
+        Price::from("1.00020"),
+        Price::from("1.00030"),
+        Quantity::from(1),
+        UnixNanos::from(2000),
+        UnixNanos::from(2000),
+    );
+
+    cache.add_bar(brick1).unwrap();
+    cache.add_bar(brick2).unwrap();
+    cache.add_bar(brick3).unwrap();
+
+    // all distinct bricks are cached, newest first
     let result = cache.bars(&bar_type).unwrap();
     assert_eq!(
         result.len(),
         3,
-        "All bars with same timestamp should be added"
+        "Distinct Renko bricks with the same ts_event should be added"
     );
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(
+        stamps,
+        vec![
+            UnixNanos::from(2000),
+            UnixNanos::from(1000),
+            UnixNanos::from(1000),
+        ]
+    );
+    assert_eq!(result[1].open, Price::from("1.00010"));
+    assert_eq!(result[2].open, Price::from("1.00000"));
+}
+
+#[rstest]
+fn test_add_volume_bars_same_timestamp_adds_all(mut cache: Cache) {
+    // mirrors `test_volume_bar_aggregator_builds_multiple_bars_from_large_update`:
+    // a single 25-lot trade with a 10-lot threshold emits two bars stamped with the
+    // trade's ts, identical in content for a single-price trade
+    let ts = UnixNanos::from(1000);
+    let bar_type = BarType::from("AUDUSD.SIM-10-VOLUME-LAST-INTERNAL");
+
+    let bar1 = Bar::new(
+        bar_type,
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Quantity::from(10),
+        ts,
+        ts,
+    );
+
+    let bar2 = Bar::new(
+        bar_type,
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Price::from("1.00001"),
+        Quantity::from(10),
+        ts,
+        ts,
+    );
+
+    cache.add_bars(&[bar1, bar2]).unwrap();
+
+    // both bars are cached despite sharing ts_event and content
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(
+        result.len(),
+        2,
+        "Distinct volume bars with the same ts_event should be added"
+    );
+    assert_eq!(result[0].volume, Quantity::from(10));
+    assert_eq!(result[1].volume, Quantity::from(10));
+}
+
+#[rstest]
+fn test_add_bar_historical_older_than_front_inserted_behind(mut cache: Cache) {
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(2_000), "1.00002"))
+        .unwrap();
+    cache
+        .add_bar_historical(bar(bar_type, UnixNanos::from(1_000), "1.00001"))
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(stamps, vec![UnixNanos::from(2_000), UnixNanos::from(1_000)]);
+}
+
+#[rstest]
+fn test_add_bar_historical_equal_ts_event_time_bar_replaces_at_position(mut cache: Cache) {
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(1_000), "1.00001"),
+            bar(bar_type, UnixNanos::from(2_000), "1.00002"),
+            bar(bar_type, UnixNanos::from(3_000), "1.00003"),
+        ])
+        .unwrap();
+
+    cache
+        .add_bar_historical(bar(bar_type, UnixNanos::from(2_000), "1.00009"))
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 3);
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(
+        stamps,
+        vec![
+            UnixNanos::from(3_000),
+            UnixNanos::from(2_000),
+            UnixNanos::from(1_000),
+        ]
+    );
+    assert_eq!(result[1].close, Price::from("1.00009"));
+    assert_eq!(result[0].close, Price::from("1.00003"));
+    assert_eq!(result[2].close, Price::from("1.00001"));
+}
+
+#[rstest]
+fn test_add_bar_historical_equal_ts_event_non_time_bar_inserted(mut cache: Cache) {
+    let ts = UnixNanos::from(1000);
+    let bar_type = BarType::from("AUDUSD.SIM-10-RENKO-MID-INTERNAL");
+
+    let brick1 = Bar::new(
+        bar_type,
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Price::from("1.00000"),
+        Price::from("1.00010"),
+        Quantity::from(1),
+        ts,
+        ts,
+    );
+
+    let brick2 = Bar::new(
+        bar_type,
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Quantity::from(1),
+        ts,
+        ts,
+    );
+
+    cache.add_bar(brick1).unwrap();
+    cache.add_bar_historical(brick2).unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 2);
+}
+
+#[rstest]
+fn test_add_bar_historical_at_capacity_evicts_oldest() {
+    let mut cache = cache_with_data_capacity(1_000, 2);
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(1_000), "1.00001"),
+            bar(bar_type, UnixNanos::from(3_000), "1.00003"),
+        ])
+        .unwrap();
+    cache
+        .add_bar_historical(bar(bar_type, UnixNanos::from(2_000), "1.00002"))
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(stamps, vec![UnixNanos::from(3_000), UnixNanos::from(2_000)]);
+}
+
+#[rstest]
+fn test_add_bar_newer_ts_event_pushes(mut cache: Cache) {
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(1_000), "1.00000"))
+        .unwrap();
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(61_000), "1.00001"))
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].ts_event, UnixNanos::from(61_000)); // newest first
+    assert_eq!(result[1].ts_event, UnixNanos::from(1_000));
+}
+
+#[rstest]
+fn test_add_bar_older_ts_event_skipped(mut cache: Cache) {
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(61_000), "1.00001"))
+        .unwrap();
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(1_000), "1.00000"))
+        .unwrap();
+
+    // the older bar is not added and the front bar is unchanged
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].ts_event, UnixNanos::from(61_000));
+    assert_eq!(result[0].close, Price::from("1.00001"));
+}
+
+#[rstest]
+fn test_add_bars_older_history_after_newer_bars_skipped(mut cache: Cache) {
+    // an overlapping historical request for older history after newer bars are cached
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    // newest window already cached
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(121_000), "1.00002"),
+            bar(bar_type, UnixNanos::from(181_000), "1.00003"),
+        ])
+        .unwrap();
+
+    // older overlapping request: only the bar matching the front ts_event replaces it,
+    // everything older than the front is skipped
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(1_000), "0.99998"),
+            bar(bar_type, UnixNanos::from(61_000), "0.99999"),
+            bar(bar_type, UnixNanos::from(121_000), "1.00005"),
+            bar(bar_type, UnixNanos::from(181_000), "1.00006"),
+        ])
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 2);
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(
+        stamps,
+        vec![UnixNanos::from(181_000), UnixNanos::from(121_000)]
+    );
+    // the front bar was replaced by the later data; the older cached bar is unchanged
+    assert_eq!(result[0].close, Price::from("1.00006"));
+    assert_eq!(result[1].close, Price::from("1.00002"));
+}
+
+#[rstest]
+fn test_add_bars_batch_containing_newer_bars_pushed(mut cache: Cache) {
+    // a chronological batch newer than the cached front extends the series
+    let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    cache
+        .add_bar(bar(bar_type, UnixNanos::from(150_000), "1.00001"))
+        .unwrap();
+
+    cache
+        .add_bars(&[
+            bar(bar_type, UnixNanos::from(1_000), "0.99998"),
+            bar(bar_type, UnixNanos::from(100_000), "0.99999"),
+            bar(bar_type, UnixNanos::from(200_000), "1.00002"),
+            bar(bar_type, UnixNanos::from(300_000), "1.00003"),
+        ])
+        .unwrap();
+
+    let result = cache.bars(&bar_type).unwrap();
+    assert_eq!(result.len(), 3);
+    let stamps: Vec<_> = result.iter().map(|b| b.ts_event).collect();
+    assert_eq!(
+        stamps,
+        vec![
+            UnixNanos::from(300_000),
+            UnixNanos::from(200_000),
+            UnixNanos::from(150_000),
+        ]
+    );
+}
+
+fn bar(bar_type: BarType, ts_event: UnixNanos, close: &str) -> Bar {
+    Bar::new(
+        bar_type,
+        Price::from(close),
+        Price::from(close),
+        Price::from(close),
+        Price::from(close),
+        Quantity::from(100_000),
+        ts_event,
+        ts_event,
+    )
 }
 
 // -- orders_emulated index tests ------------------------------------------------------------------
@@ -12093,4 +13338,102 @@ fn test_view_returns_borrowed_when_unfiltered(mut cache: Cache, audusd_sim: Curr
     check_borrow!(position_ids_view, positions);
     check_borrow!(position_open_ids_view, positions_open);
     check_borrow!(position_closed_ids_view, positions_closed);
+}
+
+#[rstest]
+fn test_cache_api_borrow_conflict_is_distinct_from_missing_data() {
+    let cell = RefCell::new(Cache::new(None, None));
+    let api = CacheApi::new(&cell);
+    let id = ClientOrderId::from("BORROW-ORDER");
+    let guard = cell.borrow_mut();
+    let lookup_error = api.try_order(&id).unwrap_err();
+    let get_error = api.get("borrow-key").unwrap_err();
+    drop(guard);
+
+    assert_eq!(
+        lookup_error,
+        OrderLookupError::Access(ComponentAccessError::ReadConflict {
+            resource: "cache",
+            operation: "try_order",
+        })
+    );
+    assert_eq!(
+        get_error.downcast_ref::<ComponentAccessError>(),
+        Some(&ComponentAccessError::ReadConflict {
+            resource: "cache",
+            operation: "get",
+        })
+    );
+    assert_eq!(api.try_order(&id), Err(OrderLookupError::not_found(id)));
+    assert_eq!(api.get("borrow-key").unwrap(), None);
+}
+
+#[rstest]
+#[case("try_account")]
+#[case("try_currency")]
+#[case("try_instrument")]
+#[case("try_synthetic")]
+#[case("try_order_book")]
+#[case("try_own_order_book")]
+#[case("try_order_list")]
+#[case("try_position")]
+fn test_cache_api_lookup_borrow_conflict(#[case] operation: &'static str) {
+    let cell = RefCell::new(Cache::new(None, None));
+    let api = CacheApi::new(&cell);
+    let _guard = cell.borrow_mut();
+
+    let expected = ComponentAccessError::ReadConflict {
+        resource: "cache",
+        operation,
+    };
+
+    match operation {
+        "try_account" => assert_eq!(
+            api.try_account(&AccountId::from("SIM-001")).unwrap_err(),
+            AccountLookupError::Access(expected)
+        ),
+        "try_currency" => assert_eq!(
+            api.try_currency(&Ustr::from("USD")).unwrap_err(),
+            CurrencyLookupError::Access(expected)
+        ),
+        "try_instrument" => assert_eq!(
+            api.try_instrument(&InstrumentId::from("AUD/USD.SIM"))
+                .unwrap_err(),
+            InstrumentLookupError::Access(expected)
+        ),
+        "try_synthetic" => assert_eq!(
+            api.try_synthetic(&InstrumentId::from("SYNTH.SYNTH"))
+                .unwrap_err(),
+            SyntheticInstrumentLookupError::Access(expected)
+        ),
+        "try_order_book" => assert_eq!(
+            api.try_order_book(&InstrumentId::from("AUD/USD.SIM"))
+                .unwrap_err(),
+            OrderBookLookupError::Access(expected)
+        ),
+        "try_own_order_book" => assert_eq!(
+            api.try_own_order_book(&InstrumentId::from("AUD/USD.SIM"))
+                .unwrap_err(),
+            OwnOrderBookLookupError::Access(expected)
+        ),
+        "try_order_list" => assert_eq!(
+            api.try_order_list(&OrderListId::from("OL-001"))
+                .unwrap_err(),
+            OrderListLookupError::Access(expected)
+        ),
+        "try_position" => assert_eq!(
+            api.try_position(&PositionId::from("P-001")).unwrap_err(),
+            PositionLookupError::Access(expected)
+        ),
+        _ => unreachable!(),
+    }
+}
+
+#[rstest]
+#[should_panic(expected = "Cannot read cache during cache read: it is already mutably borrowed")]
+fn test_cache_api_infallible_borrow_conflict_panics_with_context() {
+    let cell = RefCell::new(Cache::new(None, None));
+    let api = CacheApi::new(&cell);
+    let _guard = cell.borrow_mut();
+    let _ = api.order(&ClientOrderId::from("BORROW-ORDER"));
 }

@@ -27,7 +27,6 @@ import pytest
 
 from nautilus_trader.common import Cache
 from nautilus_trader.common import Clock
-from nautilus_trader.model import HIGH_PRECISION
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarAggregation
 from nautilus_trader.model import BarSpecification
@@ -39,23 +38,24 @@ from nautilus_trader.model import FundingRateUpdate
 from nautilus_trader.model import IndexPriceUpdate
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarkPriceUpdate
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OrderBookDelta
-from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderBookDepth
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import Venue
 from nautilus_trader.persistence import BarDataWrangler
-from nautilus_trader.persistence import DataBackendSession
-from nautilus_trader.persistence import NautilusDataType
+from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import OrderBookDeltaDataWrangler
-from nautilus_trader.persistence import OrderBookDepth10DataWrangler
+from nautilus_trader.persistence import OrderBookDepthDataWrangler
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import QuoteTickDataWrangler
+from nautilus_trader.persistence import RotationConfig
 from nautilus_trader.persistence import StreamingFeatherWriter
+from nautilus_trader.persistence import StreamingWriter
 from nautilus_trader.persistence import TradeTickDataWrangler
 from tests.providers import TEST_DATA_DIR
 from tests.providers import TestInstrumentProvider
@@ -65,11 +65,7 @@ from tests.stubs import TestDataProviderPyo3
 AUDUSD_SIM = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 AUDUSD_1_MIN_BID = BarType(AUDUSD_SIM, ONE_MIN_BID)
-
-
-def _data_path(name: str) -> str:
-    subdir = "128-bit" if HIGH_PRECISION else "64-bit"
-    return str(TEST_DATA_DIR / "nautilus" / subdir / name)
+ARROW_FIXTURES = TEST_DATA_DIR / "nautilus" / "arrow"
 
 
 def _make_bar(ts: int) -> Bar:
@@ -85,159 +81,12 @@ def _make_bar(ts: int) -> Bar:
     )
 
 
-def test_backend_session_construction() -> None:
+def test_nautilus_data_type_variants() -> None:
     """
-    Test backend session construction.
-    """
-    session = DataBackendSession()
-
-    assert session is not None
-
-
-def test_backend_session_construction_with_chunk_size() -> None:
-    """
-    Test backend session construction with chunk size.
-    """
-    session = DataBackendSession(chunk_size=5_000)
-
-    assert session is not None
-
-
-def test_backend_session_rejects_zero_chunk_size() -> None:
-    """
-    Test backend session rejects zero chunk size.
-    """
-    with pytest.raises(ValueError, match="chunk_size must be positive"):
-        DataBackendSession(chunk_size=0)
-
-
-def test_backend_session_add_file_and_query_quotes() -> None:
-    """
-    Test backend session add file and query quotes.
-    """
-    session = DataBackendSession()
-    session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
-
-    chunks = list(session.to_query_result())
-    quotes = chunks[0]
-
-    assert len(chunks) == 1
-    assert isinstance(quotes, list)
-    assert len(quotes) == 9_500
-    assert all(isinstance(quote, QuoteTick) for quote in quotes)
-    assert quotes[0].ts_init == 1_577_898_000_000_000_065
-    assert quotes[-1].ts_init == 1_577_919_652_000_000_125
-
-
-def test_backend_session_to_list_queries_quotes() -> None:
-    """
-    Test backend session to list queries quotes.
-    """
-    session = DataBackendSession()
-    session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
-
-    quotes = session.to_query_result().to_list()
-
-    assert len(quotes) == 9_500
-    assert all(isinstance(quote, QuoteTick) for quote in quotes)
-    assert quotes[0].ts_init == 1_577_898_000_000_000_065
-    assert quotes[-1].ts_init == 1_577_919_652_000_000_125
-
-
-def test_backend_session_to_list_returns_unread_records() -> None:
-    """
-    Test backend session to list returns unread records.
-    """
-    session = DataBackendSession(chunk_size=1_000)
-    session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
-    result = session.to_query_result()
-
-    next(result)
-    quotes = result.to_list()
-
-    assert len(quotes) == 8_500
-    assert all(isinstance(quote, QuoteTick) for quote in quotes)
-    assert quotes[0].ts_init == 1_577_900_944_000_000_879
-
-
-def test_backend_session_to_list_returns_empty_for_empty_query() -> None:
-    """
-    Test backend session to list returns empty for empty query.
-    """
-    session = DataBackendSession()
-    session.add_file(
-        NautilusDataType.QuoteTick,
-        "quotes",
-        _data_path("quotes.parquet"),
-        "SELECT * FROM quotes WHERE 1=0",
-    )
-
-    assert session.to_query_result().to_list() == []
-
-
-def test_backend_session_add_file_and_query_trades() -> None:
-    """
-    Test backend session add file and query trades.
-    """
-    session = DataBackendSession()
-    session.add_file(NautilusDataType.TradeTick, "trades", _data_path("trades.parquet"))
-
-    result = session.to_query_result()
-    chunk_count = sum(1 for _ in result)
-
-    assert chunk_count > 0
-
-
-def test_backend_session_add_file_and_query_bars() -> None:
-    """
-    Test backend session add file and query bars.
-    """
-    session = DataBackendSession()
-    session.add_file(NautilusDataType.Bar, "bars", _data_path("bars.parquet"))
-
-    result = session.to_query_result()
-    chunk_count = sum(1 for _ in result)
-
-    assert chunk_count > 0
-
-
-def test_backend_session_add_file_and_query_deltas() -> None:
-    """
-    Test backend session add file and query deltas.
-    """
-    session = DataBackendSession()
-    session.add_file(
-        NautilusDataType.OrderBookDelta,
-        "deltas",
-        _data_path("deltas.parquet"),
-    )
-
-    result = session.to_query_result()
-    chunk_count = sum(1 for _ in result)
-
-    assert chunk_count > 0
-
-
-def test_backend_session_multiple_files() -> None:
-    """
-    Test backend session multiple files.
-    """
-    session = DataBackendSession()
-    session.add_file(NautilusDataType.TradeTick, "trades", _data_path("trades.parquet"))
-    session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
-
-    result = session.to_query_result()
-    chunk_count = sum(1 for _ in result)
-
-    assert chunk_count > 0
-
-
-def test_backend_session_nautilus_data_type_variants() -> None:
-    """
-    Test backend session nautilus data type variants.
+    Test nautilus data type variants.
     """
     assert NautilusDataType.OrderBookDelta is not None
-    assert NautilusDataType.OrderBookDepth10 is not None
+    assert NautilusDataType.OrderBookDepth is not None
     assert NautilusDataType.QuoteTick is not None
     assert NautilusDataType.TradeTick is not None
     assert NautilusDataType.Bar is not None
@@ -273,6 +122,16 @@ def test_catalog_construction_rejects_malformed_uri(uri: object, message: object
         ParquetDataCatalog(uri)
 
 
+def test_catalog_query_custom_data_rejects_non_custom_data_type(tmp_path: Path) -> None:
+    """
+    Test catalog query custom data rejects a built-in data type.
+    """
+    catalog = ParquetDataCatalog(str(tmp_path))
+
+    with pytest.raises(TypeError, match="data_type must be a custom NautilusDataType"):
+        catalog.query_custom_data(NautilusDataType.QuoteTick)
+
+
 def test_catalog_write_and_read_bars(tmp_path: Path) -> None:
     """
     Test catalog write and read bars.
@@ -284,7 +143,7 @@ def test_catalog_write_and_read_bars(tmp_path: Path) -> None:
     catalog.write_bars([_make_bar(1), _make_bar(2)])
 
     bar_type_str = str(AUDUSD_1_MIN_BID)
-    intervals = catalog.get_intervals("bars", bar_type_str)
+    intervals = catalog.get_intervals(data_type=NautilusDataType.Bar, identifier=bar_type_str)
     loaded = catalog.query_bars(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
@@ -305,7 +164,7 @@ def test_catalog_write_and_read_quotes(tmp_path: Path) -> None:
     ]
     catalog.write_quote_ticks(quotes)
 
-    intervals = catalog.get_intervals("quotes", "AUD/USD.SIM")
+    intervals = catalog.get_intervals(NautilusDataType.QuoteTick, "AUD/USD.SIM")
     loaded = catalog.query_quote_ticks(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
@@ -326,7 +185,7 @@ def test_catalog_write_and_read_trades(tmp_path: Path) -> None:
     ]
     catalog.write_trade_ticks(trades)
 
-    intervals = catalog.get_intervals("trades", "AUD/USD.SIM")
+    intervals = catalog.get_intervals(NautilusDataType.TradeTick, "AUD/USD.SIM")
     loaded = catalog.query_trade_ticks(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
@@ -415,7 +274,7 @@ def test_catalog_write_and_read_order_book_depths(tmp_path: Path) -> None:
         for level in range(10)
     ]
     depths = [
-        OrderBookDepth10(
+        OrderBookDepth(
             instrument_id=AUDUSD_SIM,
             bids=bids,
             asks=asks,
@@ -451,7 +310,7 @@ def test_catalog_write_and_read_order_book_depths(tmp_path: Path) -> None:
                 assert actual_order.price == expected_order.price
                 assert actual_order.size == expected_order.size
                 assert expected_order.order_id != 0
-                assert actual_order.order_id == 0
+                assert actual_order.order_id == expected_order.order_id
 
 
 def test_catalog_append_data(tmp_path: Path) -> None:
@@ -466,7 +325,7 @@ def test_catalog_append_data(tmp_path: Path) -> None:
     catalog.write_bars([_make_bar(3)])
 
     bar_type_str = str(AUDUSD_1_MIN_BID)
-    intervals = catalog.get_intervals("bars", bar_type_str)
+    intervals = catalog.get_intervals(NautilusDataType.Bar, bar_type_str)
     assert intervals == [(1, 2), (3, 3)]
 
 
@@ -483,8 +342,42 @@ def test_catalog_consolidate(tmp_path: Path) -> None:
     catalog.consolidate_catalog()
 
     bar_type_str = str(AUDUSD_1_MIN_BID)
-    intervals = catalog.get_intervals("bars", bar_type_str)
+    intervals = catalog.get_intervals(NautilusDataType.Bar, bar_type_str)
     assert intervals == [(1, 3)]
+
+
+def test_catalog_file_operations_take_identifier_keyword(tmp_path: Path) -> None:
+    """
+    Test catalog file operations select data with the `identifier` keyword.
+    """
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+    bar_type = str(AUDUSD_1_MIN_BID)
+    catalog.write_bars([_make_bar(1), _make_bar(2)])
+    catalog.write_bars([_make_bar(5), _make_bar(6)])
+
+    catalog.extend_file_name(NautilusDataType.Bar, identifier=bar_type, start=7, end=7)
+    extended = catalog.get_intervals(NautilusDataType.Bar, identifier=bar_type)
+    catalog.reset_data_file_names(NautilusDataType.Bar, identifier=bar_type)
+    reset = catalog.get_intervals(NautilusDataType.Bar, identifier=bar_type)
+    catalog.consolidate_data(NautilusDataType.Bar, identifier=bar_type)
+    consolidated = catalog.get_intervals(NautilusDataType.Bar, identifier=bar_type)
+    missing = catalog.get_missing_intervals_for_request(
+        0,
+        10,
+        NautilusDataType.Bar,
+        identifier=bar_type,
+    )
+    files = catalog.list_parquet_files(NautilusDataType.Bar, identifier=bar_type)
+
+    assert extended == [(1, 2), (5, 7)]
+    assert reset == [(1, 2), (5, 6)]
+    assert consolidated == [(1, 6)]
+    assert missing == [(0, 0), (7, 10)]
+    assert len(files) == 1
+    with pytest.raises(TypeError, match="instrument_id"):
+        catalog.get_intervals(NautilusDataType.Bar, instrument_id=bar_type)  # type: ignore[call-arg]
 
 
 def test_catalog_instrument_roundtrip(tmp_path: Path) -> None:
@@ -505,6 +398,36 @@ def test_catalog_instrument_roundtrip(tmp_path: Path) -> None:
     assert [instrument.to_dict() for instrument in read] == [inst.to_dict()]
 
 
+def test_catalog_list_parquet_files_with_typed_selectors(tmp_path: Path) -> None:
+    """
+    Test listing parquet files with typed selectors.
+    """
+    path = str(tmp_path / "catalog")
+    os.makedirs(path, exist_ok=True)
+    catalog = ParquetDataCatalog(path)
+
+    quotes = [
+        TestDataProviderPyo3.quote_tick(instrument_id=AUDUSD_SIM, ts_event=1, ts_init=1),
+    ]
+    catalog.write_quote_ticks(quotes)
+    currency_pair = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    equity = TestInstrumentProvider.aapl_equity()
+    catalog.write_instruments([currency_pair, equity])
+
+    quote_files = catalog.list_parquet_files(NautilusDataType.QuoteTick, "AUDUSD.SIM")
+
+    assert len(quote_files) == 1
+    assert "data/quotes/AUDUSD.SIM/" in quote_files[0]
+
+    pair_files = catalog.list_parquet_files(NautilusDataType.Instrument, "AUDUSD.SIM")
+    equity_files = catalog.list_parquet_files(NautilusDataType.Instrument, "AAPL.XNAS")
+
+    assert len(pair_files) == 1
+    assert "data/currency_pair/AUDUSD.SIM/" in pair_files[0]
+    assert len(equity_files) == 1
+    assert "data/equity/AAPL.XNAS/" in equity_files[0]
+
+
 def test_catalog_query_filters_and_timestamp_metadata(tmp_path: Path) -> None:
     """
     Test catalog query filters and timestamp metadata.
@@ -520,18 +443,18 @@ def test_catalog_query_filters_and_timestamp_metadata(tmp_path: Path) -> None:
         ["AUD/USD.SIM"],
         start=1,
         end=6,
-        where_clause="ts_init >= 5",
+        where_clause="ts_init >= arrow_cast(5, 'Timestamp(Nanosecond, Some(\"UTC\"))')",
     )
 
     assert loaded == [_make_bar(5), _make_bar(6)]
-    assert catalog.query_first_timestamp("bars", bar_type) == 1
-    assert catalog.query_last_timestamp("bars", bar_type) == 6
-    assert catalog.get_missing_intervals_for_request(0, 10, "bars", bar_type) == [
+    assert catalog.query_first_timestamp(data_type=NautilusDataType.Bar, identifier=bar_type) == 1
+    assert catalog.query_last_timestamp(data_type=NautilusDataType.Bar, identifier=bar_type) == 6
+    assert catalog.get_missing_intervals_for_request(0, 10, NautilusDataType.Bar, bar_type) == [
         (0, 0),
         (3, 4),
         (7, 10),
     ]
-    assert "bars" in catalog.list_data_types()
+    assert catalog.list_data_types() == [NautilusDataType.Bar]
 
 
 def test_catalog_delete_data_range_uses_nanosecond_boundaries(tmp_path: Path) -> None:
@@ -545,7 +468,7 @@ def test_catalog_delete_data_range_uses_nanosecond_boundaries(tmp_path: Path) ->
     catalog.write_bars([_make_bar(ts) for ts in timestamps])
 
     catalog.delete_data_range(
-        "bars",
+        NautilusDataType.Bar,
         str(AUDUSD_1_MIN_BID),
         1_000_000_001,
         1_000_000_002,
@@ -640,11 +563,11 @@ def test_order_book_delta_wrangler_construction() -> None:
     assert wrangler.size_precision == 5
 
 
-def test_order_book_depth10_wrangler_construction() -> None:
+def test_order_book_depth_wrangler_construction() -> None:
     """
-    Test order book depth10 wrangler construction.
+    Test order book depth wrangler construction.
     """
-    wrangler = OrderBookDepth10DataWrangler(
+    wrangler = OrderBookDepthDataWrangler(
         instrument_id="ETHUSDT.BINANCE",
         price_precision=2,
         size_precision=5,
@@ -708,10 +631,11 @@ def test_streaming_feather_writer_write_trade(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(os.name == "nt", reason="Feather stream path checks are not stable on Windows")
 @pytest.mark.parametrize(
-    ("data_name", "data_factory"),
+    ("data_name", "data_type", "data_factory"),
     [
         (
             "mark_prices",
+            NautilusDataType.MarkPriceUpdate,
             lambda instrument_id: MarkPriceUpdate(
                 instrument_id,
                 Price.from_str("100.00"),
@@ -721,6 +645,7 @@ def test_streaming_feather_writer_write_trade(tmp_path: Path) -> None:
         ),
         (
             "index_prices",
+            NautilusDataType.IndexPriceUpdate,
             lambda instrument_id: IndexPriceUpdate(
                 instrument_id,
                 Price.from_str("100.00"),
@@ -729,7 +654,8 @@ def test_streaming_feather_writer_write_trade(tmp_path: Path) -> None:
             ),
         ),
         (
-            "funding_rate_update",
+            "funding_rates",
+            NautilusDataType.FundingRateUpdate,
             lambda instrument_id: FundingRateUpdate(
                 instrument_id,
                 Decimal("0.0001"),
@@ -741,30 +667,31 @@ def test_streaming_feather_writer_write_trade(tmp_path: Path) -> None:
         ),
     ],
 )
-def test_streaming_feather_writer_uses_per_instrument_paths(
+def test_streaming_feather_writer_uses_one_file_per_type(
     tmp_path: Path,
     data_name: object,
+    data_type: object,
     data_factory: object,
 ) -> None:
     """
-    Test streaming feather writer uses per instrument paths.
+    Test streaming feather writer stages every instrument of a type in one file.
     """
     path = tmp_path / f"streaming_{data_name}"
     path.mkdir()
-    instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
     writer = StreamingFeatherWriter(
         path=str(path),
         cache=Cache(),
         clock=Clock.new_test(),
-        include_types=[data_name],
+        include_types=[data_type],
     )
 
-    writer.write(data_factory(instrument_id))
+    writer.write(data_factory(InstrumentId.from_str("ETHUSDT.BINANCE")))
+    writer.write(data_factory(InstrumentId.from_str("BTCUSDT.BINANCE")))
     writer.close()
 
-    files = list(path.glob(f"{data_name}/{instrument_id}/*.feather"))
-    assert len(files) == 1
-    assert files[0].stat().st_size > 0
+    assert [file.relative_to(path).as_posix() for file in path.rglob("*.feather")] == [
+        f"{data_name}/{data_name}_0.feather",
+    ]
 
 
 def test_streaming_feather_writer_replace_removes_local_files(tmp_path: Path) -> None:
@@ -778,43 +705,134 @@ def test_streaming_feather_writer_replace_removes_local_files(tmp_path: Path) ->
         path=str(path),
         cache=Cache(),
         clock=Clock.new_test(),
-        include_types=["quotes"],
+        include_types=[NautilusDataType.QuoteTick],
     )
     writer.write(TestDataProviderPyo3.quote_tick(instrument_id=instrument_id))
     writer.close()
-    assert len(list(path.glob(f"quotes/{instrument_id}/*.feather"))) == 1
+    assert len(list(path.glob("quotes/*.feather"))) == 1
 
     replacement = StreamingFeatherWriter(
         path=str(path),
         cache=Cache(),
         clock=Clock.new_test(),
-        include_types=["quotes"],
+        include_types=[NautilusDataType.QuoteTick],
         replace=True,
     )
     replacement.close()
 
-    assert list(path.glob(f"quotes/{instrument_id}/*.feather")) == []
+    assert list(path.glob("quotes/*.feather")) == []
 
 
-def test_streaming_feather_writer_replace_rejects_remote_root() -> None:
+def test_streaming_feather_writer_recovers_partial_files_on_start(tmp_path: Path) -> None:
     """
-    Test streaming feather writer replace rejects remote root.
+    Test streaming feather writer seals partial files a crashed writer left.
+    """
+    path = tmp_path / "streaming_recover"
+    path.mkdir()
+    instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
+    writer = StreamingFeatherWriter(
+        path=str(path),
+        cache=Cache(),
+        clock=Clock.new_test(),
+        include_types=[NautilusDataType.QuoteTick],
+    )
+    writer.write(TestDataProviderPyo3.quote_tick(instrument_id=instrument_id))
+    writer.close()
+
+    # A writer that exited before sealing leaves its flushed stream as a partial file
+    [sealed] = path.glob("quotes/*.feather")
+    sealed.rename(sealed.with_name(f"{sealed.name}.partial"))
+
+    restarted = StreamingFeatherWriter(
+        path=str(path),
+        cache=Cache(),
+        clock=Clock.new_test(),
+        include_types=[NautilusDataType.QuoteTick],
+    )
+    files = [file.relative_to(path).as_posix() for file in path.rglob("*.feather*")]
+    restarted.close()
+
+    assert files == [sealed.relative_to(path).as_posix()]
+
+
+def test_streaming_feather_writer_rejects_string_include_type(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer rejects a catalog name as an include type.
     """
     with pytest.raises(
-        OSError,
-        match="replace=True for remote streaming paths requires a non-empty prefix",
+        TypeError,
+        match="filter key must be NautilusRecordType or NautilusDataType",
     ):
         StreamingFeatherWriter(
-            path="test-bucket",
+            path=str(tmp_path),
             cache=Cache(),
             clock=Clock.new_test(),
-            fs_protocol="s3",
-            fs_storage_options={
-                "access_key_id": "not-a-key",
-                "secret_access_key": "not-a-secret",
-            },
-            replace=True,
+            include_types=["quotes"],
         )
+
+
+def test_streaming_feather_writer_rejects_remote_path() -> None:
+    """
+    Test streaming feather writer rejects a remote path.
+    """
+    with pytest.raises(OSError, match="writer path must be local, was s3://test-bucket/stream"):
+        StreamingFeatherWriter(
+            path="s3://test-bucket/stream",
+            cache=Cache(),
+            clock=Clock.new_test(),
+        )
+
+
+def test_streaming_writer_promotes_into_catalog(tmp_path: Path) -> None:
+    """
+    Test streaming writer with a catalog promotes its Feather files into that catalog.
+    """
+    catalog_path = tmp_path / "catalog"
+    writer = StreamingWriter(
+        str(tmp_path / "stream" / "backtest" / "run-1"),
+        Clock.new_test(),
+        catalog=DataCatalogConfig(path=str(catalog_path)),
+    )
+    quote = TestDataProviderPyo3.quote_tick()
+
+    writer.write(quote)
+    writer.close()
+
+    assert writer.backend == "Parquet"
+    assert ParquetDataCatalog(str(catalog_path)).query_quote_ticks() == [quote]
+
+
+def test_streaming_writer_rejects_unknown_catalog_param(tmp_path: Path) -> None:
+    """
+    Test streaming writer rejects a catalog param its catalog backend does not accept.
+    """
+    with pytest.raises(OSError, match="Unknown Parquet catalog param") as exc_info:
+        StreamingWriter(
+            str(tmp_path / "stream" / "backtest" / "run-1"),
+            Clock.new_test(),
+            catalog=DataCatalogConfig(path=str(tmp_path / "catalog"), params={"batch_size": 1024}),
+        )
+
+    assert str(exc_info.value) == (
+        "Failed to create writer: Unknown Parquet catalog param 'batch_size': "
+        "this catalog takes no params"
+    )
+
+
+def test_streaming_writer_without_catalog_keeps_feather_files(tmp_path: Path) -> None:
+    """
+    Test streaming writer without a catalog keeps only the Feather files.
+    """
+    path = tmp_path / "stream"
+    writer = StreamingWriter(str(path), Clock.new_test())
+
+    writer.write(TestDataProviderPyo3.quote_tick())
+    writer.close()
+
+    assert writer.backend == "Feather"
+    assert [file.relative_to(path).as_posix() for file in path.rglob("*.feather")] == [
+        "quotes/quotes_0.feather",
+    ]
 
 
 def test_streaming_feather_writer_close(tmp_path: Path) -> None:
@@ -843,19 +861,21 @@ def test_streaming_feather_writer_rotation_modes(tmp_path: Path) -> None:
     cache = Cache()
     clock = Clock.new_test()
 
-    for mode, kwargs in [
-        (0, {"max_file_size": 1024 * 1024}),
-        (1, {"rotation_interval_ns": 3600_000_000_000}),
-        (3, {}),
-    ]:
-        path = str(tmp_path / f"streaming_{mode}")
+    for index, rotation_config in enumerate(
+        [
+            RotationConfig.size(1024 * 1024),
+            RotationConfig.interval(3600_000_000_000),
+            RotationConfig.no_rotation(),
+            None,
+        ],
+    ):
+        path = str(tmp_path / f"streaming_{index}")
         os.makedirs(path, exist_ok=True)
         writer = StreamingFeatherWriter(
             path=path,
             cache=cache,
             clock=clock,
-            rotation_mode=mode,
-            **kwargs,
+            rotation_config=rotation_config,
         )
         assert writer is not None
 
@@ -890,16 +910,17 @@ def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
         path=path,
         cache=Cache(),
         clock=clock,
-        rotation_mode=2,
-        rotation_interval_ns=86_400_000_000_000,
-        rotation_time_ns=1_800_000_000_000,
-        rotation_timezone="America/New_York",
+        rotation_config=RotationConfig.scheduled_dates(
+            86_400_000_000_000,
+            1_800_000_000_000,
+            timezone="America/New_York",
+        ),
     )
     quote = TestDataProviderPyo3.quote_tick()
 
     writer.write(quote)
 
-    next_rotation_rust = writer.get_next_rotation_time("quotes", str(quote.instrument_id))
+    next_rotation_rust = writer.get_next_rotation_time(NautilusDataType.QuoteTick)
     next_rotation_python = _next_rotation_python(now)
     expected_ns = pd.Timestamp(expected).value
 
@@ -930,7 +951,7 @@ def test_streaming_feather_writer_include_types(tmp_path: Path) -> None:
         path=path,
         cache=Cache(),
         clock=Clock.new_test(),
-        include_types=["quotes", "trades"],
+        include_types=[NautilusDataType.QuoteTick, NautilusDataType.TradeTick],
     )
 
     assert writer is not None

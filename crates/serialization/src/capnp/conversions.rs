@@ -26,7 +26,7 @@ use nautilus_model::{
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
         deltas::OrderBookDeltas,
-        depth::OrderBookDepth10,
+        depth::OrderBookDepth,
         order::BookOrder,
     },
     enums::{
@@ -2333,8 +2333,8 @@ impl<'a> FromCapnp<'a> for OrderBookDeltas {
     }
 }
 
-impl<'a> ToCapnp<'a> for OrderBookDepth10 {
-    type Builder = market_capnp::order_book_depth10::Builder<'a>;
+impl<'a> ToCapnp<'a> for OrderBookDepth {
+    type Builder = market_capnp::order_book_depth::Builder<'a>;
 
     fn to_capnp(&self, mut builder: Self::Builder) {
         let instrument_id_builder = builder.reborrow().init_instrument_id();
@@ -2386,55 +2386,42 @@ impl<'a> ToCapnp<'a> for OrderBookDepth10 {
     }
 }
 
-impl<'a> FromCapnp<'a> for OrderBookDepth10 {
-    type Reader = market_capnp::order_book_depth10::Reader<'a>;
+impl<'a> FromCapnp<'a> for OrderBookDepth {
+    type Reader = market_capnp::order_book_depth::Reader<'a>;
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
-        use nautilus_model::data::order::NULL_ORDER;
-
         let instrument_id_reader = reader.get_instrument_id()?;
         let instrument_id = InstrumentId::from_capnp(instrument_id_reader)?;
 
-        // Convert bids (BookLevel list to BookOrder array)
+        // The Capnp lists retain the snapshot length.
         let bids_reader = reader.get_bids()?;
-        let mut bids = [NULL_ORDER; 10];
+        let mut bids = Vec::with_capacity(bids_reader.len() as usize);
 
-        for (i, level_reader) in bids_reader.iter().enumerate().take(10) {
+        for level_reader in bids_reader {
             let price_reader = level_reader.get_price()?;
             let price = Price::from_capnp(price_reader)?;
 
             let size_reader = level_reader.get_size()?;
             let size = Quantity::from_capnp(size_reader)?;
 
-            bids[i] = BookOrder::new(OrderSide::Buy, price, size, 0);
+            bids.push(BookOrder::new(OrderSide::Buy, price, size, 0));
         }
 
-        // Convert asks (BookLevel list to BookOrder array)
         let asks_reader = reader.get_asks()?;
-        let mut asks = [NULL_ORDER; 10];
+        let mut asks = Vec::with_capacity(asks_reader.len() as usize);
 
-        for (i, level_reader) in asks_reader.iter().enumerate().take(10) {
+        for level_reader in asks_reader {
             let price_reader = level_reader.get_price()?;
             let price = Price::from_capnp(price_reader)?;
 
             let size_reader = level_reader.get_size()?;
             let size = Quantity::from_capnp(size_reader)?;
 
-            asks[i] = BookOrder::new(OrderSide::Sell, price, size, 0);
+            asks.push(BookOrder::new(OrderSide::Sell, price, size, 0));
         }
 
-        // Convert counts
-        let bid_counts_reader = reader.get_bid_counts()?;
-        let mut bid_counts = [0u32; 10];
-        for (i, count) in bid_counts_reader.iter().enumerate().take(10) {
-            bid_counts[i] = count;
-        }
-
-        let ask_counts_reader = reader.get_ask_counts()?;
-        let mut ask_counts = [0u32; 10];
-        for (i, count) in ask_counts_reader.iter().enumerate().take(10) {
-            ask_counts[i] = count;
-        }
+        let bid_counts = reader.get_bid_counts()?.iter().collect::<Vec<_>>();
+        let ask_counts = reader.get_ask_counts()?.iter().collect::<Vec<_>>();
 
         let flags = reader.get_flags();
         let sequence = reader.get_sequence();
@@ -2445,7 +2432,7 @@ impl<'a> FromCapnp<'a> for OrderBookDepth10 {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        Ok(Self {
+        Ok(Self::new_checked(
             instrument_id,
             bids,
             asks,
@@ -2453,9 +2440,9 @@ impl<'a> FromCapnp<'a> for OrderBookDepth10 {
             ask_counts,
             flags,
             sequence,
-            ts_event: ts_event.into(),
-            ts_init: ts_init.into(),
-        })
+            ts_event.into(),
+            ts_init.into(),
+        )?)
     }
 }
 
@@ -4900,8 +4887,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decimal_roundtrip_preserves_scale_and_sign() {
-        let decimal = Decimal::from_parts(0xffff_ffff, 0x7fff_ffff, 0x0000_00ff, false, 9);
+    #[case::positive(false, 9)]
+    #[case::negative(true, 9)]
+    #[case::maximum_scale_positive(false, Decimal::MAX_SCALE)]
+    #[case::maximum_scale_negative(true, Decimal::MAX_SCALE)]
+    fn test_decimal_roundtrip_preserves_scale_and_sign(#[case] negative: bool, #[case] scale: u32) {
+        let decimal = Decimal::from_parts(0xffff_ffff, 0x7fff_ffff, 0x0000_00ff, negative, scale);
 
         let mut message = capnp::message::Builder::new_default();
         {
@@ -4914,6 +4905,7 @@ mod tests {
             .expect("reader");
         let decoded = Decimal::from_capnp(reader).expect("decoded decimal");
         assert_eq!(decimal, decoded);
+        assert_eq!(decimal.serialize(), decoded.serialize());
     }
 
     #[rstest]
@@ -5114,11 +5106,11 @@ mod tests {
         OrderBookDeltas
     );
     capnp_simple_roundtrip_test!(
-        order_book_depth10_capnp_roundtrip,
-        sample_order_book_depth10(),
-        market_capnp::order_book_depth10::Builder,
-        market_capnp::order_book_depth10::Reader,
-        OrderBookDepth10
+        order_book_depth_capnp_roundtrip,
+        sample_order_book_depth(),
+        market_capnp::order_book_depth::Builder,
+        market_capnp::order_book_depth::Reader,
+        OrderBookDepth
     );
     capnp_simple_roundtrip_test!(
         mark_price_update_capnp_roundtrip,
@@ -5239,6 +5231,62 @@ mod tests {
             OrderInitialized
         );
     }
+
+    #[rstest]
+    #[case::empty(false)]
+    #[case::populated(true)]
+    fn order_initialized_optional_collections_capnp_roundtrip(
+        order_initialized_buy_limit: OrderInitialized,
+        #[case] populated: bool,
+    ) {
+        let initialized = OrderInitialized {
+            expire_time: Some(UnixNanos::from(123_456)),
+            linked_order_ids: Some(if populated {
+                vec![ClientOrderId::from("O-101"), ClientOrderId::from("O-202")]
+            } else {
+                vec![]
+            }),
+            exec_algorithm_params: Some(if populated {
+                IndexMap::from([
+                    (Ustr::from("interval"), Ustr::from("17")),
+                    (Ustr::from("duration"), Ustr::from("53")),
+                ])
+            } else {
+                IndexMap::new()
+            }),
+            tags: Some(if populated {
+                vec![Ustr::from("first"), Ustr::from("second")]
+            } else {
+                vec![]
+            }),
+            ..order_initialized_buy_limit
+        };
+
+        let mut message = Builder::new_default();
+        initialized.to_capnp(message.init_root::<order_capnp::order_initialized::Builder>());
+        let reader = message
+            .get_root_as_reader::<order_capnp::order_initialized::Reader>()
+            .unwrap();
+        let decoded = OrderInitialized::from_capnp(reader).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&decoded).unwrap(),
+            serde_json::to_value(&initialized).unwrap()
+        );
+        assert_eq!(
+            decoded
+                .exec_algorithm_params
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            initialized
+                .exec_algorithm_params
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[rstest]
     fn order_filled_info_capnp_roundtrip(order_filled: OrderFilled) {
         let mut info = IndexMap::new();
@@ -5547,7 +5595,7 @@ mod tests {
             .build()
     }
 
-    fn sample_order_book_depth10() -> OrderBookDepth10 {
+    fn sample_order_book_depth() -> OrderBookDepth {
         const LEVELS: usize = 10;
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut bids = [BookOrder::default(); LEVELS];
@@ -5568,7 +5616,7 @@ mod tests {
         }
         let bid_counts = [1_u32; LEVELS];
         let ask_counts = [1_u32; LEVELS];
-        OrderBookDepth10::new(
+        OrderBookDepth::new(
             instrument_id,
             bids,
             asks,

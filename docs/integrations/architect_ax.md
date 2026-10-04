@@ -184,13 +184,15 @@ AX instrument states map to `MarketStatusAction` as follows:
 
 :::note
 Historical quote tick requests are not supported by AX Exchange. Only real-time quote
-data is available via WebSocket L1 book subscriptions. AX also publishes no index prices and no
-instrument close events, so those subscriptions log a warning and yield no data.
+data is available via WebSocket L1 book subscriptions. The adapter does not expose AX index prices
+or instrument close events, so those subscriptions log a warning and yield no data.
 :::
 
 :::note
 AX L3 snapshots contain per-order quantities but no venue order IDs. The adapter assigns synthetic
 IDs within each snapshot. It cannot track the same individual order across snapshots.
+L2 and L3 processing requires full snapshots (`st: true`). The adapter rejects incremental
+frames (`st: false`) to avoid clearing unchanged book levels.
 :::
 
 :::note
@@ -213,11 +215,97 @@ smallest stream that covers the active Nautilus subscriptions:
 - Book deltas subscribe at the AX level matching the Nautilus book type. `L1_MBP` has no
   delta-capable AX equivalent, so the adapter logs a warning and subscribes at L2 instead.
 - If multiple Nautilus data types are active for a symbol, the adapter resubscribes only when the
-  required AX level or delivery flags change.
+  required AX level or delivery flags change, or when an order book needs a fresh snapshot (see
+  [Order book recovery](#order-book-recovery)).
+- Subscription changes reach AX in the order the data engine issues them, so an unsubscribe
+  followed by a resubscribe leaves the stream subscribed.
 
 AX documents estimated funding rates on ticker events and an estimated-funding request on the orders
-WebSocket. Nautilus exposes settled funding-rate updates through HTTP polling; the adapter does not
-parse or emit the venue's estimated funding fields as a separate Nautilus data type.
+WebSocket. Ticker models retain estimated-funding metadata. Nautilus exposes settled funding-rate
+updates through HTTP polling; the adapter does not emit a separate estimated-funding data type or
+request standalone estimates.
+
+### Order book recovery
+
+The data client tracks each order book delta subscription with the
+[shared book recovery machinery](../developer_guide/adapters.md#order-book-recovery-ownership).
+AX L2 and L3 messages carry a full snapshot and no sequence number, and AX sends one right after
+each subscribe acknowledgement, including for an empty or unchanged book. The client accepts every
+message as a snapshot. It suppresses book output while a subscription write is in flight and drops
+frames for a book that is no longer subscribed.
+
+Recovery replaces the symbol's subscription with an unsubscribe and a subscribe on the same
+connection, echoing its current level and trade and ticker flags. AX carries all market data for a
+symbol on one stream, so trades, quotes, mark prices, and instrument status for that symbol pause
+while the replacement runs. Recovery starts when:
+
+- An initial subscription write fails.
+- No snapshot arrives within `book_snapshot_timeout_secs` (default 10 seconds) after the initial
+  subscription write completes or the connection is re-established. A data client `connect` after
+  `disconnect` counts too: the client keeps its books, and the WebSocket client replays their
+  subscriptions.
+- An L2 or L3 frame cannot be converted, such as an incremental (`st: false`) frame. The book stops
+  emitting until a replacement snapshot arrives, and a running recovery's current attempt fails
+  without waiting for its snapshot deadline.
+
+A subscription AX rejects delivers no snapshot, so its snapshot deadline starts recovery. A
+subscription the client cannot queue because the WebSocket handler has stopped starts no recovery,
+and its book emits nothing. Subscribing to deltas for a book whose stream is already open replaces
+the stream, so the book starts from a fresh snapshot.
+
+Each recovery makes up to eight attempts within 180 seconds, with exponential backoff, then
+continues at an interval that doubles from one minute to fifteen minutes until a snapshot is
+accepted. A running recovery continues across reconnects with its remaining budget, and
+unsubscribe or shutdown cancels it. A recovery waiting between attempts after its budget retries at
+once on the new connection. Recovery never ends in a failed state.
+
+The client does not correlate subscription acknowledgements with recovery attempts. A snapshot
+queued before a replacement can complete recovery once the replacement write finishes. AX sends no
+frames while a book is unchanged, so the client does not treat a silent book as stale.
+
+Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines. Recovery then starts only
+from a failed initial write or an invalid frame. Within the retry budget, a replacement that
+delivers no snapshot leaves its attempt waiting until a snapshot is accepted, an invalid frame
+fails it, recovery is cancelled, or the 180-second initial budget ends.
+
+### Live recovery validation
+
+The `ax-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It uses AX sandbox market data, submits no orders, and checks five perpetual books against
+the book stream contract and against the book in each raw L2 frame the harness relays.
+
+The AX market data stream requires authentication, so the harness reads sandbox API credentials
+from `AX_API_KEY` and `AX_API_SECRET` and runs without `scripts/strip-adapter-env.bash`. From the
+repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 cargo test -p nautilus-architect-ax --features examples --test ax-book-stress -- --timeout 10 --rounds 14
+```
+
+`--scenario` selects the run:
+
+- `churn` (default): rotates invalid frames that each book recovers without a reconnect,
+  snapshots held past their deadlines after a reconnect, late snapshots after a reconnect, a
+  rejected replacement, reconnects cut before their snapshots, a restart during recovery, and a
+  40-second traffic freeze that closes no socket.
+- `initial`: drops each book's first snapshot and silences its stream, in a fresh session per
+  round. With `--timeout 0`, the books stay dark until a reconnect replays their subscriptions.
+- `turnover`: unsubscribes and resubscribes a recovering book just after recovery starts, after its
+  replacement reaches the venue, or after a rejected replacement's deadline. The new subscription
+  must keep streaming once the venue settles, with no further replacement.
+- `boundaries`: rejects every attempt in the retry budget, then checks the retry ceiling, a
+  reconnect that ends the ceiling wait, unsubscribe during recovery, and shutdown during a
+  reconnect. It requires a nonzero `--timeout`, since snapshot deadlines end each rejected attempt,
+  and at least three `--symbols`.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
+`--rounds` sets the number of rounds (14 by default). `--symbols` takes a comma-separated list of
+symbols to check. The sandbox market maker quotes only some instruments, and a book that stops
+streaming fails the run, so choose books that stream.
+
+The harness requires the sandbox market data WebSocket and REST API. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared flags
+and output format.
 
 ### HTTP API behavior
 
@@ -290,6 +378,16 @@ configured trigger, then sends a plain limit order to this adapter.
 | `quote_quantity` | -         | Rejected locally; the adapter wire path encodes base only.    |
 | `display_qty`    | -         | Rejected locally; the adapter wire path has no display field. |
 
+The adapter omits `rb` on place and replace requests, using AX's default `rej` behavior for
+post-only orders. Selecting `bo` (back off one tick from the opposite side) or `tbl` (best price on
+the same side) is not supported. See the [AX changelog](https://docs.architect.exchange/changelog).
+
+Order-history, open-order, and WebSocket order responses retain `rb` as optional typed adapter
+metadata on `AxOrderDetail`, `AxOpenOrder`, and `AxWsOrder`. It describes the latest place or replace request and takes effect
+only when that request has `po: true`. Missing or null values remain absent; unrecognized strings map
+to `Unknown`, not `Reject`. `OrderStatusReport` does not expose this metadata, so reconciliation
+reports cannot distinguish these repricing policies for externally placed or replaced orders.
+
 The reduce-only boundary matters because AX has no reduce-only field. In sandbox, an order whose
 reduce-only instruction was dropped from the wire payload was accepted and filled as an ordinary
 order, which can open or increase exposure instead of closing it; production behavior was not
@@ -324,6 +422,18 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | Batch cancel       | -         | The adapter sends individual cancels.                              |
 | Order lists        | ✓         | Sequential submission (orders submitted individually, non-atomic). |
 
+A cancel that already has a venue order ID is forwarded, including a second cancel of a
+terminal order. A strategy does not send that second cancel after the local order is already
+closed or pending cancel. The adapter emits `OrderCancelRejected` only when AX sends
+`CancelRejected`. Sandbox answers a resend of an already canceled order with WebSocket error
+`404` (`order not found`). The adapter logs that error and does not turn it into
+`OrderCancelRejected`.
+
+**Side filter**: AX cancel-all has no side parameter, so a `CancelAllOrders` command with
+`order_side` set cancels only open orders on that side for the instrument through individual
+cancel requests. A side-filtered request selects from open orders only, so an inflight
+(`SUBMITTED`) order not yet acknowledged by AX survives one.
+
 ### Position management
 
 | Feature         | Supported | Notes                                |
@@ -351,7 +461,37 @@ state.
 AX open and historical order payloads do not expose a stop order type or trigger price.
 REST-derived reconciliation therefore reports every visible external order as a limit order. The
 adapter does not submit venue-native conditional orders.
+
+Historical order reports carry the venue reject reason (`r`, falling back to `txt`), so
+reconciled `OrderRejected` events keep the same reason strings as their real-time counterparts;
+reconciled `OrderCanceled` events can also carry the venue reason where a live cancel carries
+none. Reports retain the venue's post-only flag and subsecond timestamp. Replaced historical
+order IDs are terminal; day-complete orders expire, and expired IOC orders cancel, matching the
+WebSocket event path. An unknown order state fails the reconciliation request instead of omitting
+an order from the snapshot. A fill with an unknown sibling order state still reaches execution.
+
+Startup mass-status reconciliation bounds its `/orders` and `/fills` requests by
+`reconciliation_lookback_mins`, and positions are always reported as a current snapshot. A
+lookback longer than seven days still yields only seven days of fills, and the declared
+window is floored at that cap. With a bounded window, fills for instruments that reconcile
+flat apply to their orders without materializing positions, so round trips completed inside
+the window do not open phantom positions on restart. Without a bound, every historical order
+on the account is fetched and reconciled at startup.
 :::
+
+:::warning
+After a restart without cached replacement history, reconciliation can apply an older order's
+state or fields to its replacement, making a working order appear canceled locally. Recovery
+remains incomplete; check replaced orders against AX before resuming trading.
+:::
+
+### Account state
+
+The `/balances` endpoint carries no margin data, so account state also requests `/risk-snapshot`:
+its USD `initial_margin_required_total` populates the USD balance's locked funds, capped at the
+USD balance, and a USD `MarginBalance` entry pairs initial with maintenance margin. When
+`/risk-snapshot` fails, account state falls back to balances-only with zero locked margin and a
+warning.
 
 ## Authentication
 
@@ -381,45 +521,46 @@ API base URL. The adapter resolves both from the configured environment.
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                                         |
-| ---------------------------------- | --------- | ------------------------------------------------------------------- |
-| `api_key`                          | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
-| `api_secret`                       | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `environment`                      | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
-| `base_url_http`                    | `None`    | Override for the REST base URL.                                     |
-| `base_url_ws_public`               | `None`    | Override for the market data WebSocket URL.                         |
-| `base_url_ws_private`              | `None`    | Override for the private orders WebSocket URL.                      |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
-| `http_timeout_secs`                | `60`      | Timeout (seconds) for REST requests.                                |
-| `max_retries`                      | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`           | `1,000`   | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`               | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
-| `heartbeat_interval_secs`          | `20`      | Heartbeat interval (seconds) for WebSocket connections.             |
-| `recv_window_ms`                   | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.    |
-| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.            |
-| `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.              |
-| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                        |
+| Option                             | Default   | Description                                                                     |
+| ---------------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `api_key`                          | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.                         |
+| `api_secret`                       | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.                   |
+| `environment`                      | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                                |
+| `base_url_http`                    | `None`    | Override for the REST base URL.                                                 |
+| `base_url_ws_public`               | `None`    | Override for the market data WebSocket URL.                                     |
+| `base_url_ws_private`              | `None`    | Override for the private orders WebSocket URL.                                  |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                           |
+| `http_timeout_secs`                | `60`      | Timeout (seconds) for REST requests.                                            |
+| `max_retries`                      | `3`       | Maximum retry attempts for idempotent REST requests (`GET`, `HEAD`, `OPTIONS`). |
+| `retry_delay_initial_ms`           | `1,000`   | Initial delay (milliseconds) between retries.                                   |
+| `retry_delay_max_ms`               | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff).             |
+| `heartbeat_interval_secs`          | `20`      | Heartbeat interval (seconds) for WebSocket connections.                         |
+| `recv_window_ms`                   | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.                |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalog refreshes.                        |
+| `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate poll requests.                          |
+| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery book snapshot wait; `0` disables.              |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                    |
 
 ### Execution client configuration options
 
-| Option                    | Default   | Description                                                         |
-| ------------------------- | --------- | ------------------------------------------------------------------- |
-| `account_id`              | `AX-001`  | Account ID for the execution client.                                |
-| `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
-| `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
-| `base_url_http`           | `None`    | Override for the API REST base URL.                                 |
-| `base_url_orders`         | `None`    | Override for the orders REST base URL.                              |
-| `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                              |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
-| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                |
-| `max_retries`             | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
-| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.             |
-| `recv_window_ms`          | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.    |
-| `cancel_on_disconnect`    | `False`   | Cancel this WebSocket session's open orders on disconnect.          |
-| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                        |
+| Option                    | Default   | Description                                                                     |
+| ------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `account_id`              | `AX-001`  | Account ID for the execution client.                                            |
+| `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.                         |
+| `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.                   |
+| `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                                |
+| `base_url_http`           | `None`    | Override for the API REST base URL.                                             |
+| `base_url_orders`         | `None`    | Override for the orders REST base URL.                                          |
+| `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                                          |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                           |
+| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                            |
+| `max_retries`             | `3`       | Maximum retry attempts for idempotent REST requests (`GET`, `HEAD`, `OPTIONS`). |
+| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                   |
+| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff).             |
+| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.                         |
+| `recv_window_ms`          | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.                |
+| `cancel_on_disconnect`    | `False`   | Cancel this WebSocket session's open orders on disconnect.                      |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                    |
 
 When `transport_backend=None`, the compiled Rust default selects Sockudo when the
 `transport-sockudo` Cargo feature is enabled and Tungstenite otherwise.
@@ -468,13 +609,17 @@ credentials are valid and have trading permissions.
   weekends and holidays, and emits the latest rate only when it differs from the last one emitted.
 - **Cancel on disconnect**: Set `cancel_on_disconnect=True` in the execution client config
   to have the exchange cancel all open orders if the orders WebSocket disconnects.
-- **Instrument fee rates**: AX reports maker and taker rates per account on `GET /whoami`, so the
-  adapter resolves them after authenticating and applies them to every instrument. A client with
-  credentials fails to connect if that lookup fails, rather than reporting zero fees for the process
-  lifetime. A data client configured without credentials cannot read the rates and reports zero fees.
+- **Instrument fee rates**: Instruments do not carry maker or taker fee rates. An
+  authenticated client still resolves account rates from `GET /whoami` and fails to
+  connect if that lookup fails. Those rates are not copied onto instruments.
 - **Fill commissions**: Real-time fill events from the WebSocket do not include fee data.
-  Commission is reported as zero for streaming fills. During reconciliation, the REST
-  `/fills` endpoint provides accurate fee information.
+  A tracked streaming fill leaves `commission` unset. An untracked fill falls back to a
+  fill report with zero commission. Reconciliation does not replace the commission on a
+  fill that was already applied. The REST `/fills` endpoint supplies the fee for a fill
+  that was not already applied from the stream. The adapter converts that fee with
+  `Money::from_decimal` into USD, whose precision is 2, so a sub-cent fee such as
+  `0.012188` is stored as `0.01`. A fee that cannot be represented fails the fill-report
+  request and mass status. During startup, that error prevents the node from starting.
 - **Fill reconciliation window**: The `/fills` endpoint requires a bounded time range and
   caps the span at seven days. Reconciliation requests the most recent seven days of fills;
   fills older than that are not reconciled.

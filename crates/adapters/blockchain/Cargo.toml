@@ -92,6 +92,7 @@ nautilus-model = { workspace = true, features = ["test-support"] }
 
 axum = { workspace = true }
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 toml = { workspace = true }
 turmoil = { workspace = true }
 

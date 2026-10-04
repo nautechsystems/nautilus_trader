@@ -33,7 +33,7 @@ use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -105,6 +105,10 @@ pub struct DatabentoDataClientConfig {
     pub(crate) credential: Credential,
     /// Path to publishers.json file.
     pub publishers_filepath: PathBuf,
+    /// Override for the Databento Historical API base URL.
+    pub historical_base_url: Option<String>,
+    /// Override for the Databento live gateway address.
+    pub live_gateway_addr: Option<String>,
     /// Venue-to-dataset overrides applied on top of the publishers.json mappings.
     pub venue_dataset_map: IndexMap<String, String>,
     /// Whether to use exchange as venue for GLBX instruments.
@@ -118,6 +122,8 @@ pub struct DatabentoDataClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(DatabentoDataClientConfig {
     publishers_filepath: PathBuf,
+    historical_base_url: Option<String>,
+    live_gateway_addr: Option<String>,
     use_exchange_as_venue: bool,
     bars_timestamp_on_close: bool,
     venue_dataset_map: IndexMap<String, String>,
@@ -139,6 +145,8 @@ impl DatabentoDataClientConfig {
             use_exchange_as_venue,
             bars_timestamp_on_close,
             reconnect_timeout_mins: Some(10), // Default: 10 minutes
+            historical_base_url: None,
+            live_gateway_addr: None,
         }
     }
 
@@ -177,7 +185,7 @@ pub struct DatabentoDataClient {
     cancellation_token: CancellationToken,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
 }
 
 impl DatabentoDataClient {
@@ -191,12 +199,21 @@ impl DatabentoDataClient {
         config: DatabentoDataClientConfig,
         clock: &'static AtomicTime,
     ) -> anyhow::Result<Self> {
-        let historical = DatabentoHistoricalClient::new(
-            config.credential.clone(),
-            config.publishers_filepath.clone(),
-            clock,
-            config.use_exchange_as_venue,
-        )?;
+        let historical = match &config.historical_base_url {
+            Some(base_url) => DatabentoHistoricalClient::new_with_base_url(
+                config.credential.clone(),
+                config.publishers_filepath.clone(),
+                clock,
+                config.use_exchange_as_venue,
+                base_url,
+            )?,
+            None => DatabentoHistoricalClient::new(
+                config.credential.clone(),
+                config.publishers_filepath.clone(),
+                clock,
+                config.use_exchange_as_venue,
+            )?,
+        };
 
         // Create data loader for venue-to-dataset mapping
         let mut loader = DatabentoDataLoader::new(Some(config.publishers_filepath.clone()))?;
@@ -349,10 +366,13 @@ impl DatabentoDataClient {
             self.config.reconnect_timeout_mins,
         );
 
+        if let Some(addr) = &self.config.live_gateway_addr {
+            feed_handler = feed_handler.with_gateway_addr(addr.clone());
+        }
+
         let feed_future = async move {
-            if let Err(e) = feed_handler.run().await {
-                log::error!("Feed handler error: {e}");
-            }
+            // run() logs its terminal error and forwards it as `DatabentoMessage::Error`
+            let _ = feed_handler.run().await;
             feed_channels.lock().remove(&feed_dataset);
         };
 
@@ -677,7 +697,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -689,7 +709,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -701,7 +721,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -716,7 +736,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -1145,7 +1165,7 @@ impl DataClient for DatabentoDataClient {
             };
 
             match historical_client
-                .get_range_order_book_depth10(params, depth)
+                .get_range_order_book_depth(params, depth)
                 .await
             {
                 Ok(depths) => {
@@ -1349,11 +1369,7 @@ async fn seed_price_precision_if_needed(
     }
 }
 
-fn send_data_response(
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    response: DataResponse,
-    label: &str,
-) {
+fn send_data_response(data_sender: &EventSender<DataEvent>, response: DataResponse, label: &str) {
     if let Err(e) = data_sender.send(DataEvent::Response(response)) {
         log::error!("Failed to send {label} response: {e}");
     }
@@ -1554,6 +1570,41 @@ mod tests {
             client.get_dataset_for_venue(Venue::from("XCBO")).unwrap(),
             "OPRA.PILLAR"
         );
+    }
+
+    #[rstest]
+    fn test_config_base_url_overrides_default_to_none() {
+        let config = DatabentoDataClientConfig::new(
+            "32-character-with-lots-of-filler",
+            PathBuf::from("test_publishers.json"),
+            true,
+            true,
+        );
+
+        assert!(config.historical_base_url.is_none());
+        assert!(config.live_gateway_addr.is_none());
+    }
+
+    #[rstest]
+    fn test_historical_base_url_override_invalid_errors() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(sender);
+
+        let mut config = DatabentoDataClientConfig::new(
+            "32-character-with-lots-of-filler",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            true,
+            true,
+        );
+        config.historical_base_url = Some("not a url".to_string());
+
+        let result = DatabentoDataClient::new(
+            ClientId::from("DATABENTO-TEST"),
+            config,
+            get_atomic_clock_realtime(),
+        );
+
+        assert!(result.is_err());
     }
 
     fn subscribe_quotes_cmd(params: Option<Params>) -> SubscribeQuotes {

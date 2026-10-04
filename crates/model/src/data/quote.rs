@@ -26,13 +26,13 @@ use nautilus_core::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::HasTsInit;
+use super::{ARROW_TIMESTAMP_NANOSECOND, HasTsInit};
 use crate::{
     enums::PriceType,
     identifiers::InstrumentId,
     types::{
         Price, Quantity,
-        fixed::{FIXED_PRECISION, FIXED_SIZE_BINARY},
+        fixed::{FIXED_DECIMAL, FIXED_PRECISION},
     },
 };
 
@@ -156,12 +156,18 @@ impl QuoteTick {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("bid_price".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("ask_price".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("bid_size".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("ask_size".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("ts_event".to_string(), "UInt64".to_string());
-        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata.insert("bid_price".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("ask_price".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("bid_size".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("ask_size".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert(
+            "ts_event".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
+        metadata.insert(
+            "ts_init".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
         metadata
     }
 
@@ -245,10 +251,15 @@ mod tests {
 
     use super::QuoteTickBuilder;
     use crate::{
-        data::{HasTsInit, QuoteTick, stubs::quote_ethusdt_binance},
+        data::{ARROW_TIMESTAMP_NANOSECOND, HasTsInit, QuoteTick, stubs::quote_ethusdt_binance},
         enums::PriceType,
         identifiers::InstrumentId,
-        types::{Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw, quantity::QuantityRaw},
+        types::{
+            Price, Quantity,
+            fixed::{FIXED_DECIMAL, FIXED_PRECISION},
+            price::PriceRaw,
+            quantity::QuantityRaw,
+        },
     };
 
     fn create_test_quote() -> QuoteTick {
@@ -387,47 +398,20 @@ mod tests {
 
         assert_eq!(fields.len(), 6);
 
-        #[cfg(feature = "high-precision")]
-        {
-            assert_eq!(
-                fields.get("bid_price"),
-                Some(&"FixedSizeBinary(16)".to_string())
-            );
-            assert_eq!(
-                fields.get("ask_price"),
-                Some(&"FixedSizeBinary(16)".to_string())
-            );
-            assert_eq!(
-                fields.get("bid_size"),
-                Some(&"FixedSizeBinary(16)".to_string())
-            );
-            assert_eq!(
-                fields.get("ask_size"),
-                Some(&"FixedSizeBinary(16)".to_string())
-            );
-        }
-        #[cfg(not(feature = "high-precision"))]
-        {
-            assert_eq!(
-                fields.get("bid_price"),
-                Some(&"FixedSizeBinary(8)".to_string())
-            );
-            assert_eq!(
-                fields.get("ask_price"),
-                Some(&"FixedSizeBinary(8)".to_string())
-            );
-            assert_eq!(
-                fields.get("bid_size"),
-                Some(&"FixedSizeBinary(8)".to_string())
-            );
-            assert_eq!(
-                fields.get("ask_size"),
-                Some(&"FixedSizeBinary(8)".to_string())
-            );
-        }
+        assert_eq!(fields.get("bid_price"), Some(&FIXED_DECIMAL.to_string()));
+        assert_eq!(fields.get("ask_price"), Some(&FIXED_DECIMAL.to_string()));
+        assert_eq!(fields.get("bid_size"), Some(&FIXED_DECIMAL.to_string()));
+        assert_eq!(fields.get("ask_size"), Some(&FIXED_DECIMAL.to_string()));
 
-        assert_eq!(fields.get("ts_event"), Some(&"UInt64".to_string()));
-        assert_eq!(fields.get("ts_init"), Some(&"UInt64".to_string()));
+        assert_eq!(
+            fields.get("ts_event"),
+            Some(&ARROW_TIMESTAMP_NANOSECOND.to_string())
+        );
+        assert_eq!(
+            fields.get("ts_init"),
+            Some(&ARROW_TIMESTAMP_NANOSECOND.to_string())
+        );
+        assert_eq!(fields.get("identifier"), None);
     }
 
     #[rstest]

@@ -23,16 +23,17 @@
 use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr};
 
 use nautilus_backtest::{
-    config::{
-        BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
-        NautilusDataType,
-    },
+    config::{BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
 };
 use nautilus_common::actor::DataActor;
 use nautilus_core::UnixNanos;
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
-    data::{BarSpecification, BookOrder, FundingRateUpdate, OrderBookDelta, QuoteTick, TradeTick},
+    data::{
+        BarSpecification, BookOrder, FundingRateUpdate, NautilusDataType, OrderBookDelta,
+        QuoteTick, TradeTick,
+    },
     enums::{
         AccountType, AggressorSide, BarAggregation, BookAction, BookType, OmsType, OrderSide,
         PriceType,
@@ -41,7 +42,9 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::{
+    backend::parquet::catalog::ParquetDataCatalog, catalog::types::CatalogInstrumentQuery,
+};
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
 use rust_decimal::Decimal;
@@ -174,6 +177,7 @@ fn binance_venue_config() -> BacktestVenueConfig {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap()
 }
@@ -598,6 +602,7 @@ fn test_new_validates_venue_exists_for_instruments(crypto_perpetual_ethusdt: Cry
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap();
 
@@ -905,14 +910,77 @@ fn test_dispose_clears_engines(crypto_perpetual_ethusdt: CryptoPerpetual) {
 }
 
 #[rstest]
+fn test_run_after_completion_disposal_errors(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
+    let config = run_config(&catalog_path, instrument.id(), None);
+    let config_id = config.id().to_string();
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+
+    assert_eq!(node.run().unwrap().len(), 1);
+    assert!(node.get_engine(&config_id).is_some());
+
+    let error = node.run().unwrap_err().to_string();
+    assert!(error.contains("disposed"), "unexpected error: {error}");
+    assert!(
+        error.contains("new BacktestNode"),
+        "unexpected error: {error}"
+    );
+    assert!(node.get_engine(&config_id).is_some());
+}
+
+#[rstest]
+fn test_run_after_node_disposal_errors(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
+    let config = run_config(&catalog_path, instrument.id(), None);
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.dispose();
+
+    let error = node.run().unwrap_err().to_string();
+    assert!(error.contains("disposed"), "unexpected error: {error}");
+    assert!(
+        error.contains("new BacktestNode"),
+        "unexpected error: {error}"
+    );
+    assert!(node.get_engines().is_empty());
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_build_after_disposal_errors(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] dispose_on_completion: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
+    let config = run_config(&catalog_path, instrument.id(), None);
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+
+    if dispose_on_completion {
+        node.run().unwrap();
+    } else {
+        node.dispose();
+    }
+
+    let error = node.build().unwrap_err().to_string();
+    assert!(error.contains("disposed"), "unexpected error: {error}");
+    assert!(
+        error.contains("new BacktestNode"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
 fn test_load_catalog(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
 
     let config = data_config(&catalog_path, instrument.id());
-    let catalog = BacktestNode::load_catalog(&config).unwrap();
+    let mut catalog = BacktestNode::load_catalog(&config).unwrap();
 
-    let instruments = catalog.query_instruments(None).unwrap();
+    let instruments = catalog.instruments(&CatalogInstrumentQuery::new()).unwrap();
     assert_eq!(instruments.len(), 1);
 }
 
@@ -1399,6 +1467,7 @@ fn test_l2_venue_without_book_data_rejected(crypto_perpetual_ethusdt: CryptoPerp
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap();
 
@@ -1421,19 +1490,21 @@ fn test_l2_venue_without_book_data_rejected(crypto_perpetual_ethusdt: CryptoPerp
 }
 
 #[rstest]
-fn test_l2_venue_with_book_data_accepted() {
+#[case(NautilusDataType::OrderBookDelta)]
+#[case(NautilusDataType::OrderBookDepth)]
+fn test_l2_venue_with_book_data_accepted(#[case] data_type: NautilusDataType) {
     let venue_config = BacktestVenueConfig::builder()
         .name(Ustr::from("BINANCE"))
         .oms_type(OmsType::Netting)
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap();
 
-    // OrderBookDelta data on the L2 venue satisfies its book-data requirement
     let book_data = BacktestDataConfig::builder()
-        .data_type(NautilusDataType::OrderBookDelta)
+        .data_type(data_type)
         .catalog_path("/tmp/catalog".to_string())
         .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
         .build()
@@ -1494,6 +1565,7 @@ fn test_l2_streaming_accepts_quote_chunk_after_book_chunk(
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
         .build()
         .unwrap();
     let book_data = BacktestDataConfig::builder()

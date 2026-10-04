@@ -82,6 +82,7 @@ use nautilus_lighter::{
     },
     config::LighterExecutionClientConfig,
     execution::LighterExecutionClient,
+    signing::tx::{CancelOrderTxInfo, TxContext, compute_tx_hash},
 };
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
@@ -118,7 +119,7 @@ const TEST_ACCOUNT_INDEX: u64 = 12_345;
 const TEST_API_KEY_INDEX: u8 = 5;
 const ETH_PERP_SYMBOL: &str = "ETH-PERP";
 const ETH_SPOT_SYMBOL: &str = "ETH/USDC-SPOT";
-const TEST_MARKET_INDEX: i16 = 0;
+const TEST_MARKET_INDEX: i64 = 0;
 const TEST_NEXT_NONCE: i64 = 9_999;
 const TEST_ORDER_NONCE: i64 = 281_474_720_725_346;
 const INTEGRATOR_APPROVAL_MAX_TTL_MS: i64 = 5 * 365 * 24 * 60 * 60 * 1_000;
@@ -200,6 +201,7 @@ struct TestServerState {
     trades_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     next_rest_send_tx_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     next_send_tx_ack: Arc<tokio::sync::Mutex<Option<Value>>>,
+    next_nonce: Arc<AtomicI64>,
     inbox_tx: tokio::sync::broadcast::Sender<String>,
     close_after_next_frame: Arc<AtomicBool>,
     subscribe_ack_delay_ms: Arc<AtomicU64>,
@@ -244,6 +246,7 @@ impl Default for TestServerState {
             trades_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             next_rest_send_tx_response: Arc::new(tokio::sync::Mutex::new(None)),
             next_send_tx_ack: Arc::new(tokio::sync::Mutex::new(None)),
+            next_nonce: Arc::new(AtomicI64::new(TEST_NEXT_NONCE)),
             inbox_tx,
             close_after_next_frame: Arc::new(AtomicBool::new(false)),
             subscribe_ack_delay_ms: Arc::new(AtomicU64::new(0)),
@@ -290,14 +293,13 @@ async fn account(State(state): State<Arc<TestServerState>>) -> Response {
     (StatusCode::OK, response.to_string()).into_response()
 }
 
-async fn next_nonce() -> Response {
-    // Always return the same nonce baseline. The execution client refreshes
-    // on connect and again on reconnect; both fetches resolve to this value.
+async fn next_nonce(State(state): State<Arc<TestServerState>>) -> Response {
+    // Tests can advance the venue baseline independently of acknowledgements
     (
         StatusCode::OK,
         json!({
             "code": 200,
-            "nonce": TEST_NEXT_NONCE,
+            "nonce": state.next_nonce.load(Ordering::Acquire),
         })
         .to_string(),
     )
@@ -438,13 +440,25 @@ async fn tx(
         )
             .into_response();
     };
-    let info = send_tx_info(frame);
+
+    let (info, tx_type) = if frame["type"] == "jsonapi/sendtxbatch" {
+        (
+            batch_cancel_infos(frame)
+                .into_iter()
+                .find(|info| cancel_tx_hash(info) == *tx_hash)
+                .expect("known batch hash"),
+            15,
+        )
+    } else {
+        (send_tx_info(frame), 14)
+    };
+
     let object = body
         .as_object_mut()
         .expect("transaction fixture must be an object");
     object.insert("code".to_string(), json!(200));
     object.insert("hash".to_string(), json!(tx_hash));
-    object.insert("type".to_string(), json!(14));
+    object.insert("type".to_string(), json!(tx_type));
     object.insert("info".to_string(), json!(info.to_string()));
     object.insert("account_index".to_string(), info["AccountIndex"].clone());
     object.insert("api_key_index".to_string(), info["ApiKeyIndex"].clone());
@@ -644,6 +658,16 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                             break;
                         }
                     }
+                    "jsonapi/sendtxbatch" => {
+                        state.send_txs.lock().await.push(value.clone());
+                        let infos = batch_cancel_infos(&value);
+                        let hashes: Vec<_> = infos.iter().map(cancel_tx_hash).collect();
+                        let mut ack = state.next_send_tx_ack.lock().await.take().unwrap_or_else(|| json!({"code": 200, "tx_hash": hashes}));
+                        if ack.is_null() { continue; }
+                        ack["type"] = json!("jsonapi/sendtxbatch");
+                        ack["id"] = value["data"]["id"].clone();
+                        if sink.send(Message::Text(ack.to_string().into())).await.is_err() { break; }
+                    }
                     "jsonapi/sendtx" => {
                         state.send_txs.lock().await.push(value);
 
@@ -838,6 +862,7 @@ fn build_config(addr: SocketAddr) -> LighterExecutionClientConfig {
         rest_quota_per_min: None,
         sendtx_quota_per_min: None,
         transport_backend: Default::default(),
+        use_gtd: true,
     }
 }
 
@@ -1343,6 +1368,37 @@ fn submit_order_list_command(orders: &[OrderAny], order_list_id: &str) -> Submit
         UnixNanos::default(),
         None,
     )
+}
+
+fn cancel_tx_hash(info: &Value) -> String {
+    let tx = CancelOrderTxInfo {
+        context: TxContext {
+            account_index: info["AccountIndex"].as_i64().unwrap(),
+            api_key_index: info["ApiKeyIndex"].as_u64().unwrap() as u8,
+            nonce: info["Nonce"].as_i64().unwrap(),
+            expired_at: info["ExpiredAt"].as_i64().unwrap(),
+        },
+        market_index: info["MarketIndex"].as_i64().unwrap(),
+        index: info["Index"].as_i64().unwrap(),
+        skip_nonce: 0,
+    };
+
+    compute_tx_hash(&tx, 300)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
+
+fn batch_cancel_infos(frame: &Value) -> Vec<Value> {
+    assert_eq!(frame["type"], "jsonapi/sendtxbatch");
+    let types: Vec<u8> = serde_json::from_str(frame["data"]["tx_types"].as_str().unwrap()).unwrap();
+    let infos: Vec<String> =
+        serde_json::from_str(frame["data"]["tx_infos"].as_str().unwrap()).unwrap();
+    assert_eq!(types, vec![15; infos.len()]);
+    infos
+        .iter()
+        .map(|info| serde_json::from_str(info).unwrap())
+        .collect()
 }
 
 // The handler renders `tx_info` as a raw JSON string, so the recorded
@@ -3359,6 +3415,17 @@ async fn seed_open_order(
         false,
         false,
     );
+    seed_open_order_from_order(client, cache, state, rx, order, voi_str).await
+}
+
+async fn seed_open_order_from_order(
+    client: &LighterExecutionClient,
+    cache: &Rc<RefCell<Cache>>,
+    state: &TestServerState,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    order: OrderAny,
+    voi_str: &str,
+) -> (i64, VenueOrderId) {
     cache_order(cache, order.clone());
     let cloid = order.client_order_id();
 
@@ -3395,16 +3462,18 @@ async fn seed_open_order(
     // path; a regression there would surface as a missing OrderAccepted.
     let _ = cloid; // retained for readability; assertion uses client_order_index
     let voi = VenueOrderId::from(voi_str);
+    let mut entry = account_all_orders_open_entry(
+        client_order_index,
+        voi.as_str(),
+        &client_order_index.to_string(),
+        TEST_ORDER_NONCE,
+    );
+    entry["is_ask"] = json!(order.order_side() == OrderSide::Sell);
     state.push_frame(&json!({
         "type": "update/account_all_orders",
         "channel": format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
         "orders": {
-            "0": [account_all_orders_open_entry(
-                client_order_index,
-                voi.as_str(),
-                &client_order_index.to_string(),
-                TEST_ORDER_NONCE,
-            )]
+            "0": [entry]
         }
     }));
 
@@ -3475,9 +3544,9 @@ fn account_all_orders_open_entry(
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_all_orders_iterates_open_orders_and_dispatches_cancel_per_order() {
+async fn test_cancel_all_orders_batches_selected_open_orders() {
     // `cancel_all_orders` walks `cache.orders_open` for the target
-    // instrument and routes each through `cancel_order`, which depends
+    // instrument and prepares explicit cancellations, which depend
     // on `dispatch.lookup_venue_order_id` because the synthesized
     // CancelOrder commands carry `venue_order_id: None`. The test seeds
     // both halves of that contract via [`seed_open_order`] so a
@@ -3523,18 +3592,13 @@ async fn test_cancel_all_orders_iterates_open_orders_and_dispatches_cancel_per_o
         .cancel_all_orders(cancel_all)
         .expect("cancel_all_orders");
 
-    await_send_tx_count(&state, baseline + 2).await;
+    await_send_tx_count(&state, baseline + 1).await;
     let new_frames = state.send_txs().await[baseline..].to_vec();
-    assert_eq!(new_frames.len(), 2);
-    let mut cancelled_indices: Vec<i64> = new_frames
+    assert_eq!(new_frames.len(), 1);
+    let infos = batch_cancel_infos(&new_frames[0]);
+    let mut cancelled_indices: Vec<i64> = infos
         .iter()
-        .map(|frame| {
-            // CancelOrder tx_type discriminant.
-            assert_eq!(send_tx_type(frame), 15);
-            send_tx_info(frame)["Index"]
-                .as_i64()
-                .expect("CancelOrder tx_info.Index")
-        })
+        .map(|info| info["Index"].as_i64().unwrap())
         .collect();
     cancelled_indices.sort_unstable();
     // The two voi values pinned by `seed_open_order` above. Asserting
@@ -3602,7 +3666,7 @@ async fn test_cancel_all_orders_venue_rejection_suppresses_cancel_rejected_for_o
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_batch_cancel_orders_fans_out_correlated_cancel_orders() {
+async fn test_batch_cancel_orders_shares_one_transport_batch() {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -3649,12 +3713,11 @@ async fn test_batch_cancel_orders_fans_out_correlated_cancel_orders() {
         None,
     );
     client.batch_cancel_orders(batch).expect("batch_cancel");
-    await_send_tx_count(&state, 3).await;
+    await_send_tx_count(&state, 1).await;
     let frames = state.send_txs().await;
-    assert_eq!(frames.len(), 3);
-    assert!(frames.iter().all(|frame| frame["type"] == "jsonapi/sendtx"));
-    assert!(frames.iter().all(|frame| send_tx_type(frame) == 15));
-    let infos = frames.iter().map(send_tx_info).collect::<Vec<_>>();
+    assert_eq!(frames.len(), 1);
+    let infos = batch_cancel_infos(&frames[0]);
+    assert_eq!(infos.len(), 3);
     let first_nonce = infos[0]["Nonce"].as_i64().expect("first nonce");
     assert_eq!(infos[1]["Nonce"].as_i64(), Some(first_nonce + 1));
     assert_eq!(infos[2]["Nonce"].as_i64(), Some(first_nonce + 2));
@@ -3678,6 +3741,496 @@ async fn test_batch_cancel_orders_fans_out_correlated_cancel_orders() {
         "sendTx handoff must wait for account stream cancel outcomes",
     );
     client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::admission_rejection(false)]
+#[case::execution_rejection(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_batch_cancel_rejections_preserve_nonce_consumption(#[case] admitted: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+
+    if admitted {
+        for _ in 0..2 {
+            state.tx_responses.lock().await.push_back(json!({"status": 2, "event_info": json!({"ae":"invalid client order index"}).to_string()}));
+        }
+    } else {
+        *state.next_send_tx_ack.lock().await =
+            Some(json!({"error":{"code":21104,"message":"invalid nonce"}}));
+    }
+
+    let mut cancels = Vec::new();
+
+    for i in 0..2 {
+        let order = make_limit_order(
+            &format!("O-FAILED-BATCH-{i}"),
+            OrderSide::Buy,
+            Quantity::from("0.0050"),
+            Price::from("2361.31"),
+            TimeInForce::Gtc,
+            false,
+            false,
+        );
+        let id = order.client_order_id();
+        let venue_id = VenueOrderId::from(format!("{}", 281_476_929_510_800_u64 + i));
+        cache_pending_cancel_order(&cache, order, venue_id);
+        cancels.push(CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            id,
+            Some(venue_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+    }
+
+    client
+        .batch_cancel_orders(BatchCancelOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            cancels.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, 1).await;
+    let infos = batch_cancel_infos(&state.send_txs().await[0]);
+    let mut rejected = Vec::new();
+
+    for _ in 0..2 {
+        let event = next_order_event(&mut rx, Duration::from_secs(8))
+            .await
+            .unwrap();
+
+        match &event {
+            OrderEventAny::CancelRejected(event) => {
+                let cancel = cancels
+                    .iter()
+                    .find(|cancel| cancel.client_order_id == event.client_order_id)
+                    .unwrap();
+                assert_eq!(event.strategy_id, cancel.strategy_id);
+                assert_eq!(event.instrument_id, cancel.instrument_id);
+                assert_eq!(event.venue_order_id, cancel.venue_order_id);
+                assert!(event.reason.contains(if admitted {
+                    "invalid client order index"
+                } else {
+                    "invalid nonce"
+                }));
+                rejected.push(event.client_order_id);
+            }
+            other => panic!("expected cancel rejection, was {other:?}"),
+        }
+
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    rejected.sort();
+    assert_eq!(
+        rejected,
+        cancels
+            .iter()
+            .map(|cancel| cancel.client_order_id)
+            .collect::<Vec<_>>()
+    );
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let order = make_limit_order(
+        "O-AFTER-BATCH-FAILURE",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).unwrap();
+    await_send_tx_count(&state, 2).await;
+    let next = send_tx_info(&state.send_txs().await[1]);
+    assert_eq!(
+        next["Nonce"].as_i64().unwrap(),
+        infos[0]["Nonce"].as_i64().unwrap() + if admitted { 2 } else { 0 }
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case(0, vec![])]
+#[case(1, vec![1])]
+#[case(15, vec![15])]
+#[case(16, vec![15, 1])]
+#[case(30, vec![15, 15])]
+#[case(31, vec![15, 15, 1])]
+#[case(45, vec![15, 15, 15])]
+#[case(46, vec![15, 15, 15, 1])]
+#[case(150, vec![15; 10])]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_batch_boundaries(
+    #[case] count: usize,
+    #[case] expected_sizes: Vec<usize>,
+) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.sendtx_quota_per_min = Some(1_000);
+    let (mut client, mut rx, cache) = build_client_with(config);
+    client.connect().await.unwrap();
+
+    for i in 0..count {
+        seed_open_order(
+            &client,
+            &cache,
+            &state,
+            &mut rx,
+            &format!("O-CHUNK-{i}"),
+            &format!("{}", 281_476_929_510_400_u64 + i as u64),
+        )
+        .await;
+    }
+
+    let baseline = state.send_txs().await.len();
+    client
+        .cancel_all_orders(CancelAllOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, baseline + expected_sizes.len()).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let frames = state.send_txs().await;
+    let batches: Vec<_> = frames[baseline..].iter().map(batch_cancel_infos).collect();
+    assert_eq!(
+        batches.iter().map(Vec::len).collect::<Vec<_>>(),
+        expected_sizes
+    );
+    let infos: Vec<_> = batches.into_iter().flatten().collect();
+    let mut indices: Vec<_> = infos
+        .iter()
+        .map(|info| info["Index"].as_u64().unwrap())
+        .collect();
+    indices.sort_unstable();
+    assert_eq!(
+        indices,
+        (0..count)
+            .map(|i| 281_476_929_510_400_u64 + i as u64)
+            .collect::<Vec<_>>()
+    );
+
+    for pair in infos.windows(2) {
+        assert_eq!(
+            pair[1]["Nonce"].as_i64().unwrap(),
+            pair[0]["Nonce"].as_i64().unwrap() + 1
+        );
+    }
+
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::delayed_ack(0)]
+#[case::lost_ack(1)]
+#[case::lost_acks_recover_from_venue(2)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_retain_unsigned_after_ack_gap(#[case] lost_acks: usize) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+
+    for i in 0..45 {
+        seed_open_order(
+            &client,
+            &cache,
+            &state,
+            &mut rx,
+            &format!("O-ACK-GAP-{i}"),
+            &format!("{}", 281_476_929_511_000_u64 + i),
+        )
+        .await;
+    }
+
+    let baseline = state.send_txs().await.len();
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
+    client
+        .cancel_all_orders(CancelAllOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, baseline + 1).await;
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), baseline + 1);
+    let first = &frames[baseline];
+
+    if lost_acks == 2 {
+        *state.next_send_tx_ack.lock().await = Some(Value::Null);
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { state.send_txs().await.len() == baseline + 2 }
+            },
+            Duration::from_secs(15),
+        )
+        .await;
+
+        let nonce = batch_cancel_infos(first)[0]["Nonce"].as_i64().unwrap();
+        state.next_nonce.store(nonce + 16, Ordering::Release);
+    } else if lost_acks == 0 {
+        state.push_frame(&json!({"type":"jsonapi/sendtxbatch", "id":first["data"]["id"],
+            "code":200, "tx_hash":batch_cancel_infos(first).iter().map(cancel_tx_hash).collect::<Vec<_>>()}));
+    }
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.send_txs().await[baseline..]
+                    .iter()
+                    .map(|frame| batch_cancel_infos(frame).len())
+                    .sum::<usize>()
+                    == 45
+            }
+        },
+        Duration::from_secs(25),
+    )
+    .await;
+
+    let frames = state.send_txs().await;
+    let mut indices: Vec<_> = frames[baseline..]
+        .iter()
+        .flat_map(batch_cancel_infos)
+        .map(|info| info["Index"].as_u64().unwrap())
+        .collect();
+    indices.sort_unstable();
+    let infos: Vec<_> = frames[baseline..]
+        .iter()
+        .flat_map(batch_cancel_infos)
+        .collect();
+
+    for pair in infos.windows(2) {
+        assert_eq!(
+            pair[1]["Nonce"].as_i64().unwrap(),
+            pair[0]["Nonce"].as_i64().unwrap() + 1
+        );
+    }
+
+    client.disconnect().await.unwrap();
+    assert_eq!(
+        indices,
+        (0..45)
+            .map(|i| 281_476_929_511_000_u64 + i)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+#[case::completed(false)]
+#[case::disconnect_while_queued(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_retain_unsigned_concurrent_sides(#[case] disconnect: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+
+    for i in 0..30 {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id())
+            .strategy_id(strategy_id())
+            .instrument_id(eth_perp_id())
+            .client_order_id(ClientOrderId::from(format!("O-CONCURRENT-{i}")))
+            .side(if i < 15 {
+                OrderSide::Buy
+            } else {
+                OrderSide::Sell
+            })
+            .quantity(Quantity::from("0.0050"))
+            .price(Price::from("2361.31"))
+            .build();
+
+        seed_open_order_from_order(
+            &client,
+            &cache,
+            &state,
+            &mut rx,
+            order,
+            &format!("{}", 281_476_929_512_000_u64 + i),
+        )
+        .await;
+    }
+
+    let baseline = state.send_txs().await.len();
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
+
+    for side in [OrderSide::Buy, OrderSide::Sell] {
+        client
+            .cancel_all_orders(CancelAllOrders::new(
+                trader_id(),
+                Some(client_id()),
+                strategy_id(),
+                eth_perp_id(),
+                Some(side),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+    }
+
+    await_send_tx_count(&state, baseline + 2).await;
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let frames = state.send_txs().await;
+    if disconnect {
+        let sent = frames[baseline..]
+            .iter()
+            .map(|frame| batch_cancel_infos(frame).len())
+            .sum::<usize>();
+        assert!(sent < 30, "disconnect must exercise queued cancellations");
+        client.disconnect().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_eq!(state.send_txs().await, frames);
+        return;
+    }
+
+    let first = &frames[baseline];
+    state.push_frame(&json!({"type":"jsonapi/sendtxbatch", "id":first["data"]["id"],
+        "code":200, "tx_hash":batch_cancel_infos(first).iter().map(cancel_tx_hash).collect::<Vec<_>>()}));
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.send_txs().await[baseline..]
+                    .iter()
+                    .map(|frame| batch_cancel_infos(frame).len())
+                    .sum::<usize>()
+                    == 30
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let frames = state.send_txs().await;
+    let mut indices: Vec<_> = frames[baseline..]
+        .iter()
+        .flat_map(batch_cancel_infos)
+        .map(|info| info["Index"].as_u64().unwrap())
+        .collect();
+    indices.sort_unstable();
+    client.disconnect().await.unwrap();
+    assert_eq!(
+        indices,
+        (0..30)
+            .map(|i| 281_476_929_512_000_u64 + i)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+#[case::buy(Some(OrderSide::Buy), vec![0, 2])]
+#[case::sell(Some(OrderSide::Sell), vec![1, 3])]
+#[case::unsided(None, vec![0, 1, 2, 3])]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_side_selection_shares_transport_batch(
+    #[case] side: Option<OrderSide>,
+    #[case] selected: Vec<u64>,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+
+    for (i, (owner, order_side)) in [
+        ("OWNER-001", OrderSide::Buy),
+        ("OWNER-001", OrderSide::Sell),
+        ("OWNER-002", OrderSide::Buy),
+        ("OWNER-002", OrderSide::Sell),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id())
+            .strategy_id(StrategyId::from(owner))
+            .instrument_id(eth_perp_id())
+            .client_order_id(ClientOrderId::from(format!("O-SIDE-{i}")))
+            .side(order_side)
+            .quantity(Quantity::from("0.0050"))
+            .price(Price::from("2361.31"))
+            .build();
+        seed_open_order_from_order(
+            &client,
+            &cache,
+            &state,
+            &mut rx,
+            order,
+            &format!("{}", 281_476_929_510_500_u64 + i as u64),
+        )
+        .await;
+    }
+
+    let baseline = state.send_txs().await.len();
+    client
+        .cancel_all_orders(CancelAllOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            side,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, baseline + 1).await;
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), baseline + 1);
+    let infos = batch_cancel_infos(&frames[baseline]);
+    let mut indices: Vec<_> = infos
+        .iter()
+        .map(|info| info["Index"].as_u64().unwrap())
+        .collect();
+    indices.sort_unstable();
+    assert_eq!(
+        indices,
+        selected
+            .iter()
+            .map(|i| 281_476_929_510_500_u64 + i)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

@@ -115,6 +115,17 @@ Log files are written to the current working directory by default. The naming co
 Set the log directory and custom file basename with `FileWriterConfig.directory` and
 `FileWriterConfig.file_name`.
 
+:::warning
+When file logging is enabled, logging initialization fails if the log directory cannot be created
+or the log file cannot be opened, so a node with an unusable log path does not start. Rust binaries
+that initialize logging lazily from `NAUTILUS_LOG` report the error and continue with console
+logging only.
+:::
+
+The logging thread flushes the file buffer to the operating system about every 100 ms without
+syncing to disk, so a tailed log file stays current. Blocking console output can delay a flush, and
+an abrupt process exit can still lose lines that are buffered or queued for the logging thread.
+
 **Log file formats:**
 
 - `None` (default) - Plain text format with `.log` extension.
@@ -141,6 +152,11 @@ Rotation behavior depends on both the presence of a size limit and whether a cus
 - **Backup file management**:
   - The second value in `file_rotate` limits the total number of rotated files kept.
   - When this limit is exceeded, the oldest backup files are automatically removed.
+  - The limit applies to files rotated by the current process. Rotated files from earlier runs are
+    not removed; use an external tool such as `logrotate` for retention across restarts.
+- **Rotation failures**:
+  - If a rotation fails (for example, the new file cannot be opened), logging continues to the
+    current file and rotation is retried at the next size or date boundary.
 
 #### Log file naming convention
 
@@ -174,6 +190,8 @@ If `file_name` is set (e.g., `my_custom_log`):
 
 - With rotation disabled: The file will be named exactly as provided (e.g., `my_custom_log.log`).
 - With rotation enabled: The file will include the custom name and timestamp (e.g., `my_custom_log_2025-04-09_210721-521.log`).
+- An extension in `file_name` is replaced by the format suffix, so `my_custom_log.log` produces the
+  same names as `my_custom_log`.
 
 ### Component log filtering
 
@@ -287,6 +305,23 @@ In environments that do not support ANSI color rendering (such as some cloud env
 these color codes may not be appropriate as they can appear as raw text.
 
 Set `LoggerConfig.is_colored=False` for these environments.
+
+## Python callback exceptions
+
+Python callback errors include a traceback and chained exceptions. If traceback formatting fails,
+reporting falls back to the exception type and message.
+
+Python strategy and execution algorithm order and position callbacks log failures at `ERROR`, with
+the component identity and callback name. Strategy market-exit callbacks use the same reporting.
+Python data and timer callback errors also reach `ERROR`; those records use the emitting Rust module
+as their component.
+
+For these event callbacks, an exception interrupts that Python invocation. By default, the runtime
+continues dispatching events; it does not roll back work the callback completed before raising.
+To request a normal shutdown after an error, enable `shutdown_on_error` in the
+[backtest engine](backtesting/apis-and-runs.md#shutdown-on-error) or [live node](live.md#shutdown-on-error)
+configuration. The request takes effect when the runtime next checks for shutdown, rather than
+interrupting the current event dispatch.
 
 ## Using a logger directly
 

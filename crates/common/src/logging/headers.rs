@@ -422,6 +422,45 @@ mod tests {
         assert_eq!(version(&versions, "allocator"), Some("system"),);
     }
 
+    /// Pins the header against the precision constants rather than restating the format
+    /// expression, so a change to either the mode check or the byte-to-bit conversion fails.
+    #[rstest]
+    fn test_precision_version_reports_the_compiled_precision_mode() {
+        let (expected_mode, expected_bits) = match PRECISION_BYTES {
+            16 => ("high", 128),
+            8 => ("standard", 64),
+            other => panic!("unexpected PRECISION_BYTES {other}"),
+        };
+
+        assert_eq!(
+            precision_version(),
+            format!("{expected_mode} ({expected_bits}-bit, {FIXED_PRECISION} dp)")
+        );
+    }
+
+    #[rstest]
+    #[case(0, 0.0)]
+    #[case(1 << 30, 1.0)]
+    #[case(3 << 29, 1.5)]
+    #[case((1 << 30) * 64, 64.0)]
+    fn test_bytes_to_gib_converts_from_binary_gigabytes(#[case] bytes: u64, #[case] expected: f64) {
+        assert_eq!(bytes_to_gib(bytes), expected);
+    }
+
+    #[rstest]
+    #[case("cargo_lock", "crc32:0a1b2c3d", "0a1b2c3d")]
+    #[case("cargo_lock", "0a1b2c3d", "0a1b2c3d")]
+    #[case("git_commit", "0123456789abcdef0123", "0123456789ab")]
+    #[case("git_commit", "0123abc", "0123abc")]
+    #[case("rustc", "1.90.0", "1.90.0")]
+    fn test_display_version_trims_only_the_named_fields(
+        #[case] name: &str,
+        #[case] version: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(display_version(name, version), expected);
+    }
+
     #[rstest]
     fn test_allocator_version_formats() {
         let mimalloc = env!("NAUTILUS_BUILD_MIMALLOC_VERSION");

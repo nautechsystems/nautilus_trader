@@ -232,3 +232,133 @@ The comparison excludes TLS, HTTP/2, proxies, WAN latency, and adapter parsing. 
 a production-wide speedup or an allocation improvement. The standalone comparison harness is
 separate from the checked-in Criterion benchmarks; the WebSocket commands above do not reproduce
 these HTTP results.
+
+## HTTP/2 flow-control windows
+
+Measured 2026-09-26. This comparison times response bodies from 32 KiB to 16 MiB under each HTTP/2
+flow-control setting Hyper offers, and backs the `HttpClient` default of fixed 16 MiB stream and
+32 MiB connection windows. The networking guide states the resulting
+[flow-control policy](../../../docs/concepts/networking.md#flow-control-windows).
+
+| Setting                                          | Stream window                   | Connection window | Growth during a transfer        |
+| ------------------------------------------------ | ------------------------------- | ----------------- | ------------------------------- |
+| Adaptive (`NAUTILUS_HTTP2_ADAPTIVE_WINDOW=true`) | 65,535 bytes, growing to 16 MiB | Same as stream    | PING probes and SETTINGS frames |
+| Fixed 2 MiB (Hyper default)                      | 2 MiB                           | 5 MiB             | None                            |
+| Fixed 8 MiB                                      | 8 MiB                           | 16 MiB            | None                            |
+| Fixed 16 MiB (`HttpClient` default)              | 16 MiB                          | 32 MiB            | None                            |
+
+### Flow-control setup
+
+| Item      | Value                                                                             |
+| --------- | --------------------------------------------------------------------------------- |
+| Host      | AMD Ryzen Threadripper 9980X, Ubuntu 24.04.5 LTS, Linux 7.0.0-34-generic          |
+| Toolchain | Rust 1.98.1, `release` profile                                                    |
+| Libraries | Hyper 1.11.1, hyper-util 0.1.20, h2 0.4.19                                        |
+| Server    | `h2` over TLS 1.3 on loopback, sending as fast as the client window allows        |
+| Latency   | Relay holds each chunk for half the RTT in each direction; 1 ms timer             |
+| RTT       | 20, 100, and 250 ms                                                               |
+| Samples   | 20 per cell, except 10 for fixed 8 MiB                                            |
+| Metric    | Median time from sending the request to holding the complete, length-checked body |
+
+- Loopback bandwidth is effectively unlimited, so the window alone sets how many round trips a
+  body needs. Real links narrow the large-body gaps.
+- A new connection costs two round trips: TLS, then the request. The relay accepts TCP at once, so
+  a real network adds a third round trip under every setting.
+- A warm connection first serves three requests of the same size, which lets adaptive windows grow.
+- Each round runs one process per setting and takes five samples per cell. Adaptive and fixed
+  2 MiB ran four rounds in alternating order; fixed 8 MiB and 16 MiB ran afterwards.
+- Adaptive and the final fixed 16 MiB samples ran through `HttpClient::builder`, switched by
+  `NAUTILUS_HTTP2_ADAPTIVE_WINDOW`. Fixed 2 MiB leaves Hyper's window sizes unset.
+- Fixed 8 MiB and the other half of the fixed 16 MiB samples came from a temporary build that set
+  the sizes directly. Its fixed 16 MiB medians are within 1.5 ms of the final build's.
+- Other builds shared the host. The standalone harness is not checked in.
+
+### Flow-control results: new connections
+
+Median milliseconds; lower is better.
+
+| RTT (ms) | Body    | Adaptive | Fixed 2 MiB | Fixed 8 MiB | Fixed 16 MiB |
+| -------- | ------- | -------- | ----------- | ----------- | ------------ |
+| 20       | 32 KiB  | 45       | 45          | 46          | 45           |
+| 20       | 64 KiB  | 68       | 45          | 45          | 45           |
+| 20       | 256 KiB | 112      | 46          | 46          | 45           |
+| 20       | 1 MiB   | 180      | 46          | 46          | 46           |
+| 20       | 4 MiB   | 261      | 92          | 48          | 48           |
+| 20       | 16 MiB  | 323      | 253         | 95          | 52           |
+| 100      | 32 KiB  | 206      | 206         | 206         | 205          |
+| 100      | 64 KiB  | 308      | 206         | 206         | 206          |
+| 100      | 256 KiB | 411      | 206         | 206         | 206          |
+| 100      | 1 MiB   | 616      | 207         | 207         | 207          |
+| 100      | 4 MiB   | 875      | 413         | 209         | 208          |
+| 100      | 16 MiB  | 1,185    | 1,037       | 416         | 211          |
+| 250      | 32 KiB  | 506      | 506         | 506         | 506          |
+| 250      | 64 KiB  | 758      | 506         | 506         | 506          |
+| 250      | 256 KiB | 1,012    | 506         | 506         | 506          |
+| 250      | 1 MiB   | 1,517    | 507         | 507         | 507          |
+| 250      | 4 MiB   | 2,276    | 1,013       | 508         | 508          |
+| 250      | 16 MiB  | 3,033    | 2,662       | 1,017       | 512          |
+
+### Flow-control results: warm connections
+
+Median milliseconds; lower is better.
+
+| RTT (ms) | Body    | Adaptive | Fixed 2 MiB | Fixed 8 MiB | Fixed 16 MiB |
+| -------- | ------- | -------- | ----------- | ----------- | ------------ |
+| 20       | 32 KiB  | 22       | 22          | 22          | 22           |
+| 20       | 64 KiB  | 22       | 22          | 22          | 22           |
+| 20       | 256 KiB | 45       | 23          | 23          | 22           |
+| 20       | 1 MiB   | 24       | 23          | 23          | 23           |
+| 20       | 4 MiB   | 47       | 70          | 24          | 25           |
+| 20       | 16 MiB  | 52       | 213         | 75          | 28           |
+| 100      | 32 KiB  | 103      | 102         | 103         | 102          |
+| 100      | 64 KiB  | 103      | 103         | 103         | 103          |
+| 100      | 256 KiB | 103      | 103         | 103         | 103          |
+| 100      | 1 MiB   | 154      | 103         | 104         | 103          |
+| 100      | 4 MiB   | 105      | 310         | 105         | 105          |
+| 100      | 16 MiB  | 212      | 935         | 315         | 108          |
+| 250      | 32 KiB  | 253      | 253         | 253         | 253          |
+| 250      | 64 KiB  | 253      | 253         | 253         | 253          |
+| 250      | 256 KiB | 253      | 253         | 253         | 253          |
+| 250      | 1 MiB   | 254      | 254         | 254         | 253          |
+| 250      | 4 MiB   | 381      | 760         | 255         | 254          |
+| 250      | 16 MiB  | 510      | 2,285       | 764         | 258          |
+
+### Flow-control findings
+
+- **Fixed 16 MiB is never slower.** In all 36 cells it matches the faster of adaptive and fixed
+  2 MiB within 1 ms, or beats it.
+- **Adaptive windows start small.** On a new connection, every body from 64 KiB up needs extra
+  round trips. A 64 KiB body exceeds the 65,535-byte start by one byte and pays a full round trip.
+- **Warm adaptive connections mostly catch up.** They match the fixed windows up to 1 MiB, except
+  256 KiB at 20 ms and 1 MiB at 100 ms. They still trail fixed 16 MiB for 16 MiB bodies, and for
+  4 MiB bodies at 20 ms and 250 ms.
+- **Fixed 2 MiB caps large bodies.** It sends at most 2 MiB per round trip, so warm 4 MiB and
+  16 MiB bodies take 1.5 to 4.5 times as long as with adaptive windows.
+- **Fixed 8 MiB falls behind at 16 MiB.** It matches fixed 16 MiB up to 4 MiB, then takes two to
+  three times as long.
+- **Adaptive timings vary most.** Growth depends on probe timing, so 90th percentiles run up to
+  253 ms above the median. Fixed 8 MiB and 16 MiB stay within 4 ms.
+
+### Cloudflare downloads
+
+Each run fetches the uncompressed Deribit instrument list, about 284 MB, from `api.tardis.dev` over
+HTTP/2 through Cloudflare. Each uses a new client and `HttpClient::get_stream`.
+
+| Setting      | Runs | Mid-body resets | Median completed download (s) |
+| ------------ | ---- | --------------- | ----------------------------- |
+| Adaptive     | 21   | 13              | 20.2                          |
+| Fixed 2 MiB  | 26   | 0               | 21.1                          |
+| Fixed 8 MiB  | 8    | 0               | 15.9                          |
+| Fixed 16 MiB | 20   | 0               | 15.8                          |
+
+- Adaptive runs failed after 15 to 48 MB and 2.0 to 4.5 seconds. Each ended in a connection reset
+  or a peer close without TLS `close_notify`.
+- A frame trace of an earlier failing run showed 17 PINGs, 12 SETTINGS frames, a window of about
+  7.6 MB, and no GOAWAY.
+- No fixed-window run reset, including fixed 16 MiB, which is larger than that 7.6 MB window. This
+  points to the adaptive probe and SETTINGS traffic as the trigger, not the window size. Cloudflare
+  does not document the rule.
+- Five fixed 2 MiB runs received an HTTP 403 quota response from Tardis before any body, so 21
+  completed.
+- Download times depend on the Tardis origin, which varies over time. Only 12 runs alternated
+  settings, six adaptive and six fixed 2 MiB, so compare times loosely.

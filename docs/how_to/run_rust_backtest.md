@@ -17,11 +17,11 @@ Add the following to your `Cargo.toml`. The `streaming` and
 
 ```toml
 [dependencies]
-nautilus-backtest = { version = "0.63", features = ["streaming"] }
-nautilus-execution = "0.63"
-nautilus-model = { version = "0.63", features = ["test-support"] }
-nautilus-persistence = "0.63"
-nautilus-trading = { version = "0.63", features = ["examples"] }
+nautilus-backtest = { version = "0.64", features = ["streaming"] }
+nautilus-execution = "0.64"
+nautilus-model = { version = "0.64", features = ["test-support"] }
+nautilus-persistence = "0.64"
+nautilus-trading = { version = "0.64", features = ["examples"] }
 
 ahash = "0.8"
 anyhow = "1"
@@ -53,6 +53,7 @@ configuration and returns a `ConfigResult`, so propagate or unwrap it.
 
 ```rust
 use nautilus_backtest::config::SimulatedVenueConfig;
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
     identifiers::Venue,
@@ -66,6 +67,7 @@ engine.add_venue(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USD")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
         .build()?,
 )?;
 ```
@@ -126,7 +128,7 @@ configurable chunk sizes. Requires the `streaming` feature on
 use nautilus_model::instruments::{
     Instrument, InstrumentAny, stubs::audusd_sim,
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use tempfile::TempDir;
 
 let instrument = InstrumentAny::CurrencyPair(audusd_sim());

@@ -39,7 +39,7 @@ client = db.Historical()  # Uses the DATABENTO_API_KEY environment variable
 # The response is in USD, displayed as fractional cents.
 
 # %% [markdown]
-# The following request is for a small amount of data (as used in this Medium article [Building high-frequency trading signals in Python with Databento and sklearn](https://databento.com/blog/hft-sklearn-python)) to demonstrate the workflow.
+# The following request is for a small amount of data (as used in the Databento blog post [Building high-frequency trading signals in Python with Databento and sklearn](https://databento.com/blog/hft-sklearn-python)) to demonstrate the workflow.
 
 # %%
 from pathlib import Path
@@ -66,7 +66,7 @@ client.metadata.get_cost(
 )
 
 # %% [markdown]
-# Use the historical API to request the data used in the Medium article.
+# Use the historical API to request the data used in the blog post.
 
 # %%
 path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
@@ -94,6 +94,8 @@ df
 
 # %% [markdown]
 # ## Write to data catalog
+#
+# The guide writes the catalog to `catalog/` under the working directory and replaces that directory on each run.
 
 # %%
 import shutil
@@ -122,24 +124,24 @@ catalog = ParquetDataCatalog(str(CATALOG_PATH))
 loader = DatabentoDataLoader()
 
 # %% [markdown]
-# Passing an `instrument_id` is optional but speeds up loading by skipping symbology mapping. If provided, use the Nautilus `symbol.venue` format (e.g., "ES.GLBX").
+# Passing an `instrument_id` is optional but speeds up loading by skipping symbology mapping. If provided, use the Nautilus `symbol.venue` format (e.g., "ESZ3.GLBX").
 
 # %%
 path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
 
 # Option 1 (recommended): Let the loader infer the instrument ID from DBN metadata
-depth10 = loader.load_order_book_depth10(filepath=path)
+depth = loader.load_order_book_depth(filepath=path)
 
 # Option 2: Explicitly specify a valid Nautilus instrument ID (symbol.venue format)
 # instrument_id = InstrumentId.from_str("ESZ3.GLBX")  # E-mini S&P December 2023 futures on Globex
-# depth10 = loader.load_order_book_depth10(
+# depth = loader.load_order_book_depth(
 #     filepath=path,
 #     instrument_id=instrument_id,
 # )
 
 # %%
 # Write data to catalog (this takes ~20 seconds or ~250,000/second for writing MBP-10 at the moment)
-catalog.write_order_book_depths(depth10)
+catalog.write_order_book_depths(depth)
 
 # %%
 # Test reading from catalog
@@ -150,7 +152,7 @@ len(depths)
 # ## Preparing a month of AAPL trades
 
 # %% [markdown]
-# Now we'll expand on this workflow by preparing a month of AAPL trades on the Nasdaq exchange using the Databento `trade` schema, which will translate to Nautilus `TradeTick` objects.
+# Now we'll expand on this workflow by preparing a month of AAPL trades on the Nasdaq exchange using the Databento `trades` schema, which will translate to Nautilus `TradeTick` objects.
 
 # %%
 # Request cost quote (USD) - this endpoint is 'free'

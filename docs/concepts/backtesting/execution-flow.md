@@ -64,8 +64,9 @@ sequenceDiagram
 The three phases ensure resting orders see the incoming market before newly submitted orders do.
 
 Timer events use the same settle mechanism but batch by timestamp: all callbacks at timestamp T
-execute first, then venues are settled for T before advancing to T+1. For timer behavior used by
-internally aggregated bars, see
+execute first, then venues are settled for T before advancing to T+1. A timestamp containing only
+portfolio snapshot timers does not release older latency-deferred commands. For timer behavior used
+by internally aggregated bars, see
 [internal bar aggregation timing](bar-execution.md#internal-bar-aggregation-timing).
 
 ### Deferred option settlement
@@ -97,12 +98,13 @@ settle within the same cycle. Simulation modules run once, after the command loo
 A `LatencyModel` places each command in the venue's inflight queue with an arrival timestamp. Once a
 command is due, the settlement point determines whether the engine releases it:
 
-| Settlement point        | Due commands released                                                      |
-| ----------------------- | -------------------------------------------------------------------------- |
-| Market data             | Same-timestamp commands and older commands for the data's instrument.      |
-| Timer                   | All commands due at the timer timestamp.                                   |
-| Funding-rate settlement | All commands due at the funding settlement timestamp.                      |
-| Shutdown drain          | All commands due as the clock advances through the final inflight arrival. |
+| Settlement point               | Due commands released                                                      |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| Market data                    | Same-timestamp commands and older commands for the data's instrument.      |
+| Portfolio snapshot timers only | Same-timestamp commands.                                                   |
+| Other timer                    | All commands due at the timer timestamp.                                   |
+| Funding-rate settlement        | All commands due at the funding settlement timestamp.                      |
+| Shutdown drain                 | All commands due as the clock advances through the final inflight arrival. |
 
 Market data for another instrument does not activate an older command against stale market state.
 Commands with a future arrival timestamp remain in the inflight queue.
@@ -116,7 +118,10 @@ expirations) are not delayed, so the model covers the inbound leg only. Without 
 client is unchanged and its events take the runner's execution channel as before.
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.model import Money
 from nautilus_trader.model import Venue
@@ -125,6 +130,10 @@ config = SandboxExecutionClientConfig(
     venue=Venue("BINANCE"),
     starting_balances=[Money.from_str("10_000 USDT")],
     latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0.001"),
+        taker_rate=Decimal("0.001"),
+    ),
 )
 ```
 

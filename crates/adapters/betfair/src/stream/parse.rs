@@ -37,7 +37,10 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        enums::{MarketStatus, RunnerStatus, StreamingOrderStatus, resolve_streaming_order_status},
+        enums::{
+            MarketStatus, RunnerStatus, StreamingOrderStatus, StreamingOrderType,
+            resolve_streaming_order_status,
+        },
         parse::{
             make_instrument_id, normalize_betfair_price, normalize_betfair_quantity,
             parse_betfair_price, parse_betfair_quantity, parse_millis_timestamp,
@@ -583,6 +586,12 @@ impl FillTracker {
         }
     }
 
+    pub(crate) fn matched_quantity(&self, bet_id: &str) -> Decimal {
+        let filled = self.filled_qty.get(bet_id).copied().unwrap_or_default();
+        let voided = self.voided_qty.get(bet_id).copied().unwrap_or_default();
+        (filled - voided).max(Decimal::ZERO)
+    }
+
     pub(crate) fn sync_voided_qty(&mut self, bet_id: &str, voided_qty: Decimal) {
         self.voided_qty
             .insert(bet_id.to_string(), normalize_betfair_quantity(voided_qty));
@@ -776,6 +785,24 @@ pub fn is_lapsed(uo: &UnmatchedOrder) -> bool {
     uo.status == StreamingOrderStatus::ExecutionComplete && uo.lsrc.is_some()
 }
 
+/// Returns `true` if the unmatched order is an SP (on-close) bet resting until
+/// BSP reconciliation: execution-complete with no matched, cancelled, lapsed,
+/// or voided quantity and no lapse reason.
+///
+/// SP bets cannot be cancelled once placed, so this state is open, not
+/// terminal.
+#[must_use]
+pub fn is_resting_sp_bet(uo: &UnmatchedOrder) -> bool {
+    uo.status == StreamingOrderStatus::ExecutionComplete
+        && matches!(
+            uo.ot,
+            StreamingOrderType::LimitOnClose | StreamingOrderType::MarketOnClose
+        )
+        && uo.sm.unwrap_or(Decimal::ZERO) <= Decimal::ZERO
+        && uo.lsrc.is_none()
+        && !has_cancel_quantity(uo)
+}
+
 /// Parses a streaming [`UnmatchedOrder`] into a Nautilus [`OrderStatusReport`].
 ///
 /// Resolves the Nautilus order status from the Betfair streaming status
@@ -808,6 +835,8 @@ pub fn parse_order_status_report(
         && size_lapsed.is_zero()
     {
         OrderStatus::Voided
+    } else if is_resting_sp_bet(uo) {
+        OrderStatus::Accepted
     } else {
         resolve_streaming_order_status(uo.status, size_matched, size_closed)
     };
@@ -877,16 +906,17 @@ pub fn parse_order_status_report(
 }
 
 fn parse_stream_time_in_force(uo: &UnmatchedOrder) -> anyhow::Result<TimeInForce> {
+    if matches!(
+        uo.ot,
+        StreamingOrderType::LimitOnClose | StreamingOrderType::MarketOnClose
+    ) {
+        // The stream can carry a non-BSP persistence type on SP bets; the
+        // on-close instruction defines the time in force
+        return Ok(TimeInForce::AtTheClose);
+    }
+
     match uo.pt {
         Some(persistence_type) => Ok(TimeInForce::from(persistence_type)),
-        None if matches!(
-            uo.ot,
-            crate::common::enums::StreamingOrderType::LimitOnClose
-                | crate::common::enums::StreamingOrderType::MarketOnClose
-        ) =>
-        {
-            Ok(TimeInForce::AtTheClose)
-        }
         None => anyhow::bail!("missing persistence type for order update {}", uo.id),
     }
 }
@@ -1048,15 +1078,15 @@ pub fn parse_bsp_book_deltas(
     ] {
         for pv in levels {
             let action = if pv.volume == Decimal::ZERO {
-                BookAction::Delete as u32
+                BookAction::Delete
             } else {
-                BookAction::Update as u32
+                BookAction::Update
             };
 
             result.push(BetfairBspBookDelta::new(
                 instrument_id,
                 action,
-                side as u32,
+                side,
                 pv.price,
                 pv.volume,
                 ts_event,
@@ -1744,6 +1774,105 @@ mod tests {
         } else {
             panic!("expected OrderChange");
         }
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_sp_resting() {
+        let data = load_test_json("stream/ocm_SP_RESTING.json");
+        let msg: StreamMessage = serde_json::from_str(&data).unwrap();
+
+        if let StreamMessage::OrderChange(ocm) = msg {
+            let oc = ocm.oc.as_ref().unwrap();
+            let omc = &oc[0];
+            let orc = &omc.orc.as_ref().unwrap()[0];
+            let uo = &orc.uo.as_ref().unwrap()[0];
+
+            assert!(is_resting_sp_bet(uo));
+
+            let instrument_id = make_instrument_id(&omc.id, orc.id, Decimal::ZERO);
+            let report = parse_order_status_report(
+                uo,
+                instrument_id,
+                AccountId::from("BETFAIR-001"),
+                parse_millis_timestamp(ocm.pt),
+                parse_millis_timestamp(ocm.pt),
+            )
+            .unwrap();
+
+            // A resting SP bet reports execution-complete with zero size
+            // fields, but cannot be cancelled and is still open until BSP
+            // reconciliation
+            assert_eq!(report.order_status, OrderStatus::Accepted);
+            assert_eq!(report.time_in_force, TimeInForce::AtTheClose);
+            assert_eq!(report.order_side, Some(OrderSide::Sell)); // Back → Sell
+            assert_eq!(report.filled_qty.as_f64(), 0.0);
+            assert_eq!(report.quantity.as_f64(), 2.0);
+        } else {
+            panic!("expected OrderChange");
+        }
+    }
+
+    fn sp_unmatched_order(size_matched: Decimal, size_lapsed: Decimal) -> UnmatchedOrder {
+        UnmatchedOrder {
+            id: "442849719274".to_string(),
+            p: Decimal::new(10000, 1),
+            s: Decimal::ZERO,
+            side: StreamingSide::Back,
+            status: StreamingOrderStatus::ExecutionComplete,
+            pt: Some(StreamingPersistenceType::MarketOnClose),
+            ot: StreamingOrderType::MarketOnClose,
+            pd: 1789423573000,
+            bsp: Some(Decimal::new(2, 0)),
+            rfo: None,
+            rfs: None,
+            rc: None,
+            rac: None,
+            md: None,
+            cd: None,
+            ld: None,
+            avp: None,
+            sm: Some(size_matched),
+            sr: Some(Decimal::ZERO),
+            sl: Some(size_lapsed),
+            sc: Some(Decimal::ZERO),
+            sv: Some(Decimal::ZERO),
+            lsrc: None,
+        }
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_sp_reconciled() {
+        // At BSP reconciliation an SP bet is no longer resting: a matched bet
+        // resolves Filled and a lapsed bet resolves Canceled
+        let matched = sp_unmatched_order(Decimal::new(2, 0), Decimal::ZERO);
+        assert!(!is_resting_sp_bet(&matched));
+
+        let report = parse_order_status_report(
+            &matched,
+            InstrumentId::from("1.262362241-6532924-0.BETFAIR"),
+            AccountId::from("BETFAIR-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.filled_qty.as_f64(), 2.0);
+        assert_eq!(report.quantity.as_f64(), 2.0);
+
+        let lapsed = sp_unmatched_order(Decimal::ZERO, Decimal::new(2, 0));
+        assert!(!is_resting_sp_bet(&lapsed));
+
+        let report = parse_order_status_report(
+            &lapsed,
+            InstrumentId::from("1.262362241-6532924-0.BETFAIR"),
+            AccountId::from("BETFAIR-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Canceled);
     }
 
     #[rstest]
@@ -2566,14 +2695,14 @@ mod tests {
         assert_eq!(deltas.len(), spb_count + spl_count);
 
         // SPB entries are Sell side
-        assert_eq!(deltas[0].side, OrderSide::Sell as u32);
+        assert_eq!(deltas[0].side, OrderSide::Sell);
         assert_eq!(deltas[0].price, Decimal::new(1000, 0));
         assert_eq!(deltas[0].size, Decimal::new(3338, 2));
-        assert_eq!(deltas[0].action, BookAction::Update as u32);
+        assert_eq!(deltas[0].action, BookAction::Update);
 
         // SPL entries are Buy side
         let spl_start = spb_count;
-        assert_eq!(deltas[spl_start].side, OrderSide::Buy as u32);
+        assert_eq!(deltas[spl_start].side, OrderSide::Buy);
         assert_eq!(deltas[spl_start].price, Decimal::new(7, 0));
         assert_eq!(deltas[spl_start].size, Decimal::new(10, 0));
     }
@@ -2606,7 +2735,7 @@ mod tests {
         let deltas = parse_bsp_book_deltas(instrument_id, &rc, ts, ts);
 
         assert_eq!(deltas.len(), 1);
-        assert_eq!(deltas[0].action, BookAction::Delete as u32);
+        assert_eq!(deltas[0].action, BookAction::Delete);
         assert_eq!(deltas[0].price, Decimal::new(5, 0));
         assert_eq!(deltas[0].size, Decimal::ZERO);
     }

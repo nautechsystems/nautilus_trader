@@ -29,7 +29,7 @@ use dashmap::DashMap;
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -103,7 +103,7 @@ pub struct DydxDataClient {
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instrument_cache: Arc<InstrumentCache>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
@@ -800,7 +800,7 @@ impl DataClient for DydxDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
 
         self.spawn_command(async move {
-            let instrument = match http.request_instruments(None, None, None).await {
+            let instrument = match http.request_instruments(None).await {
                 Ok(instruments) => {
                     for inst in &instruments {
                         instrument_cache.insert_instrument_only(inst.clone());
@@ -851,7 +851,7 @@ impl DataClient for DydxDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
 
         self.spawn_command(async move {
-            match http.request_instruments(None, None, None).await {
+            match http.request_instruments(None).await {
                 Ok(instruments) => {
                     log::debug!("Fetched {} instruments from dYdX", instruments.len());
 
@@ -1579,7 +1579,7 @@ impl DydxDataClient {
 
     fn handle_data_message(
         payloads: Vec<NautilusData>,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &EventSender<DataEvent>,
         incomplete_bars: &Arc<DashMap<BarType, Bar>>,
         clock: &'static AtomicTime,
     ) {
@@ -1594,7 +1594,7 @@ impl DydxDataClient {
 
     fn handle_bar_message(
         bar: Bar,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &EventSender<DataEvent>,
         incomplete_bars: &Arc<DashMap<BarType, Bar>>,
         clock: &'static AtomicTime,
     ) {
@@ -1785,7 +1785,7 @@ impl DydxDataClient {
 
     fn handle_deltas_message(
         deltas: OrderBookDeltas,
-        data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: &EventSender<DataEvent>,
         order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
         last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
         instrument_cache: &Arc<InstrumentCache>,
@@ -1878,7 +1878,7 @@ impl DydxDataClient {
 
 struct WsMessageContext {
     clock: &'static AtomicTime,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instrument_cache: Arc<InstrumentCache>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,

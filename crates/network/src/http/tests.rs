@@ -15,7 +15,15 @@
 
 //! HTTP wire behavior and connection lifecycle regressions.
 
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    io::{self, ErrorKind},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
@@ -23,7 +31,74 @@ use http::Method;
 use rstest::rstest;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::{HttpClient, HttpClientError, HttpResponse};
+use super::{HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse};
+
+#[rstest]
+#[case(301)]
+#[case(302)]
+#[case(303)]
+#[case(307)]
+#[case(308)]
+#[tokio::test]
+async fn rejected_redirect_preserves_response_without_contacting_destination(#[case] status: u16) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = destination.local_addr().unwrap();
+    let destination_requests = Arc::new(AtomicUsize::new(0));
+    let requests = destination_requests.clone();
+
+    let destination_task = tokio::spawn(async move {
+        let (mut stream, _) = destination.accept().await.unwrap();
+        requests.fetch_add(1, Ordering::SeqCst);
+        read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+            .await
+            .unwrap();
+    });
+
+    let origin_task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let headers = read_headers(&mut stream).await;
+        let mut body = [0; 7];
+        stream.read_exact(&mut body).await.unwrap();
+        stream
+            .write_all(format!("HTTP/1.1 {status} Redirect\r\nContent-Length: 4\r\nLocation: http://{target}/next\r\n\r\nstop").as_bytes())
+            .await
+            .unwrap();
+        (headers, body)
+    });
+    let client = HttpClient::builder()
+        .redirect_policy(HttpRedirectPolicy::Reject)
+        .headers(HashMap::from([("x-api-key".into(), "test-key".into())]))
+        .header_keys(vec!["location".into()])
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+    let response = send(
+        &client,
+        Method::POST,
+        format!("http://{addr}/start"),
+        Some(b"payload".to_vec()),
+    )
+    .await
+    .unwrap();
+    let (headers, body) = origin_task.await.unwrap();
+    destination_task.abort();
+
+    assert_eq!(response.status.as_u16(), status);
+    assert_eq!(response.body.as_ref(), b"stop");
+    assert_eq!(
+        response.headers,
+        HashMap::from([("location".into(), format!("http://{target}/next"))])
+    );
+    assert!(headers.starts_with("POST /start HTTP/1.1\r\n"));
+    assert!(headers.contains("\r\nx-api-key: test-key\r\n"));
+    assert_eq!(&body, b"payload");
+    assert_eq!(destination_requests.load(Ordering::SeqCst), 0);
+}
 
 #[tokio::test]
 async fn pooled_requests_consume_complete_bodies() {
@@ -286,6 +361,52 @@ async fn truncated_body_returns_transport_error(#[case] streamed: bool) {
 }
 
 #[tokio::test]
+async fn streamed_truncated_body_error_omits_query_string_by_default() {
+    const QUERY_SECRET: &str = "stream-query-secret";
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nshort")
+            .await
+            .unwrap();
+        stream.shutdown().await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let mut response = client
+        .get_stream(format!("http://{addr}/stream?api_key={QUERY_SECRET}"))
+        .await
+        .unwrap();
+
+    let error = loop {
+        match response.chunk().await {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("truncated body must not end successfully"),
+            Err(e) => break e,
+        }
+    };
+
+    peer.await.unwrap();
+
+    let rendered = error.to_string();
+    assert!(
+        rendered.contains(&format!("for url (http://{addr}/stream)")),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("api_key="), "{rendered}");
+    assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+}
+
+#[tokio::test]
 async fn body_deadline_overrides_default_and_closes_connection() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -381,12 +502,18 @@ async fn canceled_request_releases_partial_response() {
             .unwrap();
         ready.send(()).unwrap();
         let mut byte = [0];
-        assert_eq!(
-            tokio::time::timeout(Duration::from_secs(3), stream.read(&mut byte))
-                .await
-                .unwrap()
-                .unwrap(),
-            0
+        let read = tokio::time::timeout(Duration::from_secs(3), stream.read(&mut byte))
+            .await
+            .unwrap();
+
+        // Closing a socket with unread received bytes sends a reset instead of EOF on some
+        // platforms; both mean the canceled request released the connection
+        assert!(
+            matches!(
+                read.as_ref().map_err(io::Error::kind),
+                Ok(0) | Err(ErrorKind::ConnectionReset)
+            ),
+            "connection was not released: {read:?}"
         );
     });
     let client = HttpClient::builder()
@@ -485,63 +612,16 @@ async fn streamed_response_releases_partial_body(#[case] timeout: bool) {
     peer.await.unwrap();
 }
 
-// SSL_CERT_FILE supplies isolated trust on the Unix verifier, not native Apple/Windows stores
 #[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
 #[rstest]
 fn platform_tls_http2_and_protocol_retries() {
-    use std::{
-        process::Command,
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
-    };
-
     use http::StatusCode;
 
-    const MARKER: &str = "NAUTILUS_HTTP_TLS_PARITY_CHILD";
-    if std::env::var_os(MARKER).is_none() {
-        let directory = tempfile::tempdir().unwrap();
-        let key = rcgen::KeyPair::generate().unwrap();
-        let cert = rcgen::CertificateParams::new(vec!["localhost".into()])
-            .unwrap()
-            .self_signed(&key)
-            .unwrap();
-        std::fs::write(directory.path().join("cert.pem"), cert.pem()).unwrap();
-        std::fs::write(directory.path().join("cert.der"), cert.der()).unwrap();
-        std::fs::write(directory.path().join("key.der"), key.serialize_der()).unwrap();
-        let output = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "http::tests::platform_tls_http2_and_protocol_retries",
-                "--nocapture",
-            ])
-            .env(MARKER, directory.path())
-            .env("SSL_CERT_FILE", directory.path().join("cert.pem"))
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+    let Some(config) = tls_server_config() else {
+        run_tls_child("http::tests::platform_tls_http2_and_protocol_retries", &[]);
         return;
-    }
-    nautilus_cryptography::providers::install_cryptographic_provider();
-    let directory = std::path::PathBuf::from(std::env::var_os(MARKER).unwrap());
-    let cert =
-        rustls::pki_types::CertificateDer::from(std::fs::read(directory.join("cert.der")).unwrap());
-    let key = rustls::pki_types::PrivatePkcs8KeyDer::from(
-        std::fs::read(directory.join("key.der")).unwrap(),
-    );
-    let mut config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert], key.into())
-        .unwrap();
-    config.alpn_protocols = vec![b"h2".to_vec()];
-    let config = Arc::new(config);
+    };
+
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -620,6 +700,340 @@ fn platform_tls_http2_and_protocol_retries() {
         });
 }
 
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+#[rstest]
+fn proxy_authentication_survives_tls_redirects_without_reaching_origin() {
+    let Some(config) = tls_server_config() else {
+        run_tls_child(
+            "http::tests::proxy_authentication_survives_tls_redirects_without_reaching_origin",
+            &[("RUST_TEST_THREADS", Some("1"))],
+        );
+        return;
+    };
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let addr = listener.local_addr().unwrap();
+                let mut config = (*config).clone();
+                config.alpn_protocols.clear();
+                let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+
+                let peer = tokio::spawn(async move {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let initial = read_headers(&mut stream).await;
+                    stream
+                        .write_all(b"HTTP/1.1 302 Found\r\nLocation: https://localhost:443/secure\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        .await
+                        .unwrap();
+                    drop(stream);
+
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let connect = read_headers(&mut stream).await;
+                    stream
+                        .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                        .await
+                        .unwrap();
+                    let mut stream = acceptor.accept(stream).await.unwrap();
+                    let origin = read_headers(&mut stream).await;
+                    stream
+                        .write_all(b"HTTP/1.1 302 Found\r\nLocation: http://localhost:2/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        .await
+                        .unwrap();
+                    drop(stream);
+
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let final_hop = read_headers(&mut stream).await;
+                    stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\naccepted")
+                        .await
+                        .unwrap();
+                    [initial, connect, origin, final_hop]
+                });
+
+                let client = HttpClient::builder()
+                    .use_system_proxy(false)
+                    .proxy_url(format!("http://user:secret@{addr}"))
+                    .timeout_secs(3)
+                    .build()
+                    .unwrap();
+                let headers = HashMap::from([
+                    ("authorization".into(), "Bearer origin-19".into()),
+                    ("cookie".into(), "session=origin-23".into()),
+                ]);
+                let response = client
+                    .request(
+                        Method::GET,
+                        "http://localhost:1/start".into(),
+                        None,
+                        Some(headers),
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                let requests = peer.await.unwrap();
+                let expected_auth = format!("Basic {}", BASE64.encode("user:secret"));
+
+                for (index, (request, target)) in requests
+                    .iter()
+                    .zip([
+                        "GET http://localhost:1/start HTTP/1.1\r\n",
+                        "CONNECT localhost:443 HTTP/1.1\r\n",
+                        "GET /secure HTTP/1.1\r\n",
+                        "GET http://localhost:2/final HTTP/1.1\r\n",
+                    ])
+                    .enumerate()
+                {
+                    let headers: HashMap<_, _> = request
+                        .lines()
+                        .skip(1)
+                        .filter_map(|line| line.split_once(':'))
+                        .map(|(name, value)| (name.to_ascii_lowercase(), value.trim()))
+                        .collect();
+                    assert!(request.starts_with(target), "{request}");
+                    assert_eq!(headers.get("proxy-authorization").copied(), (index != 2).then_some(expected_auth.as_str()), "{request}");
+                    assert_eq!(headers.get("authorization").copied(), (index == 0).then_some("Bearer origin-19"), "{request}");
+                    assert_eq!(headers.get("cookie").copied(), (index == 0).then_some("session=origin-23"), "{request}");
+                }
+
+                assert_eq!(response.status.as_u16(), 200);
+                assert_eq!(response.headers, HashMap::new());
+                assert_eq!(response.body, Bytes::from_static(b"accepted"));
+            })
+            .await
+            .unwrap();
+        });
+}
+
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+#[rstest]
+fn http2_initial_window_follows_environment() {
+    let Some(config) = tls_server_config() else {
+        for (value, expected) in [
+            (None, "windows=16777216/33554432"),
+            (Some("false"), "windows=16777216/33554432"),
+            (Some("true"), "windows=65535/65535"),
+            (
+                Some("1"),
+                "error=Failed to build HTTP client: NAUTILUS_HTTP2_ADAPTIVE_WINDOW must be 'true' or 'false', was '1'",
+            ),
+        ] {
+            let stdout = run_tls_child(
+                "http::tests::http2_initial_window_follows_environment",
+                &[("NAUTILUS_HTTP2_ADAPTIVE_WINDOW", value)],
+            );
+            assert!(stdout.contains(expected), "{value:?}: {stdout}");
+        }
+
+        return;
+    };
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let client = match HttpClient::builder()
+                .use_system_proxy(false)
+                .timeout_secs(3)
+                .build()
+            {
+                Ok(client) => client,
+                Err(e) => {
+                    println!("error={e}");
+                    return;
+                }
+            };
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let url = format!("https://localhost:{port}/");
+
+            let mut task = tokio::spawn(async move { send(&client, Method::GET, url, None).await });
+
+            let (stream, _) = tokio::select! {
+                accepted = listener.accept() => accepted.unwrap(),
+                result = &mut task => panic!("request ended before connecting: {result:?}"),
+            };
+            let mut stream = tokio_rustls::TlsAcceptor::from(config)
+                .accept(stream)
+                .await
+                .unwrap();
+
+            let mut preface = [0; 24];
+            stream.read_exact(&mut preface).await.unwrap();
+            assert_eq!(&preface, b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
+
+            // Both windows start at 65,535 bytes until SETTINGS or WINDOW_UPDATE frames change them
+            let mut stream_window = 65_535;
+            let mut connection_window = 65_535;
+
+            loop {
+                let mut header = [0; 9];
+                stream.read_exact(&mut header).await.unwrap();
+                let length = u32::from_be_bytes([0, header[0], header[1], header[2]]);
+                let id = u32::from_be_bytes([header[5], header[6], header[7], header[8]]);
+                let mut payload = vec![0; length as usize];
+                stream.read_exact(&mut payload).await.unwrap();
+
+                match header[3] {
+                    0x1 => break,
+                    0x4 => {
+                        for setting in payload.as_chunks::<6>().0 {
+                            if let [0, 0x4, a, b, c, d] = *setting {
+                                stream_window = u32::from_be_bytes([a, b, c, d]);
+                            }
+                        }
+                    }
+                    0x8 if id == 0 => {
+                        connection_window +=
+                            u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                    }
+                    _ => {}
+                }
+            }
+
+            println!("windows={stream_window}/{connection_window}");
+            task.abort();
+        });
+}
+
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+#[rstest]
+fn platform_roots_load_once_per_process() {
+    let Some(config) = tls_server_config() else {
+        // Cargo exports the system `SSL_CERT_DIR`, which would still supply roots without the file
+        run_tls_child(
+            "http::tests::platform_roots_load_once_per_process",
+            &[("SSL_CERT_DIR", None)],
+        );
+        return;
+    };
+
+    let roots = std::path::PathBuf::from(std::env::var_os("SSL_CERT_FILE").unwrap());
+    let parked = roots.with_extension("parked");
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            std::fs::rename(&roots, &parked).unwrap();
+            let error = HttpClient::builder()
+                .use_system_proxy(false)
+                .build()
+                .unwrap_err();
+
+            std::fs::rename(&parked, &roots).unwrap();
+            HttpClient::builder()
+                .use_system_proxy(false)
+                .build()
+                .unwrap();
+
+            std::fs::remove_file(&roots).unwrap();
+            let client = HttpClient::builder()
+                .use_system_proxy(false)
+                .timeout_secs(3)
+                .build()
+                .unwrap();
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let acceptor = tokio_rustls::TlsAcceptor::from(config);
+
+            let peer = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let stream = acceptor.accept(stream).await.unwrap();
+                let mut connection = h2::server::handshake(stream).await.unwrap();
+                while let Some(request) = connection.accept().await {
+                    let (_, mut respond) = request.unwrap();
+                    respond
+                        .send_response(http::Response::new(()), true)
+                        .unwrap();
+                }
+            });
+
+            let response = send(
+                &client,
+                Method::GET,
+                format!("https://localhost:{port}/"),
+                None,
+            )
+            .await
+            .unwrap();
+            peer.abort();
+
+            assert_eq!(
+                error.to_string(),
+                "Failed to build HTTP client: unexpected error: No CA certificates were loaded from the system"
+            );
+            assert_eq!(response.status.as_u16(), 200);
+            assert_eq!(response.body, Bytes::new());
+        });
+}
+
+// SSL_CERT_FILE supplies isolated trust on the Unix verifier, not native Apple/Windows stores
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+const TLS_CHILD: &str = "NAUTILUS_HTTP_TLS_PARITY_CHILD";
+
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+fn run_tls_child(test: &str, envs: &[(&str, Option<&str>)]) -> String {
+    let directory = tempfile::tempdir().unwrap();
+    let key = rcgen::KeyPair::generate().unwrap();
+    let cert = rcgen::CertificateParams::new(vec!["localhost".into()])
+        .unwrap()
+        .self_signed(&key)
+        .unwrap();
+    std::fs::write(directory.path().join("cert.pem"), cert.pem()).unwrap();
+    std::fs::write(directory.path().join("cert.der"), cert.der()).unwrap();
+    std::fs::write(directory.path().join("key.der"), key.serialize_der()).unwrap();
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", test, "--nocapture"])
+        .env(TLS_CHILD, directory.path())
+        .env("SSL_CERT_FILE", directory.path().join("cert.pem"));
+
+    for (key, value) in envs {
+        match value {
+            Some(value) => command.env(key, value),
+            None => command.env_remove(key),
+        };
+    }
+
+    let output = command.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(
+        output.status.success(),
+        "{stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("1 passed"));
+    stdout
+}
+
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+fn tls_server_config() -> Option<Arc<rustls::ServerConfig>> {
+    let directory = std::path::PathBuf::from(std::env::var_os(TLS_CHILD)?);
+    nautilus_cryptography::providers::install_cryptographic_provider();
+    let cert =
+        rustls::pki_types::CertificateDer::from(std::fs::read(directory.join("cert.der")).unwrap());
+    let key = rustls::pki_types::PrivatePkcs8KeyDer::from(
+        std::fs::read(directory.join("key.der")).unwrap(),
+    );
+    let mut config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert], key.into())
+        .unwrap();
+    config.alpn_protocols = vec![b"h2".to_vec()];
+    Some(Arc::new(config))
+}
+
 async fn send(
     client: &HttpClient,
     method: Method,
@@ -631,7 +1045,7 @@ async fn send(
         .await
 }
 
-async fn read_headers(stream: &mut tokio::net::TcpStream) -> String {
+async fn read_headers(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> String {
     let mut bytes = Vec::new();
     while !bytes.ends_with(b"\r\n\r\n") {
         bytes.push(stream.read_u8().await.unwrap());

@@ -795,7 +795,7 @@ host.
 | `Bar`               |   160 | Inline            |
 | `OrderBookDelta`    |    96 | Inline            |
 | `OrderBookDeltas`   |    72 | Boxed             |
-| `OrderBookDepth10`  | 1,088 | Boxed             |
+| `OrderBookDepth`    | 1,088 | Boxed             |
 | `MarkPriceUpdate`   |    48 | Inline            |
 | `IndexPriceUpdate`  |    48 | Inline            |
 | `FundingRateUpdate` |    72 | Inline            |
@@ -808,13 +808,13 @@ Loaded-data memory was measured with a temporary program that built the same ite
 (`VmHWM`) before and after construction. GNU `time` maximum resident set sizes agreed within 1.4%.
 Each row is the median of three runs.
 
-| Payload            |     Items | `Vec<Data>` | `BatchView<T>` | Bytes per item | Reduction |
-| ------------------ | --------: | ----------: | -------------: | -------------- | --------: |
-| `QuoteTick`        | 1,000,000 |   166.0 MiB |       97.4 MiB | 174 to 102     |     41.4% |
-| `OrderBookDepth10` |   200,000 |   248.4 MiB |      213.3 MiB | 1,303 to 1,119 |     14.1% |
+| Payload          |     Items | `Vec<Data>` | `BatchView<T>` | Bytes per item | Reduction |
+| ---------------- | --------: | ----------: | -------------: | -------------- | --------: |
+| `QuoteTick`      | 1,000,000 |   166.0 MiB |       97.4 MiB | 174 to 102     |     41.4% |
+| `OrderBookDepth` |   200,000 |   248.4 MiB |      213.3 MiB | 1,303 to 1,119 |     14.1% |
 
 The quote reduction matches the 72-byte difference between `Data` and `QuoteTick`. The depth
-reduction matches the 168-byte enum plus the allocator header that `Data::BookDepth10` spends on
+reduction matches the 168-byte enum plus the allocator header that `Data::BookDepth` spends on
 each boxed snapshot.
 
 ## v1.231.0 and v2 comparison

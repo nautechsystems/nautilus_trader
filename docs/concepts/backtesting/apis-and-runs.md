@@ -100,13 +100,17 @@ The high-level API centers on `BacktestNode`. Each `BacktestRunConfig` contains:
 Build the node before adding strategies through its run-specific methods:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
 
 venue = BacktestVenueConfig(
@@ -115,9 +119,13 @@ venue = BacktestVenueConfig(
     account_type=AccountType.MARGIN,
     book_type=BookType.L1_MBP,
     starting_balances=["1_000_000 USD"],
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 data = BacktestDataConfig(
-    data_type="QuoteTick",
+    data_type=NautilusDataType.QuoteTick,
     catalog_path="/data/catalog",
     instrument_id=instrument_id,
 )
@@ -133,6 +141,10 @@ node.build()
 node.add_strategy_from_config(config.id, strategy_config)
 results = node.run()
 ```
+
+Fees belong to the venue configuration, not to instruments. Every venue needs an explicit
+`fee_model`, including an explicit zero-rate model for a frictionless baseline. Two accounts can
+trade the same instrument under different schedules without changing the instrument definition.
 
 Set `chunk_size` to a value in `[1, 1_000_000]` to enable streaming. Leave it as `None` to load all
 data at once.

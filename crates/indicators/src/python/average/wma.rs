@@ -23,6 +23,7 @@ use pyo3::prelude::*;
 use crate::{
     average::wma::WeightedMovingAverage,
     indicator::{Indicator, MovingAverage},
+    python::float_precision,
 };
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -30,13 +31,17 @@ use crate::{
 impl WeightedMovingAverage {
     /// An indicator which calculates a weighted moving average across a rolling window.
     #[new]
-    #[pyo3(signature = (period, weights, price_type=None))]
+    #[pyo3(signature = (period, weights=None, price_type=None))]
     pub fn py_new(
         period: usize,
-        weights: Vec<f64>,
+        weights: Option<Vec<f64>>,
         price_type: Option<PriceType>,
     ) -> PyResult<Self> {
-        Self::new_checked(period, weights, price_type).map_err(to_pyvalue_err)
+        match weights {
+            Some(weights) => Self::with_weights_checked(period, weights, price_type),
+            None => Self::new_checked(period, price_type),
+        }
+        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -93,17 +98,22 @@ impl WeightedMovingAverage {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        float_precision::check_quote(quote)?;
         self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) -> PyResult<()> {
+        float_precision::check_trade(trade)?;
         self.handle_trade(trade);
+        Ok(())
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

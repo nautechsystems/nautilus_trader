@@ -380,7 +380,7 @@ mod tests {
         Currency::register(currency2, false).unwrap();
 
         let found = Currency::try_from_str("TEST1").unwrap();
-        assert_eq!(found.name, "Test Currency 1");
+        assert_eq!(found.name.as_str(), "Test Currency 1");
     }
 
     #[rstest]
@@ -398,17 +398,17 @@ mod tests {
         Currency::register(currency2, true).unwrap();
 
         let found = Currency::try_from_str("TEST2").unwrap();
-        assert_eq!(found.name, "Test Currency 2 Overwritten");
+        assert_eq!(found.name.as_str(), "Test Currency 2 Overwritten");
     }
 
     #[rstest]
     fn test_new_for_fiat() {
         let currency = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
         assert_eq!(currency, currency);
-        assert_eq!(currency.code, "AUD");
+        assert_eq!(currency.code.as_str(), "AUD");
         assert_eq!(currency.precision, 2);
         assert_eq!(currency.iso4217, 36);
-        assert_eq!(currency.name, "Australian dollar");
+        assert_eq!(currency.name.as_str(), "Australian dollar");
         assert_eq!(currency.currency_type, CurrencyType::Fiat);
     }
 
@@ -416,10 +416,10 @@ mod tests {
     fn test_new_for_crypto() {
         let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
         assert_eq!(currency, currency);
-        assert_eq!(currency.code, "ETH");
+        assert_eq!(currency.code.as_str(), "ETH");
         assert_eq!(currency.precision, 8);
         assert_eq!(currency.iso4217, 0);
-        assert_eq!(currency.name, "Ether");
+        assert_eq!(currency.name.as_str(), "Ether");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 
@@ -572,7 +572,7 @@ mod tests {
     fn test_get_or_create_crypto_existing() {
         // Test with an existing currency (BTC is in the default map)
         let currency = Currency::get_or_create_crypto("BTC");
-        assert_eq!(currency.code, "BTC");
+        assert_eq!(currency.code.as_str(), "BTC");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 
@@ -580,10 +580,10 @@ mod tests {
     fn test_get_or_create_crypto_new() {
         // Test with a non-existent currency code
         let currency = Currency::get_or_create_crypto("NEWCOIN");
-        assert_eq!(currency.code, "NEWCOIN");
+        assert_eq!(currency.code.as_str(), "NEWCOIN");
         assert_eq!(currency.precision, 8);
         assert_eq!(currency.iso4217, 0);
-        assert_eq!(currency.name, "NEWCOIN");
+        assert_eq!(currency.name.as_str(), "NEWCOIN");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
 
         // Verify it was registered and can be retrieved
@@ -610,7 +610,7 @@ mod tests {
         // Test that it works with Ustr (via AsRef<str>)
         let code = Ustr::from("USTRCOIN");
         let currency = Currency::get_or_create_crypto(code);
-        assert_eq!(currency.code, "USTRCOIN");
+        assert_eq!(currency.code.as_str(), "USTRCOIN");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 
@@ -636,7 +636,7 @@ mod tests {
     fn test_get_or_create_crypto_with_context_unknown() {
         // Unknown codes should create a new Currency, preserving newly listed assets
         let result = Currency::get_or_create_crypto_with_context("NEWCOIN", Some("test context"));
-        assert_eq!(result.code, "NEWCOIN");
+        assert_eq!(result.code.as_str(), "NEWCOIN");
         assert_eq!(result.precision, 8);
     }
 }

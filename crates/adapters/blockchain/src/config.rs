@@ -72,16 +72,16 @@ pub struct BlockchainDataClientConfig {
     pub use_hypersync_for_live_data: bool,
     /// The HTTP URL for the blockchain RPC endpoint.
     pub http_rpc_url: SecretString,
+    /// The WebSocket secure URL for the blockchain RPC endpoint.
+    pub wss_rpc_url: Option<SecretString>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
     /// The maximum number of Multicall calls per one RPC request.
     #[builder(default = 200)]
     #[serde(default = "default_multicall_calls_per_rpc_request")]
     pub multicall_calls_per_rpc_request: u32,
-    /// The WebSocket secure URL for the blockchain RPC endpoint.
-    pub wss_rpc_url: Option<SecretString>,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<SecretString>,
     /// The block from which to sync historical data.
     pub from_block: Option<u64>,
     /// Filtering criteria that define which DEX pools to include in the data universe.

@@ -23,7 +23,8 @@ use std::{rc::Rc, sync::Arc};
 use nautilus_common::{
     defi,
     messages::defi::{
-        DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
+        DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, PoolSnapshotResponse,
+        RequestPoolSnapshot,
     },
     msgbus::{self, TypedHandler},
 };
@@ -32,6 +33,7 @@ use nautilus_model::{
     defi::{
         Blockchain, DefiData, PoolProfiler,
         data::{DexPoolData, block::BlockPosition},
+        pool_analysis::PoolSnapshot,
     },
     identifiers::{ClientId, InstrumentId},
     instruments::{CurrencyPair, InstrumentAny},
@@ -127,42 +129,38 @@ impl DataEngine {
     /// or if the underlying client operation fails.
     pub fn execute_defi_subscribe(&mut self, cmd: DefiSubscribeCommand) -> anyhow::Result<()> {
         if let Some(client_id) = cmd.client_id()
-            && self.external_clients.contains(client_id)
+            && self.is_external_client(*client_id)
         {
-            if self.config.debug {
+            if self.config().debug {
                 log::debug!("Skipping defi subscribe for external client {client_id}: {cmd:?}");
             }
             return Ok(());
         }
 
-        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            log::info!("Forwarding subscription to client {}", client.client_id);
-            client.execute_defi_subscribe_with_retained(cmd.clone(), true);
-        } else {
+        let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
                 cmd.client_id(),
                 cmd.venue(),
             );
-        }
+            return Ok(());
+        };
 
-        match cmd {
-            DefiSubscribeCommand::Pool(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
-            }
-            DefiSubscribeCommand::PoolSwaps(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
-            }
-            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
-            }
-            DefiSubscribeCommand::PoolFeeCollects(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
-            }
-            DefiSubscribeCommand::PoolFlashEvents(cmd) => {
-                self.setup_pool_updater(&cmd.instrument_id, cmd.client_id.as_ref());
-            }
-            DefiSubscribeCommand::Blocks(_) => {} // No pool setup needed for blocks
+        #[rustfmt::skip]
+        let pool = match &cmd {
+            DefiSubscribeCommand::Pool(cmd) => Some((cmd.instrument_id, cmd.client_id)),
+            DefiSubscribeCommand::PoolSwaps(cmd) => Some((cmd.instrument_id, cmd.client_id)),
+            DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => Some((cmd.instrument_id, cmd.client_id)),
+            DefiSubscribeCommand::PoolFeeCollects(cmd) => Some((cmd.instrument_id, cmd.client_id)),
+            DefiSubscribeCommand::PoolFlashEvents(cmd) => Some((cmd.instrument_id, cmd.client_id)),
+            DefiSubscribeCommand::Blocks(_) => None, // No pool setup needed for blocks
+        };
+
+        log::info!("Forwarding subscription to client {}", client.client_id);
+        client.execute_defi_subscribe_with_retained(cmd, true);
+
+        if let Some((instrument_id, client_id)) = pool {
+            self.setup_pool_updater(&instrument_id, client_id.as_ref());
         }
 
         Ok(())
@@ -175,22 +173,42 @@ impl DataEngine {
     /// Returns an error if the underlying client operation fails.
     pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) -> anyhow::Result<()> {
         if let Some(client_id) = cmd.client_id()
-            && self.external_clients.contains(client_id)
+            && self.is_external_client(*client_id)
         {
-            if self.config.debug {
+            if self.config().debug {
                 log::debug!("Skipping defi unsubscribe for external client {client_id}: {cmd:?}");
             }
             return Ok(());
         }
 
-        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_defi_unsubscribe(cmd);
-        } else {
+        let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
                 cmd.client_id(),
                 cmd.venue(),
             );
+            return Ok(());
+        };
+
+        client.execute_defi_unsubscribe(cmd);
+
+        #[rustfmt::skip]
+        let instrument_id = match cmd {
+            DefiUnsubscribeCommand::Pool(cmd) => cmd.instrument_id,
+            DefiUnsubscribeCommand::PoolSwaps(cmd) => cmd.instrument_id,
+            DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd) => cmd.instrument_id,
+            DefiUnsubscribeCommand::PoolFeeCollects(cmd) => cmd.instrument_id,
+            DefiUnsubscribeCommand::PoolFlashEvents(cmd) => cmd.instrument_id,
+            DefiUnsubscribeCommand::Blocks(_) => return Ok(()),
+        };
+
+        // The updater serves every pool subscription shape on every client
+        if !self
+            .get_clients()
+            .iter()
+            .any(|client| client.has_defi_pool_demand(&instrument_id))
+        {
+            self.release_pool_updater(&instrument_id);
         }
 
         Ok(())
@@ -205,9 +223,9 @@ impl DataEngine {
     pub fn execute_defi_request(&mut self, req: DefiRequestCommand) -> anyhow::Result<()> {
         // Skip requests for external clients
         if let Some(cid) = req.client_id()
-            && self.external_clients.contains(cid)
+            && self.is_external_client(*cid)
         {
-            if self.config.debug {
+            if self.config().debug {
                 log::debug!("Skipping defi data request for external client {cid}: {req:?}");
             }
             return Ok(());
@@ -234,7 +252,7 @@ impl DataEngine {
                 msgbus::publish_defi_block(topic, &block);
             }
             DefiData::Pool(pool) => {
-                if let Err(e) = self.cache.borrow_mut().add_pool(pool.clone()) {
+                if let Err(e) = self.cache().borrow_mut().add_pool(pool.clone()) {
                     log::error!("Failed to add Pool to cache: {e}");
                 }
 
@@ -250,180 +268,79 @@ impl DataEngine {
                     }
                 }
 
-                // Check if pool profiler creation was deferred. When a snapshot is also
-                // pending, leave the updater marker in place so a second subscription cannot
-                // race ahead and install a duplicate updater. The snapshot handler clears
-                // both flags and creates the updater once.
-                if self.pool_updaters_pending.contains(&pool.instrument_id) {
-                    if self.pool_snapshot_pending.contains(&pool.instrument_id) {
-                        log::debug!(
-                            "Pool {} loaded; deferring profiler creation to snapshot handler",
-                            pool.instrument_id
-                        );
-                    } else {
-                        self.pool_updaters_pending.remove(&pool.instrument_id);
-                        log::info!(
-                            "Pool {} now loaded, creating deferred pool profiler",
-                            pool.instrument_id
-                        );
-                        self.setup_pool_updater(&pool.instrument_id, None);
-                    }
-                }
-
                 let topic = defi::switchboard::get_defi_pool_topic(pool.instrument_id);
                 msgbus::publish_defi_pool(topic, &pool);
             }
             DefiData::PoolSnapshot(snapshot) => {
-                let instrument_id = snapshot.instrument_id;
-                log::info!(
-                    "Received pool snapshot for {instrument_id} at block {} with {} positions and {} ticks",
-                    snapshot.block_position.number,
-                    snapshot.positions.len(),
-                    snapshot.ticks.len()
-                );
-
-                // Validate we're expecting this snapshot
-                if !self.pool_snapshot_pending.contains(&instrument_id) {
-                    log::warn!(
-                        "Received unexpected pool snapshot for {instrument_id} (not in pending set)"
-                    );
-                    return;
-                }
-
-                // Get pool from cache
-                let pool = match self.cache.borrow().pool(&instrument_id) {
-                    Some(pool) => Arc::new(pool.clone()),
-                    None => {
-                        log::error!(
-                            "Pool {instrument_id} not found in cache when processing snapshot"
-                        );
-                        return;
-                    }
-                };
-
-                // Defensive: refuse stub snapshots that slipped past the bootstrap-side
-                // guards. Installing one would leave Python actors observing an initialized
-                // profiler with zero liquidity; better to leave the pool without a profiler
-                // so the bad state is visible.
-                if snapshot.positions.is_empty()
-                    && snapshot.ticks.is_empty()
-                    && snapshot.block_position.number == pool.creation_block
+                // Replayed snapshots carry no request identity, so any pending bootstrap accepts them
+                if !self
+                    .pool_snapshot_pending
+                    .contains_key(&snapshot.instrument_id)
                 {
                     log::warn!(
-                        "Refusing empty stub snapshot for {instrument_id} at pool creation block {}; pool will remain without profiler",
-                        snapshot.block_position.number,
-                    );
-                    self.pool_snapshot_pending.remove(&instrument_id);
-                    self.pool_updaters_pending.remove(&instrument_id);
-                    self.pool_event_buffers.remove(&instrument_id);
-                    return;
-                }
-
-                // Create profiler and restore from snapshot
-                let mut profiler = PoolProfiler::new(pool);
-                if let Err(e) = profiler.restore_from_snapshot(snapshot.clone()) {
-                    log::error!(
-                        "Failed to restore profiler from snapshot for {instrument_id}: {e}"
+                        "Received unexpected pool snapshot for {} (not in pending set)",
+                        snapshot.instrument_id
                     );
                     return;
                 }
-                log::debug!("Restored pool profiler for {instrument_id} from snapshot");
 
-                // Process buffered events
-                let buffered_events = self
-                    .pool_event_buffers
-                    .remove(&instrument_id)
-                    .unwrap_or_default();
-
-                if !buffered_events.is_empty() {
-                    log::info!(
-                        "Processing {} buffered events for {instrument_id}",
-                        buffered_events.len()
-                    );
-
-                    let events_to_apply = convert_and_sort_buffered_events(buffered_events);
-                    let applied_count = Self::apply_buffered_events_to_profiler(
-                        &mut profiler,
-                        events_to_apply,
-                        &snapshot.block_position,
-                        instrument_id,
-                    );
-
-                    log::info!(
-                        "Applied {applied_count} buffered events to profiler for {instrument_id}"
-                    );
-                }
-
-                // Add profiler to cache
-                if let Err(e) = self.cache.borrow_mut().add_pool_profiler(profiler) {
-                    log::error!("Failed to add pool profiler to cache for {instrument_id}: {e}");
-                    return;
-                }
-
-                // Create updater and subscribe to topics
-                self.pool_snapshot_pending.remove(&instrument_id);
-                self.pool_updaters_pending.remove(&instrument_id);
-                let updater = Rc::new(PoolUpdater::new(&instrument_id, self.cache.clone()));
-
-                self.subscribe_pool_updater_topics(instrument_id, updater.clone());
-                self.pool_updaters.insert(instrument_id, updater);
-
-                log::info!(
-                    "Pool profiler setup completed for {instrument_id}, now processing live events"
-                );
+                self.hydrate_pool_profiler(&snapshot);
             }
             DefiData::PoolSwap(swap) => {
                 let instrument_id = swap.instrument_id;
-                // Buffer if waiting for snapshot, otherwise publish
-                if self.pool_snapshot_pending.contains(&instrument_id) {
+                // Subscribers receive events immediately; keep a copy for profiler hydration
+                // while the snapshot is pending.
+                if self.pool_snapshot_pending.contains_key(&instrument_id) {
                     log::debug!("Buffering swap event for {instrument_id} (waiting for snapshot)");
                     self.pool_event_buffers
                         .entry(instrument_id)
                         .or_default()
-                        .push(DefiData::PoolSwap(swap));
-                } else {
-                    let topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
-                    msgbus::publish_defi_swap(topic, &swap);
+                        .push(DefiData::PoolSwap(swap.clone()));
                 }
+
+                let topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
+                msgbus::publish_defi_swap(topic, &swap);
             }
             DefiData::PoolLiquidityUpdate(update) => {
                 let instrument_id = update.instrument_id;
-                // Buffer if waiting for snapshot, otherwise publish
-                if self.pool_snapshot_pending.contains(&instrument_id) {
+                // Subscribers receive events immediately; keep a copy for profiler hydration
+                // while the snapshot is pending.
+                if self.pool_snapshot_pending.contains_key(&instrument_id) {
                     log::debug!(
                         "Buffering liquidity update event for {instrument_id} (waiting for snapshot)"
                     );
                     self.pool_event_buffers
                         .entry(instrument_id)
                         .or_default()
-                        .push(DefiData::PoolLiquidityUpdate(update));
-                } else {
-                    let topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
-                    msgbus::publish_defi_liquidity(topic, &update);
+                        .push(DefiData::PoolLiquidityUpdate(update.clone()));
                 }
+
+                let topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
+                msgbus::publish_defi_liquidity(topic, &update);
             }
             DefiData::PoolFeeCollect(collect) => {
                 let instrument_id = collect.instrument_id;
-                // Buffer if waiting for snapshot, otherwise publish
-                if self.pool_snapshot_pending.contains(&instrument_id) {
+                // Subscribers receive events immediately; keep a copy for profiler hydration
+                // while the snapshot is pending.
+                if self.pool_snapshot_pending.contains_key(&instrument_id) {
                     log::debug!(
                         "Buffering fee collect event for {instrument_id} (waiting for snapshot)"
                     );
                     self.pool_event_buffers
                         .entry(instrument_id)
                         .or_default()
-                        .push(DefiData::PoolFeeCollect(collect));
-                } else {
-                    let topic = defi::switchboard::get_defi_collect_topic(instrument_id);
-                    msgbus::publish_defi_collect(topic, &collect);
+                        .push(DefiData::PoolFeeCollect(collect.clone()));
                 }
+
+                let topic = defi::switchboard::get_defi_collect_topic(instrument_id);
+                msgbus::publish_defi_collect(topic, &collect);
             }
             DefiData::PoolFeeProtocolUpdate(update) => {
                 let instrument_id = update.instrument_id;
                 // A protocol-fee change is profiler infrastructure, not a subscriber data stream:
                 // it only needs to keep the profiler's `fee_protocol` consistent for swap and flash
                 // fee splitting. Buffer until the snapshot lands, otherwise apply in place.
-                if self.pool_snapshot_pending.contains(&instrument_id) {
+                if self.pool_snapshot_pending.contains_key(&instrument_id) {
                     log::debug!(
                         "Buffering fee protocol update for {instrument_id} (waiting for snapshot)"
                     );
@@ -432,7 +349,7 @@ impl DataEngine {
                         .or_default()
                         .push(DefiData::PoolFeeProtocolUpdate(update));
                 } else if let Some(profiler) =
-                    self.cache.borrow_mut().pool_profiler_mut(&instrument_id)
+                    self.cache().borrow_mut().pool_profiler_mut(&instrument_id)
                     && let Err(e) = profiler.process_fee_protocol_update(&update)
                 {
                     log::error!("Failed to process pool fee protocol update: {e}");
@@ -443,7 +360,7 @@ impl DataEngine {
                 // A protocol-fee withdrawal is profiler infrastructure, not a subscriber data
                 // stream: it only decrements the profiler's accrued protocol-fee balances. Buffer
                 // until the snapshot lands, otherwise apply in place.
-                if self.pool_snapshot_pending.contains(&instrument_id) {
+                if self.pool_snapshot_pending.contains_key(&instrument_id) {
                     log::debug!(
                         "Buffering fee protocol collect event for {instrument_id} (waiting for snapshot)"
                     );
@@ -452,7 +369,7 @@ impl DataEngine {
                         .or_default()
                         .push(DefiData::PoolFeeProtocolCollect(collect));
                 } else if let Some(profiler) =
-                    self.cache.borrow_mut().pool_profiler_mut(&instrument_id)
+                    self.cache().borrow_mut().pool_profiler_mut(&instrument_id)
                     && let Err(e) = profiler.process_fee_protocol_collect(&collect)
                 {
                     log::error!("Failed to process pool fee protocol collect event: {e}");
@@ -460,24 +377,133 @@ impl DataEngine {
             }
             DefiData::PoolFlash(flash) => {
                 let instrument_id = flash.instrument_id;
-                // Buffer if waiting for snapshot, otherwise publish
-                if self.pool_snapshot_pending.contains(&instrument_id) {
+                // Subscribers receive events immediately; keep a copy for profiler hydration
+                // while the snapshot is pending.
+                if self.pool_snapshot_pending.contains_key(&instrument_id) {
                     log::debug!("Buffering flash event for {instrument_id} (waiting for snapshot)");
                     self.pool_event_buffers
                         .entry(instrument_id)
                         .or_default()
-                        .push(DefiData::PoolFlash(flash));
-                } else {
-                    let topic = defi::switchboard::get_defi_flash_topic(instrument_id);
-                    msgbus::publish_defi_flash(topic, &flash);
+                        .push(DefiData::PoolFlash(flash.clone()));
                 }
+
+                let topic = defi::switchboard::get_defi_flash_topic(instrument_id);
+                msgbus::publish_defi_flash(topic, &flash);
             }
         }
     }
 
+    pub(crate) fn handle_pool_snapshot_response(&mut self, response: &PoolSnapshotResponse) {
+        let instrument_id = response.data.instrument_id;
+
+        if self.pool_snapshot_pending.get(&instrument_id) != Some(&response.correlation_id) {
+            log::warn!(
+                "Discarding pool snapshot for {instrument_id} from stale request {}",
+                response.correlation_id
+            );
+            return;
+        }
+
+        self.hydrate_pool_profiler(&response.data);
+    }
+
+    fn hydrate_pool_profiler(&mut self, snapshot: &PoolSnapshot) {
+        let instrument_id = snapshot.instrument_id;
+        log::info!(
+            "Received pool snapshot for {instrument_id} at block {} with {} positions and {} ticks",
+            snapshot.block_position.number,
+            snapshot.positions.len(),
+            snapshot.ticks.len()
+        );
+
+        // Get pool from cache
+        let pool = self
+            .cache()
+            .borrow()
+            .pool(&instrument_id)
+            .map(|pool| Arc::new(pool.clone()));
+
+        let Some(pool) = pool else {
+            log::error!("Pool {instrument_id} not found in cache when processing snapshot");
+            self.abandon_pool_snapshot(&instrument_id);
+            return;
+        };
+
+        // Defensive: refuse stub snapshots that slipped past the bootstrap-side
+        // guards. Installing one would leave Python actors observing an initialized
+        // profiler with zero liquidity; better to leave the pool without a profiler
+        // so the bad state is visible.
+        if snapshot.positions.is_empty()
+            && snapshot.ticks.is_empty()
+            && snapshot.block_position.number == pool.creation_block
+        {
+            log::warn!(
+                "Refusing empty stub snapshot for {instrument_id} at pool creation block {}; pool will remain without profiler",
+                snapshot.block_position.number,
+            );
+            self.abandon_pool_snapshot(&instrument_id);
+            return;
+        }
+
+        // Create profiler and restore from snapshot
+        let mut profiler = PoolProfiler::new(pool);
+        if let Err(e) = profiler.restore_from_snapshot(snapshot.clone()) {
+            log::error!("Failed to restore profiler from snapshot for {instrument_id}: {e}");
+            self.abandon_pool_snapshot(&instrument_id);
+            return;
+        }
+
+        log::debug!("Restored pool profiler for {instrument_id} from snapshot");
+
+        // Process buffered events
+        let buffered_events = self
+            .pool_event_buffers
+            .remove(&instrument_id)
+            .unwrap_or_default();
+
+        if !buffered_events.is_empty() {
+            log::info!(
+                "Processing {} buffered events for {instrument_id}",
+                buffered_events.len()
+            );
+
+            let events_to_apply = convert_and_sort_buffered_events(buffered_events);
+            let applied_count = Self::apply_buffered_events_to_profiler(
+                &mut profiler,
+                events_to_apply,
+                &snapshot.block_position,
+                instrument_id,
+            );
+
+            log::info!("Applied {applied_count} buffered events to profiler for {instrument_id}");
+        }
+
+        // Add profiler to cache
+        let result = self.cache().borrow_mut().add_pool_profiler(profiler);
+        if let Err(e) = result {
+            log::error!("Failed to add pool profiler to cache for {instrument_id}: {e}");
+            self.abandon_pool_snapshot(&instrument_id);
+            return;
+        }
+
+        // Create updater and subscribe to topics
+        self.pool_snapshot_pending.remove(&instrument_id);
+        let updater = Rc::new(PoolUpdater::new(&instrument_id, self.cache().clone()));
+
+        self.subscribe_pool_updater_topics(instrument_id, updater.clone());
+        self.pool_updaters.insert(instrument_id, updater);
+
+        log::info!("Pool profiler setup completed for {instrument_id}, now processing live events");
+    }
+
+    fn abandon_pool_snapshot(&mut self, instrument_id: &InstrumentId) {
+        self.pool_snapshot_pending.remove(instrument_id);
+        self.pool_event_buffers.remove(instrument_id);
+    }
+
     /// Subscribes a pool updater to all relevant pool data topics using typed handlers.
     fn subscribe_pool_updater_topics(&self, instrument_id: InstrumentId, updater: Rc<PoolUpdater>) {
-        let priority = Some(self.msgbus_priority);
+        let priority = Some(self.msgbus_priority());
 
         // Subscribe swap handler
         let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
@@ -539,7 +565,7 @@ impl DataEngine {
     fn setup_pool_updater(&mut self, instrument_id: &InstrumentId, client_id: Option<&ClientId>) {
         // Early return if updater already exists or we are in the middle of setting it up.
         if self.pool_updaters.contains_key(instrument_id)
-            || self.pool_updaters_pending.contains(instrument_id)
+            || self.pool_snapshot_pending.contains_key(instrument_id)
         {
             log::debug!("Pool updater for {instrument_id} already exists");
             return;
@@ -549,7 +575,7 @@ impl DataEngine {
 
         // Check cache state and ensure profiler exists
         {
-            let mut cache = self.cache.borrow_mut();
+            let mut cache = self.cache().borrow_mut();
 
             if cache.pool_profiler(instrument_id).is_some() {
                 // Profiler already exists, proceed to create updater
@@ -583,7 +609,8 @@ impl DataEngine {
                 drop(cache);
 
                 let request_id = UUID4::new();
-                let ts_init = self.clock.borrow().timestamp_ns();
+                let ts_init = self.clock().borrow().timestamp_ns();
+
                 let request = RequestPoolSnapshot::new(
                     *instrument_id,
                     client_id.copied(),
@@ -597,8 +624,8 @@ impl DataEngine {
                     log::warn!("Failed to request pool snapshot for {instrument_id}: {e}");
                 } else {
                     log::debug!("Requested pool snapshot for {instrument_id}");
-                    self.pool_snapshot_pending.insert(*instrument_id);
-                    self.pool_updaters_pending.insert(*instrument_id);
+                    self.pool_snapshot_pending
+                        .insert(*instrument_id, request_id);
                     self.pool_event_buffers.entry(*instrument_id).or_default();
                 }
                 return;
@@ -606,12 +633,53 @@ impl DataEngine {
         }
 
         // Profiler exists, create updater and subscribe to topics
-        let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache.clone()));
+        let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache().clone()));
 
         self.subscribe_pool_updater_topics(*instrument_id, updater.clone());
         self.pool_updaters.insert(*instrument_id, updater);
 
         log::debug!("Created PoolUpdater for instrument ID {instrument_id}");
+    }
+
+    fn release_pool_updater(&mut self, instrument_id: &InstrumentId) {
+        if let Some(updater) = self.pool_updaters.remove(instrument_id) {
+            Self::unsubscribe_pool_updater_topics(*instrument_id, updater);
+            log::debug!("Removed PoolUpdater for instrument ID {instrument_id}");
+        }
+
+        self.abandon_pool_snapshot(instrument_id);
+    }
+
+    pub(crate) fn clear_pool_updaters(&mut self) {
+        let updaters: Vec<_> = self.pool_updaters.drain().collect();
+        for (instrument_id, updater) in updaters {
+            Self::unsubscribe_pool_updater_topics(instrument_id, updater);
+        }
+
+        self.abandon_pool_snapshots();
+    }
+
+    pub(crate) fn abandon_pool_snapshots(&mut self) {
+        self.pool_snapshot_pending.clear();
+        self.pool_event_buffers.clear();
+    }
+
+    fn unsubscribe_pool_updater_topics(instrument_id: InstrumentId, updater: Rc<PoolUpdater>) {
+        let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
+        let swap_handler = TypedHandler(Rc::new(PoolSwapHandler::new(updater.clone())));
+        msgbus::unsubscribe_defi_swaps(swap_topic.into(), &swap_handler);
+
+        let liq_topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
+        let liq_handler = TypedHandler(Rc::new(PoolLiquidityHandler::new(updater.clone())));
+        msgbus::unsubscribe_defi_liquidity(liq_topic.into(), &liq_handler);
+
+        let collect_topic = defi::switchboard::get_defi_collect_topic(instrument_id);
+        let collect_handler = TypedHandler(Rc::new(PoolCollectHandler::new(updater.clone())));
+        msgbus::unsubscribe_defi_collects(collect_topic.into(), &collect_handler);
+
+        let flash_topic = defi::switchboard::get_defi_flash_topic(instrument_id);
+        let flash_handler = TypedHandler(Rc::new(PoolFlashHandler::new(updater)));
+        msgbus::unsubscribe_defi_flash(flash_topic.into(), &flash_handler);
     }
 }
 

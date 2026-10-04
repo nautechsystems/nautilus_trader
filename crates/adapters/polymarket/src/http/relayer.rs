@@ -18,15 +18,21 @@
 use std::{collections::HashMap, result::Result as StdResult, str::from_utf8};
 
 use alloy_primitives::{Address, U256};
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method, USER_AGENT},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method,
+        create_standard_nautilus_headers,
+    },
     websocket::proxy::ProxyUrl,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    common::{credential::RelayerApiKey, urls::relayer_http_url},
+    common::{
+        credential::{Credential, RelayerApiKey},
+        urls::relayer_http_url,
+    },
     http::error::{Error, Result, decode_response},
     signing::eip712::{DEPOSIT_WALLET_FACTORY, DepositWalletCall},
 };
@@ -96,7 +102,7 @@ pub struct RelayerTransaction {
 pub struct PolymarketRelayerHttpClient {
     client: HttpClient,
     base_url: String,
-    credential: RelayerApiKey,
+    credential: RelayerAuthentication,
 }
 
 impl PolymarketRelayerHttpClient {
@@ -124,6 +130,63 @@ impl PolymarketRelayerHttpClient {
         timeout_secs: u64,
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
+        Self::with_auth(
+            RelayerAuthentication::Relayer(credential),
+            base_url,
+            timeout_secs,
+            proxy_url,
+        )
+    }
+
+    /// Creates a Relayer client authenticated by a Builder HMAC credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created.
+    pub fn new_with_builder(
+        credential: Credential,
+        base_url: Option<String>,
+        timeout_secs: u64,
+        proxy_url: Option<ProxyUrl>,
+    ) -> StdResult<Self, HttpClientError> {
+        Self::with_auth(
+            RelayerAuthentication::Builder(Box::new(credential)),
+            base_url,
+            timeout_secs,
+            proxy_url,
+        )
+    }
+
+    pub(crate) async fn post_session<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &str,
+        idempotency_key: &str,
+    ) -> Result<T> {
+        let mut headers = self.auth_headers("POST", path, body);
+        headers.insert("Idempotency-Key".into(), idempotency_key.into());
+        let response = self
+            .client
+            .request(
+                Method::POST,
+                self.url(path),
+                None,
+                Some(headers),
+                Some(body.as_bytes().to_vec()),
+                None,
+                None,
+            )
+            .await
+            .map_err(Error::from_http_client)?;
+        decode_response(&response)
+    }
+
+    fn with_auth(
+        credential: RelayerAuthentication,
+        base_url: Option<String>,
+        timeout_secs: u64,
+        proxy_url: Option<ProxyUrl>,
+    ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
             client: HttpClient::builder()
                 .headers(Self::default_headers())
@@ -140,27 +203,46 @@ impl PolymarketRelayerHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([
-            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Content-Type".to_string(), "application/json".to_string()),
-        ])
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        headers
     }
 
     fn url(&self, path: &str) -> String {
         format!("{}{path}", self.base_url)
     }
 
-    fn auth_headers(&self) -> HashMap<String, String> {
-        HashMap::from([
-            (
-                "RELAYER_API_KEY".to_string(),
-                self.credential.key().to_string(),
-            ),
-            (
-                "RELAYER_API_KEY_ADDRESS".to_string(),
-                self.credential.address().to_string(),
-            ),
-        ])
+    fn auth_headers(&self, method: &str, path: &str, body: &str) -> HashMap<String, String> {
+        match &self.credential {
+            RelayerAuthentication::Relayer(credential) => HashMap::from([
+                ("RELAYER_API_KEY".into(), credential.key().to_string()),
+                (
+                    "RELAYER_API_KEY_ADDRESS".into(),
+                    credential.address().to_string(),
+                ),
+            ]),
+            RelayerAuthentication::Builder(credential) => {
+                let timestamp = (get_atomic_clock_realtime().get_time_ns().as_u64()
+                    / 1_000_000_000)
+                    .to_string();
+                HashMap::from([
+                    (
+                        "POLY_BUILDER_API_KEY".into(),
+                        credential.api_key_str().to_string(),
+                    ),
+                    (
+                        "POLY_BUILDER_PASSPHRASE".into(),
+                        credential.passphrase().to_string(),
+                    ),
+                    (
+                        "POLY_BUILDER_SIGNATURE".into(),
+                        credential.sign(&timestamp, method, path, body),
+                    ),
+                    ("POLY_BUILDER_TIMESTAMP".into(), timestamp),
+                ])
+            }
+        }
     }
 
     /// Fetches a fresh `WALLET` nonce for `signer`.
@@ -208,8 +290,9 @@ impl PolymarketRelayerHttpClient {
             },
         };
 
-        let body_bytes = serde_json::to_vec(&body)?;
-        let headers = Some(self.auth_headers());
+        let body = serde_json::to_string(&body)?;
+        let headers = Some(self.auth_headers("POST", PATH_SUBMIT, &body));
+        let body_bytes = body.into_bytes();
         let url = self.url(PATH_SUBMIT);
         let response = self
             .client
@@ -246,7 +329,7 @@ impl PolymarketRelayerHttpClient {
                 Method::GET,
                 url,
                 None::<&[(&str, &str); 0]>,
-                Some(self.auth_headers()),
+                Some(self.auth_headers("GET", &path, "")),
                 None,
                 None,
                 None,
@@ -275,7 +358,7 @@ impl PolymarketRelayerHttpClient {
                 Method::GET,
                 url,
                 params,
-                Some(self.auth_headers()),
+                Some(self.auth_headers("GET", path, "")),
                 None,
                 None,
                 None,
@@ -284,6 +367,12 @@ impl PolymarketRelayerHttpClient {
             .map_err(Error::from_http_client)?;
         decode_response(&response)
     }
+}
+
+#[derive(Debug, Clone)]
+enum RelayerAuthentication {
+    Relayer(RelayerApiKey),
+    Builder(Box<Credential>),
 }
 
 /// Signed Deposit Wallet batch submitted to the Relayer.

@@ -81,9 +81,9 @@ The following Databento schemas are supported by NautilusTrader:
 
 | Databento schema                                                             | Nautilus data type               | Description                     |
 | :--------------------------------------------------------------------------- | :------------------------------- | :------------------------------ |
-| [MBO](https://databento.com/docs/schemas-and-data-formats/mbo)               | `OrderBookDelta`                 | Market by order (L3).           |
+| [MBO](https://databento.com/docs/schemas-and-data-formats/mbo)               | `OrderBookDelta \| TradeTick`    | Market by order (L3).           |
 | [MBP_1](https://databento.com/docs/schemas-and-data-formats/mbp-1)           | `(QuoteTick, TradeTick \| None)` | Market by price (L1).           |
-| [MBP_10](https://databento.com/docs/schemas-and-data-formats/mbp-10)         | `OrderBookDepth10`               | Market depth (L2).              |
+| [MBP_10](https://databento.com/docs/schemas-and-data-formats/mbp-10)         | `OrderBookDepth`                 | Market depth (L2).              |
 | [BBO_1S](https://databento.com/docs/schemas-and-data-formats/bbo-1s)         | `QuoteTick`                      | 1-second best bid/offer.        |
 | [BBO_1M](https://databento.com/docs/schemas-and-data-formats/bbo-1m)         | `QuoteTick`                      | 1-minute best bid/offer.        |
 | [CMBP_1](https://databento.com/docs/schemas-and-data-formats/cmbp-1)         | `(QuoteTick, TradeTick \| None)` | Consolidated MBP across venues. |
@@ -248,7 +248,7 @@ schema. For example, `EQUS.MINI` cannot serve `mbo`, `mbp-10`, `statistics`, or
 :::
 
 :::warning
-The live data client does not handle `subscribe_book_depth10()`, `subscribe_bars()`, or
+The live data client does not handle `subscribe_book_depth()`, `subscribe_bars()`, or
 `subscribe_data()`. Those commands log a "handler not implemented" warning and deliver no data.
 Reach MBP-10 depth and OHLCV bars through historical requests (`request_book_depth()` and
 `request_bars()`), and imbalance and statistics through the historical client or the data loader.
@@ -573,20 +573,22 @@ symbol. `InstrumentStatus` carries no prices and needs no precision.
 
 MBO is the highest granularity data from Databento, representing full order book
 depth. Some messages include trade data. The decoder produces an `OrderBookDelta`
-and optionally a `TradeTick`.
+and optionally a `TradeTick`. The live client emits a `TradeTick` only after the
+instrument has received its first delta.
 
 The live client buffers MBO messages until a record carries the `F_LAST` flag
 closing the match event, then passes one `OrderBookDeltas` container to the
-handler. Records that decode to no delta (a fill attribution or a status action)
-can still carry `F_LAST`, so the client honors the raw flag independently of the
-decoded payload; otherwise a partial event would be stranded and merged into the
-next event.
+handler. Records that decode to no delta (a fill attribution, a status action, or
+a trade) can still carry `F_LAST`, so the client honors the raw flag independently
+of the decoded payload; otherwise a partial event would be stranded and merged into
+the next event. A trade that closes the event follows the flushed container.
 
 Snapshot records (`F_SNAPSHOT`) accumulate into the same buffer and flush with the
 first non-snapshot event boundary, so a snapshot reaches the handler as one
 `OrderBookDeltas` container rather than as individual deltas. When a subscription
-carries a replay `start` anchor, the client suppresses emission until an event
-timestamp passes that anchor, which keeps replayed history out of the live stream.
+carries a replay `start` anchor, the client keeps replayed history out of the live
+stream until an event timestamp passes the session start time. It holds replayed
+deltas and flushes them with that first live event, and drops replayed trades.
 
 ### MBP-1 (market by price, top-of-book)
 
@@ -727,7 +729,7 @@ decoding.
 
 `DatabentoDataLoader` decodes DBN files directly into Nautilus objects. It exposes a method for
 each supported output type, including `load_instruments`, `load_order_book_deltas`,
-`load_order_book_depth10`, `load_quotes`, `load_trades`, `load_bars`, `load_status`,
+`load_order_book_depth`, `load_quotes`, `load_trades`, `load_bars`, `load_status`,
 `load_imbalance`, and `load_statistics`.
 
 Pass the publisher metadata file when it is not available beside the running executable:
@@ -823,6 +825,8 @@ and point `publishers_filepath` at the local copy.
 | `use_exchange_as_venue`   | `False`  | Use exchange MIC venues for GLBX instruments.           |
 | `bars_timestamp_on_close` | `True`   | Timestamp bars on close instead of the interval open.   |
 | `venue_dataset_map`       | `None`   | Override venue-to-dataset mappings from publisher data. |
+| `historical_base_url`     | `None`   | Override the Historical API base URL.                   |
+| `live_gateway_addr`       | `None`   | Override the live gateway socket address (`host:port`). |
 
 Use `DatabentoDataClientConfig` with `DatabentoDataClientFactory`. The current
 [Python example](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/databento/data_tester.py)

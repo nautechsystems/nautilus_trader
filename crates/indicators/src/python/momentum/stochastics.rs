@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
@@ -20,35 +21,42 @@ use crate::{
     average::MovingAverageType,
     indicator::Indicator,
     momentum::stochastics::{Stochastics, StochasticsDMethod},
+    python::float_precision,
 };
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl StochasticsDMethod {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Stochastics {
-    /// Creates a new `Stochastics` instance with default parameters.
+    /// Stochastic oscillator with smoothed K and D outputs.
     ///
-    /// This is the backward-compatible constructor that produces identical output
-    /// to the original Nautilus implementation, setting the following to:
-    /// - `slowing = 1` (no slowing applied to %K)
-    /// - `ma_type = Exponential` (unused when slowing = 1 or with Ratio method)
-    /// - `d_method = Ratio` (Nautilus native %D calculation)
+    /// Defaults to `slowing = 1`, `ma_type = Simple`, and `d_method = MovingAverage`,
+    /// so D is a simple moving average of K. Select `StochasticsDMethod.Ratio`
+    /// for the legacy Nautilus range-weighted D calculation.
     #[new]
     #[pyo3(signature = (period_k, period_d, slowing=None, ma_type=None, d_method=None))]
-    #[must_use]
     pub fn py_new(
         period_k: usize,
         period_d: usize,
         slowing: Option<usize>,
         ma_type: Option<MovingAverageType>,
         d_method: Option<StochasticsDMethod>,
-    ) -> Self {
-        Self::new_with_params(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             period_k,
             period_d,
-            slowing.unwrap_or(1),
-            ma_type.unwrap_or(MovingAverageType::Exponential),
-            d_method.unwrap_or(StochasticsDMethod::Ratio),
+            slowing.unwrap_or(Self::DEFAULT_SLOWING),
+            ma_type.unwrap_or(Self::DEFAULT_MA_TYPE),
+            d_method.unwrap_or(Self::DEFAULT_D_METHOD),
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -131,8 +139,10 @@ impl Stochastics {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

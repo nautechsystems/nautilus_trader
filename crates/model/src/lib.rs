@@ -124,6 +124,7 @@ pub mod currencies;
 pub mod data;
 pub mod enums;
 pub mod events;
+pub mod fees;
 pub mod identifiers;
 pub mod instruments;
 pub mod macros;
@@ -147,3 +148,6 @@ pub mod stubs;
 
 #[cfg(feature = "defi")]
 pub mod defi;
+
+/// Generates custom-data model behavior.
+pub use nautilus_macros::custom_data;

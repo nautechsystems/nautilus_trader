@@ -39,6 +39,8 @@ use std::{
 
 use parking_lot::Mutex;
 
+use crate::dst;
+
 pub type AuthResultSender = tokio::sync::oneshot::Sender<Result<(), String>>;
 pub type AuthResultReceiver = tokio::sync::oneshot::Receiver<Result<(), String>>;
 
@@ -139,6 +141,8 @@ impl AuthTracker {
     /// again, so operations requiring authentication are properly guarded. A
     /// terminal [`AuthState::Failed`] state remains failed.
     pub fn invalidate(&self) {
+        let _guard = self.tx.lock();
+
         if self
             .state
             .try_update(Ordering::AcqRel, Ordering::Acquire, |state| {
@@ -165,10 +169,10 @@ impl AuthTracker {
     )]
     pub fn begin(&self) -> AuthResultReceiver {
         let (sender, receiver) = tokio::sync::oneshot::channel();
+        let mut guard = self.tx.lock();
         self.state
             .store(AuthState::Unauthenticated.as_u8(), Ordering::Release);
 
-        let mut guard = self.tx.lock();
         if let Some(old) = guard.take() {
             log::warn!("New authentication request superseding previous pending request");
             let _ = old.send(Err("Authentication attempt superseded".to_string()));
@@ -189,11 +193,12 @@ impl AuthTracker {
     /// The state is always updated even if no receiver is waiting (e.g., after
     /// a timeout), since the server has confirmed authentication.
     pub fn succeed(&self) {
+        let mut guard = self.tx.lock();
         self.state
             .store(AuthState::Authenticated.as_u8(), Ordering::Release);
         self.state_notify.notify_waiters();
 
-        if let Some(sender) = self.tx.lock().take() {
+        if let Some(sender) = guard.take() {
             let _ = sender.send(Ok(()));
         }
     }
@@ -207,12 +212,13 @@ impl AuthTracker {
     /// The state is always updated even if no receiver is waiting, since the
     /// server has rejected authentication or future auth is impossible.
     pub fn fail(&self, error: impl Into<String>) {
+        let message = error.into();
+        let mut guard = self.tx.lock();
         self.state
             .store(AuthState::Failed.as_u8(), Ordering::Release);
         self.state_notify.notify_waiters();
-        let message = error.into();
 
-        if let Some(sender) = self.tx.lock().take() {
+        if let Some(sender) = guard.take() {
             let _ = sender.send(Err(message));
         }
     }
@@ -241,7 +247,7 @@ impl AuthTracker {
     where
         E: From<String>,
     {
-        match tokio::time::timeout(timeout, receiver).await {
+        match dst::time::timeout(timeout, receiver).await {
             Ok(Ok(Ok(()))) => Ok(()),
             Ok(Ok(Err(msg))) => Err(E::from(msg)),
             Ok(Err(_)) => Err(E::from("Authentication channel closed".to_string())),
@@ -272,7 +278,7 @@ impl AuthTracker {
             return true;
         }
 
-        tokio::time::timeout(timeout, async {
+        dst::time::timeout(timeout, async {
             loop {
                 // Enable before the state check: an unpolled Notified is unregistered and misses notifies
                 let mut notified = pin!(self.state_notify.notified());
@@ -297,9 +303,13 @@ impl Default for AuthTracker {
 }
 
 #[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))]
 mod tests {
     use std::{
-        sync::atomic::{AtomicBool, Ordering},
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
         time::Duration,
     };
 
@@ -313,6 +323,108 @@ mod tests {
     impl From<String> for TestError {
         fn from(msg: String) -> Self {
             Self(msg)
+        }
+    }
+
+    #[rstest]
+    fn test_begin_during_failure_keeps_receiver_and_state_consistent() {
+        struct DeferredError {
+            entered: mpsc::SyncSender<()>,
+            proceed: mpsc::Receiver<()>,
+        }
+
+        impl From<DeferredError> for String {
+            fn from(error: DeferredError) -> Self {
+                error.entered.send(()).unwrap();
+                error.proceed.recv_timeout(Duration::from_secs(2)).unwrap();
+                "credentials rejected".to_string()
+            }
+        }
+
+        let tracker = AuthTracker::new();
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (proceed_tx, proceed_rx) = mpsc::sync_channel(1);
+
+        let mut receiver = std::thread::scope(|scope| {
+            let completion = scope.spawn(|| {
+                tracker.fail(DeferredError {
+                    entered: entered_tx,
+                    proceed: proceed_rx,
+                });
+            });
+
+            entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            let receiver = tracker.begin();
+            proceed_tx.send(()).unwrap();
+            completion.join().unwrap();
+            receiver
+        });
+
+        assert_eq!(
+            receiver.try_recv(),
+            Ok(Err("credentials rejected".to_string()))
+        );
+        assert_eq!(tracker.auth_state(), AuthState::Failed);
+    }
+
+    #[rstest]
+    #[case::success(AuthTracker::succeed, Ok(()), AuthState::Authenticated)]
+    #[case::failure(|tracker: &AuthTracker| tracker.fail("rejected"), Err("rejected".to_string()), AuthState::Failed)]
+    fn test_concurrent_begin_and_completion_keep_receiver_and_state_consistent(
+        #[case] complete: fn(&AuthTracker),
+        #[case] result: Result<(), String>,
+        #[case] state: AuthState,
+    ) {
+        const ATTEMPTS: usize = 2_000;
+
+        let tracker = AuthTracker::new();
+        let (begin_tx, begin_rx) = mpsc::sync_channel(1);
+        let (complete_tx, complete_rx) = mpsc::sync_channel(1);
+        let (receiver_tx, receiver_rx) = mpsc::sync_channel(1);
+        let (done_tx, done_rx) = mpsc::sync_channel(1);
+
+        let observations = std::thread::scope(|scope| {
+            let tracker = &tracker;
+
+            scope.spawn(move || {
+                for _ in 0..ATTEMPTS {
+                    begin_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                    receiver_tx.send(tracker.begin()).unwrap();
+                }
+            });
+
+            scope.spawn(move || {
+                for _ in 0..ATTEMPTS {
+                    complete_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                    complete(tracker);
+                    done_tx.send(()).unwrap();
+                }
+            });
+
+            let mut observations = Vec::with_capacity(ATTEMPTS);
+
+            for _ in 0..ATTEMPTS {
+                begin_tx.send(()).unwrap();
+                complete_tx.send(()).unwrap();
+                let mut receiver = receiver_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                observations.push((receiver.try_recv(), tracker.auth_state()));
+            }
+
+            observations
+        });
+
+        for (received, actual_state) in observations {
+            match received {
+                Ok(actual_result) => {
+                    assert_eq!(actual_result, result);
+                    assert_eq!(actual_state, state);
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
+                    assert_eq!(actual_state, AuthState::Unauthenticated);
+                }
+                Err(receive_error) => panic!("authentication channel closed: {receive_error}"),
+            }
         }
     }
 
@@ -390,8 +502,9 @@ mod tests {
     async fn test_succeed_without_pending_auth() {
         let tracker = AuthTracker::new();
 
-        // Calling succeed without begin should not panic
         tracker.succeed();
+
+        assert_eq!(tracker.auth_state(), AuthState::Authenticated);
     }
 
     #[rstest]
@@ -399,8 +512,9 @@ mod tests {
     async fn test_fail_without_pending_auth() {
         let tracker = AuthTracker::new();
 
-        // Calling fail without begin should not panic
         tracker.fail("Some error");
+
+        assert_eq!(tracker.auth_state(), AuthState::Failed);
     }
 
     #[rstest]
@@ -439,17 +553,16 @@ mod tests {
         let tracker = AuthTracker::new();
         let rx = tracker.begin();
 
-        // Drop the tracker's sender by starting a new auth
-        tracker.begin();
+        drop(tracker.tx.lock().take());
 
-        // Original receiver should get channel closed error
         let result: Result<(), TestError> =
             tracker.wait_for_result(Duration::from_secs(1), rx).await;
 
         assert_eq!(
-            result.unwrap_err(),
-            TestError("Authentication attempt superseded".to_string())
+            result,
+            Err(TestError("Authentication channel closed".to_string()))
         );
+        assert_eq!(tracker.auth_state(), AuthState::Unauthenticated);
     }
 
     #[rstest]
@@ -1209,6 +1322,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))]
 mod proptest_tests {
     use std::{sync::Arc, time::Duration};
 
@@ -1534,5 +1648,42 @@ mod proptest_tests {
                 "wait_for_authenticated took {elapsed:?} for auth_result={auth_result}"
             );
         }
+    }
+}
+
+#[cfg(all(test, feature = "simulation", madsim))]
+mod simulation_tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[madsim::test]
+    async fn test_wait_for_result_succeeds_without_tokio_reactor() {
+        let tracker = AuthTracker::new();
+        let rx = tracker.begin();
+        tracker.succeed();
+        let result: Result<(), String> = tracker.wait_for_result(Duration::from_secs(1), rx).await;
+        assert_eq!(result, Ok(()));
+    }
+
+    #[madsim::test]
+    async fn test_wait_for_result_times_out_on_virtual_clock() {
+        let tracker = AuthTracker::new();
+        let rx = tracker.begin();
+        let result: Result<(), String> =
+            tracker.wait_for_result(Duration::from_millis(10), rx).await;
+        assert_eq!(result, Err("Authentication timed out".to_string()));
+    }
+
+    #[madsim::test]
+    async fn test_wait_for_authenticated_succeeds_without_tokio_reactor() {
+        let tracker = AuthTracker::new();
+        let pending = tracker.clone();
+
+        madsim::task::spawn(async move {
+            madsim::time::sleep(Duration::from_millis(1)).await;
+            pending.succeed();
+        });
+        assert!(tracker.wait_for_authenticated(Duration::from_secs(1)).await);
     }
 }

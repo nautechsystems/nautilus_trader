@@ -37,7 +37,7 @@ use nautilus_model::defi::{
 use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -68,7 +68,7 @@ use crate::{
     },
     cache::Cache,
     clock::Clock,
-    component::{Component, with_component_registry},
+    component::{Component, ComponentAccessError, with_component_registry},
     enums::ComponentState,
     logging::{CMD, RECV},
     messages::{
@@ -80,7 +80,7 @@ use crate::{
         cache::PyCache,
         clock::PyClock,
         indicators::{registered_python_indicators, wrap_python_indicator},
-        logging::PyLogger,
+        logging::{PyLogger, format_exception},
         wrappers::{get_python_message_bus, retain_python_wrapper},
     },
     runner::SystemChannel,
@@ -261,13 +261,16 @@ impl PyDataActorInner {
         match command {
             TradingCommand::SubmitOrder(cmd) => {
                 let order = DataActor::cache(self).try_order(&cmd.client_order_id)?;
-                self.dispatch_on_order(order)
-                    .map_err(|e| anyhow::anyhow!("Python on_order failed: {e}"))
+                self.dispatch_on_order(order).map_err(|e| {
+                    anyhow::anyhow!("Python on_order failed:\n{}", format_exception(&e))
+                })
             }
             TradingCommand::SubmitOrderList(cmd) => {
                 let orders = self.orders_for_list(&cmd.order_list)?;
                 self.dispatch_on_order_list(cmd.order_list.clone(), orders)
-                    .map_err(|e| anyhow::anyhow!("Python on_order_list failed: {e}"))
+                    .map_err(|e| {
+                        anyhow::anyhow!("Python on_order_list failed:\n{}", format_exception(&e))
+                    })
             }
             _ => {
                 log::warn!("Unhandled command type: {command}");
@@ -478,10 +481,10 @@ impl PyDataActorInner {
         Ok(())
     }
 
-    fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
+    fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth) -> PyResult<()> {
         if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any(py)?,))
+                py_self.call_method1(py, "on_book_depth", (depth.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -579,7 +582,7 @@ impl PyDataActorInner {
         Ok(())
     }
 
-    fn dispatch_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth10>) -> PyResult<()> {
+    fn dispatch_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth>) -> PyResult<()> {
         if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_depths = depths
@@ -1018,52 +1021,52 @@ pub fn register_python_exec_algorithm_endpoint(exec_algorithm_id: ExecAlgorithmI
 impl DataActor for PyDataActorInner {
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_start()
-            .map_err(|e| anyhow::anyhow!("Python on_start failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_start failed:\n{}", format_exception(&e)))
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_stop()
-            .map_err(|e| anyhow::anyhow!("Python on_stop failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_stop failed:\n{}", format_exception(&e)))
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_resume()
-            .map_err(|e| anyhow::anyhow!("Python on_resume failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_resume failed:\n{}", format_exception(&e)))
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_reset()
-            .map_err(|e| anyhow::anyhow!("Python on_reset failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_reset failed:\n{}", format_exception(&e)))
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_dispose()
-            .map_err(|e| anyhow::anyhow!("Python on_dispose failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_dispose failed:\n{}", format_exception(&e)))
     }
 
     fn on_degrade(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_degrade()
-            .map_err(|e| anyhow::anyhow!("Python on_degrade failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_degrade failed:\n{}", format_exception(&e)))
     }
 
     fn on_fault(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_fault()
-            .map_err(|e| anyhow::anyhow!("Python on_fault failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_fault failed:\n{}", format_exception(&e)))
     }
 
     fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
         self.dispatch_on_save()
-            .map_err(|e| anyhow::anyhow!("Python on_save failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_save failed:\n{}", format_exception(&e)))
     }
 
     fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
         self.dispatch_on_load(&state)
-            .map_err(|e| anyhow::anyhow!("Python on_load failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_load failed:\n{}", format_exception(&e)))
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         self.dispatch_on_time_event(event.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_time_event failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_time_event failed:\n{}", format_exception(&e)))
     }
 
     #[allow(unused_variables)]
@@ -1071,133 +1074,156 @@ impl DataActor for PyDataActorInner {
         Python::attach(|py| {
             let py_data: Py<PyAny> = Py::new(py, data.clone())?.into_any();
             self.dispatch_on_data(py_data)
-                .map_err(|e| anyhow::anyhow!("Python on_data failed: {e}"))
+                .map_err(|e| anyhow::anyhow!("Python on_data failed:\n{}", format_exception(&e)))
         })
     }
 
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         self.dispatch_on_signal(signal)
-            .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_signal failed:\n{}", format_exception(&e)))
     }
 
     fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
         self.dispatch_on_queue_state(event)
-            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed:\n{}", format_exception(&e)))
     }
 
     fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
-        self.dispatch_on_socket_state(event)
-            .map_err(|e| anyhow::anyhow!("Python on_socket_state failed: {e}"))
+        self.dispatch_on_socket_state(event).map_err(|e| {
+            anyhow::anyhow!("Python on_socket_state failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         Python::attach(|py| {
             let py_instrument = instrument_any_to_pyobject(py, instrument.clone())
                 .map_err(|e| anyhow::anyhow!("Failed to convert InstrumentAny to Python: {e}"))?;
-            self.dispatch_on_instrument(py_instrument)
-                .map_err(|e| anyhow::anyhow!("Python on_instrument failed: {e}"))
+            self.dispatch_on_instrument(py_instrument).map_err(|e| {
+                anyhow::anyhow!("Python on_instrument failed:\n{}", format_exception(&e))
+            })
         })
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         self.dispatch_on_quote(*quote)
-            .map_err(|e| anyhow::anyhow!("Python on_quote failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_quote failed:\n{}", format_exception(&e)))
     }
 
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
         self.dispatch_on_trade(*tick)
-            .map_err(|e| anyhow::anyhow!("Python on_trade failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_trade failed:\n{}", format_exception(&e)))
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         self.dispatch_on_bar(*bar)
-            .map_err(|e| anyhow::anyhow!("Python on_bar failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_bar failed:\n{}", format_exception(&e)))
     }
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         self.dispatch_on_book_deltas(deltas.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed:\n{}", format_exception(&e)))
     }
 
-    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+    fn on_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
         self.dispatch_on_book_depth(depth)
-            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed:\n{}", format_exception(&e)))
     }
 
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         self.dispatch_on_book(order_book)
-            .map_err(|e| anyhow::anyhow!("Python on_book failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book failed:\n{}", format_exception(&e)))
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         self.dispatch_on_mark_price(*mark_price)
-            .map_err(|e| anyhow::anyhow!("Python on_mark_price failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_mark_price failed:\n{}", format_exception(&e)))
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         self.dispatch_on_index_price(*index_price)
-            .map_err(|e| anyhow::anyhow!("Python on_index_price failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_index_price failed:\n{}", format_exception(&e)))
     }
 
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
-        self.dispatch_on_funding_rate(*funding_rate)
-            .map_err(|e| anyhow::anyhow!("Python on_funding_rate failed: {e}"))
+        self.dispatch_on_funding_rate(*funding_rate).map_err(|e| {
+            anyhow::anyhow!("Python on_funding_rate failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
-        self.dispatch_on_instrument_status(*data)
-            .map_err(|e| anyhow::anyhow!("Python on_instrument_status failed: {e}"))
+        self.dispatch_on_instrument_status(*data).map_err(|e| {
+            anyhow::anyhow!(
+                "Python on_instrument_status failed:\n{}",
+                format_exception(&e)
+            )
+        })
     }
 
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
-        self.dispatch_on_instrument_close(*update)
-            .map_err(|e| anyhow::anyhow!("Python on_instrument_close failed: {e}"))
+        self.dispatch_on_instrument_close(*update).map_err(|e| {
+            anyhow::anyhow!(
+                "Python on_instrument_close failed:\n{}",
+                format_exception(&e)
+            )
+        })
     }
 
     fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
-        self.dispatch_on_option_greeks(*greeks)
-            .map_err(|e| anyhow::anyhow!("Python on_option_greeks failed: {e}"))
+        self.dispatch_on_option_greeks(*greeks).map_err(|e| {
+            anyhow::anyhow!("Python on_option_greeks failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
-        self.dispatch_on_option_chain(slice.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_option_chain failed: {e}"))
+        self.dispatch_on_option_chain(slice.clone()).map_err(|e| {
+            anyhow::anyhow!("Python on_option_chain failed:\n{}", format_exception(&e))
+        })
     }
 
     #[cfg(feature = "defi")]
     fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
         self.dispatch_on_block(block.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_block failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_block failed:\n{}", format_exception(&e)))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool(&mut self, pool: &Pool) -> anyhow::Result<()> {
         self.dispatch_on_pool(pool.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_pool failed:\n{}", format_exception(&e)))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.dispatch_on_pool_swap(swap.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool_swap failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_pool_swap failed:\n{}", format_exception(&e)))
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
         self.dispatch_on_pool_liquidity_update(update.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool_liquidity_update failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_pool_liquidity_update failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_fee_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
         self.dispatch_on_pool_fee_collect(collect.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool_fee_collect failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_pool_fee_collect failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     #[cfg(feature = "defi")]
     fn on_pool_flash(&mut self, flash: &PoolFlash) -> anyhow::Result<()> {
         self.dispatch_on_pool_flash(flash.clone())
-            .map_err(|e| anyhow::anyhow!("Python on_pool_flash failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_pool_flash failed:\n{}", format_exception(&e)))
     }
 
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
@@ -1209,29 +1235,54 @@ impl DataActor for PyDataActorInner {
             } else {
                 anyhow::bail!("Failed to convert historical data to Python: unsupported type");
             };
-            self.dispatch_on_historical_data(py_data)
-                .map_err(|e| anyhow::anyhow!("Python on_historical_data failed: {e}"))
+
+            self.dispatch_on_historical_data(py_data).map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_data failed:\n{}",
+                    format_exception(&e)
+                )
+            })
         })
     }
 
     fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
         self.dispatch_on_historical_book_deltas(deltas.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_book_deltas failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_book_deltas failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
-    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth]) -> anyhow::Result<()> {
         self.dispatch_on_historical_book_depth(depths.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_book_depth failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_book_depth failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         self.dispatch_on_historical_quotes(quotes.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_quotes failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_quotes failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         self.dispatch_on_historical_trades(trades.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_trades failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_trades failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_funding_rates(
@@ -1239,17 +1290,32 @@ impl DataActor for PyDataActorInner {
         funding_rates: &[FundingRateUpdate],
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_funding_rates(funding_rates.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_funding_rates failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_funding_rates failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         self.dispatch_on_historical_bars(bars.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_bars failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_bars failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         self.dispatch_on_historical_mark_prices(mark_prices.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_mark_prices failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_mark_prices failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_index_prices(
@@ -1257,7 +1323,12 @@ impl DataActor for PyDataActorInner {
         index_prices: &[IndexPriceUpdate],
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_index_prices(index_prices.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_index_prices failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_index_prices failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 }
 
@@ -1547,110 +1618,110 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "on_start")]
-    fn py_on_start(&self) {}
+    fn py_on_start(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_stop")]
-    fn py_on_stop(&mut self) {}
+    fn py_on_stop(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_resume")]
-    fn py_on_resume(&mut self) {}
+    fn py_on_resume(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_reset")]
-    fn py_on_reset(&mut self) {}
+    fn py_on_reset(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_dispose")]
-    fn py_on_dispose(&mut self) {}
+    fn py_on_dispose(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_degrade")]
-    fn py_on_degrade(&mut self) {}
+    fn py_on_degrade(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_fault")]
-    fn py_on_fault(&mut self) {}
+    fn py_on_fault(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_save")]
-    fn py_on_save(&self, py: Python<'_>) -> Py<PyDict> {
+    fn py_on_save(_slf: &Bound<'_, Self>, py: Python<'_>) -> Py<PyDict> {
         PyDict::new(py).unbind()
     }
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_load")]
-    fn py_on_load(&mut self, state: &Bound<'_, PyDict>) {}
+    fn py_on_load(_slf: &Bound<'_, Self>, state: &Bound<'_, PyDict>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_time_event")]
-    fn py_on_time_event(&mut self, event: TimeEvent) {}
+    fn py_on_time_event(_slf: &Bound<'_, Self>, event: TimeEvent) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_data")]
-    fn py_on_data(&mut self, data: Py<PyAny>) {}
+    fn py_on_data(_slf: &Bound<'_, Self>, data: Py<PyAny>) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_signal")]
-    fn py_on_signal(&mut self, signal: &Signal) {}
+    fn py_on_signal(_slf: &Bound<'_, Self>, signal: &Signal) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_queue_state")]
-    fn py_on_queue_state(&mut self, event: QueueStateChanged) {}
+    fn py_on_queue_state(_slf: &Bound<'_, Self>, event: QueueStateChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_socket_state")]
-    fn py_on_socket_state(&mut self, event: SocketStateChanged) {}
+    fn py_on_socket_state(_slf: &Bound<'_, Self>, event: SocketStateChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_instrument")]
-    fn py_on_instrument(&mut self, instrument: Py<PyAny>) {}
+    fn py_on_instrument(_slf: &Bound<'_, Self>, instrument: Py<PyAny>) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_quote")]
-    fn py_on_quote(&mut self, quote: QuoteTick) {}
+    fn py_on_quote(_slf: &Bound<'_, Self>, quote: QuoteTick) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_trade")]
-    fn py_on_trade(&mut self, trade: TradeTick) {}
+    fn py_on_trade(_slf: &Bound<'_, Self>, trade: TradeTick) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_bar")]
-    fn py_on_bar(&mut self, bar: Bar) {}
+    fn py_on_bar(_slf: &Bound<'_, Self>, bar: Bar) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_book_deltas")]
-    fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) {}
+    fn py_on_book_deltas(_slf: &Bound<'_, Self>, deltas: OrderBookDeltas) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_book_depth")]
-    fn py_on_book_depth(&mut self, depth: &OrderBookDepth10) {}
+    fn py_on_book_depth(_slf: &Bound<'_, Self>, depth: &OrderBookDepth) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_book")]
-    fn py_on_book(&mut self, book: &OrderBook) {}
+    fn py_on_book(_slf: &Bound<'_, Self>, book: &OrderBook) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_mark_price")]
-    fn py_on_mark_price(&mut self, mark_price: MarkPriceUpdate) {}
+    fn py_on_mark_price(_slf: &Bound<'_, Self>, mark_price: MarkPriceUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_index_price")]
-    fn py_on_index_price(&mut self, index_price: IndexPriceUpdate) {}
+    fn py_on_index_price(_slf: &Bound<'_, Self>, index_price: IndexPriceUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_funding_rate")]
-    fn py_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) {}
+    fn py_on_funding_rate(_slf: &Bound<'_, Self>, funding_rate: FundingRateUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_status")]
-    fn py_on_instrument_status(&mut self, status: InstrumentStatus) {}
+    fn py_on_instrument_status(_slf: &Bound<'_, Self>, status: InstrumentStatus) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_close")]
-    fn py_on_instrument_close(&mut self, close: InstrumentClose) {}
+    fn py_on_instrument_close(_slf: &Bound<'_, Self>, close: InstrumentClose) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_option_greeks")]
-    fn py_on_option_greeks(&mut self, greeks: OptionGreeks) {}
+    fn py_on_option_greeks(_slf: &Bound<'_, Self>, greeks: OptionGreeks) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_option_chain")]
-    fn py_on_option_chain(&mut self, slice: OptionChainSlice) {}
+    fn py_on_option_chain(_slf: &Bound<'_, Self>, slice: OptionChainSlice) {}
 
     #[pyo3(name = "subscribe_data")]
     #[pyo3(signature = (data_type, client_id=None, params=None))]
@@ -1669,9 +1740,14 @@ impl PyDataActor {
 
     #[pyo3(name = "subscribe_signal")]
     #[pyo3(signature = (name="", priority=None))]
-    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) -> PyResult<()> {
-        self.ensure_registered()?;
-        DataActor::subscribe_signal(self.inner_mut(), name, priority);
+    fn py_subscribe_signal(
+        slf: &Bound<'_, Self>,
+        name: &str,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
+        let actor = borrow_actor_mut(slf, "subscribe_signal")?;
+        actor.ensure_registered()?;
+        DataActor::subscribe_signal(actor.inner_mut(), name, priority);
         Ok(())
     }
 
@@ -1758,23 +1834,33 @@ impl PyDataActor {
         Ok(())
     }
 
-    #[pyo3(name = "subscribe_book_depth10")]
-    #[pyo3(signature = (instrument_id, book_type, client_id=None, managed=false, params=None))]
-    fn py_subscribe_book_depth10(
+    #[expect(clippy::too_many_arguments)]
+    #[pyo3(name = "subscribe_book_depth")]
+    #[pyo3(signature = (instrument_id, book_type, depth=None, client_id=None, managed=false, params=None))]
+    fn py_subscribe_book_depth(
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
         book_type: BookType,
+        depth: Option<usize>,
         client_id: Option<ClientId>,
         managed: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         self.ensure_registered()?;
+
+        let depth = depth
+            .map(|value| {
+                NonZeroUsize::new(value).ok_or_else(|| to_pyvalue_err("depth must be positive"))
+            })
+            .transpose()?;
+
         let params = dict_to_params(py, params)?;
-        DataActor::subscribe_book_depth10(
+        DataActor::subscribe_book_depth(
             self.inner_mut(),
             instrument_id,
             book_type,
+            depth,
             client_id,
             managed,
             params,
@@ -1989,9 +2075,10 @@ impl PyDataActor {
 
     #[pyo3(name = "unsubscribe_signal")]
     #[pyo3(signature = (name=""))]
-    fn py_unsubscribe_signal(&mut self, name: &str) -> PyResult<()> {
-        self.ensure_registered()?;
-        DataActor::unsubscribe_signal(self.inner_mut(), name);
+    fn py_unsubscribe_signal(slf: &Bound<'_, Self>, name: &str) -> PyResult<()> {
+        let actor = borrow_actor_mut(slf, "unsubscribe_signal")?;
+        actor.ensure_registered()?;
+        DataActor::unsubscribe_signal(actor.inner_mut(), name);
         Ok(())
     }
 
@@ -2060,9 +2147,9 @@ impl PyDataActor {
         Ok(())
     }
 
-    #[pyo3(name = "unsubscribe_book_depth10")]
+    #[pyo3(name = "unsubscribe_book_depth")]
     #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_unsubscribe_book_depth10(
+    fn py_unsubscribe_book_depth(
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
@@ -2071,7 +2158,7 @@ impl PyDataActor {
     ) -> PyResult<()> {
         self.ensure_registered()?;
         let params = dict_to_params(py, params)?;
-        DataActor::unsubscribe_book_depth10(self.inner_mut(), instrument_id, client_id, params);
+        DataActor::unsubscribe_book_depth(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -2535,51 +2622,54 @@ impl PyDataActor {
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_data")]
-    fn py_on_historical_data(&mut self, data: Py<PyAny>) {
+    fn py_on_historical_data(_slf: &Bound<'_, Self>, data: Py<PyAny>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_book_deltas")]
-    fn py_on_historical_book_deltas(&mut self, deltas: Vec<OrderBookDelta>) {}
+    fn py_on_historical_book_deltas(_slf: &Bound<'_, Self>, deltas: Vec<OrderBookDelta>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_book_depth")]
-    fn py_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth10>) {}
+    fn py_on_historical_book_depth(_slf: &Bound<'_, Self>, depths: Vec<OrderBookDepth>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_quotes")]
-    fn py_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) {
+    fn py_on_historical_quotes(_slf: &Bound<'_, Self>, quotes: Vec<QuoteTick>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_trades")]
-    fn py_on_historical_trades(&mut self, trades: Vec<TradeTick>) {
+    fn py_on_historical_trades(_slf: &Bound<'_, Self>, trades: Vec<TradeTick>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_funding_rates")]
-    fn py_on_historical_funding_rates(&mut self, funding_rates: Vec<FundingRateUpdate>) {
+    fn py_on_historical_funding_rates(
+        _slf: &Bound<'_, Self>,
+        funding_rates: Vec<FundingRateUpdate>,
+    ) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_bars")]
-    fn py_on_historical_bars(&mut self, bars: Vec<Bar>) {
+    fn py_on_historical_bars(_slf: &Bound<'_, Self>, bars: Vec<Bar>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_mark_prices")]
-    fn py_on_historical_mark_prices(&mut self, mark_prices: Vec<MarkPriceUpdate>) {
+    fn py_on_historical_mark_prices(_slf: &Bound<'_, Self>, mark_prices: Vec<MarkPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_index_prices")]
-    fn py_on_historical_index_prices(&mut self, index_prices: Vec<IndexPriceUpdate>) {
+    fn py_on_historical_index_prices(_slf: &Bound<'_, Self>, index_prices: Vec<IndexPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
     }
 }
@@ -2628,27 +2718,27 @@ impl PyDataActor {
 impl PyDataActor {
     #[pyo3(name = "on_block")]
     #[allow(unused_variables, clippy::needless_pass_by_value)]
-    fn py_on_block(&mut self, block: Block) {}
+    fn py_on_block(_slf: &Bound<'_, Self>, block: Block) {}
 
     #[pyo3(name = "on_pool")]
     #[allow(unused_variables, clippy::needless_pass_by_value)]
-    fn py_on_pool(&mut self, pool: Pool) {}
+    fn py_on_pool(_slf: &Bound<'_, Self>, pool: Pool) {}
 
     #[pyo3(name = "on_pool_swap")]
     #[allow(unused_variables, clippy::needless_pass_by_value)]
-    fn py_on_pool_swap(&mut self, swap: PoolSwap) {}
+    fn py_on_pool_swap(_slf: &Bound<'_, Self>, swap: PoolSwap) {}
 
     #[pyo3(name = "on_pool_liquidity_update")]
     #[allow(unused_variables, clippy::needless_pass_by_value)]
-    fn py_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) {}
+    fn py_on_pool_liquidity_update(_slf: &Bound<'_, Self>, update: PoolLiquidityUpdate) {}
 
     #[pyo3(name = "on_pool_fee_collect")]
     #[allow(unused_variables, clippy::needless_pass_by_value)]
-    fn py_on_pool_fee_collect(&mut self, update: PoolFeeCollect) {}
+    fn py_on_pool_fee_collect(_slf: &Bound<'_, Self>, update: PoolFeeCollect) {}
 
     #[pyo3(name = "on_pool_flash")]
     #[allow(unused_variables, clippy::needless_pass_by_value)]
-    fn py_on_pool_flash(&mut self, flash: PoolFlash) {}
+    fn py_on_pool_flash(_slf: &Bound<'_, Self>, flash: PoolFlash) {}
 
     #[pyo3(name = "subscribe_blocks")]
     #[pyo3(signature = (chain, client_id=None, params=None))]
@@ -2948,6 +3038,18 @@ fn extract_bool_config_attr(config: &Bound<'_, PyAny>, attr: &str) -> Option<boo
         .and_then(|value| value.extract::<bool>().ok())
 }
 
+fn borrow_actor_mut<'py>(
+    actor: &Bound<'py, PyDataActor>,
+    operation: &'static str,
+) -> PyResult<PyRefMut<'py, PyDataActor>> {
+    actor.try_borrow_mut().map_err(|_| {
+        to_pyruntime_err(ComponentAccessError::WriteConflict {
+            resource: "Python actor",
+            operation,
+        })
+    })
+}
+
 /// Returns whether the config retained by the actor supplies an actor ID.
 ///
 /// The config is read through Python rather than the extracted [`DataActorConfig`] so that a
@@ -2986,7 +3088,7 @@ mod tests {
     use nautilus_model::{
         data::{
             Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate,
-            InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+            InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth,
             QuoteTick, TradeTick,
             close::InstrumentClose,
             greeks::OptionGreekValues,
@@ -3002,7 +3104,7 @@ mod tests {
         types::{Price, Quantity},
     };
     use pyo3::{
-        Bound, Py, PyAny, PyRef, PyResult, Python,
+        Bound, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python,
         ffi::c_str,
         types::{PyAnyMethods, PyBytes, PyDict, PyList, PyWeakrefMethods, PyWeakrefReference},
     };
@@ -3013,7 +3115,7 @@ mod tests {
     use crate::{
         actor::{DataActor, data_actor::DataActorConfig, registry::actor_exists},
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         component::{Component, get_component},
         enums::ComponentState,
         live::runner::replace_system_command_sender,
@@ -3032,8 +3134,8 @@ mod tests {
     };
 
     #[fixture]
-    fn clock() -> Rc<RefCell<TestClock>> {
-        Rc::new(RefCell::new(TestClock::new()))
+    fn clock() -> Rc<RefCell<VirtualClock>> {
+        Rc::new(RefCell::new(VirtualClock::new()))
     }
 
     #[fixture]
@@ -3071,7 +3173,7 @@ mod tests {
     }
 
     fn create_registered_actor(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) -> PyDataActor {
@@ -3233,7 +3335,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_registration_success(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3245,7 +3347,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_registered_actor_basic_properties(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3263,7 +3365,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_basic_subscription_methods_compile(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         data_type: DataType,
@@ -3300,7 +3402,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_shutdown_system_passes_through(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3316,7 +3418,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_data_delivers_to_any_subscriber(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3348,7 +3450,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_signal_delivers_to_customdata_subscriber(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3400,7 +3502,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_signal_accepts_numeric_py_values(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3449,7 +3551,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_subscribe_and_unsubscribe_signal_compile(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3457,16 +3559,20 @@ class PreparedActor(DataActor):
 
         *get_message_bus().borrow_mut() = MessageBus::default();
 
-        let mut actor = create_registered_actor(clock, cache, trader_id);
-        actor.py_subscribe_signal("example", None).unwrap();
-        actor.py_unsubscribe_signal("example").unwrap();
-        actor.py_subscribe_signal("", None).unwrap();
-        actor.py_unsubscribe_signal("").unwrap();
+        let actor = create_registered_actor(clock, cache, trader_id);
+        Python::initialize();
+        Python::attach(|py| {
+            let actor = Bound::new(py, actor).unwrap();
+            PyDataActor::py_subscribe_signal(&actor, "example", None).unwrap();
+            PyDataActor::py_unsubscribe_signal(&actor, "example").unwrap();
+            PyDataActor::py_subscribe_signal(&actor, "", None).unwrap();
+            PyDataActor::py_unsubscribe_signal(&actor, "").unwrap();
+        });
     }
 
     #[rstest]
     fn test_py_subscribe_signal_forwards_priority(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3474,19 +3580,23 @@ class PreparedActor(DataActor):
 
         *get_message_bus().borrow_mut() = MessageBus::default();
 
-        let mut actor = create_registered_actor(clock, cache, trader_id);
-        actor.py_subscribe_signal("trigger", Some(50)).unwrap();
+        let actor = create_registered_actor(clock, cache, trader_id);
+        Python::initialize();
+        Python::attach(|py| {
+            let actor = Bound::new(py, actor).unwrap();
+            PyDataActor::py_subscribe_signal(&actor, "trigger", Some(50)).unwrap();
 
-        // The PyO3 binding must forward the priority to the bus unchanged.
-        let topic = get_signal_topic("trigger");
-        let subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
-        assert_eq!(subs.len(), 1);
-        assert_eq!(subs[0].priority, 50);
+            // The PyO3 binding must forward the priority to the bus unchanged.
+            let topic = get_signal_topic("trigger");
+            let subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert_eq!(subs.len(), 1);
+            assert_eq!(subs[0].priority, 50);
+        });
     }
 
     #[rstest]
     fn test_register_in_global_registries_retains_python_wrapper(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3515,7 +3625,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_register_in_global_registries_rejects_missing_python_wrapper(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3541,7 +3651,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_data_dispatches_to_python_on_data(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3575,7 +3685,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_publish_signal_dispatches_to_python_on_signal(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3594,7 +3704,9 @@ class PreparedActor(DataActor):
             rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("example", None).unwrap();
+            let bound_actor = Bound::new(py, rust_actor).unwrap();
+            PyDataActor::py_subscribe_signal(&bound_actor, "example", None).unwrap();
+            let rust_actor = bound_actor.borrow_mut();
             let val1: Py<PyAny> = "1.5".into_py_any_unwrap(py);
             let val2: Py<PyAny> = 2.0_f64.into_py_any_unwrap(py);
             rust_actor
@@ -3611,7 +3723,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_unsubscribe_signal_stops_python_dispatch(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3630,14 +3742,18 @@ class PreparedActor(DataActor):
             rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("example", None).unwrap();
+            let bound_actor = Bound::new(py, rust_actor).unwrap();
+            PyDataActor::py_subscribe_signal(&bound_actor, "example", None).unwrap();
+            let rust_actor = bound_actor.borrow_mut();
             let val1: Py<PyAny> = "1".into_py_any_unwrap(py);
             let val2: Py<PyAny> = "2".into_py_any_unwrap(py);
             rust_actor
                 .py_publish_signal(py, "example", val1, 0)
                 .unwrap();
 
-            rust_actor.py_unsubscribe_signal("example").unwrap();
+            drop(rust_actor);
+            PyDataActor::py_unsubscribe_signal(&bound_actor, "example").unwrap();
+            let rust_actor = bound_actor.borrow_mut();
             rust_actor
                 .py_publish_signal(py, "example", val2, 0)
                 .unwrap();
@@ -3650,7 +3766,7 @@ class PreparedActor(DataActor):
     #[case(None)]
     #[case(Some(SystemChannel::ExecCommands))]
     fn test_queue_state_changed_subscription_dispatches_and_unsubscribes(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] channel: Option<SystemChannel>,
@@ -3713,7 +3829,7 @@ class PreparedActor(DataActor):
         Some("binance-futures-market-streams")
     )]
     fn test_socket_state_changed_subscription_dispatches_and_unsubscribes(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] client_id: Option<ClientId>,
@@ -3777,7 +3893,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_subscribe_signal_wildcard_dispatches_all_names_to_python(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3796,7 +3912,9 @@ class PreparedActor(DataActor):
             rust_actor.register_in_global_registries().unwrap();
             rust_actor.py_start().unwrap();
 
-            rust_actor.py_subscribe_signal("", None).unwrap();
+            let bound_actor = Bound::new(py, rust_actor).unwrap();
+            PyDataActor::py_subscribe_signal(&bound_actor, "", None).unwrap();
+            let rust_actor = bound_actor.borrow_mut();
             let val1: Py<PyAny> = "1".into_py_any_unwrap(py);
             let val2: Py<PyAny> = "2".into_py_any_unwrap(py);
             let val3: Py<PyAny> = "3".into_py_any_unwrap(py);
@@ -3810,7 +3928,7 @@ class PreparedActor(DataActor):
 
     #[rstest]
     fn test_signal_customdata_unwraps_to_python_signal(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3883,7 +4001,7 @@ class CapturingActor:
 
     #[rstest]
     fn test_add_and_update_synthetic_via_pyo3(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -3945,7 +4063,7 @@ class CapturingActor:
 
     #[rstest]
     fn test_book_at_interval_invalid_interval_ms(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
@@ -3980,8 +4098,11 @@ class CapturingActor:
     }
 
     #[rstest]
-    fn test_book_depth10_subscription_methods_manage_handler(
-        clock: Rc<RefCell<TestClock>>,
+    #[case(None)]
+    #[case(Some(25))]
+    fn test_book_depth_subscription_methods_manage_handler(
+        #[case] depth: Option<usize>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
@@ -3992,14 +4113,22 @@ class CapturingActor:
 
         Python::attach(|py| {
             actor
-                .py_subscribe_book_depth10(py, audusd_sim.id, BookType::L2_MBP, None, false, None)
+                .py_subscribe_book_depth(
+                    py,
+                    audusd_sim.id,
+                    BookType::L2_MBP,
+                    depth,
+                    None,
+                    false,
+                    None,
+                )
                 .unwrap();
-            assert_eq!(actor.inner().depth10_handler_count(), 1);
+            assert_eq!(actor.inner().depth_handler_count(), 1);
 
             actor
-                .py_unsubscribe_book_depth10(py, audusd_sim.id, None, None)
+                .py_unsubscribe_book_depth(py, audusd_sim.id, None, None)
                 .unwrap();
-            assert_eq!(actor.inner().depth10_handler_count(), 0);
+            assert_eq!(actor.inner().depth_handler_count(), 0);
         });
     }
 
@@ -4011,7 +4140,7 @@ class CapturingActor:
 
     #[rstest]
     fn test_data_actor_trait_implementation(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -4022,7 +4151,7 @@ class CapturingActor:
 
     #[rstest]
     fn test_python_reconnect_socket_enqueues_typed_command(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -4166,7 +4295,7 @@ class CapturingActor:
         OrderBookDeltas::new(instrument.id, vec![delta])
     }
 
-    fn sample_book_depth() -> OrderBookDepth10 {
+    fn sample_book_depth() -> OrderBookDepth {
         stub_depth10()
     }
 
@@ -4493,9 +4622,12 @@ class TrackingActor:
 
     def __init__(self):
         self.calls = []
+        self.raises = False
 
     def _record(self, method_name, *args):
         self.calls.append((method_name, args))
+        if self.raises:
+            raise RuntimeError("actor callback failure")
 
     def was_called(self, method_name):
         return any(call[0] == method_name for call in self.calls)
@@ -4654,7 +4786,7 @@ class IndicatorEventActor:
 
     fn assert_python_dispatch<F>(
         py: Python<'_>,
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         method_name: &str,
@@ -4679,6 +4811,24 @@ class IndicatorEventActor:
     }
 
     #[rstest]
+    fn test_python_actor_callback_exception_preserves_traceback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let tracker = create_tracking_python_actor(py).unwrap();
+            tracker.setattr(py, "raises", true).unwrap();
+            let mut actor = PyDataActor::new(None);
+            actor.set_python_instance(tracker.bind(py)).unwrap();
+            let error = DataActor::on_bar(actor.inner_mut(), &sample_bar()).unwrap_err();
+            let message = error.to_string();
+
+            assert_eq!(python_method_call_count(&tracker, py, "on_bar"), 1);
+            assert!(message.contains("Python on_bar failed:"));
+            assert!(message.contains("in _record"));
+            assert!(message.contains("RuntimeError: actor callback failure"));
+        });
+    }
+
+    #[rstest]
     #[case("on_start")]
     #[case("on_stop")]
     #[case("on_resume")]
@@ -4687,7 +4837,7 @@ class IndicatorEventActor:
     #[case("on_degrade")]
     #[case("on_fault")]
     fn test_python_dispatch_lifecycle_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -4714,7 +4864,7 @@ class IndicatorEventActor:
     #[case("on_save")]
     #[case("on_load")]
     fn test_python_dispatch_persistence_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -4745,7 +4895,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_persistence_methods_convert_state(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -4835,7 +4985,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_registered_indicators_receive_quote_trade_and_bar_before_actor_callbacks(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -4901,7 +5051,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_registered_indicators_receive_live_data_when_actor_not_running(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5033,7 +5183,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_duplicate_indicator_registration_does_not_duplicate_callbacks(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5092,7 +5242,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_indicator_error_prevents_actor_callback(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5140,7 +5290,7 @@ class IndicatorEventActor:
     #[case("on_option_greeks")]
     #[case("on_option_chain")]
     fn test_python_dispatch_typed_callback_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -5243,7 +5393,7 @@ class IndicatorEventActor:
     #[case("on_historical_mark_prices")]
     #[case("on_historical_index_prices")]
     fn test_python_dispatch_historical_callback_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -5303,7 +5453,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_historical_book_deltas_preserves_batch(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5334,7 +5484,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_historical_book_depth_preserves_batch(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5342,7 +5492,7 @@ class IndicatorEventActor:
 
         Python::attach(|py| {
             let first = stub_depth10();
-            let mut second = first;
+            let mut second = first.clone();
             second.sequence = 17;
             second.ts_event = UnixNanos::from(18);
             second.ts_init = UnixNanos::from(19);
@@ -5361,7 +5511,7 @@ class IndicatorEventActor:
                 .bind(py)
                 .get_item(0)
                 .unwrap()
-                .extract::<Vec<OrderBookDepth10>>()
+                .extract::<Vec<OrderBookDepth>>()
                 .unwrap();
 
             assert_eq!(actual, expected);
@@ -5377,7 +5527,7 @@ class IndicatorEventActor:
     #[case("on_pool_fee_collect")]
     #[case("on_pool_flash")]
     fn test_python_dispatch_defi_callback_matrix(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         #[case] method_name: &str,
@@ -5419,7 +5569,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_multiple_calls_tracked(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         audusd_sim: CurrencyPair,
@@ -5453,7 +5603,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_historical_custom_data_preserves_payload_shape(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
         client_id: ClientId,
@@ -5562,7 +5712,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_dispatch_no_call_when_py_self_not_set(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5580,7 +5730,7 @@ class IndicatorEventActor:
 
     #[rstest]
     fn test_python_on_historical_data_rejects_non_custom_data(
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) {
@@ -5615,6 +5765,143 @@ class IndicatorEventActor:
             assert!(
                 weakref.upgrade().is_none(),
                 "an unregistered DataActor must be collected once its last Python owner is dropped",
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("on_start")]
+    #[case("on_stop")]
+    #[case("on_resume")]
+    #[case("on_reset")]
+    #[case("on_dispose")]
+    #[case("on_degrade")]
+    #[case("on_fault")]
+    #[case("on_save")]
+    #[case("on_load")]
+    #[case("on_time_event")]
+    #[case("on_data")]
+    #[case("on_signal")]
+    #[case("on_queue_state")]
+    #[case("on_socket_state")]
+    #[case("on_instrument")]
+    #[case("on_quote")]
+    #[case("on_trade")]
+    #[case("on_bar")]
+    #[case("on_book_deltas")]
+    #[case("on_book_depth")]
+    #[case("on_book")]
+    #[case("on_mark_price")]
+    #[case("on_index_price")]
+    #[case("on_funding_rate")]
+    #[case("on_instrument_status")]
+    #[case("on_instrument_close")]
+    #[case("on_option_greeks")]
+    #[case("on_option_chain")]
+    #[case("on_historical_data")]
+    #[case("on_historical_book_deltas")]
+    #[case("on_historical_book_depth")]
+    #[case("on_historical_quotes")]
+    #[case("on_historical_trades")]
+    #[case("on_historical_funding_rates")]
+    #[case("on_historical_bars")]
+    #[case("on_historical_mark_prices")]
+    #[case("on_historical_index_prices")]
+    fn test_default_callback_during_exclusive_borrow(#[case] method: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let argument = match method {
+                "on_start" | "on_stop" | "on_resume" | "on_reset" | "on_dispose" | "on_degrade"
+                | "on_fault" | "on_save" => None,
+                "on_load" => Some(PyDict::new(py).into_any().unbind()),
+                "on_time_event" => Some(sample_time_event().into_py_any(py).unwrap()),
+                "on_data" | "on_instrument" | "on_historical_data" => Some(py.None()),
+                "on_signal" => Some(sample_signal().into_py_any(py).unwrap()),
+                "on_queue_state" => Some(
+                    sample_queue_state_changed(QueueState::Triggered)
+                        .into_py_any(py)
+                        .unwrap(),
+                ),
+                "on_socket_state" => Some(
+                    sample_socket_state_changed(SocketState::Connected)
+                        .into_py_any(py)
+                        .unwrap(),
+                ),
+                "on_quote" => Some(sample_quote().into_py_any(py).unwrap()),
+                "on_trade" => Some(sample_trade().into_py_any(py).unwrap()),
+                "on_bar" => Some(sample_bar().into_py_any(py).unwrap()),
+                "on_book_deltas" => Some(sample_book_deltas().into_py_any(py).unwrap()),
+                "on_book_depth" => Some(sample_book_depth().into_py_any(py).unwrap()),
+                "on_book" => Some(sample_book().into_py_any(py).unwrap()),
+                "on_mark_price" => Some(sample_mark_price().into_py_any(py).unwrap()),
+                "on_index_price" => Some(sample_index_price().into_py_any(py).unwrap()),
+                "on_funding_rate" => Some(sample_funding_rate().into_py_any(py).unwrap()),
+                "on_instrument_status" => Some(sample_instrument_status().into_py_any(py).unwrap()),
+                "on_instrument_close" => Some(sample_instrument_close().into_py_any(py).unwrap()),
+                "on_option_greeks" => Some(sample_option_greeks().into_py_any(py).unwrap()),
+                "on_option_chain" => Some(sample_option_chain().into_py_any(py).unwrap()),
+                "on_historical_book_deltas"
+                | "on_historical_book_depth"
+                | "on_historical_quotes"
+                | "on_historical_trades"
+                | "on_historical_funding_rates"
+                | "on_historical_bars"
+                | "on_historical_mark_prices"
+                | "on_historical_index_prices" => Some(PyList::empty(py).into_any().unbind()),
+                _ => unreachable!(),
+            };
+
+            let instance = py.get_type::<PyDataActor>().call0().unwrap();
+            let _borrow = instance
+                .extract::<pyo3::PyRefMut<'_, PyDataActor>>()
+                .unwrap();
+
+            let result = match argument {
+                Some(argument) => instance.call_method1(method, (argument,)),
+                None => instance.call_method0(method),
+            }
+            .unwrap();
+
+            if method == "on_save" {
+                assert_eq!(result.len().unwrap(), 0);
+            } else {
+                assert!(result.is_none());
+            }
+        });
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest::rstest]
+    #[case("on_block")]
+    #[case("on_pool")]
+    #[case("on_pool_swap")]
+    #[case("on_pool_liquidity_update")]
+    #[case("on_pool_fee_collect")]
+    #[case("on_pool_flash")]
+    fn test_default_defi_callback_during_exclusive_borrow(#[case] method: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let argument = match method {
+                "on_block" => sample_block().into_py_any(py).unwrap(),
+                "on_pool" => sample_pool_components().2.into_py_any(py).unwrap(),
+                "on_pool_swap" => sample_pool_swap().into_py_any(py).unwrap(),
+                "on_pool_liquidity_update" => {
+                    sample_pool_liquidity_update().into_py_any(py).unwrap()
+                }
+                "on_pool_fee_collect" => sample_pool_fee_collect().into_py_any(py).unwrap(),
+                "on_pool_flash" => sample_pool_flash().into_py_any(py).unwrap(),
+                _ => unreachable!(),
+            };
+
+            let instance = py.get_type::<PyDataActor>().call0().unwrap();
+            let _borrow = instance
+                .extract::<pyo3::PyRefMut<'_, PyDataActor>>()
+                .unwrap();
+            assert!(
+                instance
+                    .call_method1(method, (argument,))
+                    .unwrap()
+                    .is_none()
             );
         });
     }

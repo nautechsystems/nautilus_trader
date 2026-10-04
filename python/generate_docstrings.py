@@ -65,7 +65,6 @@ ANNOTATED_ADAPTER_CRATES = [
     "architect_ax",
     "betfair",
     "binance",
-    "bitmex",
     "blockchain",
     "bybit",
     "databento",
@@ -153,7 +152,7 @@ def collect_source_docs(  # noqa: C901
                 continue
 
             if stripped.startswith("#["):
-                if not ATTR_END_RE.search(stripped):
+                if rust_attr_continues(stripped):
                     in_multiline_attr = True
                 continue
 
@@ -310,7 +309,7 @@ def parse_pyo3_items(lines: list[str]) -> list[dict]:  # noqa: C901
                 has_new = True
             if stripped in ("#[pymethods]", "#[pyo3::pymethods]"):
                 in_pymethods = True
-            if not ATTR_END_RE.search(stripped):
+            if rust_attr_continues(stripped):
                 in_ml_attr = True
             continue
 
@@ -354,6 +353,17 @@ def parse_pyo3_items(lines: list[str]) -> list[dict]:  # noqa: C901
             has_new = False
 
     return items
+
+
+def rust_attr_continues(line: str) -> bool:
+    """
+    Return whether a Rust attribute starting on ``line`` continues onto the next line.
+
+    A parameter attribute such as ``#[builder(default)] name: T`` closes its brackets
+    before the parameter on the same line.
+
+    """
+    return not ATTR_END_RE.search(line) and line.count("[") > line.count("]")
 
 
 def rust_fn_signature(lines: list[str], start: int) -> str:

@@ -15,8 +15,6 @@
 
 //! Provides a generic `Portfolio` for all environments.
 
-#![warn(clippy::clone_on_ref_ptr)]
-
 use std::{
     cell::RefCell,
     collections::{BTreeSet, VecDeque},
@@ -31,7 +29,7 @@ use nautilus_analysis::{
     snapshot::PortfolioStatistics,
 };
 use nautilus_common::{
-    cache::{AccountLookupError, AccountRef, Cache},
+    cache::{AccountLookupError, AccountRef, Cache, OrderRef},
     clock::Clock,
     enums::LogColor,
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
@@ -57,6 +55,8 @@ use crate::{config::PortfolioConfig, manager::AccountsManager};
 // at per-minute cadence), long-lived live deployments should consume snapshots
 // via the message bus instead of relying on this buffer.
 const SNAPSHOT_BUFFER_CAP: usize = 1_000_000;
+const EQUITY_CURVE_TIMER_PREFIX: &str = "portfolio_equity_curve.";
+const SNAPSHOT_TIMER_PREFIX: &str = "portfolio_snapshot.";
 
 struct PortfolioState {
     accounts: AccountsManager,
@@ -87,6 +87,7 @@ struct PortfolioState {
     equity_curve_finalized: bool,
     portfolio_snapshots: AHashMap<AccountId, VecDeque<PortfolioSnapshot>>,
     pre_position_fill_events: AHashSet<UUID4>,
+    balance_error: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -147,6 +148,7 @@ impl PortfolioState {
             equity_curve_finalized: false,
             portfolio_snapshots: AHashMap::new(),
             pre_position_fill_events: AHashSet::new(),
+            balance_error: None,
         }
     }
 
@@ -176,6 +178,7 @@ impl PortfolioState {
         self.equity_curve_finalized = false;
         self.portfolio_snapshots.clear();
         self.pre_position_fill_events.clear();
+        self.balance_error = None;
         self.analyzer.reset();
         self.initialized = false;
         log::debug!("READY");
@@ -422,29 +425,46 @@ impl Portfolio {
         self.inner.borrow().initialized
     }
 
-    /// Returns the locked balances for the given venue.
+    /// Returns the locked balances for the `account_id`, or for the account issued under `venue`
+    /// when no account ID is given.
     ///
-    /// Locked balances represent funds reserved for open orders.
+    /// Locked balances represent funds reserved for open orders. A venue-only query resolves only
+    /// when exactly one account is issued under the venue; otherwise it returns an empty map.
     #[must_use]
-    pub fn balances_locked(&self, venue: &Venue) -> IndexMap<Currency, Money> {
-        self.cache.borrow().account_for_venue(venue).map_or_else(
+    pub fn balances_locked(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<Currency, Money> {
+        let cache = self.cache.borrow();
+        resolve_account(&cache, Some(venue), account_id).map_or_else(
             || {
-                log::error!("Cannot get balances locked: no account generated for {venue}");
+                log::error!(
+                    "Cannot get balances locked: no account resolved for venue={venue}, account_id={account_id:?}"
+                );
                 IndexMap::new()
             },
             |account| account.balances_locked(),
         )
     }
 
-    /// Returns the initial margin requirements for the given venue.
+    /// Returns the initial margin requirements for the `account_id`, or for the account issued
+    /// under `venue` when no account ID is given.
     ///
-    /// Only applicable for margin accounts. Returns empty map for cash accounts.
+    /// Only applicable for margin accounts. Returns empty map for cash accounts. A venue-only
+    /// query resolves only when exactly one account is issued under the venue; otherwise it
+    /// returns an empty map.
     #[must_use]
-    pub fn instrument_initial_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.cache.borrow().account_for_venue(venue).map_or_else(
+    pub fn instrument_initial_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
+        let cache = self.cache.borrow();
+        resolve_account(&cache, Some(venue), account_id).map_or_else(
             || {
                 log::error!(
-                    "Cannot get initial (order) margins: no account registered for {venue}"
+                    "Cannot get initial (order) margins: no account resolved for venue={venue}, account_id={account_id:?}"
                 );
                 IndexMap::new()
             },
@@ -458,15 +478,23 @@ impl Portfolio {
         )
     }
 
-    /// Returns the maintenance margin requirements for the given venue.
+    /// Returns the maintenance margin requirements for the `account_id`, or for the account
+    /// issued under `venue` when no account ID is given.
     ///
-    /// Only applicable for margin accounts. Returns empty map for cash accounts.
+    /// Only applicable for margin accounts. Returns empty map for cash accounts. A venue-only
+    /// query resolves only when exactly one account is issued under the venue; otherwise it
+    /// returns an empty map.
     #[must_use]
-    pub fn instrument_maintenance_margins(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.cache.borrow().account_for_venue(venue).map_or_else(
+    pub fn instrument_maintenance_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
+        let cache = self.cache.borrow();
+        resolve_account(&cache, Some(venue), account_id).map_or_else(
             || {
                 log::error!(
-                    "Cannot get maintenance (position) margins: no account registered for {venue}"
+                    "Cannot get maintenance (position) margins: no account resolved for venue={venue}, account_id={account_id:?}"
                 );
                 IndexMap::new()
             },
@@ -492,6 +520,10 @@ impl Portfolio {
     ) -> Option<IndexMap<Currency, Money>> {
         let (unrealized_pnls, unpriced) =
             self.unrealized_pnls_with_missing(*venue, account_id, target_currency)?;
+
+        if account_id.is_some() {
+            self.update_missing_price_state(*venue, account_id.copied(), &unpriced);
+        }
 
         if unpriced.is_empty() {
             Some(unrealized_pnls)
@@ -539,10 +571,6 @@ impl Portfolio {
                 }
                 Err(UnrealizedPnlError::Invalid) => return None,
             }
-        }
-
-        if account_id.is_some() {
-            self.update_missing_price_state(venue, account_id.copied(), &unpriced);
         }
 
         Some((unrealized_pnls, unpriced))
@@ -882,8 +910,20 @@ impl Portfolio {
     /// touched (open or closed) so a multi-venue account where one venue is
     /// now flat still reports its accumulated realized PnL. Returns `None` if
     /// no account is registered.
+    ///
+    /// Unpriced open positions are also recorded in the missing-price tracker
+    /// under the account's scope (see [`Portfolio::missing_price_instruments`]).
     #[must_use]
     pub fn build_snapshot(&mut self, account_id: &AccountId) -> Option<PortfolioSnapshot> {
+        self.build_snapshot_inner(*account_id, true)
+    }
+
+    fn build_snapshot_inner(
+        &mut self,
+        account_id: AccountId,
+        track_missing_prices: bool,
+    ) -> Option<PortfolioSnapshot> {
+        let account_id = &account_id;
         let account = self.cache.borrow().account_owned(account_id)?;
 
         let balances: Vec<AccountBalance> = account.balances().into_values().collect();
@@ -933,6 +973,10 @@ impl Portfolio {
         for venue in &open_venues {
             let (unrealized_pnls, venue_unpriced) =
                 self.unrealized_pnls_with_missing(*venue, Some(account_id), None)?;
+
+            if track_missing_prices {
+                self.update_missing_price_state(*venue, Some(*account_id), &venue_unpriced);
+            }
             snapshot_unpriced.extend(venue_unpriced);
 
             for money in unrealized_pnls.into_values() {
@@ -960,14 +1004,25 @@ impl Portfolio {
             }
             AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => {
                 for venue in &open_venues {
-                    for money in self
-                        .mark_values_with_mode(*venue, Some(account_id), MarkValueMode::Equity)
-                        .into_values()
-                    {
+                    let mut values: IndexMap<Currency, Decimal> = IndexMap::new();
+                    let mut venue_unpriced: AHashSet<InstrumentId> = AHashSet::new();
+                    // Returns true here: `open_venues` only holds venues with open positions
+                    self.accumulate_mark_values(
+                        *venue,
+                        Some(account_id),
+                        &mut values,
+                        &mut venue_unpriced,
+                        MarkValueMode::Equity,
+                    );
+
+                    if track_missing_prices {
+                        self.update_missing_price_state(*venue, Some(*account_id), &venue_unpriced);
+                    }
+
+                    for money in decimal_map_to_money(values).into_values() {
                         checked_add_money_map(&mut equity, money, "snapshot equity")?;
                     }
-                    snapshot_unpriced
-                        .extend(self.missing_price_instruments_for_account(*venue, *account_id));
+                    snapshot_unpriced.extend(venue_unpriced);
                 }
             }
         }
@@ -1075,6 +1130,16 @@ impl Portfolio {
             .unwrap_or_default()
     }
 
+    /// Returns the first error from a cash, betting, or wallet account rejecting a fill's
+    /// balances, such as a balance that would become negative without borrowing.
+    ///
+    /// The fill's balances are not applied. Cleared on [`Portfolio::reset`].
+    #[doc(hidden)]
+    #[must_use]
+    pub fn balance_error(&self) -> Option<String> {
+        self.inner.borrow().balance_error.clone()
+    }
+
     /// Records one final equity-curve sample for every registered account and stops its timer.
     ///
     /// Has no effect when `equity_curve` is disabled. Calling this method more than once
@@ -1146,20 +1211,6 @@ impl Portfolio {
         // tracking set is AHash-backed.
         ids.sort();
         ids
-    }
-
-    fn missing_price_instruments_for_account(
-        &self,
-        venue: Venue,
-        account_id: AccountId,
-    ) -> AHashSet<InstrumentId> {
-        self.inner
-            .borrow()
-            .venues_missing_price
-            .get(&venue)
-            .and_then(|observations| observations.get(&Some(account_id)))
-            .cloned()
-            .unwrap_or_default()
     }
 
     fn update_missing_price_state(
@@ -3005,15 +3056,37 @@ impl Portfolio {
                 return None;
             }
         };
-        let is_valid = |price: &Price| price.as_decimal() > Decimal::ZERO;
+        // A price at or below zero is valid where the instrument allows it and its notional does
+        // not divide by price
+        let allows_non_positive = || {
+            cache.instrument(instrument_id).is_some_and(|instrument| {
+                instrument.allows_negative_price()
+                    && !instrument
+                        .instrument_class()
+                        .divides_notional_by_price(instrument.is_inverse())
+            })
+        };
+        let is_valid = |price: &Price| price.as_decimal() > Decimal::ZERO || allows_non_positive();
         let mark_price = if self.config.use_mark_prices {
             cache.mark_price(instrument_id).map(|mark| mark.value)
         } else {
             None
         };
+        // An empty quote side can arrive as a zero price with zero size, so a price at or below
+        // zero counts only with size behind it
+        let quote_price = || {
+            cache.quote(instrument_id).and_then(|quote| {
+                let (price, size) = match price_type {
+                    PriceType::Bid => (quote.bid_price, quote.bid_size),
+                    _ => (quote.ask_price, quote.ask_size),
+                };
+                (is_valid(&price) && (price.as_decimal() > Decimal::ZERO || size.is_positive()))
+                    .then_some(price)
+            })
+        };
         let current = mark_price
             .filter(is_valid)
-            .or_else(|| cache.price(instrument_id, price_type).filter(is_valid))
+            .or_else(quote_price)
             .or_else(|| cache.price(instrument_id, PriceType::Last).filter(is_valid))
             .or_else(|| {
                 self.inner
@@ -3202,6 +3275,18 @@ fn update_bar(
     update_instrument_id(cache, clock, inner, config, &instrument_id);
 }
 
+pub(crate) fn resolve_account<'a>(
+    cache: &'a Cache,
+    venue: Option<&Venue>,
+    account_id: Option<&AccountId>,
+) -> Option<AccountRef<'a>> {
+    match (account_id, venue) {
+        (Some(account_id), _) => cache.account(account_id),
+        (None, Some(venue)) => cache.account_for_venue(venue),
+        (None, None) => None,
+    }
+}
+
 /// Account for an instrument. For broker-routed instruments the account lives
 /// under the broker venue (e.g. `IB`) while the instrument carries the exchange
 /// MIC (e.g. `IBIS`); on venue miss, fall back to the position-owning account.
@@ -3226,11 +3311,11 @@ fn wallet_order_reserves_balance(order: &OrderAny) -> bool {
     order.is_open() || order.is_inflight()
 }
 
-fn wallet_reservation_orders(
-    cache: &Cache,
+fn wallet_reservation_orders<'a>(
+    cache: &'a Cache,
     instrument_id: &InstrumentId,
     account_id: AccountId,
-) -> Vec<OrderAny> {
+) -> Vec<OrderRef<'a>> {
     let mut client_order_ids = BTreeSet::new();
     client_order_ids.extend(cache.iter_client_order_ids_open(
         None,
@@ -3249,7 +3334,6 @@ fn wallet_reservation_orders(
         .into_iter()
         .filter_map(|client_order_id| cache.order(&client_order_id))
         .filter(|order| wallet_order_reserves_balance(order))
-        .map(|order| (*order).clone())
         .collect()
 }
 
@@ -3417,8 +3501,8 @@ fn update_order(
         }
     };
 
-    // Scoped borrow: must drop before calling AccountsManager (which borrows cache internally)
-    let (instrument, orders_open, calculate_account_state, is_wallet) = {
+    // Scoped borrow: must drop before taking the account out of the cache
+    let (instrument, calculate_account_state, is_wallet) = {
         let cache_ref = cache.borrow();
 
         let account = match cache_ref.try_account(&account_id) {
@@ -3491,26 +3575,9 @@ fn update_order(
             return;
         };
 
-        let orders_open = if is_wallet {
-            wallet_reservation_orders(&cache_ref, &event.instrument_id(), account_id)
-        } else {
-            cache_ref
-                .orders_open(
-                    None,
-                    Some(&event.instrument_id()),
-                    None,
-                    Some(&account_id),
-                    None,
-                )
-                .into_iter()
-                .map(|order| (*order).clone())
-                .collect()
-        };
-
-        (instrument, orders_open, calculate_account_state, is_wallet)
+        (instrument, calculate_account_state, is_wallet)
     };
 
-    // No cache borrow held: AccountsManager borrows cache internally for xrate lookups.
     let mut working_account = match take_or_clone_account(cache, account_id) {
         Some(account) => account,
         None => {
@@ -3526,12 +3593,20 @@ fn update_order(
         && calculate_account_state
     {
         if !instrument.is_spread() {
-            let (post_balance, _state) =
+            let (post_balance, result) =
                 inner
                     .borrow()
                     .accounts
                     .update_balances(working_account, &instrument, order_filled);
             working_account = post_balance;
+
+            if let Err(e) = result {
+                log::error!("{e}");
+                inner
+                    .borrow_mut()
+                    .balance_error
+                    .get_or_insert_with(|| e.to_string());
+            }
         }
 
         cache.borrow_mut().cache_account_owned(working_account);
@@ -3632,13 +3707,31 @@ fn update_order(
         working_account = restored_account;
     }
 
-    let orders_open_refs: Vec<&OrderAny> = orders_open.iter().collect();
-    let account_state = inner.borrow().accounts.update_orders_in_place(
-        &mut working_account,
-        &instrument,
-        &orders_open_refs,
-        clock.borrow().timestamp_ns(),
-    );
+    // AccountsManager only takes shared cache borrows, so orders stay borrowed from the cache
+    let account_state = {
+        let cache_ref = cache.borrow();
+
+        let orders_open = if is_wallet {
+            wallet_reservation_orders(&cache_ref, &event.instrument_id(), account_id)
+        } else {
+            cache_ref.orders_open(
+                None,
+                Some(&event.instrument_id()),
+                None,
+                Some(&account_id),
+                None,
+            )
+        };
+
+        let orders_open_refs: Vec<&OrderAny> = orders_open.iter().map(|order| &**order).collect();
+
+        inner.borrow().accounts.update_orders_in_place(
+            &mut working_account,
+            &instrument,
+            &orders_open_refs,
+            clock.borrow().timestamp_ns(),
+        )
+    };
 
     let is_fill = matches!(event, OrderEventAny::Filled(_));
     let suppress_margin_fill_account_state =
@@ -4064,7 +4157,7 @@ fn update_account(
 }
 
 fn equity_curve_timer_name(account_id: AccountId) -> String {
-    format!("portfolio_equity_curve.{account_id}")
+    format!("{EQUITY_CURVE_TIMER_PREFIX}{account_id}")
 }
 
 fn register_equity_curve_account(
@@ -4139,7 +4232,17 @@ fn arm_equity_curve_timer(
 }
 
 fn snapshot_timer_name(account_id: AccountId) -> String {
-    format!("portfolio_snapshot.{account_id}")
+    format!("{SNAPSHOT_TIMER_PREFIX}{account_id}")
+}
+
+/// Returns whether the timer name uses a portfolio snapshot namespace.
+///
+/// Backtests use this classification so snapshot-only timestamps do not release older
+/// latency-deferred commands.
+#[doc(hidden)]
+#[must_use]
+pub fn is_snapshot_timer(name: &str) -> bool {
+    name.starts_with(EQUITY_CURVE_TIMER_PREFIX) || name.starts_with(SNAPSHOT_TIMER_PREFIX)
 }
 
 fn update_snapshot_timer_state(
@@ -4244,7 +4347,9 @@ fn emit_snapshot(
         config,
     };
 
-    let mut snapshot = match portfolio.build_snapshot(&account_id) {
+    // Skip the missing-price tracker: no caller refreshes the account scope between
+    // scheduled samples. The snapshot still reports its unpriced instruments.
+    let mut snapshot = match portfolio.build_snapshot_inner(account_id, false) {
         Some(snapshot) => snapshot,
         None => return,
     };
@@ -4285,6 +4390,15 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::equity_curve(equity_curve_timer_name(AccountId::new("SIM-001")), true)]
+    #[case::snapshot(snapshot_timer_name(AccountId::new("SIM-001")), true)]
+    #[case::strategy("settlement".to_string(), false)]
+    #[case::similar_name("portfolio_snapshot_strategy".to_string(), false)]
+    fn test_is_snapshot_timer(#[case] name: String, #[case] expected: bool) {
+        assert_eq!(is_snapshot_timer(&name), expected);
+    }
 
     fn mk_snapshot(seq: u64) -> PortfolioSnapshot {
         PortfolioSnapshot::new(

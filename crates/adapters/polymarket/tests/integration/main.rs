@@ -22,4 +22,5 @@ mod mock_venue;
 mod node;
 mod positions;
 mod python;
+mod session;
 mod websocket;

@@ -19,12 +19,13 @@ use std::{str::FromStr, sync::LazyLock};
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use nautilus_common::cache::fifo::FifoCacheMap;
 use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
         InstrumentStatus, MarkPriceUpdate, OptionGreekValues, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN, option_chain::OptionGreeks,
+        OrderBookDepth, QuoteTick, TradeTick, option_chain::OptionGreeks,
     },
     enums::{
         AggregationSource, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus,
@@ -70,44 +71,101 @@ use crate::{
     websocket::messages::{ExecutionReport, NautilusWsMessage, OKXFundingRateMsg},
 };
 
-/// Extracts fee rates from a cached instrument.
+/// Maximum terminal-order baselines retained for reconnect replay before the oldest is evicted.
+const TERMINAL_BASELINE_CAPACITY: usize = 10_000;
+
+/// Cumulative fee per venue order ID (`ordId`).
+pub type FeeCache = FillBaselineCache<Money>;
+
+/// Cumulative filled quantity per venue order ID (`ordId`).
+pub type FilledQtyCache = FillBaselineCache<Quantity>;
+
+/// Cumulative per-order baseline used to derive incremental fill values.
 ///
-/// Returns a tuple of (`margin_init`, `margin_maint`, `maker_fee`, `taker_fee`).
-/// All values are None if the instrument type doesn't support fees.
+/// OKX reports `fee` and `accFillSz` cumulatively, so a fill's incremental commission derives
+/// from the previous message for the same `ordId`, as does its quantity whenever `fillSz` is
+/// absent. Losing an open order's baseline would charge its whole cumulative fee, and its whole
+/// accumulated quantity, to the next fill.
+///
+/// Baselines are therefore split by order lifecycle. An order that can still fill keeps its
+/// baseline in full. A terminal order keeps one only to absorb reconnect replays, so those are
+/// held in a bounded cache that evicts oldest-first and cannot grow with session length.
+#[derive(Debug)]
+pub struct FillBaselineCache<T> {
+    open: AHashMap<Ustr, T>,
+    terminal: FifoCacheMap<Ustr, T, TERMINAL_BASELINE_CAPACITY>,
+}
+
+impl<T> Default for FillBaselineCache<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> FillBaselineCache<T> {
+    /// Creates a new empty [`FillBaselineCache`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            open: AHashMap::new(),
+            terminal: FifoCacheMap::new(),
+        }
+    }
+
+    /// Returns the cumulative baseline recorded for `ord_id`.
+    #[must_use]
+    pub fn get(&self, ord_id: &Ustr) -> Option<&T> {
+        self.open.get(ord_id).or_else(|| self.terminal.get(ord_id))
+    }
+
+    /// Records the cumulative baseline for `ord_id`.
+    ///
+    /// Pass `is_terminal` for an order state the venue cannot follow with a new fill; its
+    /// baseline then becomes evictable. An open order's baseline is retained in full.
+    pub fn record(&mut self, ord_id: Ustr, value: T, is_terminal: bool) {
+        if is_terminal {
+            self.open.remove(&ord_id);
+            self.terminal.insert(ord_id, value);
+        } else if self.terminal.contains_key(&ord_id) {
+            self.terminal.insert(ord_id, value);
+        } else {
+            self.open.insert(ord_id, value);
+        }
+    }
+
+    /// Drops any baseline recorded for `ord_id`.
+    pub fn remove(&mut self, ord_id: &Ustr) {
+        self.open.remove(ord_id);
+        self.terminal.remove(ord_id);
+    }
+}
+
+/// Returns whether the venue order state admits no further fills.
+#[must_use]
+pub const fn is_terminal_order_state(state: OKXOrderStatus) -> bool {
+    matches!(
+        state,
+        OKXOrderStatus::Filled | OKXOrderStatus::Canceled | OKXOrderStatus::MmpCanceled
+    )
+}
+
+/// Extracts margin rates from a cached instrument.
+///
+/// Returns a tuple of (`margin_init`, `margin_maint`).
+/// Both values are None if the instrument type doesn't carry margins.
 pub(crate) fn extract_fees_from_cached_instrument(
     instrument: &InstrumentAny,
-) -> (
-    Option<Decimal>,
-    Option<Decimal>,
-    Option<Decimal>,
-    Option<Decimal>,
-) {
+) -> (Option<Decimal>, Option<Decimal>) {
     match instrument {
-        InstrumentAny::CurrencyPair(pair) => (
-            Some(pair.margin_init),
-            Some(pair.margin_maint),
-            Some(pair.maker_fee),
-            Some(pair.taker_fee),
-        ),
-        InstrumentAny::CryptoPerpetual(perp) => (
-            Some(perp.margin_init),
-            Some(perp.margin_maint),
-            Some(perp.maker_fee),
-            Some(perp.taker_fee),
-        ),
-        InstrumentAny::CryptoFuture(future) => (
-            Some(future.margin_init),
-            Some(future.margin_maint),
-            Some(future.maker_fee),
-            Some(future.taker_fee),
-        ),
-        InstrumentAny::CryptoOption(option) => (
-            Some(option.margin_init),
-            Some(option.margin_maint),
-            Some(option.maker_fee),
-            Some(option.taker_fee),
-        ),
-        _ => (None, None, None, None),
+        InstrumentAny::CurrencyPair(pair) => (Some(pair.margin_init), Some(pair.margin_maint)),
+        InstrumentAny::CryptoPerpetual(perp) => (Some(perp.margin_init), Some(perp.margin_maint)),
+        InstrumentAny::CryptoFuture(future) => {
+            (Some(future.margin_init), Some(future.margin_maint))
+        }
+        InstrumentAny::CryptoOption(option) => {
+            (Some(option.margin_init), Some(option.margin_maint))
+        }
+        _ => (None, None),
     }
 }
 
@@ -582,39 +640,6 @@ fn is_spread_order_updated_excluding_venue_id_for_live(
     Ok(false)
 }
 
-/// Checks if order parameters have been updated (used by tests).
-#[cfg(test)]
-fn is_order_updated(
-    msg: &OKXOrderMsg,
-    previous: &OrderStateSnapshot,
-    instrument: &InstrumentAny,
-) -> anyhow::Result<bool> {
-    let current_venue_id = VenueOrderId::new(msg.ord_id);
-
-    // Venue order ID change indicates amendment
-    if previous.venue_order_id != current_venue_id {
-        return Ok(true);
-    }
-
-    let current_qty = parse_quantity(&msg.sz, instrument.size_precision())?;
-    if previous.quantity != current_qty {
-        return Ok(true);
-    }
-
-    // Price change only applies to limit orders
-    if !is_market_price(&msg.px) {
-        let current_price = parse_price(&msg.px, instrument.price_precision())?;
-
-        if let Some(prev_price) = previous.price
-            && prev_price != current_price
-        {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
-}
-
 /// Parses vector of OKX book messages into Nautilus order book deltas.
 ///
 /// # Errors
@@ -852,32 +877,32 @@ pub fn parse_candle_msg_vec(
     Ok(bars)
 }
 
-/// Parses vector of OKX book messages into Nautilus depth10 updates.
+/// Parses vector of OKX book messages into Nautilus depth updates.
 ///
 /// # Errors
 ///
-/// Returns an error if any book10 message fails to parse.
-pub fn parse_book10_msg_vec(
+/// Returns an error if any book depth message fails to parse.
+pub fn parse_book_depth_msg_vec(
     data: Vec<OKXBookMsg>,
     instrument_id: &InstrumentId,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<Data>> {
-    let mut depth10_updates = Vec::with_capacity(data.len());
+    let mut depth_updates = Vec::with_capacity(data.len());
 
     for msg in data {
-        let depth10 = parse_book10_msg(
+        let depth = parse_book_depth_msg(
             &msg,
             *instrument_id,
             price_precision,
             size_precision,
             ts_init,
         )?;
-        depth10_updates.push(Data::BookDepth10(Box::new(depth10)));
+        depth_updates.push(Data::BookDepth(Box::new(depth)));
     }
 
-    Ok(depth10_updates)
+    Ok(depth_updates)
 }
 
 /// Parses an OKX book message into Nautilus order book deltas.
@@ -893,14 +918,24 @@ pub fn parse_book_msg(
     action: &OKXBookAction,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
-    let flags = if action == &OKXBookAction::Snapshot {
+    let is_snapshot = action == &OKXBookAction::Snapshot;
+
+    let flags = if is_snapshot {
         RecordFlag::F_SNAPSHOT as u8
     } else {
         0
     };
     let ts_event = parse_millisecond_timestamp(msg.ts);
+    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len() + usize::from(is_snapshot));
 
-    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len());
+    if is_snapshot {
+        deltas.push(OrderBookDelta::clear(
+            instrument_id,
+            msg.seq_id,
+            ts_event,
+            ts_init,
+        ));
+    }
 
     for bid in &msg.bids {
         let book_action = match action {
@@ -950,6 +985,11 @@ pub fn parse_book_msg(
         deltas.push(delta);
     }
 
+    // The data engine only publishes a buffered batch once a delta closes the event
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
+    }
+
     OrderBookDeltas::new_checked(instrument_id, deltas)
 }
 
@@ -966,13 +1006,24 @@ pub fn parse_rpi_book_msg(
     action: &OKXBookAction,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
-    let flags = if action == &OKXBookAction::Snapshot {
+    let is_snapshot = action == &OKXBookAction::Snapshot;
+
+    let flags = if is_snapshot {
         RecordFlag::F_SNAPSHOT as u8
     } else {
         0
     };
     let ts_event = parse_millisecond_timestamp(msg.ts);
-    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len());
+    let mut deltas = Vec::with_capacity(msg.asks.len() + msg.bids.len() + usize::from(is_snapshot));
+
+    if is_snapshot {
+        deltas.push(OrderBookDelta::clear(
+            instrument_id,
+            msg.seq_id,
+            ts_event,
+            ts_init,
+        ));
+    }
 
     for bid in &msg.bids {
         let book_action = if action == &OKXBookAction::Snapshot {
@@ -1018,6 +1069,11 @@ pub fn parse_rpi_book_msg(
         ));
     }
 
+    // The data engine only publishes a buffered batch once a delta closes the event
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
+    }
+
     OrderBookDeltas::new_checked(instrument_id, deltas)
 }
 
@@ -1059,51 +1115,48 @@ pub fn parse_quote_msg(
     )
 }
 
-/// Parses an OKX book message into a Nautilus [`OrderBookDepth10`].
+/// Parses an OKX book message into a Nautilus [`OrderBookDepth`].
 ///
-/// Converts order book data into a fixed-depth snapshot with top 10 levels for both sides.
+/// Uses venue order counts for the snapshot's non-empty price levels.
 ///
 /// # Errors
 ///
-/// Returns an error if price or size fields cannot be parsed for any level.
-pub fn parse_book10_msg(
+/// Returns an error if price, size, or order count fields cannot be parsed for any level.
+pub fn parse_book_depth_msg(
     msg: &OKXBookMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> anyhow::Result<OrderBookDepth10> {
-    let zero_price = Price::zero(price_precision);
-    let zero_qty = Quantity::zero(size_precision);
-    let empty_bid = BookOrder::new(OrderSide::Buy, zero_price, zero_qty, 0);
-    let empty_ask = BookOrder::new(OrderSide::Sell, zero_price, zero_qty, 0);
+) -> anyhow::Result<OrderBookDepth> {
+    let mut bids = Vec::with_capacity(msg.bids.len());
+    let mut asks = Vec::with_capacity(msg.asks.len());
+    let mut bid_counts = Vec::with_capacity(msg.bids.len());
+    let mut ask_counts = Vec::with_capacity(msg.asks.len());
 
-    let mut bids: [BookOrder; DEPTH10_LEN] = [empty_bid; DEPTH10_LEN];
-    let mut asks: [BookOrder; DEPTH10_LEN] = [empty_ask; DEPTH10_LEN];
-    let mut bid_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
-    let mut ask_counts: [u32; DEPTH10_LEN] = [0; DEPTH10_LEN];
-
-    for (i, level) in msg.bids.iter().take(DEPTH10_LEN).enumerate() {
-        let price = parse_price(&level.price, price_precision)?;
-        let size = parse_quantity(&level.size, size_precision)?;
-        let orders_count = level.orders_count.parse::<u32>().unwrap_or(1);
-
-        bids[i] = BookOrder::new(OrderSide::Buy, price, size, 0);
-        bid_counts[i] = orders_count;
-    }
-
-    for (i, level) in msg.asks.iter().take(DEPTH10_LEN).enumerate() {
-        let price = parse_price(&level.price, price_precision)?;
-        let size = parse_quantity(&level.size, size_precision)?;
-        let orders_count = level.orders_count.parse::<u32>().unwrap_or(1);
-
-        asks[i] = BookOrder::new(OrderSide::Sell, price, size, 0);
-        ask_counts[i] = orders_count;
+    for (levels, side, orders, counts) in [
+        (&msg.bids, OrderSide::Buy, &mut bids, &mut bid_counts),
+        (&msg.asks, OrderSide::Sell, &mut asks, &mut ask_counts),
+    ] {
+        for level in levels {
+            orders.push(BookOrder::new(
+                side,
+                parse_price(&level.price, price_precision)?,
+                parse_quantity(&level.size, size_precision)?,
+                0,
+            ));
+            counts.push(
+                level
+                    .orders_count
+                    .parse::<u32>()
+                    .context("invalid OKX order count")?,
+            );
+        }
     }
 
     let ts_event = parse_millisecond_timestamp(msg.ts);
 
-    Ok(OrderBookDepth10::new(
+    Ok(OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -1249,8 +1302,8 @@ pub fn parse_order_msg_vec(
     data: &[OKXOrderMsg],
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    fee_cache: &mut AHashMap<Ustr, Money>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    fee_cache: &mut FeeCache,
+    filled_qty_cache: &mut FilledQtyCache,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<ExecutionReport>> {
     let mut order_reports = Vec::with_capacity(data.len());
@@ -1285,9 +1338,11 @@ pub fn parse_order_msg_vec(
 pub fn update_fee_fill_caches(
     msg: &OKXOrderMsg,
     instrument: &InstrumentAny,
-    fee_cache: &mut AHashMap<Ustr, Money>,
-    filled_qty_cache: &mut AHashMap<Ustr, Quantity>,
+    fee_cache: &mut FeeCache,
+    filled_qty_cache: &mut FilledQtyCache,
 ) {
+    let is_terminal = is_terminal_order_state(msg.state);
+
     if let Some(ref fee_str) = msg.fee
         && !fee_str.is_empty()
     {
@@ -1297,7 +1352,7 @@ pub fn update_fee_fill_caches(
         });
 
         if let Ok(total_fee) = crate::common::parse::parse_fee(Some(fee_str.as_str()), fee_ccy) {
-            fee_cache.insert(msg.ord_id, total_fee);
+            fee_cache.record(msg.ord_id, total_fee, is_terminal);
         }
     }
 
@@ -1306,7 +1361,7 @@ pub fn update_fee_fill_caches(
         && acc_fill_sz != "0"
         && let Ok(qty) = parse_quantity(acc_fill_sz, instrument.size_precision())
     {
-        filled_qty_cache.insert(msg.ord_id, qty);
+        filled_qty_cache.record(msg.ord_id, qty, is_terminal);
     }
 }
 
@@ -1341,8 +1396,8 @@ pub fn parse_order_msg(
     msg: &OKXOrderMsg,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    fee_cache: &AHashMap<Ustr, Money>,
-    filled_qty_cache: &AHashMap<Ustr, Quantity>,
+    fee_cache: &FeeCache,
+    filled_qty_cache: &FilledQtyCache,
     ts_init: UnixNanos,
 ) -> anyhow::Result<ExecutionReport> {
     let instrument = instruments
@@ -1407,7 +1462,7 @@ pub fn parse_spread_order_msg(
     msg: &OKXSpreadOrder,
     account_id: AccountId,
     instruments: &AHashMap<Ustr, InstrumentAny>,
-    filled_qty_cache: &AHashMap<Ustr, Quantity>,
+    filled_qty_cache: &FilledQtyCache,
     ts_init: UnixNanos,
 ) -> anyhow::Result<ExecutionReport> {
     let instrument = instruments
@@ -1825,15 +1880,11 @@ pub fn parse_order_status_report(
         (quantity, filled_qty)
     };
 
-    // For quote-quantity orders marked as FILLED, adjust quantity to match filled_qty
-    // to avoid precision mismatches from quote-to-base conversion
-    let (quantity, filled_qty) = if (is_quote_qty_explicit || is_quote_qty_heuristic)
-        && msg.state == OKXOrderStatus::Filled
-        && filled_qty.is_positive()
-    {
-        (filled_qty, filled_qty)
+    // Normalize quote conversion and base shortfalls to the venue's terminal filled size
+    let quantity = if msg.state == OKXOrderStatus::Filled && filled_qty.is_positive() {
+        filled_qty
     } else {
-        (quantity, filled_qty)
+        quantity
     };
 
     let ts_accepted = parse_millisecond_timestamp(msg.c_time);
@@ -2359,10 +2410,8 @@ pub fn parse_ws_message_data(
             if let Ok(msg) = serde_json::from_value::<OKXInstrument>(data) {
                 let inst_key = msg.inst_id;
                 let cached_instrument = instruments_cache.get(&inst_key);
-                let (margin_init, margin_maint, maker_fee, taker_fee) = cached_instrument.map_or(
-                    (None, None, None, None),
-                    extract_fees_from_cached_instrument,
-                );
+                let (margin_init, margin_maint) =
+                    cached_instrument.map_or((None, None), extract_fees_from_cached_instrument);
                 let instrument_id =
                     cached_instrument.map_or_else(|| parse_instrument_id(inst_key), Instrument::id);
 
@@ -2379,14 +2428,7 @@ pub fn parse_ws_message_data(
                     None,
                 );
 
-                match parse_instrument_any(
-                    &msg,
-                    margin_init,
-                    margin_maint,
-                    maker_fee,
-                    taker_fee,
-                    ts_init,
-                ) {
+                match parse_instrument_any(&msg, margin_init, margin_maint, ts_init) {
                     Ok(Some(inst_any)) => Ok(Some(NautilusWsMessage::Instrument(
                         Box::new(inst_any),
                         Some(status),
@@ -2465,7 +2507,7 @@ pub fn parse_ws_message_data(
         | OKXWsChannel::Books5
         | OKXWsChannel::Books50Tbt => {
             if let Ok(book_msgs) = serde_json::from_value::<Vec<OKXBookMsg>>(data) {
-                let data_vec = parse_book10_msg_vec(
+                let data_vec = parse_book_depth_msg_vec(
                     book_msgs,
                     instrument_id,
                     price_precision,
@@ -2490,14 +2532,15 @@ mod tests {
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
-        enums::GreeksConvention,
-        identifiers::{ClientOrderId, Symbol},
-        instruments::CryptoPerpetual,
+        enums::{AccountType, BookType, GreeksConvention},
+        identifiers::{ClientOrderId, Symbol, VenueOrderId},
+        instruments::{CryptoPerpetual, CurrencyPair},
+        orderbook::OrderBook,
         types::Currency,
     };
     use rstest::rstest;
-    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use serde_json::Value;
     use ustr::Ustr;
 
     use super::*;
@@ -2519,6 +2562,35 @@ mod tests {
         },
     };
 
+    fn is_order_updated(
+        msg: &OKXOrderMsg,
+        previous: &OrderStateSnapshot,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<bool> {
+        let current_venue_id = VenueOrderId::new(msg.ord_id);
+
+        if previous.venue_order_id != current_venue_id {
+            return Ok(true);
+        }
+
+        let current_qty = parse_quantity(&msg.sz, instrument.size_precision())?;
+        if previous.quantity != current_qty {
+            return Ok(true);
+        }
+
+        if !is_market_price(&msg.px) {
+            let current_price = parse_price(&msg.px, instrument.price_precision())?;
+
+            if let Some(prev_price) = previous.price
+                && prev_price != current_price
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     fn create_stub_instrument() -> CryptoPerpetual {
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
         CryptoPerpetual::builder()
@@ -2536,6 +2608,108 @@ mod tests {
             .ts_init(UnixNanos::default())
             .build()
             .unwrap()
+    }
+
+    #[rstest]
+    fn open_order_baselines_survive_unrelated_order_churn() {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
+
+        let mut resting = create_stub_order_msg("1.0", Some("1.0".to_string()), "ord-resting", "");
+        resting.state = OKXOrderStatus::PartiallyFilled;
+        update_fee_fill_caches(&resting, &instrument, &mut fee_cache, &mut filled_qty_cache);
+
+        for i in 0..=TERMINAL_BASELINE_CAPACITY {
+            let mut msg =
+                create_stub_order_msg("1.0", Some("1.0".to_string()), &format!("ord-{i}"), "");
+            msg.state = OKXOrderStatus::Filled;
+            update_fee_fill_caches(&msg, &instrument, &mut fee_cache, &mut filled_qty_cache);
+        }
+
+        let resting_key = Ustr::from("ord-resting");
+
+        assert_eq!(fee_cache.get(&resting_key).unwrap().as_decimal(), dec!(1.0));
+        assert_eq!(
+            filled_qty_cache.get(&resting_key).unwrap().as_decimal(),
+            dec!(1.0)
+        );
+        assert_eq!(fee_cache.open.len(), 1);
+        assert_eq!(filled_qty_cache.open.len(), 1);
+
+        // Demotion is what bounds the open map, so prove the migration and not just the
+        // classification: a settled order must leave `open` and expose its newer baseline.
+        let mut settled = resting.clone();
+        settled.state = OKXOrderStatus::Filled;
+        settled.fee = Some("-2.5".to_string());
+        settled.acc_fill_sz = Some("2.0".to_string());
+        update_fee_fill_caches(&settled, &instrument, &mut fee_cache, &mut filled_qty_cache);
+
+        assert_eq!(fee_cache.open.len(), 0);
+        assert_eq!(filled_qty_cache.open.len(), 0);
+        assert_eq!(fee_cache.get(&resting_key).unwrap().as_decimal(), dec!(2.5));
+        assert_eq!(
+            filled_qty_cache.get(&resting_key).unwrap().as_decimal(),
+            dec!(2.0)
+        );
+    }
+
+    #[rstest]
+    #[case(OKXOrderStatus::Filled)]
+    #[case(OKXOrderStatus::Canceled)]
+    #[case(OKXOrderStatus::MmpCanceled)]
+    fn terminal_order_baselines_stay_terminal_after_late_updates(
+        #[case] terminal_state: OKXOrderStatus,
+        #[values(OKXOrderStatus::Live, OKXOrderStatus::PartiallyFilled)] late_state: OKXOrderStatus,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
+        let mut msg = create_stub_order_msg("1.0", Some("2.0".to_string()), "ord-late", "");
+        msg.state = terminal_state;
+        update_fee_fill_caches(&msg, &instrument, &mut fee_cache, &mut filled_qty_cache);
+
+        msg.state = late_state;
+        msg.fee = Some("-0.5".to_string());
+        msg.acc_fill_sz = Some("1.0".to_string());
+        update_fee_fill_caches(&msg, &instrument, &mut fee_cache, &mut filled_qty_cache);
+
+        let key = msg.ord_id;
+        let fee = Money::from_decimal(dec!(0.5), Currency::USDT()).unwrap();
+        let quantity = Quantity::from("1.00000000");
+
+        assert_eq!(fee_cache.open.len(), 0);
+        assert_eq!(filled_qty_cache.open.len(), 0);
+        assert_eq!(fee_cache.terminal.get(&key), Some(&fee));
+        assert_eq!(filled_qty_cache.terminal.get(&key), Some(&quantity));
+        assert_eq!(fee_cache.get(&key), Some(&fee));
+        assert_eq!(filled_qty_cache.get(&key), Some(&quantity));
+    }
+
+    #[rstest]
+    fn terminal_order_baselines_evict_oldest_first() {
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
+
+        for i in 0..=TERMINAL_BASELINE_CAPACITY {
+            let mut msg =
+                create_stub_order_msg("1.0", Some("1.0".to_string()), &format!("ord-{i}"), "");
+            msg.state = OKXOrderStatus::Filled;
+            update_fee_fill_caches(&msg, &instrument, &mut fee_cache, &mut filled_qty_cache);
+        }
+
+        let oldest = Ustr::from("ord-0");
+        let newest = Ustr::from(&format!("ord-{TERMINAL_BASELINE_CAPACITY}"));
+
+        assert_eq!(fee_cache.get(&oldest), None);
+        assert_eq!(filled_qty_cache.get(&oldest), None);
+        assert_eq!(fee_cache.get(&newest).unwrap().as_decimal(), dec!(1.0));
+        assert_eq!(
+            filled_qty_cache.get(&newest).unwrap().as_decimal(),
+            dec!(1.0)
+        );
+        assert_eq!(fee_cache.open.len(), 0);
     }
 
     fn create_stub_order_msg(
@@ -2616,6 +2790,140 @@ mod tests {
     }
 
     #[rstest]
+    #[case::standard(false)]
+    #[case::rpi(true)]
+    fn snapshot_replaces_existing_book(#[case] rpi: bool, #[values(false, true)] empty: bool) {
+        let fixture = if rpi {
+            "ws_books_rpi_snapshot.json"
+        } else {
+            "ws_books_snapshot.json"
+        };
+
+        let mut frame: Value = serde_json::from_str(&load_test_json(fixture)).unwrap();
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        let parse = |frame: &Value| {
+            if rpi {
+                parse_rpi_book_msg(
+                    &serde_json::from_value(frame["data"][0].clone()).unwrap(),
+                    instrument_id,
+                    7,
+                    3,
+                    &OKXBookAction::Snapshot,
+                    UnixNanos::from(123),
+                )
+                .unwrap()
+            } else {
+                parse_book_msg(
+                    &serde_json::from_value(frame["data"][0].clone()).unwrap(),
+                    instrument_id,
+                    2,
+                    1,
+                    &OKXBookAction::Snapshot,
+                    UnixNanos::from(123),
+                )
+                .unwrap()
+            }
+        };
+
+        let mut actual = OrderBook::new(instrument_id, BookType::L2_MBP);
+        actual.apply_deltas(&parse(&frame)).unwrap();
+        for side in ["bids", "asks"] {
+            let levels = frame["data"][0][side].as_array_mut().unwrap();
+            if empty {
+                levels.clear();
+            } else {
+                levels.remove(0);
+            }
+        }
+
+        let snapshot = parse(&frame);
+        let mut expected = OrderBook::new(instrument_id, BookType::L2_MBP);
+        expected.apply_deltas(&snapshot).unwrap();
+        actual.apply_deltas(&snapshot).unwrap();
+
+        assert_eq!(actual.bids_as_map(None), expected.bids_as_map(None));
+        assert_eq!(actual.asks_as_map(None), expected.asks_as_map(None));
+
+        let expected_clear_flags = if empty {
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        } else {
+            RecordFlag::F_SNAPSHOT as u8
+        };
+
+        assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+        assert_eq!(snapshot.deltas[0].flags, expected_clear_flags);
+        assert_eq!(snapshot.deltas[0].sequence, snapshot.sequence);
+        assert_eq!(snapshot.deltas[0].ts_event, snapshot.ts_event);
+        assert_eq!(snapshot.deltas[0].ts_init, UnixNanos::from(123));
+    }
+
+    #[rstest]
+    #[case::snapshot("ws_books_snapshot.json", OKXBookAction::Snapshot)]
+    #[case::update("ws_books_update.json", OKXBookAction::Update)]
+    #[case::rpi_snapshot("ws_books_rpi_snapshot.json", OKXBookAction::Snapshot)]
+    #[case::rpi_update("ws_books_rpi_update.json", OKXBookAction::Update)]
+    fn book_deltas_flag_only_the_final_delta_last(
+        #[case] fixture: &str,
+        #[case] action: OKXBookAction,
+    ) {
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let frame: OKXWsFrame = serde_json::from_str(&load_test_json(fixture)).unwrap();
+
+        let deltas = match frame {
+            OKXWsFrame::BookData { data, .. } => {
+                parse_book_msg(&data[0], instrument_id, 2, 1, &action, UnixNanos::default())
+            }
+            OKXWsFrame::RpiBookData { data, .. } => {
+                parse_rpi_book_msg(&data[0], instrument_id, 7, 3, &action, UnixNanos::default())
+            }
+            _ => panic!("Expected a book frame"),
+        }
+        .unwrap();
+
+        let last_count = deltas
+            .deltas
+            .iter()
+            .filter(|delta| RecordFlag::F_LAST.matches(delta.flags))
+            .count();
+
+        assert_eq!(last_count, 1, "exactly one delta must close the event");
+        assert!(RecordFlag::F_LAST.matches(deltas.deltas.last().unwrap().flags));
+        assert!(RecordFlag::F_LAST.matches(deltas.flags));
+    }
+
+    #[rstest]
+    fn empty_book_snapshot_flags_the_clear_delta_last() {
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+        let msg = OKXBookMsg {
+            bids: Vec::new(),
+            asks: Vec::new(),
+            ts: 1_597_026_383_085,
+            checksum: None,
+            prev_seq_id: None,
+            seq_id: 123_456,
+        };
+
+        let deltas = parse_book_msg(
+            &msg,
+            instrument_id,
+            2,
+            1,
+            &OKXBookAction::Snapshot,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            deltas.flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
+    }
+
+    #[rstest]
     fn test_parse_books_snapshot() {
         let json_data = load_test_json("ws_books_snapshot.json");
         let msg: OKXWsFrame = serde_json::from_str(&json_data).unwrap();
@@ -2636,8 +2944,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(deltas.instrument_id, instrument_id);
-        assert_eq!(deltas.deltas.len(), 16);
-        assert_eq!(deltas.flags, 32);
+        assert_eq!(deltas.deltas.len(), 17);
+        assert_eq!(
+            deltas.flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
         assert_eq!(deltas.sequence, 123_456);
         assert_eq!(deltas.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::default());
@@ -2683,7 +2994,7 @@ mod tests {
 
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 16);
-        assert_eq!(deltas.flags, 0);
+        assert_eq!(deltas.flags, RecordFlag::F_LAST as u8);
         assert_eq!(deltas.sequence, 123_457);
         assert_eq!(deltas.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::default());
@@ -2723,7 +3034,7 @@ mod tests {
 
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 2);
-        assert_eq!(deltas.flags, 0);
+        assert_eq!(deltas.flags, RecordFlag::F_LAST as u8);
         assert_eq!(deltas.sequence, 1_082_831_230);
         assert_eq!(deltas.ts_event, UnixNanos::from(1_785_406_443_903_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::from(123));
@@ -3024,7 +3335,7 @@ mod tests {
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
-        let account_state = parse_account_state(account, account_id, ts_init);
+        let account_state = parse_account_state(account, account_id, AccountType::Margin, ts_init);
 
         assert!(account_state.is_ok());
         let state = account_state.unwrap();
@@ -3050,7 +3361,13 @@ mod tests {
         assert_eq!(account.total_eq, "0");
 
         let account_id = AccountId::new("OKX-001");
-        let account_state = parse_account_state(account, account_id, UnixNanos::default()).unwrap();
+        let account_state = parse_account_state(
+            account,
+            account_id,
+            AccountType::Margin,
+            UnixNanos::default(),
+        )
+        .unwrap();
 
         assert_eq!(account_state.account_id, account_id);
         assert_eq!(account_state.margins.len(), 0);
@@ -3096,8 +3413,8 @@ mod tests {
         );
 
         let ts_init = UnixNanos::default();
-        let mut fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         let result = parse_order_msg_vec(
             &data,
@@ -3190,6 +3507,89 @@ mod tests {
     }
 
     #[rstest]
+    #[case::base_filled(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296475"
+    )]
+    #[case::base_partial(
+        OKXOrderStatus::PartiallyFilled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296487"
+    )]
+    #[case::base_canceled(
+        OKXOrderStatus::Canceled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0.00296475",
+        "0.00296487"
+    )]
+    #[case::base_zero_fill(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::BaseCcy,
+        "0.00296487",
+        "0",
+        "0.00296487"
+    )]
+    #[case::quote_filled(
+        OKXOrderStatus::Filled,
+        OKXTargetCurrency::QuoteCcy,
+        "296.487",
+        "0.00296475",
+        "0.00296475"
+    )]
+    fn test_parse_order_status_report_terminal_quantity(
+        #[values("", "0")] price: &str,
+        #[case] state: OKXOrderStatus,
+        #[case] target: OKXTargetCurrency,
+        #[case] size: &str,
+        #[case] filled: &str,
+        #[case] expected_quantity: &str,
+    ) {
+        let payload: Value = serde_json::from_str(&load_test_json("ws_orders.json")).unwrap();
+        let mut order: OKXOrderMsg = serde_json::from_value(payload["data"][0].clone()).unwrap();
+        order.inst_type = OKXInstrumentType::Spot;
+        order.ord_type = OKXOrderType::Market;
+        order.side = OKXSide::Buy;
+        order.tgt_ccy = Some(target);
+        order.state = state;
+        order.sz = size.to_string();
+        order.acc_fill_sz = Some(filled.to_string());
+        order.px = price.to_string();
+        order.avg_px = "100000".to_string();
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("BTC-USDC.OKX"))
+            .raw_symbol(Symbol::from("BTC-USDC"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDC())
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
+
+        let report = parse_order_status_report(
+            &order,
+            &InstrumentAny::CurrencyPair(instrument),
+            AccountId::from("OKX-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.price, None);
+        assert_eq!(report.order_status, OrderStatus::try_from(state).unwrap());
+        assert_eq!(report.quantity, Quantity::from(expected_quantity));
+        assert_eq!(report.filled_qty, Quantity::from(filled));
+    }
+
+    #[rstest]
     fn test_parse_fill_report() {
         let json_data = load_test_json("ws_orders.json");
         let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
@@ -3265,7 +3665,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_book10_msg() {
+    fn test_parse_book_depth_msg() {
         let json_data = load_test_json("ws_books_snapshot.json");
         let event: OKXWsFrame = serde_json::from_str(&json_data).unwrap();
         let msgs: Vec<OKXBookMsg> = match event {
@@ -3274,47 +3674,56 @@ mod tests {
         };
 
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let depth10 =
-            parse_book10_msg(&msgs[0], instrument_id, 2, 0, UnixNanos::default()).unwrap();
+        let depth =
+            parse_book_depth_msg(&msgs[0], instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
-        assert_eq!(depth10.instrument_id, instrument_id);
-        assert_eq!(depth10.sequence, 123_456);
-        assert_eq!(depth10.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
-        assert_eq!(depth10.flags, RecordFlag::F_SNAPSHOT as u8);
+        let expected_bids = [
+            ("8476.97", "256"),
+            ("8475.55", "101"),
+            ("8475.54", "100"),
+            ("8475.30", "1"),
+            ("8447.32", "6"),
+            ("8447.02", "246"),
+            ("8446.83", "24"),
+            ("8446.00", "95"),
+        ];
+        let expected_asks = [
+            ("8476.98", "415"),
+            ("8477.00", "7"),
+            ("8477.34", "85"),
+            ("8477.56", "1"),
+            ("8505.84", "8"),
+            ("8506.37", "85"),
+            ("8506.49", "2"),
+            ("8506.96", "100"),
+        ];
 
-        // Check bid levels (available in test data: 8 levels)
-        assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
-        assert_eq!(depth10.bids[0].size, Quantity::from("256"));
-        assert_eq!(depth10.bids[0].side, OrderSide::Buy.into());
-        assert_eq!(depth10.bid_counts[0], 12);
+        assert_eq!(depth.instrument_id, instrument_id);
+        assert_eq!(depth.sequence, 123_456);
+        assert_eq!(depth.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(depth.ts_init, UnixNanos::default());
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.bids.len(), expected_bids.len());
+        assert_eq!(depth.asks.len(), expected_asks.len());
+        assert_eq!(depth.bid_counts.as_slice(), &[12, 1, 1, 1, 1, 1, 1, 3]);
+        assert_eq!(depth.ask_counts.as_slice(), &[13, 2, 1, 1, 1, 1, 1, 2]);
+        for (order, (price, size)) in depth.bids.iter().zip(expected_bids) {
+            assert_eq!(order.side, Some(OrderSide::Buy));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
 
-        assert_eq!(depth10.bids[1].price, Price::from("8475.55"));
-        assert_eq!(depth10.bids[1].size, Quantity::from("101"));
-        assert_eq!(depth10.bid_counts[1], 1);
-
-        // Check that levels beyond available data are padded with empty orders
-        assert_eq!(depth10.bids[8].price, Price::from("0"));
-        assert_eq!(depth10.bids[8].size, Quantity::from("0"));
-        assert_eq!(depth10.bid_counts[8], 0);
-
-        // Check ask levels (available in test data: 8 levels)
-        assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
-        assert_eq!(depth10.asks[0].size, Quantity::from("415"));
-        assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
-        assert_eq!(depth10.ask_counts[0], 13);
-
-        assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
-        assert_eq!(depth10.asks[1].size, Quantity::from("7"));
-        assert_eq!(depth10.ask_counts[1], 2);
-
-        // Check that levels beyond available data are padded with empty orders
-        assert_eq!(depth10.asks[8].price, Price::from("0"));
-        assert_eq!(depth10.asks[8].size, Quantity::from("0"));
-        assert_eq!(depth10.ask_counts[8], 0);
+        for (order, (price, size)) in depth.asks.iter().zip(expected_asks) {
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.order_id, 0);
+        }
     }
 
     #[rstest]
-    fn test_parse_book10_msg_vec() {
+    fn test_parse_book_depth_msg_vec() {
         let json_data = load_test_json("ws_books_snapshot.json");
         let event: OKXWsFrame = serde_json::from_str(&json_data).unwrap();
         let msgs: Vec<OKXBookMsg> = match event {
@@ -3323,18 +3732,18 @@ mod tests {
         };
 
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let depth10_vec =
-            parse_book10_msg_vec(msgs, &instrument_id, 2, 0, UnixNanos::default()).unwrap();
+        let depth_vec =
+            parse_book_depth_msg_vec(msgs, &instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
-        assert_eq!(depth10_vec.len(), 1);
+        assert_eq!(depth_vec.len(), 1);
 
-        if let Data::BookDepth10(d) = &depth10_vec[0] {
+        if let Data::BookDepth(d) = &depth_vec[0] {
             assert_eq!(d.instrument_id, instrument_id);
             assert_eq!(d.sequence, 123_456);
             assert_eq!(d.bids[0].price, Price::from("8476.97"));
             assert_eq!(d.asks[0].price, Price::from("8476.98"));
         } else {
-            panic!("Expected Depth10");
+            panic!("Expected Depth");
         }
     }
 
@@ -4288,8 +4697,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         // First update: acc_fill_sz = 0.01, no fill_sz, no trade_id
         let msg_1 = create_stub_order_msg("", Some("0.01".to_string()), "1234567890", "");
@@ -4311,7 +4720,7 @@ mod tests {
         }
 
         // Update cache
-        filled_qty_cache.insert(Ustr::from("1234567890"), Quantity::from("0.01"));
+        filled_qty_cache.record(Ustr::from("1234567890"), Quantity::from("0.01"), false);
 
         // Second update: acc_fill_sz increased to 0.03, still no fill_sz or trade_id
         let msg_2 = create_stub_order_msg("", Some("0.03".to_string()), "1234567890", "");
@@ -4334,8 +4743,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_book10_msg_partial_levels() {
-        // Test with fewer than 10 levels - should pad with empty orders
+    fn test_parse_book_depth_msg_partial_levels() {
         let book_msg = OKXBookMsg {
             asks: vec![
                 OrderBookEntry {
@@ -4364,23 +4772,32 @@ mod tests {
         };
 
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
-        let depth10 =
-            parse_book10_msg(&book_msg, instrument_id, 2, 0, UnixNanos::default()).unwrap();
+        let depth =
+            parse_book_depth_msg(&book_msg, instrument_id, 2, 0, UnixNanos::default()).unwrap();
 
-        // Check that first levels have data
-        assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
-        assert_eq!(depth10.bids[0].size, Quantity::from("256"));
-        assert_eq!(depth10.bid_counts[0], 12);
-
-        // Check that remaining levels are padded with default (empty) orders
-        assert_eq!(depth10.bids[1].price, Price::from("0"));
-        assert_eq!(depth10.bids[1].size, Quantity::from("0"));
-        assert_eq!(depth10.bid_counts[1], 0);
-
-        // Check asks
-        assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
-        assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
-        assert_eq!(depth10.asks[2].price, Price::from("0")); // padded with empty
+        assert_eq!(depth.instrument_id, instrument_id);
+        assert_eq!(depth.bids.len(), 1);
+        assert_eq!(depth.asks.len(), 2);
+        assert_eq!(depth.bids[0].price, Price::from("8476.97"));
+        assert_eq!(depth.bids[0].size, Quantity::from("256"));
+        assert_eq!(depth.bids[0].side, Some(OrderSide::Buy));
+        assert_eq!(depth.bids[0].order_id, 0);
+        assert_eq!(depth.bid_counts.as_slice(), &[12]);
+        assert_eq!(depth.ask_counts.as_slice(), &[13, 2]);
+        for (order, (price, size)) in depth
+            .asks
+            .iter()
+            .zip([("8476.98", "415"), ("8477.00", "7")])
+        {
+            assert_eq!(order.price, Price::from(price));
+            assert_eq!(order.size, Quantity::from(size));
+            assert_eq!(order.side, Some(OrderSide::Sell));
+            assert_eq!(order.order_id, 0);
+        }
+        assert_eq!(depth.sequence, 123_456);
+        assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(depth.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(depth.ts_init, UnixNanos::default());
     }
 
     #[rstest]
@@ -4598,8 +5015,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let mut fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         let result = parse_order_msg_vec(
             std::slice::from_ref(msg),
@@ -4659,8 +5076,8 @@ mod tests {
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
         );
-        let mut fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         let result = parse_order_msg_vec(
             std::slice::from_ref(msg),
@@ -4723,8 +5140,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(instrument),
         );
 
-        let mut fee_cache = AHashMap::new();
-        let mut filled_qty_cache = AHashMap::new();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
 
         let result = parse_order_msg_vec(
             std::slice::from_ref(msg),
@@ -4871,8 +5288,8 @@ mod tests {
             msg: None,
         };
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let result = parse_order_msg(
             &partial_liq_msg,
             account_id,
@@ -4919,8 +5336,8 @@ mod tests {
             InstrumentAny::CryptoOption(option),
         );
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let report = parse_order_msg(
             msg,
             account_id,
@@ -4964,8 +5381,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(create_stub_instrument()),
         );
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let report = parse_order_msg(
             msg,
             account_id,
@@ -5006,8 +5423,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(create_stub_instrument()),
         );
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let result = parse_order_msg(
             &msg,
             account_id,
@@ -5038,8 +5455,8 @@ mod tests {
             InstrumentAny::CryptoPerpetual(create_stub_instrument()),
         );
 
-        let fee_cache = AHashMap::new();
-        let filled_qty_cache = AHashMap::new();
+        let fee_cache = FeeCache::new();
+        let filled_qty_cache = FilledQtyCache::new();
         let report = parse_order_msg(
             msg,
             account_id,
@@ -5089,14 +5506,7 @@ mod tests {
 
         let ts_init = UnixNanos::default();
 
-        // Create initial instrument with fees (simulating HTTP load)
-        // These values are already in Nautilus format (HTTP client negates OKX values)
-        let initial_fees = (
-            Some(Decimal::new(8, 4)),  // Nautilus: 0.0008 (commission)
-            Some(Decimal::new(10, 4)), // Nautilus: 0.0010 (commission)
-        );
-
-        // Deserialize initial instrument from JSON
+        // Deserialize the initial instrument from JSON.
         let initial_inst_json = serde_json::json!({
             "instType": "SPOT",
             "instId": "BTC-USD",
@@ -5133,25 +5543,14 @@ mod tests {
         let initial_inst: OKXInstrument = serde_json::from_value(initial_inst_json)
             .expect("Failed to deserialize initial instrument");
 
-        // Parse initial instrument with fees
-        let parsed_initial = parse_instrument_any(
-            &initial_inst,
-            None,
-            None,
-            initial_fees.0,
-            initial_fees.1,
-            ts_init,
-        )
-        .expect("Failed to parse initial instrument")
-        .expect("Initial instrument should not be None");
+        // Parse the initial instrument.
+        let parsed_initial = parse_instrument_any(&initial_inst, None, None, ts_init)
+            .expect("Failed to parse initial instrument")
+            .expect("Initial instrument should not be None");
 
-        // Verify fees were applied
-        if let InstrumentAny::CurrencyPair(ref pair) = parsed_initial {
-            assert_eq!(pair.maker_fee, dec!(0.0008));
-            assert_eq!(pair.taker_fee, dec!(0.0010));
-        } else {
+        let InstrumentAny::CurrencyPair(_) = parsed_initial else {
             panic!("Expected CurrencyPair instrument");
-        }
+        };
 
         // Build instrument cache with the initial instrument
         let mut instruments_cache = AHashMap::new();
@@ -5207,22 +5606,10 @@ mod tests {
         )
         .expect("Failed to parse WebSocket instrument update");
 
-        // Verify the update preserves the cached fees
         if let Some(NautilusWsMessage::Instrument(boxed_inst, _status)) = result {
-            if let InstrumentAny::CurrencyPair(pair) = *boxed_inst {
-                assert_eq!(
-                    pair.maker_fee,
-                    Decimal::new(8, 4),
-                    "Maker fee should be preserved from cache"
-                );
-                assert_eq!(
-                    pair.taker_fee,
-                    Decimal::new(10, 4),
-                    "Taker fee should be preserved from cache"
-                );
-            } else {
+            let InstrumentAny::CurrencyPair(_) = *boxed_inst else {
                 panic!("Expected CurrencyPair instrument from WebSocket update");
-            }
+            };
         } else {
             panic!("Expected Instrument message from WebSocket update");
         }
@@ -7223,7 +7610,7 @@ mod tests {
 
         let ts_init = UnixNanos::default();
 
-        // Build a cached instrument with fees
+        // Build a cached instrument.
         let inst_json = serde_json::json!({
             "instType": "SPOT",
             "instId": "BTC-USD",
@@ -7256,7 +7643,7 @@ mod tests {
             "instFamily": ""
         });
         let initial: OKXInstrument = serde_json::from_value(inst_json).unwrap();
-        let parsed = parse_instrument_any(&initial, None, None, None, None, ts_init)
+        let parsed = parse_instrument_any(&initial, None, None, ts_init)
             .unwrap()
             .unwrap();
 
@@ -7422,7 +7809,7 @@ mod tests {
             "instFamily": ""
         });
         let initial: OKXInstrument = serde_json::from_value(inst_json).unwrap();
-        let parsed = parse_instrument_any(&initial, None, None, None, None, ts_init)
+        let parsed = parse_instrument_any(&initial, None, None, ts_init)
             .unwrap()
             .unwrap();
 
@@ -7872,7 +8259,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(deltas.instrument_id, instrument_id);
-        assert_eq!(deltas.flags, RecordFlag::F_SNAPSHOT as u8);
+        assert_eq!(
+            deltas.flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
         let bid = deltas
             .deltas
             .iter()

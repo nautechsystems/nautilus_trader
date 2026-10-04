@@ -29,6 +29,7 @@ use super::{
     bool_field, float64_field, price_to_f64, quantity_to_f64, timestamp_field, unix_nanos_to_i64,
     utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`OrderFilled`].
 #[must_use]
@@ -83,8 +84,10 @@ pub fn encode_order_fills(data: &[OrderFilled]) -> Result<RecordBatch, ArrowErro
     let mut currency = StringBuilder::new();
     let mut liquidity_side = StringBuilder::new();
     let mut event_id = StringBuilder::new();
-    let mut ts_event = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
     let mut reconciliation = BooleanBuilder::with_capacity(data.len());
     let mut position_id = StringBuilder::new();
     let mut commission = StringBuilder::new();
@@ -185,7 +188,7 @@ mod tests {
         assert_eq!(fields[14].name(), "ts_event");
         assert_eq!(
             fields[14].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[16].name(), "reconciliation");
         assert_eq!(fields[16].data_type(), &DataType::Boolean);

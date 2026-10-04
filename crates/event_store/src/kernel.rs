@@ -1091,7 +1091,7 @@ fn marker_manifest_for(
 const fn data_marker_class_to_data_class(class: DataMarkerClass) -> DataClass {
     match class {
         DataMarkerClass::BookDeltas => DataClass::BookDeltas,
-        DataMarkerClass::BookDepth10 => DataClass::BookDepth10,
+        DataMarkerClass::BookDepth => DataClass::BookDepth,
         DataMarkerClass::Quote => DataClass::Quote,
         DataMarkerClass::Trade => DataClass::Trade,
         DataMarkerClass::Bar => DataClass::Bar,
@@ -1387,7 +1387,7 @@ mod tests {
 
     use indexmap::IndexMap;
     use nautilus_common::{
-        clock::TestClock,
+        clock::VirtualClock,
         messages::{
             data::{
                 DataCommand, DataResponse, QuotesResponse, RequestCommand, RequestQuotes,
@@ -1716,7 +1716,7 @@ mod tests {
     #[rstest]
     fn lifecycle_options_custom_registry_captures_registered_message() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let options = EventStoreLifecycleOptions::new().with_encoder_registry(test_registry());
 
@@ -1757,7 +1757,7 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let memory = Arc::new(Mutex::new(MemoryBackend::new()));
         let opener_memory = Arc::clone(&memory);
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let options = EventStoreLifecycleOptions::new()
             .with_encoder_registry(test_registry())
@@ -1923,7 +1923,7 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let memory = Arc::new(Mutex::new(MemoryBackend::new()));
         let opener_memory = Arc::clone(&memory);
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let mut config = make_config(tmp.path().to_path_buf());
         config.identity.seed = Some(seed);
@@ -2428,9 +2428,9 @@ mod tests {
         // BacktestEngine::run -> reset -> run reuses the kernel. EventStoreLifecycle::open
         // must seal any leftover session before opening a fresh one so RunStarted is
         // the first entry of every run. The UUID suffix in build_run_id keeps the
-        // two ids distinct even though TestClock holds start_ts_init at zero.
+        // two ids distinct even though VirtualClock holds start_ts_init at zero.
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -2483,7 +2483,7 @@ mod tests {
         // rerun (reset -> run) opens with a fresh signal, reports no stale halt, and
         // its graceful stop still seals Ended.
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -2773,7 +2773,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_submit_order_sent_through_msgbus() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -2842,7 +2842,7 @@ mod tests {
     #[rstest]
     fn kernel_with_markers_captures_snapshots_over_synthetic_bus() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let mut config = make_config(tmp.path().to_path_buf());
         config.data_markers = Some(DataMarkerConfig {
@@ -2908,7 +2908,7 @@ mod tests {
     #[rstest]
     fn boot_recovery_ignores_marker_sidecar_files() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let mut config = make_config(tmp.path().to_path_buf());
         config.data_markers = Some(DataMarkerConfig {
@@ -3008,7 +3008,7 @@ mod tests {
     #[rstest]
     fn marker_registry_factory_receives_enabled_classes() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let seen_classes: Arc<Mutex<Vec<Vec<DataClass>>>> = Arc::new(Mutex::new(Vec::new()));
         let seen_for_factory = Arc::clone(&seen_classes);
@@ -3044,7 +3044,7 @@ mod tests {
     #[rstest]
     fn markers_disabled_installs_no_file_and_no_cost() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3088,7 +3088,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_time_event_handler_run() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3135,7 +3135,7 @@ mod tests {
     #[rstest]
     fn seal_clears_bus_tap_so_post_seal_dispatches_do_not_capture() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3180,7 +3180,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_trading_command_envelope_with_inner_payload_type() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3262,7 +3262,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_order_event_any_envelope_with_inner_payload_type() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3342,7 +3342,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_data_command_envelopes_with_category_payload_types() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3443,7 +3443,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_data_response_sent_through_correlation_handler() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(

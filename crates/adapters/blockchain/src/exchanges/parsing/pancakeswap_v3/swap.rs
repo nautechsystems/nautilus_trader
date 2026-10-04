@@ -145,6 +145,8 @@ pub fn parse_swap_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Swap
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use alloy::primitives::{I256, U160, U256};
     use rstest::*;
 
@@ -169,7 +171,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_swap_event_hypersync(hypersync_log: HypersyncLog) {
-        let dex = bsc::PANCAKESWAP_V3.dex.clone();
+        let dex = Arc::clone(&bsc::PANCAKESWAP_V3.dex);
         let event = parse_swap_event_hypersync(dex, &hypersync_log).unwrap();
 
         assert_eq!(
@@ -206,7 +208,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_swap_event_rpc(rpc_log: RpcLog) {
-        let dex = bsc::PANCAKESWAP_V3.dex.clone();
+        let dex = Arc::clone(&bsc::PANCAKESWAP_V3.dex);
         let event = parse_swap_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
@@ -231,8 +233,8 @@ mod tests {
 
     #[rstest]
     fn test_hypersync_rpc_match(hypersync_log: HypersyncLog, rpc_log: RpcLog) {
-        let dex = bsc::PANCAKESWAP_V3.dex.clone();
-        let event_hypersync = parse_swap_event_hypersync(dex.clone(), &hypersync_log).unwrap();
+        let dex = Arc::clone(&bsc::PANCAKESWAP_V3.dex);
+        let event_hypersync = parse_swap_event_hypersync(Arc::clone(&dex), &hypersync_log).unwrap();
         let event_rpc = parse_swap_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);
@@ -258,7 +260,7 @@ mod tests {
         value["data"] = serde_json::Value::String(truncated);
         let log: HypersyncLog = serde_json::from_value(value).unwrap();
 
-        let dex = bsc::PANCAKESWAP_V3.dex.clone();
+        let dex = Arc::clone(&bsc::PANCAKESWAP_V3.dex);
         let err = parse_swap_event_hypersync(dex, &log).unwrap_err();
         assert!(err.to_string().contains("too short"));
     }
@@ -271,7 +273,7 @@ mod tests {
         let log_json = HYPERSYNC_SWAP_LOG.replace(SWAP_EVENT_SIGNATURE_HASH, uniswap_v3_topic);
         let log: HypersyncLog = serde_json::from_str(&log_json).unwrap();
 
-        let dex = bsc::PANCAKESWAP_V3.dex.clone();
+        let dex = Arc::clone(&bsc::PANCAKESWAP_V3.dex);
         let result = parse_swap_event_hypersync(dex, &log);
         assert!(result.is_err());
     }

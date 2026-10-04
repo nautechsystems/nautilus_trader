@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 // TODO: We'll use anyhow for now, but would be best to implement some specific Error(s)
+use nautilus_common::cache::Cache;
 use nautilus_model::{
     enums::{OrderSide, OrderType, TrailingOffsetType, TriggerType},
     orders::{Order, OrderAny, OrderError},
@@ -221,6 +222,31 @@ pub fn trailing_stop_calculate_with_bid_ask(
     };
 
     trailing_stop_calculate_with_last(price_increment, trailing_offset_type, side, offset, basis)
+}
+
+// Activation is not an order event, so copy only the activation fields into the cached order:
+// `replace_order` would append its last event to the cache database again, and copying the whole
+// order would overwrite a lifecycle state whose event is still queued for the execution engine.
+pub(crate) fn store_trailing_stop_activation(cache: &mut Cache, order: &OrderAny) {
+    let Some(mut cached) = cache.order_mut(&order.client_order_id()) else {
+        log::error!(
+            "Cannot store trailing stop activation: order {} not found",
+            order.client_order_id()
+        );
+        return;
+    };
+
+    match (&mut *cached, order) {
+        (OrderAny::TrailingStopMarket(cached), OrderAny::TrailingStopMarket(order)) => {
+            cached.activation_price = order.activation_price;
+            cached.is_activated = order.is_activated;
+        }
+        (OrderAny::TrailingStopLimit(cached), OrderAny::TrailingStopLimit(order)) => {
+            cached.activation_price = order.activation_price;
+            cached.is_activated = order.is_activated;
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]

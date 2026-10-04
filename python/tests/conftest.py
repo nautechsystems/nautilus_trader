@@ -16,7 +16,9 @@
 Test conftest behavior.
 """
 
+import gc
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -141,3 +143,12 @@ def usdjpy_id() -> object:
     Usdjpy id.
     """
     return InstrumentId.from_str("USD/JPY.SIM")
+
+
+@pytest.fixture
+def collect_node_cycles() -> Iterator[None]:
+    """
+    Collect unreachable node reference cycles after each test.
+    """
+    yield
+    gc.collect()

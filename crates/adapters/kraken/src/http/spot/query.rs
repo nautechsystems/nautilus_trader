@@ -254,9 +254,14 @@ pub struct KrakenSpotCancelOrderParams {
 /// - <https://docs.kraken.com/api/docs/rest-api/cancel-order-batch>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KrakenSpotCancelOrderBatchParams {
-    /// List of transaction IDs (venue order IDs) or client order IDs to cancel.
-    /// Maximum 50 IDs.
+    /// Transaction IDs (venue order IDs) to cancel.
+    ///
+    /// Kraken accepts transaction IDs and user references here, not client order IDs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub orders: Vec<String>,
+    /// Client order IDs to cancel, which Kraken requires in this separate field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cl_ord_ids: Vec<String>,
 }
 
 /// Parameters for editing an order via `POST /0/private/EditOrder`.

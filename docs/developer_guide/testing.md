@@ -157,6 +157,10 @@ make pytest
 The Makefile target isolates certain test modules in separate pytest processes to avoid
 global Rust state conflicts. Use `make pytest` rather than invoking pytest directly.
 
+`make pytest` runs tests in parallel with pytest-xdist, using one worker per CPU up to 32. Set
+`PYTEST_XDIST_AUTO_NUM_WORKERS` to change the worker count, for example
+`make pytest PYTEST_XDIST_AUTO_NUM_WORKERS=8`.
+
 Local `make pytest` runs use the debug extension from `make build-debug`.
 CI tests a release wheel.
 Do not write `python/tests/` cases that probe Rust panic paths in process with

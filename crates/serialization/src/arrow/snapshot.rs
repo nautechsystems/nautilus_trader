@@ -13,9 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
+use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::events::{OrderSnapshot, PositionSnapshot};
 
-use super::json::{JsonFieldSpec, impl_json_arrow};
+use super::{
+    ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
+    KEY_INSTRUMENT_ID,
+    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+};
 
 const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
@@ -36,11 +43,11 @@ const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trailing_offset", true),
     JsonFieldSpec::utf8("trailing_offset_type", true),
     JsonFieldSpec::utf8("time_in_force", false),
-    JsonFieldSpec::u64("expire_time", true),
+    JsonFieldSpec::timestamp("expire_time", true),
     JsonFieldSpec::utf8("filled_qty", false),
     JsonFieldSpec::utf8("liquidity_side", true),
-    JsonFieldSpec::decimal_str("avg_px", true),
-    JsonFieldSpec::decimal_str("slippage", true),
+    JsonFieldSpec::utf8("avg_px", true),
+    JsonFieldSpec::utf8("slippage", true),
     JsonFieldSpec::utf8_json("commissions", false),
     JsonFieldSpec::utf8("status", false),
     JsonFieldSpec::boolean("is_post_only", false),
@@ -58,8 +65,8 @@ const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("exec_spawn_id", true),
     JsonFieldSpec::utf8_json("tags", true),
     JsonFieldSpec::utf8("init_id", false),
-    JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("ts_last", false),
+    JsonFieldSpec::timestamp("ts_init", false),
+    JsonFieldSpec::timestamp("ts_last", false),
     // Appended (not inserted) so older batches without this column fail with a clean
     // `MissingColumn` error rather than silently reading a shifted column.
     JsonFieldSpec::utf8("activation_price", true),
@@ -88,15 +95,62 @@ const POSITION_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("unrealized_pnl", true),
     JsonFieldSpec::utf8_json("commissions", false),
     JsonFieldSpec::u64("duration_ns", true),
-    JsonFieldSpec::u64("ts_opened", false),
-    JsonFieldSpec::u64("ts_closed", true),
-    JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("ts_last", false),
+    JsonFieldSpec::timestamp("ts_opened", false),
+    JsonFieldSpec::timestamp("ts_closed", true),
+    JsonFieldSpec::timestamp("ts_init", false),
+    JsonFieldSpec::timestamp("ts_last", false),
     JsonFieldSpec::utf8_json("replay_state", true),
 ];
 
-impl_json_arrow!(instrument OrderSnapshot, "OrderSnapshot", ORDER_SNAPSHOT_FIELDS);
-impl_json_arrow!(instrument PositionSnapshot,
+fn instrument_metadata(type_name: &'static str, instrument_id: &str) -> HashMap<String, String> {
+    let mut metadata = metadata_for_type(type_name);
+    metadata.insert(KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string());
+    metadata
+}
+
+macro_rules! impl_snapshot_arrow {
+    ($type:ty, $type_name:expr, $fields:expr) => {
+        impl ArrowSchemaProvider for $type {
+            fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
+                schema_for_type($type_name, metadata, $fields)
+            }
+        }
+
+        impl EncodeToRecordBatch for $type {
+            fn encode_batch<T>(
+                metadata: &HashMap<String, String>,
+                data: &[T],
+            ) -> Result<RecordBatch, ArrowError>
+            where
+                T: std::borrow::Borrow<Self>,
+            {
+                encode_batch(
+                    $type_name,
+                    metadata,
+                    data.iter().map(std::borrow::Borrow::borrow),
+                    $fields,
+                )
+            }
+
+            fn metadata(&self) -> HashMap<String, String> {
+                instrument_metadata($type_name, &self.instrument_id.to_string())
+            }
+        }
+
+        impl DecodeTypedFromRecordBatch for $type {
+            fn decode_typed_batch(
+                metadata: &HashMap<String, String>,
+                record_batch: RecordBatch,
+            ) -> Result<Vec<Self>, EncodingError> {
+                decode_batch(metadata, &record_batch, $fields, Some($type_name))
+            }
+        }
+    };
+}
+
+impl_snapshot_arrow!(OrderSnapshot, "OrderSnapshot", ORDER_SNAPSHOT_FIELDS);
+impl_snapshot_arrow!(
+    PositionSnapshot,
     "PositionSnapshot",
     POSITION_SNAPSHOT_FIELDS
 );
@@ -118,7 +172,6 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBatch, json::encode_batch};
 
     #[rstest]
     fn test_order_snapshot_round_trip_preserves_decimal_precision() {
@@ -155,7 +208,7 @@ mod tests {
     }
 
     // The catalog spec before `avg_px` and `slippage` became exact
-    fn legacy_float64_fields() -> Vec<JsonFieldSpec> {
+    fn float64_fields() -> Vec<JsonFieldSpec> {
         ORDER_SNAPSHOT_FIELDS
             .iter()
             .map(|spec| match spec.name {
@@ -198,51 +251,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_snapshot_decodes_legacy_float64_columns() {
-        // A catalog file written while the fields were `f64`: the columns are `Float64`, not
-        // `Utf8`, and must still decode to the same economic state without a version marker.
+    fn test_order_snapshot_rejects_float64_avg_px_column() {
+        // Converting a float into an exact price would lose precision silently
         let snapshot = make_order_snapshot(Some(dec!(1.07)), Some(dec!(0.07)));
         let metadata = snapshot.metadata();
-        let legacy_batch = encode_batch(
+        let batch = encode_batch(
             "OrderSnapshot",
             &metadata,
             std::slice::from_ref(&snapshot),
-            &legacy_float64_fields(),
+            &float64_fields(),
         )
         .unwrap();
 
-        assert_eq!(
-            legacy_batch
-                .schema()
-                .field_with_name("avg_px")
-                .unwrap()
-                .data_type(),
-            &DataType::Float64
-        );
+        let error =
+            OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap_err();
 
-        let decoded =
-            OrderSnapshot::decode_typed_batch(legacy_batch.schema().metadata(), legacy_batch)
-                .unwrap();
-
-        assert_eq!(decoded, vec![snapshot]);
-    }
-
-    #[rstest]
-    fn test_order_snapshot_decodes_legacy_float64_null_columns() {
-        let snapshot = make_order_snapshot(None, None);
-        let metadata = snapshot.metadata();
-        let legacy_batch = encode_batch(
-            "OrderSnapshot",
-            &metadata,
-            std::slice::from_ref(&snapshot),
-            &legacy_float64_fields(),
-        )
-        .unwrap();
-        let decoded =
-            OrderSnapshot::decode_typed_batch(legacy_batch.schema().metadata(), legacy_batch)
-                .unwrap();
-
-        assert_eq!(decoded, vec![snapshot]);
+        assert!(matches!(
+            error,
+            EncodingError::InvalidColumnType("avg_px", _, DataType::Utf8, DataType::Float64)
+        ));
     }
 
     fn make_position_snapshot() -> PositionSnapshot {
@@ -268,7 +295,7 @@ mod tests {
             realized_pnl: Some(Money::new(100.0, Currency::USD())),
             unrealized_pnl: Some(Money::new(50.0, Currency::USD())),
             commissions: vec![Money::new(2.0, Currency::USD())],
-            duration_ns: Some(DurationNanos::from_hours(1)),
+            duration_ns: Some(DurationNanos::new(3_600_000_000_000)),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),
             ts_init: UnixNanos::from(2_000_000_000),

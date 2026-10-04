@@ -26,6 +26,7 @@ Example of databento option exercise.
 # trade ticks that supply the underlying price used to determine exercise.
 
 # %%
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -33,6 +34,7 @@ import pandas as pd
 from nautilus_trader.adapters.databento import DatabentoDataLoader
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BarType
@@ -154,6 +156,10 @@ if __name__ == "__main__":
         account_type=AccountType.MARGIN,
         base_currency=USD,
         starting_balances=[Money(1_000_000, USD)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     for instrument in futures + options:

@@ -101,10 +101,21 @@ struct TestServerState {
     open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
     trade_volume_request_count: Arc<AtomicUsize>,
     trade_volume_failures_remaining: Arc<AtomicUsize>,
+    /// When true, `/0/private/TradeVolume` returns a Kraken API permission error.
+    trade_volume_api_error: Arc<AtomicBool>,
     trade_volume_bodies: Arc<tokio::sync::Mutex<Vec<Value>>>,
     trade_volume_omitted_fee: Arc<tokio::sync::Mutex<Option<String>>>,
     trade_volume_omitted_maker_fee: Arc<tokio::sync::Mutex<Option<String>>>,
     spot_asset_pairs_empty: Arc<AtomicBool>,
+    /// When true, `/0/public/AssetPairs` also returns a legacy-named pair whose key differs
+    /// from its altname (`XXBTZEUR` / `XBTEUR`).
+    spot_asset_pairs_legacy: Arc<AtomicBool>,
+    /// When set, `/0/private/OpenOrders` returns this JSON string instead of the fixture file.
+    open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/0/private/ClosedOrders` returns this JSON string instead of the fixture file.
+    closed_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/0/private/TradesHistory` returns this JSON string instead of the fixture file.
+    trades_history_json: Arc<tokio::sync::Mutex<Option<String>>>,
     spot_asset_pairs_tokenized_duplicate: Arc<AtomicBool>,
     spot_asset_pairs_request_count: Arc<AtomicUsize>,
     futures_instruments_empty: Arc<AtomicBool>,
@@ -130,10 +141,15 @@ impl Default for TestServerState {
             open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
             trade_volume_request_count: Arc::new(AtomicUsize::new(0)),
             trade_volume_failures_remaining: Arc::new(AtomicUsize::new(0)),
+            trade_volume_api_error: Arc::new(AtomicBool::new(false)),
             trade_volume_bodies: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             trade_volume_omitted_fee: Arc::new(tokio::sync::Mutex::new(None)),
             trade_volume_omitted_maker_fee: Arc::new(tokio::sync::Mutex::new(None)),
             spot_asset_pairs_empty: Arc::new(AtomicBool::new(false)),
+            spot_asset_pairs_legacy: Arc::new(AtomicBool::new(false)),
+            open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            closed_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            trades_history_json: Arc::new(tokio::sync::Mutex::new(None)),
             spot_asset_pairs_tokenized_duplicate: Arc::new(AtomicBool::new(false)),
             spot_asset_pairs_request_count: Arc::new(AtomicUsize::new(0)),
             futures_instruments_empty: Arc::new(AtomicBool::new(false)),
@@ -240,6 +256,18 @@ async fn mock_asset_pairs(aclass_base: Option<&str>, state: Arc<TestServerState>
         _ => "http_asset_pairs.json",
     };
     let mut data = load_test_data(filename);
+
+    if aclass_base != Some("tokenized_asset")
+        && state.spot_asset_pairs_legacy.load(Ordering::Relaxed)
+    {
+        // Kraken keys this pair XXBTZEUR while OpenOrders and TradesHistory spell it XBTEUR.
+        let mut legacy = data["result"]["XBTUSDT"].clone();
+        legacy["altname"] = serde_json::json!("XBTEUR");
+        legacy["wsname"] = serde_json::json!("XBT/EUR");
+        legacy["base"] = serde_json::json!("XXBT");
+        legacy["quote"] = serde_json::json!("ZEUR");
+        data["result"]["XXBTZEUR"] = legacy;
+    }
 
     if aclass_base == Some("tokenized_asset")
         && state
@@ -419,6 +447,14 @@ async fn mock_open_orders(state: Arc<TestServerState>) -> Response {
         return mock_rate_limit_error().await;
     }
 
+    if let Some(json) = state.open_orders_json.lock().await.clone() {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(json))
+            .unwrap();
+    }
+
     let data = load_test_data("http_open_orders.json");
     Response::builder()
         .status(StatusCode::OK)
@@ -427,7 +463,20 @@ async fn mock_open_orders(state: Arc<TestServerState>) -> Response {
         .unwrap()
 }
 
-async fn mock_closed_orders() -> Response {
+async fn mock_closed_orders(state: Arc<TestServerState>) -> Response {
+    {
+        let mut guard = state.closed_orders_json.lock().await;
+        if let Some(json) = guard.take() {
+            // Serve the override once, then empty pages so the caller's pagination terminates.
+            *guard = Some(r#"{"error":[],"result":{"closed":{},"count":0}}"#.to_string());
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(Body::from(json))
+                .unwrap();
+        }
+    }
+
     let data = load_test_data("http_closed_orders.json");
     Response::builder()
         .status(StatusCode::OK)
@@ -436,7 +485,20 @@ async fn mock_closed_orders() -> Response {
         .unwrap()
 }
 
-async fn mock_trades_history() -> Response {
+async fn mock_trades_history(state: Arc<TestServerState>) -> Response {
+    {
+        let mut guard = state.trades_history_json.lock().await;
+        if let Some(json) = guard.take() {
+            // Serve the override once, then empty pages so the caller's pagination terminates.
+            *guard = Some(r#"{"error":[],"result":{"trades":{},"count":0}}"#.to_string());
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(Body::from(json))
+                .unwrap();
+        }
+    }
+
     let data = load_test_data("http_trades_history.json");
     Response::builder()
         .status(StatusCode::OK)
@@ -671,8 +733,8 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
             }
         }
         "/0/private/OpenOrders" => mock_open_orders(state.clone()).await,
-        "/0/private/ClosedOrders" => mock_closed_orders().await,
-        "/0/private/TradesHistory" => mock_trades_history().await,
+        "/0/private/ClosedOrders" => mock_closed_orders(state.clone()).await,
+        "/0/private/TradesHistory" => mock_trades_history(state.clone()).await,
         "/0/private/AddOrder" => {
             state.add_order_calls.fetch_add(1, Ordering::Relaxed);
             mock_add_order_spot().await
@@ -789,6 +851,15 @@ async fn mock_spot_trade_volume(req: Request, state: Arc<TestServerState>) -> Re
             .unwrap();
     }
 
+    // Kraken signals API errors with HTTP 200 and a populated `error` array.
+    if state.trade_volume_api_error.load(Ordering::Relaxed) {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"error":["EGeneral:Permission denied"]}"#))
+            .unwrap();
+    }
+
     let result = if let Some(pairs) = body["pair"].as_array() {
         let mut fees = serde_json::Map::new();
         let mut fees_maker = serde_json::Map::new();
@@ -815,12 +886,16 @@ async fn mock_spot_trade_volume(req: Request, state: Arc<TestServerState>) -> Re
             "result": {"fees": fees, "fees_maker": fees_maker}
         })
     } else {
+        // Mirror the array form: one fee entry per requested pair, same rates as before.
+        let mut fees = serde_json::Map::new();
+        let mut fees_maker = serde_json::Map::new();
+        for pair in body["pair"].as_str().unwrap_or("XBTUSDT").split(',') {
+            fees.insert(pair.to_string(), serde_json::json!({"fee": "0.2900"}));
+            fees_maker.insert(pair.to_string(), serde_json::json!({"fee": "0.1700"}));
+        }
         serde_json::json!({
             "error": [],
-            "result": {
-                "fees": {"XBTUSDT": {"fee": "0.2900"}},
-                "fees_maker": {"XBTUSDT": {"fee": "0.1700"}}
-            }
+            "result": {"fees": fees, "fees_maker": fees_maker}
         })
     };
 
@@ -951,46 +1026,6 @@ async fn test_spot_data_client_request_instrument_refetches_when_cached() {
         instrument_response(&events).is_none(),
         "request_instrument must not emit a stale cached response when Kraken Spot returns no instruments; events were: {events:?}",
     );
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_spot_data_client_publishes_account_fee_rates() {
-    let (addr, state) = start_test_server().await;
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    replace_data_event_sender(tx);
-    let mut config = create_data_config(addr, KrakenProductType::Spot);
-    config.api_key = Some("test_api_key".into());
-    config.api_secret = Some("dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".into());
-    let client =
-        KrakenSpotDataClient::new(*KRAKEN_CLIENT_ID, config).expect("Kraken spot data client");
-    let instrument_id = InstrumentId::from("BTC/USDT.KRAKEN");
-
-    client
-        .request_instrument(RequestInstrument::new(
-            instrument_id,
-            None,
-            None,
-            Some(*KRAKEN_CLIENT_ID),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        ))
-        .expect("request_instrument");
-
-    wait_until_async(
-        || async {
-            state.trade_volume_request_count.load(Ordering::Relaxed) == 2 && !rx.is_empty()
-        },
-        Duration::from_secs(5),
-    )
-    .await;
-    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
-    let response = instrument_response(&events).expect("instrument response");
-
-    assert_eq!(response.instrument_id, instrument_id);
-    assert_eq!(response.data.maker_fee(), dec!(0.0017));
-    assert_eq!(response.data.taker_fee(), dec!(0.0029));
 }
 
 #[rstest]
@@ -1333,126 +1368,7 @@ async fn test_spot_domain_request_instruments() {
         .expect("AAPLxUSD instrument");
 
     assert!(matches!(currency_pair, InstrumentAny::CurrencyPair(_)));
-    assert_eq!(currency_pair.maker_fee(), dec!(0.0025));
-    assert_eq!(currency_pair.taker_fee(), dec!(0.004));
     assert!(matches!(tokenized, InstrumentAny::TokenizedAsset(_)));
-    assert_eq!(tokenized.maker_fee(), dec!(-0.0002));
-    assert_eq!(tokenized.taker_fee(), dec!(0.001));
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_spot_domain_request_instruments_uses_account_fee_rates_and_retries() {
-    let (addr, state) = start_test_server().await;
-    state
-        .trade_volume_failures_remaining
-        .store(1, Ordering::Relaxed);
-    state
-        .spot_asset_pairs_tokenized_duplicate
-        .store(true, Ordering::Relaxed);
-    let client = KrakenSpotHttpClient::with_credentials(
-        "test_api_key".to_string(),
-        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
-        KrakenEnvironment::Live,
-        Some(format!("http://{addr}")),
-        10,
-        Some(1),
-        Some(1),
-        Some(1),
-        None,
-        5,
-    )
-    .unwrap();
-
-    let instruments = client.request_instruments(None).await.unwrap();
-    let currency_pair = instruments
-        .iter()
-        .find(|instrument| instrument.raw_symbol().as_str() == "XBTUSDT")
-        .expect("XBTUSDT instrument");
-    let tokenized = instruments
-        .iter()
-        .find(|instrument| instrument.raw_symbol().as_str() == "AAPLxUSD")
-        .expect("AAPLxUSD instrument");
-    let tokenized_spv = instruments
-        .iter()
-        .find(|instrument| instrument.raw_symbol().as_str() == "AAPLSPVUSD")
-        .expect("AAPLSPVUSD instrument");
-    let bodies = state.trade_volume_bodies.lock().await;
-
-    assert_eq!(currency_pair.maker_fee(), dec!(0.0017));
-    assert_eq!(currency_pair.taker_fee(), dec!(0.0029));
-    assert_eq!(tokenized.maker_fee(), dec!(0.0003));
-    assert_eq!(tokenized.taker_fee(), dec!(0.0019));
-    assert_eq!(tokenized_spv.maker_fee(), dec!(0.0003));
-    assert_eq!(tokenized_spv.taker_fee(), dec!(0.0019));
-    assert_eq!(state.trade_volume_request_count.load(Ordering::Relaxed), 3);
-    assert_eq!(bodies.len(), 3);
-    assert_eq!(bodies[0]["pair"], serde_json::json!("XBTUSDT"));
-    assert_eq!(bodies[1]["pair"], serde_json::json!("XBTUSDT"));
-    assert_ne!(bodies[0]["nonce"], bodies[1]["nonce"]);
-    assert_eq!(
-        bodies[2]["pair"],
-        serde_json::json!([
-            {"asset": "AAPL/USD", "aclass": "equity_pair"}
-        ])
-    );
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_spot_domain_request_instruments_rejects_missing_account_fee() {
-    let (addr, state) = start_test_server().await;
-    *state.trade_volume_omitted_fee.lock().await = Some("AAPLZUSD.EQ".to_string());
-    let client = KrakenSpotHttpClient::with_credentials(
-        "test_api_key".to_string(),
-        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
-        KrakenEnvironment::Live,
-        Some(format!("http://{addr}")),
-        10,
-        None,
-        None,
-        None,
-        None,
-        5,
-    )
-    .unwrap();
-
-    let result = client.request_instruments(None).await;
-
-    assert!(matches!(
-        result,
-        Err(KrakenHttpError::ParseError(ref message))
-            if message == "TradeVolume response missing taker fee for AAPLxUSD"
-    ));
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_spot_domain_request_instruments_uses_taker_fee_when_maker_fee_missing() {
-    let (addr, state) = start_test_server().await;
-    *state.trade_volume_omitted_maker_fee.lock().await = Some("AAPLZUSD.EQ".to_string());
-    let client = KrakenSpotHttpClient::with_credentials(
-        "test_api_key".to_string(),
-        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
-        KrakenEnvironment::Live,
-        Some(format!("http://{addr}")),
-        10,
-        None,
-        None,
-        None,
-        None,
-        5,
-    )
-    .unwrap();
-
-    let instruments = client.request_instruments(None).await.unwrap();
-    let tokenized = instruments
-        .iter()
-        .find(|instrument| instrument.raw_symbol().as_str() == "AAPLxUSD")
-        .expect("AAPLxUSD instrument");
-
-    assert_eq!(tokenized.maker_fee(), dec!(0.0019));
-    assert_eq!(tokenized.taker_fee(), dec!(0.0019));
 }
 
 #[rstest]
@@ -3759,7 +3675,7 @@ async fn test_spot_request_account_state_margin_other_wallets_lock_own_holds() {
         .unwrap();
 
     // Fixture holds from test_data/http_spot_balance_ex.json.
-    for (code, expected_locked) in [("XBT", dec!(0.1)), ("ETH", dec!(0))] {
+    for (code, expected_locked) in [("BTC", dec!(0.1)), ("ETH", dec!(0))] {
         let balance = state
             .balances
             .iter()
@@ -3833,7 +3749,7 @@ async fn test_spot_request_account_state_cash_locks_held_amounts() {
     let xbt = state
         .balances
         .iter()
-        .find(|b| b.currency.code == "XBT")
+        .find(|b| b.currency.code == "BTC")
         .expect("expected XBT balance");
     assert_eq!(xbt.total.as_decimal().normalize(), dec!(0.5));
     assert_eq!(xbt.locked.as_decimal().normalize(), dec!(0.1));
@@ -3913,7 +3829,7 @@ async fn test_spot_request_account_state_cash_includes_net_credit() {
     let xbt = state
         .balances
         .iter()
-        .find(|b| b.currency.code == "XBT")
+        .find(|b| b.currency.code == "BTC")
         .expect("expected XBT balance from available credit alone");
     assert_eq!(xbt.total.as_decimal().normalize(), dec!(1));
     assert_eq!(xbt.locked.as_decimal(), Decimal::ZERO);
@@ -4244,6 +4160,471 @@ async fn test_spot_request_account_state_synthetic_margin_balance_error() {
     );
 }
 
+fn spot_open_orders_json_for_pair(pair: &str) -> String {
+    format!(
+        r#"{{"error":[],"result":{{"open":{{"O26VBY-ISGAE-JP5TLU":{{"refid":null,"userref":0,"status":"open","opentm":1688583840.8648,"starttm":0,"expiretm":0,"descr":{{"pair":"{pair}","type":"buy","ordertype":"limit","price":"29500.0","price2":"0","leverage":"none","order":"buy 0.50000000 {pair} @ limit 29500.0","close":""}},"vol":"0.50000000","vol_exec":"0.00000000","cost":"0.00000","fee":"0.00000","price":"29500.0","stopprice":"0.00000","limitprice":"0.00000","misc":"","oflags":"fciq"}}}}}}}}"#
+    )
+}
+
+fn spot_trades_history_json(pairs: &[&str]) -> String {
+    let entries: Vec<String> = pairs
+        .iter()
+        .enumerate()
+        .map(|(i, pair)| {
+            format!(
+                r#""TTRADE-{i}":{{"ordertxid":"O26VBY-ISGAE-JP5TLU","postxid":"TKH2SE-M7IF5-CFI7LT","pair":"{pair}","time":1688585840.8921,"type":"buy","ordertype":"limit","price":"29500.50","cost":"14750.25","fee":"23.60","vol":"0.50000000","margin":"0.00000","misc":"","trade_id":{i},"maker":true,"ledgers":["L4UESK-KG3EQ-BJM7HJ"]}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"error":[],"result":{{"trades":{{{}}},"count":{}}}}}"#,
+        entries.join(","),
+        pairs.len()
+    )
+}
+
+fn spot_closed_orders_json(pairs: &[&str]) -> String {
+    let entries: Vec<String> = pairs
+        .iter()
+        .enumerate()
+        .map(|(i, pair)| {
+            format!(
+                r#""OCLOSED-{i}":{{"refid":null,"userref":0,"status":"closed","reason":"User requested","opentm":1688583840.8648,"closetm":1688590000.5432,"starttm":0,"expiretm":0,"descr":{{"pair":"{pair}","type":"buy","ordertype":"limit","price":"29500.0","price2":"0","leverage":"none","order":"buy 0.50000000 {pair} @ limit 29500.0","close":""}},"vol":"0.50000000","vol_exec":"0.50000000","cost":"14750.00000","fee":"22.12500","price":"29500.0","stopprice":"0.00000","limitprice":"0.00000","misc":"","oflags":""}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"error":[],"result":{{"closed":{{{}}},"count":{}}}}}"#,
+        entries.join(","),
+        pairs.len()
+    )
+}
+
+async fn legacy_pair_spot_client(addr: SocketAddr) -> KrakenSpotHttpClient {
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments(None).await.unwrap();
+    client.cache_instruments(&instruments);
+    client
+}
+
+/// A scoped read must match the instrument the row resolves to, not its spelling.
+///
+/// Kraken keys this pair `XXBTZEUR`, which becomes the instrument `raw_symbol`, while `OpenOrders`
+/// spells it `XBTEUR`. Comparing the cached `raw_symbol` against the row dropped the pair's own
+/// orders, and a request for an instrument the client does not hold returned every instrument's.
+#[rstest]
+#[tokio::test]
+async fn test_spot_scoped_order_reports_match_the_resolved_instrument() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.open_orders_json.lock().await = Some(spot_open_orders_json_for_pair("XBTEUR"));
+
+    let client = legacy_pair_spot_client(addr).await;
+    let account = AccountId::new("KRAKEN-001");
+
+    // Control: unscoped, the order is read. Without this the assertions below could all pass
+    // because the server returned nothing.
+    let control = client
+        .request_order_status_reports(account, None, None, None, true)
+        .await
+        .unwrap();
+    assert_eq!(control.len(), 1);
+    assert_eq!(
+        control[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    // Scoped to the pair itself: its own order must come back despite the two spellings.
+    let scoped = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/EUR.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(scoped.len(), 1, "the pair's own order must be returned");
+    assert_eq!(
+        scoped[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    // Scoped to another instrument this client does hold: nothing matches.
+    let other = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/USDT.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(
+        other.is_empty(),
+        "another instrument must not match: {other:?}"
+    );
+
+    // Scoped to an instrument this client does not hold at all. Spot and futures ids share the
+    // KRAKEN venue, so a futures id can reach the spot client.
+    let absent = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(
+        absent.is_empty(),
+        "an instrument this client does not hold must match nothing: {absent:?}"
+    );
+}
+
+/// The same rule for the closed-order read.
+#[rstest]
+#[tokio::test]
+async fn test_spot_scoped_closed_order_reports_match_the_resolved_instrument() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.open_orders_json.lock().await = Some(r#"{"error":[],"result":{"open":{}}}"#.to_string());
+
+    let client = legacy_pair_spot_client(addr).await;
+    let account = AccountId::new("KRAKEN-001");
+
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTEUR", "XBTUSDT"]));
+    let control = client
+        .request_order_status_reports(account, None, None, None, false)
+        .await
+        .unwrap();
+    assert_eq!(control.len(), 2, "control must read both closed orders");
+
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTEUR", "XBTUSDT"]));
+    let scoped = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/EUR.KRAKEN")),
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(
+        scoped[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTEUR", "XBTUSDT"]));
+    let absent = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(absent.is_empty(), "not held must match nothing: {absent:?}");
+}
+
+/// The same rule for the fill read.
+#[rstest]
+#[tokio::test]
+async fn test_spot_scoped_fill_reports_match_the_resolved_instrument() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+
+    let client = legacy_pair_spot_client(addr).await;
+    let account = AccountId::new("KRAKEN-001");
+
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "XBTUSDT"]));
+    let control = client
+        .request_fill_reports(account, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(control.len(), 2, "control must read both fills");
+
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "XBTUSDT"]));
+    let scoped = client
+        .request_fill_reports(
+            account,
+            Some(InstrumentId::from("BTC/EUR.KRAKEN")),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(
+        scoped[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "XBTUSDT"]));
+    let absent = client
+        .request_fill_reports(
+            account,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(absent.is_empty(), "not held must match nothing: {absent:?}");
+}
+
+/// Scoped reads must hold when instruments arrived through the cache APIs.
+///
+/// Such a client never sees the `AssetPairs` response, so its aliases can only come from the
+/// instruments themselves. It must resolve an altname-spelled record, and must still return
+/// nothing for an instrument it does not hold.
+#[rstest]
+#[tokio::test]
+async fn test_spot_scoped_reads_hold_for_cache_supplied_instruments() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.open_orders_json.lock().await = Some(spot_open_orders_json_for_pair("XBTUSDT"));
+
+    let source = legacy_pair_spot_client(addr).await;
+    let instruments = source.request_instruments(None).await.unwrap();
+
+    // A second client fed only through the cache API, so it never sees the AssetPairs response.
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+    client.cache_instruments(&instruments);
+
+    let account = AccountId::new("KRAKEN-001");
+
+    // Control: the row is spelled with the key, which resolves without any alias.
+    let control = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/USDT.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        control.len(),
+        1,
+        "a cache-supplied client must still read its own instrument"
+    );
+
+    // An altname-spelled row must resolve too. `XXBTZEUR` is keyed one way and spelled `XBTEUR`
+    // by OpenOrders, so the alias can only come from the instrument itself here.
+    *state.open_orders_json.lock().await = Some(spot_open_orders_json_for_pair("XBTEUR"));
+    let altname = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("BTC/EUR.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        altname.len(),
+        1,
+        "a cache-supplied client must resolve an altname-spelled row"
+    );
+    assert_eq!(
+        altname[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+
+    let absent = client
+        .request_order_status_reports(
+            account,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(
+        absent.is_empty(),
+        "not held must match nothing on a cache-supplied client: {absent:?}"
+    );
+}
+
+/// An open order spelled with Kraken's altname must resolve to its instrument.
+///
+/// `AssetPairs` keys this pair `XXBTZEUR`, which becomes the instrument `raw_symbol`, while
+/// `OpenOrders` reports it as `XBTEUR`. Without the alias lookup the report is dropped.
+#[rstest]
+#[tokio::test]
+async fn test_spot_order_reports_resolve_altname_spelled_pair() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.open_orders_json.lock().await = Some(spot_open_orders_json_for_pair("XBTEUR"));
+
+    let client = legacy_pair_spot_client(addr).await;
+
+    let reports = client
+        .request_order_status_reports(AccountId::new("KRAKEN-001"), None, None, None, true)
+        .await
+        .expect("an altname-spelled order must resolve to its instrument");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+}
+
+/// A fill spelled with Kraken's altname must resolve the same way.
+#[rstest]
+#[tokio::test]
+async fn test_spot_fill_reports_resolve_altname_spelled_pair() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.trades_history_json.lock().await = Some(spot_trades_history_json(&["XBTEUR"]));
+
+    let client = legacy_pair_spot_client(addr).await;
+
+    let reports = client
+        .request_fill_reports(AccountId::new("KRAKEN-001"), None, None, None)
+        .await
+        .expect("an altname-spelled fill must resolve to its instrument");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+}
+
+/// A report the adapter cannot resolve must fail rather than vanish from a successful return.
+///
+/// A silently shorter list reads to reconciliation as "the order does not exist", which is a
+/// worse outcome than a failed read.
+#[rstest]
+#[tokio::test]
+async fn test_spot_order_reports_error_on_unresolvable_pair() {
+    let (addr, state) = start_test_server().await;
+    *state.open_orders_json.lock().await = Some(spot_open_orders_json_for_pair("NOSUCHPAIR"));
+
+    let client = legacy_pair_spot_client(addr).await;
+
+    let error = client
+        .request_order_status_reports(AccountId::new("KRAKEN-001"), None, None, None, true)
+        .await
+        .expect_err("an unresolvable pair must not be dropped from a successful return");
+
+    assert!(
+        error
+            .to_string()
+            .contains("OpenOrders: instrument not in cache for pair NOSUCHPAIR"),
+        "unexpected error: {error}"
+    );
+}
+
+/// A historical fill whose instrument is gone must not withhold the fills that resolve.
+///
+/// Historical queries reach past the loaded instrument set routinely, so an unresolved row is
+/// logged and skipped while the usable records are preserved.
+#[rstest]
+#[tokio::test]
+async fn test_spot_fill_reports_preserve_records_around_unresolvable_historical_pair() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+
+    let client = legacy_pair_spot_client(addr).await;
+
+    // Control: the identical payload with both pairs resolvable returns both rows, which proves
+    // the row dropped below is well-formed and is skipped only because its pair cannot resolve.
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "XBTUSDT"]));
+    let control = client
+        .request_fill_reports(AccountId::new("KRAKEN-001"), None, None, None)
+        .await
+        .expect("control fills must resolve");
+    assert_eq!(control.len(), 2);
+
+    *state.trades_history_json.lock().await =
+        Some(spot_trades_history_json(&["XBTEUR", "DELISTEDPAIR"]));
+    let reports = client
+        .request_fill_reports(AccountId::new("KRAKEN-001"), None, None, None)
+        .await
+        .expect("an unresolved historical fill must not fail the read");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+}
+
+/// The same contract for closed orders: warn on the unresolved row, return the rest.
+#[rstest]
+#[tokio::test]
+async fn test_spot_closed_order_reports_preserve_records_around_unresolvable_historical_pair() {
+    let (addr, state) = start_test_server().await;
+    state.spot_asset_pairs_legacy.store(true, Ordering::Relaxed);
+    *state.open_orders_json.lock().await = Some(r#"{"error":[],"result":{"open":{}}}"#.to_string());
+
+    let client = legacy_pair_spot_client(addr).await;
+
+    // Control, as above: both rows come back when both pairs resolve.
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTEUR", "XBTUSDT"]));
+    let control = client
+        .request_order_status_reports(AccountId::new("KRAKEN-001"), None, None, None, false)
+        .await
+        .expect("control closed orders must resolve");
+    assert_eq!(control.len(), 2);
+
+    *state.closed_orders_json.lock().await =
+        Some(spot_closed_orders_json(&["XBTEUR", "DELISTEDPAIR"]));
+    let reports = client
+        .request_order_status_reports(AccountId::new("KRAKEN-001"), None, None, None, false)
+        .await
+        .expect("an unresolved historical order must not fail the read");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("BTC/EUR.KRAKEN")
+    );
+}
+
 fn create_xbtusd_spot_instrument() -> (InstrumentId, InstrumentAny) {
     let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
     let inst = InstrumentAny::CurrencyPair(
@@ -4363,6 +4744,18 @@ fn make_open_positions_json(lots: &[(&str, &str, Decimal, Decimal)]) -> String {
     format!(r#"{{"error":[],"result":{{{}}}}}"#, entries.join(","))
 }
 
+fn make_open_positions_json_with_costs(lots: &[(&str, &str, &str, Decimal, Decimal)]) -> String {
+    let entries: Vec<String> = lots
+        .iter()
+        .map(|(pos_id, side, cost, vol, vol_closed)| {
+            format!(
+                r#""{pos_id}": {{"ordertxid": "O-{pos_id}", "pair": "XXBTZUSD", "time": 1714500000.0, "type": "{side}", "ordertype": "market", "cost": "{cost}", "fee": "75.00", "vol": "{vol}", "vol_closed": "{vol_closed}", "margin": "10000.00"}}"#
+            )
+        })
+        .collect();
+    format!(r#"{{"error":[],"result":{{{}}}}}"#, entries.join(","))
+}
+
 async fn setup_margin_position_test(json: String) -> (KrakenSpotHttpClient, InstrumentId) {
     let state = Arc::new(TestServerState::default());
     *state.open_positions_json.lock().await = Some(json);
@@ -4395,6 +4788,141 @@ async fn setup_margin_position_test(json: String) -> (KrakenSpotHttpClient, Inst
     client.cache_instrument(inst);
 
     (client, instrument_id)
+}
+
+/// A FIFO average must be marked so reconciliation never compares it with the cached one.
+///
+/// Buying 1 at 50,000 then 1 at 60,000 and closing 1 leaves Kraken reporting the surviving
+/// 60,000 lot, while a netting position keeps the blended 55,000. Both are right under their own
+/// convention, so the report has to say the average opens a position rather than matches one.
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_entry_average_is_marked_opening_only() {
+    use nautilus_model::{
+        enums::{AccountType, AvgPxReconciliation},
+        identifiers::AccountId,
+    };
+
+    // The 50,000 lot is fully closed, so Kraken drops it and reports only the 60,000 one.
+    let (client, _instrument_id) = setup_margin_position_test(make_open_positions_json_with_costs(
+        &[("LOT2", "buy", "60000.00", dec!(1.0), dec!(0.0))],
+    ))
+    .await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].avg_px_open, Some(dec!(60000)));
+    assert_eq!(
+        reports[0].avg_px_open_reconciliation,
+        AvgPxReconciliation::OpeningOnly,
+        "a FIFO average must not be compared with the cached netting average"
+    );
+}
+
+/// Margin position reports must carry the entry average derived from `cost` and `vol`.
+///
+/// Reconciliation opens a reported position at its entry average, and refuses to invent one, so a
+/// report without it can fail startup.
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_position_reports_carry_the_entry_average() {
+    use nautilus_model::{enums::AccountType, identifiers::AccountId};
+
+    // Control: a single lot priced at 50,000 per unit.
+    let (client, _instrument_id) = setup_margin_position_test(make_open_positions_json_with_costs(
+        &[("LOT1", "buy", "50000.00", dec!(1.0), dec!(0.0))],
+    ))
+    .await;
+
+    let control = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(control.len(), 1);
+    assert_eq!(control[0].avg_px_open, Some(dec!(50000)));
+
+    // Two lots at different prices: the average is weighted by the volume that remains open, so a
+    // second lot at 60,000 moves it to 55,000 rather than leaving it at the first lot's price.
+    let (client, _instrument_id) =
+        setup_margin_position_test(make_open_positions_json_with_costs(&[
+            ("LOT1", "buy", "50000.00", dec!(1.0), dec!(0.0)),
+            ("LOT2", "buy", "60000.00", dec!(1.0), dec!(0.0)),
+        ]))
+        .await;
+
+    let reports = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].avg_px_open, Some(dec!(55000)));
+
+    // A partially closed lot keeps its entry price: cost covers the original volume.
+    let (client, _instrument_id) = setup_margin_position_test(make_open_positions_json_with_costs(
+        &[("LOT1", "buy", "100000.00", dec!(2.0), dec!(1.0))],
+    ))
+    .await;
+
+    let partial = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(partial.len(), 1);
+    assert_eq!(partial[0].avg_px_open, Some(dec!(50000)));
+
+    // Opposing lots net to long, and the report carries the long side's average. Blending the
+    // short lot in would report an entry the surviving exposure was never opened at.
+    let (client, _instrument_id) =
+        setup_margin_position_test(make_open_positions_json_with_costs(&[
+            ("LOT1", "buy", "50000.00", dec!(1.0), dec!(0.0)),
+            ("LOT2", "sell", "28000.00", dec!(0.4), dec!(0.0)),
+        ]))
+        .await;
+
+    let netted = client
+        .request_position_status_reports(
+            AccountId::new("KRAKEN-001"),
+            None,
+            AccountType::Margin,
+            false,
+            ustr::Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(netted.len(), 1);
+    assert_eq!(netted[0].avg_px_open, Some(dec!(50000)));
 }
 
 #[rstest]

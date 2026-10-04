@@ -21,7 +21,7 @@ use databento::dbn;
 use jiff::civil::Time;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
-    data::{Bar, InstrumentStatus, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{Bar, InstrumentStatus, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick},
     identifiers::{InstrumentId, Symbol, Venue},
     python::instruments::instrument_any_to_pyobject,
 };
@@ -43,7 +43,7 @@ impl DatabentoDataLoader {
     /// # Supported Schemas
     ///  - `MBO` -> `OrderBookDelta`
     ///  - `MBP_1` -> `(QuoteTick, Option<TradeTick>)`
-    ///  - `MBP_10` -> `OrderBookDepth10`
+    ///  - `MBP_10` -> `OrderBookDepth`
     ///  - `BBO_1S` -> `QuoteTick`
     ///  - `BBO_1M` -> `QuoteTick`
     ///  - `CMBP_1` -> `(QuoteTick, Option<TradeTick>)`
@@ -198,20 +198,20 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)
     }
 
-    /// Loads order book depth10 snapshots from a DBN MBP-10 schema file.
+    /// Loads order book depth snapshots from a DBN MBP-10 schema file.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading order book depth10 fails.
-    #[pyo3(name = "load_order_book_depth10")]
+    /// Returns an error if loading order book depth fails.
+    #[pyo3(name = "load_order_book_depth")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
-    fn py_load_order_book_depth10(
+    fn py_load_order_book_depth(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
-    ) -> PyResult<Vec<OrderBookDepth10>> {
-        self.load_order_book_depth10(&filepath, instrument_id, price_precision)
+    ) -> PyResult<Vec<OrderBookDepth>> {
+        self.load_order_book_depth(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
     }
 

@@ -26,20 +26,31 @@
 //! `dispatch`: venue execution report (`FillReport`, `OrderStatusReport`) ->
 //! report forwarded via [`ExecutionEventEmitter`]. Covers the untracked
 //! report-fallback path through `dispatch_execution_reports`: dedup plus
-//! `send_*_report` forwarding. The tracked-order path (`dispatch_ws_message`
-//! -> `dispatch_parsed_order_event` -> `OrderAccepted`/`OrderFilled` event
-//! construction) is `pub(crate)` and not exercised here.
+//! `send_*_report` forwarding.
+//!
+//! `dispatch_ws`: decoded private-stream message -> events forwarded via
+//! [`ExecutionEventEmitter`] through `dispatch_ws_message`. Covers the
+//! tracked-order path (identity lookup, order-event parse, dedup bookkeeping,
+//! `OrderAccepted`/`OrderFilled` construction) and account-state updates.
+//!
+//! Every dispatch bench runs against one long-lived `WsDispatchState`, as in
+//! production, and gives each iteration the next ID from a pool larger than the
+//! dedup caches: the caches stay at capacity and no iteration hits a duplicate.
 
 mod common;
 
 use std::hint::black_box;
 
-use common::btc_usdt_swap;
+use ahash::AHashMap;
+use common::{btc_usdt_swap, fixtures};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_common::messages::ExecutionEvent;
+use nautilus_core::{AtomicMap, UUID4, UnixNanos};
+use nautilus_live::execution::context::OrderIdentity;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{ClientOrderId, TradeId, VenueOrderId},
+    enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+    events::OrderEventAny,
+    identifiers::{ClientOrderId, StrategyId, TradeId, VenueOrderId},
     instruments::Instrument,
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
@@ -48,15 +59,17 @@ use nautilus_okx::{
     common::enums::{OKXAlgoOrderType, OKXOrderType, OKXSide, OKXTradeMode, OKXTriggerType},
     http::models::{OKXPlaceAlgoOrderRequest, OKXPlaceOrderRequest},
     websocket::{
-        dispatch::{WsDispatchState, dispatch_execution_reports},
+        dispatch::{WsDispatchState, dispatch_execution_reports, dispatch_ws_message},
         enums::OKXWsOperation,
         messages::{
-            ExecutionReport, OKXWsRequest, WsAmendOrderParams, WsAmendOrderParamsBuilder,
-            WsCancelOrderParams, WsCancelOrderParamsBuilder, WsPostOrderParams,
-            WsPostOrderParamsBuilder,
+            ExecutionReport, OKXOrderMsg, OKXWsFrame, OKXWsMessage, OKXWsRequest,
+            WsAmendOrderParams, WsAmendOrderParamsBuilder, WsCancelOrderParams,
+            WsCancelOrderParamsBuilder, WsPostOrderParams, WsPostOrderParamsBuilder,
         },
+        parse::{FeeCache, FilledQtyCache},
     },
 };
+use ustr::Ustr;
 
 const BTC_INST_ID_CODE: u64 = 1234; // synthetic instIdCode used by WS order ops
 
@@ -275,12 +288,25 @@ fn drain<T>(rx: &mut tokio::sync::mpsc::UnboundedReceiver<T>) {
     while rx.try_recv().is_ok() {}
 }
 
-fn build_fill_report(cid: ClientOrderId, voi: VenueOrderId) -> FillReport {
+// Cycles more distinct IDs than the dispatch dedup caches retain (10,000), so a
+// long-lived state stays at capacity and no ID is still cached when it recurs
+const ID_POOL_SIZE: usize = 16_384;
+
+// Keeps each batch's events, up to two per dispatch, within one emitter channel
+// block (32 slots). The channel drains only between batches, so a larger batch
+// grows and trims the heap inside the timed region; a live consumer never does.
+const DISPATCH_BATCH_SIZE: u64 = 16;
+
+fn id_pool(prefix: &str) -> Vec<String> {
+    (0..ID_POOL_SIZE).map(|i| format!("{prefix}-{i}")).collect()
+}
+
+fn build_fill_report(cid: ClientOrderId, voi: VenueOrderId, trade_id: TradeId) -> FillReport {
     FillReport::new(
         common::account_id(),
         btc_usdt_swap().id(),
         voi,
-        TradeId::new("TRADE-1"),
+        trade_id,
         OrderSide::Buy,
         Quantity::from("0.001"),
         Price::from("92572.0"),
@@ -318,97 +344,236 @@ fn build_status_report(
     .with_price(Price::from("92572.0"))
 }
 
-fn bench_dispatch_fill(c: &mut Criterion) {
+fn bench_dispatch_reports<F>(c: &mut Criterion, name: &str, build: F)
+where
+    F: Fn(ClientOrderId, VenueOrderId, TradeId) -> ExecutionReport,
+{
     let (emitter, mut rx) = common::bench_emitter();
-    let cid = ClientOrderId::from("O-BENCH-DFL");
+    let state = WsDispatchState::default();
+    let client_order_ids: Vec<ClientOrderId> =
+        id_pool("O-BENCH").iter().map(ClientOrderId::new).collect();
+    let trade_ids: Vec<TradeId> = id_pool("T-BENCH").iter().map(TradeId::new).collect();
     let voi = VenueOrderId::from("2497956918703120384");
+    let mut next = 0;
 
     let mut group = c.benchmark_group("dispatch");
     group.throughput(Throughput::Elements(1));
-    group.bench_function("fill", |b| {
+    group.bench_function(name, |b| {
         b.iter_batched(
             || {
                 drain(&mut rx);
-                let state = WsDispatchState::default();
-                let report = build_fill_report(cid, voi);
-                (state, vec![ExecutionReport::Fill(report)])
+                next = (next + 1) % ID_POOL_SIZE;
+                vec![build(client_order_ids[next], voi, trade_ids[next])]
             },
-            |(state, reports)| {
-                dispatch_execution_reports(black_box(reports), &emitter, &state);
-            },
-            BatchSize::SmallInput,
+            |reports| dispatch_execution_reports(black_box(reports), &emitter, &state),
+            BatchSize::NumIterations(DISPATCH_BATCH_SIZE),
         );
     });
     group.finish();
+}
+
+fn bench_dispatch_fill(c: &mut Criterion) {
+    bench_dispatch_reports(c, "fill", |cid, voi, trade_id| {
+        ExecutionReport::Fill(build_fill_report(cid, voi, trade_id))
+    });
 }
 
 fn bench_dispatch_status_accepted(c: &mut Criterion) {
-    let (emitter, mut rx) = common::bench_emitter();
-    let cid = ClientOrderId::from("O-BENCH-DAC");
-    let voi = VenueOrderId::from("2497956918703120384");
-
-    let mut group = c.benchmark_group("dispatch");
-    group.throughput(Throughput::Elements(1));
-    group.bench_function("status_accepted", |b| {
-        b.iter_batched(
-            || {
-                drain(&mut rx);
-                let state = WsDispatchState::default();
-                let report = build_status_report(cid, voi, OrderStatus::Accepted);
-                (state, vec![ExecutionReport::Order(report)])
-            },
-            |(state, reports)| {
-                dispatch_execution_reports(black_box(reports), &emitter, &state);
-            },
-            BatchSize::SmallInput,
-        );
+    bench_dispatch_reports(c, "status_accepted", |cid, voi, _| {
+        ExecutionReport::Order(build_status_report(cid, voi, OrderStatus::Accepted))
     });
-    group.finish();
 }
 
 fn bench_dispatch_status_canceled(c: &mut Criterion) {
-    let (emitter, mut rx) = common::bench_emitter();
-    let cid = ClientOrderId::from("O-BENCH-DCX");
-    let voi = VenueOrderId::from("2497956918703120384");
+    bench_dispatch_reports(c, "status_canceled", |cid, voi, _| {
+        ExecutionReport::Order(build_status_report(cid, voi, OrderStatus::Canceled))
+    });
+}
 
-    let mut group = c.benchmark_group("dispatch");
+fn bench_dispatch_status_filled(c: &mut Criterion) {
+    bench_dispatch_reports(c, "status_filled", |cid, voi, _| {
+        ExecutionReport::Order(build_status_report(cid, voi, OrderStatus::Filled))
+    });
+}
+
+fn decode_data(frame: &str) -> serde_json::Value {
+    let frame: OKXWsFrame = serde_json::from_str(frame).unwrap();
+
+    let OKXWsFrame::Data { data, .. } = frame else {
+        unreachable!()
+    };
+
+    data
+}
+
+fn decode_order_msgs(frame: &str) -> Vec<OKXOrderMsg> {
+    serde_json::from_value(decode_data(frame)).unwrap()
+}
+
+// Gives each pooled message its own client order, venue order, and trade IDs so
+// the long-lived fee, fill, and dedup caches treat every iteration as a new order
+fn tracked_order_msgs(frame: &str) -> Vec<OKXOrderMsg> {
+    let template = decode_order_msgs(frame).remove(0);
+    let client_order_ids = id_pool("O-BENCH");
+    let venue_order_ids = id_pool(template.ord_id.as_str());
+    let trade_ids = id_pool("T-BENCH");
+
+    (0..ID_POOL_SIZE)
+        .map(|i| {
+            let mut msg = template.clone();
+            msg.cl_ord_id.clone_from(&client_order_ids[i]);
+            msg.ord_id = Ustr::from(&venue_order_ids[i]);
+
+            if !msg.trade_id.is_empty() {
+                msg.trade_id.clone_from(&trade_ids[i]);
+            }
+
+            msg
+        })
+        .collect()
+}
+
+fn order_event_kinds(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Vec<&'static str> {
+    std::iter::from_fn(|| rx.try_recv().ok())
+        .map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Accepted(_)) => "accepted",
+            ExecutionEvent::Order(OrderEventAny::Filled(_)) => "filled",
+            _ => "other",
+        })
+        .collect()
+}
+
+fn bench_dispatch_ws_orders(
+    c: &mut Criterion,
+    name: &str,
+    frame: &str,
+    order_type: OrderType,
+    expected_events: &[&str],
+) {
+    let (emitter, mut rx) = common::bench_emitter();
+    let account_id = common::account_id();
+    let instruments = AtomicMap::from(common::instrument_cache());
+    let state = WsDispatchState::default();
+    let mut fee_cache = FeeCache::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
+    let mut order_state_cache = AHashMap::new();
+    let msgs = tracked_order_msgs(frame);
+
+    let identities: Vec<OrderIdentity> = msgs
+        .iter()
+        .map(|msg| OrderIdentity {
+            client_order_id: ClientOrderId::new(&msg.cl_ord_id),
+            strategy_id: StrategyId::from("S-BENCH"),
+            instrument_id: btc_usdt_swap().id(),
+            order_side: OrderSide::Buy,
+            order_type,
+        })
+        .collect();
+
+    let mut dispatch = |message| {
+        dispatch_ws_message(
+            message,
+            &emitter,
+            &state,
+            account_id,
+            AccountType::Cash,
+            &instruments,
+            &mut fee_cache,
+            &mut filled_qty_cache,
+            &mut order_state_cache,
+            common::clock(),
+        );
+    };
+
+    // Checks the steady state the pool relies on: once every pooled ID has been
+    // seen, a recurring ID still emits the events of a first venue update
+    for index in (0..ID_POOL_SIZE).chain([0]) {
+        drain(&mut rx);
+        let identity = identities[index];
+        state
+            .order_identities
+            .insert(identity.client_order_id, identity);
+        dispatch(OKXWsMessage::Orders(vec![msgs[index].clone()]));
+    }
+
+    assert_eq!(order_event_kinds(&mut rx), expected_events);
+    let mut next = 0;
+
+    let mut group = c.benchmark_group("dispatch_ws");
     group.throughput(Throughput::Elements(1));
-    group.bench_function("status_canceled", |b| {
+    group.bench_function(name, |b| {
         b.iter_batched(
             || {
                 drain(&mut rx);
-                let state = WsDispatchState::default();
-                let report = build_status_report(cid, voi, OrderStatus::Canceled);
-                (state, vec![ExecutionReport::Order(report)])
+                next = (next + 1) % ID_POOL_SIZE;
+                let identity = identities[next];
+                state
+                    .order_identities
+                    .insert(identity.client_order_id, identity);
+                OKXWsMessage::Orders(vec![msgs[next].clone()])
             },
-            |(state, reports)| {
-                dispatch_execution_reports(black_box(reports), &emitter, &state);
-            },
-            BatchSize::SmallInput,
+            |message| dispatch(black_box(message)),
+            BatchSize::NumIterations(DISPATCH_BATCH_SIZE),
         );
     });
     group.finish();
 }
 
-fn bench_dispatch_status_filled(c: &mut Criterion) {
-    let (emitter, mut rx) = common::bench_emitter();
-    let cid = ClientOrderId::from("O-BENCH-DFD");
-    let voi = VenueOrderId::from("2497956918703120384");
+fn bench_dispatch_ws_order_accepted(c: &mut Criterion) {
+    bench_dispatch_ws_orders(
+        c,
+        "order_accepted",
+        fixtures::ORDER_LIVE,
+        OrderType::Limit,
+        &["accepted"],
+    );
+}
 
-    let mut group = c.benchmark_group("dispatch");
+fn bench_dispatch_ws_order_filled(c: &mut Criterion) {
+    bench_dispatch_ws_orders(
+        c,
+        "order_filled",
+        fixtures::ORDERS,
+        OrderType::Market,
+        &["accepted", "filled"],
+    );
+}
+
+fn bench_dispatch_ws_account(c: &mut Criterion) {
+    let (emitter, mut rx) = common::bench_emitter();
+    let account_id = common::account_id();
+    let instruments = AtomicMap::from(common::instrument_cache());
+    let state = WsDispatchState::default();
+    let mut fee_cache = FeeCache::new();
+    let mut filled_qty_cache = FilledQtyCache::new();
+    let mut order_state_cache = AHashMap::new();
+    let data = decode_data(fixtures::ACCOUNT);
+
+    let mut group = c.benchmark_group("dispatch_ws");
     group.throughput(Throughput::Elements(1));
-    group.bench_function("status_filled", |b| {
+    group.bench_function("account", |b| {
         b.iter_batched(
             || {
                 drain(&mut rx);
-                let state = WsDispatchState::default();
-                let report = build_status_report(cid, voi, OrderStatus::Filled);
-                (state, vec![ExecutionReport::Order(report)])
+                OKXWsMessage::Account(data.clone())
             },
-            |(state, reports)| {
-                dispatch_execution_reports(black_box(reports), &emitter, &state);
+            |message| {
+                dispatch_ws_message(
+                    black_box(message),
+                    &emitter,
+                    &state,
+                    account_id,
+                    AccountType::Cash,
+                    &instruments,
+                    &mut fee_cache,
+                    &mut filled_qty_cache,
+                    &mut order_state_cache,
+                    common::clock(),
+                );
             },
-            BatchSize::SmallInput,
+            BatchSize::NumIterations(DISPATCH_BATCH_SIZE),
         );
     });
     group.finish();
@@ -426,5 +591,8 @@ criterion_group!(
     bench_dispatch_status_accepted,
     bench_dispatch_status_canceled,
     bench_dispatch_status_filled,
+    bench_dispatch_ws_order_accepted,
+    bench_dispatch_ws_order_filled,
+    bench_dispatch_ws_account,
 );
 criterion_main!(benches);

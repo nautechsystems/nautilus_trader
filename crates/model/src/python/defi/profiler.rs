@@ -198,8 +198,11 @@ impl PoolProfiler {
 
     /// Calculates the liquidity utilization rate for the pool.
     ///
-    /// The utilization rate measures what percentage of total deployed liquidity
+    /// The utilization rate measures what fraction of total deployed liquidity
     /// is currently active (in-range and earning fees) at the current price tick.
+    /// Returns zero when no position liquidity is tracked, otherwise truncates to six decimal places.
+    /// Partial-history replay can produce values above one when active liquidity includes positions
+    /// whose mint events were not replayed.
     #[pyo3(name = "liquidity_utilization_rate")]
     fn py_liquidity_utilization_rate(&self) -> f64 {
         self.liquidity_utilization_rate()
@@ -341,14 +344,14 @@ mod tests {
             "Collect",
         ));
         let token0 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("0000000000000000000000000000000000000001"),
             "USD Coin".to_string(),
             "USDC".to_string(),
             6,
         );
         let token1 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("0000000000000000000000000000000000000002"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),

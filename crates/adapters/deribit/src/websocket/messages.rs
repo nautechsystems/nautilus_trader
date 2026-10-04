@@ -14,11 +14,16 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Data structures for Deribit WebSocket JSON-RPC messages.
+//!
+//! Types with decimal fields or book levels borrow their JSON tokens, so they deserialize only from
+//! borrowed input such as `serde_json::from_str` or `serde_json::from_slice`.
 
-use std::{fmt::Debug, str::FromStr};
+use std::{borrow::Cow, fmt::Debug};
 
 use nautilus_core::{
-    serialization::{deserialize_decimal, deserialize_optional_decimal},
+    serialization::{
+        decimal, deserialize_decimal_token_borrowed, deserialize_optional_decimal_token_borrowed,
+    },
     string::secret::{REDACTED, SecretString},
 };
 use nautilus_model::{
@@ -35,6 +40,7 @@ use nautilus_model::{
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Deserializer, Serialize, de};
+use serde_json::value::RawValue;
 use ustr::Ustr;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -43,7 +49,10 @@ pub use crate::common::{
     enums::DeribitInstrumentState,
     rpc::{DeribitJsonRpcError, DeribitJsonRpcRequest, DeribitJsonRpcResponse},
 };
-use crate::{common::models::DeribitTradeLeg, websocket::error::DeribitWsError};
+use crate::{
+    common::{models::DeribitTradeLeg, serialization::deserialize_decimal_token_or_zero_borrowed},
+    websocket::error::DeribitWsError,
+};
 
 /// JSON-RPC subscription notification from Deribit.
 #[derive(Debug, Clone, Deserialize)]
@@ -148,10 +157,10 @@ pub struct DeribitTradeMsg {
     /// Instrument name.
     pub instrument_name: Ustr,
     /// Trade price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub price: Decimal,
     /// Trade amount (contracts).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub amount: Decimal,
     /// Trade direction ("buy" or "sell").
     pub direction: String,
@@ -162,13 +171,16 @@ pub struct DeribitTradeMsg {
     /// Tick direction (0-3).
     pub tick_direction: i8,
     /// Index price at trade time.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub index_price: Decimal,
     /// Mark price at trade time.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub mark_price: Decimal,
     /// IV (for options).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub iv: Option<Decimal>,
     /// Liquidation indicator.
     pub liquidation: Option<String>,
@@ -191,7 +203,7 @@ pub struct DeribitTradeMsg {
 /// Note: The grouped book channel (`book.{instrument}.{group}.{depth}.{interval}`) does not include
 /// a `type` field since it always sends complete snapshots. We default to `Snapshot` when not present.
 #[derive(Debug, Clone, Deserialize)]
-pub struct DeribitBookMsg {
+pub struct DeribitBookMsg<'a> {
     /// Message type (snapshot or change). Defaults to Snapshot for grouped channels.
     #[serde(rename = "type", default = "default_book_msg_type")]
     pub msg_type: DeribitBookMsgType,
@@ -204,9 +216,11 @@ pub struct DeribitBookMsg {
     /// Previous change ID (for delta validation).
     pub prev_change_id: Option<u64>,
     /// Bid levels: [action, price, amount] where action is "new" for snapshot, "new"/"change"/"delete" for change.
-    pub bids: Vec<Vec<serde_json::Value>>,
+    #[serde(borrow)]
+    pub bids: Vec<Vec<&'a RawValue>>,
     /// Ask levels: [action, price, amount] where action is "new" for snapshot, "new"/"change"/"delete" for change.
-    pub asks: Vec<Vec<serde_json::Value>>,
+    #[serde(borrow)]
+    pub asks: Vec<Vec<&'a RawValue>>,
 }
 
 /// Default book message type for grouped channels (always snapshot).
@@ -233,52 +247,91 @@ pub struct DeribitTickerMsg {
     /// Timestamp in milliseconds.
     pub timestamp: u64,
     /// Best bid price.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub best_bid_price: Option<Decimal>,
     /// Best bid amount.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub best_bid_amount: Option<Decimal>,
     /// Best ask price.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub best_ask_price: Option<Decimal>,
     /// Best ask amount.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub best_ask_amount: Option<Decimal>,
     /// Last trade price.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub last_price: Option<Decimal>,
     /// Mark price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub mark_price: Decimal,
     /// Index price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub index_price: Decimal,
     /// Open interest.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub open_interest: Decimal,
     /// Current funding rate (perpetuals).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub current_funding: Option<Decimal>,
     /// Funding 8h rate (perpetuals).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub funding_8h: Option<Decimal>,
     /// Settlement price (expired instruments).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub settlement_price: Option<Decimal>,
     /// 24h volume.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub volume: Option<Decimal>,
     /// 24h volume in USD.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub volume_usd: Option<Decimal>,
     /// 24h high.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub high: Option<Decimal>,
     /// 24h low.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub low: Option<Decimal>,
     /// 24h price change.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub price_change: Option<Decimal>,
     /// State of the instrument.
     pub state: String,
@@ -286,16 +339,28 @@ pub struct DeribitTickerMsg {
     /// Greeks (options).
     pub greeks: Option<DeribitGreeks>,
     /// Mark implied volatility (options).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub mark_iv: Option<Decimal>,
     /// Bid implied volatility (options).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub bid_iv: Option<Decimal>,
     /// Ask implied volatility (options).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub ask_iv: Option<Decimal>,
     /// Underlying price (options).
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub underlying_price: Option<Decimal>,
     /// Underlying index (options).
     pub underlying_index: Option<String>,
@@ -304,15 +369,15 @@ pub struct DeribitTickerMsg {
 /// Greeks for options.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeribitGreeks {
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub delta: Decimal,
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub gamma: Decimal,
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub vega: Decimal,
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub theta: Decimal,
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub rho: Decimal,
 }
 
@@ -337,16 +402,16 @@ pub struct DeribitQuoteMsg {
     /// Timestamp in milliseconds.
     pub timestamp: u64,
     /// Best bid price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub best_bid_price: Decimal,
     /// Best bid amount.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub best_bid_amount: Decimal,
     /// Best ask price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub best_ask_price: Decimal,
     /// Best ask amount.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub best_ask_amount: Decimal,
 }
 
@@ -372,10 +437,10 @@ pub struct DeribitInstrumentStateMsg {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeribitPerpetualMsg {
     /// Current index price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub index_price: Decimal,
     /// Current interest rate (funding rate).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub interest: Decimal,
     /// Timestamp in milliseconds since Unix epoch.
     pub timestamp: u64,
@@ -412,17 +477,23 @@ pub struct DeribitChartMsg {
     /// Bar timestamp in milliseconds since Unix epoch.
     pub tick: u64,
     /// Opening price.
-    pub open: f64,
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
+    pub open: Decimal,
     /// Highest price.
-    pub high: f64,
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
+    pub high: Decimal,
     /// Lowest price.
-    pub low: f64,
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
+    pub low: Decimal,
     /// Closing price.
-    pub close: f64,
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
+    pub close: Decimal,
     /// Volume in base currency.
-    pub volume: f64,
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
+    pub volume: Decimal,
     /// Volume in USD.
-    pub cost: f64,
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
+    pub cost: Decimal,
     /// Bar status: `Ok` for closed bar, `Imputed` for in-progress bar.
     #[serde(default)]
     pub status: DeribitChartStatus,
@@ -430,14 +501,14 @@ pub struct DeribitChartMsg {
 
 /// Order parameters for private/buy and private/sell requests.
 ///
-/// Note: Decimal fields are serialized as JSON floats per Deribit API requirements,
-/// which may cause precision loss for values with more than ~15 significant digits.
+/// Decimal fields serialize as exact JSON numbers. Without `serde_json/arbitrary_precision`,
+/// serialization fails when the JSON number would change the decimal value.
 #[derive(Debug, Clone, Serialize)]
 pub struct DeribitOrderParams {
     /// Instrument name (e.g., "BTC-PERPETUAL").
     pub instrument_name: String,
     /// Order amount in contracts.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(serialize_with = "decimal::serialize")]
     pub amount: Decimal,
     /// Order type: "limit", "market", "stop_limit", "stop_market", "take_limit", "take_market".
     #[serde(rename = "type")]
@@ -448,7 +519,7 @@ pub struct DeribitOrderParams {
     /// Limit price (required for limit orders).
     #[serde(
         skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::float_option"
+        serialize_with = "decimal::serialize_optional"
     )]
     pub price: Option<Decimal>,
     /// Time in force: "good_til_cancelled", "good_til_day", "fill_or_kill", "immediate_or_cancel".
@@ -468,7 +539,7 @@ pub struct DeribitOrderParams {
     /// Trigger price for stop/take orders.
     #[serde(
         skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::float_option"
+        serialize_with = "decimal::serialize_optional"
     )]
     pub trigger_price: Option<Decimal>,
     /// Trigger type: "last_price", "index_price", "mark_price".
@@ -477,7 +548,7 @@ pub struct DeribitOrderParams {
     /// Maximum display quantity for iceberg orders.
     #[serde(
         skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::float_option"
+        serialize_with = "decimal::serialize_optional"
     )]
     pub max_show: Option<Decimal>,
     /// GTD expiration timestamp in milliseconds.
@@ -504,25 +575,25 @@ pub struct DeribitCancelAllByInstrumentParams {
 
 /// Edit order parameters for private/edit request.
 ///
-/// Note: Decimal fields are serialized as JSON floats per Deribit API requirements,
-/// which may cause precision loss for values with more than ~15 significant digits.
+/// Decimal fields serialize as exact JSON numbers. Without `serde_json/arbitrary_precision`,
+/// serialization fails when the JSON number would change the decimal value.
 #[derive(Debug, Clone, Serialize)]
 pub struct DeribitEditParams {
     /// Venue order ID to modify.
     pub order_id: String,
     /// New amount.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(serialize_with = "decimal::serialize")]
     pub amount: Decimal,
     /// New price (for limit orders).
     #[serde(
         skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::float_option"
+        serialize_with = "decimal::serialize_optional"
     )]
     pub price: Option<Decimal>,
     /// New trigger price (for stop orders).
     #[serde(
         skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::float_option"
+        serialize_with = "decimal::serialize_optional"
     )]
     pub trigger_price: Option<Decimal>,
     /// Post-only flag. If true and order would take liquidity, price is adjusted
@@ -547,74 +618,20 @@ pub struct DeribitGetOrderStateParams {
 
 // Deribit returns the literal string `"market_price"` for the price of trigger
 // market orders (`stop_market`, `take_market`) since they have no limit price.
-// Such values are mapped to `None`; other inputs delegate to the standard
-// optional decimal deserialization.
+// Such values are mapped to `None`; other inputs delegate to the optional exact
+// decimal reader.
 fn deserialize_optional_decimal_or_market<'de, D>(
     deserializer: D,
 ) -> Result<Option<Decimal>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    struct Visitor;
-
-    impl<'de> de::Visitor<'de> for Visitor {
-        type Value = Option<Decimal>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str(
-                "null, a decimal as string/integer/float, or the literal \"market_price\"",
-            )
-        }
-
-        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-            if v.is_empty() || v == "market_price" {
-                return Ok(None);
-            }
-
-            if v.contains('e') || v.contains('E') {
-                Decimal::from_scientific(v).map(Some).map_err(E::custom)
-            } else {
-                Decimal::from_str(v).map(Some).map_err(E::custom)
-            }
-        }
-
-        fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
-            self.visit_str(&v)
-        }
-
-        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
-            Ok(Some(Decimal::from(v)))
-        }
-
-        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
-            Ok(Some(Decimal::from(v)))
-        }
-
-        fn visit_i128<E: de::Error>(self, v: i128) -> Result<Self::Value, E> {
-            Ok(Some(Decimal::from(v)))
-        }
-
-        fn visit_u128<E: de::Error>(self, v: u128) -> Result<Self::Value, E> {
-            Ok(Some(Decimal::from(v)))
-        }
-
-        fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
-            if v.is_nan() || v.is_infinite() {
-                return Err(E::invalid_value(de::Unexpected::Float(v), &self));
-            }
-            Decimal::try_from(v).map(Some).map_err(E::custom)
-        }
-
-        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
+    match Option::<&'de RawValue>::deserialize(deserializer)? {
+        Some(raw) if raw.get() == "\"market_price\"" => Ok(None),
+        Some(raw) => deserialize_optional_decimal_token_borrowed(raw)
+            .map_err(|_| de::Error::custom("expected a decimal or market_price")),
+        None => Ok(None),
     }
-
-    deserializer.deserialize_any(Visitor)
 }
 
 /// Order response from buy/sell/edit operations.
@@ -654,16 +671,19 @@ pub struct DeribitOrderMsg {
     #[serde(default, deserialize_with = "deserialize_optional_decimal_or_market")]
     pub price: Option<Decimal>,
     /// Original order amount in contracts.
-    #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token_or_zero_borrowed")]
     pub amount: Decimal,
     /// Amount filled so far. Deribit omits this field for untriggered trigger
     /// orders (e.g. `stop_market`, `stop_limit`); treat the missing case as zero.
-    #[serde(default, deserialize_with = "deserialize_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_decimal_token_or_zero_borrowed"
+    )]
     pub filled_amount: Decimal,
     /// Average fill price.
     #[serde(
         default,
-        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
     )]
     pub average_price: Option<Decimal>,
     /// Order creation timestamp in milliseconds.
@@ -675,7 +695,7 @@ pub struct DeribitOrderMsg {
     /// Commission paid in base currency.
     #[serde(
         default,
-        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+        deserialize_with = "deserialize_decimal_token_or_zero_borrowed"
     )]
     pub commission: Decimal,
     /// Post-only flag.
@@ -687,7 +707,7 @@ pub struct DeribitOrderMsg {
     /// Trigger price for stop/take orders.
     #[serde(
         default,
-        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
     )]
     pub trigger_price: Option<Decimal>,
     /// Trigger type: "last_price", "index_price", "mark_price".
@@ -695,7 +715,7 @@ pub struct DeribitOrderMsg {
     /// Max show quantity for iceberg orders.
     #[serde(
         default,
-        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
     )]
     pub max_show: Option<Decimal>,
     /// API request flag.
@@ -722,20 +742,20 @@ pub struct DeribitUserTradeMsg {
     pub direction: String,
     /// Execution price.
     #[serde(
-        serialize_with = "nautilus_core::serialization::serialize_decimal",
-        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+        serialize_with = "decimal::serialize",
+        deserialize_with = "deserialize_decimal_token_or_zero_borrowed"
     )]
     pub price: Decimal,
     /// Trade amount in contracts.
     #[serde(
-        serialize_with = "nautilus_core::serialization::serialize_decimal",
-        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+        serialize_with = "decimal::serialize",
+        deserialize_with = "deserialize_decimal_token_or_zero_borrowed"
     )]
     pub amount: Decimal,
     /// Fee amount.
     #[serde(
-        serialize_with = "nautilus_core::serialization::serialize_decimal",
-        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+        serialize_with = "decimal::serialize",
+        deserialize_with = "deserialize_decimal_token_or_zero_borrowed"
     )]
     pub fee: Decimal,
     /// Fee currency.
@@ -750,14 +770,14 @@ pub struct DeribitUserTradeMsg {
     pub order_type: String,
     /// Index price at trade time.
     #[serde(
-        serialize_with = "nautilus_core::serialization::serialize_decimal",
-        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+        serialize_with = "decimal::serialize",
+        deserialize_with = "deserialize_decimal_token_or_zero_borrowed"
     )]
     pub index_price: Decimal,
     /// Mark price at trade time.
     #[serde(
-        serialize_with = "nautilus_core::serialization::serialize_decimal",
-        deserialize_with = "nautilus_core::serialization::deserialize_decimal"
+        serialize_with = "decimal::serialize",
+        deserialize_with = "deserialize_decimal_token_or_zero_borrowed"
     )]
     pub mark_price: Decimal,
     /// Tick direction (0-3).
@@ -778,8 +798,8 @@ pub struct DeribitUserTradeMsg {
     /// Profit/loss for this trade.
     #[serde(
         default,
-        serialize_with = "nautilus_core::serialization::serialize_optional_decimal",
-        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+        serialize_with = "decimal::serialize_optional",
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
     )]
     pub profit_loss: Option<Decimal>,
 }
@@ -790,22 +810,22 @@ pub struct DeribitPortfolioMsg {
     /// Currency code (e.g., "BTC", "ETH", "USDC", "USDT").
     pub currency: String,
     /// Account equity (balance + unrealized PnL). Used for zero-balance filtering.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub equity: Decimal,
     /// Account balance. Used for zero-balance filtering.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub balance: Decimal,
     /// Available funds for trading. Maps to AccountBalance.free.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub available_funds: Decimal,
     /// Margin balance. Maps to AccountBalance.total.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub margin_balance: Decimal,
     /// Initial margin requirement. Maps to MarginBalance.initial.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub initial_margin: Decimal,
     /// Maintenance margin requirement. Maps to MarginBalance.maintenance.
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(deserialize_with = "deserialize_decimal_token_borrowed")]
     pub maintenance_margin: Decimal,
     /// Margin model (e.g., "segregated_sm", "cross_sm", "cross_pm")
     #[serde(default)]
@@ -814,17 +834,23 @@ pub struct DeribitPortfolioMsg {
     #[serde(default)]
     pub cross_collateral_enabled: Option<bool>,
     /// Available withdrawal funds (per-currency withdrawable amount)
-    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
     pub available_withdrawal_funds: Option<Decimal>,
 }
 
 /// Raw Deribit WebSocket message variants.
+///
+/// Response results and notification data keep their raw JSON text so typed decoding reads
+/// exact numeric tokens.
 #[derive(Clone)]
 pub enum DeribitWsMessage {
     /// JSON-RPC response to a request.
-    Response(DeribitJsonRpcResponse<serde_json::Value>),
+    Response(DeribitJsonRpcResponse<Box<RawValue>>),
     /// Subscription notification (trade, book, ticker data).
-    Notification(DeribitSubscriptionNotification<serde_json::Value>),
+    Notification(DeribitSubscriptionNotification<Box<RawValue>>),
     /// Heartbeat message.
     Heartbeat(DeribitHeartbeatData),
     /// JSON-RPC error.
@@ -838,7 +864,9 @@ impl Debug for DeribitWsMessage {
         match self {
             Self::Response(response)
                 if response.result.as_ref().is_some_and(|result| {
-                    result.get("access_token").is_some() || result.get("refresh_token").is_some()
+                    serde_json::from_str::<DeribitAuthTokenKeys>(result.get()).is_ok_and(|keys| {
+                        keys.access_token.is_some() || keys.refresh_token.is_some()
+                    })
                 }) =>
             {
                 f.debug_tuple("Response").field(&REDACTED).finish()
@@ -915,7 +943,7 @@ pub enum NautilusWsMessage {
     /// Error from venue.
     Error(DeribitWsError),
     /// Unhandled/raw message for debugging.
-    Raw(serde_json::Value),
+    Raw(Box<RawValue>),
     /// Reconnection completed.
     Reconnected,
     /// Authentication succeeded with tokens.
@@ -930,40 +958,50 @@ pub enum NautilusWsMessage {
 ///
 /// Returns an error if JSON parsing fails or the message format is unrecognized.
 pub fn parse_raw_message(text: &str) -> Result<DeribitWsMessage, DeribitWsError> {
-    let value: serde_json::Value =
+    let header: DeribitWsHeader =
         serde_json::from_str(text).map_err(|e| DeribitWsError::Json(e.to_string()))?;
 
-    // Check for subscription notification (has "method": "subscription")
-    if let Some(method) = value.get("method").and_then(|m| m.as_str()) {
-        if method == "subscription" {
-            let notification: DeribitSubscriptionNotification<serde_json::Value> =
-                serde_json::from_value(value).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+    match header.method.as_deref() {
+        Some("subscription") => {
+            let notification: DeribitSubscriptionNotification<Box<RawValue>> =
+                serde_json::from_str(text).map_err(|e| DeribitWsError::Json(e.to_string()))?;
             return Ok(DeribitWsMessage::Notification(notification));
         }
-        // Check for heartbeat
-        if method == "heartbeat"
-            && let Some(params) = value.get("params")
-        {
-            let heartbeat: DeribitHeartbeatData = serde_json::from_value(params.clone())
-                .map_err(|e| DeribitWsError::Json(e.to_string()))?;
-            return Ok(DeribitWsMessage::Heartbeat(heartbeat));
+        Some("heartbeat") => {
+            let heartbeat: DeribitHeartbeatNotification =
+                serde_json::from_str(text).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+
+            if let Some(params) = heartbeat.params {
+                return Ok(DeribitWsMessage::Heartbeat(params));
+            }
         }
+        _ => {}
     }
 
-    // Check for JSON-RPC response (has "id" field)
-    // IMPORTANT: Both success and error responses should be returned as Response
-    // so the handler can correlate them with pending requests using the ID.
-    // This allows proper cleanup of pending_requests and emission of rejection events.
-    if value.get("id").is_some() {
-        let response: DeribitJsonRpcResponse<serde_json::Value> =
-            serde_json::from_value(value).map_err(|e| DeribitWsError::Json(e.to_string()))?;
-        return Ok(DeribitWsMessage::Response(response));
-    }
-
-    // Fallback: try to parse as generic response
-    let response: DeribitJsonRpcResponse<serde_json::Value> =
-        serde_json::from_value(value).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+    // Both success and error responses are returned as Response so the handler can
+    // correlate them with pending requests by ID, clean up pending_requests, and emit
+    // rejection events. Messages without an ID also parse as responses.
+    let response: DeribitJsonRpcResponse<Box<RawValue>> =
+        serde_json::from_str(text).map_err(|e| DeribitWsError::Json(e.to_string()))?;
     Ok(DeribitWsMessage::Response(response))
+}
+
+#[derive(Deserialize)]
+struct DeribitWsHeader<'a> {
+    #[serde(borrow, default)]
+    method: Option<Cow<'a, str>>,
+}
+
+#[derive(Deserialize)]
+struct DeribitHeartbeatNotification {
+    #[serde(default)]
+    params: Option<DeribitHeartbeatData>,
+}
+
+#[derive(Deserialize)]
+struct DeribitAuthTokenKeys {
+    access_token: Option<de::IgnoredAny>,
+    refresh_token: Option<de::IgnoredAny>,
 }
 
 /// Extracts the instrument name from a channel string.
@@ -983,6 +1021,97 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(f64::NEG_INFINITY)]
+    fn test_order_price_rejects_non_finite_floats(#[case] value: f64) {
+        let value = serde::de::value::F64Deserializer::<serde::de::value::Error>::new(value);
+        assert!(deserialize_optional_decimal_or_market(value).is_err());
+    }
+
+    #[rstest]
+    #[case(serde_json::json!("market_price"), None)]
+    #[case(serde_json::json!(""), None)]
+    #[case(serde_json::Value::Null, None)]
+    #[case(serde_json::json!("0.1234567890123456789012345678"), Some(Decimal::from_str_exact("0.1234567890123456789012345678").unwrap()))]
+    #[case(serde_json::json!(9007199254740993u64), Some(Decimal::from(9_007_199_254_740_993u64)))]
+    fn test_order_price_routes(
+        #[case] price: serde_json::Value,
+        #[case] expected: Option<Decimal>,
+    ) {
+        let mut response: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_stop_market_response.json"
+        ))
+        .unwrap();
+        response["result"]["order"]["price"] = price;
+        let order: DeribitOrderMsg =
+            serde_json::from_str(&response["result"]["order"].to_string()).unwrap();
+
+        assert_eq!(order.price, expected);
+    }
+
+    #[rstest]
+    #[case("abc")]
+    #[case("MARKET_PRICE")]
+    fn test_order_price_rejects_invalid_strings(#[case] price: &str) {
+        let mut response: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_order_stop_market_response.json"
+        ))
+        .unwrap();
+        response["result"]["order"]["price"] = serde_json::json!(price);
+        let error =
+            serde_json::from_str::<DeribitOrderMsg>(&response["result"]["order"].to_string())
+                .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("expected a decimal or market_price")
+        );
+    }
+
+    #[rstest]
+    #[case(None, "55.00055")]
+    #[case(
+        Some("0.12345678901234567890123456789"),
+        "0.1234567890123456789012345679"
+    )]
+    fn test_portfolio_decimal_routes(#[case] equity: Option<&str>, #[case] expected: &str) {
+        let response: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/ws_portfolio.json")).unwrap();
+        let mut data = response["params"]["data"].clone();
+
+        if let Some(equity) = equity {
+            data["equity"] = serde_json::json!(equity);
+        }
+
+        let portfolio: DeribitPortfolioMsg = serde_json::from_str(&data.to_string()).unwrap();
+        assert_eq!(portfolio.currency, "USDT");
+        assert_eq!(portfolio.equity, Decimal::from_str_exact(expected).unwrap());
+        assert_eq!(portfolio.balance, Decimal::new(5500055, 5));
+        assert_eq!(portfolio.available_funds, Decimal::new(53868247, 6));
+        assert_eq!(portfolio.margin_balance, Decimal::new(54968258, 6));
+        assert_eq!(portfolio.initial_margin, Decimal::new(1100011, 6));
+        assert_eq!(portfolio.maintenance_margin, Decimal::ZERO);
+        assert_eq!(portfolio.margin_model.as_deref(), Some("cross_sm"));
+        assert_eq!(portfolio.cross_collateral_enabled, Some(true));
+        assert_eq!(
+            portfolio.available_withdrawal_funds,
+            Some(Decimal::new(54968257, 6))
+        );
+
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!(""),
+            serde_json::json!(true),
+        ] {
+            let mut data = data.clone();
+            data["equity"] = invalid;
+            assert!(serde_json::from_str::<DeribitPortfolioMsg>(&data.to_string()).is_err());
+        }
+    }
 
     fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
 
@@ -1079,7 +1208,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_auth_response_debug_redacts_tokens() {
+    #[case::plain_keys("access_token", "refresh_token")]
+    #[case::escaped_keys(r"access\u005ftoken", r"refresh\u005ftoken")]
+    fn test_auth_response_debug_redacts_tokens(
+        #[case] access_key: &str,
+        #[case] refresh_key: &str,
+    ) {
         let access_token = "access-token-value";
         let refresh_token = "refresh-token-value";
         let json = format!(
@@ -1087,8 +1221,8 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 1,
                 "result": {{
-                    "access_token": "{access_token}",
-                    "refresh_token": "{refresh_token}"
+                    "{access_key}": "{access_token}",
+                    "{refresh_key}": "{refresh_token}"
                 }}
             }}"#,
         );

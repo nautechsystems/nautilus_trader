@@ -30,7 +30,7 @@ use super::{
     level::BookLevel, own::OwnOrderBook,
 };
 use crate::{
-    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick},
     enums::{BookAction, BookType, OrderSide, OrderStatus, RecordFlag},
     identifiers::InstrumentId,
     orderbook::{
@@ -162,6 +162,9 @@ impl OrderBook {
     }
 
     /// Clears all orders from both sides of the book.
+    ///
+    /// A full clear uses its `sequence` as the new sequence high-water.
+    /// `clear_bids` and `clear_asks` preserve the current high-water.
     pub fn clear(&mut self, sequence: u64, ts_event: UnixNanos) {
         self.clear_with_flags(sequence, ts_event, 0);
     }
@@ -182,6 +185,11 @@ impl OrderBook {
         self.bids.clear();
         self.asks.clear();
         self.increment(sequence, ts_event, flags);
+
+        // Check the clear against the old high-water before using its sequence as the new one
+        if !RecordFlag::F_SNAPSHOT.matches(flags) {
+            self.sequence = sequence;
+        }
     }
 
     /// Removes overlapped bid/ask levels when the book is strictly crossed (best bid > best ask)
@@ -529,7 +537,7 @@ impl OrderBook {
     /// # Errors
     ///
     /// Returns an error if the depth's instrument ID does not match this book's instrument ID.
-    pub fn apply_depth(&mut self, depth: &OrderBookDepth10) -> Result<(), BookIntegrityError> {
+    pub fn apply_depth(&mut self, depth: &OrderBookDepth) -> Result<(), BookIntegrityError> {
         if depth.instrument_id != self.instrument_id {
             return Err(BookIntegrityError::InstrumentMismatch(
                 self.instrument_id,
@@ -548,12 +556,12 @@ impl OrderBook {
     /// This function currently does not return errors, but returns `Result` for API consistency.
     pub fn apply_depth_unchecked(
         &mut self,
-        depth: &OrderBookDepth10,
+        depth: &OrderBookDepth,
     ) -> Result<(), BookIntegrityError> {
         self.bids.clear();
         self.asks.clear();
 
-        for order in depth.bids {
+        for &order in &depth.bids {
             // Skip padding entries
             if order.side.is_none() || !order.size.is_positive() {
                 continue;
@@ -578,7 +586,7 @@ impl OrderBook {
             self.bids.add(order, depth.flags);
         }
 
-        for order in depth.asks {
+        for &order in &depth.asks {
             // Skip padding entries
             if order.side.is_none() || !order.size.is_positive() {
                 continue;
@@ -867,9 +875,10 @@ impl OrderBook {
         let mut public_map = group_levels(self.bids(None), group_size, depth, true);
 
         if let Some(own_book) = own_book {
+            // Leave own buckets untruncated so better-priced ones cannot evict those within depth
             filter_quantities(
                 &mut public_map,
-                own_book.bid_quantity(status, depth, Some(group_size), accepted_buffer_ns, now),
+                own_book.bid_quantity(status, None, Some(group_size), accepted_buffer_ns, now),
             );
         }
 
@@ -899,9 +908,10 @@ impl OrderBook {
         let mut public_map = group_levels(self.asks(None), group_size, depth, false);
 
         if let Some(own_book) = own_book {
+            // Leave own buckets untruncated so better-priced ones cannot evict those within depth
             filter_quantities(
                 &mut public_map,
-                own_book.ask_quantity(status, depth, Some(group_size), accepted_buffer_ns, now),
+                own_book.ask_quantity(status, None, Some(group_size), accepted_buffer_ns, now),
             );
         }
 
@@ -988,7 +998,9 @@ impl OrderBook {
         analysis::get_worst_px_for_quantity(qty, levels)
     }
 
-    /// Calculates average price and quantity for target exposure. Returns (price, quantity, `executed_exposure`).
+    /// Calculates average price and quantity for target exposure.
+    ///
+    /// Returns (average price, quantity, last-touched price).
     #[must_use]
     pub fn get_avg_px_qty_for_exposure(
         &self,

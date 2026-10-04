@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::common::{
-    enums::{PolymarketOrderSide, PolymarketOutcome},
+    enums::{PolymarketOrderSide, PolymarketOutcome, PolymarketSignerType},
     parse::{deserialize_decimal_from_str, serialize_decimal_as_str},
 };
 
@@ -38,8 +38,10 @@ pub(crate) fn is_owned_by_account(
     owner: &str,
     user_address: &str,
     api_key: &str,
+    signer_type: PolymarketSignerType,
 ) -> bool {
-    maker_address.eq_ignore_ascii_case(user_address) || owner == api_key
+    (signer_type == PolymarketSignerType::Owner && maker_address.eq_ignore_ascii_case(user_address))
+        || owner == api_key
 }
 
 /// A maker order included in trade messages.
@@ -78,15 +80,27 @@ impl PolymarketMakerOrder {
     /// Returns whether this maker order belongs to the account identified by
     /// `user_address` and `api_key`.
     ///
-    /// The address comparison ignores ASCII case: hex letter case carries no
+    /// Session signers require an exact API-key match; the wallet can have other signers.
+    /// For owner signers, the address comparison ignores ASCII case: hex letter case carries no
     /// account identity (EIP-55 checksumming encodes only a display checksum),
     /// and the two sides routinely disagree: recorded venue payloads carry
     /// checksummed maker addresses while configured funder addresses are
     /// commonly lowercase, or vice versa. The API-key comparison stays exact
     /// because keys are opaque credentials.
     #[must_use]
-    pub(crate) fn is_owned_by(&self, user_address: &str, api_key: &str) -> bool {
-        is_owned_by_account(&self.maker_address, &self.owner, user_address, api_key)
+    pub(crate) fn is_owned_by(
+        &self,
+        user_address: &str,
+        api_key: &str,
+        signer_type: PolymarketSignerType,
+    ) -> bool {
+        is_owned_by_account(
+            &self.maker_address,
+            &self.owner,
+            user_address,
+            api_key,
+            signer_type,
+        )
     }
 }
 
@@ -198,11 +212,19 @@ mod tests {
         // Production direction: venue payloads carry checksummed maker
         // addresses while configured funder addresses are commonly lowercase.
         order.maker_address = uppercase_variant_address.clone();
-        assert!(order.is_owned_by(&lowercase_address, "no-such-key"));
+        assert!(order.is_owned_by(
+            &lowercase_address,
+            "no-such-key",
+            PolymarketSignerType::Owner
+        ));
 
         // Reverse direction: lowercase payload, mixed-case configuration.
         order.maker_address = lowercase_address;
-        assert!(order.is_owned_by(&uppercase_variant_address, "no-such-key"));
+        assert!(order.is_owned_by(
+            &uppercase_variant_address,
+            "no-such-key",
+            PolymarketSignerType::Owner
+        ));
     }
 
     #[rstest]
@@ -210,7 +232,7 @@ mod tests {
         let order: PolymarketMakerOrder = serde_json::from_str(sample_maker_order_json()).unwrap();
         let owner = order.owner.clone();
 
-        assert!(order.is_owned_by("0xother", &owner));
+        assert!(order.is_owned_by("0xother", &owner, PolymarketSignerType::Owner));
     }
 
     #[rstest]
@@ -221,14 +243,14 @@ mod tests {
         let case_variant_key = order.owner.to_ascii_uppercase();
         assert_ne!(case_variant_key, order.owner);
 
-        assert!(!order.is_owned_by("0xother", &case_variant_key));
+        assert!(!order.is_owned_by("0xother", &case_variant_key, PolymarketSignerType::Owner));
     }
 
     #[rstest]
     fn test_maker_order_ownership_rejects_foreign_identity() {
         let order: PolymarketMakerOrder = serde_json::from_str(sample_maker_order_json()).unwrap();
 
-        assert!(!order.is_owned_by("0xother", "no-such-key"));
+        assert!(!order.is_owned_by("0xother", "no-such-key", PolymarketSignerType::Owner));
     }
 
     #[rstest]
@@ -317,5 +339,21 @@ mod tests {
         }"#;
         let order: PolymarketMakerOrder = serde_json::from_str(json).unwrap();
         assert_eq!(order.matched_amount, dec!(10.0));
+    }
+
+    #[rstest]
+    #[case(PolymarketSignerType::Owner, "other", true)]
+    #[case(PolymarketSignerType::Session, "other", false)]
+    #[case(PolymarketSignerType::Session, "session-api", true)]
+    #[case(PolymarketSignerType::Session, "SESSION-API", false)]
+    fn test_shared_wallet_session_ownership(
+        #[case] signer_type: PolymarketSignerType,
+        #[case] owner: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            is_owned_by_account("0xwallet", owner, "0xwallet", "session-api", signer_type),
+            expected
+        );
     }
 }

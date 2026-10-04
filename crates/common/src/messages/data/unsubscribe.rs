@@ -201,7 +201,7 @@ impl UnsubscribeBookDeltas {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
-pub struct UnsubscribeBookDepth10 {
+pub struct UnsubscribeBookDepth {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
@@ -211,8 +211,8 @@ pub struct UnsubscribeBookDepth10 {
     pub params: Option<Params>,
 }
 
-impl UnsubscribeBookDepth10 {
-    /// Creates a new [`UnsubscribeBookDepth10`] instance.
+impl UnsubscribeBookDepth {
+    /// Creates a new [`UnsubscribeBookDepth`] instance.
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,

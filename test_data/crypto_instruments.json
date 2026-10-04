@@ -18,8 +18,6 @@
     "min_price": null,
     "margin_init": "1",
     "margin_maint": "1",
-    "maker_fee": "1",
-    "taker_fee": "1",
     "ts_event": 0,
     "ts_init": 0,
     "info": null
@@ -43,8 +41,6 @@
     "min_price": null,
     "margin_init": "1",
     "margin_maint": "1",
-    "maker_fee": "1",
-    "taker_fee": "1",
     "ts_event": 0,
     "ts_init": 0,
     "info": null
@@ -68,8 +64,6 @@
     "min_price": null,
     "margin_init": "1",
     "margin_maint": "1",
-    "maker_fee": "1",
-    "taker_fee": "1",
     "ts_event": 0,
     "ts_init": 0,
     "info": null
@@ -93,8 +87,6 @@
     "min_price": null,
     "margin_init": "1",
     "margin_maint": "1",
-    "maker_fee": "1",
-    "taker_fee": "1",
     "ts_event": 0,
     "ts_init": 0,
     "info": null
@@ -118,8 +110,6 @@
     "min_price": null,
     "margin_init": "1",
     "margin_maint": "1",
-    "maker_fee": "1",
-    "taker_fee": "1",
     "ts_event": 0,
     "ts_init": 0,
     "info": null
@@ -143,8 +133,6 @@
     "min_price": null,
     "margin_init": "1",
     "margin_maint": "1",
-    "maker_fee": "1",
-    "taker_fee": "1",
     "ts_event": 0,
     "ts_init": 0,
     "info": null

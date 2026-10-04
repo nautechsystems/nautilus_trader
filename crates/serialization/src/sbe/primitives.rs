@@ -124,7 +124,13 @@ mod tests {
     #[rstest]
     fn test_group_size_decode_too_short() {
         let err = GroupSizeEncoding::decode(&[0, 0, 0]).unwrap_err();
-        assert!(matches!(err, SbeDecodeError::BufferTooShort { .. }));
+        assert_eq!(
+            err,
+            SbeDecodeError::BufferTooShort {
+                expected: 6,
+                actual: 3
+            }
+        );
     }
 
     #[rstest]
@@ -132,7 +138,13 @@ mod tests {
         let mut buf = [0u8; GroupSizeEncoding::ENCODED_LENGTH];
         buf[2..6].copy_from_slice(&(MAX_GROUP_SIZE + 1).to_le_bytes());
         let err = GroupSizeEncoding::decode(&buf).unwrap_err();
-        assert!(matches!(err, SbeDecodeError::GroupSizeTooLarge { .. }));
+        assert_eq!(
+            err,
+            SbeDecodeError::GroupSizeTooLarge {
+                count: MAX_GROUP_SIZE + 1,
+                max: MAX_GROUP_SIZE
+            }
+        );
     }
 
     #[rstest]
@@ -140,7 +152,13 @@ mod tests {
         let mut buf = [0u8; GroupSize16Encoding::ENCODED_LENGTH];
         buf[2..4].copy_from_slice(&(MAX_GROUP_SIZE as u16 + 1).to_le_bytes());
         let err = GroupSize16Encoding::decode(&buf).unwrap_err();
-        assert!(matches!(err, SbeDecodeError::GroupSizeTooLarge { .. }));
+        assert_eq!(
+            err,
+            SbeDecodeError::GroupSizeTooLarge {
+                count: MAX_GROUP_SIZE + 1,
+                max: MAX_GROUP_SIZE
+            }
+        );
     }
 
     #[rstest]
@@ -156,5 +174,47 @@ mod tests {
         let buf = [2u8, 0xFF, 0xFF];
         let err = decode_var_string8(&buf).unwrap_err();
         assert_eq!(err, SbeDecodeError::InvalidUtf8);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(MAX_GROUP_SIZE)]
+    fn test_group_headers_preserve_fields(#[case] count: u32) {
+        let block_length = 0x1234_u16;
+        let mut wide = block_length.to_le_bytes().to_vec();
+        wide.extend_from_slice(&count.to_le_bytes());
+        let mut compact = block_length.to_le_bytes().to_vec();
+        compact.extend_from_slice(&u16::try_from(count).unwrap().to_le_bytes());
+
+        assert_eq!(
+            GroupSizeEncoding::decode(&wide),
+            Ok(GroupSizeEncoding {
+                block_length,
+                num_in_group: count,
+            })
+        );
+        assert_eq!(
+            GroupSize16Encoding::decode(&compact),
+            Ok(GroupSize16Encoding {
+                block_length,
+                num_in_group: count as u16,
+            })
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    fn test_group_size_16_decode_too_short(#[case] len: usize) {
+        assert_eq!(
+            GroupSize16Encoding::decode(&[0; 4][..len]),
+            Err(SbeDecodeError::BufferTooShort {
+                expected: 4,
+                actual: len
+            })
+        );
     }
 }

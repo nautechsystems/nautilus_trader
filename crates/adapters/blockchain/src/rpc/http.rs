@@ -20,7 +20,10 @@ use bytes::Bytes as HttpBytes;
 use nautilus_core::{hex, string::secret::REDACTED};
 use nautilus_model::defi::rpc::{RpcLog, RpcNodeHttpResponse};
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpRedirectPolicy, Method, Url},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, Method, Url,
+        create_standard_nautilus_headers,
+    },
     ratelimiter::quota::Quota,
 };
 use serde::de::DeserializeOwned;
@@ -74,6 +77,7 @@ impl BlockchainHttpRpcClient {
         let use_system_proxy = !is_canonical_loopback_endpoint(&http_rpc_url);
         let proxy_url = if use_system_proxy { proxy_url } else { None };
         let http_client = HttpClient::builder()
+            .headers(create_standard_nautilus_headers().into_iter().collect())
             .maybe_default_quota(default_quota)
             .maybe_proxy_url(proxy_url)
             .redirect_policy(HttpRedirectPolicy::Reject)

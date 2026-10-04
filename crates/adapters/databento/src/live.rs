@@ -38,7 +38,7 @@ use std::{
 
 use ahash::{AHashMap, HashSet, HashSetExt};
 use databento::{
-    dbn::{self, PitSymbolMap, Record, SymbolIndex},
+    dbn::{self, PitSymbolMap, SymbolIndex},
     live::Subscription,
 };
 use indexmap::IndexMap;
@@ -638,6 +638,9 @@ impl DatabentoFeedHandler {
                 self.subscriptions.len()
             );
 
+            // Anchors remain only when the first connection failed, so this session replays
+            let replay = self.subscriptions.iter().any(|sub| sub.start.is_some());
+
             for sub in self.subscriptions.clone() {
                 client.subscribe(sub).await?;
             }
@@ -645,6 +648,8 @@ impl DatabentoFeedHandler {
             for sub in &mut self.subscriptions {
                 sub.start = None;
             }
+
+            buffering_start = replay.then(|| clock.get_time_ns());
             client.start().await?;
             running = true;
             log::info!("Resubscription complete");
@@ -932,7 +937,10 @@ impl DatabentoFeedHandler {
                             ))));
                         }
 
-                        continue;
+                        // Replayed trades stay out of the live stream
+                        if buffering_start.is_some_and(|start| msg.ts_recv <= start) {
+                            continue;
+                        }
                     }
                 }
 
@@ -952,7 +960,7 @@ impl DatabentoFeedHandler {
         log::trace!("Sending {msg:?}");
         match self.msg_tx.send(msg) {
             Ok(()) => {}
-            Err(e) => log::error!("Error sending message: {e}"),
+            Err(e) => log::debug!("Error sending message: {e}"),
         }
     }
 
@@ -1027,7 +1035,7 @@ fn handle_symbol_mapping_msg(
     symbol_map
         .on_symbol_mapping(msg)
         .map_err(|e| anyhow::anyhow!("on_symbol_mapping failed for {msg:?}: {e}"))?;
-    instrument_id_map.remove(&msg.header().instrument_id);
+    instrument_id_map.remove(&msg.hd.instrument_id);
     Ok(())
 }
 

@@ -16,7 +16,7 @@
 //! Instrument status mapping and polling for the Bybit adapter.
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::InstrumentStatus, enums::MarketStatusAction, identifiers::InstrumentId,
@@ -49,7 +49,7 @@ pub fn diff_and_emit_statuses(
     new_statuses: &AHashMap<InstrumentId, MarketStatusAction>,
     cached_statuses: &mut AHashMap<InstrumentId, MarketStatusAction>,
     subscriptions: Option<&AHashSet<InstrumentId>>,
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) {
@@ -90,7 +90,7 @@ pub fn diff_and_emit_statuses(
 }
 
 pub(crate) fn emit_status(
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     instrument_id: InstrumentId,
     action: MarketStatusAction,
     ts_event: UnixNanos,
@@ -153,7 +153,7 @@ mod tests {
             &new_statuses,
             &mut cached,
             None,
-            &tx,
+            &tx.into(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -186,7 +186,7 @@ mod tests {
             &new_statuses,
             &mut cached,
             None,
-            &tx,
+            &tx.into(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -207,7 +207,7 @@ mod tests {
             &new_statuses,
             &mut cached,
             None,
-            &tx,
+            &tx.into(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -237,7 +237,7 @@ mod tests {
             &new_statuses,
             &mut cached,
             None,
-            &tx,
+            &tx.into(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -279,7 +279,7 @@ mod tests {
             &new_statuses,
             &mut cached,
             Some(&subs),
-            &tx,
+            &tx.into(),
             UnixNanos::default(),
             UnixNanos::default(),
         );
@@ -322,7 +322,7 @@ mod tests {
             &new_statuses,
             &mut cached,
             Some(&subs),
-            &tx,
+            &tx.into(),
             UnixNanos::default(),
             UnixNanos::default(),
         );

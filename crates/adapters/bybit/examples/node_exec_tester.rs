@@ -44,7 +44,7 @@ use nautilus_trading::strategy::StrategyConfig;
 // environment and may use real funds. Set `DRY_RUN = true` to connect without
 // submitting orders or sending shutdown cancel/close commands.
 const DRY_RUN: bool = false;
-const BYBIT_ENVIRONMENT: BybitEnvironment = BybitEnvironment::Mainnet;
+const BYBIT_ENVIRONMENT: BybitEnvironment = BybitEnvironment::Testnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "BYBIT-001";
 const NODE_NAME: &str = "BYBIT-EXEC-TESTER-001";

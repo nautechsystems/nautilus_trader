@@ -21,7 +21,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
 use crate::{
-    enums::PositionSide,
+    enums::{AvgPxReconciliation, PositionSide},
     identifiers::{AccountId, InstrumentId, PositionId},
     reports::position::PositionStatusReport,
     types::Quantity,
@@ -31,8 +31,11 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PositionStatusReport {
     /// Represents a position status at a point in time.
+    ///
+    /// When `avg_px_open_precision` is set, reconciliation accepts `avg_px_open` within one unit at
+    /// that precision on top of its relative tolerance. A precision above 28 adds no allowance.
     #[new]
-    #[pyo3(signature = (account_id, instrument_id, position_side, quantity, ts_last, ts_init, report_id=None, venue_position_id=None, avg_px_open=None))]
+    #[pyo3(signature = (account_id, instrument_id, position_side, quantity, ts_last, ts_init, report_id=None, venue_position_id=None, avg_px_open=None, avg_px_open_reconciliation=None, avg_px_open_precision=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         account_id: AccountId,
@@ -44,8 +47,10 @@ impl PositionStatusReport {
         report_id: Option<UUID4>,
         venue_position_id: Option<PositionId>,
         avg_px_open: Option<Decimal>,
+        avg_px_open_reconciliation: Option<AvgPxReconciliation>,
+        avg_px_open_precision: Option<u8>,
     ) -> Self {
-        Self::new(
+        let report = Self::new(
             account_id,
             instrument_id,
             position_side,
@@ -55,7 +60,13 @@ impl PositionStatusReport {
             report_id,
             venue_position_id,
             avg_px_open,
-        )
+        );
+
+        Self {
+            avg_px_open_reconciliation: avg_px_open_reconciliation.unwrap_or_default(),
+            avg_px_open_precision,
+            ..report
+        }
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -114,6 +125,18 @@ impl PositionStatusReport {
     #[pyo3(name = "avg_px_open")]
     const fn py_avg_px_open(&self) -> Option<Decimal> {
         self.avg_px_open
+    }
+
+    #[getter]
+    #[pyo3(name = "avg_px_open_reconciliation")]
+    const fn py_avg_px_open_reconciliation(&self) -> AvgPxReconciliation {
+        self.avg_px_open_reconciliation
+    }
+
+    #[getter]
+    #[pyo3(name = "avg_px_open_precision")]
+    const fn py_avg_px_open_precision(&self) -> Option<u8> {
+        self.avg_px_open_precision
     }
 
     #[getter]
@@ -190,6 +213,55 @@ impl PositionStatusReport {
         dict.set_item("report_id", self.report_id.to_string())?;
         dict.set_item("ts_last", self.ts_last.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
+        dict.set_item(
+            "avg_px_open",
+            self.avg_px_open.map(|avg_px_open| avg_px_open.to_string()),
+        )?;
+        dict.set_item(
+            "avg_px_open_reconciliation",
+            self.avg_px_open_reconciliation.to_string(),
+        )?;
+        dict.set_item("avg_px_open_precision", self.avg_px_open_precision)?;
         Ok(dict.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
+    use super::*;
+
+    #[rstest]
+    fn test_position_status_report_python_dict_round_trip() {
+        Python::initialize();
+        Python::attach(|py| {
+            let report = PositionStatusReport::py_new(
+                AccountId::from("SIM-001"),
+                InstrumentId::from("AUDUSD.SIM"),
+                PositionSide::Short,
+                Quantity::from("100"),
+                1_000_000_000,
+                2_000_000_000,
+                None,
+                Some(PositionId::from("P-001")),
+                Some(dec!(1.23456)),
+                Some(AvgPxReconciliation::OpeningOnly),
+                Some(4),
+            );
+
+            let values = report.py_to_dict(py).unwrap();
+            let restored =
+                PositionStatusReport::py_from_dict(py, values.extract(py).unwrap()).unwrap();
+
+            assert_eq!(report.avg_px_open, Some(dec!(1.23456)));
+            assert_eq!(
+                report.avg_px_open_reconciliation,
+                AvgPxReconciliation::OpeningOnly
+            );
+            assert_eq!(report.avg_px_open_precision, Some(4));
+            assert_eq!(restored, report);
+        });
     }
 }

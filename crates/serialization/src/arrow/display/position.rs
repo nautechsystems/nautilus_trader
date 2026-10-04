@@ -32,6 +32,7 @@ use super::{
     bool_field, float64_field, money_to_f64, quantity_to_f64, timestamp_field, uint8_field,
     uint32_field, uint64_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`Position`].
 #[must_use]
@@ -129,10 +130,14 @@ pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
     let mut base_currency = StringBuilder::new();
     let mut quote_currency = StringBuilder::new();
     let mut settlement_currency = StringBuilder::new();
-    let mut ts_init = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_opened = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_last = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_closed = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_init =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_opened =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_last =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_closed =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
     let mut duration_ns = UInt64Builder::with_capacity(data.len());
     let mut avg_px_open = Float64Builder::with_capacity(data.len());
     let mut avg_px_close = Float64Builder::with_capacity(data.len());
@@ -310,7 +315,7 @@ mod tests {
         assert_eq!(fields[21].name(), "ts_init");
         assert_eq!(
             fields[21].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[25].name(), "duration_ns");
         assert_eq!(fields[25].data_type(), &DataType::UInt64);

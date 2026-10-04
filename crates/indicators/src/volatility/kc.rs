@@ -15,14 +15,17 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::{MAX_PERIOD, typical_price},
     volatility::atr::AverageTrueRange,
 };
 
+/// Keltner channel.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -35,6 +38,7 @@ use crate::{
 )]
 pub struct KeltnerChannel {
     pub period: usize,
+    pub atr_period: usize,
     pub k_multiplier: f64,
     pub ma_type: MovingAverageType,
     pub ma_type_atr: MovingAverageType,
@@ -85,20 +89,64 @@ impl Indicator for KeltnerChannel {
 
 impl KeltnerChannel {
     /// Creates a new [`KeltnerChannel`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either period is outside `1..=MAX_PERIOD`, the multiplier is not positive and finite,
+    /// or the ATR floor is negative or non-finite.
+    ///
+    /// The defaults are the standard Keltner convention: an EMA centerline
+    /// over the typical price and a Wilder smoothed ATR. `atr_period`
+    /// defaults to `period` when not given.
     #[must_use]
     pub fn new(
         period: usize,
         k_multiplier: f64,
+        atr_period: Option<usize>,
         ma_type: Option<MovingAverageType>,
         ma_type_atr: Option<MovingAverageType>,
         use_previous: Option<bool>,
         atr_floor: Option<f64>,
     ) -> Self {
-        Self {
+        Self::new_checked(
             period,
             k_multiplier,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
-            ma_type_atr: ma_type_atr.unwrap_or(MovingAverageType::Simple),
+            atr_period,
+            ma_type,
+            ma_type_atr,
+            use_previous,
+            atr_floor,
+        )
+        .expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        k_multiplier: f64,
+        atr_period: Option<usize>,
+        ma_type: Option<MovingAverageType>,
+        ma_type_atr: Option<MovingAverageType>,
+        use_previous: Option<bool>,
+        atr_floor: Option<f64>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(period <= MAX_PERIOD, "period cannot exceed {MAX_PERIOD}");
+        let atr_period = atr_period.unwrap_or(period);
+        anyhow::ensure!(period > 0, "period must be positive");
+        anyhow::ensure!(
+            (1..=MAX_PERIOD).contains(&atr_period),
+            "atr_period must be in 1..={MAX_PERIOD}"
+        );
+        anyhow::ensure!(
+            k_multiplier.is_finite() && k_multiplier > 0.0,
+            "k_multiplier must be finite and positive"
+        );
+        let atr = AverageTrueRange::new_checked(atr_period, ma_type_atr, use_previous, atr_floor)?;
+        Ok(Self {
+            period,
+            atr_period,
+            k_multiplier,
+            ma_type: ma_type.unwrap_or(MovingAverageType::Exponential),
+            ma_type_atr: ma_type_atr.unwrap_or(MovingAverageType::Wilder),
             use_previous: use_previous.unwrap_or(true),
             atr_floor: atr_floor.unwrap_or(0.0),
             upper: 0.0,
@@ -106,26 +154,36 @@ impl KeltnerChannel {
             lower: 0.0,
             has_inputs: false,
             initialized: false,
-            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
-            atr: AverageTrueRange::new(period, ma_type_atr, use_previous, atr_floor),
-        }
+            ma: MovingAverageFactory::create(
+                ma_type.unwrap_or(MovingAverageType::Exponential),
+                period,
+            ),
+            atr,
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
-        let typical_price = (high + low + close) / 3.0;
-
-        self.ma.update_raw(typical_price);
+        let count = self.atr.count;
         self.atr.update_raw(high, low, close);
+        if self.atr.count == count {
+            return;
+        }
+        self.ma.update_raw(typical_price(high, low, close));
+        self.has_inputs = true;
+
+        if !self.ma.initialized() || !self.atr.initialized {
+            return;
+        }
 
         self.upper = self.atr.value.mul_add(self.k_multiplier, self.ma.value());
         self.middle = self.ma.value();
         self.lower = self.atr.value.mul_add(-self.k_multiplier, self.ma.value());
 
-        // Initialization Logic
+        // Bands are only meaningful once both the centerline MA and the ATR are warm
         if !self.initialized {
             self.has_inputs = true;
 
-            if self.ma.initialized() {
+            if self.ma.initialized() && self.atr.initialized {
                 self.initialized = true;
             }
         }
@@ -170,8 +228,8 @@ mod tests {
         ];
 
         let close_values = [
-            0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.05, 10.15, 10.25, 11.05,
-            11.45,
+            0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.5, 11.0, 11.5, 12.5,
+            13.0,
         ];
 
         for i in 0..15 {
@@ -179,16 +237,32 @@ mod tests {
         }
 
         assert!(kc_10.initialized());
-        assert_approx_equal(kc_10.upper, 13.4366666667);
-        assert_approx_equal(kc_10.middle, 9.67666666667);
-        assert_approx_equal(kc_10.lower, 5.91666666667);
+        let middle = (5..15)
+            .map(|i| (high_values[i] + low_values[i] + close_values[i]) / 3.0)
+            .sum::<f64>()
+            / 10.0;
+        let atr = (5..15)
+            .map(|i| {
+                f64::max(high_values[i], close_values[i - 1])
+                    - f64::min(low_values[i], close_values[i - 1])
+            })
+            .sum::<f64>()
+            / 10.0;
+        assert_approx_equal(kc_10.upper, middle + 2.0 * atr);
+        assert_approx_equal(kc_10.middle, middle);
+        assert_approx_equal(kc_10.lower, middle - 2.0 * atr);
     }
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(mut kc_10: KeltnerChannel) {
-        kc_10.update_raw(1.00020, 1.00050, 1.00030);
-        kc_10.update_raw(1.00030, 1.00060, 1.00040);
-        kc_10.update_raw(1.00070, 1.00080, 1.00075);
+        for _ in 0..10 {
+            kc_10.update_raw(11.0, 9.0, 10.0);
+        }
+        // Typical price 10 and true range 2 give bands at 10 -/+ 2 * 2
+        assert!(kc_10.initialized());
+        assert_eq!(kc_10.upper, 14.0);
+        assert_eq!(kc_10.middle, 10.0);
+        assert_eq!(kc_10.lower, 6.0);
 
         kc_10.reset();
 

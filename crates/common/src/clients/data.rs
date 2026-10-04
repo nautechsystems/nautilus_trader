@@ -22,11 +22,11 @@ use super::log_not_implemented;
 use crate::messages::data::{
     RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
     RequestFundingRates, RequestInstrument, RequestInstruments, RequestOptionChainReferencePrice,
-    RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+    RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
     SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
     SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
     SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-    UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
+    UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData, UnsubscribeFundingRates,
     UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
     UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
     UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
@@ -151,12 +151,12 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to top 10 order book depth updates for the specified instrument.
+    /// Subscribes to order book depth snapshot updates for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the subscribe operation fails.
-    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }
@@ -363,12 +363,12 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from top 10 order book depth updates for the specified instrument.
+    /// Unsubscribes from order book depth snapshot updates for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the unsubscribe operation fails.
-    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }

@@ -50,9 +50,8 @@ use anyhow::Context;
 use jiff::{Timestamp, fmt::rfc2822::DateTimeParser};
 use nautilus_common::{cache::InstrumentLookupError, live::dst::time};
 use nautilus_core::{
-    AtomicMap, AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT,
-    datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var, string::secret::REDACTED,
-    time::get_atomic_clock_realtime,
+    AtomicMap, AtomicTime, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var,
+    string::secret::REDACTED, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{
@@ -60,8 +59,8 @@ use nautilus_model::{
         OrderBookDelta, OrderBookDeltas, TradeTick,
     },
     enums::{
-        AggregationSource, BarAggregation, BookAction, BookType, OrderSide, OrderStatus, OrderType,
-        PositionSide, RecordFlag, TimeInForce, TriggerType,
+        AccountType, AggregationSource, BarAggregation, BookAction, BookType, OrderSide,
+        OrderStatus, OrderType, PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
@@ -71,7 +70,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, Method, StatusCode, USER_AGENT},
+    http::{HttpClient, HttpRedirectPolicy, Method, StatusCode, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -123,9 +122,9 @@ use crate::{
         },
         credential::Credential,
         enums::{
-            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXContractType, OKXEnvironment,
-            OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode,
-            OKXPositionSide, OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
+            OKXAlgoOrderStatus, OKXAlgoOrderType, OKXEnvironment, OKXInstrumentStatus,
+            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
+            OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
             conditional_order_to_algo_type,
         },
         models::OKXInstrument,
@@ -189,6 +188,13 @@ fn spot_quote_priority(symbol: &str) -> u8 {
         "USD" => 2,
         _ => 3,
     })
+}
+
+// OKX omits `data` from gateway errors such as authentication failures
+#[derive(Deserialize)]
+struct OKXErrorEnvelope {
+    code: String,
+    msg: String,
 }
 
 fn resolve_okx_error_code(response_body: &[u8], envelope_code: &str) -> String {
@@ -305,7 +311,10 @@ fn retry_after(headers: &HashMap<String, String>, now: Timestamp) -> Option<Dura
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use anyhow::Context;
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde::{Serialize, Serializer, ser::Error as _};
@@ -326,6 +335,33 @@ mod tests {
         {
             Err(S::Error::custom("intentional serialization failure"))
         }
+    }
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = OKXRawHttpClient::with_credentials(
+            "key".into(),
+            "secret".into(),
+            "pass".into(),
+            "http://localhost".into(),
+            3,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
     }
 
     #[rstest]
@@ -374,6 +410,18 @@ mod tests {
         }"#;
 
         assert_eq!(resolve_okx_error_code(body, "1"), "50013");
+    }
+
+    #[rstest]
+    fn test_activate_feature_quota_fits_five_per_two_seconds() {
+        let keys = OKXRawHttpClient::rate_limit_keys("/api/v5/account/activate-feature");
+        let quota = OKXRawHttpClient::rate_limiter_quotas()
+            .into_iter()
+            .find_map(|(key, quota)| (key == keys[1].as_str()).then_some(quota))
+            .expect("activate-feature quota");
+
+        assert_eq!(quota.burst_size().get(), 2);
+        assert_eq!(quota.replenish_interval(), Duration::from_millis(500));
     }
 
     #[rstest]
@@ -605,7 +653,7 @@ impl OKXRawHttpClient {
             ),
             (
                 "okx:/api/v5/account/activate-feature".to_string(),
-                Quota::per_second(NonZeroU32::new(3).expect("non-zero")).expect("valid constant"),
+                Quota::per_second(NonZeroU32::new(2).expect("non-zero")).expect("valid constant"),
             ),
             (
                 "okx:/api/v5/account/balance".to_string(),
@@ -887,6 +935,7 @@ impl OKXRawHttpClient {
             clock: get_atomic_clock_realtime(),
             base_url,
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers(environment))
                 .header_keys(vec![RETRY_AFTER_HEADER.to_string()])
                 .keyed_quotas(Self::rate_limiter_quotas())
@@ -906,8 +955,8 @@ impl OKXRawHttpClient {
 
     /// Builds the default headers to include with each request (e.g., `User-Agent`).
     fn default_headers(environment: OKXEnvironment) -> HashMap<String, String> {
-        let mut headers =
-            HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]);
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
 
         if environment == OKXEnvironment::Demo {
             headers.insert("x-simulated-trading".to_string(), "1".to_string());
@@ -1037,11 +1086,7 @@ impl OKXRawHttpClient {
                 let retry_after = retry_after(&resp.headers, now);
 
                 if resp.status.is_success() {
-                    let okx_response: OKXResponse<T> = deserialize_okx_response(&resp.body)
-                        .map_err(|e| {
-                            log::warn!("Failed to deserialize OKX response: {e}");
-                            e
-                        })?;
+                    let okx_response: OKXResponse<T> = deserialize_okx_response(&resp.body)?;
 
                     if okx_response.code != OKX_SUCCESS_CODE
                         && !(accepts_partial_success
@@ -1064,15 +1109,15 @@ impl OKXRawHttpClient {
                     if status == StatusCode::NOT_FOUND {
                         log::debug!("HTTP 404 with body: {error_body}");
                     } else {
-                        log::warn!(
+                        log::debug!(
                             "HTTP error {} with body: {error_body}",
                             resp.status.as_str()
                         );
                     }
 
-                    if let Ok(parsed_error) = deserialize_okx_response::<T>(&resp.body) {
-                        let error_code = resolve_okx_error_code(&resp.body, &parsed_error.code);
-                        let message = resolve_okx_error_message(&resp.body, &parsed_error.msg);
+                    if let Ok(envelope) = serde_json::from_slice::<OKXErrorEnvelope>(&resp.body) {
+                        let error_code = resolve_okx_error_code(&resp.body, &envelope.code);
+                        let message = resolve_okx_error_message(&resp.body, &envelope.msg);
                         return Err(OKXHttpError::from_venue_response(
                             error_code,
                             message,
@@ -1137,21 +1182,12 @@ impl OKXRawHttpClient {
             }
         };
 
-        let result = self
-            .retry_manager
+        self.retry_manager
             .invocation(path, operation, should_retry, create_error)
             .retry_delay(&OKXHttpError::retry_after)
             .cancellation_token(&self.cancellation_token)
             .execute()
-            .await;
-
-        if let Err(ref e) = result
-            && e.is_retryable()
-        {
-            log::error!("Request exhausted retries: path={path}, error={e}");
-        }
-
-        result
+            .await
     }
 
     /// Sets the position mode for an account.
@@ -1176,9 +1212,11 @@ impl OKXRawHttpClient {
 
     /// Activates an account feature such as USDC order book trading.
     ///
-    /// Activation is one-time per master account and per sub-account. This method
-    /// does not run implicitly; callers must invoke it before trading a
-    /// `Crypto-USDC` instrument if the account has not already traded USDC.
+    /// This method does not run implicitly. Call it only after order placement
+    /// returns error code `54109`. Activation is shared between a master account and
+    /// its sub-accounts, so one successful call covers all of them. Error code
+    /// `51773` means the account does not support activation, not that USDC trading
+    /// is unavailable.
     ///
     /// # Errors
     ///
@@ -1822,6 +1860,9 @@ impl OKXRawHttpClient {
     /// Requests fee rates for the account.
     ///
     /// Returns fee rates for the specified instrument type and the user's VIP level.
+    /// Incentive-program rates require `inst_id` for SPOT/MARGIN or `inst_family` for
+    /// FUTURES/SWAP/OPTION; a `group_id` query alone does not provide equivalent rates.
+    /// Fee selection remains with the caller. The endpoint does not reflect zero-fee promotions.
     ///
     /// # Errors
     ///
@@ -1834,6 +1875,12 @@ impl OKXRawHttpClient {
         &self,
         params: GetTradeFeeParams,
     ) -> Result<Vec<OKXFeeRate>, OKXHttpError> {
+        if params.group_id.is_some() && (params.inst_id.is_some() || params.inst_family.is_some()) {
+            return Err(OKXHttpError::ValidationError(
+                "group_id cannot be combined with inst_id or inst_family".to_string(),
+            ));
+        }
+
         self.send_request(
             Method::GET,
             "/api/v5/account/trade-fee",
@@ -2433,12 +2480,16 @@ impl OKXHttpClient {
 
     /// Requests the account state for the `account_id` from OKX.
     ///
+    /// Pass the execution client's configured account type; the OKX balance payload carries
+    /// no account-mode field.
+    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or no account state is returned.
     pub async fn request_account_state(
         &self,
         account_id: AccountId,
+        account_type: AccountType,
     ) -> anyhow::Result<AccountState> {
         let resp = self
             .inner
@@ -2450,7 +2501,7 @@ impl OKXHttpClient {
         let raw = resp
             .first()
             .ok_or_else(|| anyhow::anyhow!("No account state returned from OKX"))?;
-        let account_state = parse_account_state(raw, account_id, ts_init)?;
+        let account_state = parse_account_state(raw, account_id, account_type, ts_init)?;
 
         Ok(account_state)
     }
@@ -2493,9 +2544,12 @@ impl OKXHttpClient {
 
     /// Activates an account feature such as USDC order book trading.
     ///
-    /// This does not run at client start. Call it once per master account and
-    /// once per sub-account before trading a `Crypto-USDC` instrument if that
-    /// account has not already traded USDC.
+    /// This does not run at client start. Call it only after OKX rejects a
+    /// `Crypto-USDC` order with error code `54109`. Activation is shared between a
+    /// master account and its sub-accounts, so one successful call covers all of
+    /// them. Error code `51773` means the account does not support activation, not
+    /// that USDC trading is unavailable; a successful order confirms the account can
+    /// trade the instrument.
     ///
     /// # Errors
     ///
@@ -2617,30 +2671,6 @@ impl OKXHttpClient {
                 .map_err(|e| anyhow::anyhow!(e))?
         };
 
-        let fee_rate_opt = {
-            let fee_params = GetTradeFeeParams {
-                inst_type: instrument_type,
-                uly: None,
-                inst_family: if instrument_type == OKXInstrumentType::Events {
-                    None
-                } else {
-                    instrument_family
-                },
-            };
-
-            match self.inner.get_trade_fee(fee_params).await {
-                Ok(rates) => rates.into_iter().next(),
-                Err(OKXHttpError::MissingCredentials) => {
-                    log::debug!("Missing credentials for fee rates, using None");
-                    None
-                }
-                Err(e) => {
-                    log::warn!("Failed to fetch fee rates for {instrument_type}: {e}");
-                    None
-                }
-            }
-        };
-
         let ts_init = self.generate_ts_init();
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
@@ -2663,35 +2693,7 @@ impl OKXHttpClient {
                 continue;
             }
 
-            // Determine which fee fields to use based on contract type
-            // OKX fee rate convention: positive = rebate, negative = commission
-            // Nautilus convention: negative = rebate, positive = commission
-            // Negate to convert between conventions
-            let (maker_fee, taker_fee) = if let Some(ref fee_rate) = fee_rate_opt {
-                let is_usdt_margined = inst.ct_type == OKXContractType::Linear;
-                let (maker_str, taker_str) = if is_usdt_margined {
-                    (&fee_rate.maker_u, &fee_rate.taker_u)
-                } else {
-                    (&fee_rate.maker, &fee_rate.taker)
-                };
-
-                let maker = if maker_str.is_empty() {
-                    None
-                } else {
-                    Decimal::from_str(maker_str).ok().map(|v| -v)
-                };
-                let taker = if taker_str.is_empty() {
-                    None
-                } else {
-                    Decimal::from_str(taker_str).ok().map(|v| -v)
-                };
-
-                (maker, taker)
-            } else {
-                (None, None)
-            };
-
-            match parse_instrument_any(inst, None, None, maker_fee, taker_fee, ts_init) {
+            match parse_instrument_any(inst, None, None, ts_init) {
                 Ok(Some(instrument_any)) => {
                     instruments.push(instrument_any);
                 }
@@ -2728,7 +2730,7 @@ impl OKXHttpClient {
         let mut instruments = Vec::new();
 
         for spread in &resp {
-            match parse_spread_instrument(spread, None, None, None, None, ts_init) {
+            match parse_spread_instrument(spread, None, None, ts_init) {
                 Ok(instrument) => instruments.push(instrument),
                 Err(e) => log::warn!("Failed to parse spread {}: {e}", spread.sprd_id),
             }
@@ -2815,57 +2817,9 @@ impl OKXHttpClient {
             .into());
         }
 
-        let fee_rate_opt = {
-            let fee_params = GetTradeFeeParams {
-                inst_type: instrument_type,
-                uly: None,
-                inst_family: None,
-            };
-
-            match self.inner.get_trade_fee(fee_params).await {
-                Ok(rates) => rates.into_iter().next(),
-                Err(OKXHttpError::MissingCredentials) => {
-                    log::debug!("Missing credentials for fee rates, using None");
-                    None
-                }
-                Err(e) => {
-                    log::warn!("Failed to fetch fee rates for {symbol}: {e}");
-                    None
-                }
-            }
-        };
-
-        // OKX fee rate convention: positive = rebate, negative = commission
-        // Nautilus convention: negative = rebate, positive = commission
-        // Negate to convert between conventions
-        let (maker_fee, taker_fee) = if let Some(ref fee_rate) = fee_rate_opt {
-            let is_usdt_margined = raw_inst.ct_type == OKXContractType::Linear;
-            let (maker_str, taker_str) = if is_usdt_margined {
-                (&fee_rate.maker_u, &fee_rate.taker_u)
-            } else {
-                (&fee_rate.maker, &fee_rate.taker)
-            };
-
-            let maker = if maker_str.is_empty() {
-                None
-            } else {
-                Decimal::from_str(maker_str).ok().map(|v| -v)
-            };
-            let taker = if taker_str.is_empty() {
-                None
-            } else {
-                Decimal::from_str(taker_str).ok().map(|v| -v)
-            };
-
-            (maker, taker)
-        } else {
-            (None, None)
-        };
-
         let ts_init = self.generate_ts_init();
-        let Some(instrument) =
-            parse_instrument_any(raw_inst, None, None, maker_fee, taker_fee, ts_init)
-                .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e))?
+        let Some(instrument) = parse_instrument_any(raw_inst, None, None, ts_init)
+            .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e))?
         else {
             return Err(OKXInstrumentDefinitionError::new(
                 symbol,
@@ -2894,7 +2848,7 @@ impl OKXHttpClient {
             .ok_or_else(|| anyhow::anyhow!("Spread instrument {symbol} not found"))?;
         let ts_init = self.generate_ts_init();
 
-        parse_spread_instrument(raw_spread, None, None, None, None, ts_init)
+        parse_spread_instrument(raw_spread, None, None, ts_init)
             .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e).into())
     }
 
@@ -6102,7 +6056,7 @@ impl OKXHttpClient {
 
     /// Cancels multiple algo orders via HTTP in a single request.
     ///
-    /// Items with non-zero `sCode` are logged as warnings but do not
+    /// Items with non-zero `sCode` are logged at debug level but do not
     /// fail the entire batch.
     ///
     /// # Errors
@@ -6138,7 +6092,7 @@ impl OKXHttpClient {
                 && code != "0"
             {
                 let msg = item.s_msg.as_deref().unwrap_or("");
-                log::warn!(
+                log::debug!(
                     "Algo cancel rejected: algo_id={} sCode={code} sMsg={msg}",
                     item.algo_id
                 );
@@ -6151,7 +6105,7 @@ impl OKXHttpClient {
     /// Cancels advance algo orders (trailing stop, iceberg, TWAP) via HTTP.
     ///
     /// These order types cannot use the standard `cancel-algos` endpoint.
-    /// Items with non-zero `sCode` are logged as warnings.
+    /// Items with non-zero `sCode` are logged at debug level.
     ///
     /// # Errors
     ///
@@ -6186,7 +6140,7 @@ impl OKXHttpClient {
                 && code != "0"
             {
                 let msg = item.s_msg.as_deref().unwrap_or("");
-                log::warn!(
+                log::debug!(
                     "Advance algo cancel rejected: algo_id={} sCode={code} sMsg={msg}",
                     item.algo_id
                 );
@@ -6883,6 +6837,8 @@ impl OKXHttpClient {
                 orders.retain(|order| order.state == state);
             }
 
+            self.resolve_close_fraction_sizes(&mut orders).await?;
+
             complete &= self.collect_algo_reports(
                 account_id,
                 &orders,
@@ -6976,6 +6932,10 @@ impl OKXHttpClient {
                 if let Some(state) = state {
                     pending.retain(|order| order.state == state);
                 }
+
+                self.resolve_close_fraction_sizes(&mut pending)
+                    .await
+                    .map_err(OKXPendingAlgoOrderReportsError::new)?;
 
                 let pending_reports_complete = match self.collect_algo_reports(
                     account_id,
@@ -7102,6 +7062,55 @@ impl OKXHttpClient {
     /// Exposes raw HTTP client for testing purposes
     pub fn raw_client(&self) -> &Arc<OKXRawHttpClient> {
         &self.inner
+    }
+
+    /// Sets `sz` on open `closeFraction` algo orders from the positions they close.
+    ///
+    /// OKX omits `sz` when an algo order closes the whole position, and links the order to that
+    /// position through `closeOrderAlgo` instead. Reconciliation needs a positive quantity to
+    /// materialize the order, so the linked position size stands in for it.
+    async fn resolve_close_fraction_sizes(
+        &self,
+        orders: &mut [OKXOrderAlgo],
+    ) -> anyhow::Result<()> {
+        let needs_size = |order: &OKXOrderAlgo| {
+            order.sz.is_empty() && !order.close_fraction.is_empty() && is_open_okx_algo(order.state)
+        };
+
+        if !orders.iter().any(needs_size) {
+            return Ok(());
+        }
+
+        let positions = self
+            .inner
+            .get_positions(GetPositionsParams::default())
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        for order in orders.iter_mut().filter(|order| needs_size(order)) {
+            let position = positions.iter().find(|position| {
+                position
+                    .close_order_algo
+                    .iter()
+                    .any(|algo| algo.algo_id == order.algo_id)
+            });
+
+            let Some(position) = position else {
+                log::warn!(
+                    "No position links close-fraction algo order {}, quantity remains zero",
+                    order.algo_id,
+                );
+                continue;
+            };
+
+            let size = Decimal::from_str(&position.pos).with_context(|| {
+                format!("invalid position size for algo order {}", order.algo_id)
+            })?;
+
+            order.sz = size.abs().to_string();
+        }
+
+        Ok(())
     }
 
     #[expect(clippy::too_many_arguments)]

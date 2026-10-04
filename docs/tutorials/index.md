@@ -13,7 +13,7 @@ Rust tutorials use the commands shown on their pages.
 
 - **Latest**: docs built from the `master` branch for stable releases.
   See <https://nautilustrader.io/docs/latest/tutorials/>.
-- **Nightly**: docs built from the `nightly` branch for experimental features.
+- **Nightly**: docs built from the `develop` branch for experimental features.
   See <https://nautilustrader.io/docs/nightly/tutorials/>.
 
 :::
@@ -36,11 +36,11 @@ New to NautilusTrader? Work through these in sequence:
 
 ## Backtesting
 
-| Tutorial                                                                    | Description                                    | Data          |
-| :-------------------------------------------------------------------------- | :--------------------------------------------- | :------------ |
-| [Backtest with FX Bar Data][backtest_fx_bars]                               | EMA cross on FX bars with rollover simulation. | Bundled       |
-| [Backtest with Order Book Depth Data (Binance)][backtest_orderbook_binance] | Order book imbalance strategy on depth data.   | User-provided |
-| [Backtest with Order Book Depth Data (Bybit)][backtest_orderbook_bybit]     | Order book imbalance strategy on depth data.   | User-provided |
+| Tutorial                                                                    | Description                                    | Data                    |
+| :-------------------------------------------------------------------------- | :--------------------------------------------- | :---------------------- |
+| [Backtest with FX Bar Data][backtest_fx_bars]                               | EMA cross on FX bars with rollover simulation. | Sample                  |
+| [Backtest with Order Book Depth Data (Binance)][backtest_orderbook_binance] | Order book imbalance strategy on depth data.   | Sample or user-provided |
+| [Backtest with Order Book Depth Data (Bybit)][backtest_orderbook_bybit]     | Order book imbalance strategy on depth data.   | Sample or user-provided |
 
 ## Data workflows
 
@@ -57,7 +57,7 @@ For task-oriented data recipes, see the [how-to guides](../how_to/):
 | :---------------------------------------------------------------------------------- | :-------------------------------------------- | :---------------- |
 | [Mean Reversion with Proxy FX Data (AX Exchange)](fx_mean_reversion_ax)             | Bollinger Band mean reversion on EURUSD-PERP. | TrueFX proxy      |
 | [Gold Perpetual Book Imbalance (AX Exchange)](gold_book_imbalance_ax)               | Order book imbalance on XAU-PERP.             | Databento API key |
-| [On-Chain Grid Market Making with Short-Term Orders (dYdX)](grid_market_maker_dydx) | Grid MM on dYdX v4 perpetuals.                | User-provided     |
+| [On-Chain Grid Market Making with Short-Term Orders (dYdX)](grid_market_maker_dydx) | Grid MM on dYdX v4 perpetuals.                | Live API          |
 
 ## Options
 

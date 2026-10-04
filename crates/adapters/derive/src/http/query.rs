@@ -916,6 +916,7 @@ mod tests {
             scheduled_deactivation: 0,
             taker_fee_rate: dec!(0.0005),
             tick_size: dec!(0.01),
+            raw: None,
         }
     }
 

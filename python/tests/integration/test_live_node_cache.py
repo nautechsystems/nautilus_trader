@@ -232,6 +232,7 @@ def test_cache_backing_round_trips_general_data(
     saving_node = _build_cache_node(config_type(), trader_id)
     saving_node.add_actor_from_config(actor_config)
     _run_node_lifecycle(saving_node)
+    del saving_node
 
     GeneralDataActor.configure(key, token, write_on_start=False)
     loading_node = _build_cache_node(config_type(), trader_id)
@@ -267,6 +268,7 @@ def test_redis_cache_backing_round_trips_actor_and_strategy_state() -> None:
         StateRoundTripStrategy(TestStrategyConfig(strategy_id=strategy_id)),
     )
     _run_node_lifecycle(saving_node)
+    del saving_node
 
     assert StateRoundTripActor.loaded_state is None
     assert StateRoundTripStrategy.loaded_state is None

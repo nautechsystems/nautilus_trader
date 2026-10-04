@@ -13,15 +13,45 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{collections::VecDeque, fmt::Display};
 
-use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
-use crate::indicator::Indicator;
+use crate::{indicator::Indicator, support::MAX_PERIOD};
 
-const MAX_PERIOD: usize = 1_024;
+/// Output convention for [`RateOfChange`].
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.indicators",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.indicators")
+)]
+pub enum RateOfChangeMode {
+    /// Percentage change: `100 * (current - previous) / previous`.
+    #[default]
+    Percentage,
+    /// Fractional change: `(current - previous) / previous`.
+    Fraction,
+    /// Price ratio: `current / previous`.
+    Ratio,
+    /// Price ratio scaled by 100.
+    RatioPercent,
+    /// Natural logarithm of the price ratio.
+    Log,
+}
 
+/// Rate of change with configurable output units.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -35,10 +65,11 @@ const MAX_PERIOD: usize = 1_024;
 pub struct RateOfChange {
     pub period: usize,
     pub use_log: bool,
+    pub mode: RateOfChangeMode,
     pub value: f64,
     pub initialized: bool,
     has_inputs: bool,
-    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    prices: VecDeque<f64>,
 }
 
 impl Display for RateOfChange {
@@ -83,45 +114,79 @@ impl RateOfChange {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `period` is greater than `MAX_PERIOD`.
+    /// Panics if `period` is outside `1..=MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, use_log: Option<bool>) -> Self {
-        assert!(
-            period <= MAX_PERIOD,
-            "RateOfChange: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
-        );
+        let mode = if use_log.unwrap_or(false) {
+            RateOfChangeMode::Log
+        } else {
+            RateOfChangeMode::Percentage
+        };
+        Self::new_checked(period, mode).expect(FAILED)
+    }
 
-        Self {
+    pub(crate) fn new_checked(period: usize, mode: RateOfChangeMode) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (1..=MAX_PERIOD).contains(&period),
+            "period must be in 1..={MAX_PERIOD}"
+        );
+        Ok(Self {
             period,
-            use_log: use_log.unwrap_or(false),
+            use_log: mode == RateOfChangeMode::Log,
+            mode,
             value: 0.0,
-            prices: ArrayDeque::new(),
+            prices: VecDeque::with_capacity(period + 1),
             has_inputs: false,
             initialized: false,
-        }
+        })
+    }
+
+    /// Creates a new [`RateOfChange`] with an explicit output convention.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is zero or exceeds 16,777,216.
+    #[must_use]
+    pub fn new_with_mode(period: usize, mode: RateOfChangeMode) -> Self {
+        Self::new_checked(period, mode).expect(FAILED)
     }
 
     pub fn update_raw(&mut self, price: f64) {
-        if self.prices.len() == self.period {
+        if !price.is_finite() || (self.mode == RateOfChangeMode::Log && price <= 0.0) {
+            return;
+        }
+        // The window holds `period + 1` prices so the front is the price exactly
+        // `period` updates ago (the standard ROC lookback).
+        if self.prices.len() == self.period + 1 {
             let _ = self.prices.pop_front();
         }
-        let _ = self.prices.push_back(price);
+        self.prices.push_back(price);
 
         if !self.initialized {
             self.has_inputs = true;
 
-            if self.prices.len() >= self.period {
+            if self.prices.len() > self.period {
                 self.initialized = true;
             }
         }
 
+        if !self.initialized {
+            return;
+        }
+
         if let Some(first) = self.prices.front() {
-            if self.use_log {
-                self.value = (price / first).ln();
-            } else {
-                self.value = (price - first) / first;
+            if *first == 0.0 {
+                self.value = 0.0;
+                return;
             }
+            let ratio = price / first;
+            self.value = match self.mode {
+                RateOfChangeMode::Percentage => 100.0 * (ratio - 1.0),
+                RateOfChangeMode::Fraction => ratio - 1.0,
+                RateOfChangeMode::Ratio => ratio,
+                RateOfChangeMode::RatioPercent => 100.0 * ratio,
+                RateOfChangeMode::Log => (price / first).ln(),
+            };
         }
     }
 }
@@ -166,7 +231,8 @@ mod tests {
         }
 
         assert!(roc_10.initialized());
-        assert_approx_equal(roc_10.value, 0.654598510443);
+        // ln(11.45 / 4.95): the price exactly 10 updates back is 4.95
+        assert_approx_equal(roc_10.value, 0.838_602_153_419_649_5);
     }
 
     #[rstest]
@@ -192,6 +258,7 @@ mod tests {
         roc.update_raw(3.0);
         roc.update_raw(4.0);
 
-        assert_eq!(roc.value, 1.0);
+        // Lookback is exactly `period` = 3 updates: 4.0 against 1.0
+        assert_eq!(roc.value, 300.0);
     }
 }

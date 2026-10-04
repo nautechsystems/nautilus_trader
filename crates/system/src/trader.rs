@@ -1254,9 +1254,7 @@ impl Trader {
     pub fn clear_actors(&mut self) -> anyhow::Result<()> {
         for actor_id in self.actor_ids.clone() {
             log::debug!("Disposing actor {actor_id}");
-            // Stop if running before disposal; ignore stop failures so a single
-            // misbehaving actor does not leave the rest in a half-cleared state.
-            let _ = stop_component(&actor_id.inner());
+            Self::stop_before_disposal(actor_id.inner())?;
             self.retire_actor(actor_id)?;
         }
 
@@ -1318,8 +1316,7 @@ impl Trader {
             anyhow::bail!("Cannot remove actor, {actor_id} not found");
         }
 
-        // Stop if running, then dispose
-        let _ = stop_component(&actor_id.inner());
+        Self::stop_before_disposal(actor_id.inner())?;
         self.retire_actor(*actor_id)?;
 
         log::info!("Removed actor {actor_id} from trader {}", self.trader_id);
@@ -1424,14 +1421,27 @@ impl Trader {
             anyhow::bail!("Cannot remove strategy, {strategy_id} not found");
         }
 
-        // Stop if running, then dispose
-        let _ = stop_component(&strategy_id.inner());
+        Self::stop_before_disposal(strategy_id.inner())?;
         self.retire_strategy(*strategy_id)?;
 
         log::info!(
             "Removed strategy {strategy_id} from trader {}",
             self.trader_id
         );
+        Ok(())
+    }
+
+    fn stop_before_disposal(id: Ustr) -> anyhow::Result<()> {
+        let mut state = component_state(&id)?;
+        if state.transition(&ComponentTrigger::Stop).is_err() {
+            return Ok(());
+        }
+
+        // A failed stop hook must not prevent disposal or leave later actors uncleared
+        if let Err(e) = stop_component(&id) {
+            log::error!(component = id.as_str(); "{e}");
+        }
+
         Ok(())
     }
 
@@ -1832,15 +1842,19 @@ mod tests {
             registry::{actor_exists, get_actor_unchecked, try_get_actor_unchecked},
         },
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         component::get_component,
         enums::{ComponentState, Environment},
+        logging::{
+            arm_shutdown_on_error, disarm_shutdown_on_error, init_logging, logger::LoggerConfig,
+            take_shutdown_on_error_trigger, writer::FileWriterConfig,
+        },
         messages::execution::SubmitOrder,
         msgbus,
         msgbus::{
             MessageBus, MessagingSwitchboard, TypedHandler, set_message_bus,
             switchboard::{
-                get_bars_topic, get_book_deltas_topic, get_book_depth10_topic, get_custom_topic,
+                get_bars_topic, get_book_deltas_topic, get_book_depth_topic, get_custom_topic,
                 get_event_order_topic,
             },
         },
@@ -2158,8 +2172,8 @@ mod tests {
         let mut clock_ref = clock.borrow_mut();
         let test_clock = clock_ref
             .as_any_mut()
-            .downcast_mut::<TestClock>()
-            .expect("test default clock must be TestClock");
+            .downcast_mut::<VirtualClock>()
+            .expect("test default clock must be VirtualClock");
         test_clock.set_time(1_000_000_000u64.into());
         drop(clock_ref);
         let msgbus = Rc::new(RefCell::new(MessageBus::new(
@@ -2182,7 +2196,7 @@ mod tests {
 
         // Create separate cache and clock instances for RiskEngine to avoid borrowing conflicts
         let risk_cache = Rc::new(RefCell::new(Cache::new(None, None)));
-        let risk_clock = Rc::new(RefCell::new(TestClock::new()));
+        let risk_clock = Rc::new(RefCell::new(VirtualClock::new()));
         let risk_portfolio = Portfolio::new(
             risk_clock.clone() as Rc<RefCell<dyn Clock>>,
             risk_cache.clone(),
@@ -3383,8 +3397,8 @@ mod tests {
             let mut clock_ref = clock.borrow_mut();
             let test_clock = clock_ref
                 .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("component clock must be TestClock");
+                .downcast_mut::<VirtualClock>()
+                .expect("component clock must be VirtualClock");
             let events = test_clock.advance_time(to_time_ns, true);
             test_clock.match_handlers(events)
         };
@@ -3795,7 +3809,7 @@ mod tests {
         let calls_in_closure = calls.clone();
         let clock_factory = ClockFactory::new(move || {
             calls_in_closure.set(calls_in_closure.get() + 1);
-            Rc::new(RefCell::new(TestClock::new())) as Rc<RefCell<dyn Clock>>
+            Rc::new(RefCell::new(VirtualClock::new())) as Rc<RefCell<dyn Clock>>
         });
 
         let mut trader = Trader::new(
@@ -4302,6 +4316,161 @@ class StateComponent:
             control_endpoint_registered(retained_id),
             "deregistration must not remove an unrelated strategy's control endpoint",
         );
+    }
+
+    #[rstest]
+    #[case("clear_actors")]
+    #[case("remove_actor")]
+    #[case("remove_strategy")]
+    fn test_retirement_reports_stop_hook_errors(
+        #[case] method: &str,
+        #[values(
+            ComponentState::Ready,
+            ComponentState::Starting,
+            ComponentState::Running,
+            ComponentState::Resuming,
+            ComponentState::Degraded,
+            ComponentState::Stopping,
+            ComponentState::Stopped,
+            ComponentState::Faulted,
+            ComponentState::Disposed
+        )]
+        state: ComponentState,
+    ) {
+        let _guard = init_logging(
+            TraderId::test_default(),
+            UUID4::new(),
+            LoggerConfig::default(),
+            FileWriterConfig::default(),
+        )
+        .unwrap();
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let actor_id = ActorId::from("Failing-Stop-Actor");
+        let strategy_id = StrategyId::from("Failing-Stop-Strategy");
+
+        let transitions: &[ComponentTrigger] = match state {
+            ComponentState::Ready => &[],
+            ComponentState::Starting => &[ComponentTrigger::Start],
+            ComponentState::Running => &[ComponentTrigger::Start, ComponentTrigger::StartCompleted],
+            ComponentState::Resuming => &[
+                ComponentTrigger::Start,
+                ComponentTrigger::StartCompleted,
+                ComponentTrigger::Stop,
+                ComponentTrigger::StopCompleted,
+                ComponentTrigger::Resume,
+            ],
+            ComponentState::Degraded => &[
+                ComponentTrigger::Start,
+                ComponentTrigger::StartCompleted,
+                ComponentTrigger::Degrade,
+                ComponentTrigger::DegradeCompleted,
+            ],
+            ComponentState::Stopping => &[
+                ComponentTrigger::Start,
+                ComponentTrigger::StartCompleted,
+                ComponentTrigger::Stop,
+            ],
+            ComponentState::Stopped => &[
+                ComponentTrigger::Start,
+                ComponentTrigger::StartCompleted,
+                ComponentTrigger::Stop,
+                ComponentTrigger::StopCompleted,
+            ],
+            ComponentState::Faulted => &[
+                ComponentTrigger::Start,
+                ComponentTrigger::StartCompleted,
+                ComponentTrigger::Fault,
+                ComponentTrigger::FaultCompleted,
+            ],
+            ComponentState::Disposed => &[
+                ComponentTrigger::Dispose,
+                ComponentTrigger::DisposeCompleted,
+            ],
+            _ => unreachable!(),
+        };
+
+        let prepare = |component: &mut dyn Component| {
+            for trigger in transitions {
+                component.transition_state(*trigger).unwrap();
+            }
+        };
+
+        let (id, error) = if method == "remove_strategy" {
+            let mut strategy = TestStrategy::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            });
+
+            strategy.fail_stop = true;
+            trader.add_strategy(strategy).unwrap();
+            prepare(&mut *get_actor_unchecked::<TestStrategy>(
+                &strategy_id.inner(),
+            ));
+            (strategy_id.inner(), "test strategy stop failure")
+        } else {
+            let mut actor = TestDataActor::new(DataActorConfig {
+                actor_id: Some(actor_id),
+                ..Default::default()
+            });
+
+            actor.fail_stop = true;
+            trader.add_actor(actor).unwrap();
+            prepare(&mut *get_actor_unchecked::<TestDataActor>(
+                &actor_id.inner(),
+            ));
+            (actor_id.inner(), "test actor stop failure")
+        };
+
+        let other_id = ActorId::from("Other-Actor");
+        trader
+            .add_actor(TestDataActor::new(DataActorConfig {
+                actor_id: Some(other_id),
+                ..Default::default()
+            }))
+            .unwrap();
+
+        arm_shutdown_on_error(true);
+
+        let result = match method {
+            "clear_actors" => trader.clear_actors(),
+            "remove_actor" => trader.remove_actor(&actor_id),
+            "remove_strategy" => trader.remove_strategy(&strategy_id),
+            _ => unreachable!(),
+        };
+
+        let trigger = take_shutdown_on_error_trigger();
+        disarm_shutdown_on_error();
+
+        result.unwrap();
+        assert!(get_component(&id).is_none());
+        assert!(!actor_exists(&id));
+        assert_eq!(trader.strategy_count(), 0);
+        assert_eq!(trader.actor_count(), usize::from(method != "clear_actors"));
+        assert_eq!(actor_exists(&other_id.inner()), method != "clear_actors");
+
+        if matches!(
+            state,
+            ComponentState::Starting
+                | ComponentState::Running
+                | ComponentState::Resuming
+                | ComponentState::Degraded
+        ) {
+            let trigger = trigger.unwrap();
+            assert_eq!(trigger.component, id);
+            assert_eq!(trigger.message, error);
+        } else {
+            assert_eq!(trigger, None);
+        }
     }
 
     #[rstest]
@@ -4993,7 +5162,7 @@ class ModuleStrategy(Strategy):
 
             // An already registered algorithm fails `register`, which the trader only reaches after
             // it has created the component clock
-            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
             algorithm
                 .exec_algorithm_core_mut()
                 .register(trader_id, clock, cache)
@@ -5057,27 +5226,27 @@ class ModuleStrategy(Strategy):
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
         let data_type = DataType::new(stringify!(TestRetirementData), None, None);
         let deltas_topic = get_book_deltas_topic(instrument_id);
-        let depth_topic = get_book_depth10_topic(instrument_id);
+        let depth_topic = get_book_depth_topic(instrument_id);
         let data_topic = get_custom_topic(&data_type);
 
         {
             let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id.inner());
             actor.subscribe_data(data_type, None, None);
             actor.subscribe_book_deltas(instrument_id, BookType::L3_MBO, None, None, false, None);
-            actor.subscribe_book_depth10(instrument_id, BookType::L2_MBP, None, false, None);
+            actor.subscribe_book_depth(instrument_id, BookType::L2_MBP, None, None, false, None);
         }
 
         // Positive control: without these the checks after retirement would be vacuous
         assert_eq!(msgbus::subscriptions_count_any(data_topic).unwrap(), 1);
         assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 1);
-        assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 1);
+        assert_eq!(msgbus::subscriber_count_depth(depth_topic), 1);
 
         trader.remove_actor(&actor_id).unwrap();
 
         // Retirement must leave no handler behind for any of the component's subscription kinds
         assert_eq!(msgbus::subscriptions_count_any(data_topic).unwrap(), 0);
         assert_eq!(msgbus::subscriber_count_deltas(deltas_topic), 0);
-        assert_eq!(msgbus::subscriber_count_depth10(depth_topic), 0);
+        assert_eq!(msgbus::subscriber_count_depth(depth_topic), 0);
     }
 
     #[rstest]

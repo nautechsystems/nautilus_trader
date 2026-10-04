@@ -1,0 +1,18 @@
+{
+  "t": "bc",
+  "symbol": "EURUSD-PERP",
+  "ts": 1790222020,
+  "bid_open": "1.138",
+  "bid_high": "1.138",
+  "bid_low": "1.138",
+  "bid_close": "1.138",
+  "ask_open": "1.1388",
+  "ask_high": "1.1388",
+  "ask_low": "1.1388",
+  "ask_close": "1.1388",
+  "mid_open": "1.1384",
+  "mid_high": "1.1384",
+  "mid_low": "1.1384",
+  "mid_close": "1.1384",
+  "width": "1s"
+}

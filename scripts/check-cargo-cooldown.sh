@@ -14,17 +14,24 @@
 # Publication dates come from a committed JSON database of registry versions,
 # discovered at .supply-chain/crate-dates.json or supply-chain/crate-dates.json
 # and overridable with --db. Publication dates are immutable, so recorded
-# entries are trusted without network access. Entries the diff adds to the
-# database alongside a lockfile bump are still verified against crates.io and
-# fail closed when the dates disagree. Versions missing from the database are
-# looked up online and reported; record them with --update-db, which mirrors
+# entries are trusted without network access. Entries added to a database that
+# already exists at the comparison base are re-verified, including a
+# database-only addition, and fail closed when the dates disagree. A database
+# absent from the base is a seed: only versions the lockfile diff also
+# introduces are re-verified. Versions missing from the database are looked up
+# online and reported; record them with --update-db, which mirrors
 # every tracked lockfile's registry versions (or the selected --lock subset),
 # prunes entries no lock resolves in the full-scope case, and writes atomically.
 # update-cargo-dependencies.bash records dates inside its update transaction.
 #
-# --all checks every resolved registry version without a Git comparison base.
+# --all checks every resolved registry version. With --base, or the
+# trusted-base revision in [workspace.metadata.cooldown], it also re-verifies
+# database entries absent at that revision under the same seed rule, so a branch
+# cannot vouch for dates it adds. A shallow checkout that lacks the configured
+# trusted base trusts recorded dates instead; an explicit --base must resolve.
 # --cache stores a successful full check for identical locks, policy, audits,
-# database, and script content. Diff and repair modes do not use this cache.
+# database, script, and trusted-base content. Diff and repair modes do not use
+# this cache.
 #
 # CI uses CHANGED_BASE_SHA when it resolves. New-branch sentinels and unreachable
 # force-push bases fall back to the live origin default branch. An unresolved CI
@@ -100,7 +107,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --base)
-      (($# >= 2)) || {
+      (($# >= 2)) && [[ -n "$2" ]] || {
         echo "--base requires a value" >&2
         exit 2
       }
@@ -170,8 +177,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$ALL" == true && ("$BASE_EXPLICIT" == true || "$FIX" == true) ]]; then
-  echo "--all cannot be combined with --base or --fix" >&2
+if [[ "$ALL" == true && "$FIX" == true ]]; then
+  echo "--all cannot be combined with --fix" >&2
   exit 2
 fi
 if [[ -n "$CACHE" && "$ALL" == false ]]; then
@@ -409,6 +416,27 @@ if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || ((TIMEOUT < 1 || TIMEOUT > 300)); then
   exit 2
 fi
 
+# A full check re-verifies database entries absent at a trusted revision. A
+# shallow CI checkout cannot resolve the configured revision, so it falls back
+# to the recorded dates that the full-history pre-commit job verifies.
+ALL_BASE=false
+if [[ "$ALL" == true && "$UPDATE_DB" == false ]]; then
+  if [[ "$BASE_EXPLICIT" == false ]]; then
+    BASE=$(read_metadata "workspace.metadata.cooldown" "trusted-base")
+  fi
+  if [[ -n "$BASE" ]]; then
+    if git rev-parse --verify --quiet "$BASE^{commit}" > /dev/null; then
+      ALL_BASE=true
+    elif [[ "$BASE_EXPLICIT" == false && "$(git rev-parse --is-shallow-repository)" == true ]]; then
+      echo "NOTE: trusted base ${BASE} is not in this shallow checkout; recorded dates are trusted."
+    else
+      echo "Trusted base does not resolve to a commit: $BASE" >&2
+      echo "Fetch it, or pass --base with a trusted revision." >&2
+      exit 2
+    fi
+  fi
+fi
+
 if [[ "$AUDITS_EXPLICIT" == false ]]; then
   audit_count=0
   for candidate in .supply-chain/audits.toml supply-chain/audits.toml; do
@@ -592,6 +620,12 @@ if [[ -n "$CACHE" ]]; then
     {
       printf '%s\n' "$DAYS"
       "${hash_command[@]}" "${cache_inputs[@]}"
+      if [[ "$ALL_BASE" == true ]]; then
+        for path in "$DB" "${LOCKS[@]}"; do
+          printf 'trusted-base %s %s\n' "$path" \
+            "$(git rev-parse --verify --quiet "${BASE}:${path}" || echo absent)"
+        done
+      fi
     } |
       "${hash_command[@]}" | awk '{print $1}'
   )
@@ -687,6 +721,31 @@ write_database() (
   fi
 )
 
+# Print each registry package of the lockfile on stdin as name|version|source.
+lock_registry_entries() {
+  awk '
+    /^\[\[package\]\]/ { name=""; version=""; next }
+    /^name = "/ {
+      name=$0
+      sub(/^name = "/, "", name)
+      sub(/"$/, "", name)
+      next
+    }
+    /^version = "/ {
+      version=$0
+      sub(/^version = "/, "", version)
+      sub(/"$/, "", version)
+      next
+    }
+    /^source = "registry\+/ && name != "" && version != "" {
+      source=$0
+      sub(/^source = "/, "", source)
+      sub(/"$/, "", source)
+      print name "|" version "|" source
+    }
+  '
+}
+
 candidates=""
 candidate_entries=""
 unsupported_registry=""
@@ -757,27 +816,7 @@ for lock in "${LOCKS[@]}"; do
   ')
   [[ -n "$bumped" ]] || continue
 
-  registry_entries=$(awk '
-    /^\[\[package\]\]/ { name=""; version=""; next }
-    /^name = "/ {
-      name=$0
-      sub(/^name = "/, "", name)
-      sub(/"$/, "", name)
-      next
-    }
-    /^version = "/ {
-      version=$0
-      sub(/^version = "/, "", version)
-      sub(/"$/, "", version)
-      next
-    }
-    /^source = "registry\+/ && name != "" && version != "" {
-      source=$0
-      sub(/^source = "/, "", source)
-      sub(/"$/, "", source)
-      print name "|" version "|" source
-    }
-  ' "$lock")
+  registry_entries=$(lock_registry_entries < "$lock")
 
   while IFS='|' read -r entry_name entry_version source; do
     [[ -n "$entry_name" ]] || continue
@@ -846,23 +885,43 @@ if [[ "$db_valid" == true && -n "$candidates" ]]; then
   ')
 fi
 
-# Entries present in the database but absent from its state at the comparison
-# base were introduced by this change and must be re-verified.
+# Entries added to a database that already exists at the comparison base must be
+# re-verified. A database absent from the base is a seed: re-verify only
+# versions the lockfile diff also introduces, so adopting a reviewed date
+# database does not repeat a registry lookup for every recorded version.
 new_db_keys=""
-if [[ "$db_valid" == true && "$ALL" == false ]]; then
+if [[ "$db_valid" == true && ("$ALL" == false || "$ALL_BASE" == true) ]]; then
   db_keys_now=$(jq -r '.entries // {} | keys[]?' "$DB" | LC_ALL=C sort)
   if [[ -n "$db_keys_now" ]]; then
+    db_present_at_base=false
     db_keys_base=""
     if db_keys_content=$(git show "${BASE}:${DB}" 2> /dev/null); then
+      db_present_at_base=true
       db_keys_base=$(printf '%s' "$db_keys_content" |
         jq -r '.entries // {} | keys[]?' 2> /dev/null | LC_ALL=C sort || true)
     fi
-    if [[ -n "$db_keys_base" ]]; then
-      new_db_keys=$(LC_ALL=C comm -23 \
+    if [[ "$db_present_at_base" == true ]]; then
+      if [[ -n "$db_keys_base" ]]; then
+        new_db_keys=$(LC_ALL=C comm -23 \
+          <(printf '%s\n' "$db_keys_now") \
+          <(printf '%s\n' "$db_keys_base"))
+      else
+        new_db_keys=$db_keys_now
+      fi
+    elif [[ -n "$candidates" ]]; then
+      introduced=$candidates
+      # A full check selects every resolved version, so the seed rule narrows
+      # to versions the trusted base did not resolve.
+      if [[ "$ALL_BASE" == true ]]; then
+        introduced=$(LC_ALL=C comm -23 \
+          <(printf '%s\n' "$candidates" | LC_ALL=C sort -u) \
+          <(for lock in "${LOCKS[@]}"; do
+            { git show "${BASE}:${lock}" 2> /dev/null || true; } | lock_registry_entries
+          done | awk -F'|' '{ print $1 " " $2 }' | LC_ALL=C sort -u))
+      fi
+      new_db_keys=$(LC_ALL=C comm -12 \
         <(printf '%s\n' "$db_keys_now") \
-        <(printf '%s\n' "$db_keys_base"))
-    else
-      new_db_keys=$db_keys_now
+        <(printf '%s\n' "$introduced" | awk 'NF { print $1 "@" $2 }' | LC_ALL=C sort -u))
     fi
   fi
 fi
@@ -886,7 +945,6 @@ if [[ -z "$candidates" ]]; then
     if [[ "$UPDATE_DB" == true ]]; then
       write_database
     fi
-    save_cache
   elif ((${#lookup_lines[@]} == 0 && ${#parse_lines[@]} == 0 && ${#mismatch_lines[@]} == 0)); then
     echo "No new registry crate versions vs $BASE."
     if [[ "$FIX" == true ]]; then

@@ -44,6 +44,7 @@ use nautilus_betfair::{
     common::consts::BETFAIR_VENUE,
     loader::{BetfairDataItem, BetfairDataLoader},
 };
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::Data,
     enums::{AccountType, BookType, OmsType},
@@ -152,6 +153,7 @@ fn main() -> anyhow::Result<()> {
             .account_type(AccountType::Cash)
             .book_type(BookType::L2_MBP)
             .starting_balances(vec![Money::from("1_000_000 GBP")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()?,
     )?;
 

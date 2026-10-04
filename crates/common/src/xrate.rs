@@ -71,12 +71,12 @@ pub fn get_exchange_rate(
         let ask = quotes_ask
             .remove(&pair)
             .ok_or_else(|| anyhow::anyhow!("Missing ask quote for pair {pair}"))?;
-        let parts: Vec<&str> = pair.split('/').collect();
+        let mut parts = pair.split('/');
 
-        if parts.len() != 2 {
+        let (Some(base), Some(quote), None) = (parts.next(), parts.next(), parts.next()) else {
             log::warn!("Skipping invalid pair string: {pair}");
             continue;
-        }
+        };
 
         if bid <= Decimal::ZERO || ask <= Decimal::ZERO {
             // Both sides are required to build valid forward and reverse edges.
@@ -84,8 +84,8 @@ pub fn get_exchange_rate(
             continue;
         }
 
-        let base = Ustr::from(parts[0]);
-        let quote = Ustr::from(parts[1]);
+        let base = Ustr::from(base);
+        let quote = Ustr::from(quote);
         let (forward_rate, reverse_rate) = directional_rates(bid, ask, price_type);
 
         graph.entry(base).or_default().push((quote, forward_rate));
@@ -164,12 +164,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_invalid_pair_string() {
+    #[case("EURUSD")]
+    #[case("EUR/USD/JPY")]
+    #[case("EUR/USD/")]
+    #[case("EUR//USD")]
+    #[case("/EUR/USD")]
+    fn test_invalid_pair_string(#[case] pair: &str) {
         let mut quotes_bid = AHashMap::new();
         let mut quotes_ask = AHashMap::new();
-        // Invalid pair string (missing '/')
-        quotes_bid.insert(Ustr::from("EURUSD"), dec!(1.1000));
-        quotes_ask.insert(Ustr::from("EURUSD"), dec!(1.1002));
+        quotes_bid.insert(Ustr::from(pair), dec!(2));
+        quotes_ask.insert(Ustr::from(pair), dec!(2));
         // Valid pair string
         quotes_bid.insert(Ustr::from("EUR/USD"), dec!(1.1000));
         quotes_ask.insert(Ustr::from("EUR/USD"), dec!(1.1002));
@@ -184,6 +188,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(rate, Some(dec!(1.1001)));
+    }
+
+    #[rstest]
+    #[case("/USD", "", "USD")]
+    #[case("EUR/", "EUR", "")]
+    fn test_pair_with_empty_currency_field(
+        #[case] pair: &str,
+        #[case] from_currency: &str,
+        #[case] to_currency: &str,
+    ) {
+        let quotes_bid = AHashMap::from([(Ustr::from(pair), dec!(2))]);
+        let quotes_ask = AHashMap::from([(Ustr::from(pair), dec!(4))]);
+
+        let rate = get_exchange_rate(
+            Ustr::from(from_currency),
+            Ustr::from(to_currency),
+            PriceType::Mid,
+            quotes_bid,
+            quotes_ask,
+        )
+        .unwrap();
+
+        assert_eq!(rate, Some(dec!(3)));
     }
 
     #[rstest]
@@ -412,7 +439,10 @@ mod tests {
             quotes_bid,
             quotes_ask,
         );
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Quote maps must not be empty"
+        );
     }
 
     #[rstest]
@@ -432,7 +462,10 @@ mod tests {
             quotes_bid,
             quotes_ask,
         );
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Quote maps must have equal lengths"
+        );
     }
 
     #[rstest]
@@ -450,7 +483,10 @@ mod tests {
             quotes_ask,
         );
 
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Missing ask quote for pair EUR/USD"
+        );
     }
 
     #[rstest]
@@ -464,7 +500,10 @@ mod tests {
             quotes_bid,
             quotes_ask,
         );
-        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid `price_type`, was 'LAST'"
+        );
     }
 
     #[rstest]

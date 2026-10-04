@@ -38,8 +38,41 @@ impl TardisError {
             }
             Self::Http(crate::http::error::Error::Request(_)) => true,
             Self::Machine(crate::machine::Error::ConnectFailed(_)) => true,
-            Self::Machine(crate::machine::Error::ConnectionClosed { .. }) => true,
+            Self::Machine(crate::machine::Error::ConnectionClosed { reason }) => {
+                !crate::machine::is_unsupported_streaming_error(reason)
+            }
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{common::enums::TardisExchange, machine::Error};
+
+    #[rstest]
+    #[case(
+        "Error: Real-time streaming is not supported for exchange bitmex",
+        false
+    )]
+    #[case("Real-time streaming is not supported for exchange coinflex", false)]
+    #[case("Too many subsequent errors when connecting to deribit WS API", true)]
+    fn test_machine_close_retryable(#[case] reason: &str, #[case] expected: bool) {
+        let error = TardisError::Machine(Error::ConnectionClosed {
+            reason: reason.to_string(),
+        });
+
+        assert_eq!(error.is_retryable(), expected);
+    }
+
+    #[rstest]
+    fn test_unsupported_streaming_exchange_not_retryable() {
+        let error =
+            TardisError::Machine(Error::UnsupportedStreamingExchange(TardisExchange::Bitmex));
+
+        assert!(!error.is_retryable());
     }
 }

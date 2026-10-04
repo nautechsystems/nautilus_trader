@@ -171,7 +171,7 @@ impl BlockchainExecutionClient {
     ) -> anyhow::Result<Self> {
         let transaction_limits = Self::transaction_limits(&config)?;
         let chain = Arc::new(config.chain.clone());
-        let cache = BlockchainCache::new(chain.clone());
+        let cache = BlockchainCache::new(Arc::clone(&chain));
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             config.http_rpc_url.clone().into_inner(),
             config.rpc_requests_per_second,
@@ -189,14 +189,14 @@ impl BlockchainExecutionClient {
             "Verification chain anchor name does not match the configured chain"
         );
         let verification = VerificationCoordinator::new(
-            http_rpc_client.clone(),
+            Arc::clone(&http_rpc_client),
             config.http_rpc_url.expose_secret(),
             verification_config,
             config.rpc_requests_per_second,
         )?;
         let wallet_address = validate_address(config.wallet_address.as_str())?;
         let erc20_contract = Erc20Contract::new_with_timeout(
-            http_rpc_client.clone(),
+            Arc::clone(&http_rpc_client),
             Some(EXECUTION_RPC_TIMEOUT_SECS),
             true,
         );
@@ -499,7 +499,7 @@ impl BlockchainExecutionClient {
         } else {
             let token_info = self.erc20_contract.fetch_token_info(token_address).await?;
             let token = Token::new(
-                self.chain.clone(),
+                Arc::clone(&self.chain),
                 *token_address,
                 token_info.name,
                 token_info.symbol,
@@ -984,7 +984,7 @@ impl BlockchainExecutionClient {
             .collect::<Vec<_>>();
 
         Ok(TransactionExecutor {
-            http_rpc_client: self.http_rpc_client.clone(),
+            http_rpc_client: Arc::clone(&self.http_rpc_client),
             verification: self.verification.clone(),
             manifest_version: verification_config.manifest_version.clone(),
             manifest_digest: verification_config.manifest_digest.clone(),
@@ -3707,7 +3707,8 @@ enum SwapQuoteKind {
 /// transaction exists, `OrderSubmitted` after broadcast acceptance, and `OrderRejected` on
 /// a definitive node rejection or an on-chain revert. No fill is emitted at broadcast or
 /// first inclusion; fills arrive with finality reconciliation. Ambiguous outcomes keep the
-/// order submitted untouched while the persisted record reconciles.
+/// order submitted untouched while the persisted record reconciles. The client retains
+/// unresolved submissions, so an exhausted in-flight check leaves the order submitted.
 async fn execute_swap(
     mut plan: SwapPlan,
     executor: TransactionExecutor,
@@ -4811,7 +4812,7 @@ fn validate_finalized_swap_fill(
         .checked_mul(NANOSECONDS_IN_SECOND)
         .ok_or_else(|| anyhow::anyhow!("Finalized block timestamp overflows nanoseconds"))?;
     let mut swap = event.to_pool_swap(
-        plan.pool.chain.clone(),
+        Arc::clone(&plan.pool.chain),
         plan.instrument_id,
         plan.pool.pool_identifier,
         UnixNanos::from(timestamp_ns),
@@ -4900,7 +4901,7 @@ async fn load_verified_wallet_after_fill(
         );
         let identity = identities[0];
         let token = Token::new(
-            plan.pool.chain.clone(),
+            Arc::clone(&plan.pool.chain),
             address,
             identity.name.clone(),
             identity.symbol.clone(),
@@ -5822,11 +5823,15 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
-        log::warn!(
+        log::debug!(
             "Order queries are not supported on the blockchain execution client; cannot query {}",
             cmd.client_order_id
         );
         Ok(())
+    }
+
+    fn retain_unresolved_submissions(&self) -> bool {
+        true
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -6267,7 +6272,7 @@ impl ExecutionClient for BlockchainExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         // Venue mass status is unsupported; durable intent reconciliation at connect
         // covers restart recovery, and Ok(None) keeps LiveNode startup safe
-        log::warn!(
+        log::info!(
             "Mass status is not supported on the blockchain execution client; skipping venue reconciliation"
         );
         Ok(None)
@@ -6295,11 +6300,21 @@ mod tests {
         sol_types::SolValue,
     };
     use nautilus_common::{
-        cache::Cache, live::runner::replace_exec_event_sender, messages::ExecutionEvent,
+        cache::Cache,
+        clock::{Clock, VirtualClock},
+        live::runner::replace_exec_event_sender,
+        messages::{ExecutionEvent, execution::TradingCommand},
         testing::wait_until_async,
     };
     use nautilus_core::UUID4;
     use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
+    use nautilus_live::{
+        execution::{
+            config::ExecutionManagerConfig,
+            submission::{SubmissionRecoveryExhausted, SubmissionRecoverySource},
+        },
+        manager::ExecutionManager,
+    };
     use nautilus_model::{
         defi::{
             PoolProfiler,
@@ -6474,16 +6489,16 @@ mod tests {
 
     fn test_pool() -> Pool {
         let chain = Arc::new(chains::ARBITRUM.clone());
-        let dex = UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&UNISWAP_V3.dex);
         let weth = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
             18,
         );
         let usdc = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
             "USD Coin".to_string(),
             "USDC".to_string(),
@@ -6749,7 +6764,7 @@ mod tests {
             AccountId::from("BLOCKCHAIN-001"),
             AccountType::Wallet,
             None,
-            cache.clone(),
+            Rc::clone(&cache),
         );
 
         let client = BlockchainExecutionClient::new(core, config)?;
@@ -7063,7 +7078,7 @@ mod tests {
             AccountId::from("BLOCKCHAIN-001"),
             AccountType::Wallet,
             None,
-            cache.clone(),
+            Rc::clone(&cache),
         );
 
         let client = BlockchainExecutionClient::new(core, config).unwrap();
@@ -9840,6 +9855,135 @@ mod tests {
         ));
 
         drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[rstest]
+    #[case::filled("execution_inflight_finality_fill_test", false)]
+    #[case::reverted("execution_inflight_finality_revert_test", true)]
+    #[tokio::test]
+    async fn swap_awaiting_finality_survives_inflight_exhaustion(
+        #[case] test_name: &str,
+        #[case] reverted: bool,
+    ) {
+        let min_amount_out = expected_min_amount_out(50);
+        let (expected_hash, _) = expected_swap_tx(min_amount_out).await;
+
+        let state = if reverted {
+            let block = finalized_swap_block(expected_hash, min_amount_out);
+            let receipt = receipt_with_transaction_hash(RECEIPT_REVERTED, expected_hash);
+            with_finalized_identity(
+                swap_rpc_state()
+                    .await
+                    .with_response("eth_getTransactionReceipt", &receipt),
+                &block,
+                &receipt,
+            )
+        } else {
+            finalized_swap_rpc_state(expected_hash, min_amount_out)
+        };
+
+        let Some((admin_pool, schema, mut client, _state, cache)) =
+            swap_client_with_database(test_name, state).await
+        else {
+            return;
+        };
+
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let client_order_id = order.client_order_id();
+        let mut receiver = start_with_events(&mut client);
+
+        let plan = client
+            .prepare_swap(&submit_order_cmd(&order), &order)
+            .unwrap();
+        execute_swap(
+            plan,
+            client.transaction_executor().unwrap(),
+            client.emitter.clone(),
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
+        )
+        .await
+        .unwrap();
+        let swap_events = collect_order_events(&mut receiver);
+        assert_eq!(swap_events.len(), 2, "was: {swap_events:?}");
+        assert!(matches!(&swap_events[0], OrderEventAny::Submitted(_)));
+
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+        let config = ExecutionManagerConfig::default();
+        let max_retries = config.inflight_max_retries;
+        let mut manager = ExecutionManager::new(clock, Rc::clone(&cache), config).unwrap();
+
+        // The open-order check registers the client's retention requirement, as LiveNode does
+        assert!(manager.check_open_orders(&[&client]).await.is_empty());
+        cache.borrow_mut().update_order(&swap_events[0]).unwrap();
+        tokio::time::pause();
+        manager.register_submission(order.init_event(), Some(client.client_id()));
+
+        // Hold the finality outcome until well past the default in-flight budget
+        let mut inflight_events = Vec::new();
+        let mut queries_sent = 0;
+
+        for _ in 0..60 {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            let result = manager.check_inflight_orders();
+            inflight_events.extend(result.events);
+
+            for query in result.queries {
+                let TradingCommand::QueryOrder(query) = query else {
+                    panic!("expected QueryOrder, was {query:?}");
+                };
+
+                client.query_order(query).unwrap();
+                queries_sent += 1;
+            }
+        }
+
+        let exhaustions = manager.take_submission_recovery_exhaustions();
+        let status_before_finality = cache.borrow().order(&client_order_id).unwrap().status();
+        cache.borrow_mut().update_order(&swap_events[1]).unwrap();
+        tokio::time::resume();
+        drop_execution_schema(&admin_pool, &schema).await;
+
+        assert!(inflight_events.is_empty(), "was: {inflight_events:?}");
+        assert_eq!(queries_sent, max_retries - 1);
+        assert!(collect_order_events(&mut receiver).is_empty());
+        assert_eq!(
+            exhaustions,
+            vec![SubmissionRecoveryExhausted {
+                trader_id: order.trader_id(),
+                client_id: Some(client.client_id()),
+                strategy_id: order.strategy_id(),
+                instrument_id: order.instrument_id(),
+                client_order_id,
+                source: SubmissionRecoverySource::Inflight,
+                retry_count: max_retries,
+                ts_event: UnixNanos::default(),
+            }]
+        );
+        assert_eq!(status_before_finality, OrderStatus::Submitted);
+        let cache = cache.borrow();
+        let resolved = cache.order(&client_order_id).unwrap();
+
+        if reverted {
+            let OrderEventAny::Rejected(rejected) = &swap_events[1] else {
+                panic!("expected OrderRejected, was {:?}", swap_events[1]);
+            };
+
+            assert_eq!(
+                rejected.reason.as_str(),
+                format!("Transaction {expected_hash} reverted on-chain")
+            );
+            assert!(!rejected.reconciliation);
+            assert_eq!(resolved.status(), OrderStatus::Rejected);
+            assert_eq!(
+                resolved.filled_qty(),
+                Quantity::zero(order.quantity().precision)
+            );
+        } else {
+            assert!(matches!(&swap_events[1], OrderEventAny::Filled(_)));
+            assert_eq!(resolved.status(), OrderStatus::Filled);
+            assert_eq!(resolved.filled_qty(), order.quantity());
+        }
     }
 
     #[tokio::test]
@@ -12694,16 +12838,16 @@ mod tests {
         // and WETH is token1, so the base token (WETH, by token priority) sits in the
         // token1 position and the swap quotes zero_for_one = false
         let chain = Arc::new(chains::ARBITRUM.clone());
-        let dex = UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&UNISWAP_V3.dex);
         let usdc = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
             "USD Coin".to_string(),
             "USDC".to_string(),
             6,
         );
         let weth = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
@@ -13290,16 +13434,16 @@ mod tests {
     #[rstest]
     fn resolve_pool_rejects_ambiguous_token_priority() {
         let chain = Arc::new(chains::ARBITRUM.clone());
-        let dex = UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&UNISWAP_V3.dex);
         let token_a = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("1111111111111111111111111111111111111111"),
             "Token A".to_string(),
             "TOKA".to_string(),
             18,
         );
         let token_b = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("2222222222222222222222222222222222222222"),
             "Token B".to_string(),
             "TOKB".to_string(),

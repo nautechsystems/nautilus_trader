@@ -24,7 +24,7 @@ use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{Bar, CustomData, DataType, QuoteTick, TradeTick},
     events::{OrderSnapshot, PositionSnapshot},
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TraderId},
     python::{
         account::{account_any_to_pyobject, pyobject_to_account_any},
         events::order::pyobject_to_order_event,
@@ -44,21 +44,28 @@ use crate::sql::{
 impl PostgresCacheDatabase {
     /// Connects to the Postgres cache database using the provided connection parameters.
     ///
+    /// Loads, trader-owned writes and flushes are scoped to `trader_id`, and account events are
+    /// stamped with it.
+    ///
     /// # Errors
     ///
-    /// Returns an error if establishing the database connection fails.
+    /// Returns an error if establishing the database connection fails, if the schema is out of
+    /// date, if any account events have no trader (the error lists the accounts to assign), or if
+    /// checking account ownership fails.
     #[staticmethod]
     #[pyo3(name = "connect")]
-    #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None))]
+    #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None, *, trader_id))]
     fn py_connect(
         host: Option<String>,
         port: Option<u16>,
         username: Option<String>,
         password: Option<String>,
         database: Option<String>,
+        trader_id: TraderId,
     ) -> PyResult<Self> {
-        let result = get_runtime()
-            .block_on(async { Self::connect(host, port, username, password, database).await });
+        let result = get_runtime().block_on(async {
+            Self::connect(host, port, username, password, database, trader_id).await
+        });
         result.map_err(to_pyruntime_err)
     }
 
@@ -138,9 +145,10 @@ impl PostgresCacheDatabase {
         client_order_id: ClientOrderId,
     ) -> PyResult<Option<Py<PyAny>>> {
         get_runtime().block_on(async {
-            let result = DatabaseQueries::load_order(&self.pool, &client_order_id)
-                .await
-                .map_err(to_pyruntime_err)?;
+            let result =
+                DatabaseQueries::load_order(&self.pool, &client_order_id, &self.trader_id())
+                    .await
+                    .map_err(to_pyruntime_err)?;
 
             match result {
                 Some(order) => {
@@ -155,7 +163,7 @@ impl PostgresCacheDatabase {
     #[pyo3(name = "load_account")]
     fn py_load_account(&self, py: Python, account_id: AccountId) -> PyResult<Option<Py<PyAny>>> {
         get_runtime().block_on(async {
-            let result = DatabaseQueries::load_account(&self.pool, &account_id)
+            let result = DatabaseQueries::load_account(&self.pool, &account_id, &self.trader_id())
                 .await
                 .map_err(to_pyruntime_err)?;
 
@@ -240,7 +248,7 @@ impl PostgresCacheDatabase {
         client_order_id: ClientOrderId,
     ) -> PyResult<Option<OrderSnapshot>> {
         get_runtime().block_on(async {
-            DatabaseQueries::load_order_snapshot(&self.pool, &client_order_id)
+            DatabaseQueries::load_order_snapshot(&self.pool, &client_order_id, &self.trader_id())
                 .await
                 .map_err(to_pyruntime_err)
         })
@@ -252,7 +260,7 @@ impl PostgresCacheDatabase {
         position_id: PositionId,
     ) -> PyResult<Option<PositionSnapshot>> {
         get_runtime().block_on(async {
-            DatabaseQueries::load_position_snapshot(&self.pool, &position_id)
+            DatabaseQueries::load_position_snapshot(&self.pool, &position_id, &self.trader_id())
                 .await
                 .map_err(to_pyruntime_err)
         })

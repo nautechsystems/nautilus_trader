@@ -36,7 +36,7 @@ use super::messages::{
     KrakenFuturesBookDelta, KrakenFuturesBookSnapshot, KrakenFuturesFill, KrakenFuturesOpenOrder,
     KrakenFuturesTickerData, KrakenFuturesTradeData,
 };
-use crate::common::enums::KrakenOrderSide;
+use crate::common::{enums::KrakenOrderSide, parse::fee_currency};
 
 fn millis_to_nanos(millis: i64) -> UnixNanos {
     UnixNanos::from((millis as u64) * NANOSECONDS_IN_MILLISECOND)
@@ -352,7 +352,11 @@ pub fn parse_futures_ws_fill_report(
     let liquidity_side = fill.fill_type.into();
 
     let fee = fill.fee_paid.unwrap_or(Decimal::ZERO);
-    let commission_currency = instrument.quote_currency();
+    // The venue reports the fee currency, which on an inverse contract is not the quote.
+    let commission_currency = fill.fee_currency.as_deref().map_or_else(
+        || instrument.quote_currency(),
+        |reported| fee_currency(reported, instrument),
+    );
     let commission = Money::from_decimal(fee, commission_currency)?;
 
     let ts_event = millis_to_nanos(fill.time);
@@ -746,6 +750,49 @@ mod tests {
         assert_eq!(report.last_px.as_decimal(), dec!(3162));
         assert_eq!(report.last_qty.as_decimal(), dec!(0.001));
         assert_eq!(report.liquidity_side, expected_liquidity_side);
+        assert_eq!(report.commission.as_decimal(), dec!(0.001581));
+        // The fixture reports the quote currency, so the commission stays in it.
+        assert_eq!(report.commission.currency.code, "USD");
+    }
+
+    /// A fee the venue reports in something other than the quote must be booked in that currency.
+    ///
+    /// An inverse contract charges in the base currency, so assuming the quote would record the
+    /// wrong currency against the amount.
+    #[rstest]
+    fn test_parse_futures_ws_fill_report_honors_the_reported_fee_currency() {
+        let json = include_str!("../../../test_data/ws_futures_fills_delta.json");
+        let fills_delta: super::super::messages::KrakenFuturesFillsDelta =
+            serde_json::from_str(json).unwrap();
+        let mut fill = fills_delta.fills[0].clone();
+        fill.fee_currency = Some("XXBT".to_string());
+
+        let instrument_id = InstrumentId::new(Symbol::new("PI_XBTUSD"), *KRAKEN_VENUE);
+        let usd = Currency::new("USD", 6, 0, "USD", CurrencyType::Fiat);
+        let instrument = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("PI_XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(usd)
+                .settlement_currency(Currency::BTC())
+                .is_inverse(true)
+                .price_precision(1)
+                .size_precision(3)
+                .price_increment(Price::from("0.5"))
+                .size_increment(Quantity::from("0.001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        );
+
+        let report =
+            parse_futures_ws_fill_report(&fill, &instrument, AccountId::from("KRAKEN-001"), TS)
+                .unwrap();
+
+        // `XXBT` is Kraken's spelling; the report carries the standard code.
+        assert_eq!(report.commission.currency.code, "BTC");
         assert_eq!(report.commission.as_decimal(), dec!(0.001581));
     }
 }

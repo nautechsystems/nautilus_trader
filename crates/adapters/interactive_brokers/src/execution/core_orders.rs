@@ -7,6 +7,8 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::live::sender::EventSender;
+
 use super::*;
 
 #[allow(dead_code)]
@@ -24,7 +26,7 @@ impl InteractiveBrokersExecutionClient {
         terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
         next_order_id: &Arc<Mutex<i32>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
         account_id: AccountId,
         order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
@@ -199,7 +201,7 @@ impl InteractiveBrokersExecutionClient {
         venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
         instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        _exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        _exec_sender: &EventSender<ExecutionEvent>,
         _clock: &'static AtomicTime,
         account_id: AccountId,
         original_order: Option<&Arc<OrderAny>>,
@@ -236,7 +238,8 @@ impl InteractiveBrokersExecutionClient {
                 if Self::is_definitive_order_submit_error(&e) {
                     return Err(e).context("IB rejected the modified order before sending it");
                 }
-                tracing::error!(
+
+                tracing::warn!(
                     "Modify outcome is unknown after attempting to send order {} to IB: {e}",
                     cmd.client_order_id
                 );
@@ -369,7 +372,8 @@ impl InteractiveBrokersExecutionClient {
                             return Err(e)
                                 .context("IB rejected the modified open order before sending it");
                         }
-                        tracing::error!(
+
+                        tracing::warn!(
                             "Modify outcome is unknown after attempting to send open order {} to IB: {e}",
                             cmd.client_order_id
                         );
@@ -412,7 +416,7 @@ impl InteractiveBrokersExecutionClient {
         terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
         next_order_id: &Arc<Mutex<i32>>,
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
         account_id: AccountId,
         strategy_id: StrategyId,
@@ -567,7 +571,7 @@ impl InteractiveBrokersExecutionClient {
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
         terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
-        exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
     ) -> anyhow::Result<()> {
         match Self::classify_order_submit_error(error) {

@@ -34,7 +34,7 @@ use pyo3::{IntoPyObjectExt, prelude::*, pyclass::CompareOp, types::PyDict};
 use crate::{
     data::order::{BookOrder, OrderId},
     enums::OrderSide,
-    python::common::PY_MODULE_MODEL,
+    python::{common::PY_MODULE_MODEL, types::fixed::FloatArithmetic},
     types::{Price, Quantity},
 };
 
@@ -101,14 +101,17 @@ impl BookOrder {
 
     /// Returns the order exposure as an `f64`.
     #[pyo3(name = "exposure")]
-    fn py_exposure(&self) -> f64 {
-        self.exposure()
+    fn py_exposure(&self) -> PyResult<f64> {
+        self.price.check_float_precision()?;
+        self.size.check_float_precision()?;
+        Ok(self.exposure())
     }
 
     /// Returns the signed order size as `f64`, positive for buys, negative for sells.
     #[pyo3(name = "signed_size")]
-    fn py_signed_size(&self) -> f64 {
-        self.signed_size()
+    fn py_signed_size(&self) -> PyResult<f64> {
+        self.size.check_float_precision()?;
+        Ok(self.signed_size())
     }
 
     /// Constructs a `BookOrder` from its dictionary representation.

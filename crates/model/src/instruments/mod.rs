@@ -53,6 +53,7 @@ use nautilus_core::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 pub use crate::instruments::{
@@ -81,6 +82,58 @@ pub use crate::instruments::{
     },
     tokenized_asset::TokenizedAsset,
 };
+/// Instrument family selector used by streaming persistence filters.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, strum::Display, strum::EnumIter,
+)]
+pub enum NautilusInstrumentType {
+    BettingInstrument,
+    BinaryOption,
+    Cfd,
+    Commodity,
+    CryptoFuture,
+    CryptoFuturesSpread,
+    CryptoOption,
+    CryptoOptionSpread,
+    CryptoPerpetual,
+    CurrencyPair,
+    Equity,
+    FuturesContract,
+    FuturesSpread,
+    IndexInstrument,
+    OptionContract,
+    OptionSpread,
+    PerpetualContract,
+    TokenizedAsset,
+}
+
+impl FromStr for NautilusInstrumentType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "BettingInstrument" | "Betting" | "betting_instrument" => Ok(Self::BettingInstrument),
+            "BinaryOption" | "binary_option" => Ok(Self::BinaryOption),
+            "Cfd" | "cfd" => Ok(Self::Cfd),
+            "Commodity" | "commodity" => Ok(Self::Commodity),
+            "CryptoFuture" | "crypto_future" => Ok(Self::CryptoFuture),
+            "CryptoFuturesSpread" | "crypto_futures_spread" => Ok(Self::CryptoFuturesSpread),
+            "CryptoOption" | "crypto_option" => Ok(Self::CryptoOption),
+            "CryptoOptionSpread" | "crypto_option_spread" => Ok(Self::CryptoOptionSpread),
+            "CryptoPerpetual" | "crypto_perpetual" => Ok(Self::CryptoPerpetual),
+            "CurrencyPair" | "currency_pair" => Ok(Self::CurrencyPair),
+            "Equity" | "equity" => Ok(Self::Equity),
+            "FuturesContract" | "futures_contract" => Ok(Self::FuturesContract),
+            "FuturesSpread" | "futures_spread" => Ok(Self::FuturesSpread),
+            "IndexInstrument" | "index_instrument" => Ok(Self::IndexInstrument),
+            "OptionContract" | "option_contract" => Ok(Self::OptionContract),
+            "OptionSpread" | "option_spread" => Ok(Self::OptionSpread),
+            "PerpetualContract" | "perpetual_contract" => Ok(Self::PerpetualContract),
+            "TokenizedAsset" | "tokenized_asset" => Ok(Self::TokenizedAsset),
+            _ => anyhow::bail!("Invalid `NautilusInstrumentType`: '{s}'"),
+        }
+    }
+}
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
@@ -290,12 +343,6 @@ pub trait Instrument: 'static + Send {
         dec!(0)
     }
     fn margin_maint(&self) -> Decimal {
-        dec!(0)
-    }
-    fn maker_fee(&self) -> Decimal {
-        dec!(0)
-    }
-    fn taker_fee(&self) -> Decimal {
         dec!(0)
     }
 
@@ -548,7 +595,10 @@ pub trait Instrument: 'static + Send {
             anyhow::bail!("`last_price` was zero when calculating base quantity");
         }
         let precision = u32::from(self.min_size_increment_precision());
-        let value = (quantity.as_decimal() / last_px)
+        let value = quantity
+            .as_decimal()
+            .checked_div(last_px)
+            .ok_or_else(|| anyhow::anyhow!("Base quantity exceeds Decimal bounds"))?
             .round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
         Quantity::from_decimal_dp(value, self.size_precision()).map_err(Into::into)
     }
@@ -564,10 +614,16 @@ pub trait Instrument: 'static + Send {
 
     /// Calculates the notional value for the given quantity and price.
     ///
+    /// Inverse instruments value notional in the base currency as `quantity * multiplier / price`,
+    /// or as `quantity` in the quote currency when `use_quote_for_inverse` is set. Premium-based
+    /// inverse instruments, such as coin-settled options, quote the premium in the base currency,
+    /// so their base notional is `quantity * multiplier * price`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if base-denominated inverse valuation lacks a base currency or positive
-    /// price, or if the result cannot be represented as [`Money`].
+    /// Returns an error if base-denominated inverse valuation lacks a base currency, if a
+    /// non-premium inverse instrument receives a nonpositive price, or if the result cannot be
+    /// represented as [`Money`].
     #[inline(always)]
     fn try_calculate_notional_value(
         &self,
@@ -594,6 +650,7 @@ pub trait Instrument: 'static + Send {
             quantity,
             price,
             self.multiplier(),
+            self.instrument_class(),
             self.is_inverse(),
             use_quote_inverse,
             currency,
@@ -707,11 +764,14 @@ pub(crate) fn try_notional_value(
     quantity: Quantity,
     price: Price,
     multiplier: Quantity,
+    instrument_class: InstrumentClass,
     is_inverse: bool,
     use_quote_for_inverse: bool,
     currency: Currency,
 ) -> anyhow::Result<Money> {
-    let amount = if is_inverse && !use_quote_for_inverse {
+    let amount = if is_inverse && use_quote_for_inverse {
+        quantity.as_decimal()
+    } else if instrument_class.divides_notional_by_price(is_inverse) {
         anyhow::ensure!(
             price.is_positive(),
             "price must be positive for inverse notional valuation"
@@ -721,8 +781,6 @@ pub(crate) fn try_notional_value(
             .checked_mul(multiplier.as_decimal())
             .and_then(|value| value.checked_div(price.as_decimal()))
             .ok_or_else(|| anyhow::anyhow!("inverse notional calculation overflow"))?
-    } else if is_inverse {
-        quantity.as_decimal()
     } else {
         quantity
             .as_decimal()
@@ -767,6 +825,44 @@ mod tests {
         instruments::stubs::*,
         types::{ERROR_PRICE, Money, PRICE_ERROR, PRICE_UNDEF, QUANTITY_UNDEF},
     };
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_try_normalize_price_rejects_wei_scale_against_standard_instrument(
+        audusd_sim: CurrencyPair,
+    ) {
+        let wei_price =
+            Price::from_wei(alloy_primitives::U256::from(1_000_000_000_000_000_000_u64));
+
+        let error = audusd_sim.try_normalize_price(wei_price).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "`price` raw scale does not match instrument price precision, price precision was 18, instrument price precision was {}",
+                audusd_sim.price_precision()
+            )
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_try_normalize_qty_rejects_wei_scale_against_standard_instrument(
+        audusd_sim: CurrencyPair,
+    ) {
+        let wei_qty =
+            Quantity::from_wei(alloy_primitives::U256::from(1_000_000_000_000_000_000_u64));
+
+        let error = audusd_sim.try_normalize_qty(wei_qty).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "`quantity` raw scale does not match instrument size precision, quantity precision was 18, instrument size precision was {}",
+                audusd_sim.size_precision()
+            )
+        );
+    }
 
     pub(super) fn default_price_increment(precision: u8) -> Price {
         let step = 10f64.powi(-i32::from(precision));
@@ -1303,6 +1399,34 @@ mod tests {
     }
 
     #[rstest]
+    fn base_quantity_out_of_range_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let error = currency_pair_btcusdt
+            .try_calculate_base_quantity(Quantity::from("1000000000"), Price::from("0.00001"))
+            .unwrap_err();
+
+        let expected = Quantity::from_decimal_dp(
+            dec!(100000000000000),
+            currency_pair_btcusdt.size_precision(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.downcast_ref::<CorrectnessError>(), Some(&expected));
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn base_quantity_decimal_overflow_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let error = currency_pair_btcusdt
+            .try_calculate_base_quantity(
+                Quantity::from("10000000000000"),
+                Price::from("0.0000000000000001"),
+            )
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "Base quantity exceeds Decimal bounds");
+    }
+
+    #[rstest]
     #[case(f64::NAN)]
     #[case(f64::INFINITY)]
     #[case(1e30)] // Finite but not representable as a Decimal
@@ -1587,30 +1711,44 @@ mod tests {
     }
 
     #[rstest]
-    fn notional_inverse_base(xbtusd_inverse_perp: CryptoPerpetual) {
-        let quantity = xbtusd_inverse_perp.make_qty(100.0, None);
-        let price = xbtusd_inverse_perp.make_price(50_000.0);
-        let notional = xbtusd_inverse_perp.calculate_notional_value(quantity, price, Some(false));
+    fn notional_inverse_base(btcusd_inverse_perp: CryptoPerpetual) {
+        let quantity = btcusd_inverse_perp.make_qty(100.0, None);
+        let price = btcusd_inverse_perp.make_price(50_000.0);
+        let notional = btcusd_inverse_perp.calculate_notional_value(quantity, price, Some(false));
         let expected = Money::new(
-            100.0 * xbtusd_inverse_perp.multiplier().as_f64() * (1.0 / 50_000.0),
-            xbtusd_inverse_perp.base_currency().unwrap(),
+            100.0 * btcusd_inverse_perp.multiplier().as_f64() * (1.0 / 50_000.0),
+            btcusd_inverse_perp.base_currency().unwrap(),
         );
         assert_eq!(notional, expected);
     }
 
     #[rstest]
-    fn notional_inverse_quote_use_quote(xbtusd_inverse_perp: CryptoPerpetual) {
-        let quantity = xbtusd_inverse_perp.make_qty(100.0, None);
-        let price = xbtusd_inverse_perp.make_price(50_000.0);
-        let notional = xbtusd_inverse_perp.calculate_notional_value(quantity, price, Some(true));
-        let expected = Money::new(100.0, xbtusd_inverse_perp.quote_currency());
+    fn notional_inverse_quote_use_quote(btcusd_inverse_perp: CryptoPerpetual) {
+        let quantity = btcusd_inverse_perp.make_qty(100.0, None);
+        let price = btcusd_inverse_perp.make_price(50_000.0);
+        let notional = btcusd_inverse_perp.calculate_notional_value(quantity, price, Some(true));
+        let expected = Money::new(100.0, btcusd_inverse_perp.quote_currency());
         assert_eq!(notional, expected);
     }
 
     #[rstest]
-    fn try_notional_inverse_zero_price_returns_error(xbtusd_inverse_perp: CryptoPerpetual) {
-        let result = xbtusd_inverse_perp.try_calculate_notional_value(
-            xbtusd_inverse_perp.make_qty(100.0, None),
+    fn notional_inverse_option_values_premium_in_base(mut crypto_option_btc_deribit: CryptoOption) {
+        crypto_option_btc_deribit.is_inverse = true;
+        crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+
+        let notional = crypto_option_btc_deribit.calculate_notional_value(
+            Quantity::from("10.0"),
+            Price::from("0.020"),
+            None,
+        );
+
+        assert_eq!(notional, Money::from("0.002 BTC"));
+    }
+
+    #[rstest]
+    fn try_notional_inverse_zero_price_returns_error(btcusd_inverse_perp: CryptoPerpetual) {
+        let result = btcusd_inverse_perp.try_calculate_notional_value(
+            btcusd_inverse_perp.make_qty(100.0, None),
             Price::new(0.0, 1),
             Some(false),
         );
@@ -1638,6 +1776,7 @@ mod tests {
             Quantity::from("9000000000"),
             Price::from("9000000000"),
             Quantity::from("9000000000"),
+            InstrumentClass::Spot,
             false,
             false,
             Currency::USD(),

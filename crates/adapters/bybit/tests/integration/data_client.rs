@@ -52,9 +52,10 @@ use nautilus_common::{
     messages::{
         DataEvent, SystemEvent,
         data::{
-            DataResponse, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
-            RequestInstruments, RequestOptionChainReferencePrice, SubscribeBookDeltas,
-            SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas, UnsubscribeQuotes,
+            DataResponse, RequestBars, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
+            RequestInstruments, RequestOptionChainReferencePrice, SubscribeBars,
+            SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            UnsubscribeQuotes,
         },
         system::SocketState,
     },
@@ -63,8 +64,8 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
-    data::Data,
-    enums::{BookAction, BookType},
+    data::{BarType, Data, OrderBookDeltas, QuoteTick},
+    enums::{BookAction, BookType, RecordFlag},
     identifiers::{InstrumentId, OptionSeriesId},
     types::Price,
 };
@@ -77,6 +78,10 @@ use ustr::Ustr;
 #[derive(Clone)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
+    upgrade_count: Arc<AtomicUsize>,
+    instrument_requests: Arc<AtomicUsize>,
+    upgrade_gate: tokio::sync::watch::Sender<bool>,
+    socket_drops: Arc<tokio::sync::Mutex<HashMap<usize, tokio::sync::oneshot::Sender<()>>>>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>,
     disconnect_trigger: Arc<AtomicBool>,
@@ -84,12 +89,17 @@ struct TestServerState {
     ticker_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     ticker_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     book_updates: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    book_snapshot_drops: Arc<AtomicUsize>,
 }
 
 impl Default for TestServerState {
     fn default() -> Self {
         Self {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
+            upgrade_count: Arc::new(AtomicUsize::new(0)),
+            instrument_requests: Arc::new(AtomicUsize::new(0)),
+            upgrade_gate: tokio::sync::watch::channel(true).0,
+            socket_drops: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             subscription_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
@@ -97,8 +107,20 @@ impl Default for TestServerState {
             ticker_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             ticker_response: Arc::new(tokio::sync::Mutex::new(None)),
             book_updates: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            book_snapshot_drops: Arc::new(AtomicUsize::new(0)),
         }
     }
+}
+
+async fn wait_for_socket_registrations(state: &TestServerState, expected: &[usize]) {
+    wait_until_async(
+        || async {
+            let sockets = state.socket_drops.lock().await;
+            sockets.len() == expected.len() && expected.iter().all(|id| sockets.contains_key(id))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 }
 
 fn load_test_data(filename: &str) -> Value {
@@ -107,7 +129,11 @@ fn load_test_data(filename: &str) -> Value {
     serde_json::from_str(&content).expect("Failed to parse test data")
 }
 
-async fn handle_get_instruments(query: Query<HashMap<String, String>>) -> impl IntoResponse {
+async fn handle_get_instruments(
+    State(state): State<TestServerState>,
+    query: Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    state.instrument_requests.fetch_add(1, Ordering::Relaxed);
     let category = query.get("category").map(String::as_str);
     let filename = match category {
         Some("linear") => "http_get_instruments_linear.json",
@@ -155,6 +181,13 @@ async fn handle_get_orderbook() -> impl IntoResponse {
     Json(orderbook).into_response()
 }
 
+async fn handle_get_klines(Query(query): Query<HashMap<String, String>>) -> impl IntoResponse {
+    assert_eq!(query.get("category").map(String::as_str), Some("linear"));
+    assert_eq!(query.get("symbol").map(String::as_str), Some("BTCUSDT"));
+    assert_eq!(query.get("interval").map(String::as_str), Some("5"));
+    Json(load_test_data("http_get_klines_linear.json"))
+}
+
 async fn handle_get_funding_history() -> impl IntoResponse {
     let funding = load_test_data("http_get_funding_history.json");
     Json(funding).into_response()
@@ -176,10 +209,22 @@ async fn handle_get_tickers(
 }
 
 async fn handle_websocket(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
-    ws.on_upgrade(|socket| handle_socket(socket, state))
+    let mut gate = state.upgrade_gate.subscribe();
+    gate.wait_for(|open| *open).await.unwrap();
+    ws.on_upgrade(move |socket| async move {
+        let socket_id = state.upgrade_count.fetch_add(1, Ordering::Relaxed) + 1;
+        let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
+        state.socket_drops.lock().await.insert(socket_id, drop_tx);
+        handle_socket(socket, state, socket_id, drop_rx).await;
+    })
 }
 
-async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
+async fn handle_socket(
+    mut socket: WebSocket,
+    state: TestServerState,
+    socket_id: usize,
+    mut drop_rx: tokio::sync::oneshot::Receiver<()>,
+) {
     {
         let mut count = state.connection_count.lock().await;
         *count += 1;
@@ -200,7 +245,11 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             }
         }
 
-        let msg_opt = match tokio::time::timeout(Duration::from_millis(50), socket.recv()).await {
+        let received = tokio::select! {
+            _ = &mut drop_rx => break,
+            received = tokio::time::timeout(Duration::from_millis(50), socket.recv()) => received,
+        };
+        let msg_opt = match received {
             Ok(opt) => opt,
             Err(_) => continue,
         };
@@ -290,6 +339,17 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                     break;
                                 }
                             } else if first_topic.contains("orderbook") {
+                                // Answers the subscribe without its snapshot
+                                if state
+                                    .book_snapshot_drops
+                                    .try_update(Ordering::SeqCst, Ordering::SeqCst, |drops| {
+                                        drops.checked_sub(1)
+                                    })
+                                    .is_ok()
+                                {
+                                    continue;
+                                }
+
                                 let mut orderbook_msg =
                                     load_test_data("ws_orderbook_snapshot.json");
                                 orderbook_msg["topic"] = first_topic.into();
@@ -314,7 +374,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                     break;
                                 }
                             } else if first_topic.contains("kline") {
-                                let kline_msg = load_test_data("ws_kline.json");
+                                let mut kline_msg = load_test_data("ws_kline.json");
+                                kline_msg["data"][0]["confirm"] = json!(true);
 
                                 if socket
                                     .send(Message::Text(kline_msg.to_string().into()))
@@ -374,6 +435,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
         }
     }
 
+    state.socket_drops.lock().await.remove(&socket_id);
     let mut count = state.connection_count.lock().await;
     *count = count.saturating_sub(1);
 }
@@ -382,6 +444,7 @@ fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/v5/market/instruments-info", get(handle_get_instruments))
         .route("/v5/market/orderbook", get(handle_get_orderbook))
+        .route("/v5/market/kline", get(handle_get_klines))
         .route(
             "/v5/market/funding/history",
             get(handle_get_funding_history),
@@ -438,7 +501,9 @@ fn create_test_config(addr: SocketAddr) -> BybitDataClientConfig {
         recv_window_ms: 5000,
         update_instruments_interval_mins: None,
         instrument_poll_interval_secs: None,
+        book_snapshot_timeout_secs: 10,
         transport_backend: Default::default(),
+        bars_timestamp_on_close: true,
     }
 }
 
@@ -598,6 +663,117 @@ async fn test_data_client_connect_disconnect() {
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
     assert!(registry.handle(*BYBIT_CLIENT_ID, endpoint).is_none());
+}
+
+#[rstest]
+#[case::linear(vec![BybitProductType::Linear], 1)]
+#[case::linear_and_spot_drop_first(vec![BybitProductType::Linear, BybitProductType::Spot], 1)]
+#[case::linear_and_spot_drop_second(vec![BybitProductType::Linear, BybitProductType::Spot], 2)]
+#[tokio::test]
+async fn test_data_client_transport_reconnect(
+    #[case] product_types: Vec<BybitProductType>,
+    #[case] dropped_socket: usize,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let mut config = create_test_config(addr);
+    let socket_count = product_types.len();
+    config.product_types = product_types;
+    let mut client = registry
+        .scope(|| BybitDataClient::new(*BYBIT_CLIENT_ID, config))
+        .unwrap();
+    assert!(!client.is_connected());
+    assert!(client.is_disconnected());
+    client.connect().await.unwrap();
+
+    let mut endpoints = Vec::new();
+
+    for _ in 0..socket_count {
+        let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let SystemEvent::SocketState(change) = event;
+        assert_eq!(change.state, SocketState::Connected);
+        endpoints.push(change.endpoint);
+    }
+    let mut registered_sockets: Vec<_> = (1..=socket_count).collect();
+    wait_for_socket_registrations(&state, &registered_sockets).await;
+    assert!(client.is_connected());
+    assert!(!client.is_disconnected());
+    assert_eq!(state.upgrade_count.load(Ordering::Relaxed), socket_count);
+    let instrument_requests = state.instrument_requests.load(Ordering::Relaxed);
+    assert_eq!(instrument_requests, socket_count);
+
+    state.upgrade_gate.send_replace(false);
+    state
+        .socket_drops
+        .lock()
+        .await
+        .remove(&dropped_socket)
+        .unwrap()
+        .send(())
+        .unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.state, SocketState::Disconnected);
+    let dropped_endpoint = change.endpoint;
+    assert!(endpoints.contains(&dropped_endpoint));
+    assert!(
+        !client.is_connected(),
+        "transport loss must clear aggregate availability"
+    );
+    assert!(client.is_disconnected());
+    registered_sockets.retain(|id| *id != dropped_socket);
+    wait_for_socket_registrations(&state, &registered_sockets).await;
+    assert_eq!(state.socket_drops.lock().await.len(), socket_count - 1);
+
+    tokio::time::timeout(Duration::from_secs(2), client.connect())
+        .await
+        .expect("connect mid-reconnect must reuse the established session")
+        .unwrap();
+    assert!(!client.is_connected());
+    assert!(client.is_disconnected());
+    assert_eq!(
+        state.instrument_requests.load(Ordering::Relaxed),
+        instrument_requests
+    );
+
+    state.upgrade_gate.send_replace(true);
+    let event = tokio::time::timeout(Duration::from_secs(10), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, dropped_endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+    assert!(!client.is_disconnected());
+    registered_sockets.push(socket_count + 1);
+    wait_for_socket_registrations(&state, &registered_sockets).await;
+    assert_eq!(
+        state.upgrade_count.load(Ordering::Relaxed),
+        socket_count + 1
+    );
+    assert_eq!(state.socket_drops.lock().await.len(), socket_count);
+    assert_eq!(
+        state.instrument_requests.load(Ordering::Relaxed),
+        instrument_requests
+    );
+
+    client.disconnect().await.unwrap();
+    assert!(!client.is_connected());
+    assert!(client.is_disconnected());
+    for endpoint in endpoints {
+        assert!(registry.handle(*BYBIT_CLIENT_ID, endpoint).is_none());
+    }
 }
 
 #[rstest]
@@ -767,6 +943,229 @@ async fn test_data_client_subscribe_book_deltas() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_book_gap_resubscribes_for_fresh_snapshot() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+
+    let book = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(50),
+        false,
+        None,
+        None,
+    );
+
+    // The server answers every subscribe with the snapshot fixture, whose update ID is 123456789
+    let mut gapped = load_test_data("ws_orderbook_delta.json");
+    gapped["topic"] = "orderbook.50.BTCUSDT".into();
+    gapped["ts"] = 1_709_891_700_000_u64.into();
+    gapped["data"]["u"] = 123_456_791_u64.into();
+    let mut linked = gapped.clone();
+    linked["ts"] = 1_709_891_701_000_u64.into();
+    linked["data"]["u"] = 123_456_790_u64.into();
+
+    client.subscribe_book_deltas(book).unwrap();
+    let initial = next_book_deltas(&mut rx).await;
+    state.book_updates.lock().await.push(gapped);
+    let resynced = next_book_deltas(&mut rx).await;
+    state.book_updates.lock().await.push(linked);
+    let update = next_book_deltas(&mut rx).await;
+
+    for snapshot in [&initial, &resynced] {
+        assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+        assert!(
+            snapshot
+                .deltas
+                .iter()
+                .all(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags))
+        );
+    }
+
+    assert_eq!(update.ts_event, UnixNanos::new(1_709_891_701_000_000_000));
+    assert_eq!(
+        update
+            .deltas
+            .iter()
+            .map(|delta| delta.action)
+            .collect::<Vec<_>>(),
+        [BookAction::Update, BookAction::Delete],
+    );
+    client.disconnect().await.unwrap();
+}
+
+// A dropped snapshot must lead to another subscribe within the retry budget, well before the
+// one-minute interval that follows it
+#[rstest]
+#[case::initial_snapshot(false)]
+#[case::replacement_snapshot(true)]
+#[tokio::test]
+async fn test_data_client_book_recovers_dropped_snapshot(#[case] after_gap: bool) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = BybitDataClientConfig {
+        book_snapshot_timeout_secs: 1,
+        ..create_test_config(addr)
+    };
+
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let book = SubscribeBookDeltas::new(
+        InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
+        BookType::L2_MBP,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(50),
+        false,
+        None,
+        None,
+    );
+
+    // The snapshot fixture carries update ID 123456789
+    let mut gapped = load_test_data("ws_orderbook_delta.json");
+    gapped["topic"] = "orderbook.50.BTCUSDT".into();
+    gapped["data"]["u"] = 123_456_791_u64.into();
+
+    if after_gap {
+        client.subscribe_book_deltas(book).unwrap();
+        next_book_deltas(&mut rx).await;
+        state.book_snapshot_drops.store(1, Ordering::SeqCst);
+        state.book_updates.lock().await.push(gapped);
+    } else {
+        state.book_snapshot_drops.store(1, Ordering::SeqCst);
+        client.subscribe_book_deltas(book).unwrap();
+    }
+
+    let snapshot = next_book_deltas(&mut rx).await;
+
+    assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+    assert_eq!(snapshot.deltas.len(), 5);
+    assert_eq!(state.book_snapshot_drops.load(Ordering::SeqCst), 0);
+    client.disconnect().await.unwrap();
+}
+
+// Recovery resubscribes a depth-1 topic that quotes also hold, so quotes must outlive the book
+#[rstest]
+#[tokio::test]
+async fn test_data_client_shared_depth_one_recovery_keeps_quotes() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+    let topic = "orderbook.1.BTCUSDT";
+
+    let quotes = SubscribeQuotes::new(
+        instrument_id,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    let book = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(1),
+        false,
+        None,
+        None,
+    );
+
+    let unsubscribe_book = UnsubscribeBookDeltas::new(
+        instrument_id,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    // The snapshot fixture uses the depth-1 topic and carries update ID 123456789
+    let mut snapshot = load_test_data("ws_orderbook_snapshot.json");
+    snapshot["ts"] = 1_709_891_700_000_u64.into();
+    let mut gapped = load_test_data("ws_orderbook_delta.json");
+    gapped["data"]["u"] = 123_456_791_u64.into();
+    let mut later = load_test_data("ws_orderbook_snapshot.json");
+    later["ts"] = 1_709_891_800_000_u64.into();
+
+    // Consumes the subscribe snapshot first so the book can only sync from the injected one
+    client.subscribe_quotes(quotes).unwrap();
+    next_quote(&mut rx, UnixNanos::new(1_709_891_679_000_000_000)).await;
+    client.subscribe_book_deltas(book).unwrap();
+    state.book_updates.lock().await.push(snapshot);
+    let synced = next_book_deltas(&mut rx).await;
+    state.book_updates.lock().await.push(gapped);
+
+    // The server answers only a subscribe with the fixture timestamp
+    let resynced = next_book_deltas(&mut rx).await;
+    client.unsubscribe_book_deltas(&unsubscribe_book).unwrap();
+    state.book_updates.lock().await.push(later);
+    let quote = next_quote(&mut rx, UnixNanos::new(1_709_891_800_000_000_000)).await;
+
+    assert_eq!(synced.deltas[0].action, BookAction::Clear);
+    assert_eq!(synced.ts_event, UnixNanos::new(1_709_891_700_000_000_000));
+    assert_eq!(resynced.deltas[0].action, BookAction::Clear);
+    assert_eq!(resynced.ts_event, UnixNanos::new(1_709_891_679_000_000_000));
+    assert_eq!(quote.instrument_id, instrument_id);
+    assert!(state.subscriptions.lock().await.iter().any(|t| t == topic));
+    client.disconnect().await.unwrap();
+}
+
+async fn next_quote(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ts_event: UnixNanos,
+) -> QuoteTick {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let DataEvent::Data(Data::Quote(quote)) = rx.recv().await.unwrap()
+                && quote.ts_event == ts_event
+            {
+                return quote;
+            }
+        }
+    })
+    .await
+    .expect("timeout waiting for quote")
+}
+
+async fn next_book_deltas(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> OrderBookDeltas {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let DataEvent::Data(Data::BookDeltas(deltas)) = rx.recv().await.unwrap() {
+                return *deltas;
+            }
+        }
+    })
+    .await
+    .expect("timeout waiting for book deltas")
 }
 
 #[rstest]
@@ -1205,31 +1604,21 @@ async fn test_data_client_book_quote_topic_lifetime(
 }
 
 #[rstest]
-#[case::linear(BybitProductType::Linear, "BTCUSDT-LINEAR.BYBIT")]
-#[case::spot(BybitProductType::Spot, "BTCUSDT-SPOT.BYBIT")]
-#[case::inverse(BybitProductType::Inverse, "BTCUSD-INVERSE.BYBIT")]
+#[case::open(false, 1_672_324_800_000_000_000)]
+#[case::close(true, 1_672_325_100_000_000_000)]
 #[tokio::test]
-#[ignore = "Connects to Bybit mainnet public market data"]
-async fn test_live_book_and_quotes(#[case] product_type: BybitProductType, #[case] symbol: &str) {
+async fn test_data_client_live_bar_timestamp(#[case] on_close: bool, #[case] expected: u64) {
+    let (addr, _state) = start_test_server().await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
-    let config = BybitDataClientConfig {
-        product_types: vec![product_type],
-        environment: BybitEnvironment::Mainnet,
-        api_key: None,
-        api_secret: None,
-        instrument_poll_interval_secs: None,
-        ..Default::default()
-    };
+    let mut config = create_test_config(addr);
+    config.bars_timestamp_on_close = on_close;
     let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
-    tokio::time::timeout(Duration::from_secs(60), client.connect())
-        .await
-        .unwrap()
-        .unwrap();
-    let instrument_id = InstrumentId::from(symbol);
+    client.connect().await.unwrap();
+    let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-5-MINUTE-LAST-EXTERNAL");
     client
-        .subscribe_quotes(SubscribeQuotes::new(
-            instrument_id,
+        .subscribe_bars(SubscribeBars::new(
+            bar_type,
             Some(*BYBIT_CLIENT_ID),
             None,
             UUID4::new(),
@@ -1238,49 +1627,61 @@ async fn test_live_book_and_quotes(#[case] product_type: BybitProductType, #[cas
             None,
         ))
         .unwrap();
-    client
-        .subscribe_book_deltas(SubscribeBookDeltas::new(
-            instrument_id,
-            BookType::L2_MBP,
-            Some(*BYBIT_CLIENT_ID),
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-            NonZeroUsize::new(50),
-            false,
-            None,
-            None,
-        ))
-        .unwrap();
-    let mut quotes = 0;
-    let mut books = 0;
-    let mut deletions = 0;
-    let result = tokio::time::timeout(Duration::from_secs(30), async {
-        while quotes < 20 || books < 20 || deletions == 0 {
-            match rx.recv().await.unwrap() {
-                DataEvent::Data(Data::Quote(quote)) => {
-                    assert_eq!(quote.instrument_id, instrument_id);
-                    assert!(quote.bid_size.is_positive());
-                    assert!(quote.ask_size.is_positive());
-                    assert!(quote.bid_price.is_positive());
-                    assert!(quote.ask_price >= quote.bid_price);
-                    quotes += 1;
-                }
-                DataEvent::Data(Data::BookDeltas(deltas)) => {
-                    assert_eq!(deltas.instrument_id, instrument_id);
-                    deletions += deltas
-                        .deltas
-                        .iter()
-                        .filter(|delta| delta.action == BookAction::Delete)
-                        .count();
-                    books += 1;
-                }
-                _ => {}
+    let bar = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(DataEvent::Data(Data::Bar(bar))) = rx.recv().await {
+                break bar;
             }
         }
     })
-    .await;
+    .await
+    .unwrap();
     client.disconnect().await.unwrap();
-    result.expect("expected quotes and depth-50 book updates with deletions");
-    println!("{product_type}: {quotes} valid quotes, {books} books, {deletions} deletions");
+    assert_eq!(bar.bar_type, bar_type);
+    assert_eq!(bar.ts_event, UnixNanos::from(expected));
+}
+
+#[rstest]
+#[case::open(false, 1_709_891_679_000_000_000)]
+#[case::close(true, 1_709_891_979_000_000_000)]
+#[tokio::test]
+async fn test_data_client_request_bar_timestamp(#[case] on_close: bool, #[case] expected: u64) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.bars_timestamp_on_close = on_close;
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-5-MINUTE-LAST-EXTERNAL");
+    let request = RequestBars::new(
+        bar_type,
+        None,
+        None,
+        NonZeroUsize::new(1),
+        Some(*BYBIT_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let request_id = request.request_id;
+    client.request_bars(request).unwrap();
+    let response = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(DataEvent::Response(DataResponse::Bars(response))) = rx.recv().await {
+                break response;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    client.disconnect().await.unwrap();
+    assert_eq!(response.correlation_id, request_id);
+    assert_eq!(response.bar_type, bar_type);
+    assert_eq!(response.data.len(), 1);
+    assert_eq!(response.data[0].ts_event, UnixNanos::from(expected));
+    assert_eq!(
+        response.data[0].ts_init,
+        UnixNanos::from(1_709_891_979_000_000_000)
+    );
 }

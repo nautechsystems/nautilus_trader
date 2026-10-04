@@ -69,7 +69,7 @@ pub struct OwnBookOrder {
     pub order_type: OrderType,
     /// The order time in force.
     pub time_in_force: TimeInForce,
-    /// The current order status (`SUBMITTED/ACCEPTED/PENDING_CANCEL/PENDING_UPDATE/PARTIALLY_FILLED`).
+    /// The current order status.
     pub status: OrderStatus,
     /// UNIX timestamp (nanoseconds) when the last order event occurred for this order.
     pub ts_last: UnixNanos,
@@ -273,7 +273,8 @@ impl OwnOrderBook {
         self.update_count = 0;
     }
 
-    /// Adds an own order to the book.
+    /// Adds an own order to its side of the book, replacing any order there with the same client
+    /// order ID.
     pub fn add(&mut self, order: OwnBookOrder) {
         self.increment(&order);
         match order.side {
@@ -282,7 +283,7 @@ impl OwnOrderBook {
         }
     }
 
-    /// Updates an existing own order in the book.
+    /// Updates an existing own order in the book, removing it if the size becomes zero.
     ///
     /// # Errors
     ///
@@ -530,14 +531,14 @@ impl OwnOrderBook {
             .collect();
 
         for client_order_id in bids_to_remove {
-            log_audit_error(&client_order_id);
+            log_audit_removal(&client_order_id);
             if let Err(e) = self.bids.remove(&client_order_id) {
                 log::error!("{e}");
             }
         }
 
         for client_order_id in asks_to_remove {
-            log_audit_error(&client_order_id);
+            log_audit_removal(&client_order_id);
             if let Err(e) = self.asks.remove(&client_order_id) {
                 log::error!("{e}");
             }
@@ -545,10 +546,8 @@ impl OwnOrderBook {
     }
 }
 
-fn log_audit_error(client_order_id: &ClientOrderId) {
-    log::error!(
-        "Audit error - {client_order_id} absent from valid order IDs, deleting from own book"
-    );
+fn log_audit_removal(client_order_id: &ClientOrderId) {
+    log::warn!("Audit removing {client_order_id} from own book, absent from valid order IDs");
 }
 
 fn transform_opposite_order(order: OwnBookOrder, side: OrderSide) -> OwnBookOrder {
@@ -725,8 +724,21 @@ impl OwnBookLadder {
     }
 
     /// Adds an order to the ladder at its price level.
+    ///
+    /// Re-adding a client order ID at a different price moves the order to the new level's
+    /// FIFO tail, so each ID lives at exactly one level.
     pub(crate) fn add(&mut self, order: OwnBookOrder) {
         let book_price = order.to_book_price();
+
+        if self
+            .cache
+            .get(&order.client_order_id)
+            .is_some_and(|price| *price != book_price)
+            && let Err(e) = self.remove(&order.client_order_id)
+        {
+            log::error!("{e}");
+        }
+
         self.cache.insert(order.client_order_id, book_price);
 
         if let Some(level) = self.levels.get_mut(&book_price) {
@@ -738,6 +750,7 @@ impl OwnBookLadder {
     }
 
     /// Updates an existing order in the ladder, moving it to a new price level if needed.
+    /// Removes the order if the size becomes zero.
     ///
     /// # Errors
     ///
@@ -775,7 +788,10 @@ impl OwnBookLadder {
             self.levels.remove(&price);
         }
 
-        self.add(order);
+        if !order.size.is_zero() {
+            self.add(order);
+        }
+
         Ok(())
     }
 
@@ -1001,7 +1017,15 @@ impl Ord for OwnBookLevel {
     }
 }
 
+/// Returns whether an order belongs in an own order book.
+///
+/// An eligible order has a price, does not use `IOC` or `FOK` time in force, is not held by the
+/// order emulator, and has a base-denominated quantity. Emulated orders never rest in the public
+/// book, and a quote-quantity order becomes eligible once an update converts it to base units.
 #[must_use]
 pub fn should_handle_own_book_order(order: &OrderAny) -> bool {
-    order.has_price() && !matches!(order.time_in_force(), TimeInForce::Ioc | TimeInForce::Fok)
+    order.has_price()
+        && !matches!(order.time_in_force(), TimeInForce::Ioc | TimeInForce::Fok)
+        && order.emulation_trigger().is_none()
+        && !order.is_quote_quantity()
 }

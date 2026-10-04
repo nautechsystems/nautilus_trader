@@ -25,7 +25,7 @@
 use std::{cell::RefCell, hint::black_box, rc::Rc};
 
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_common::clock::TestClock;
+use nautilus_common::clock::VirtualClock;
 use nautilus_core::UnixNanos;
 use nautilus_data::aggregation::{
     BarAggregator, MapVegaProvider, RenkoBarAggregator, SpreadQuoteAggregator, TickBarAggregator,
@@ -132,7 +132,7 @@ fn build_option_spread() -> SpreadQuoteAggregator {
         Box::new(|quote| {
             black_box(quote);
         }),
-        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(VirtualClock::new())),
         false,
         None,
         0,

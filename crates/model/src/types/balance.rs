@@ -18,7 +18,7 @@
 use std::fmt::{Debug, Display};
 
 use nautilus_core::correctness::{
-    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_true,
+    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
 };
 use rust_decimal::Decimal;
 use serde::{
@@ -65,24 +65,31 @@ impl AccountBalance {
     ///
     /// PyO3 requires a `Result` type that stacktrace can be printed for errors.
     pub fn new_checked(total: Money, locked: Money, free: Money) -> CorrectnessResult<Self> {
-        check_predicate_true(
-            total.currency == locked.currency,
-            &format!(
-                "`total` currency ({}) != `locked` currency ({})",
-                total.currency, locked.currency
-            ),
-        )?;
-        check_predicate_true(
-            total.currency == free.currency,
-            &format!(
-                "`total` currency ({}) != `free` currency ({})",
-                total.currency, free.currency
-            ),
-        )?;
-        check_predicate_true(
-            locked.checked_add(free) == Some(total),
-            &format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
-        )?;
+        // Inline checks keep message formatting off this per-update hot path
+        if total.currency != locked.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`total` currency ({}) != `locked` currency ({})",
+                    total.currency, locked.currency
+                ),
+            });
+        }
+
+        if total.currency != free.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`total` currency ({}) != `free` currency ({})",
+                    total.currency, free.currency
+                ),
+            });
+        }
+
+        if locked.checked_add(free) != Some(total) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
+            });
+        }
+
         Ok(Self {
             currency: total.currency,
             total,
@@ -448,13 +455,15 @@ impl MarginBalance {
         maintenance: Money,
         instrument_id: Option<InstrumentId>,
     ) -> CorrectnessResult<Self> {
-        check_predicate_true(
-            initial.currency == maintenance.currency,
-            &format!(
-                "`initial` currency ({}) != `maintenance` currency ({})",
-                initial.currency, maintenance.currency
-            ),
-        )?;
+        if initial.currency != maintenance.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`initial` currency ({}) != `maintenance` currency ({})",
+                    initial.currency, maintenance.currency
+                ),
+            });
+        }
+
         Ok(Self {
             initial,
             maintenance,
@@ -518,14 +527,119 @@ mod tests {
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
-    use super::money_from_minor_units;
+    use super::{has_same_currency_identity, money_from_minor_units};
     use crate::{
+        enums::CurrencyType,
         identifiers::InstrumentId,
         types::{
             AccountBalance, Currency, MarginBalance, Money,
             stubs::{stub_account_balance, stub_margin_balance},
         },
     };
+
+    #[rstest]
+    fn test_has_same_currency_identity_requires_every_field() {
+        let usd = Currency::USD();
+
+        assert!(has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("XXX", 2, 840, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 8, 840, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 0, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 840, "US dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Crypto)
+        ));
+    }
+
+    #[rstest]
+    fn test_margin_balance_equality_compares_every_field() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+        let balance = MarginBalance::new(
+            Money::from("100 USD"),
+            Money::from("50 USD"),
+            Some(instrument_id),
+        );
+
+        assert_eq!(
+            balance,
+            MarginBalance::new(
+                Money::from("100 USD"),
+                Money::from("50 USD"),
+                Some(instrument_id),
+            )
+        );
+        assert_ne!(
+            balance,
+            MarginBalance::new(
+                Money::from("100 USD"),
+                Money::from("60 USD"),
+                Some(instrument_id),
+            )
+        );
+        assert_ne!(
+            balance,
+            MarginBalance::new(
+                Money::from("200 USD"),
+                Money::from("50 USD"),
+                Some(instrument_id),
+            )
+        );
+        assert_ne!(
+            balance,
+            MarginBalance::new(Money::from("100 USD"), Money::from("50 USD"), None)
+        );
+    }
+
+    #[rstest]
+    fn test_account_balance_equality_compares_every_amount() {
+        let balance = AccountBalance::new(
+            Money::from("100 USD"),
+            Money::from("25 USD"),
+            Money::from("75 USD"),
+        );
+
+        assert_eq!(
+            balance,
+            AccountBalance::new(
+                Money::from("100 USD"),
+                Money::from("25 USD"),
+                Money::from("75 USD"),
+            )
+        );
+        assert_ne!(
+            balance,
+            AccountBalance::new(
+                Money::from("100 USD"),
+                Money::from("50 USD"),
+                Money::from("50 USD"),
+            )
+        );
+        assert_ne!(
+            balance,
+            AccountBalance::new(
+                Money::from("200 USD"),
+                Money::from("125 USD"),
+                Money::from("75 USD"),
+            )
+        );
+    }
 
     #[rstest]
     fn test_account_balance_equality() {

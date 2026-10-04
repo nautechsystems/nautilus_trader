@@ -101,6 +101,7 @@ CACHE_NONE_CASES = [
     ("strategy_id_for_order", (CLIENT_ORDER_ID,)),
     ("strategy_id_for_position", (POSITION_ID,)),
     ("synthetic", (INSTRUMENT_ID,)),
+    ("top_of_book", (INSTRUMENT_ID,)),
     ("trade", (INSTRUMENT_ID, 1)),
     ("trades", (INSTRUMENT_ID,)),
     ("venue_order_id", (CLIENT_ORDER_ID,)),

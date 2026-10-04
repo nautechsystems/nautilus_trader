@@ -25,7 +25,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use tempfile::TempDir;

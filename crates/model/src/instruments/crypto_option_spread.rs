@@ -82,10 +82,6 @@ pub struct CryptoOptionSpread {
     pub margin_init: Decimal,
     /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
-    /// The fee rate for liquidity makers as a percentage of order value.
-    pub maker_fee: Decimal,
-    /// The fee rate for liquidity takers as a percentage of order value.
-    pub taker_fee: Decimal,
     /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
     /// The minimum allowable order quantity.
@@ -135,8 +131,6 @@ impl CryptoOptionSpread {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -185,8 +179,6 @@ impl CryptoOptionSpread {
             lot_size: lot_size.unwrap_or(Quantity::from(1)),
             margin_init: margin_init.unwrap_or_default(),
             margin_maint: margin_maint.unwrap_or_default(),
-            maker_fee: maker_fee.unwrap_or_default(),
-            taker_fee: taker_fee.unwrap_or_default(),
             max_notional,
             min_notional,
             max_quantity,
@@ -233,8 +225,6 @@ impl CryptoOptionSpread {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -264,8 +254,6 @@ impl CryptoOptionSpread {
             min_price,
             margin_init,
             margin_maint,
-            maker_fee,
-            taker_fee,
             tick_scheme,
             info,
             ts_event,
@@ -428,14 +416,6 @@ impl Instrument for CryptoOptionSpread {
     fn margin_maint(&self) -> Decimal {
         self.margin_maint
     }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
-    }
 }
 
 #[cfg(test)]
@@ -512,8 +492,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
             0.into(),
             0.into(),
         );
@@ -564,8 +542,6 @@ mod tests {
             Some(Price::from("0.0001")),
             Some(dec!(0.01)),
             Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
             None,
             None,
             1.into(),
@@ -597,8 +573,6 @@ mod tests {
             .min_price(Price::from("0.0001"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .ts_event(1.into())
             .ts_init(2.into())
             .build()
@@ -630,8 +604,6 @@ mod tests {
             Quantity::from("0.1"),
             multiplier,
             lot_size,
-            None,
-            None,
             None,
             None,
             None,

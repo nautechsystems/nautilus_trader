@@ -283,6 +283,32 @@ impl PyCache {
         self.0.borrow().order_book(&instrument_id).cloned()
     }
 
+    /// Returns the best bid/ask price and size for the `instrument_id`, without cloning the
+    /// resident order book.
+    ///
+    /// Returns `(bid_price, bid_size, ask_price, ask_size)`, or `None` if the book is
+    /// missing, empty, or one-sided.
+    ///
+    /// For L3 books, each size is the first order's size at the best level, not the
+    /// aggregate level size, consistent with the order book's best-size getters.
+    ///
+    /// Prefer this over `order_book()` in hot paths that only need top-of-book values, since
+    /// `order_book()` clones the full book and its cost scales with depth.
+    #[pyo3(name = "top_of_book")]
+    fn py_top_of_book(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Option<(Price, Quantity, Price, Quantity)> {
+        let cache = self.0.borrow();
+        let book = cache.order_book(&instrument_id)?;
+        Some((
+            book.best_bid_price()?,
+            book.best_bid_size()?,
+            book.best_ask_price()?,
+            book.best_ask_size()?,
+        ))
+    }
+
     #[pyo3(name = "has_order_book")]
     fn py_has_order_book(&self, instrument_id: InstrumentId) -> bool {
         self.0.borrow().has_order_book(&instrument_id)
@@ -1248,11 +1274,186 @@ impl PyCache {
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
-    use nautilus_model::{data::stubs::stub_instrument_close, enums::InstrumentCloseType};
+    use nautilus_model::{
+        data::{BookOrder, stubs::stub_instrument_close},
+        enums::{BookType, InstrumentCloseType},
+    };
     use pyo3::exceptions::PyValueError;
     use rstest::rstest;
 
     use super::*;
+
+    fn book_order(side: OrderSide, price: &str, size: &str, id: u64) -> BookOrder {
+        BookOrder::new(side, Price::from(price), Quantity::from(size), id)
+    }
+
+    #[rstest]
+    fn test_top_of_book_missing() {
+        let cache = PyCache::from_rc(Rc::new(RefCell::new(Cache::default())));
+
+        assert_eq!(
+            cache.py_top_of_book(InstrumentId::from("AUD/USD.SIM")),
+            None
+        );
+    }
+
+    #[rstest]
+    #[case::empty(None)]
+    #[case::bid_only(Some(OrderSide::Buy))]
+    #[case::ask_only(Some(OrderSide::Sell))]
+    fn test_top_of_book_incomplete(#[case] side: Option<OrderSide>) {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        if let Some(side) = side {
+            book.add(book_order(side, "0.70000", "10", 1), 0, 1, 1.into());
+        }
+        let mut cache = Cache::default();
+        cache.add_order_book(book).unwrap();
+        let cache = PyCache::from_rc(Rc::new(RefCell::new(cache)));
+
+        assert_eq!(cache.py_top_of_book(instrument_id), None);
+    }
+
+    #[rstest]
+    fn test_top_of_book_python_values_and_resident_updates() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        book.add(
+            book_order(OrderSide::Buy, "0.70000", "10", 1),
+            0,
+            1,
+            1.into(),
+        );
+        book.add(
+            book_order(OrderSide::Sell, "0.70010", "20", 2),
+            0,
+            2,
+            2.into(),
+        );
+        let mut cache = Cache::default();
+        cache.add_order_book(book).unwrap();
+        let cache = Rc::new(RefCell::new(cache));
+
+        Python::initialize();
+        Python::attach(|py| {
+            let py_cache = Py::new(py, PyCache::from_rc(cache.clone())).unwrap();
+            let original = py_cache
+                .call_method1(py, "top_of_book", (instrument_id,))
+                .unwrap();
+            let expected = (
+                Price::from("0.70000"),
+                Quantity::from("10"),
+                Price::from("0.70010"),
+                Quantity::from("20"),
+            );
+            assert_eq!(
+                original
+                    .extract::<(Price, Quantity, Price, Quantity)>(py)
+                    .unwrap(),
+                expected
+            );
+
+            {
+                let mut cache = cache.borrow_mut();
+                let book = cache.order_book_mut(&instrument_id).unwrap();
+                book.update(
+                    book_order(OrderSide::Buy, "0.70000", "15", 1),
+                    0,
+                    3,
+                    3.into(),
+                );
+                book.add(
+                    book_order(OrderSide::Sell, "0.70005", "25", 3),
+                    0,
+                    4,
+                    4.into(),
+                );
+            }
+            let updated = py_cache
+                .call_method1(py, "top_of_book", (instrument_id,))
+                .unwrap()
+                .extract::<(Price, Quantity, Price, Quantity)>(py)
+                .unwrap();
+            assert_eq!(
+                updated,
+                (
+                    Price::from("0.70000"),
+                    Quantity::from("15"),
+                    Price::from("0.70005"),
+                    Quantity::from("25"),
+                )
+            );
+            assert_eq!(
+                original
+                    .extract::<(Price, Quantity, Price, Quantity)>(py)
+                    .unwrap(),
+                expected
+            );
+
+            cache
+                .borrow_mut()
+                .order_book_mut(&instrument_id)
+                .unwrap()
+                .clear_asks(5, 5.into());
+            assert!(
+                py_cache
+                    .call_method1(py, "top_of_book", (instrument_id,))
+                    .unwrap()
+                    .is_none(py)
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_top_of_book_l3_returns_first_order_sizes() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+        let first_bid = book_order(OrderSide::Buy, "0.70000", "10", 1);
+        let first_ask = book_order(OrderSide::Sell, "0.70010", "20", 3);
+        book.add(first_bid, 0, 1, 1.into());
+        book.add(
+            book_order(OrderSide::Buy, "0.70000", "30", 2),
+            0,
+            2,
+            2.into(),
+        );
+        book.add(first_ask, 0, 3, 3.into());
+        book.add(
+            book_order(OrderSide::Sell, "0.70010", "40", 4),
+            0,
+            4,
+            4.into(),
+        );
+        let mut cache = Cache::default();
+        cache.add_order_book(book).unwrap();
+        let cache = PyCache::from_rc(Rc::new(RefCell::new(cache)));
+
+        assert_eq!(
+            cache.py_top_of_book(instrument_id),
+            Some((
+                Price::from("0.70000"),
+                Quantity::from("10"),
+                Price::from("0.70010"),
+                Quantity::from("20"),
+            ))
+        );
+
+        {
+            let mut inner = cache.0.borrow_mut();
+            let book = inner.order_book_mut(&instrument_id).unwrap();
+            book.delete(first_bid, 0, 5, 5.into());
+            book.delete(first_ask, 0, 6, 6.into());
+        }
+        assert_eq!(
+            cache.py_top_of_book(instrument_id),
+            Some((
+                Price::from("0.70000"),
+                Quantity::from("30"),
+                Price::from("0.70010"),
+                Quantity::from("40"),
+            ))
+        );
+    }
 
     fn create_order_list() -> OrderList {
         OrderList::new(
@@ -1492,7 +1693,8 @@ impl Cache {
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
     /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
-    /// are retained so registered strategy routing remains configured across resets.
+    /// and execution client account, route, and external client registrations are retained so
+    /// registered strategy and client routing remain configured across resets.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
@@ -1941,7 +2143,10 @@ impl Cache {
         self.add_trade(trade).map_err(to_pyvalue_err)
     }
 
-    /// Adds the `bar` to the cache.
+    /// Adds the `bar` to the cache, keeping the per-`bar_type` series newest-first.
+    ///
+    /// A newer bar is pushed, an older `ts_event` is skipped, and an equal
+    /// `ts_event` replaces the front bar for time bars.
     ///
     /// # Errors
     ///
@@ -2785,6 +2990,9 @@ impl Cache {
     }
 
     /// Returns a borrow of the account for the `venue` (if found).
+    ///
+    /// Returns `None` when more than one account is issued under the `venue`; look those
+    /// accounts up by account ID instead.
     #[pyo3(name = "account_for_venue")]
     fn py_account_for_venue(&self, py: Python, venue: Venue) -> PyResult<Option<Py<PyAny>>> {
         match self.account_for_venue(&venue) {
@@ -2794,6 +3002,8 @@ impl Cache {
     }
 
     /// Returns a reference to the account ID for the `venue` (if found).
+    ///
+    /// Returns `None` when more than one account is issued under the `venue`.
     #[pyo3(name = "account_id")]
     fn py_account_id(&self, venue: Venue) -> Option<AccountId> {
         self.account_id(&venue).copied()
@@ -2819,6 +3029,12 @@ impl Cache {
     }
 
     /// Returns the price for the `instrument_id` and `price_type` (if found).
+    ///
+    /// For `Mid`, returns `None` if no quote is cached or either price is a sentinel.
+    /// For quote precision `p`, the midpoint has precision `p + 1` when exactly representable,
+    /// otherwise `p`, rounded half-even if necessary. The fallback applies when the precision
+    /// limit or raw range rules out `p + 1`, and when `p` is the maximum float precision (16),
+    /// so a midpoint of a float-convertible quote stays float-convertible.
     #[pyo3(name = "price")]
     fn py_price(&self, instrument_id: InstrumentId, price_type: PriceType) -> Option<Price> {
         self.price(&instrument_id, price_type)

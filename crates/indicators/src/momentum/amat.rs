@@ -182,8 +182,8 @@ impl ArcherMovingAveragesTrends {
                 .expect("buffer has at least one element");
 
             let fast_diff = fast_back - fast_front;
-            self.long_run = fast_diff > 0.0 || self.long_run;
-            self.short_run = fast_diff < 0.0 || self.short_run;
+            self.long_run = fast_diff > 0.0;
+            self.short_run = fast_diff < 0.0;
         }
 
         if !self.initialized {
@@ -301,6 +301,46 @@ mod tests {
         feed_sequence(&mut ind, 100, 60, -1);
         assert!(ind.short_run, "Expected short_run=TRUE on down-trend");
         assert!(!ind.long_run, "long_run should remain FALSE here");
+    }
+
+    #[rstest]
+    fn long_run_clears_after_sustained_bearish_reversal() {
+        let mut ind = ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple));
+
+        for value in 0..60 {
+            ind.update_raw(f64::from(value));
+        }
+
+        assert!(ind.initialized());
+        assert!(ind.long_run);
+        assert!(!ind.short_run);
+
+        for value in (20..60).rev() {
+            ind.update_raw(f64::from(value));
+        }
+
+        assert!(!ind.long_run);
+        assert!(ind.short_run);
+    }
+
+    #[rstest]
+    fn short_run_clears_after_sustained_bullish_reversal() {
+        let mut ind = ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple));
+
+        for value in (0..60).rev() {
+            ind.update_raw(f64::from(value));
+        }
+
+        assert!(ind.initialized());
+        assert!(ind.short_run);
+        assert!(!ind.long_run);
+
+        for value in 20..60 {
+            ind.update_raw(f64::from(value));
+        }
+
+        assert!(ind.long_run);
+        assert!(!ind.short_run);
     }
 
     #[rstest]

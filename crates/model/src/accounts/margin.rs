@@ -35,7 +35,9 @@ use std::{
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
-use nautilus_core::correctness::{CorrectnessResultExt, FAILED, check_positive_decimal};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_positive_decimal,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -45,13 +47,14 @@ use crate::{
         base::BaseAccount,
         margin_model::{MarginModel, MarginModelHandle},
     },
-    enums::{AccountType, InstrumentClass, OrderSide},
+    enums::{AccountType, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     position::Position,
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
+        fixed::check_float_precision,
         money::{MONEY_RAW_MAX, MONEY_RAW_MIN, MoneyRaw},
     },
 };
@@ -125,20 +128,46 @@ impl MarginAccount {
     ///
     /// # Panics
     ///
-    /// Panics if `leverage` is not positive.
+    /// Panics if `leverage` is not positive. See [`Self::try_set_default_leverage`].
     pub fn set_default_leverage(&mut self, leverage: Decimal) {
-        check_positive_decimal(leverage, "leverage").expect_display(FAILED);
+        self.try_set_default_leverage(leverage)
+            .expect_display(FAILED);
+    }
+
+    /// Sets the default leverage for the account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `leverage` is not positive, leaving the account unchanged.
+    pub fn try_set_default_leverage(&mut self, leverage: Decimal) -> CorrectnessResult<()> {
+        check_positive_decimal(leverage, "leverage")?;
         self.default_leverage = leverage;
+        Ok(())
     }
 
     /// Sets the leverage for a specific instrument.
     ///
     /// # Panics
     ///
-    /// Panics if `leverage` is not positive.
+    /// Panics if `leverage` is not positive. See [`Self::try_set_leverage`].
     pub fn set_leverage(&mut self, instrument_id: InstrumentId, leverage: Decimal) {
-        check_positive_decimal(leverage, "leverage").expect_display(FAILED);
+        self.try_set_leverage(instrument_id, leverage)
+            .expect_display(FAILED);
+    }
+
+    /// Sets the leverage for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `leverage` is not positive, leaving the account unchanged.
+    pub fn try_set_leverage(
+        &mut self,
+        instrument_id: InstrumentId,
+        leverage: Decimal,
+    ) -> CorrectnessResult<()> {
+        check_positive_decimal(leverage, "leverage")?;
         self.leverages.insert(instrument_id, leverage);
+        Ok(())
     }
 
     #[must_use]
@@ -596,15 +625,7 @@ impl Account for MarginAccount {
         let mut pnls: Vec<Money> = Vec::new();
 
         // For premium-based instruments, realize the notional value as a cash flow on every fill
-        let instrument_class = instrument.instrument_class();
-
-        if matches!(
-            instrument_class,
-            InstrumentClass::Option
-                | InstrumentClass::OptionSpread
-                | InstrumentClass::BinaryOption
-                | InstrumentClass::Warrant
-        ) {
+        if instrument.instrument_class().is_premium_based() {
             let notional =
                 instrument.try_calculate_notional_value(fill.last_qty, fill.last_px, None)?;
             let pnl = if fill.order_side == OrderSide::Buy {
@@ -625,6 +646,7 @@ impl Account for MarginAccount {
             // to avoid double-limiting that occurs in position.calculate_pnl()
             let mut pnl_quantity = fill.last_qty.min(pos.quantity);
             pnl_quantity.precision = fill.last_qty.precision;
+            check_float_precision(fill.last_px.precision)?;
             let pnl =
                 pos.try_calculate_pnl(pos.avg_px_open, fill.last_px.as_f64(), pnl_quantity)?;
             pnls.push(pnl);
@@ -665,10 +687,12 @@ impl Hash for MarginAccount {
 
 #[cfg(test)]
 mod tests {
+    use ahash::AHashMap;
     use indexmap::IndexMap;
     use nautilus_core::UnixNanos;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use crate::{
         accounts::{
@@ -676,14 +700,15 @@ mod tests {
             margin_model::{MarginModel, MarginModelHandle},
             stubs::*,
         },
-        enums::{AccountType, OrderSide, OrderType},
+        enums::{AccountType, LiquiditySide, OrderSide, OrderType},
         events::{AccountState, account::stubs::*, order::spec::OrderFilledSpec},
+        fees::{MakerTakerFeeRates, MakerTakerFeeSchedule},
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
             stubs::{uuid4, *},
         },
         instruments::{
-            CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
+            CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
             stubs::{binary_option, option_contract_appl, *},
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -815,6 +840,36 @@ mod tests {
         assert_eq!(
             margin_account.get_leverage(&instrument_id_aud_usd_sim),
             Decimal::from(10)
+        );
+    }
+
+    #[rstest]
+    #[case(dec!(0))]
+    #[case(dec!(-2.5))]
+    fn test_try_leverage_setters_reject_non_positive_without_mutation(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+        #[case] leverage: Decimal,
+    ) {
+        margin_account
+            .try_set_leverage(instrument_id_aud_usd_sim, dec!(10))
+            .unwrap();
+        margin_account.try_set_default_leverage(dec!(5)).unwrap();
+
+        let default_error = margin_account
+            .try_set_default_leverage(leverage)
+            .unwrap_err();
+        let instrument_error = margin_account
+            .try_set_leverage(instrument_id_aud_usd_sim, leverage)
+            .unwrap_err();
+
+        let expected = format!("invalid Decimal for 'leverage' not positive, was {leverage}");
+        assert_eq!(default_error.to_string(), expected);
+        assert_eq!(instrument_error.to_string(), expected);
+        assert_eq!(margin_account.default_leverage, dec!(5));
+        assert_eq!(
+            margin_account.leverages,
+            AHashMap::from([(instrument_id_aud_usd_sim, dec!(10))])
         );
     }
 
@@ -1055,6 +1110,61 @@ mod tests {
     }
 
     #[rstest]
+    fn test_account_type_predicates(margin_account: MarginAccount) {
+        assert!(!margin_account.is_cash_account());
+        assert!(margin_account.is_margin_account());
+        assert!(!Account::is_cash_account(&margin_account));
+        assert!(Account::is_margin_account(&margin_account));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(margin_account_state: AccountState) {
+        let account = MarginAccount::new(margin_account_state.clone(), true);
+        let same = MarginAccount::new(margin_account_state.clone(), true);
+        let mut other_state = margin_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = MarginAccount::new(other_state, true);
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
+    }
+
+    #[rstest]
+    fn test_apply_routes_account_margins_when_event_has_no_balances(
+        mut margin_account: MarginAccount,
+        margin_account_state: AccountState,
+    ) {
+        let usd = Currency::USD();
+
+        let event = AccountState::new(
+            margin_account_state.account_id,
+            AccountType::Margin,
+            vec![],
+            vec![MarginBalance::new(
+                Money::from("12500 USD"),
+                Money::from("25000 USD"),
+                None,
+            )],
+            true,
+            uuid4(),
+            1.into(),
+            1.into(),
+            margin_account_state.base_currency,
+        );
+
+        margin_account.apply(event).unwrap();
+
+        assert_eq!(
+            margin_account.account_initial_margins(),
+            IndexMap::from([(usd, Money::from("12500 USD"))])
+        );
+        assert_eq!(
+            margin_account.account_maintenance_margins(),
+            IndexMap::from([(usd, Money::from("25000 USD"))])
+        );
+    }
+
+    #[rstest]
     fn test_apply_routes_account_margins_by_currency(
         mut margin_account: MarginAccount,
         margin_account_state: AccountState,
@@ -1193,11 +1303,11 @@ mod tests {
     #[rstest]
     fn test_calculate_margin_init_with_no_leverage_for_inverse(
         margin_account: MarginAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let result_use_quote_inverse_true = margin_account
             .calculate_initial_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("11493.60"),
                 Some(false),
@@ -1206,7 +1316,7 @@ mod tests {
         assert_eq!(result_use_quote_inverse_true, Money::from("0.08700494 BTC"));
         let result_use_quote_inverse_false = margin_account
             .calculate_initial_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("11493.60"),
                 Some(true),
@@ -1218,11 +1328,11 @@ mod tests {
     #[rstest]
     fn test_calculate_margin_maintenance_with_no_leverage(
         margin_account: MarginAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         let result = margin_account
             .calculate_maintenance_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("11493.60"),
                 None,
@@ -1251,12 +1361,12 @@ mod tests {
     #[rstest]
     fn test_calculate_margin_maintenance_with_leverage_inverse_instrument(
         mut margin_account: MarginAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
         margin_account.set_default_leverage(Decimal::from(10));
         let result = margin_account
             .calculate_maintenance_margin(
-                &xbtusd_bitmex,
+                &btcusd_bybit,
                 Quantity::from(100_000),
                 Price::from("100000.00"),
                 None,
@@ -1394,6 +1504,48 @@ mod tests {
 
         // Should return empty PnL list
         assert_eq!(pnls.len(), 0);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case::precision_16("50001.0000000000000000", None)]
+    #[case::precision_17("50001.00000000000000000", Some(17))]
+    #[case::precision_18("50001.000000000000000000", Some(18))]
+    fn test_calculate_pnls_checks_reducing_fill_price_float_precision(
+        margin_account: MarginAccount,
+        #[case] last_px: &str,
+        #[case] expected_error_precision: Option<u8>,
+    ) {
+        let btcusdt = currency_pair_btcusdt();
+        let instrument = InstrumentAny::CurrencyPair(btcusdt.clone());
+        let fill_open = OrderFilledSpec::builder()
+            .instrument_id(btcusdt.id)
+            .trade_id(TradeId::from("T-1"))
+            .last_qty(Quantity::from("1.000000"))
+            .last_px(Price::from("50000.00"))
+            .currency(btcusdt.quote_currency)
+            .position_id(PositionId::from("P-1"))
+            .build();
+        let position = Position::new(&instrument, fill_open);
+        let fill_close = OrderFilledSpec::builder()
+            .instrument_id(btcusdt.id)
+            .trade_id(TradeId::from("T-2"))
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from("1.000000"))
+            .last_px(Price::from(last_px))
+            .currency(btcusdt.quote_currency)
+            .position_id(PositionId::from("P-1"))
+            .build();
+
+        let result = margin_account.calculate_pnls(&instrument, &fill_close, Some(position));
+
+        match expected_error_precision {
+            None => assert_eq!(result.unwrap(), vec![Money::from("1 USDT")]),
+            Some(precision) => assert_eq!(
+                result.unwrap_err().to_string(),
+                format!("Fixed-point precision {precision} exceeds maximum float precision 16")
+            ),
+        }
     }
 
     #[rstest]
@@ -1848,6 +2000,43 @@ mod tests {
     }
 
     #[rstest]
+    #[case(OrderSide::Buy, "-0.002 BTC")]
+    #[case(OrderSide::Sell, "0.002 BTC")]
+    fn test_calculate_pnls_for_inverse_option_realizes_premium_in_base(
+        margin_account: MarginAccount,
+        mut crypto_option_btc_deribit: CryptoOption,
+        #[case] side: OrderSide,
+        #[case] expected: &str,
+    ) {
+        crypto_option_btc_deribit.is_inverse = true;
+        crypto_option_btc_deribit.multiplier = Quantity::from("0.01");
+        let option = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id())
+            .side(side)
+            .quantity(Quantity::from("10.0"))
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &option,
+            None,
+            Some(PositionId::new("P-OPT-003")),
+            Some(Price::from("0.020")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let pnls = margin_account
+            .calculate_pnls(&option, &fill.into(), None)
+            .unwrap();
+
+        assert_eq!(pnls, vec![Money::from(expected)]);
+    }
+
+    #[rstest]
     fn test_calculate_pnls_for_binary_option(margin_account: MarginAccount) {
         let binary = binary_option();
         let binary_any = InstrumentAny::BinaryOption(binary);
@@ -1878,5 +2067,64 @@ mod tests {
 
         assert_eq!(pnls.len(), 1);
         assert!(pnls[0].as_f64() < 0.0);
+    }
+
+    #[rstest]
+    fn test_commission_explicit_schedule_override(
+        margin_account: MarginAccount,
+        currency_pair_btcusdt: CurrencyPair,
+    ) {
+        let mut schedule = MakerTakerFeeSchedule::new(dec!(0.002), dec!(0.002));
+        schedule.set_override(
+            currency_pair_btcusdt.id,
+            MakerTakerFeeRates::new(dec!(0.0005), dec!(0.0005)),
+        );
+        let fee_rates = schedule.rates_for(currency_pair_btcusdt.id);
+        let result = margin_account
+            .calculate_commission(
+                &currency_pair_btcusdt.into_any(),
+                Quantity::from("1"),
+                Price::from("50000.00"),
+                LiquiditySide::Maker,
+                fee_rates,
+                None,
+            )
+            .unwrap();
+        // Override (0.0005) wins over the schedule default (0.002) and the
+        // instrument's own 0.001 fee: 50000 * 0.0005 = 25 USDT.
+        assert_eq!(result, Money::from("25 USDT"));
+    }
+
+    #[rstest]
+    fn test_commission_shared_schedule_mutation(
+        margin_account: MarginAccount,
+        currency_pair_btcusdt: CurrencyPair,
+    ) {
+        let instrument_id = currency_pair_btcusdt.id;
+        let mut schedule = MakerTakerFeeSchedule::new(dec!(0.001), dec!(0.001));
+        let before = margin_account
+            .calculate_commission(
+                &currency_pair_btcusdt.clone().into_any(),
+                Quantity::from("2"),
+                Price::from("50000.00"),
+                LiquiditySide::Taker,
+                schedule.rates_for(instrument_id),
+                None,
+            )
+            .unwrap();
+        assert_eq!(before, Money::from("100 USDT"));
+
+        schedule.default = MakerTakerFeeRates::new(dec!(0.002), dec!(0.002));
+        let after = margin_account
+            .calculate_commission(
+                &currency_pair_btcusdt.into_any(),
+                Quantity::from("2"),
+                Price::from("50000.00"),
+                LiquiditySide::Taker,
+                schedule.rates_for(instrument_id),
+                None,
+            )
+            .unwrap();
+        assert_eq!(after, Money::from("200 USDT"));
     }
 }

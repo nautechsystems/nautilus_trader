@@ -424,7 +424,7 @@ fn test_on_quote_ignores_unrelated_instrument() {
     // A QuoteTick for a third instrument neither updates signal state nor
     // touches the cache (the early-return path covers this).
     let mut strategy = create_strategy(5, 0.0, 1.0, Quantity::from("10.0"), 5);
-    let unrelated = InstrumentId::from("XBTUSD.BITMEX");
+    let unrelated = InstrumentId::from("BTCUSD.BYBIT");
     let tick = quote(unrelated, "50000.00", "50000.10");
 
     strategy.on_quote(&tick).unwrap();

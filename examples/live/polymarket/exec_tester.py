@@ -33,7 +33,7 @@ from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
-from nautilus_trader.adapters.polymarket import SignatureType
+from nautilus_trader.adapters.polymarket import PolymarketSignatureType
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
@@ -55,10 +55,10 @@ POLYMARKET = "POLYMARKET"
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = "POLYMARKET-001"
 STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
-EVENT_SLUG = "fed-decision-in-september-762"
+EVENT_SLUG = "presidential-election-winner-2028"
 INSTRUMENT_ID = InstrumentId.from_str(
-    "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830-"
-    f"28239418772633645184924651434956000849078365566842629564562475378531350731731.{POLYMARKET}",
+    "0x7ad403c3508f8e3912940fd1a913f227591145ca0614074208e0b962d5fcc422-"
+    f"16040015440196279900485035793550429453516625694844857319147506590755961451627.{POLYMARKET}",
 )
 ORDER_QTY = "5"  # In pUSD for the quote-quantity market order
 TOB_OFFSET_TICKS = 5
@@ -99,7 +99,7 @@ def main() -> None:
             PolymarketExecutionClientFactory(),
             PolymarketExecutionClientConfig(
                 account_id=ACCOUNT_ID,
-                signature_type=SignatureType.PolyGnosisSafe,
+                signature_type=PolymarketSignatureType.PolyGnosisSafe,
                 instrument_config=instrument_config,
             ),
         )

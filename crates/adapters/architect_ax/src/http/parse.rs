@@ -22,13 +22,13 @@ use nautilus_model::{
     data::{Bar, BarSpecification, BarType, FundingRateUpdate, TradeTick},
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, CurrencyType,
-        LiquiditySide, OrderSide, OrderType, PositionSide, PriceType,
+        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{FuturesContract, Instrument, PerpetualContract, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde_json::json;
@@ -36,7 +36,7 @@ use ustr::Ustr;
 
 use super::models::{
     AxBalancesResponse, AxCandle, AxFill, AxFundingRate, AxInstrument, AxOpenOrder, AxOrderDetail,
-    AxPosition, AxRestTrade,
+    AxOrderRejectReason, AxPosition, AxRestTrade, AxRiskSnapshot,
 };
 use crate::common::{
     consts::AX_VENUE,
@@ -117,7 +117,7 @@ pub fn parse_bar(
     let close = decimal_to_price_dp(candle.close, price_precision, "candle.close")?;
 
     // Ax provides volume as i64 contracts
-    let volume = Quantity::new(candle.volume as f64, size_precision);
+    let volume = Quantity::from_decimal_dp(Decimal::from(candle.volume), size_precision)?;
 
     let ts_event = ax_timestamp_s_to_unix_nanos(candle.ts)?;
 
@@ -159,8 +159,6 @@ pub fn parse_funding_rate(
 /// Panics if the constructed perpetual instrument fails validation.
 pub fn parse_instrument(
     definition: &AxInstrument,
-    maker_fee: Decimal,
-    taker_fee: Decimal,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
@@ -331,8 +329,6 @@ pub fn parse_instrument(
             .maybe_min_quantity(min_quantity)
             .margin_init(margin_init)
             .margin_maint(margin_maint)
-            .maker_fee(maker_fee)
-            .taker_fee(taker_fee)
             .info(info)
             .ts_event(ts_event)
             .ts_init(ts_init)
@@ -359,8 +355,6 @@ pub fn parse_instrument(
         .maybe_min_quantity(min_quantity)
         .margin_init(margin_init)
         .margin_maint(margin_maint)
-        .maker_fee(maker_fee)
-        .taker_fee(taker_fee)
         .info(info)
         .ts_event(ts_event)
         .ts_init(ts_init)
@@ -406,18 +400,24 @@ fn margin_percent_to_rate(value: Decimal, field: &str) -> anyhow::Result<Decimal
 
 /// Parses an Ax balances response into a Nautilus [`AccountState`].
 ///
-/// Ax provides a simple balance structure with symbol and amount.
-/// The amount is treated as both total and free balance (no locked funds tracking).
+/// Ax provides a simple balance structure with symbol and amount. When a
+/// [`AxRiskSnapshot`] is supplied, its USD margin requirements populate the
+/// USD balance's locked funds and the account's margin balances; without one,
+/// locked stays zero for every currency.
 ///
 /// # Errors
 ///
 /// Returns an error if balance amount parsing fails.
 pub fn parse_account_state(
     response: &AxBalancesResponse,
+    risk: Option<&AxRiskSnapshot>,
     account_id: AccountId,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
+    // Pass the raw USD requirement through; from_total_and_locked clamps a disagreement
+    let usd_locked = risk.map_or(Decimal::ZERO, |risk| risk.initial_margin_required_total);
+
     let mut balances = Vec::with_capacity(response.balances.len());
 
     for balance in &response.balances {
@@ -429,13 +429,14 @@ pub fn parse_account_state(
 
         let currency = get_currency(symbol_str);
 
-        // The /balances endpoint does not include margin data, so locked
-        // is always zero here. The /risk-snapshot endpoint provides
-        // initial_margin_required_total which could be used, but that
-        // requires an additional HTTP call on every account state refresh.
-        let balance =
-            AccountBalance::from_total_and_locked(balance.amount, Decimal::ZERO, currency)
-                .with_context(|| format!("Failed to convert balance for {symbol_str}"))?;
+        let locked = if currency == Currency::USD() {
+            usd_locked
+        } else {
+            Decimal::ZERO
+        };
+
+        let balance = AccountBalance::from_total_and_locked(balance.amount, locked, currency)
+            .with_context(|| format!("Failed to convert balance for {symbol_str}"))?;
         balances.push(balance);
     }
 
@@ -445,11 +446,23 @@ pub fn parse_account_state(
         balances.push(AccountBalance::new(zero_money, zero_money, zero_money));
     }
 
+    let margins = risk
+        .map(|risk| {
+            vec![MarginBalance::new(
+                Money::from_decimal(risk.initial_margin_required_total, Currency::USD())
+                    .unwrap_or_else(|_| Money::zero(Currency::USD())),
+                Money::from_decimal(risk.maintenance_margin_required, Currency::USD())
+                    .unwrap_or_else(|_| Money::zero(Currency::USD())),
+                None,
+            )]
+        })
+        .unwrap_or_default();
+
     Ok(AccountState::new(
         account_id,
         AccountType::Margin,
         balances,
-        vec![],
+        margins,
         true,
         UUID4::new(),
         ts_event,
@@ -520,6 +533,8 @@ where
 
 struct OrderStatusReportFields<'a> {
     ts: i64,
+    tn: i64,
+    post_only: bool,
     oid: &'a str,
     price: Decimal,
     quantity: u64,
@@ -528,12 +543,16 @@ struct OrderStatusReportFields<'a> {
     side: AxOrderSide,
     time_in_force: AxTimeInForce,
     cid: Option<u64>,
+    reject_reason: Option<AxOrderRejectReason>,
+    text: Option<&'a str>,
 }
 
 impl<'a> From<&'a AxOpenOrder> for OrderStatusReportFields<'a> {
     fn from(order: &'a AxOpenOrder) -> Self {
         Self {
             ts: order.ts,
+            tn: order.tn,
+            post_only: order.po,
             oid: &order.oid,
             price: order.p,
             quantity: order.q,
@@ -542,6 +561,8 @@ impl<'a> From<&'a AxOpenOrder> for OrderStatusReportFields<'a> {
             side: order.d,
             time_in_force: order.tif,
             cid: order.cid,
+            reject_reason: order.r,
+            text: order.txt.as_deref(),
         }
     }
 }
@@ -550,6 +571,8 @@ impl<'a> From<&'a AxOrderDetail> for OrderStatusReportFields<'a> {
     fn from(order: &'a AxOrderDetail) -> Self {
         Self {
             ts: order.ts,
+            tn: order.tn,
+            post_only: order.po,
             oid: &order.oid,
             price: order.p,
             quantity: order.q,
@@ -558,6 +581,8 @@ impl<'a> From<&'a AxOrderDetail> for OrderStatusReportFields<'a> {
             side: order.d,
             time_in_force: order.tif,
             cid: order.cid,
+            reject_reason: order.r,
+            text: order.txt.as_deref(),
         }
     }
 }
@@ -575,21 +600,23 @@ where
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order.oid);
     let order_side = OrderSide::from(order.side);
-    let order_status = order.status.into();
-    let time_in_force = order.time_in_force.into();
+    let time_in_force = TimeInForce::try_from(order.time_in_force)?;
+    let order_status = parse_order_status(order.status, time_in_force)?;
 
     // The current AX wire shape maps to a Nautilus limit order.
     let order_type = OrderType::Limit;
 
     // Parse quantity (Ax uses i64 contracts)
-    let quantity = Quantity::new(order.quantity as f64, instrument.size_precision());
-    let filled_qty = Quantity::new(order.filled_qty as f64, instrument.size_precision());
+    let quantity =
+        Quantity::from_decimal_dp(Decimal::from(order.quantity), instrument.size_precision())?;
+    let filled_qty =
+        Quantity::from_decimal_dp(Decimal::from(order.filled_qty), instrument.size_precision())?;
 
     // Parse price
     let price = decimal_to_price_dp(order.price, instrument.price_precision(), "order.p")?;
 
     // Ax timestamps are in Unix epoch seconds
-    let ts_event = ax_timestamp_s_to_unix_nanos(order.ts)?;
+    let ts_event = ax_timestamp_stn_to_unix_nanos(order.ts, order.tn)?;
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -615,13 +642,31 @@ where
         report = report.with_client_order_id(client_order_id);
     }
 
-    report = report.with_price(price);
+    report = report.with_price(price).with_post_only(order.post_only);
+
+    // Keep reconciled terminal reasons identical to live WS events
+    if let Some(reason) = AxOrderRejectReason::reason_str(order.reject_reason, order.text) {
+        report = report.with_cancel_reason(reason);
+    }
 
     // We don't set avg_px here since the order endpoint only provides the
     // limit price, not actual fill prices. True average would need to be
     // calculated from fill reports.
 
     Ok(report)
+}
+
+pub(super) fn parse_order_status(
+    status: AxOrderStatus,
+    time_in_force: TimeInForce,
+) -> anyhow::Result<OrderStatus> {
+    if status == AxOrderStatus::Expired
+        && matches!(time_in_force, TimeInForce::Ioc | TimeInForce::Fok)
+    {
+        return Ok(OrderStatus::Canceled);
+    }
+
+    OrderStatus::try_from(status)
 }
 
 /// Parses an Ax fill into a Nautilus [`FillReport`].
@@ -674,7 +719,8 @@ pub fn parse_fill_report(
     let order_side = OrderSide::from(fill.side);
 
     let last_px = decimal_to_price_dp(fill.price, instrument.price_precision(), "fill.price")?;
-    let last_qty = Quantity::new(fill.quantity as f64, instrument.size_precision());
+    let last_qty =
+        Quantity::from_decimal_dp(Decimal::from(fill.quantity), instrument.size_precision())?;
 
     let currency = Currency::USD();
     let commission = Money::from_decimal(fill.fee, currency)
@@ -735,15 +781,18 @@ pub fn parse_position_status_report(
     let (position_side, quantity) = if position.signed_quantity > 0 {
         (
             PositionSide::Long,
-            Quantity::new(position.signed_quantity as f64, instrument.size_precision()),
+            Quantity::from_decimal_dp(
+                Decimal::from(position.signed_quantity),
+                instrument.size_precision(),
+            )?,
         )
     } else if position.signed_quantity < 0 {
         (
             PositionSide::Short,
-            Quantity::new(
-                position.signed_quantity.unsigned_abs() as f64,
+            Quantity::from_decimal_dp(
+                Decimal::from(position.signed_quantity.unsigned_abs()),
                 instrument.size_precision(),
-            ),
+            )?,
         )
     } else {
         (
@@ -752,11 +801,15 @@ pub fn parse_position_status_report(
         )
     };
 
-    // Calculate average entry price from notional / quantity
-    // Both signed_notional and signed_quantity are negative for shorts
     let avg_px_open = if position.signed_quantity != 0 {
-        let qty_dec = Decimal::from(position.signed_quantity.abs());
-        Some(position.signed_notional.abs() / qty_dec)
+        let qty_dec = Decimal::from(position.signed_quantity.unsigned_abs());
+        Some(
+            position
+                .signed_cost_basis
+                .unwrap_or(position.signed_notional)
+                .abs()
+                / qty_dec,
+        )
     } else {
         None
     };
@@ -797,7 +850,7 @@ pub fn parse_trade_tick(
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
     let price = decimal_to_price_dp(trade.p, instrument.price_precision(), "trade.p")?;
-    let size = Quantity::new(trade.q as f64, instrument.size_precision());
+    let size = Quantity::from_decimal_dp(Decimal::from(trade.q), instrument.size_precision())?;
     let aggressor_side: AggressorSide = trade.d.into();
 
     let ts_event = ax_timestamp_stn_to_unix_nanos(trade.ts, trade.tn)?;
@@ -819,6 +872,7 @@ pub fn parse_trade_tick(
 mod tests {
     use jiff::Timestamp;
     use nautilus_core::nanos::UnixNanos;
+    use nautilus_model::enums::OrderStatus;
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
@@ -826,11 +880,23 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{AxCategory, AxInstrumentState, AxOrderSide, AxOrderStatus, AxTimeInForce},
-        http::models::{AxFundingRatesResponse, AxInstrumentsResponse, AxOpenOrder},
+        http::models::{
+            AxBalance, AxBalancesResponse, AxFundingRatesResponse, AxInstrumentsResponse,
+            AxOpenOrder, AxOrderDetail, AxOrderRejectReason,
+        },
     };
 
     fn create_eurusd_instrument() -> AxInstrument {
         AxInstrument {
+            price_scale: None,
+            additional_product_specs: Default::default(),
+            delisted_at: None,
+            is_closing: false,
+            estimated_funding_supported: false,
+            funding_schedule_calendar_description: None,
+            funding_schedule_time_description: None,
+            funding_schedule: None,
+            trading_schedule: None,
             symbol: Ustr::from("EURUSD-PERP"),
             product: Some(Ustr::from("EURUSD")),
             state: AxInstrumentState::Open,
@@ -860,6 +926,15 @@ mod tests {
 
     fn create_nvda_instrument() -> AxInstrument {
         AxInstrument {
+            price_scale: None,
+            additional_product_specs: Default::default(),
+            delisted_at: None,
+            is_closing: false,
+            estimated_funding_supported: false,
+            funding_schedule_calendar_description: None,
+            funding_schedule_time_description: None,
+            funding_schedule: None,
+            trading_schedule: None,
             symbol: Ustr::from("NVDA-PERP"),
             product: Some(Ustr::from("NVDA")),
             state: AxInstrumentState::Open,
@@ -891,6 +966,15 @@ mod tests {
 
     fn create_xau_instrument() -> AxInstrument {
         AxInstrument {
+            price_scale: None,
+            additional_product_specs: Default::default(),
+            delisted_at: None,
+            is_closing: false,
+            estimated_funding_supported: false,
+            funding_schedule_calendar_description: None,
+            funding_schedule_time_description: None,
+            funding_schedule: None,
+            trading_schedule: None,
             symbol: Ustr::from("XAU-PERP"),
             product: Some(Ustr::from("XAU")),
             state: AxInstrumentState::Open,
@@ -962,17 +1046,261 @@ mod tests {
         assert_eq!(currency.precision, 0);
     }
 
+    fn create_order_detail(
+        status: AxOrderStatus,
+        reject_reason: Option<AxOrderRejectReason>,
+        text: Option<&str>,
+    ) -> AxOrderDetail {
+        AxOrderDetail {
+            ts: 1_609_459_200,
+            tn: 0,
+            oid: "O-REJECTED".to_string(),
+            aid: Some(Ustr::from("account-1")),
+            u: Ustr::from("user"),
+            s: Ustr::from("EURUSD-PERP"),
+            p: dec!(1.0845),
+            q: 100,
+            xq: 0,
+            rq: 100,
+            o: status,
+            d: AxOrderSide::Buy,
+            tif: AxTimeInForce::Gtc,
+            cid: Some(42),
+            r: reject_reason,
+            tag: None,
+            txt: text.map(str::to_string),
+            po: false,
+            rb: None,
+        }
+    }
+
+    #[rstest]
+    fn test_parse_order_detail_status_report_carries_reject_reason() {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let order = create_order_detail(
+            AxOrderStatus::Rejected,
+            Some(AxOrderRejectReason::PriceOutOfBounds),
+            None,
+        );
+
+        let report = parse_order_detail_status_report(
+            &order,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+            None::<&fn(u64) -> Option<ClientOrderId>>,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(
+            report.cancel_reason,
+            Some("PRICE_OUT_OF_BOUNDS".to_string())
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_detail_status_report_falls_back_to_text_reason() {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let order = create_order_detail(
+            AxOrderStatus::Rejected,
+            Some(AxOrderRejectReason::Unknown),
+            Some("risk blocked"),
+        );
+
+        let report = parse_order_detail_status_report(
+            &order,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+            None::<&fn(u64) -> Option<ClientOrderId>>,
+        )
+        .unwrap();
+
+        assert_eq!(report.cancel_reason, Some("risk blocked".to_string()));
+    }
+
+    #[rstest]
+    fn test_parse_order_detail_status_report_without_reason_leaves_cancel_reason_unset() {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let order = create_order_detail(AxOrderStatus::Filled, None, None);
+
+        let report = parse_order_detail_status_report(
+            &order,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+            None::<&fn(u64) -> Option<ClientOrderId>>,
+        )
+        .unwrap();
+
+        assert_eq!(report.cancel_reason, None);
+    }
+
+    fn create_risk_snapshot() -> AxRiskSnapshot {
+        AxRiskSnapshot {
+            account_id: Ustr::from("account-1"),
+            timestamp_ns: "2024-01-15T10:30:00Z".parse::<Timestamp>().unwrap(),
+            balance_usd: dec!(100000.50),
+            equity: dec!(102500.75),
+            initial_margin_available: dec!(95500.75),
+            initial_margin_required_for_open_orders: dec!(2000.00),
+            initial_margin_required_for_positions: dec!(5000.00),
+            initial_margin_required_total: dec!(7000.00),
+            maintenance_margin_available: dec!(99000.75),
+            maintenance_margin_required: dec!(3500.00),
+            unrealized_pnl: dec!(2500.25),
+            per_symbol: Default::default(),
+        }
+    }
+
+    fn create_balances_response() -> AxBalancesResponse {
+        AxBalancesResponse {
+            usd_borrow: None,
+            balances: vec![
+                AxBalance {
+                    account_id: None,
+                    symbol: Ustr::from("USD"),
+                    amount: dec!(100000.50),
+                },
+                AxBalance {
+                    account_id: None,
+                    symbol: Ustr::from("BTC"),
+                    amount: dec!(1.25),
+                },
+            ],
+        }
+    }
+
+    #[rstest]
+    fn test_parse_account_state_applies_risk_snapshot_margins() {
+        let risk = create_risk_snapshot();
+        let state = parse_account_state(
+            &create_balances_response(),
+            Some(&risk),
+            AccountId::from("AX-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let usd = state
+            .balances
+            .iter()
+            .find(|b| b.total.currency == Currency::USD())
+            .unwrap();
+        assert_eq!(usd.locked.as_decimal(), dec!(7000.00));
+        assert_eq!(usd.free.as_decimal(), dec!(93000.50));
+
+        let btc = state
+            .balances
+            .iter()
+            .find(|b| b.total.currency.code.as_str() == "BTC")
+            .unwrap();
+        assert_eq!(btc.locked.as_decimal(), Decimal::ZERO);
+        assert_eq!(btc.free.as_decimal(), dec!(1.25));
+
+        assert_eq!(state.margins.len(), 1);
+        assert_eq!(state.margins[0].initial.as_decimal(), dec!(7000.00));
+        assert_eq!(state.margins[0].maintenance.as_decimal(), dec!(3500.00));
+        assert_eq!(state.margins[0].currency, Currency::USD());
+    }
+
+    #[rstest]
+    fn test_parse_account_state_without_risk_snapshot_locks_zero() {
+        let state = parse_account_state(
+            &create_balances_response(),
+            None,
+            AccountId::from("AX-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let usd = state
+            .balances
+            .iter()
+            .find(|b| b.total.currency == Currency::USD())
+            .unwrap();
+        assert_eq!(usd.locked.as_decimal(), Decimal::ZERO);
+        assert_eq!(usd.free.as_decimal(), dec!(100000.50));
+        assert!(state.margins.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_account_state_clamps_locked_to_balance() {
+        let mut risk = create_risk_snapshot();
+        risk.initial_margin_required_total = dec!(500000.00);
+        let state = parse_account_state(
+            &create_balances_response(),
+            Some(&risk),
+            AccountId::from("AX-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let usd = state
+            .balances
+            .iter()
+            .find(|b| b.total.currency == Currency::USD())
+            .unwrap();
+        assert_eq!(usd.locked.as_decimal(), dec!(100000.50));
+        assert_eq!(usd.free.as_decimal(), Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_parse_account_state_negative_balance_preserves_locked() {
+        // A borrowed balance keeps the raw margin requirement and carries the shortfall in free
+        let mut balances = create_balances_response();
+        balances.balances[0].amount = dec!(-500.00);
+
+        let state = parse_account_state(
+            &balances,
+            Some(&create_risk_snapshot()),
+            AccountId::from("AX-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let usd = state
+            .balances
+            .iter()
+            .find(|b| b.total.currency == Currency::USD())
+            .unwrap();
+        assert_eq!(usd.total.as_decimal(), dec!(-500.00));
+        assert_eq!(usd.locked.as_decimal(), dec!(7000.00));
+        assert_eq!(usd.free.as_decimal(), dec!(-7500.00));
+    }
+
     #[rstest]
     fn test_parse_order_status_report_uses_cid_resolver() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
         .unwrap();
         let order = AxOpenOrder {
+            aid: None,
+            r: None,
+            txt: None,
             tn: 0,
             ts: 1_609_459_200,
             d: AxOrderSide::Buy,
@@ -983,11 +1311,12 @@ mod tests {
             rq: 100,
             s: Ustr::from("EURUSD-PERP"),
             tif: AxTimeInForce::Gtc,
-            u: "user".to_string(),
+            u: Ustr::from("user"),
             xq: 0,
             cid: Some(42),
             tag: None,
             po: true,
+            rb: None,
         };
         let expected_client_order_id = ClientOrderId::from("O-PERSISTED");
         let resolver = |cid| (cid == 42).then_some(expected_client_order_id);
@@ -1016,8 +1345,6 @@ mod tests {
     ) {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1041,13 +1368,60 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_fill_report_rounds_sub_cent_fee_to_usd_precision() {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let mut fill = create_fill();
+        fill.fee = dec!(0.012188);
+
+        let report = parse_fill_report(
+            &fill,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.commission, Money::from("0.01 USD"));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_rejects_unrepresentable_fee() {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let mut fill = create_fill();
+        fill.fee = dec!(9999999999999999999999999999);
+
+        let error = parse_fill_report(
+            &fill,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to convert fill.fee Decimal to Money"),
+            "expected fee conversion failure, was {error}"
+        );
+    }
+
+    #[rstest]
     #[case(None)]
     #[case(Some("O-01ARZ3NDEKTSV4RRFFQ69G5FAV"))]
     fn test_parse_fill_report_uses_stable_surrogate_for_block_fill(#[case] order_id: Option<&str>) {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1074,8 +1448,6 @@ mod tests {
     fn test_parse_fill_report_uses_stable_surrogate_for_final_settlement() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1103,8 +1475,6 @@ mod tests {
     fn test_parse_fill_report_rejects_final_settlement_without_block_classification() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1131,8 +1501,6 @@ mod tests {
     fn test_parse_fill_report_rejects_missing_identity() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1160,8 +1528,6 @@ mod tests {
     fn test_parse_fill_report_rejects_regular_fill_without_order_id() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1186,8 +1552,6 @@ mod tests {
     fn test_parse_fill_report_rejects_invalid_regular_order_id(#[case] order_id: &str) {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1210,11 +1574,9 @@ mod tests {
     #[rstest]
     fn test_parse_fx_instrument() {
         let definition = create_eurusd_instrument();
-        let maker_fee = Decimal::new(2, 5);
-        let taker_fee = Decimal::new(2, 5);
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, maker_fee, taker_fee, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         assert!(result.is_ok());
 
         let instrument = result.unwrap();
@@ -1249,11 +1611,9 @@ mod tests {
     #[rstest]
     fn test_parse_equity_instrument() {
         let definition = create_nvda_instrument();
-        let maker_fee = Decimal::new(2, 5);
-        let taker_fee = Decimal::new(2, 5);
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, maker_fee, taker_fee, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         assert!(result.is_ok());
 
         let instrument = result.unwrap();
@@ -1277,7 +1637,7 @@ mod tests {
         let definition = create_xau_instrument();
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, Decimal::ZERO, Decimal::ZERO, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         let instrument = result.unwrap();
         match instrument {
             InstrumentAny::PerpetualContract(perp) => {
@@ -1296,16 +1656,12 @@ mod tests {
     fn test_parse_current_dated_instruments() {
         let test_data = include_str!("../../test_data/http_get_dated_instruments.json");
         let response: AxInstrumentsResponse = serde_json::from_str(test_data).unwrap();
-        let maker_fee = dec!(0.0002);
-        let taker_fee = dec!(0.0005);
         let ts_now = UnixNanos::default();
 
         let instruments = response
             .instruments
             .iter()
-            .map(|definition| {
-                parse_instrument(definition, maker_fee, taker_fee, ts_now, ts_now).unwrap()
-            })
+            .map(|definition| parse_instrument(definition, ts_now, ts_now).unwrap())
             .collect::<Vec<_>>();
 
         assert_eq!(instruments.len(), 2);
@@ -1342,8 +1698,6 @@ mod tests {
             assert_eq!(future.multiplier.as_decimal(), Decimal::ONE);
             assert_eq!(future.margin_init, dec!(0.125));
             assert_eq!(future.margin_maint, dec!(0.075));
-            assert_eq!(future.maker_fee, maker_fee);
-            assert_eq!(future.taker_fee, taker_fee);
             assert_eq!(info["product"], json!("XAU"));
             assert_eq!(
                 info["expiration"],
@@ -1367,14 +1721,8 @@ mod tests {
         definition.multiplier = dec!(2.5);
         definition.minimum_order_size = dec!(5);
 
-        let instrument = parse_instrument(
-            definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let instrument =
+            parse_instrument(definition, UnixNanos::default(), UnixNanos::default()).unwrap();
         let InstrumentAny::FuturesContract(future) = instrument else {
             panic!("Expected FuturesContract instrument");
         };
@@ -1392,14 +1740,8 @@ mod tests {
         let definition = &mut response.instruments[0];
         definition.product = None;
 
-        let instrument = parse_instrument(
-            definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let instrument =
+            parse_instrument(definition, UnixNanos::default(), UnixNanos::default()).unwrap();
         let InstrumentAny::FuturesContract(future) = instrument else {
             panic!("Expected FuturesContract instrument");
         };
@@ -1412,13 +1754,7 @@ mod tests {
         let mut definition = create_xau_instrument();
         definition.product = Some(Ustr::from(" "));
 
-        let result = parse_instrument(
-            &definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let result = parse_instrument(&definition, UnixNanos::default(), UnixNanos::default());
 
         assert!(result.is_err());
     }
@@ -1433,13 +1769,7 @@ mod tests {
         let mut definition = create_xau_instrument();
         definition.minimum_order_size = minimum_order_size;
 
-        let result = parse_instrument(
-            &definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let result = parse_instrument(&definition, UnixNanos::default(), UnixNanos::default());
 
         assert!(result.is_err());
     }
@@ -1451,13 +1781,7 @@ mod tests {
         let definition = &mut response.instruments[0];
         definition.funding_settlement_currency = Ustr::from("EUR");
 
-        let result = parse_instrument(
-            definition,
-            Decimal::ZERO,
-            Decimal::ZERO,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let result = parse_instrument(definition, UnixNanos::default(), UnixNanos::default());
 
         assert!(result.is_err());
     }
@@ -1468,7 +1792,7 @@ mod tests {
         definition.funding_settlement_currency = Ustr::from("EUR");
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, Decimal::ZERO, Decimal::ZERO, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         let instrument = result.unwrap();
         match instrument {
             InstrumentAny::PerpetualContract(perp) => {
@@ -1526,7 +1850,7 @@ mod tests {
         definition.category = AxCategory::Unknown;
         let ts_now = UnixNanos::default();
 
-        let result = parse_instrument(&definition, Decimal::ZERO, Decimal::ZERO, ts_now, ts_now);
+        let result = parse_instrument(&definition, ts_now, ts_now);
         let instrument = result.unwrap();
         match instrument {
             InstrumentAny::PerpetualContract(perp) => {
@@ -1565,8 +1889,6 @@ mod tests {
         let response: AxInstrumentsResponse =
             serde_json::from_str(test_data).expect("Failed to deserialize test data");
 
-        let maker_fee = Decimal::new(2, 4);
-        let taker_fee = Decimal::new(5, 4);
         let ts_now = UnixNanos::default();
 
         let open_instruments: Vec<_> = response
@@ -1578,7 +1900,7 @@ mod tests {
         assert_eq!(open_instruments.len(), 3);
 
         for instrument in open_instruments {
-            let result = parse_instrument(instrument, maker_fee, taker_fee, ts_now, ts_now);
+            let result = parse_instrument(instrument, ts_now, ts_now);
             assert!(
                 result.is_ok(),
                 "Failed to parse {}: {:?}",
@@ -1603,8 +1925,6 @@ mod tests {
     fn test_parse_trade_tick_derives_trade_id_from_timestamp_and_content() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1630,8 +1950,6 @@ mod tests {
         // Two prints from one sweep share `ts` and `tn`, so only the content digest separates them
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1654,8 +1972,6 @@ mod tests {
     fn test_parse_trade_tick_rejects_negative_timestamp() {
         let instrument = parse_instrument(
             &create_eurusd_instrument(),
-            Decimal::ZERO,
-            Decimal::ZERO,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1692,5 +2008,143 @@ mod tests {
         assert_eq!(update.next_funding_ns, None);
         assert_eq!(update.ts_event, UnixNanos::from(1770393600000000000u64));
         assert_eq!(update.ts_init, ts_init);
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_order_reports_preserve_post_only_and_nanoseconds(#[case] post_only: bool) {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let mut detail = create_order_detail(AxOrderStatus::Accepted, None, None);
+        detail.po = post_only;
+        detail.ts = 1700000000;
+        detail.tn = 123456789;
+        let open: AxOpenOrder =
+            serde_json::from_value(serde_json::to_value(&detail).unwrap()).unwrap();
+        let reports = [
+            parse_order_detail_status_report(
+                &detail,
+                AccountId::from("AX-001"),
+                &instrument,
+                UnixNanos::default(),
+                None::<&fn(u64) -> Option<ClientOrderId>>,
+            )
+            .unwrap(),
+            parse_order_status_report(
+                &open,
+                AccountId::from("AX-001"),
+                &instrument,
+                UnixNanos::default(),
+                None::<&fn(u64) -> Option<ClientOrderId>>,
+            )
+            .unwrap(),
+        ];
+
+        for report in reports {
+            assert_eq!(report.post_only, post_only);
+            assert_eq!(report.ts_last, UnixNanos::from(1700000000123456789));
+            assert_eq!(report.ts_accepted, UnixNanos::from(1700000000123456789));
+            assert_eq!(report.quantity.as_decimal(), Decimal::from(detail.q));
+            assert_eq!(report.filled_qty.as_decimal(), Decimal::from(detail.xq));
+        }
+    }
+
+    #[rstest]
+    fn test_unknown_order_status_cannot_become_initialized_report() {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let detail = create_order_detail(AxOrderStatus::Unknown, None, None);
+        let error = parse_order_detail_status_report(
+            &detail,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+            None::<&fn(u64) -> Option<ClientOrderId>>,
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "Unmapped AX order status");
+    }
+
+    #[rstest]
+    #[case(Some(dec!(375)), dec!(1.25))]
+    #[case(None, dec!(1.5))]
+    fn test_position_prefers_cost_basis(
+        #[case] cost_basis: Option<Decimal>,
+        #[case] expected: Decimal,
+    ) {
+        let mut response: crate::http::models::AxPositionsResponse =
+            serde_json::from_str(include_str!("../../test_data/http_get_positions.json")).unwrap();
+        let position = &mut response.positions[0];
+        position.signed_quantity = -300;
+        position.signed_notional = dec!(-450);
+        position.signed_cost_basis = cost_basis.map(|value| -value);
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let report = parse_position_status_report(
+            position,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.avg_px_open, Some(expected));
+        assert_eq!(report.position_side, PositionSide::Short);
+        assert_eq!(report.quantity.as_decimal(), dec!(300));
+    }
+    #[rstest]
+    #[case(TimeInForce::Ioc, OrderStatus::Canceled)]
+    #[case(TimeInForce::Fok, OrderStatus::Canceled)]
+    #[case(TimeInForce::Gtc, OrderStatus::Expired)]
+    #[case(TimeInForce::Day, OrderStatus::Expired)]
+    fn test_expired_http_status_matches_websocket(
+        #[case] tif: TimeInForce,
+        #[case] expected: OrderStatus,
+    ) {
+        assert_eq!(
+            parse_order_status(AxOrderStatus::Expired, tif).unwrap(),
+            expected
+        );
+    }
+    #[rstest]
+    fn test_replaced_history_is_terminal() {
+        let response: crate::http::models::AxOrdersResponse = serde_json::from_str(include_str!(
+            "../../test_data/captured/history-replaced.json"
+        ))
+        .unwrap();
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let order = &response.orders[0];
+        let report = parse_order_detail_status_report(
+            order,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+            None::<&fn(u64) -> Option<ClientOrderId>>,
+        )
+        .unwrap();
+        assert_eq!(order.o, AxOrderStatus::Replaced);
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert!(report.order_status.is_closed());
+        assert_eq!(report.filled_qty.as_decimal(), dec!(0));
+        assert_eq!(report.venue_order_id.as_str(), order.oid);
     }
 }

@@ -24,10 +24,16 @@ use std::{
     time::Duration,
 };
 
-use nautilus_common::{actor::DataActor, enums::Environment, testing::wait_until_async};
+use nautilus_common::{
+    actor::DataActor,
+    enums::Environment,
+    msgbus::{self, MessagingSwitchboard, stubs::get_any_saving_handler},
+    testing::wait_until_async,
+};
 use nautilus_live::{
     builder::LiveNodeBuilder,
     config::{LiveExecutionEngineConfig, LiveNodeConfig},
+    execution::submission::{SubmissionRecoveryExhausted, SubmissionRecoverySource},
     node::{LiveNode, NodeState},
 };
 use nautilus_model::{
@@ -69,7 +75,7 @@ struct LifecycleProbe {
 struct SubmitLimitOnStart {
     core: StrategyCore,
     instrument_id: InstrumentId,
-    client_id: ClientId,
+    client_id: Option<ClientId>,
     cancel_on_accept: bool,
     probe: LifecycleProbe,
 }
@@ -87,7 +93,7 @@ impl SubmitLimitOnStart {
                 ..Default::default()
             }),
             instrument_id,
-            client_id,
+            client_id: Some(client_id),
             cancel_on_accept,
             probe,
         }
@@ -99,7 +105,7 @@ impl DataActor for SubmitLimitOnStart {
         self.submit_order(
             harness::limit_order(self.instrument_id, CLIENT_ORDER_ID),
             None,
-            Some(self.client_id),
+            self.client_id,
             None,
         )?;
         Ok(())
@@ -111,7 +117,7 @@ nautilus_strategy!(SubmitLimitOnStart, {
         self.probe.accepted.store(true, Ordering::Relaxed);
 
         if self.cancel_on_accept {
-            self.cancel_order(event.client_order_id, Some(self.client_id), None)
+            self.cancel_order(event.client_order_id, self.client_id, None)
                 .expect("cancel_order failed");
         }
     }
@@ -141,13 +147,25 @@ async fn start_accepting_mock() -> (SocketAddr, TestServerState) {
 }
 
 fn build_node(name: &str, addr: SocketAddr) -> LiveNode {
-    let config = LiveNodeConfig {
-        environment: Environment::Live,
-        trader_id: TraderId::from(harness::TRADER_ID),
-        exec_engine: LiveExecutionEngineConfig {
+    build_node_with_execution_config(
+        name,
+        addr,
+        LiveExecutionEngineConfig {
             reconciliation: false,
             ..Default::default()
         },
+    )
+}
+
+fn build_node_with_execution_config(
+    name: &str,
+    addr: SocketAddr,
+    exec_engine: LiveExecutionEngineConfig,
+) -> LiveNode {
+    let config = LiveNodeConfig {
+        environment: Environment::Live,
+        trader_id: TraderId::from(harness::TRADER_ID),
+        exec_engine,
         delay_post_stop: Duration::from_millis(50),
         ..Default::default()
     };
@@ -177,6 +195,100 @@ fn build_node(name: &str, addr: SocketAddr) -> LiveNode {
     node
 }
 
+#[rstest]
+#[tokio::test]
+async fn stalled_submit_survives_inflight_exhaustion_and_accepts_late_response(
+    #[values(false, true)] explicit_client: bool,
+) {
+    let (addr, state) = start_accepting_mock().await;
+    state.order_response_gate.enable();
+    let probe = LifecycleProbe::default();
+
+    let mut node = build_node_with_execution_config(
+        "PolymarketNodeStalledSubmit",
+        addr,
+        LiveExecutionEngineConfig {
+            reconciliation: false,
+            inflight_check_interval_ms: 10,
+            inflight_check_threshold_ms: 20,
+            inflight_check_retries: 1,
+            ..Default::default()
+        },
+    );
+
+    let mut strategy = SubmitLimitOnStart::new(
+        InstrumentId::from(harness::INSTRUMENT_ID),
+        ClientId::from(POLYMARKET),
+        false,
+        probe.clone(),
+    );
+
+    if !explicit_client {
+        strategy.client_id = None;
+    }
+
+    node.add_strategy(strategy).unwrap();
+    let (handler, diagnostics) = get_any_saving_handler::<SubmissionRecoveryExhausted>(None);
+    let topic = MessagingSwitchboard::submission_recovery_exhausted_topic();
+    msgbus::subscribe_any(topic.into(), handler.clone(), None);
+    let handle = node.handle();
+    let gate = state.order_response_gate.clone();
+    let accepted = probe.accepted.clone();
+    let rejected = probe.rejected.clone();
+
+    let exhaustion = diagnostics.clone();
+
+    let driver = async move {
+        wait_until_async(|| async { gate.started() == 1 }, DEADLINE).await;
+        wait_until_async(|| async { !exhaustion.get_messages().is_empty() }, DEADLINE).await;
+        assert!(!rejected.load(Ordering::Relaxed));
+        gate.release();
+        wait_until_async(|| async { accepted.load(Ordering::Relaxed) }, DEADLINE).await;
+        handle.stop();
+    };
+
+    let (result, ()) =
+        tokio::time::timeout(RUN_TIMEOUT, async { tokio::join!(node.run(), driver) })
+            .await
+            .unwrap();
+    result.unwrap();
+
+    msgbus::unsubscribe_any(topic.into(), &handler);
+    let diagnostics = diagnostics.get_messages();
+    assert_eq!(diagnostics.len(), 1);
+    let diagnostic = &diagnostics[0];
+    assert_eq!(diagnostic.trader_id, TraderId::from(harness::TRADER_ID));
+    assert_eq!(diagnostic.client_id, Some(ClientId::from(POLYMARKET)));
+    assert_eq!(
+        diagnostic.strategy_id,
+        StrategyId::from(harness::STRATEGY_ID)
+    );
+    assert_eq!(
+        diagnostic.instrument_id,
+        InstrumentId::from(harness::INSTRUMENT_ID)
+    );
+    assert_eq!(
+        diagnostic.client_order_id,
+        ClientOrderId::from(CLIENT_ORDER_ID)
+    );
+    assert_eq!(diagnostic.source, SubmissionRecoverySource::Inflight);
+    assert_eq!(diagnostic.retry_count, 1);
+
+    let post_count = *state.order_post_count.lock().await;
+    let open_order_ids = state.open_order_ids.lock().await.clone();
+    let cache = node.kernel().cache.borrow();
+    let order = cache.order(&ClientOrderId::from(CLIENT_ORDER_ID)).unwrap();
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(
+        order.venue_order_id(),
+        Some(crate::mock_venue::DEFAULT_ACCEPTED_ORDER_ID.into())
+    );
+    assert!(!probe.rejected.load(Ordering::Relaxed));
+    assert_eq!(post_count, 1);
+    assert_eq!(open_order_ids.len(), 1);
+    assert!(open_order_ids.contains(crate::mock_venue::DEFAULT_ACCEPTED_ORDER_ID));
+}
+
 fn add_submit_strategy(node: &mut LiveNode, cancel_on_accept: bool, probe: LifecycleProbe) {
     node.add_strategy(SubmitLimitOnStart::new(
         InstrumentId::from(harness::INSTRUMENT_ID),
@@ -185,6 +297,71 @@ fn add_submit_strategy(node: &mut LiveNode, cancel_on_accept: bool, probe: Lifec
         probe,
     ))
     .unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn inflight_query_resolves_signed_order_while_submit_response_is_stalled() {
+    let (addr, state) = start_accepting_mock().await;
+    state.order_response_gate.enable();
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
+    let probe = LifecycleProbe::default();
+
+    let mut node = build_node_with_execution_config(
+        "PolymarketNodeQuerySubmit",
+        addr,
+        LiveExecutionEngineConfig {
+            reconciliation: false,
+            inflight_check_interval_ms: 10,
+            inflight_check_threshold_ms: 50,
+            inflight_check_retries: 5,
+            ..Default::default()
+        },
+    );
+
+    add_submit_strategy(&mut node, false, probe.clone());
+    let handle = node.handle();
+    let accepted = probe.accepted.clone();
+    let driver_state = state.clone();
+
+    let driver = tokio::spawn(async move {
+        wait_until_async(
+            || async { driver_state.order_response_gate.started() == 1 },
+            DEADLINE,
+        )
+        .await;
+        let venue_order_id = driver_state
+            .open_order_ids
+            .lock()
+            .await
+            .iter()
+            .next()
+            .cloned()
+            .unwrap();
+        let mut venue_order = load_json("http_open_order.json");
+        venue_order["id"] = serde_json::Value::from(venue_order_id.clone());
+        venue_order["asset_id"] = serde_json::Value::from(crate::mock_venue::TEST_TOKEN_ID);
+        venue_order["market"] = serde_json::Value::from(crate::mock_venue::TEST_CONDITION_ID);
+        venue_order["size_matched"] = serde_json::Value::from("0.0000");
+        *driver_state.single_order_response.lock().await = Some(venue_order);
+        wait_until_async(|| async { accepted.load(Ordering::Relaxed) }, DEADLINE).await;
+        driver_state.order_response_gate.release();
+        handle.stop();
+        venue_order_id
+    });
+
+    tokio::time::timeout(RUN_TIMEOUT, node.run())
+        .await
+        .unwrap()
+        .unwrap();
+    let venue_order_id = driver.await.unwrap();
+    let cache = node.kernel().cache.borrow();
+    let order = cache.order(&ClientOrderId::from(CLIENT_ORDER_ID)).unwrap();
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(order.venue_order_id(), Some(venue_order_id.as_str().into()));
+    assert!(!probe.rejected.load(Ordering::Relaxed));
 }
 
 #[rstest]
@@ -404,6 +581,16 @@ async fn failed_fill_routes_void_through_node_execution_manager() {
         wait_until_async(|| async { accepted.load(Ordering::Relaxed) }, DEADLINE).await;
         state.feed_user("ws_user_trade_full.json").await;
         wait_until_async(|| async { filled.load(Ordering::Relaxed) }, DEADLINE).await;
+        let mut rest_failed = load_json("http_trade_report.json");
+        rest_failed["id"] = serde_json::json!("trade-0xfull");
+        rest_failed["status"] = serde_json::json!("FAILED");
+        rest_failed["size"] = serde_json::json!("100.0000");
+        rest_failed["taker_order_id"] =
+            serde_json::json!(crate::mock_venue::DEFAULT_ACCEPTED_ORDER_ID);
+        *state.trades_response_override.lock().await = Some(serde_json::json!({
+            "data": [rest_failed],
+            "next_cursor": "LTE="
+        }));
         state.feed_user("ws_user_trade_full_failed.json").await;
         wait_until_async(|| async { fill_voided.load(Ordering::Relaxed) }, DEADLINE).await;
         stop_handle.stop();

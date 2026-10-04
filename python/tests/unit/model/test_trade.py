@@ -17,6 +17,7 @@ Test trade behavior.
 """
 
 import pickle
+import re
 
 import pytest
 
@@ -214,3 +215,92 @@ def test_trade_from_raw(audusd_id: InstrumentId) -> None:
     assert trade.trade_id == TradeId("RAW-001")
     assert trade.ts_event == 1
     assert trade.ts_init == 2
+
+
+def test_trade_from_raw_rejects_invalid_precision(audusd_id: InstrumentId) -> None:
+    """
+    Test trade from raw rejects invalid precision.
+    """
+    with pytest.raises(ValueError, match="exceeded maximum") as exc_info:
+        TradeTick.from_raw(
+            instrument_id=audusd_id,
+            price_raw=10_000_100_000_000_000,
+            price_prec=255,
+            size_raw=10_000_000_000_000_000,
+            size_prec=0,
+            aggressor_side=AggressorSide.BUY,
+            trade_id=TradeId("RAW-001"),
+            ts_event=1,
+            ts_init=2,
+        )
+
+    assert str(exc_info.value) == "`precision` exceeded maximum `WEI_PRECISION` (18), was 255"
+
+
+@pytest.mark.parametrize(
+    ("index", "value", "message"),
+    [
+        (
+            1,
+            170_141_183_460_460_000_000_000_000_001,
+            "raw value 170141183460460000000000000001 outside valid range "
+            "[-170141183460460000000000000000, 170141183460460000000000000000]",
+        ),
+        (2, 255, "`precision` exceeded maximum `WEI_PRECISION` (18), was 255"),
+        (4, 19, "`precision` exceeded maximum `WEI_PRECISION` (18), was 19"),
+        (5, 99, "Invalid aggressor_side value: 99"),
+        (6, "", "String is empty"),
+        (6, "   ", "String contains only whitespace"),
+    ],
+)
+def test_trade_setstate_rejects_invalid_state_without_mutation(
+    trade: object,
+    usdjpy_id: InstrumentId,
+    index: int,
+    value: object,
+    message: str,
+) -> None:
+    """
+    Test trade setstate rejects invalid state without mutation.
+    """
+    original_state = trade.__getstate__()
+    other = TradeTick(
+        instrument_id=usdjpy_id,
+        price=Price.from_str("150.001"),
+        size=Quantity.from_int(7),
+        aggressor_side=AggressorSide.SELL,
+        trade_id=TradeId("OTHER-001"),
+        ts_event=5,
+        ts_init=6,
+    )
+    state = list(other.__getstate__())
+    state[index] = value
+
+    with pytest.raises(ValueError, match=re.escape(message)) as exc_info:
+        trade.__setstate__(tuple(state))
+
+    assert str(exc_info.value) == message
+    assert trade.__getstate__() == original_state
+
+
+def test_trade_pickle_roundtrip_preserves_zero_size() -> None:
+    """
+    Test trade pickle roundtrip preserves zero size.
+    """
+    trade = TradeTick.from_dict(
+        {
+            "type": "TradeTick",
+            "instrument_id": "AUD/USD.SIM",
+            "price": "1.00001",
+            "size": "0",
+            "aggressor_side": "BUY",
+            "trade_id": "T-1",
+            "ts_event": 1,
+            "ts_init": 2,
+        },
+    )
+
+    restored = pickle.loads(pickle.dumps(trade))
+
+    assert restored.__getstate__() == trade.__getstate__()
+    assert restored.size == Quantity.from_int(0)

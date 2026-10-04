@@ -19,7 +19,7 @@ market swaps but is not production-ready.
 
 | Account type | Typical use case                                | What the engine locks                                                     |
 | ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional for pending buy orders; quantity for pending sell orders.        |
+| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional for pending buy orders; base-asset quantity for pending sells.   |
 | Margin       | Derivatives or any product that allows leverage | Initial margin for each order plus maintenance margin for open positions. |
 | Betting      | Sports betting, bookmaking                      | Stake required by the venue; no leverage.                                 |
 | Wallet       | Blockchain wallets (DeFi)                       | Amounts reserved locally for pending orders; no leverage or borrowing.    |
@@ -30,6 +30,41 @@ Cash accounts **settle trades in full**; there is no leverage and therefore no
 concept of margin. Locked balances reflect the value reserved for pending
 orders: the notional value of each pending buy and the quantity each pending
 sell would deliver.
+
+A sell delivers the instrument's base asset, so the reservation belongs in that
+asset. Instruments whose `base_currency()` is `None`, such as binary options and
+equities, model no such asset. A pending sell on those instruments locks nothing
+and its proceeds are not compared against the free quote balance. Reserving the
+order quantity in the quote currency instead would label a share or contract
+count as money and lock collateral the sale never consumes; comparing sale
+proceeds against free collateral would deny a sale for lack of the very balance
+it credits.
+
+In live trading, inventory availability for those instruments is not tracked or
+checked locally, including across concurrent sells. The venue enforces it, and any
+rejection arrives through the normal order lifecycle. This boundary is
+deliberate: reproducing the venue's inventory check locally would require
+per-asset balances the adapter does not receive. Buy reservations and sell
+checks for instruments that do model a base asset are unchanged.
+
+#### Simulated short-selling checks
+
+Backtests and sandbox check each equity or binary-option sell on a cash account
+at submission. The order's remaining quantity must not exceed the long inventory
+in its selected position, including executed fills awaiting position updates.
+Sells that reduce or close that position remain valid.
+
+The check uses the order price or current bid to calculate contract units for
+quote-sized sells. Trigger-style market and trailing orders can convert at a
+different price when they fill, changing the contract quantity.
+
+An entry contributes inventory to its contingent exits only as fills execute.
+By default, `oto_full_trigger` is `false`, so a full-size exit can be rejected
+after a partial entry fill. Set `oto_full_trigger` to `true` to release the exit
+only after the entry fills in full, including when position updates are deferred.
+
+This submission check does not reserve inventory for other working sells or
+revalidate later quantity changes.
 
 ### Margin accounts
 
@@ -229,6 +264,10 @@ Margin queries:
 
 - `portfolio.instrument_initial_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
 - `portfolio.instrument_maintenance_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
+
+An `account_id` selects that account. A venue-only query resolves only when
+exactly one account is issued under the venue, so pass `account_id` when several
+accounts share a venue.
 
 When a margin account resolves, these return the same per-instrument money
 views as `MarginAccount.initial_margins` and

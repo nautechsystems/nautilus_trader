@@ -109,6 +109,176 @@ caches do not hold. A material change is any serialized field other than `ts_eve
   still back open subscriptions. Suspension, expiry, and delisting arrive as
   `InstrumentStatus` events through the instruments channel.
 
+## Order book subscriptions
+
+Rust and Python v2 support the following subscriptions for L2 market-by-price (`L2_MBP`) books:
+
+| Subscription                 | Delivery                            | Depth                                          |
+| ---------------------------- | ----------------------------------- | ---------------------------------------------- |
+| `subscribe_book_deltas`      | `OrderBookDeltas` on venue updates. | 50 or 400 levels per side; five for spreads.   |
+| `subscribe_book_depth`       | Native `OrderBookDepth` snapshots.  | Up to five levels per side.                    |
+| `subscribe_book_at_interval` | Cached `OrderBook` at the interval. | All levels retained from the selected channel. |
+
+`subscribe_book_depth` uses OKX's native `books5` snapshots, published on changes at a 100 ms cadence.
+`depth=None` defaults to five levels. Requests in `[1, 5]` select the best available levels from each
+snapshot; larger requests and `rpi=True` are rejected. Prices, sizes, and venue order counts come
+directly from each snapshot. The adapter does not reconstruct depth snapshots from incremental data.
+
+Delta and interval subscriptions retain the existing channel selection: requests in `[1, 50]` select
+the 50-level channel when the configured VIP level permits it, otherwise the public 400-level `books`
+channel. Other depths select a 400-level channel. The `rpi` parameter selects `books-rpi` when true.
+Channel access remains subject to OKX account permissions.
+
+Within each client, native depth consumers share one requested limit per instrument, including
+unmanaged subscriptions. A conflicting requested depth is rejected.
+
+Native depth uses a separate feed from deltas and interval books. Unsubscribing either feed leaves
+the other active. Spread instruments use their existing shared five-level `sprd-books5` snapshot
+feed, which remains active until both delta and depth consumers unsubscribe.
+
+A managed book has one update source: deltas or depth. Compatible managed subscriptions share that
+source, but managed depth cannot coexist with managed deltas or interval subscriptions for the same
+instrument. The data engine rejects conflicting requests before changing the managed book.
+Consumers of the same source must agree on client, book type, depth, and subscription parameters.
+Different clients may use different configurations only when all consumers of that source are unmanaged.
+To receive both deltas and depth, set `managed=True` on the delta subscription and `managed=False`
+on the depth subscription. Unmanaged depth callbacks then leave the delta-managed book unchanged.
+DataTester selects this arrangement when both subscriptions are enabled.
+
+Interval delivery uses the data engine's existing delta subscription and timer. It publishes all
+retained levels, independently of an unmanaged depth consumer's requested limit. During a connection
+outage or book recovery, the timer can continue publishing the last cached book. Native depth delivery
+resumes with a new full snapshot after reconnect; it does not depend on delta recovery. See
+[order book recovery](#order-book-recovery) for recovery limits.
+
+## Order book recovery
+
+The data client recovers each delta book independently. During recovery, it suppresses incremental
+updates and replaces the subscription to request a fresh snapshot. Output resumes only after the
+client accepts a snapshot, which requires the replacement unsubscribe and subscribe requests to
+have been sent. Accepted snapshots replace all existing price levels; an empty snapshot clears the book.
+
+### Recovery triggers
+
+Recovery starts when:
+
+- A sequence gap occurs.
+- An initial subscription send fails.
+- An initial or post-reconnect snapshot times out.
+- The venue rejects a book subscription.
+
+On a sequence gap, the client drops the mismatched batch and suppresses further incremental updates.
+`book_snapshot_timeout_secs` sets the snapshot deadline. For initial subscriptions, the deadline
+starts after the subscription is sent, excluding time spent waiting to send.
+
+Reconnecting resets book synchronization on the affected socket. Spread books receive full snapshots
+on the business socket, so their recovery starts from an initial send failure, a missing initial
+or post-reconnect snapshot, or a subscription rejection.
+
+Stale-feed checks only log warnings, and skip books that a running recovery owns. They do not start
+recovery because quiet markets can legitimately have no book changes.
+
+### Retry loop and limits
+
+The adapter uses the [shared book recovery machinery](../developer_guide/adapters.md#order-book-recovery-ownership).
+Each instrument has one recovery loop. It runs until a fresh snapshot is accepted, or until
+unsubscribe or shutdown cancels it; recovery never ends in a failed state.
+
+```mermaid
+stateDiagram-v2
+    state "Recovering: replace subscription and await snapshot" as Recovering
+    state "Retrying at a growing interval" as Ceiling
+    state "Book output resumes" as Streaming
+
+    [*] --> Recovering: Recovery triggered
+    Recovering --> Recovering: Retryable failure or snapshot timeout
+    Recovering --> Streaming: Fresh snapshot accepted
+    Recovering --> Ceiling: Non-retryable rejection or retry budget spent
+    Ceiling --> Ceiling: Attempt fails
+    Ceiling --> Streaming: Fresh snapshot accepted
+```
+
+Sending a subscription request keeps the book in recovery until a fresh snapshot is accepted.
+
+- **Attempts:** Up to eight within the initial budget.
+- **Initial budget:** 180 seconds, including sends, snapshot waits, and retry delays.
+- **Delay:** The first retry is immediate. Later retries use exponential backoff starting at one
+  second, with up to one second of jitter and a ten-second cap.
+- **After the budget:** Attempts continue at an interval that doubles from one minute to fifteen
+  minutes, with up to five seconds of jitter. Each attempt is bounded by one minute, or by the
+  snapshot timeout when that is longer. A non-retryable rejection moves straight to this interval.
+
+A running recovery continues across reconnects with its existing budget. This prevents
+cancellation between the replacement unsubscribe and subscribe requests. A recovery waiting between
+attempts after its budget retries on the new connection at once. Replacing a subscription
+preserves its reconnect intent. Unsubscribe and shutdown cancel recovery.
+
+### Persistent failures
+
+When the retry budget runs out, the client logs one error, then a warning for each failed attempt.
+Once the interval reaches fifteen minutes, a book that keeps failing, such as an instrument the venue
+no longer serves, sends about eight subscription requests an hour, well under OKX's limit of 480 per
+hour on each connection. A late snapshot completes recovery at any point. Unsubscribe to stop
+recovery.
+
+### Snapshot correlation limitation
+
+Incremental book channels accept a snapshot only while establishing or recovering synchronization.
+Once synchronized, the client discards unsolicited snapshots without replacing the book or resetting
+its sequence. Channels that publish recurring full snapshots continue to accept them.
+
+Book subscription sends wait for a completed transport write on the intended connection.
+Both sends in a replacement use the same connection; a connection change fails the attempt.
+
+Snapshot acceptance does not correlate subscription acknowledgements with recovery attempts.
+A delayed snapshot from an earlier subscription can remain queued while a replacement is sent
+and complete the current recovery when the gate opens. Write confirmation does not eliminate this
+ambiguity. Recovery also cannot reliably distinguish an unsubscribe error from a subscribe error
+when the venue response identifies only the book channel and instrument.
+
+### Disabling snapshot deadlines
+
+Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines, including initial and
+post-reconnect checks. Sequence gaps and subscription rejections still start recovery.
+
+Within the retry budget, a missing snapshot leaves the current attempt waiting until a snapshot is
+accepted, a rejection arrives, recovery is cancelled, or the 180-second initial budget ends.
+Attempts after the budget stay bounded as described above.
+
+### Live recovery validation
+
+The `okx-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It connects to OKX mainnet public market data, submits no orders, and checks emitted spot,
+RPI swap, and spread books against the book stream contract and an independent reconstruction of the
+venue feed's best 20 levels.
+
+The harness checks recovery without reconnects, including a dropped replacement snapshot when
+deadlines are enabled. It then injects sequence gaps, drops and delays snapshots, forces reconnects,
+and exercises unsubscribe and shutdown during recovery.
+
+From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-okx --features examples --test okx-book-stress -- --timeout 10 --rounds 18
+```
+
+`--scenario` selects the run:
+
+- `churn` (default): the fault rounds described above.
+- `initial`: drops each book's first snapshot, once per round in a fresh session.
+- `turnover`: unsubscribes and resubscribes books during recovery.
+- `boundaries`: probes replacement cuts, retry exhaustion into the retry ceiling, and shutdown
+  during a reconnect.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines, and
+`--rounds` sets the number of rounds (18 by default).
+
+The harness requires access to the public and business WebSocket endpoints and the public instrument
+and spread APIs. Automated book lifecycle tests use local mock servers. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for the shared flags
+and output format.
+
 ## Symbology
 
 OKX uses specific symbol conventions for different instrument types. Add the `.OKX`
@@ -180,8 +350,8 @@ Spread instrument notes:
 
 - Spread market data streams on the OKX business WebSocket: quotes (`sprd-bbo-tbt`),
   trades (`sprd-public-trades`), and 5-level book snapshots (`sprd-books5`). Spreads have
-  no incremental book channel, so each `sprd-books5` update is a full snapshot delivered
-  through the order book subscription (flagged as a snapshot, not incremental L2 deltas).
+  no incremental book channel. Each `sprd-books5` update is delivered as `OrderBookDepth` to depth
+  subscribers and as snapshot-flagged `OrderBookDeltas` to delta subscribers.
 - The parser represents spot, swap, and futures leg combinations. It also represents
   option-leg spread definitions when OKX returns them through the same spread endpoint.
 - OKX option RFQ and block trading workflows are separate from the Nitro spread order
@@ -251,16 +421,10 @@ liquidity.
 
 WebSocket snapshots and updates retain `seqId` and `prevSeqId`. Emitted deltas carry `seqId` as
 their sequence. The data client checks each update's `prevSeqId` against the last accepted `seqId`;
-the values do not need to increase by one. On a mismatch, the client:
-
-- Drops the mismatched frame.
-- Suppresses later updates for that instrument.
-- Replaces the subscription once to request a fresh snapshot.
-- Resumes emission after a snapshot with `prevSeqId: -1`.
-
-If the snapshot does not arrive before the configured snapshot timeout, the book monitor logs a
-warning and the client remains fail-closed. The adapter applies the same linkage rule to standard
-incremental OKX book channels when `prevSeqId` is present. `books-rpi` has no checksum.
+the values do not need to increase by one. A mismatch starts
+[order book recovery](#order-book-recovery). Emission resumes after an accepted snapshot with
+`prevSeqId: -1`. The adapter applies the same linkage rule to standard incremental OKX book channels when `prevSeqId`
+is present. `books-rpi` has no checksum.
 
 For WebSocket subscriptions, `rpi=True` selects `books-rpi` instead of depth or VIP channel
 selection. For REST snapshots, the requested depth becomes `sz`; OKX defaults to one level per side
@@ -456,10 +620,14 @@ The list is retained from instrument definitions, including
 #### Account activation
 
 :::warning
-Before trading a `Crypto-USDC` instrument, call `OKXHttpClient.activate_feature("1")`
-once per master account and once per sub-account to enable USDC order book trading, if
-that account has not already traded USDC. The adapter never activates accounts
-implicitly.
+Call `OKXHttpClient.activate_feature("1")` to enable USDC order book trading only after OKX
+rejects a `Crypto-USDC` order with error code `54109`, then submit the order again.
+Activation is shared between a master account and its sub-accounts, so one successful call
+from any of them covers all of them. The adapter never activates accounts implicitly.
+
+Error code `51773` from `activate_feature` means OKX does not support activation for the
+account. It does not mean USDC trading is unavailable; a successful order confirms that
+the account can trade the instrument.
 :::
 
 ### Client order ID requirements
@@ -566,6 +734,32 @@ order expiration by canceling the order at the specified expiry time.
 | Batch Submit | ✓                     | Submit multiple orders in single request. |
 | Batch Modify | ✓                     | Modify multiple orders in single request. |
 | Batch Cancel | ✓                     | Cancel multiple orders in single request. |
+
+### Cancel-all orders
+
+`Strategy.cancel_all_orders` supports `order_side` in both strategy-only and cross-strategy mode.
+See [Cancel-all routing](../concepts/execution/index.md#cancel-all-routing) for strategy scope.
+
+With `strategy_only=False` and an `order_side`, the adapter selects matching open orders from the cache
+across strategies. It sends regular orders through batch cancellation and conditional and spread orders
+through their individual-order cancellation APIs. This bypasses venue mass cancellation, including when
+the Rust configuration option `use_mm_mass_cancel` is `true`.
+
+Side-filtered cancellation excludes orders absent from the cache and orders still in `SUBMITTED` state.
+Without a side filter, ordinary non-spread cancellation also uses cached open orders by default;
+spread instruments and the Rust mass-cancel option use venue bulk endpoints.
+
+### Rejection reasons
+
+When OKX rejects an order, modify, or cancel request with an error code, the `reason` on
+`OrderRejected`, `OrderModifyRejected`, or `OrderCancelRejected` has the form
+`OKX error <code>: <message>`, for example `OKX error 51000: Parameter instId error`. A WebSocket
+response without a message produces `OKX error <code>` alone, and one that also carries a
+`subCode` appends it as `(subCode=<code>)`. A conditional order that fails after acceptance
+reports only its code, such as `OKX error 51008`, because OKX sends only a `failCode`.
+
+Rejections the adapter raises before contacting OKX, such as local validation failures, carry
+the adapter's own message and no OKX error code.
 
 ### Position management
 
@@ -1092,6 +1286,7 @@ available.
 | --------------------------------------- | --------------- | ----------------------------------------- |
 | `okx:global`                            | 250             | Adapter-level shared bucket.              |
 | `/api/v5/account/set-position-mode`     | 2               | OKX 5 requests / 2 seconds, rounded down. |
+| `/api/v5/account/activate-feature`      | 2               | OKX 5 requests / 2 seconds, rounded down. |
 | `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.              |
 | `/api/v5/account/trade-fee`             | 2               | OKX 5 requests / 2 seconds, rounded down. |
 | `/api/v5/account/instruments`           | 10              | OKX 20 requests / 2 seconds.              |
@@ -1189,6 +1384,42 @@ Values above 7 days are clamped to the longest complete window across the regula
 and spread trade history endpoints used for reconciliation. This is not a limit on all archived data
 available from OKX.
 
+OKX reports no size for a live algo order placed with `close_fraction`, because the order closes
+the whole position when it triggers. REST order status reports use the size of the position that
+OKX links to the order through `closeOrderAlgo`. Without a linked position, the report keeps a zero
+quantity and the adapter logs a warning. Reconciliation does not load an external order with zero
+quantity.
+
+### Unacknowledged submissions
+
+OKX defines `50004` and `51149` as [unknown request outcomes](https://my.okx.com/docs-v5/en/#error-code).
+The adapter leaves these submissions unresolved, but the default execution policy can still resolve
+them locally when reconciliation checks exhaust. OKX does not enable submission retention automatically.
+
+To retain unacknowledged submissions, including those with no response, select the existing engine
+policy when constructing the node:
+
+```rust
+use nautilus_live::{
+    config::LiveExecutionEngineConfig,
+    execution::submission::SubmissionRecoveryPolicy,
+};
+
+let exec_engine = LiveExecutionEngineConfig {
+    submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
+    ..Default::default()
+};
+```
+
+This is a node execution-engine policy, not an OKX client setting. Recovery queries remain bounded;
+exhaustion publishes `SubmissionRecoveryExhausted` once and preserves the submission identity for
+later authoritative evidence without resubmitting the order. See
+[submission recovery](../concepts/execution/reconciliation.md#submission-recovery)
+for confirmation and query-budget rules. Retained submissions still unresolved at the node's
+`delay_post_stop` boundary produce an [incomplete-recovery shutdown error](../concepts/live.md#submission-recovery-at-shutdown)
+after teardown. The policy does not change timeout resolution for commands on already accepted
+orders, provide crash-durable recovery, or prove that positions are flat.
+
 ## Configuration
 
 ### Data client
@@ -1215,14 +1446,15 @@ The OKX data client provides the following Python configuration options.
 | `update_instruments_interval_mins` | `60`                       | REST instrument cache reconciliation interval in minutes; `0` disables.        |
 | `book_stale_check_interval_secs`   | `5`                        | Stale book check interval.                                                     |
 | `book_stale_threshold_secs`        | `30`                       | Idle time before a stale book warning.                                         |
-| `book_snapshot_timeout_secs`       | `3`                        | Post-reconnect snapshot wait.                                                  |
+| `book_snapshot_timeout_secs`       | `10`                       | Initial, reconnect, and recovery snapshot wait.                                |
 | `vip_level`                        | `None`                     | Enables higher-depth books by VIP tier.                                        |
 | `proxy_url`                        | `None`                     | Optional HTTP and WebSocket proxy URL.                                         |
 | `transport_backend`                | `Sockudo`                  | WebSocket transport backend.                                                   |
 
-Set `book_stale_check_interval_secs`, `book_stale_threshold_secs`, or
-`book_snapshot_timeout_secs` to `0` to disable that health monitor. Quiet markets can idle
-without book updates; increase `book_stale_threshold_secs` for sparse instruments.
+Set `book_stale_check_interval_secs` or `book_stale_threshold_secs` to `0` to disable stale-feed
+warnings. Set `book_snapshot_timeout_secs` to `0` to disable snapshot deadlines, as described in
+[Order book recovery](#order-book-recovery). Quiet markets can idle without book updates; increase
+`book_stale_threshold_secs` for sparse instruments.
 
 Supported data client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting
@@ -1293,6 +1525,79 @@ official endpoint list.
 Use `OKXDataClientConfig` with `OKXDataClientFactory` and `OKXExecutionClientConfig` with
 `OKXExecutionClientFactory`. The Python examples show a complete
 `LiveNode.builder(...)` configuration for data and execution clients.
+
+## Deterministic simulation testing
+
+OKX is the reference implementation for the
+[adapter DST contract](../concepts/dst.md#adapter-dst-contract), which the
+[adapter developer guide](../developer_guide/adapters.md#deterministic-simulation) requires of
+maintained adapters. This section records the audited OKX slice: the files the static gate covers,
+the exclusion rationale for the rest, and the runtime slices the `dst` tests prove.
+
+### Audited files
+
+Audited OKX DST-path production files route state-affecting clock reads and timers through the DST
+seams and sort reconnect and bulk-unsubscribe subscription commands. The static gate covers these
+files in `crates/adapters/okx/src`:
+
+- **book**: `mod.rs`, `recovery.rs`, `sync.rs`
+- **common**: `parse.rs`, `task.rs`
+- **Top level**: `config.rs`, `data.rs`, `execution.rs`
+- **http**: `client.rs`, `models.rs`, `query.rs`
+- **websocket**: `client.rs`, `dispatch.rs`, `handler.rs`, `messages.rs`, `parse.rs`,
+  `subscription.rs`
+
+:::warning
+Static coverage alone does not establish runtime eligibility: these files also serve paths outside
+a proven runtime slice.
+:::
+
+### Excluded files
+
+The remaining non-Python OKX production files stay excluded because they carry no DST-path state,
+clock, RNG, task, or transport surface:
+
+- **Module declarations**: `lib.rs`, `common/mod.rs`, `http/mod.rs`, `websocket/mod.rs`.
+- **Pure venue types**: `common/enums.rs`, `websocket/enums.rs`, `http/error.rs`,
+  `websocket/error.rs`, `common/models.rs`.
+- **Pure tables and deterministic mappings**: `common/urls.rs` (endpoint tables) and
+  `common/consts.rs` (pure predicates, validators, and wire-value and channel resolvers; its
+  `AHashSet` is contains-only retry lookup, never iterated).
+- **Deterministic helpers**: `common/credential.rs`, whose HMAC signs a caller-provided timestamp
+  and whose credential resolution reads only config or declared environment at construction, and
+  `common/failure.rs`, which is pure error classification.
+- **Construction wiring only**: `factories.rs`.
+- **Test-only or placeholder**: `common/testing.rs`, `http/parse.rs`.
+
+`check-dst-conventions` records this rationale next to `ADAPTER_PATHS`; re-audit a file if it
+gains DST-path runtime logic. The seven files under `src/python/` stay excluded by the repo-wide
+Python/FFI policy, not by this audit (see
+[Python and FFI are not in DST scope](../concepts/dst.md#python-and-ffi-are-not-in-dst-scope)).
+
+### Proven and unproven slices
+
+Focused Madsim tests in `crates/adapters/okx/tests/integration/dst.rs` prove this slice:
+
+- **Subscribe bytes**: public WebSocket quotes, trades, and books; business WebSocket bars.
+- **Reconnect order**: multi-instrument quote reconnect in topic order. Reconnect also clears quote
+  and funding caches in `data.rs` so a new generation cannot reuse prior values.
+- **Login frame**: key, passphrase, and signature derived from the simulated wall clock.
+- **Wire fields**: single order-submit, amend, and cancel; algo order-submit and cancel; batch
+  order-submit in input order.
+
+Complete request-to-wire-to-domain fresh-process comparison stays in the downstream DST harness.
+These share the DST facades and convention gate but remain unproven:
+
+- Other public channels: tickers, funding rates, index tickers, option summaries, other book
+  depths, and the other candle granularities.
+- Private data streams.
+- Mass cancel, batch amend and cancel, and spread orders.
+- HTTP report and reconciliation paths.
+
+### Simulation test leg
+
+The standard-precision leg runs the integration `dst` tests under `simulation` without the crate's
+default `high-precision` feature.
 
 ## Contributing
 

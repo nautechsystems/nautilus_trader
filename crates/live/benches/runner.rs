@@ -15,20 +15,29 @@
 
 use std::{cell::RefCell, hint::black_box, rc::Rc, sync::Arc, time::Duration};
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::{
-    messages::{DataEvent, data::DataCommand},
+    live::{dispatch::DispatchMessage, sender::EventSender},
+    messages::{
+        DataEvent, ExecutionEvent,
+        data::{DataCommand, SubscribeCommand, SubscribeQuotes},
+        execution::{QueryAccount, TradingCommand},
+    },
     msgbus::{
         self, MessageBus, TypedIntoHandler, register_data_endpoint,
         switchboard::MessagingSwitchboard,
     },
-    runner::TimeEventMessage,
+    runner::{
+        SyncTradingCommandSender, TimeEventMessage, TradingCommandMessage, TradingCommandSender,
+        drain_trading_cmd_queue,
+    },
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::runner::AsyncRunner;
 use nautilus_model::{
     data::{Data, quote::QuoteTick, trade::TradeTick},
     enums::AggressorSide,
+    events::{OrderEventAny, OrderInitialized},
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
@@ -176,6 +185,7 @@ fn bench_concurrent_channels(c: &mut Criterion) {
 
                         handles.push(std::thread::spawn(move || {
                             let quote = create_test_quote();
+
                             for _ in 0..events_per_sender {
                                 tx_clone.send(DataEvent::Data(Data::Quote(quote))).unwrap();
                             }
@@ -189,6 +199,7 @@ fn bench_concurrent_channels(c: &mut Criterion) {
 
                     // Drain receiver
                     let mut count = 0;
+
                     while rx.try_recv().is_ok() {
                         count += 1;
                     }
@@ -224,6 +235,7 @@ fn bench_batch_processing(c: &mut Criterion) {
 
                     // Receive batch
                     let mut received = 0;
+
                     while rx.try_recv().is_ok() {
                         received += 1;
                     }
@@ -304,6 +316,7 @@ fn bench_runner_dispatch(c: &mut Criterion) {
 
                 for _ in 0..iters {
                     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+
                     for _ in 0..size {
                         tx.send(DataEvent::Data(Data::Trade(trade))).unwrap();
                     }
@@ -328,8 +341,236 @@ fn bench_runner_dispatch(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_command_channels(c: &mut Criterion) {
+    let received = Rc::new(std::cell::Cell::new(0usize));
+    let values = received.clone();
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_execute(),
+        TypedIntoHandler::from(move |command| {
+            black_box(command);
+            values.set(values.get() + 1);
+        }),
+    );
+
+    let values = received.clone();
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_execute(),
+        TypedIntoHandler::from(move |command| {
+            black_box(command);
+            values.set(values.get() + 1);
+        }),
+    );
+
+    let data = DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
+        "EUR/USD.SIM".into(),
+        Some("SIM".into()),
+        None,
+        UUID4::from("00000000-0000-4000-8000-000000000001"),
+        1.into(),
+        None,
+        None,
+    )));
+
+    let trading = TradingCommandMessage::new(
+        MessagingSwitchboard::exec_engine_execute(),
+        TradingCommand::QueryAccount(QueryAccount::new(
+            "BENCH-001".into(),
+            None,
+            "SIM-001".into(),
+            UUID4::from("00000000-0000-4000-8000-000000000002"),
+            2.into(),
+            None,
+            None,
+        )),
+    );
+    bench_channel_transport(
+        c,
+        "live_data_commands",
+        || data.clone(),
+        |command| msgbus::send_data_command(MessagingSwitchboard::data_engine_execute(), command),
+        AsyncRunner::handle_data_command,
+        command_send,
+        &received,
+    );
+    bench_channel_transport(
+        c,
+        "live_trading_commands",
+        || TradingCommandMessage::new(trading.endpoint(), trading.command().clone()),
+        |message| {
+            let mut messages = vec![message];
+            while let Some(message) = messages.pop() {
+                messages.extend(message.dispatch().into_iter().rev());
+            }
+        },
+        AsyncRunner::handle_trading_command,
+        command_send,
+        &received,
+    );
+}
+
+fn bench_event_channels(c: &mut Criterion) {
+    let received = Rc::new(std::cell::Cell::new(0usize));
+    let observed = received.clone();
+    msgbus::register_data_endpoint(
+        MessagingSwitchboard::data_engine_process_data(),
+        TypedIntoHandler::from(move |event| {
+            black_box(event);
+            observed.set(observed.get() + 1);
+        }),
+    );
+
+    let observed = received.clone();
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::exec_engine_process(),
+        TypedIntoHandler::from(move |event| {
+            black_box(event);
+            observed.set(observed.get() + 1);
+        }),
+    );
+
+    bench_channel_transport(
+        c,
+        "live_data_events",
+        || DataEvent::Data(Data::Quote(create_test_quote())),
+        AsyncRunner::handle_data_event,
+        AsyncRunner::dispatch_data_event,
+        event_send,
+        &received,
+    );
+    bench_channel_transport(
+        c,
+        "live_exec_events",
+        || ExecutionEvent::Order(OrderEventAny::Initialized(OrderInitialized::default())),
+        AsyncRunner::handle_exec_event,
+        AsyncRunner::dispatch_exec_event,
+        event_send,
+        &received,
+    );
+}
+
+fn command_send<T: std::fmt::Debug>(
+    sender: tokio::sync::mpsc::UnboundedSender<DispatchMessage<T>>,
+    owner: std::thread::ThreadId,
+) -> impl Fn(T) {
+    move |command| sender.send(DispatchMessage::new(command, owner)).unwrap()
+}
+
+fn event_send<T: std::fmt::Debug>(
+    sender: tokio::sync::mpsc::UnboundedSender<DispatchMessage<T>>,
+    _owner: std::thread::ThreadId,
+) -> impl Fn(T) {
+    let sender = EventSender::new(sender);
+    move |event| sender.send(event).unwrap()
+}
+
+fn bench_channel_transport<T: std::fmt::Debug + 'static, S: Fn(T) + 'static>(
+    c: &mut Criterion,
+    name: &str,
+    make_message: impl Fn() -> T,
+    raw_dispatch: impl Fn(T),
+    dispatch: impl Fn(DispatchMessage<T>),
+    make_send: impl Fn(
+        tokio::sync::mpsc::UnboundedSender<DispatchMessage<T>>,
+        std::thread::ThreadId,
+    ) -> S,
+    received: &std::cell::Cell<usize>,
+) {
+    let mut group = c.benchmark_group(name);
+    let owner = std::thread::current().id();
+
+    for rooted in [false, true] {
+        for tracked in [false, true] {
+            let inputs = Rc::new(RefCell::new(Vec::new()));
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let (raw_tx, mut raw_rx) = tokio::sync::mpsc::unbounded_channel();
+            let pending = inputs.clone();
+            let tracked_send = make_send(tx, owner);
+
+            let send = move || {
+                for message in pending.borrow_mut().drain(..) {
+                    if tracked {
+                        tracked_send(message);
+                    } else {
+                        raw_tx.send(message).unwrap();
+                    }
+                }
+            };
+
+            let send = Rc::new(send);
+            let publish = send.clone();
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_execute(),
+                TypedIntoHandler::from(move |_| publish()),
+            );
+
+            let trigger = TradingCommandMessage::new(
+                MessagingSwitchboard::risk_engine_execute(),
+                TradingCommand::QueryAccount(QueryAccount::new(
+                    "BENCH-001".into(),
+                    None,
+                    "SIM-001".into(),
+                    UUID4::from("00000000-0000-4000-8000-000000000003"),
+                    3.into(),
+                    None,
+                    None,
+                )),
+            );
+
+            for count in [1, 64] {
+                group.throughput(Throughput::Elements(count as u64));
+                group.bench_function(
+                    format!(
+                        "{}/{}/{count}",
+                        if rooted { "shared_root" } else { "independent" },
+                        if tracked { "tracked" } else { "plain" }
+                    ),
+                    |b| {
+                        let setup = || {
+                            inputs
+                                .borrow_mut()
+                                .extend(std::iter::repeat_with(&make_message).take(count));
+                            Some(TradingCommandMessage::new(
+                                trigger.endpoint(),
+                                trigger.command().clone(),
+                            ))
+                        };
+
+                        let mut run = |trigger: &mut Option<TradingCommandMessage>| {
+                            if rooted {
+                                SyncTradingCommandSender.execute(trigger.take().unwrap());
+                                drain_trading_cmd_queue();
+                            } else {
+                                send();
+                            }
+
+                            if tracked {
+                                while let Ok(message) = rx.try_recv() {
+                                    dispatch(message);
+                                }
+                            } else {
+                                while let Ok(message) = raw_rx.try_recv() {
+                                    raw_dispatch(message);
+                                }
+                            }
+                        };
+
+                        let before = received.get();
+                        run(&mut setup());
+                        assert_eq!(received.get() - before, count);
+                        b.iter_batched_ref(setup, run, BatchSize::PerIteration);
+                    },
+                );
+            }
+        }
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
+    bench_command_channels,
+    bench_event_channels,
     bench_channel_operations,
     bench_runner_components,
     bench_event_creation,

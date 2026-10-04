@@ -15,7 +15,11 @@
 
 use crate::types::quantity::{Quantity, QuantityRaw};
 
-// TODO: Document panic
+/// Creates a new [`Quantity`] instance for FFI.
+///
+/// # Panics
+///
+/// Panics if a correctness check fails. See [`Quantity::new`] for more details.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {

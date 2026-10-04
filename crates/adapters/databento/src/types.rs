@@ -344,3 +344,20 @@ impl CustomDataTrait for DatabentoStatistics {
         Ok(Arc::new(parsed))
     }
 }
+
+/// Registers Databento custom data types.
+///
+/// Safe to call multiple times (idempotent via internal `Once` guards).
+pub fn register_databento_custom_data() {
+    #[cfg(feature = "arrow")]
+    {
+        nautilus_serialization::ensure_custom_data_registered::<DatabentoImbalance>();
+        nautilus_serialization::ensure_custom_data_registered::<DatabentoStatistics>();
+    }
+
+    #[cfg(not(feature = "arrow"))]
+    {
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<DatabentoImbalance>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<DatabentoStatistics>();
+    }
+}

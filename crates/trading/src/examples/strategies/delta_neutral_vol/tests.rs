@@ -18,7 +18,7 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{
     actor::DataActor,
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     timer::TimeEvent,
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -109,7 +109,7 @@ fn hedge_swap_integer_sized() -> CryptoPerpetual {
 
 fn register_strategy(strategy: &mut DeltaNeutralVol) {
     let trader_id = TraderId::from("TESTER-001");
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
         clock.clone(),

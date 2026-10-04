@@ -1089,7 +1089,8 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// # Errors
     ///
-    /// Returns an error if order modification fails.
+    /// Returns an error if all supplied values are absent or unchanged, or if
+    /// order modification fails.
     fn modify_order(
         &mut self,
         order: &mut OrderAny,
@@ -1106,12 +1107,11 @@ pub trait ExecutionAlgorithm: DataActor {
         let trigger_changing = trigger_price.is_some() && trigger_price != order.trigger_price();
 
         if !qty_changing && !price_changing && !trigger_changing {
-            log::error!(
+            anyhow::bail!(
                 "Cannot create command ModifyOrder: \
                 quantity, price, and trigger were either None \
                 or the same as existing values"
             );
-            return Ok(());
         }
 
         if order.is_closed() || order.is_pending_cancel() {
@@ -1911,7 +1911,7 @@ mod tests {
     use nautilus_common::{
         actor::DataActor,
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         component::Component,
         enums::ComponentTrigger,
         msgbus::{
@@ -2032,7 +2032,7 @@ mod tests {
 
     fn register_algorithm(algo: &mut TestAlgorithm) {
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         algo.core.register(trader_id, clock, cache).unwrap();
@@ -3770,7 +3770,7 @@ mod tests {
         algo.core
             .register(
                 TraderId::from("TRADER-001"),
-                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(VirtualClock::new())),
                 Rc::new(RefCell::new(Cache::default())),
             )
             .unwrap();

@@ -212,7 +212,7 @@ impl SubscribeBookDeltas {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")
 )]
-pub struct SubscribeBookDepth10 {
+pub struct SubscribeBookDepth {
     pub instrument_id: InstrumentId,
     pub book_type: BookType,
     pub client_id: Option<ClientId>,
@@ -225,8 +225,8 @@ pub struct SubscribeBookDepth10 {
     pub params: Option<Params>,
 }
 
-impl SubscribeBookDepth10 {
-    /// Creates a new [`SubscribeBookDepth10`] instance.
+impl SubscribeBookDepth {
+    /// Creates a new [`SubscribeBookDepth`] instance.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

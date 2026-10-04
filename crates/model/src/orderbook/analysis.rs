@@ -26,7 +26,7 @@ use crate::{
     orderbook::BookIntegrityError,
     types::{
         Price, Quantity,
-        fixed::{FIXED_SCALAR, check_fixed_precision},
+        fixed::{check_fixed_precision, raw_scale},
         quantity::QuantityRaw,
     },
 };
@@ -220,10 +220,15 @@ pub fn get_avg_px_qty_for_exposure(
     if cumulative_size_raw == 0 {
         (0.0, 0.0, final_price)
     } else {
+        // Native DeFi sizes store raw values above the fixed scale
+        let size_precision = levels
+            .values()
+            .find_map(BookLevel::first)
+            .map_or(0, |order| order.size.precision);
         let avg_price = cumulative_exposure / cumulative_size_raw as f64;
         (
             avg_price,
-            cumulative_size_raw as f64 / FIXED_SCALAR,
+            cumulative_size_raw as f64 / raw_scale(size_precision) as f64,
             final_price,
         )
     }

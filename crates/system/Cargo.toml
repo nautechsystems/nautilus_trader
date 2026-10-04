@@ -21,7 +21,12 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
+defi = [
+  "nautilus-common/defi",
+  "nautilus-data/defi",
+  "nautilus-model/defi",
+  "nautilus-persistence?/defi",
+]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
 python = [
@@ -33,7 +38,7 @@ python = [
   "pyo3-stub-gen",
   "streaming",
 ]
-streaming = ["dep:jiff", "nautilus-data/streaming", "nautilus-persistence"]
+streaming = ["nautilus-data/streaming", "nautilus-persistence"]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.cargo-machete]
@@ -70,7 +75,6 @@ serde_json = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }
 
-jiff = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 

@@ -18,11 +18,17 @@
 use std::{
     cell::RefCell,
     fmt::{Display, Write as _},
+    io::{self, Write as _},
     sync::{
         OnceLock,
         atomic::{AtomicBool, Ordering},
         mpsc::SendError,
     },
+};
+#[cfg(not(all(feature = "simulation", madsim)))]
+use std::{
+    sync::mpsc::{RecvTimeoutError, TryRecvError},
+    time::{Duration, Instant},
 };
 
 use ahash::AHashMap;
@@ -54,6 +60,15 @@ use crate::{
 
 #[cfg(not(all(feature = "simulation", madsim)))]
 const LOGGING: &str = "logging";
+
+// Bounds how long lines sit in the file buffer before reaching the OS (flush only, no fsync)
+#[cfg(not(all(feature = "simulation", madsim)))]
+const FILE_FLUSH_INTERVAL: Duration = Duration::from_millis(100);
+
+// Queued events between flush deadline checks, amortizing the clock read under a backlog
+#[cfg(not(all(feature = "simulation", madsim)))]
+const FILE_FLUSH_CHECK_EVENTS: u32 = 256;
+
 const KV_COLOR: &str = "color";
 const KV_COMPONENT: &str = "component";
 const LOG_FIELDS_INLINE_CAP: usize = 0;
@@ -841,7 +856,7 @@ impl Log for Logger {
         }
 
         if let Err(e) = self.tx.send(LogEvent::Flush) {
-            eprintln!("Error sending flush log event: {e}");
+            let _ = writeln!(io::stderr(), "Error sending flush log event: {e}");
         }
     }
 }
@@ -880,7 +895,10 @@ impl Logger {
 
     fn send_log_line(&self, line: LogLine) {
         if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
-            eprintln!("Error sending log event (receiver closed): {line}");
+            let _ = writeln!(
+                io::stderr(),
+                "Error sending log event (receiver closed): {line}"
+            );
         }
     }
 
@@ -929,6 +947,21 @@ impl Logger {
             LoggerLifecycle::Uninitialized => {}
         }
 
+        // Open the log file before spawning the thread so an unusable path fails init
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        let file_writer_opt = if config.fileout_level == LevelFilter::Off {
+            None
+        } else {
+            Some(FileWriter::new(
+                trader_id.to_string(),
+                instance_id.to_string(),
+                file_config.clone(),
+                config.fileout_level,
+                config.clear_log_file,
+                config.fileout_sync_on_flush,
+            )?)
+        };
+
         let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
         let filter_policy = FilterPolicy::from_config(&config);
 
@@ -937,15 +970,8 @@ impl Logger {
             .name(LOGGING.to_string())
             .spawn({
                 let config = config.clone();
-                let file_config = file_config.clone();
                 move || {
-                    Self::handle_messages(
-                        trader_id.to_string(),
-                        instance_id.to_string(),
-                        config,
-                        file_config,
-                        rx,
-                    );
+                    Self::handle_messages(trader_id.to_string(), config, file_writer_opt, rx);
                 }
             })?;
 
@@ -1039,14 +1065,13 @@ impl Logger {
     #[expect(clippy::needless_pass_by_value)]
     fn handle_messages(
         trader_id: String,
-        instance_id: String,
         config: LoggerConfig,
-        file_config: FileWriterConfig,
+        mut file_writer_opt: Option<FileWriter>,
         rx: std::sync::mpsc::Receiver<LogEvent>,
     ) {
         let LoggerConfig {
             stdout_level,
-            fileout_level,
+            fileout_level: _,
             component_level: _,
             module_level: _,
             log_components_only: _,
@@ -1055,8 +1080,8 @@ impl Logger {
             use_tracing: _,
             bypass_logging: _,
             file_config: _,
-            clear_log_file,
-            fileout_sync_on_flush,
+            clear_log_file: _,
+            fileout_sync_on_flush: _,
             buffered_stdout,
         } = config;
 
@@ -1065,20 +1090,6 @@ impl Logger {
         // Set up std I/O buffers
         let mut stdout_writer = StdoutWriter::new(stdout_level, is_colored, buffered_stdout);
         let mut stderr_writer = StderrWriter::new(is_colored);
-
-        // Conditionally create file writer based on fileout_level
-        let mut file_writer_opt = if fileout_level == LevelFilter::Off {
-            None
-        } else {
-            FileWriter::new(
-                trader_id,
-                instance_id,
-                file_config,
-                fileout_level,
-                clear_log_file,
-                fileout_sync_on_flush,
-            )
-        };
 
         let process_event = |event: LogEvent,
                              stdout_writer: &mut StdoutWriter,
@@ -1140,8 +1151,22 @@ impl Logger {
             }
         };
 
+        let mut file_flush_due = Instant::now() + FILE_FLUSH_INTERVAL; // dst-ok
+        let mut queued_since_check = 0;
+
         // Continue to receive and handle log events until channel is hung up
-        while let Ok(event) = rx.recv() {
+        loop {
+            let event = match Self::recv_event(
+                &rx,
+                &mut file_writer_opt,
+                &mut file_flush_due,
+                &mut queued_since_check,
+            ) {
+                Ok(event) => event,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
+
             match event {
                 LogEvent::Log(_) | LogEvent::Flush | LogEvent::Sync(_) => process_event(
                     event,
@@ -1183,6 +1208,53 @@ impl Logger {
                     break;
                 }
             }
+        }
+    }
+
+    // Checks the flush deadline once per batch of queued events or when the queue is empty, so
+    // console-only traffic cannot starve the file flush and a busy thread avoids per-event clock reads
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    fn recv_event(
+        rx: &std::sync::mpsc::Receiver<LogEvent>,
+        file_writer_opt: &mut Option<FileWriter>,
+        file_flush_due: &mut Instant,
+        queued_since_check: &mut u32,
+    ) -> Result<LogEvent, RecvTimeoutError> {
+        let queued = match rx.try_recv() {
+            Ok(event) => Some(event),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => return Err(RecvTimeoutError::Disconnected),
+        };
+
+        let Some(file_writer) = file_writer_opt else {
+            return match queued {
+                Some(event) => Ok(event),
+                None => rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            };
+        };
+
+        let queued = match queued {
+            Some(event) if *queued_since_check + 1 < FILE_FLUSH_CHECK_EVENTS => {
+                *queued_since_check += 1;
+                return Ok(event);
+            }
+            queued => queued,
+        };
+
+        *queued_since_check = 0;
+        let now = Instant::now(); // dst-ok
+
+        if now >= *file_flush_due {
+            if let Err(e) = file_writer.flush_buffer() {
+                let _ = writeln!(io::stderr(), "Error flushing log file: {e:?}");
+            }
+
+            *file_flush_due = now + FILE_FLUSH_INTERVAL;
+        }
+
+        match queued {
+            Some(event) => Ok(event),
+            None => rx.recv_timeout(file_flush_due.saturating_duration_since(now)),
         }
     }
 }
@@ -1454,7 +1526,10 @@ impl Drop for LogGuard {
         #[cfg(not(all(feature = "simulation", madsim)))]
         if previous_count == 1 {
             if let Err(e) = sync_sender_to_disk(&self.tx) {
-                eprintln!("Error syncing logs after dropping the last LogGuard: {e}");
+                let _ = writeln!(
+                    io::stderr(),
+                    "Error syncing logs after dropping the last LogGuard: {e}"
+                );
             }
         } else {
             // Other LogGuards are still active, just flush our logs
@@ -2291,6 +2366,160 @@ mod tests {
         }
 
         #[rstest]
+        fn test_logging_to_file_flushes_without_sync() {
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-FLUSH"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("Failed to initialize logger");
+
+            log::info!(component = "RiskEngine"; "flushed on interval");
+
+            // No sync or guard drop: the line must reach the file through the interval flush
+            wait_until(
+                || {
+                    std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .filter(|entry| entry.path().is_file())
+                        .any(|entry| {
+                            std::fs::read_to_string(entry.path())
+                                .is_ok_and(|contents| contents.contains("flushed on interval"))
+                        })
+                },
+                Duration::from_secs(3),
+            );
+
+            drop(log_guard);
+        }
+
+        #[rstest]
+        fn test_init_returns_error_when_log_directory_is_unusable() {
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let blocking_file = temp_dir.path().join("not_a_directory");
+            std::fs::write(&blocking_file, "").expect("Failed to create blocking file");
+
+            let error = Logger::init_with_config(
+                TraderId::from("TRADER-FAIL"),
+                UUID4::new(),
+                config.clone(),
+                FileWriterConfig {
+                    directory: Some(blocking_file.to_str().unwrap().to_string()),
+                    ..Default::default()
+                },
+            )
+            .expect_err("init must fail when the log directory cannot be created");
+
+            assert_eq!(
+                error.to_string(),
+                format!("failed to create log directory {}", blocking_file.display())
+            );
+            assert!(!logging_is_initialized());
+
+            // A failed init leaves the lifecycle open for a corrected retry
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-FAIL"),
+                UUID4::new(),
+                config,
+                FileWriterConfig {
+                    directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                    ..Default::default()
+                },
+            )
+            .expect("init with a usable directory must succeed after a failed attempt");
+
+            assert!(logging_is_initialized());
+
+            drop(log_guard);
+        }
+
+        #[rstest]
+        fn test_recv_event_flushes_file_after_a_batch_of_queued_events() {
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+            let file_writer = FileWriter::new(
+                "TRADER-001".to_string(),
+                "instance-123".to_string(),
+                file_config,
+                LevelFilter::Info,
+                false,
+                false,
+            )
+            .expect("Failed to create file writer");
+            let mut file_writer_opt = Some(file_writer);
+            let (tx, rx) = std::sync::mpsc::channel();
+
+            // Console-only traffic: queued events that never fill the file buffer
+            for _ in 0..=FILE_FLUSH_CHECK_EVENTS {
+                tx.send(LogEvent::Flush).unwrap();
+            }
+            file_writer_opt
+                .as_mut()
+                .unwrap()
+                .write("pending file line\n");
+            let mut file_flush_due = Instant::now();
+            let mut queued_since_check = 0;
+            let log_contents = || {
+                let entry = std::fs::read_dir(&temp_dir)
+                    .unwrap()
+                    .next()
+                    .unwrap()
+                    .unwrap();
+                std::fs::read_to_string(entry.path()).unwrap()
+            };
+
+            for _ in 1..FILE_FLUSH_CHECK_EVENTS {
+                Logger::recv_event(
+                    &rx,
+                    &mut file_writer_opt,
+                    &mut file_flush_due,
+                    &mut queued_since_check,
+                )
+                .unwrap();
+            }
+            let contents_before_check = log_contents();
+            Logger::recv_event(
+                &rx,
+                &mut file_writer_opt,
+                &mut file_flush_due,
+                &mut queued_since_check,
+            )
+            .unwrap();
+
+            assert_eq!(contents_before_check, "");
+            assert_eq!(log_contents(), "pending file line\n");
+            assert_eq!(queued_since_check, 0);
+            assert!(
+                rx.try_recv().is_ok(),
+                "the flush must happen while events are still queued"
+            );
+        }
+
+        #[rstest]
         fn test_last_guard_drop_syncs_backlog_tail() {
             const N: usize = 1000;
 
@@ -2996,6 +3225,84 @@ mod tests {
                 error.to_string(),
                 "Logging has been shut down and cannot be re-initialized"
             );
+        }
+
+        #[cfg(unix)]
+        #[rstest]
+        fn test_logging_survives_closed_stderr_pipe() {
+            use std::{process::Stdio, time::Duration};
+
+            use crate::testing::wait_until;
+
+            const MARKER: &str = "closed-stderr";
+
+            if !in_lifecycle_child(MARKER) {
+                // Close the read end of the child's stderr pipe so its ERROR writes fail with EPIPE
+                let mut child =
+                    Command::new(std::env::current_exe().expect("test executable must exist"))
+                        .arg("test_logging_survives_closed_stderr_pipe")
+                        .arg("--nocapture")
+                        .arg("--test-threads=1")
+                        .env(LIFECYCLE_CHILD_ENV, MARKER)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                        .expect("lifecycle child process must start");
+                drop(child.stderr.take());
+                let output = child
+                    .wait_with_output()
+                    .expect("lifecycle child process must finish");
+
+                assert!(
+                    output.status.success(),
+                    "lifecycle child failed with {}\nstdout:\n{}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout),
+                );
+                return;
+            }
+
+            wait_until(
+                || io::stderr().write_all(b"\n").is_err(),
+                Duration::from_secs(5),
+            );
+
+            let temp_dir = tempdir().expect("temporary directory must be created");
+
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
+
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let guard = Logger::init_with_config(
+                TraderId::from("TRADER-STDERR"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("initialization must succeed");
+            log::error!(component = "StderrTest"; "error with closed stderr");
+            log::info!(component = "StderrTest"; "info after stderr failure");
+            logging_sync_to_disk().expect("logging thread must survive a closed stderr");
+
+            let log_path = std::fs::read_dir(&temp_dir)
+                .expect("log directory must be readable")
+                .filter_map(Result::ok)
+                .find(|entry| entry.path().is_file())
+                .expect("logger must create a log file")
+                .path();
+            let contents = std::fs::read_to_string(log_path).expect("log file must be readable");
+            assert!(contents.contains("error with closed stderr"));
+            assert!(contents.contains("info after stderr failure"));
+
+            drop(guard);
+            logging_shutdown();
         }
     }
 

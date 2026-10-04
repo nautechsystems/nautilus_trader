@@ -15,9 +15,9 @@
 
 //! Deterministic two-way encoder for Binance Link broker ID prefixing.
 //!
-//! The Binance broker ID is automatically prefixed to all system-generated
-//! client order IDs for every order placed through the Binance adapter. This
-//! prefixing is transparent to strategies and requires no user configuration.
+//! The Binance broker ID is automatically prefixed to supported system-generated
+//! client order IDs placed through the Binance adapter. Prefixing is transparent
+//! to strategies and requires no user configuration.
 //! Inbound order events are decoded back to the original `ClientOrderId`
 //! before reaching the trading system.
 //!
@@ -30,18 +30,19 @@
 //! chars) exceed the 36-char limit when combined with the broker prefix. This
 //! module provides compact, deterministic, two-way encoding via pure functions.
 //!
-//! [Link and Trade]: https://developers.binance.com/docs/binance_link/link-and-trade
+//! [Link and Trade]: https://www.binance.com/en/support/faq/detail/a78a065d0c4846aaa1af474d8e712ab9
 //!
 //! # Wire format
 //!
 //! ```text
-//! x-TD67BGP9-{signal}{base62_payload}
-//! |-- prefix -||- encoded component -|
+//! Legacy:    x-TD67BGP9-{signal}{base62_payload}
+//! Short tag: x-TD67BGP9A{base62_payload}
 //! ```
 //!
 //! The prefix `x-{BROKER_ID}-` is 11 chars (for an 8-char broker ID), leaving
 //! 25 chars for the encoded component. Spot and Futures use separate broker
-//! IDs defined in [`consts`](super::consts).
+//! IDs defined in [`consts`](super::consts). The supplementary `A` format omits
+//! the separator after the broker ID and occupies 24 characters in total.
 //!
 //! # Signal chars
 //!
@@ -55,6 +56,7 @@
 //! | `U`    | UUID with hyphens          | 22 base62      | 34    |
 //! | `u`    | UUID without hyphens       | 22 base62      | 34    |
 //! | `R`    | Raw passthrough            | variable       | <= 36 |
+//! | `A`    | O-format with a short tag  | 13 base62      | 24    |
 //!
 //! # O-format packing (72 bits -> 13 base62 chars)
 //!
@@ -68,41 +70,71 @@
 //! bits [19:0]  (20 bits): count (0-1048575)
 //! ```
 //!
+//! # Short-tag O-format packing (77 bits -> 13 base62 chars)
+//!
+//! The `A` format preserves hyphenated factory IDs such as
+//! `O-20260922-160119-V2-000-8`. One tag contains one or two ASCII alphanumeric
+//! characters; the other is a canonical numeric tag in `[0, 1023]`, padded to
+//! at least three digits. The count is in `[0, 4194303]` without leading zeros.
+//! Timestamps cover `[2020-01-01 00:00:00, 2156-02-07 06:28:15]` UTC.
+//!
+//! ```text
+//! bits [76:45] (32 bits): seconds since 2020-01-01 epoch
+//! bit  [44]    (1 bit):  short tag is the strategy tag
+//! bits [43:32] (12 bits): one/two-character base62 tag, with length
+//! bits [31:22] (10 bits): numeric tag
+//! bits [21:0]  (22 bits): count
+//! ```
+//!
+//! Exact reconstruction preserves tag spelling and rejects normalized dates.
+//! Existing numeric, UUID, and raw encodings take precedence and retain their
+//! wire representation. Historical unprefixed fallback outputs contain at least
+//! 25 characters, so the 24-character supplementary format cannot be mistaken
+//! for any historical encoder output. A custom ID resembling this format is
+//! short enough to use the existing `R` wrapper.
+//!
+//! IDs outside the supported compact formats and raw prefix budget are sent
+//! unchanged with a warning; Binance's length and character limits still apply.
+//!
 //! # UUID packing (128 bits -> 22 base62 chars)
 //!
 //! The UUID is parsed from hex into a 128-bit integer and base62-encoded.
 //!
 //! # Decoding
 //!
-//! If the encoded string starts with the broker prefix, the decoder strips
-//! it, reads the signal char, and reconstructs the original `ClientOrderId`.
-//! Strings without the prefix are returned as-is for backward compatibility
-//! with orders placed before broker ID support.
+//! The decoder recognizes the 24-character `x-{BROKER_ID}A` format first,
+//! then the legacy `x-{BROKER_ID}-` signal formats. Other strings pass through
+//! unchanged, including historical unprefixed IDs. This keeps a longer custom
+//! ID starting with `x-{BROKER_ID}A` distinct from the short-tag format.
+//!
+//! Existing-order operations without a venue order ID query both supplementary
+//! and historical unprefixed identities. Different matching venue IDs are
+//! rejected as ambiguous before modification or cancellation.
 //!
 //! # Performance
 //!
-//! Encoding adds sub-microsecond overhead per order operation, negligible
-//! compared to network round-trip latency (typically 1-10 ms). Measured on
-//! AMD Ryzen 9 7950X (release build, 100k iterations):
+//! Base62 encoding uses a stack buffer and ten-digit chunks to limit wide
+//! integer division. Prefix construction writes directly into the result string.
+//! The `bench_encode_decode_timing` test provides a local timing check.
+//! Existing-order compatibility resolution may add two HTTP lookups.
 //!
-//! | Operation          | ns/op |
-//! |--------------------|-------|
-//! | encode O-format    |  ~70  |
-//! | decode O-format    | ~178  |
-//! | encode UUID        | ~208  |
-//! | decode UUID        |  ~46  |
-//! | encode raw         |  ~14  |
-//! | decode raw         |  ~14  |
-//! | decode passthrough |  ~13  |
+//! An isolated codec comparison compiled with `opt-level=3` measures the following
+//! median nanoseconds per operation over 25 interleaved batches of 100,000 calls.
+//! Timings are machine-dependent and exclude HTTP requests.
 //!
-//! Uses stack-allocated base62 output, manual civil time arithmetic, and
-//! direct byte-level hex/digit parsing to avoid heap allocations
-//! on the hot path.
+//! | Format                   | Encode before | Encode after | Decode before | Decode after |
+//! | ------------------------ | ------------- | ------------ | ------------- | ------------ |
+//! | O-format with hyphens    | 102           | 44           | 201           | 124          |
+//! | O-format without hyphens | 99            | 41           | 192           | 116          |
+//! | UUID with hyphens        | 243           | 60           | 72            | 47           |
+//! | UUID without hyphens     | 240           | 57           | 67            | 43           |
+//! | Raw prefixed ID          | 34            | 16           | 39            | 21           |
+//! | Short-tag O-format       | N/A           | 174          | N/A           | 117          |
 //!
-//! Note: `cargo bench` cannot currently run in this workspace due to a
-//! cdylib output filename collision (see <https://github.com/rust-lang/cargo/issues/6313>).
-//! Use `cargo test --release -p nautilus-binance --lib -- bench_encode_decode_timing --nocapture`
-//! to reproduce these numbers.
+//! Short-tag IDs previously used unprefixed passthrough (37 ns encode, 38 ns decode),
+//! which performs no compression and is not equivalent to short-tag encoding.
+
+use std::fmt::Write;
 
 use anyhow::Context;
 use nautilus_model::identifiers::ClientOrderId;
@@ -139,12 +171,10 @@ const SIGNAL_O_NO_HYPHENS: u8 = b't';
 const SIGNAL_UUID_HYPHENS: u8 = b'U';
 const SIGNAL_UUID_NO_HYPHENS: u8 = b'u';
 const SIGNAL_RAW: u8 = b'R';
-
-/// Formats a broker prefix string from a broker ID: `x-{broker_id}-`.
-#[must_use]
-fn broker_prefix(broker_id: &str) -> String {
-    format!("x-{broker_id}-")
-}
+const SIGNAL_O_TAGS: u8 = b'A';
+const O_TAGS_B62_LEN: usize = 13;
+const O_TAGS_COUNT_BITS: u32 = 22;
+const O_TAGS_COUNT_MAX: u32 = (1 << O_TAGS_COUNT_BITS) - 1;
 
 /// Encodes a `ClientOrderId` into a Binance-compatible string with broker ID
 /// prefix.
@@ -153,8 +183,7 @@ fn broker_prefix(broker_id: &str) -> String {
 #[must_use]
 pub fn encode_broker_id(client_order_id: &ClientOrderId, broker_id: &str) -> String {
     let id_str = client_order_id.as_str();
-    let prefix = broker_prefix(broker_id);
-    let budget = MAX_CLIENT_ORDER_ID_LEN - prefix.len();
+    let budget = MAX_CLIENT_ORDER_ID_LEN - (3 + broker_id.len());
 
     if let Some((packed, has_hyphens)) = pack_o_format(id_str) {
         let signal = if has_hyphens {
@@ -163,7 +192,7 @@ pub fn encode_broker_id(client_order_id: &ClientOrderId, broker_id: &str) -> Str
             SIGNAL_O_NO_HYPHENS
         };
         let b62 = encode_base62::<O_FORMAT_B62_LEN>(packed);
-        return build_encoded(&prefix, signal, &b62);
+        return build_encoded(broker_id, signal, &b62);
     }
 
     if let Some((value, has_hyphens)) = parse_uuid_hex(id_str) {
@@ -173,15 +202,22 @@ pub fn encode_broker_id(client_order_id: &ClientOrderId, broker_id: &str) -> Str
             SIGNAL_UUID_NO_HYPHENS
         };
         let b62 = encode_base62::<UUID_B62_LEN>(value);
-        return build_encoded(&prefix, signal, &b62);
+        return build_encoded(broker_id, signal, &b62);
     }
 
     if id_str.len() < budget {
-        let mut result = String::with_capacity(prefix.len() + 1 + id_str.len());
-        result.push_str(&prefix);
-        result.push(SIGNAL_RAW as char);
-        result.push_str(id_str);
-        return result;
+        return build_encoded(broker_id, SIGNAL_RAW, id_str.as_bytes());
+    }
+
+    // Keep the new format shorter than any historical passthrough ID
+    if 3 + broker_id.len() + O_TAGS_B62_LEN < budget
+        && let Some(packed) = pack_o_tags(id_str)
+    {
+        return build_encoded(
+            broker_id,
+            SIGNAL_O_TAGS,
+            &encode_base62::<O_TAGS_B62_LEN>(packed),
+        );
     }
 
     log::warn!(
@@ -226,8 +262,17 @@ pub(crate) fn decode_client_order_id(
 }
 
 fn decode_broker_id_checked(encoded: &str, broker_id: &str) -> anyhow::Result<String> {
-    let prefix = broker_prefix(broker_id);
-    let Some(payload) = encoded.strip_prefix(&prefix) else {
+    if let Some(data) = tagged_payload(encoded, broker_id) {
+        let packed =
+            decode_base62(data).context("invalid tagged O-format broker client order ID")?;
+        return unpack_o_tags(packed);
+    }
+
+    let Some(payload) = encoded
+        .strip_prefix("x-")
+        .and_then(|s| s.strip_prefix(broker_id))
+        .and_then(|s| s.strip_prefix('-'))
+    else {
         return Ok(encoded.to_string());
     };
 
@@ -267,20 +312,51 @@ fn decode_broker_id_checked(encoded: &str, broker_id: &str) -> anyhow::Result<St
     }
 }
 
-fn build_encoded(prefix: &str, signal: u8, b62: &[u8]) -> String {
-    let mut result = String::with_capacity(prefix.len() + 1 + b62.len());
-    result.push_str(prefix);
+pub(crate) fn legacy_client_order_id(encoded: &str, broker_id: &str) -> Option<String> {
+    let packed = decode_base62(tagged_payload(encoded, broker_id)?)?;
+    unpack_o_tags(packed).ok()
+}
+
+fn tagged_payload<'a>(encoded: &'a str, broker_id: &str) -> Option<&'a [u8]> {
+    if encoded.len() != 3 + broker_id.len() + O_TAGS_B62_LEN
+        || encoded.len() >= MAX_CLIENT_ORDER_ID_LEN - (3 + broker_id.len())
+    {
+        return None;
+    }
+
+    let payload = encoded.strip_prefix("x-")?.strip_prefix(broker_id)?;
+    let (&signal, data) = payload.as_bytes().split_first()?;
+    (signal == SIGNAL_O_TAGS).then_some(data)
+}
+
+fn build_encoded(broker_id: &str, signal: u8, payload: &[u8]) -> String {
+    let tagged = signal == SIGNAL_O_TAGS;
+    let mut result =
+        String::with_capacity(3 + broker_id.len() + usize::from(!tagged) + payload.len());
+    result.push_str("x-");
+    result.push_str(broker_id);
+
+    if !tagged {
+        result.push('-');
+    }
+
     result.push(signal as char);
-    // base62 output is always valid ASCII
-    result.push_str(std::str::from_utf8(b62).expect("base62 is valid UTF-8"));
+    result.push_str(std::str::from_utf8(payload).expect("encoded ID is valid UTF-8"));
     result
 }
 
 fn encode_base62<const N: usize>(mut value: u128) -> [u8; N] {
+    const DIGITS: usize = 10;
+    const RADIX: u128 = 62u128.pow(DIGITS as u32);
     let mut buf = [b'0'; N];
-    for i in (0..N).rev() {
-        buf[i] = BASE62_CHARS[(value % 62) as usize];
-        value /= 62;
+    for chunk in buf.rchunks_mut(DIGITS) {
+        let mut part = (value % RADIX) as u64;
+        value /= RADIX;
+
+        for byte in chunk.iter_mut().rev() {
+            *byte = BASE62_CHARS[(part % 62) as usize];
+            part /= 62;
+        }
     }
     buf
 }
@@ -391,15 +467,145 @@ fn unpack_o_format(packed: u128, has_hyphens: bool) -> String {
         return format!("DECODE_ERROR_{packed}");
     };
 
+    let mut result = String::with_capacity(MAX_CLIENT_ORDER_ID_LEN);
+
     if has_hyphens {
-        format!(
-            "O-{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}-{trader:03}-{strategy:03}-{count}",
-        )
+        write!(result, "O-{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}-{trader:03}-{strategy:03}-{count}")
+            .expect("writing to String should not fail");
     } else {
-        format!(
-            "O{year:04}{month:02}{day:02}{hour:02}{minute:02}{second:02}{trader:03}{strategy:03}{count}",
-        )
+        write!(result, "O{year:04}{month:02}{day:02}{hour:02}{minute:02}{second:02}{trader:03}{strategy:03}{count}")
+            .expect("writing to String should not fail");
     }
+
+    result
+}
+
+fn pack_o_tags(id: &str) -> Option<u128> {
+    let mut parts = id.split('-');
+    if parts.next()? != "O" {
+        return None;
+    }
+
+    let date = parts.next()?.as_bytes();
+    let time = parts.next()?.as_bytes();
+    let trader = parts.next()?;
+    let strategy = parts.next()?;
+    let count = parts.next()?;
+    if parts.next().is_some() || date.len() != 8 || time.len() != 6 {
+        return None;
+    }
+
+    let epoch = civil_to_epoch(
+        parse_digits(&date[..4])?,
+        parse_digits(&date[4..6])?,
+        parse_digits(&date[6..])?,
+        parse_digits(&time[..2])?,
+        parse_digits(&time[2..4])?,
+        parse_digits(&time[4..])?,
+    )?;
+    let seconds = u32::try_from(epoch - O_FORMAT_EPOCH).ok()?;
+    let count = count.parse::<u32>().ok()?;
+    if count > O_TAGS_COUNT_MAX {
+        return None;
+    }
+
+    for swapped in [false, true] {
+        let (tag, numeric) = if swapped {
+            (strategy, trader)
+        } else {
+            (trader, strategy)
+        };
+
+        let Some(tag) = pack_tag(tag) else {
+            continue;
+        };
+
+        let Ok(numeric) = numeric.parse::<u32>() else {
+            continue;
+        };
+
+        if numeric > 1023 {
+            continue;
+        }
+
+        let packed = ((seconds as u128) << 45)
+            | ((swapped as u128) << 44)
+            | ((tag as u128) << 32)
+            | ((numeric as u128) << O_TAGS_COUNT_BITS)
+            | count as u128;
+
+        if unpack_o_tags(packed).ok()?.as_str() == id {
+            return Some(packed);
+        }
+    }
+
+    None
+}
+
+fn unpack_o_tags(packed: u128) -> anyhow::Result<String> {
+    anyhow::ensure!(
+        packed >> 77 == 0,
+        "tagged O-format payload exceeds its bit budget"
+    );
+    let count = (packed & O_TAGS_COUNT_MAX as u128) as u32;
+    let numeric = ((packed >> O_TAGS_COUNT_BITS) & 0x3FF) as u32;
+    let tag = unpack_tag(((packed >> 32) & 0xFFF) as u32)?;
+    let swapped = ((packed >> 44) & 1) != 0;
+    let (year, month, day, hour, minute, second) =
+        epoch_to_civil((packed >> 45) as i64 + O_FORMAT_EPOCH)
+            .context("invalid tagged O-format timestamp")?;
+    let mut result = String::with_capacity(MAX_CLIENT_ORDER_ID_LEN);
+    write!(
+        result,
+        "O-{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}-"
+    )
+    .expect("writing to String should not fail");
+
+    if swapped {
+        write!(result, "{numeric:03}-{tag}-{count}").expect("writing to String should not fail");
+    } else {
+        write!(result, "{tag}-{numeric:03}-{count}").expect("writing to String should not fail");
+    }
+
+    Ok(result)
+}
+
+fn pack_tag(tag: &str) -> Option<u32> {
+    if !(1..=2).contains(&tag.len()) {
+        return None;
+    }
+
+    let mut value = 0;
+
+    for byte in tag.bytes() {
+        let digit = *BASE62_DECODE.get(byte as usize)?;
+        if digit == 0xFF {
+            return None;
+        }
+
+        value = value * 62 + u32::from(digit);
+    }
+
+    match tag.len() {
+        1 => Some(value + 1),
+        2 => Some(value + 63),
+        _ => None,
+    }
+}
+
+fn unpack_tag(value: u32) -> anyhow::Result<String> {
+    anyhow::ensure!((1..=3906).contains(&value), "invalid tagged O-format tag");
+    let mut tag = String::with_capacity(2);
+
+    if value <= 62 {
+        tag.push(BASE62_CHARS[(value - 1) as usize] as char);
+    } else {
+        let value = value - 63;
+        tag.push(BASE62_CHARS[(value / 62) as usize] as char);
+        tag.push(BASE62_CHARS[(value % 62) as usize] as char);
+    }
+
+    Ok(tag)
 }
 
 fn parse_uuid_hex(id_str: &str) -> Option<(u128, bool)> {
@@ -534,6 +740,114 @@ mod tests {
     use super::{super::consts::BINANCE_NAUTILUS_SPOT_BROKER_ID, *};
 
     const TEST_BROKER_ID: &str = BINANCE_NAUTILUS_SPOT_BROKER_ID;
+
+    #[rstest]
+    #[case("O-20260922-160119-V2-000-8")]
+    #[case("O-20260922-200130-V2-001-24")]
+    #[case("O-20260923-000138-V2-001-1")]
+    #[case("O-20260923-000138-V2-001-4194303")]
+    #[case("O-20260923-000138-001-aZ-42")]
+    fn test_tagged_id_preserves_exact_identity(#[case] original: &str) {
+        let id = ClientOrderId::from(original);
+        let encoded = encode_broker_id(&id, TEST_BROKER_ID);
+        assert_eq!(encoded.len(), 24);
+        assert!(encoded.starts_with("x-TD67BGP9A"));
+        assert_eq!(
+            decode_client_order_id(&encoded, TEST_BROKER_ID).unwrap(),
+            id
+        );
+
+        // Historical custom IDs matching this format were R-wrapped
+        let custom = ClientOrderId::from(encoded.as_str());
+        let wrapped = encode_broker_id(&custom, TEST_BROKER_ID);
+        assert_eq!(wrapped, format!("x-TD67BGP9-R{encoded}"));
+        assert_eq!(
+            decode_client_order_id(&wrapped, TEST_BROKER_ID).unwrap(),
+            custom
+        );
+    }
+
+    #[rstest]
+    #[case("O-20260923-000138-V2-001-4194304")]
+    #[case("O-20260923-000138-LONG-001-1")]
+    #[case("O-20260923-000138-V2-001-01")]
+    #[case("O-20260230-000138-V2-001-1")]
+    fn test_unsupported_tagged_id_remains_unchanged(#[case] original: &str) {
+        assert_eq!(
+            encode_broker_id(&ClientOrderId::from(original), TEST_BROKER_ID),
+            original
+        );
+    }
+
+    #[rstest]
+    fn test_historical_raw_id_does_not_enter_short_namespace() {
+        let original = "x-TD67BGP9A00000000000000";
+        assert_eq!(original.len(), 25);
+        assert_eq!(
+            encode_broker_id(&ClientOrderId::from(original), TEST_BROKER_ID),
+            original
+        );
+        assert_eq!(
+            decode_client_order_id(original, TEST_BROKER_ID)
+                .unwrap()
+                .as_str(),
+            original
+        );
+    }
+
+    #[rstest]
+    #[case("O-20260305-120000-001-001-100", "x-TD67BGP9-T047IBdyLevrb2")]
+    #[case("O20260305120000001001100", "x-TD67BGP9-t047IBdyLevrb2")]
+    #[case(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "x-TD67BGP9-U2aUyqjCzEIiEcYMKj7TZtw"
+    )]
+    #[case(
+        "550e8400e29b41d4a716446655440000",
+        "x-TD67BGP9-u2aUyqjCzEIiEcYMKj7TZtw"
+    )]
+    #[case("my-order-123", "x-TD67BGP9-Rmy-order-123")]
+    fn test_historical_wire_vectors(#[case] original: &str, #[case] encoded: &str) {
+        let id = ClientOrderId::from(original);
+        assert_eq!(encode_broker_id(&id, TEST_BROKER_ID), encoded);
+        assert_eq!(decode_client_order_id(encoded, TEST_BROKER_ID).unwrap(), id);
+    }
+
+    #[rstest]
+    fn test_base62_chunked_encoding_matches_digit_reference() {
+        let mut state = 0x1234_5678_90ab_cdef_2345_6789_abcd_ef01u128;
+
+        for value in [0, 1, 61, 62, 62u128.pow(10) - 1, 62u128.pow(10), u128::MAX]
+            .into_iter()
+            .chain((0..10_000).map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state
+            }))
+        {
+            let mut expected = [b'0'; 22];
+            let mut remaining = value;
+
+            for byte in expected.iter_mut().rev() {
+                *byte = BASE62_CHARS[(remaining % 62) as usize];
+                remaining /= 62;
+            }
+
+            assert_eq!(encode_base62::<22>(value), expected);
+            assert_eq!(encode_base62::<13>(value).as_slice(), &expected[9..]);
+            assert_eq!(decode_base62(&expected), Some(value));
+        }
+    }
+
+    #[rstest]
+    #[case("O-20200101-000000-0-000-0")]
+    #[case("O-21560207-062815-zz-1023-4194303")]
+    #[case("O-20260922-160119-000-00-1")]
+    fn test_tagged_packing_boundaries(#[case] original: &str) {
+        let packed = pack_o_tags(original).unwrap();
+        assert_eq!(unpack_o_tags(packed).unwrap(), original);
+    }
 
     #[rstest]
     fn test_base62_roundtrip_zero() {
@@ -774,8 +1088,8 @@ mod tests {
 
     #[rstest]
     fn test_broker_prefix_format() {
-        let prefix = broker_prefix(TEST_BROKER_ID);
-        assert_eq!(prefix, "x-TD67BGP9-");
+        let encoded = encode_broker_id(&ClientOrderId::from("test"), TEST_BROKER_ID);
+        assert_eq!(encoded, "x-TD67BGP9-Rtest");
     }
 
     #[rstest]

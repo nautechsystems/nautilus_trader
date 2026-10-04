@@ -32,8 +32,8 @@ use arc_swap::ArcSwap;
 use futures_util::{FutureExt, Stream, StreamExt, stream::FuturesUnordered};
 use nautilus_common::{enums::LogColor, log_debug};
 use nautilus_core::{
-    AtomicMap, AtomicSet, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt,
-    string::secret::SecretString, time::get_atomic_clock_realtime,
+    AtomicMap, AtomicSet, env::get_or_env_var_opt, string::secret::SecretString,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_model::{
@@ -41,10 +41,9 @@ use nautilus_model::{
     enums::OrderSide,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::USER_AGENT,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -554,9 +553,11 @@ impl DeribitWebSocketClient {
         // the reader routes them away from the message channel and the handler never sees them.
 
         // Configure WebSocket client
+        let headers = create_standard_nautilus_headers();
+
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
+            headers,
             heartbeat_interval_secs: self.heartbeat_interval,
             heartbeat_payload: None, // Deribit uses JSON-RPC heartbeat, not text ping
             connect_timeout_ms: Some(5_000),
@@ -567,11 +568,14 @@ impl DeribitWebSocketClient {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
             proxy_url: self
                 .proxy_url
                 .as_ref()
                 .map(|value| value.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
 
         // Configure rate limits
@@ -1640,12 +1644,9 @@ impl DeribitWebSocketClient {
     /// Returns an error if:
     /// - The client is not authenticated
     /// - The command fails to send
-    #[expect(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
-        order_id: &str,
-        quantity: Quantity,
-        price: Price,
+        params: DeribitEditParams,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -1658,18 +1659,11 @@ impl DeribitWebSocketClient {
             ));
         }
 
-        let params = DeribitEditParams {
-            order_id: order_id.to_string(),
-            amount: quantity.as_decimal(),
-            price: Some(price.as_decimal()),
-            post_only: None,
-            reject_post_only: None,
-            reduce_only: None,
-            trigger_price: None,
-        };
-
         log::debug!(
-            "Sending modify order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
+            "Sending modify order: order_id={}, amount={}, price={:?}, client_order_id={client_order_id}",
+            params.order_id,
+            params.amount,
+            params.price,
         );
 
         self.command_sender()

@@ -82,6 +82,7 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 nautilus-trading = { workspace = true }
 
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 

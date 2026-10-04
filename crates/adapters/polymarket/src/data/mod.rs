@@ -38,12 +38,12 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
             RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData,
+            RequestTrades, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
             SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
             SubscribeInstruments, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
             UnsubscribeCustomData, UnsubscribeInstrument, UnsubscribeInstrumentClose,
@@ -84,6 +84,7 @@ use self::{
     subscriptions::resolve_token_id_from,
 };
 use crate::{
+    book::{BookSequenceOutcome, recovery::start_recovery, sync::BookSyncTracker},
     common::consts::POLYMARKET_VENUE,
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
@@ -123,7 +124,7 @@ pub struct PolymarketDataClient {
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: TaskGroup,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
     token_meta: Arc<DashMap<Ustr, TokenMeta>>,
@@ -138,7 +139,7 @@ pub struct PolymarketDataClient {
     resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
-    pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
+    book_sync: BookSyncTracker,
     new_market_inflight_keys: Arc<DashMap<String, ()>>,
     new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
@@ -179,7 +180,7 @@ impl PolymarketDataClient {
     pub fn new_with_proxy(
         client_id: ClientId,
         mut config: PolymarketDataClientConfig,
-        gamma_client: PolymarketGammaHttpClient,
+        mut gamma_client: PolymarketGammaHttpClient,
         clob_public_client: PolymarketClobPublicClient,
         data_api_client: PolymarketDataApiHttpClient,
         ws_client: PolymarketMarketConnectionPool,
@@ -190,6 +191,7 @@ impl PolymarketDataClient {
         let socket_factory = SocketControlFactory::new(client_id, Some(*POLYMARKET_VENUE));
         let ws_client = ws_client.with_socket_factory(socket_factory.clone());
         let rtds_socket_control = Some(socket_factory.control(RTDS_STREAMS_ENDPOINT));
+        gamma_client.set_clob_client(clob_public_client.clone());
         let provider =
             PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
         let configured_fetch_max_concurrency = config.new_market_fetch_max_concurrency;
@@ -239,7 +241,7 @@ impl PolymarketDataClient {
             resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
             pending_resolutions: Arc::new(DashMap::new()),
             deferred_resolutions: Arc::new(AtomicMap::new()),
-            pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
+            book_sync: BookSyncTracker::default(),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
                 fetch_max_concurrency,
@@ -523,6 +525,59 @@ impl PolymarketDataClient {
             log::debug!("Skipping Polymarket data task after shutdown began: {e}");
         }
     }
+
+    // The venue ignores a duplicate subscribe, so a token another subscription already holds
+    // sends no `book` for this one; a recovery cycle requests it instead.
+    fn sync_book_subscription(&self, instrument_id: InstrumentId) {
+        let Ok(token_id) = self.resolve_token_id(instrument_id) else {
+            return;
+        };
+
+        let spawner = match self.tasks.spawner() {
+            Ok(spawner) => spawner,
+            Err(e) => {
+                log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+                return;
+            }
+        };
+
+        // Read on arrival so a subscription still queued behind the subscription lock does not
+        // look open; its `book` reaches this one.
+        let was_open = self.ws_open_tokens.contains(&Ustr::from(token_id.as_str()));
+        let resolve_ctx = self.resolution_context();
+        let book_sync = self.book_sync.clone();
+        let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+
+        // The sync waits out any subscribe write in flight, so recovery cycles an owned token
+        let future = async move {
+            resolve_ctx
+                .sync_ws_subscription(instrument_id, token_id.clone())
+                .await;
+
+            if was_open
+                && book_sync.request_snapshot_if_subscribed(
+                    &resolve_ctx.active_delta_subs,
+                    instrument_id,
+                    Instant::now(),
+                ) == BookSequenceOutcome::Recover
+            {
+                log::debug!("Requesting a book snapshot for {instrument_id} on an open token");
+                start_recovery(
+                    instrument_id,
+                    Some(token_id),
+                    &resolve_ctx.active_delta_subs,
+                    &book_sync,
+                    &resolve_ctx.ws,
+                    snapshot_timeout,
+                    &spawner,
+                );
+            }
+        };
+
+        if let Err(e) = self.tasks.spawn(future) {
+            log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+        }
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -671,13 +726,13 @@ impl DataClient for PolymarketDataClient {
             return Ok(());
         }
 
-        self.sync_ws_subscription(instrument_id);
+        self.sync_book_subscription(instrument_id);
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, _cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth(&mut self, _cmd: SubscribeBookDepth) -> anyhow::Result<()> {
         anyhow::bail!(
-            "Polymarket does not support OrderBookDepth10 subscriptions; use managed L2_MBP order book deltas"
+            "Polymarket does not support OrderBookDepth subscriptions; use managed L2_MBP order book deltas"
         )
     }
 
@@ -743,8 +798,7 @@ impl DataClient for PolymarketDataClient {
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_delta_subs.remove(&instrument_id);
-        self.pending_snapshot_after_tick_change
-            .remove(&instrument_id);
+        self.book_sync.remove(instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.drop_local_data_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);

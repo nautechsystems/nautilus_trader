@@ -26,6 +26,7 @@ use arrow::{
 use nautilus_model::data::InstrumentClose;
 
 use super::{float64_field, price_to_f64, timestamp_field, unix_nanos_to_i64, utf8_field};
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`InstrumentClose`].
 #[must_use]
@@ -57,8 +58,10 @@ pub fn encode_instrument_closes(data: &[InstrumentClose]) -> Result<RecordBatch,
     let mut instrument_id_builder = StringBuilder::new();
     let mut close_price_builder = Float64Builder::with_capacity(data.len());
     let mut close_type_builder = StringBuilder::new();
-    let mut ts_event_builder = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init_builder = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for close in data {
         instrument_id_builder.append_value(close.instrument_id.to_string());
@@ -120,7 +123,7 @@ mod tests {
         assert_eq!(fields[3].name(), "ts_event");
         assert_eq!(
             fields[3].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[4].name(), "ts_init");
     }

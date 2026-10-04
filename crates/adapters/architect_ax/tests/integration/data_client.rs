@@ -19,7 +19,7 @@
 //! to parsed Nautilus data types. Handler-level tests use the WebSocket stream directly,
 //! while full client tests use the event sender channel.
 
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::atomic::Ordering, time::Duration};
 
 use futures_util::StreamExt;
 use nautilus_architect_ax::{
@@ -38,24 +38,27 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse, SystemEvent,
         data::{
-            RequestInstrument, SubscribeBars, SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades,
+            RequestInstrument, SubscribeBars, SubscribeBookDeltas, SubscribeQuotes,
+            SubscribeTrades, UnsubscribeBookDeltas,
         },
         system::SocketState,
     },
+    testing::wait_until_async,
 };
 use nautilus_core::UUID4;
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
-    data::{BarType, Data},
-    enums::BookType,
+    data::{BarType, Data, OrderBookDeltas},
+    enums::{BookAction, BookType, RecordFlag},
     identifiers::{ClientId, InstrumentId},
     instruments::Instrument,
 };
 use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
+use serde_json::Value;
 use ustr::Ustr;
 
-use crate::common::server::{start_test_server, wait_for_connection};
+use crate::common::server::{TestServerState, start_test_server, wait_for_connection};
 
 fn setup_data_channel() -> tokio::sync::mpsc::UnboundedReceiver<DataEvent> {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -661,7 +664,7 @@ async fn test_data_client_request_instrument_emits_response() {
 
     let (addr, state) = start_test_server().await.unwrap();
     let client_id = ClientId::from("AX-TEST");
-    let mut client = create_data_client(addr, client_id);
+    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -705,7 +708,7 @@ async fn test_data_client_disconnect_aborts_instrument_request() {
 
     let (addr, state) = start_test_server().await.unwrap();
     let client_id = ClientId::from("AX-TEST");
-    let mut client = create_data_client(addr, client_id);
+    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -790,7 +793,316 @@ async fn test_data_client_disconnect_aborts_instrument_request() {
     client.disconnect().await.expect("Failed to disconnect");
 }
 
-fn create_data_client(addr: SocketAddr, client_id: ClientId) -> AxDataClient {
+#[rstest]
+#[tokio::test]
+async fn test_data_client_recovers_missing_initial_book_snapshot() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    state.withhold_book.store(true, Ordering::Relaxed);
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, book_config(1));
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Subscribe failed");
+    wait_for_requests(&state, "unsubscribe", 1, Duration::from_secs(10)).await;
+
+    state.withhold_book.store(false, Ordering::Relaxed);
+    let recovered = wait_for_book_deltas(&mut rx).await;
+
+    let subscribes = count_requests(&state, "subscribe").await;
+    let unsubscribes = count_requests(&state, "unsubscribe").await;
+    assert_snapshot(&recovered, instrument_id);
+    assert_eq!(
+        subscribes,
+        unsubscribes + 1,
+        "each replacement follows the initial subscribe with one unsubscribe",
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_recovers_book_after_invalid_frame() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    state.invalid_book.store(true, Ordering::Relaxed);
+    let client_id = ClientId::from("AX-TEST");
+
+    // Far beyond the test's wait, so only invalid frames can start recovery and fail its attempts
+    let mut client = create_data_client(addr, client_id, book_config(30));
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Subscribe failed");
+    wait_for_requests(&state, "unsubscribe", 2, Duration::from_secs(8)).await;
+
+    state.invalid_book.store(false, Ordering::Relaxed);
+    let recovered = wait_for_book_deltas(&mut rx).await;
+
+    let subscribes = count_requests(&state, "subscribe").await;
+    let unsubscribes = count_requests(&state, "unsubscribe").await;
+    assert_snapshot(&recovered, instrument_id);
+    assert_eq!(subscribes, unsubscribes + 1);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_recovers_book_snapshot_missing_after_reconnect() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    let client_id = ClientId::from("AX-TEST");
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry.scope(|| create_data_client(addr, client_id, book_config(1)));
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Subscribe failed");
+    wait_for_book_deltas(&mut rx).await;
+
+    // The reconnect replays the subscription, which now delivers no snapshot
+    state.withhold_book.store(true, Ordering::Relaxed);
+    let handle = registry
+        .handle(client_id, Ustr::from("architect-ax-data-streams"))
+        .unwrap();
+    let reconnect = handle.request_reconnect();
+    wait_for_requests(&state, "unsubscribe", 1, Duration::from_secs(15)).await;
+
+    state.withhold_book.store(false, Ordering::Relaxed);
+    let recovered = wait_for_book_deltas(&mut rx).await;
+
+    let subscribes = count_requests(&state, "subscribe").await;
+    let unsubscribes = count_requests(&state, "unsubscribe").await;
+    assert_eq!(reconnect, SocketReconnectRequestOutcome::Accepted);
+    assert_snapshot(&recovered, instrument_id);
+    assert_eq!(
+        subscribes,
+        unsubscribes + 2,
+        "the initial subscribe and the reconnect replay precede each replacement",
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_recovers_book_snapshot_missing_after_client_reconnect() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, book_config(1));
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Subscribe failed");
+    wait_for_book_deltas(&mut rx).await;
+
+    // The client keeps its book across the reconnect, and the replay delivers no snapshot
+    state.withhold_book.store(true, Ordering::Relaxed);
+    client.disconnect().await.expect("Failed to disconnect");
+    client.connect().await.expect("Failed to reconnect");
+    wait_for_requests(&state, "unsubscribe", 1, Duration::from_secs(15)).await;
+
+    state.withhold_book.store(false, Ordering::Relaxed);
+    let recovered = wait_for_book_deltas(&mut rx).await;
+
+    let subscribes = count_requests(&state, "subscribe").await;
+    let unsubscribes = count_requests(&state, "unsubscribe").await;
+    assert_snapshot(&recovered, instrument_id);
+    assert_eq!(
+        subscribes,
+        unsubscribes + 2,
+        "the initial subscribe and the connect replay precede each replacement",
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_reconnect_replays_book_after_recovery() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    state.withhold_book.store(true, Ordering::Relaxed);
+    let client_id = ClientId::from("AX-TEST");
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry.scope(|| create_data_client(addr, client_id, book_config(1)));
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Subscribe failed");
+    wait_for_requests(&state, "unsubscribe", 1, Duration::from_secs(10)).await;
+
+    state.withhold_book.store(false, Ordering::Relaxed);
+    wait_for_book_deltas(&mut rx).await;
+    let subscribes = count_requests(&state, "subscribe").await;
+    let unsubscribes = count_requests(&state, "unsubscribe").await;
+
+    // A replacement keeps the subscription in replay, so the reconnect alone restores the book
+    let handle = registry
+        .handle(client_id, Ustr::from("architect-ax-data-streams"))
+        .unwrap();
+    let reconnect = handle.request_reconnect();
+    let replayed = wait_for_book_deltas(&mut rx).await;
+
+    assert_eq!(reconnect, SocketReconnectRequestOutcome::Accepted);
+    assert_snapshot(&replayed, instrument_id);
+    assert_eq!(count_requests(&state, "subscribe").await, subscribes + 1);
+    assert_eq!(count_requests(&state, "unsubscribe").await, unsubscribes);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_suppresses_book_frames_after_unsubscribe() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, book_config(30));
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Subscribe failed");
+    wait_for_book_deltas(&mut rx).await;
+
+    // The venue answers the unsubscribe with a frame it sent before processing it
+    state.trailing_book.store(true, Ordering::Relaxed);
+    client
+        .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+            instrument_id,
+            Some(client_id),
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        ))
+        .expect("Unsubscribe failed");
+    wait_for_requests(&state, "unsubscribe", 1, Duration::from_secs(5)).await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    let mut late_deltas = 0;
+
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+        if matches!(event, DataEvent::Data(Data::BookDeltas(_))) {
+            late_deltas += 1;
+        }
+    }
+
+    assert_eq!(late_deltas, 0);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+// Each resubscribe races the unsubscribe before it across worker threads
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_data_client_applies_book_resubscribe_after_unsubscribe() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, book_config(30));
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Subscribe failed");
+    wait_for_book_deltas(&mut rx).await;
+
+    for _ in 0..10 {
+        state.messages_received.lock().await.clear();
+        client
+            .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+                instrument_id,
+                Some(client_id),
+                None,
+                UUID4::new(),
+                0.into(),
+                None,
+                None,
+            ))
+            .expect("Unsubscribe failed");
+        client
+            .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+            .expect("Resubscribe failed");
+        let resubscribed = wait_for_book_deltas(&mut rx).await;
+
+        let requests: Vec<String> = state
+            .get_messages()
+            .await
+            .iter()
+            .filter_map(|message| message.get("type").and_then(Value::as_str))
+            .map(ToString::to_string)
+            .collect();
+
+        assert_snapshot(&resubscribed, instrument_id);
+        assert_eq!(requests, ["unsubscribe", "subscribe"]);
+        assert_eq!(
+            *state.subscriptions.lock().await,
+            ["EURUSD-PERP:LEVEL_2".to_string()]
+        );
+    }
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_book_resubscribe_starts_from_fresh_snapshot() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, book_config(30));
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Subscribe failed");
+    let initial = wait_for_book_deltas(&mut rx).await;
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Resubscribe failed");
+    let replaced = wait_for_book_deltas(&mut rx).await;
+
+    assert_snapshot(&initial, instrument_id);
+    assert_snapshot(&replaced, instrument_id);
+    assert_eq!(count_requests(&state, "subscribe").await, 2);
+    assert_eq!(count_requests(&state, "unsubscribe").await, 1);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+fn create_data_client(
+    addr: SocketAddr,
+    client_id: ClientId,
+    config: AxDataClientConfig,
+) -> AxDataClient {
     let http_url = format!("http://{addr}");
     let ws_url = format!("ws://{addr}/md/ws");
     let http_client = AxHttpClient::new(Some(http_url), None, 60, 3, 1000, 10_000, None).unwrap();
@@ -802,11 +1114,90 @@ fn create_data_client(addr: SocketAddr, client_id: ClientId) -> AxDataClient {
         None,
     );
 
-    AxDataClient::new(
-        client_id,
-        AxDataClientConfig::default(),
-        http_client,
-        ws_client,
+    AxDataClient::new(client_id, config, http_client, ws_client)
+        .expect("Failed to create data client")
+}
+
+fn book_config(book_snapshot_timeout_secs: u64) -> AxDataClientConfig {
+    AxDataClientConfig {
+        book_snapshot_timeout_secs,
+        ..AxDataClientConfig::default()
+    }
+}
+
+fn book_deltas_subscription(
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+) -> SubscribeBookDeltas {
+    SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(client_id),
+        None,
+        UUID4::new(),
+        0.into(),
+        None,
+        false,
+        None,
+        None,
     )
-    .expect("Failed to create data client")
+}
+
+async fn count_requests(state: &TestServerState, request_type: &str) -> usize {
+    state
+        .get_messages()
+        .await
+        .iter()
+        .filter(|message| message.get("type").and_then(Value::as_str) == Some(request_type))
+        .filter(|message| message.get("symbol").and_then(Value::as_str) == Some("EURUSD-PERP"))
+        .count()
+}
+
+async fn wait_for_requests(
+    state: &TestServerState,
+    request_type: &str,
+    count: usize,
+    timeout: Duration,
+) {
+    wait_until_async(
+        || async { count_requests(state, request_type).await >= count },
+        timeout,
+    )
+    .await;
+}
+
+async fn wait_for_book_deltas(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> OrderBookDeltas {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+
+    loop {
+        let event = tokio::time::timeout_at(deadline, rx.recv())
+            .await
+            .expect("Timeout waiting for book deltas")
+            .expect("Data event channel closed");
+
+        if let DataEvent::Data(Data::BookDeltas(deltas)) = event {
+            return *deltas;
+        }
+    }
+}
+
+// Asserts the `ws_md_book_l2.json` snapshot as one event group closed by `F_LAST` once
+fn assert_snapshot(deltas: &OrderBookDeltas, instrument_id: InstrumentId) {
+    let snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let level = RecordFlag::F_MBP as u8 | snapshot;
+    let last = RecordFlag::F_LAST as u8;
+    let flags: Vec<u8> = deltas.deltas.iter().map(|delta| delta.flags).collect();
+    let actions: Vec<BookAction> = deltas.deltas.iter().map(|delta| delta.action).collect();
+
+    assert_eq!(deltas.instrument_id, instrument_id);
+    assert_eq!(
+        actions,
+        [vec![BookAction::Clear], vec![BookAction::Add; 6],].concat()
+    );
+    assert_eq!(
+        flags,
+        vec![snapshot, level, level, level, level, level, level | last]
+    );
 }

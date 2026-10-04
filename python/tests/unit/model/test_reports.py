@@ -28,6 +28,7 @@ from tests.unit.model.factories import make_position_status_report
 
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
+from nautilus_trader.model import AvgPxReconciliation
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ContingencyType
@@ -49,6 +50,7 @@ from nautilus_trader.model import PositionChanged
 from nautilus_trader.model import PositionClosed
 from nautilus_trader.model import PositionId
 from nautilus_trader.model import PositionOpened
+from nautilus_trader.model import PositionSide
 from nautilus_trader.model import PositionSnapshot
 from nautilus_trader.model import PositionStatusReport
 from nautilus_trader.model import Price
@@ -224,7 +226,36 @@ def test_position_status_report_properties_and_roundtrip(audusd_id: InstrumentId
     assert not report.is_flat
     assert report.quantity == Quantity.from_int(100_000)
     assert report.avg_px_open == Decimal("1.00010")
-    assert restored.venue_position_id == PositionId("P-1")
+    assert report.avg_px_open_reconciliation == AvgPxReconciliation.MATCH
+    assert report.avg_px_open_precision is None
+    assert restored == report
+
+
+def test_position_status_report_avg_px_open_metadata_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test position status report average entry metadata survives a dict roundtrip.
+    """
+    report = PositionStatusReport(
+        account_id=AccountId("SIM-001"),
+        instrument_id=audusd_id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(100_000),
+        ts_last=10,
+        ts_init=20,
+        avg_px_open=Decimal("1.00010"),
+        avg_px_open_reconciliation=AvgPxReconciliation.OPENING_ONLY,
+        avg_px_open_precision=4,
+    )
+
+    data = report.to_dict()
+    restored = PositionStatusReport.from_dict(data)
+
+    assert data["avg_px_open"] == "1.00010"
+    assert data["avg_px_open_reconciliation"] == "OPENING_ONLY"
+    assert data["avg_px_open_precision"] == 4
+    assert restored == report
+    assert restored.avg_px_open_reconciliation == AvgPxReconciliation.OPENING_ONLY
+    assert restored.avg_px_open_precision == 4
 
 
 def test_position_snapshot_from_dict_returns_snapshot_instance() -> None:

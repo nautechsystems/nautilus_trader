@@ -296,10 +296,10 @@ impl DatabentoHistoricalClient {
         })
     }
 
-    #[pyo3(name = "get_order_book_depth10")]
+    #[pyo3(name = "get_order_book_depth")]
     #[pyo3(signature = (dataset, instrument_ids, start, end=None, depth=None))]
     #[expect(clippy::needless_pass_by_value)]
-    fn py_get_order_book_depth10<'py>(
+    fn py_get_order_book_depth<'py>(
         &self,
         py: Python<'py>,
         dataset: String,
@@ -322,7 +322,7 @@ impl DatabentoHistoricalClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let depths = inner
-                .get_range_order_book_depth10(params, depth)
+                .get_range_order_book_depth(params, depth)
                 .await
                 .map_err(to_pyvalue_err)?;
             Python::attach(|py| depths.into_py_any(py))

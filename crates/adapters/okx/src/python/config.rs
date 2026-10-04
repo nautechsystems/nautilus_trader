@@ -252,7 +252,7 @@ mod tests {
         assert!(config.load_spreads);
         assert_eq!(config.book_stale_check_interval_secs, 5);
         assert_eq!(config.book_stale_threshold_secs, 30);
-        assert_eq!(config.book_snapshot_timeout_secs, 3);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]

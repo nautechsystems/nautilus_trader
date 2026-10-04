@@ -4,8 +4,8 @@ Render the dYdX grid market maker tutorial panels from a captured live run.
 After building NautilusTrader from source, run these commands from the repository root:
 
     make sync
-    # Capture a live run (mainnet by default; pass DYDX_NETWORK=testnet for testnet
-    # if you have an API trading key configured for the testnet wallet).
+    # Capture a live run (mainnet by default; for testnet, set the DYDX_NETWORK
+    # constant in node_grid_mm.rs to DydxNetwork::Testnet and rebuild).
     timeout 35 ./target/release/examples/dydx-grid-mm > /tmp/dydx_main.log 2>&1
 
     DYDX_LOG=/tmp/dydx_main.log \

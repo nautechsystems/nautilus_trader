@@ -18,13 +18,13 @@
 use pyo3::{
     conversion::IntoPyObjectExt,
     prelude::*,
-    types::{PyDict, PyList, PyModule},
+    types::{PyCFunction, PyDict, PyList, PyModule, PyTuple},
 };
 use serde_json::Value;
 
 use crate::{
     params::Params,
-    python::{serialization::from_pyobject_pyo3, to_pyvalue_err},
+    python::{serialization::serialize_pyobject_pyo3, to_pyvalue_err},
 };
 
 /// Converts a Python dict to `Params` (IndexMap<String, Value>).
@@ -33,18 +33,51 @@ use crate::{
 /// from a populated map. This is not the inverse of [`params_to_pydict`], which
 /// accepts `&Params` (not `Option<&Params>`); callers handle the outer option.
 ///
+/// Integer values must fit signed or unsigned 64-bit integers, including in nested containers.
+///
 /// # Errors
 ///
 /// Returns a `PyErr` if:
 /// - the dict cannot be serialized to JSON
 /// - the JSON is not a valid object
+/// - an integer value is outside the signed or unsigned 64-bit range (`ValueError`)
 pub fn pydict_to_params(py: Python<'_>, dict: &Py<PyDict>) -> PyResult<Option<Params>> {
     let dict_bound = dict.bind(py);
     if dict_bound.is_empty() {
         return Ok(None);
     }
 
-    from_pyobject_pyo3(py, dict_bound.as_any()).map(Some)
+    let json_str = serialize_pyobject_pyo3(py, dict_bound.as_any())?;
+
+    let parse_int = PyCFunction::new_closure(
+        py,
+        None,
+        None,
+        |args: &Bound<'_, PyTuple>, _kwargs| -> PyResult<Py<PyAny>> {
+            let text: String = args.get_item(0)?.extract()?;
+            if let Ok(value) = text.parse::<i64>() {
+                return value.into_py_any(args.py());
+            }
+
+            let value = text.parse::<u64>().map_err(|_| {
+                to_pyvalue_err(format!(
+                    "Python integer must be in range [{}, {}]",
+                    i64::MIN,
+                    u64::MAX,
+                ))
+            })?;
+
+            value.into_py_any(args.py())
+        },
+    )?;
+
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("parse_int", parse_int)?;
+    PyModule::import(py, "json")?.call_method("loads", (&json_str,), Some(&kwargs))?;
+
+    serde_json::from_str(&json_str)
+        .map(Some)
+        .map_err(to_pyvalue_err)
 }
 
 /// Converts a `serde_json::Value` to a Python object.
@@ -112,6 +145,7 @@ pub fn params_to_pydict(py: Python<'_>, params: &Params) -> PyResult<Py<PyDict>>
 
 #[cfg(test)]
 mod tests {
+    use pyo3::exceptions::PyValueError;
     use rstest::rstest;
     use serde_json::json;
 
@@ -156,12 +190,21 @@ mod tests {
         let mut params = Params::new();
         params.insert("null".to_string(), Value::Null);
         params.insert("enabled".to_string(), json!(true));
-        params.insert("name".to_string(), json!("nautilus"));
+        params.insert(
+            "name".to_string(),
+            json!("Nautilus \u{65e5}\u{672c}\u{8a9e}"),
+        );
         params.insert("signed".to_string(), json!(-7));
         params.insert("unsigned".to_string(), json!(42_u64));
+        params.insert("signed_min".to_string(), json!(i64::MIN));
+        params.insert("unsigned_max".to_string(), json!(u64::MAX));
         params.insert("ratio".to_string(), json!(2.5));
+        params.insert("large_float".to_string(), json!(2_f64.powi(65)));
         params.insert("levels".to_string(), json!([1, "two", false]));
-        params.insert("nested".to_string(), json!({"venue": "SIM", "count": 3}));
+        params.insert(
+            "nested".to_string(),
+            json!({"venue": "SIM", "limits": [i64::MIN, u64::MAX]}),
+        );
 
         Python::initialize();
         Python::attach(|py| {
@@ -171,7 +214,89 @@ mod tests {
             let absent = pydict_to_params(py, &empty).unwrap();
 
             assert_eq!(restored, params);
+            assert_eq!(
+                restored.keys().collect::<Vec<_>>(),
+                params.keys().collect::<Vec<_>>()
+            );
             assert_eq!(absent, None);
+        });
+    }
+
+    #[rstest]
+    #[case("18446744073709551616")]
+    #[case("18446744073709551617")]
+    #[case("-9223372036854775809")]
+    #[case("340282366920938463463374607431768211456")]
+    fn test_params_reject_out_of_range_integer(
+        #[case] integer: &str,
+        #[values("direct", "dict", "list", "tuple")] container: &str,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let value = PyModule::import(py, "builtins")
+                .unwrap()
+                .getattr("int")
+                .unwrap()
+                .call1((integer,))
+                .unwrap();
+
+            let value = match container {
+                "dict" => {
+                    let nested = PyDict::new(py);
+                    nested.set_item("nested", value).unwrap();
+                    nested.into_any()
+                }
+                "list" => PyList::new(py, [value]).unwrap().into_any(),
+                "tuple" => PyTuple::new(py, [value]).unwrap().into_any(),
+                _ => value,
+            };
+
+            let dict = PyDict::new(py);
+            dict.set_item("value", value).unwrap();
+
+            let error = pydict_to_params(py, &dict.unbind()).unwrap_err();
+
+            assert!(error.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                error.value(py).to_string(),
+                format!(
+                    "Python integer must be in range [{}, {}]",
+                    i64::MIN,
+                    u64::MAX
+                ),
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_params_reject_out_of_range_integer_from_dict_projection() {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = PyModule::from_code(
+                py,
+                c"class ProjectedDict(dict):\n    calls = 0\n    def items(self):\n        self.calls += 1\n        return [('value', 18446744073709551617)]\n",
+                c"",
+                c"",
+            )
+            .unwrap();
+            let projected = module.getattr("ProjectedDict").unwrap().call0().unwrap();
+            projected.set_item("hidden", &projected).unwrap();
+            let dict = PyDict::new(py);
+            dict.set_item("nested", &projected).unwrap();
+
+            let error = crate::params::from_pydict(py, &dict.unbind()).unwrap_err();
+            let calls: usize = projected.getattr("calls").unwrap().extract().unwrap();
+
+            assert!(error.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                error.value(py).to_string(),
+                format!(
+                    "Python integer must be in range [{}, {}]",
+                    i64::MIN,
+                    u64::MAX
+                ),
+            );
+            assert_eq!(calls, 1);
         });
     }
 }

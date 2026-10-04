@@ -57,8 +57,9 @@ fail() {
   exit 1
 }
 
+# Cooldown failure ordering is covered by test-check-cargo-cooldown.bash.
 PATH="${FAKE_BIN}:${PATH}" CARGO_LOG="$CARGO_LOG" \
-  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory \
+  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   CARGO_CI_PROFILE=nextest DEFI=true EXTRA_FEATURES= \
   clippy-strict-audit > "$REPORT" 2> "$ERROR_LOG"
 
@@ -85,14 +86,14 @@ grep -Fq "| \`nautilus-model\` | \`indexing_slicing\` | 1 |" "$REPORT" ||
 
 : > "$CARGO_LOG"
 PATH="${FAKE_BIN}:${PATH}" CARGO_LOG="$CARGO_LOG" \
-  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory \
+  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   clippy-pedantic-crate-nautilus-core > /dev/null
 grep -Fq \
   'clippy --locked --all-targets --all-features -p nautilus-core -- -D warnings -W clippy::pedantic -W clippy::todo -W clippy::unwrap_used -W clippy::expect_used' \
   "$CARGO_LOG" || fail "Pedantic crate target did not enable its named lint group"
 
 if PATH="${FAKE_BIN}:${PATH}" CARGO_LOG="$CARGO_LOG" FAKE_CARGO_FAIL_TESTS=1 \
-  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory \
+  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   CARGO_CI_PROFILE=nextest DEFI=true EXTRA_FEATURES= \
   clippy-strict-audit > "$REPORT" 2> "$ERROR_LOG"; then
   fail "Audit ignored a Cargo failure"
@@ -101,7 +102,7 @@ grep -Fq 'test Cargo Clippy run failed with status 17' "$ERROR_LOG" ||
   fail "Audit did not explain the Cargo failure"
 
 if PATH="${FAKE_BIN}:${PATH}" CARGO_LOG="$CARGO_LOG" FAKE_CARGO_BAD_JSON=1 \
-  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory \
+  "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   CARGO_CI_PROFILE=nextest DEFI=true EXTRA_FEATURES= \
   clippy-strict-audit > "$REPORT" 2> "$ERROR_LOG"; then
   fail "Audit accepted malformed Cargo output"

@@ -23,7 +23,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
 };
 use nautilus_execution::engine::{
     ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
@@ -154,7 +154,7 @@ fn run_netting_split_close() -> NettingReopen {
 }
 
 fn run_netting_scenario(fills: &[FillSpec]) -> NettingReopen {
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
         carry_replay_events_on_reopen: true,

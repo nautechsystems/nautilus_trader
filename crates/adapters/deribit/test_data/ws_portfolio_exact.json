@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "user.portfolio.btc",
+    "data": {
+      "currency": "BTC",
+      "equity": 1000000000.12345679,
+      "balance": 1000000000.12345679,
+      "available_funds": 1000000000.12345678,
+      "margin_balance": 1000000000.12345679,
+      "initial_margin": 1000000000.12345678,
+      "maintenance_margin": 5.551115123125783e-17,
+      "margin_model": "segregated_sm",
+      "cross_collateral_enabled": false
+    }
+  }
+}

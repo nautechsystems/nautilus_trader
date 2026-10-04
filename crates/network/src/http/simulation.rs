@@ -24,7 +24,7 @@ use url::{Position, Url};
 
 use super::{HttpClientError, HttpRedirectPolicy};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(super) struct Client {
     redirects: HttpRedirectPolicy,
 }

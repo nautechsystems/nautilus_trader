@@ -470,6 +470,106 @@ mod tests {
     }
 
     #[rstest]
+    #[case(1)]
+    #[case(3)]
+    #[case(8)]
+    fn test_burst_capacity_and_pacing_after_idle(#[case] burst: u32) {
+        let interval = Duration::from_nanos(100);
+        let quota = Quota::with_period(interval)
+            .unwrap()
+            .allow_burst(NonZeroU32::new(burst).unwrap());
+        let clock = FakeRelativeClock::default();
+        let limiter = RateLimiter::new_with_clock(Some(quota), vec![], clock.clone());
+        let key = "requests";
+
+        for idle in [
+            Duration::ZERO,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        ] {
+            clock.advance(idle);
+
+            for _ in 0..burst {
+                assert_eq!(limiter.check_key(&key), Ok(()));
+            }
+
+            let denied = limiter.check_key(&key).unwrap_err();
+            assert_eq!(denied.quota(), quota);
+            assert_eq!(denied.wait_time_from(clock.now()), interval);
+            clock.advance(Duration::from_nanos(99));
+            assert_eq!(
+                limiter
+                    .check_key(&key)
+                    .unwrap_err()
+                    .wait_time_from(clock.now()),
+                Duration::from_nanos(1),
+            );
+            clock.advance(Duration::from_nanos(1));
+            assert_eq!(limiter.check_key(&key), Ok(()));
+            assert_eq!(
+                limiter
+                    .check_key(&key)
+                    .unwrap_err()
+                    .wait_time_from(clock.now()),
+                interval,
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(3)]
+    #[case(8)]
+    #[tokio::test]
+    async fn test_multi_key_admission_after_idle_preserves_capacity_and_atomicity(
+        #[case] burst: u32,
+    ) {
+        let interval = Duration::from_nanos(100);
+        let quota = Quota::with_period(interval)
+            .unwrap()
+            .allow_burst(NonZeroU32::new(burst).unwrap());
+        let clock = FakeRelativeClock::default();
+        let limiter = RateLimiter::new_with_clock(Some(quota), vec![], clock.clone());
+        let keys = ["first", "second"];
+
+        for _ in 0..burst {
+            limiter.await_keys_ready(Some(&keys)).await;
+        }
+
+        clock.advance(Duration::from_secs(1));
+        let now = clock.now();
+
+        for _ in 0..burst {
+            limiter.await_keys_ready(Some(&keys)).await;
+            assert_eq!(clock.now(), now);
+        }
+
+        assert_eq!(limiter.plan_keys(&["spare", "first"], now), Err(interval));
+        assert!(!limiter.state.contains_key(&"spare"));
+        limiter.await_keys_ready(Some(&["spare", "first"])).await;
+        assert_eq!(clock.now(), now + Nanos::from(interval));
+        assert_eq!(
+            limiter
+                .check_key(&"first")
+                .unwrap_err()
+                .wait_time_from(clock.now()),
+            interval
+        );
+
+        for _ in 1..burst {
+            assert_eq!(limiter.check_key(&"spare"), Ok(()));
+        }
+
+        assert_eq!(
+            limiter
+                .check_key(&"spare")
+                .unwrap_err()
+                .wait_time_from(clock.now()),
+            interval
+        );
+    }
+
+    #[rstest]
     fn test_custom_key_quota() {
         let mock_limiter = initialize_mock_rate_limiter();
 
@@ -618,7 +718,6 @@ mod tests {
 
         advance_test_clock(Duration::from_millis(9_999)).await;
         limiter.until_key_ready(&fast).await;
-        limiter.until_key_ready(&fast).await;
         advance_test_clock(Duration::from_millis(1)).await;
         test_task::yield_now().await;
         assert!(!request.is_finished());
@@ -653,13 +752,13 @@ mod tests {
     #[rstest]
     fn test_per_minute_accepts_max_burst() {
         let quota = Quota::per_minute(NonZeroU32::new(u32::MAX).unwrap());
-        assert!(quota.replenish_interval().as_nanos() > 0);
+        assert_eq!(quota.replenish_interval(), Duration::from_nanos(13));
     }
 
     #[rstest]
     fn test_per_hour_accepts_max_burst() {
         let quota = Quota::per_hour(NonZeroU32::new(u32::MAX).unwrap());
-        assert!(quota.replenish_interval().as_nanos() > 0);
+        assert_eq!(quota.replenish_interval(), Duration::from_nanos(838));
     }
 
     mod property_tests {

@@ -178,15 +178,12 @@ impl Clock for MonotonicClock {
     }
 
     async fn sleep(&self, duration: Duration) {
-        #[cfg(not(all(feature = "simulation", madsim)))]
-        tokio::time::sleep(duration).await;
-        #[cfg(all(feature = "simulation", madsim))]
-        madsim::time::sleep(duration).await;
+        crate::dst::time::sleep(duration).await;
     }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::{sync::Arc, thread, time::Duration};
 
     use rstest::rstest;
@@ -197,7 +194,7 @@ mod test {
     fn fake_clock_parallel_advances() {
         let clock = Arc::new(FakeRelativeClock::default());
         let threads = std::iter::repeat_n((), 10)
-            .map(move |()| {
+            .map(|()| {
                 let clock = Arc::clone(&clock);
 
                 thread::spawn(move || {
@@ -213,13 +210,88 @@ mod test {
         for t in threads {
             t.join().unwrap();
         }
+
+        assert_eq!(clock.now(), Nanos::new(10_000_000));
     }
 
     #[rstest]
     fn duration_addition_coverage() {
         let d = Duration::from_secs(1);
         let one_ns = Nanos::from(1);
-        assert!(d + one_ns > d);
+        assert_eq!(d + one_ns, Duration::new(1, 1));
+    }
+
+    #[rstest]
+    #[case(12, 5, 7)]
+    #[case(12, 12, 0)]
+    #[case(5, 12, 0)]
+    fn duration_since_saturates(#[case] now: u64, #[case] earlier: u64, #[case] expected: u64) {
+        assert_eq!(
+            Reference::duration_since(&Duration::from_nanos(now), Duration::from_nanos(earlier)),
+            Nanos::new(expected)
+        );
+    }
+
+    #[rstest]
+    #[case(12, 5, 7)]
+    #[case(12, 12, 0)]
+    #[case(5, 12, 5)]
+    fn duration_subtraction_preserves_reference_on_underflow(
+        #[case] now: u64,
+        #[case] subtract: u64,
+        #[case] expected: u64,
+    ) {
+        assert_eq!(
+            Reference::saturating_sub(&Duration::from_nanos(now), Nanos::new(subtract)),
+            Duration::from_nanos(expected)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn fake_sleep_advances_shared_clock() {
+        let clock = FakeRelativeClock::default();
+        let clone = clock.clone();
+        clock.advance(Duration::from_nanos(13));
+
+        clone.sleep(Duration::from_nanos(29)).await;
+
+        assert_eq!(clock.now(), Nanos::new(42));
+        assert_eq!(clone.now(), Nanos::new(42));
+        assert_eq!(clock, clone);
+        assert_ne!(clock, FakeRelativeClock::default());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Cannot represent durations greater than 584 years")]
+    fn fake_clock_rejects_unrepresentable_duration() {
+        FakeRelativeClock::default().advance(Duration::MAX);
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn instant_reference_arithmetic_preserves_exact_offsets() {
+        let start = Instant::now();
+        let later = start + Nanos::new(37);
+
+        assert_eq!(later, start + Duration::from_nanos(37));
+        assert_eq!(Reference::duration_since(&later, start), Nanos::new(37));
+        assert_eq!(Reference::duration_since(&start, later), Nanos::new(0));
+        assert_eq!(Reference::duration_since(&start, start), Nanos::new(0));
+        assert_eq!(Reference::saturating_sub(&later, Nanos::new(37)), start);
+    }
+
+    #[rstest]
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[tokio::test(start_paused = true)]
+    async fn monotonic_sleep_advances_clock_by_requested_duration() {
+        let clock = MonotonicClock;
+        let start = clock.now();
+
+        clock.sleep(Duration::from_millis(37)).await;
+
+        assert_eq!(clock.now() - start, Duration::from_millis(37));
     }
 
     // Under madsim, `MonotonicClock::sleep` runs on the virtual clock with

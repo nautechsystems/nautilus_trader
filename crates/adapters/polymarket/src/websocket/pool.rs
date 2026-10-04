@@ -37,6 +37,7 @@ use std::sync::{
 use ahash::AHashMap;
 use nautilus_live::{
     SocketControlFactory,
+    book::snapshot::SnapshotGate,
     task::{TaskJoinOutcome, TaskSlot, TaskSpawnError, finish_task},
 };
 use nautilus_network::websocket::{TransportBackend, proxy::ProxyUrl};
@@ -46,6 +47,7 @@ use ustr::Ustr;
 use super::{
     MARKET_STREAMS_ENDPOINT,
     client::{PolymarketWebSocketClient, WsSubscriptionHandle},
+    handler::CycleMarketOutcome,
     messages::{MarketWsMessage, PolymarketWsMessage},
 };
 use crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS;
@@ -84,7 +86,7 @@ struct PoolInner {
     closed: AtomicBool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct PoolState {
     shards: AHashMap<usize, ShardEntry>,
     assignments: AHashMap<Ustr, usize>,
@@ -98,24 +100,14 @@ struct PoolDrain<'a> {
 
 impl<'a> PoolDrain<'a> {
     fn take(owner: &'a Mutex<PoolState>) -> Self {
-        let state = std::mem::replace(&mut *owner.lock(), PoolState::new());
+        let state = std::mem::take(&mut *owner.lock());
         Self { owner, state }
     }
 }
 
 impl Drop for PoolDrain<'_> {
     fn drop(&mut self) {
-        *self.owner.lock() = std::mem::replace(&mut self.state, PoolState::new());
-    }
-}
-
-impl PoolState {
-    fn new() -> Self {
-        Self {
-            shards: AHashMap::new(),
-            assignments: AHashMap::new(),
-            shutdown_errors: Vec::new(),
-        }
+        *self.owner.lock() = std::mem::take(&mut self.state);
     }
 }
 
@@ -233,6 +225,16 @@ impl PolymarketMarketConnectionPool {
         }
     }
 
+    pub(crate) async fn prepare(&self) -> anyhow::Result<()> {
+        if self.inner.closed.load(Ordering::Acquire) {
+            self.disconnect().await?;
+        }
+
+        let _wire = self.inner.wire_mutex.lock().await;
+        self.inner.prepare_channel();
+        Ok(())
+    }
+
     /// Opens the primary shard and prepares the merged message stream.
     ///
     /// # Errors
@@ -251,15 +253,7 @@ impl PolymarketMarketConnectionPool {
             return Ok(());
         }
 
-        {
-            let _state = self.inner.state.lock();
-            self.inner.closed.store(false, Ordering::Release);
-        }
-
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
-        *self.inner.out_tx.lock() = Some(out_tx);
-        *self.inner.out_rx.lock() = Some(out_rx);
-
+        self.inner.prepare_channel();
         self.inner.connect_new_shard(true).await?;
         Ok(())
     }
@@ -444,6 +438,46 @@ impl PolymarketMarketPoolHandle {
         }
         Ok(())
     }
+
+    /// Cycles owned assets (unsubscribe then subscribe) to trigger fresh snapshots.
+    ///
+    /// Unlike [`Self::subscribe_market`], this never changes shard assignment: it routes
+    /// each asset to its owning shard, which re-subscribes it on the wire without
+    /// touching desired subscription state. The venue ignores a duplicate subscribe,
+    /// so only a real cycle produces a fresh `book` snapshot. Used by book recovery.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pool is closed, an asset is not owned by any shard,
+    /// or a cycle command send fails.
+    pub async fn resubscribe_market(
+        &self,
+        asset_ids: Vec<String>,
+        cancel: &tokio_util::sync::CancellationToken,
+        gate: &SnapshotGate,
+    ) -> anyhow::Result<CycleMarketOutcome> {
+        let mut outcome = CycleMarketOutcome::Completed;
+
+        for asset_id in asset_ids {
+            outcome = self.inner.cycle_one(&asset_id, cancel, gate).await?;
+
+            if !matches!(outcome, CycleMarketOutcome::Completed) {
+                break;
+            }
+        }
+
+        Ok(outcome)
+    }
+
+    /// Returns the tokens currently assigned to `shard_id`.
+    pub(crate) fn tokens_for_shard(&self, shard_id: usize) -> Vec<Ustr> {
+        let state = self.inner.state.lock();
+        state
+            .assignments
+            .iter()
+            .filter_map(|(token, assigned)| (*assigned == shard_id).then_some(*token))
+            .collect()
+    }
 }
 
 impl PoolInner {
@@ -454,6 +488,21 @@ impl PoolInner {
         for shard in state.shards.values() {
             shard.client.begin_shutdown();
         }
+    }
+
+    fn prepare_channel(&self) {
+        {
+            let _state = self.state.lock();
+            self.closed.store(false, Ordering::Release);
+        }
+
+        if self.out_tx.lock().is_some() {
+            return;
+        }
+
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
+        *self.out_tx.lock() = Some(out_tx);
+        *self.out_rx.lock() = Some(out_rx);
     }
 
     fn ensure_open(&self) -> anyhow::Result<()> {
@@ -506,7 +555,7 @@ impl PoolInner {
             subscribe_new_markets,
             max_subscriptions,
             wire_mutex: tokio::sync::Mutex::new(()),
-            state: Mutex::new(PoolState::new()),
+            state: Mutex::new(PoolState::default()),
             out_tx: Mutex::new(None),
             out_rx: Mutex::new(None),
             socket_factory: Mutex::new(None),
@@ -556,6 +605,50 @@ impl PoolInner {
                 self.close_shard(id, shard).await
             }
         }
+    }
+
+    async fn cycle_one(
+        &self,
+        asset_id: &str,
+        cancel: &tokio_util::sync::CancellationToken,
+        gate: &SnapshotGate,
+    ) -> anyhow::Result<CycleMarketOutcome> {
+        let responder_rx = {
+            let _wire = self.wire_mutex.lock().await;
+            self.ensure_open()?;
+
+            let handle = {
+                let state = self.state.lock();
+                let token = Ustr::from(asset_id);
+
+                let Some(id) = state.assignments.get(&token).copied() else {
+                    anyhow::bail!("Market asset {asset_id} is not owned by any shard");
+                };
+
+                state
+                    .shards
+                    .get(&id)
+                    .map(|shard| shard.handle.clone())
+                    .ok_or_else(|| anyhow::anyhow!("Market shard {id} is not available"))?
+            };
+
+            // The wire mutex is released before awaiting completion: the queued
+            // command is ordered, and awaiting must not block pool operations.
+            let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
+            handle
+                .cycle_market_subscription(
+                    vec![asset_id.to_string()],
+                    cancel.clone(),
+                    responder_tx,
+                    gate.clone(),
+                )
+                .await?;
+            responder_rx
+        };
+
+        responder_rx
+            .await
+            .map_err(|_| anyhow::anyhow!("Market subscription cycle response lost"))
     }
 
     // Returns `None` when the token is already owned by a shard.
@@ -657,7 +750,8 @@ impl PoolInner {
         let rx = client
             .take_message_receiver()
             .ok_or_else(|| anyhow::anyhow!("Market shard receiver unavailable after connect"))?;
-        let forwarder = match self.spawn_forwarder(rx, is_primary) {
+
+        let forwarder = match self.spawn_forwarder(rx, id) {
             Ok(forwarder) => forwarder,
             Err((e, forwarder)) => {
                 let shard = Box::new(ShardEntry {
@@ -735,9 +829,10 @@ impl PoolInner {
     fn spawn_forwarder(
         &self,
         mut rx: tokio::sync::mpsc::UnboundedReceiver<PolymarketWsMessage>,
-        is_primary: bool,
+        shard_id: usize,
     ) -> Result<TaskSlot<()>, (TaskSpawnError, TaskSlot<()>)> {
         let out_tx = self.out_tx.lock().clone();
+        let is_primary = shard_id == PRIMARY_SHARD_ID;
 
         let mut forwarder = TaskSlot::new();
         if let Err(e) = forwarder.spawn(async move {
@@ -749,6 +844,13 @@ impl PoolInner {
                 if !should_forward_from_shard(&msg, is_primary) {
                     continue;
                 }
+
+                let msg = match msg {
+                    PolymarketWsMessage::Reconnected { .. } => PolymarketWsMessage::Reconnected {
+                        shard_id: Some(shard_id),
+                    },
+                    other => other,
+                };
 
                 if out_tx.send(msg).is_err() {
                     break;
@@ -896,6 +998,7 @@ mod tests {
     use nautilus_model::identifiers::ClientId;
     use parking_lot::{Condvar, Mutex as TestMutex};
     use rstest::rstest;
+    use tokio_util::sync::CancellationToken;
 
     use super::*;
     use crate::websocket::handler::HandlerCommand;
@@ -940,7 +1043,7 @@ mod tests {
 
     // Bare state with unconnected shards for pure capacity-accounting tests.
     fn state_with_shards(owned: &[usize]) -> PoolState {
-        let mut state = PoolState::new();
+        let mut state = PoolState::default();
 
         for (id, owned) in owned.iter().enumerate() {
             let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -993,7 +1096,7 @@ mod tests {
         *inner.out_tx.lock() = Some(out_tx);
         let (shard_tx, shard_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut forwarder = inner
-            .spawn_forwarder(shard_rx, false)
+            .spawn_forwarder(shard_rx, PRIMARY_SHARD_ID + 1)
             .expect("spawn forwarder");
 
         shard_tx
@@ -1026,6 +1129,53 @@ mod tests {
             ),
         );
         assert!(out_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn pool_drain_restores_remaining_state_on_drop() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = Handle::test_single_shard(cmd_tx, &["token-a"]);
+        handle
+            .inner
+            .state
+            .lock()
+            .shutdown_errors
+            .push("before drain".to_string());
+
+        {
+            let mut drain = PoolDrain::take(&handle.inner.state);
+            let owner = handle.inner.state.lock();
+            assert!(owner.shards.is_empty());
+            assert!(owner.assignments.is_empty());
+            assert!(owner.shutdown_errors.is_empty());
+            drop(owner);
+
+            assert_eq!(drain.state.shards.len(), 1);
+            assert_eq!(
+                drain.state.assignments,
+                AHashMap::from([(Ustr::from("token-a"), PRIMARY_SHARD_ID)]),
+            );
+            assert_eq!(drain.state.shutdown_errors, vec!["before drain"]);
+            drain.state.shutdown_errors.push("during drain".to_string());
+        }
+
+        let restored = handle.inner.state.lock();
+        assert_eq!(restored.shards.len(), 1);
+        let shard = restored
+            .shards
+            .get(&PRIMARY_SHARD_ID)
+            .expect("restored shard");
+        assert_eq!(shard.owned, 1);
+        assert!(!shard.closing);
+        assert_eq!(
+            restored.assignments,
+            AHashMap::from([(Ustr::from("token-a"), PRIMARY_SHARD_ID)]),
+        );
+        assert_eq!(
+            restored.shutdown_errors,
+            vec!["before drain", "during drain"]
+        );
     }
 
     #[rstest]
@@ -1309,5 +1459,239 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(handle.inner.subscription_count_for_test(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resubscribe_market_cycles_without_changing_assignment() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+        let cancel = CancellationToken::new();
+
+        let task = {
+            let handle = handle.clone();
+            let cancel = cancel.clone();
+
+            tokio::spawn(async move {
+                handle
+                    .resubscribe_market(
+                        vec!["token-a".to_string()],
+                        &cancel,
+                        &SnapshotGate::default(),
+                    )
+                    .await
+            })
+        };
+
+        match rx.recv().await.expect("expected cycle command") {
+            HandlerCommand::CycleMarketSubscription {
+                asset_ids,
+                responder,
+                ..
+            } => {
+                assert_eq!(asset_ids, vec!["token-a".to_string()]);
+                responder
+                    .send(CycleMarketOutcome::Completed)
+                    .expect("answer cycle");
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        assert!(matches!(
+            task.await.expect("cycle task").expect("cycle owned asset"),
+            CycleMarketOutcome::Completed
+        ));
+        assert_eq!(
+            handle.tokens_for_shard(PRIMARY_SHARD_ID),
+            vec![Ustr::from("token-a")]
+        );
+        assert!(handle.tokens_for_shard(PRIMARY_SHARD_ID + 1).is_empty());
+        assert_eq!(handle.inner.subscription_count_for_test(), 1);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resubscribe_market_propagates_cycle_outcome() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+        let cancel = CancellationToken::new();
+
+        let task = {
+            let handle = handle.clone();
+            let cancel = cancel.clone();
+
+            tokio::spawn(async move {
+                handle
+                    .resubscribe_market(
+                        vec!["token-a".to_string()],
+                        &cancel,
+                        &SnapshotGate::default(),
+                    )
+                    .await
+            })
+        };
+
+        match rx.recv().await.expect("expected cycle command") {
+            HandlerCommand::CycleMarketSubscription { responder, .. } => {
+                responder
+                    .send(CycleMarketOutcome::ConnectionChanged)
+                    .expect("answer cycle");
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        assert!(matches!(
+            task.await.expect("cycle task").expect("cycle reports"),
+            CycleMarketOutcome::ConnectionChanged
+        ));
+        // Ownership is preserved even when the cycle does not complete.
+        assert_eq!(
+            handle.tokens_for_shard(PRIMARY_SHARD_ID),
+            vec![Ustr::from("token-a")]
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resubscribe_market_fails_when_cycle_response_lost() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+        let cancel = CancellationToken::new();
+
+        let task = {
+            let handle = handle.clone();
+            let cancel = cancel.clone();
+
+            tokio::spawn(async move {
+                handle
+                    .resubscribe_market(
+                        vec!["token-a".to_string()],
+                        &cancel,
+                        &SnapshotGate::default(),
+                    )
+                    .await
+            })
+        };
+
+        // Simulate handler death: receive the command, drop the responder.
+        assert!(matches!(
+            rx.recv().await.expect("expected cycle command"),
+            HandlerCommand::CycleMarketSubscription { .. }
+        ));
+
+        let err = task.await.expect("cycle task").expect_err("lost response");
+
+        assert!(
+            err.to_string().contains("response lost"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resubscribe_market_rejects_unowned_asset() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+
+        let err = handle
+            .resubscribe_market(
+                vec!["token-unknown".to_string()],
+                &CancellationToken::new(),
+                &SnapshotGate::default(),
+            )
+            .await
+            .expect_err("unowned asset must fail");
+
+        assert!(
+            err.to_string().contains("not owned by any shard"),
+            "unexpected error: {err}"
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resubscribe_market_rejects_missing_shard() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+        handle.inner.state.lock().shards.remove(&PRIMARY_SHARD_ID);
+
+        let err = handle
+            .resubscribe_market(
+                vec!["token-a".to_string()],
+                &CancellationToken::new(),
+                &SnapshotGate::default(),
+            )
+            .await
+            .expect_err("missing shard must fail");
+
+        assert!(
+            err.to_string().contains("is not available"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resubscribe_market_rejects_closed_pool() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let handle = Handle::test_single_shard(tx, &["token-a"]);
+        handle.inner.closed.store(true, Ordering::SeqCst);
+
+        let err = handle
+            .resubscribe_market(
+                vec!["token-a".to_string()],
+                &CancellationToken::new(),
+                &SnapshotGate::default(),
+            )
+            .await
+            .expect_err("closed pool must fail");
+
+        assert!(
+            err.to_string().contains("closed"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn forwarder_stamps_reconnected_with_shard_id() {
+        let inner = PoolInner::new(None, TransportBackend::default(), true, 1);
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        *inner.out_tx.lock() = Some(out_tx);
+        let (shard_tx, shard_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut forwarder = inner
+            .spawn_forwarder(shard_rx, PRIMARY_SHARD_ID + 1)
+            .expect("spawn forwarder");
+
+        shard_tx
+            .send(PolymarketWsMessage::Reconnected { shard_id: None })
+            .unwrap();
+        shard_tx
+            .send(market_message("ws_market_best_bid_ask_msg.json"))
+            .unwrap();
+        drop(shard_tx);
+        let outcome = finish_task(
+            &mut forwarder,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("forwarder task");
+        assert!(matches!(outcome, TaskJoinOutcome::Completed(())));
+
+        assert!(
+            matches!(
+                out_rx.try_recv().unwrap(),
+                PolymarketWsMessage::Reconnected { shard_id: Some(id) }
+                if id == PRIMARY_SHARD_ID + 1
+            ),
+            "forwarder must stamp the reconnecting shard"
+        );
+        assert!(matches!(
+            out_rx.try_recv().unwrap(),
+            PolymarketWsMessage::Market(MarketWsMessage::BestBidAsk(_))
+        ));
+        assert!(out_rx.try_recv().is_err());
     }
 }

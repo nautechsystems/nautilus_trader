@@ -30,7 +30,6 @@ use arc_swap::ArcSwap;
 use jiff::{Timestamp, tz::Offset};
 use nautilus_core::{
     AtomicMap, UnixNanos,
-    consts::NAUTILUS_USER_AGENT,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
@@ -42,7 +41,10 @@ use nautilus_model::{
     types::{MarginBalance, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
+    http::{
+        HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method,
+        create_standard_nautilus_headers,
+    },
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
@@ -196,6 +198,7 @@ impl CoinbaseRawHttpClient {
     ) -> std::result::Result<Self, HttpClientError> {
         Ok(Self {
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
                 .default_quota(*COINBASE_REST_QUOTA)
                 .timeout_secs(timeout_secs)
@@ -271,10 +274,10 @@ impl CoinbaseRawHttpClient {
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([
-            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Content-Type".to_string(), "application/json".to_string()),
-        ])
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        headers
     }
 
     fn build_url(&self, path: &str) -> String {
@@ -1720,9 +1723,32 @@ pub fn build_order_configuration(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = CoinbaseRawHttpClient::with_credentials(
+            CoinbaseCredential::new("key".into(), "secret".into()),
+            CoinbaseEnvironment::Sandbox,
+            3,
+            None,
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
+    }
 
     #[rstest]
     fn test_raw_client_construction_live() {

@@ -161,11 +161,12 @@ MODULE_FIXUPS: dict[str, StubFixup] = {
     ),
 }
 
-# Re-exports of hand-written (pure-Python) symbols to inject into generated module
-# stubs. PyO3's stub generator only knows about Rust pyclasses, so it drops these on
-# every regeneration; the redundant `as` alias marks them as explicit re-exports so
-# `from <module> import <symbol>` type-checks. Keyed by stub path suffix.
+# Re-exports and module attributes of hand-written (pure-Python) symbols to inject into
+# generated module stubs. PyO3's stub generator only knows about Rust pyclasses, so it
+# drops these on every regeneration; the redundant `as` alias marks them as explicit
+# re-exports so `from <module> import <symbol>` type-checks. Keyed by stub path suffix.
 EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
+    "nautilus_trader/__init__.pyi": ("__version__: str",),
     "nautilus_trader/live/__init__.pyi": (
         "from nautilus_trader.live.providers import InstrumentProvider as InstrumentProvider",
     ),
@@ -1083,7 +1084,7 @@ def elide_forward_class_defaults_in_signatures(content: str) -> str:
     Replace local class defaults with ``...`` when the class is declared later.
 
     This keeps the signature shape while avoiding invalid runtime expressions like
-    ``BitmexEnvironment.MAINNET`` inside a class body before ``BitmexEnvironment`` is
+    ``ExampleEnvironment.MAINNET`` inside a class body before ``ExampleEnvironment`` is
     defined.
 
     """

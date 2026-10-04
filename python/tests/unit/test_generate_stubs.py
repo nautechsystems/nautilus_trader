@@ -1804,19 +1804,19 @@ def test_elide_forward_class_defaults_in_signatures_keeps_earlier_local_defaults
     Test elide forward class defaults in signatures keeps earlier local defaults.
     """
     content = """
-class BitmexEnvironment(Enum):
+class ExampleEnvironment(Enum):
     MAINNET = ...
 
 class Client:
     def __init__(
         self,
-        environment: BitmexEnvironment = BitmexEnvironment.MAINNET,
+        environment: ExampleEnvironment = ExampleEnvironment.MAINNET,
     ) -> None: ...
 """.strip()
 
     updated = generate_stubs.elide_forward_class_defaults_in_signatures(content)
 
-    assert "environment: BitmexEnvironment = BitmexEnvironment.MAINNET" in updated
+    assert "environment: ExampleEnvironment = ExampleEnvironment.MAINNET" in updated
 
 
 STUB_ROOT = WORKSPACE_ROOT / "python" / "nautilus_trader"
@@ -1923,11 +1923,15 @@ ADAPTER_CONFIG_SECRET_FIELDS = {
     "api_secret",
     "api_passphrase",
     "app_key",
+    "builder_api_key",
+    "builder_api_secret",
+    "builder_passphrase",
     "http_rpc_url",
     "password",
     "passphrase",
     "private_key",
     "session_key",
+    "tardis_http_url",
     "tardis_ws_url",
     "wss_rpc_url",
 }
@@ -2070,7 +2074,6 @@ def test_live_stub_exposes_builder_engine_config_methods() -> None:
         ("nautilus_trader.infrastructure", "RedisCacheConfig"),
         ("nautilus_trader.infrastructure", "RedisMessageBusConfig"),
         ("nautilus_trader.infrastructure", "RedisMessageBusFactory"),
-        ("nautilus_trader.persistence", "DataBackendSession"),
         ("nautilus_trader.persistence", "ParquetDataCatalog"),
         ("nautilus_trader.persistence", "StreamingFeatherWriter"),
     ],
@@ -2732,11 +2735,9 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
     from nautilus_trader.adapters.architect_ax import AxDataClientConfig
     from nautilus_trader.adapters.betfair import BetfairDataClientConfig
     from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
-    from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.bybit import BybitDataClientConfig
     from nautilus_trader.adapters.databento import DatabentoDataClientConfig
     from nautilus_trader.adapters.interactive_brokers import DockerizedIBGatewayConfig
-    from nautilus_trader.model import AccountId
 
     ax_config = AxDataClientConfig(
         base_url_http="https://ax.example.test",
@@ -2750,15 +2751,13 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         proxy_url="http://user:password@proxy.example.test",
         event_type_ids=[7, 9],
         stream_heartbeat_secs=43,
+        book_snapshot_timeout_secs=0,
     )
     betfair_exec_config = BetfairExecutionClientConfig(username="exec-readback-user")
-    bitmex_config = BitmexExecutionClientConfig(
-        account_id=AccountId("BITMEX-001"),
-        submitter_proxy_urls=["http://submitter.example.test"],
-        canceller_proxy_urls=["http://canceller.example.test"],
-        deadmans_switch_timeout_secs=45,
+    bybit_config = BybitDataClientConfig(
+        instrument_status_poll_secs=23,
+        book_snapshot_timeout_secs=0,
     )
-    bybit_config = BybitDataClientConfig(instrument_status_poll_secs=23)
     databento_config = DatabentoDataClientConfig(
         api_key="readback-api-key",
         publishers_filepath=tmp_path / "publishers.json",
@@ -2776,15 +2775,13 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
     assert betfair_config.event_type_ids == ["7", "9"]
     assert betfair_config.stream_heartbeat_secs == 43
     assert betfair_config.has_proxy_url is True
-    assert bitmex_config.deadmans_switch_timeout_secs == 45
-    assert bitmex_config.has_submitter_proxy_urls is True
-    assert bitmex_config.has_canceller_proxy_urls is True
+    assert betfair_config.book_snapshot_timeout_secs == 0
     assert bybit_config.instrument_status_poll_secs == 23
+    assert bybit_config.book_snapshot_timeout_secs == 0
     assert databento_config.publishers_filepath == tmp_path / "publishers.json"
     assert databento_config.use_exchange_as_venue is True
     assert databento_config.bars_timestamp_on_close is False
     assert databento_config.venue_dataset_map == {"XNAS": "XNAS.ITCH"}
-    assert bitmex_config.account_id == AccountId("BITMEX-001")
     assert ib_gateway_config.username == "ib-readback-user"
 
 
@@ -2846,6 +2843,7 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
         "chain": Chain(Blockchain.ARBITRUM, 42161),
         "client_id": AccountId("BLOCKCHAIN-001"),
         "dex_ids": [DexType.UNISWAP_V3],
+        "funder": "0x3333333333333333333333333333333333333333",
         "gas_buffer_bps": 100,
         "gas_limit": 1_000_000,
         "identity": provider_identity,
@@ -2912,7 +2910,6 @@ def test_adapter_config_sensitive_readback_values_are_not_represented() -> None:
     """
     from nautilus_trader.adapters.betfair import BetfairDataClientConfig
     from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
-    from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
     from nautilus_trader.adapters.derive import DeriveDataClientConfig
     from nautilus_trader.adapters.dydx import DydxDataClientConfig
@@ -2925,10 +2922,6 @@ def test_adapter_config_sensitive_readback_values_are_not_represented() -> None:
     configs = [
         BetfairDataClientConfig(username=sentinel),
         BetfairExecutionClientConfig(username=sentinel),
-        BitmexExecutionClientConfig(
-            submitter_proxy_urls=[f"http://{sentinel}@submitter.example.test"],
-            canceller_proxy_urls=[f"http://{sentinel}@canceller.example.test"],
-        ),
         BlockchainDataClientConfig(
             chain=Chain.ARBITRUM(),
             dex_ids=[DexType.UNISWAP_V3],
@@ -3287,6 +3280,8 @@ def _collect_rust_config_source_blocks(config_names: object):  # noqa: C901
                 )
         for match in RUST_CONFIG_IMPL_RE.finditer(content):
             class_name = match.group(1)
+            if class_name.startswith("Py") and class_name[2:] in config_names:
+                class_name = class_name[2:]
             if class_name in config_names:
                 impl_blocks.setdefault(class_name, []).append(
                     _rust_block_after_position(content, match.start()),

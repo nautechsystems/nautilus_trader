@@ -76,7 +76,9 @@ pub mod python;
 // Re-exports
 pub use builder::NautilusKernelBuilder;
 pub use clock_factory::ClockFactory;
-pub use config::{NautilusKernelConfig, RotationConfig, StreamingConfig};
+pub use config::NautilusKernelConfig;
+#[cfg(feature = "streaming")]
+pub use config::{RotationConfig, StreamingConfig};
 pub use controller::Controller;
 pub use event_store::{EventStoreFactory, KernelEventStore, RegisteredComponents};
 pub use kernel::NautilusKernel;

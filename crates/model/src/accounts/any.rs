@@ -28,6 +28,7 @@ use crate::{
     accounts::{Account, BettingAccount, CashAccount, MarginAccount, WalletAccount},
     enums::{AccountType, LiquiditySide},
     events::{AccountState, OrderFilled},
+    fees::MakerTakerFeeRates,
     identifiers::AccountId,
     instruments::InstrumentAny,
     position::Position,
@@ -152,6 +153,7 @@ impl AccountAny {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        fee_rates: MakerTakerFeeRates,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         Account::calculate_commission(
@@ -160,6 +162,7 @@ impl AccountAny {
             last_qty,
             last_px,
             liquidity_side,
+            fee_rates,
             use_quote_for_inverse,
         )
     }
@@ -273,6 +276,33 @@ mod tests {
         );
         assert_eq!(account.event_count(), 1);
         assert_eq!(account.balances(), balances_before);
+    }
+
+    #[rstest]
+    fn test_delegated_state_accessors(cash_account_state: AccountState) {
+        let balance = cash_account_state.balances[0];
+        let account = AccountAny::try_from_state(cash_account_state.clone()).unwrap();
+
+        assert_eq!(account.last_event(), Some(cash_account_state.clone()));
+        assert_eq!(account.events(), vec![cash_account_state.clone()]);
+        assert_eq!(account.base_currency(), cash_account_state.base_currency);
+        assert_eq!(
+            account.balances_locked().get(&balance.currency),
+            Some(&balance.locked)
+        );
+        assert_eq!(account.balances().get(&balance.currency), Some(&balance));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(cash_account_state: AccountState) {
+        let account = AccountAny::try_from_state(cash_account_state.clone()).unwrap();
+        let same = AccountAny::try_from_state(cash_account_state.clone()).unwrap();
+        let mut other_state = cash_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = AccountAny::try_from_state(other_state).unwrap();
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
     }
 
     #[rstest]

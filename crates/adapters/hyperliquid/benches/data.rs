@@ -29,7 +29,7 @@ use nautilus_hyperliquid::websocket::{
     messages::{HyperliquidWsMessage, WsActiveAssetCtxData, WsUserEventData},
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_order_book_deltas,
-        parse_ws_order_book_depth10, parse_ws_order_status_report, parse_ws_quote_tick,
+        parse_ws_order_book_depth, parse_ws_order_status_report, parse_ws_quote_tick,
         parse_ws_trade_tick,
     },
 };
@@ -78,13 +78,13 @@ fn bench_book_deltas(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_book_depth10(c: &mut Criterion) {
+fn bench_book_depth(c: &mut Criterion) {
     let instruments = instrument_cache();
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");
     group.throughput(Throughput::Elements(1));
-    group.bench_function("book_depth10", |b| {
+    group.bench_function("book_depth", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
                 serde_json::from_str(black_box(fixtures::BOOK_L2)).unwrap();
@@ -92,7 +92,7 @@ fn bench_book_depth10(c: &mut Criterion) {
                 unreachable!()
             };
             let instrument = instruments.get(&data.coin).unwrap();
-            let depth = parse_ws_order_book_depth10(&data, instrument, ts_init).unwrap();
+            let depth = parse_ws_order_book_depth(&data, instrument, ts_init).unwrap();
             black_box(depth);
         });
     });
@@ -275,7 +275,7 @@ criterion_group!(
     benches,
     bench_trades,
     bench_book_deltas,
-    bench_book_depth10,
+    bench_book_depth,
     bench_quotes,
     bench_bars,
     bench_mark_price,

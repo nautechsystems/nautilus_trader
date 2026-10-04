@@ -16,6 +16,7 @@
 //! Python bindings for Betfair configuration.
 
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
@@ -58,6 +59,7 @@ impl BetfairDataClientConfig {
         subscription_delay_secs = None,
         subscribe_race_data = false,
         subscribe_cricket_data = false,
+        book_snapshot_timeout_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -87,6 +89,7 @@ impl BetfairDataClientConfig {
         subscription_delay_secs: Option<u64>,
         subscribe_race_data: bool,
         subscribe_cricket_data: bool,
+        book_snapshot_timeout_secs: Option<u64>,
     ) -> Self {
         Self {
             account_currency: account_currency.unwrap_or_else(|| "GBP".to_string()),
@@ -115,6 +118,8 @@ impl BetfairDataClientConfig {
             subscription_delay_secs: subscription_delay_secs.unwrap_or(3),
             subscribe_race_data,
             subscribe_cricket_data,
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         }
     }
 

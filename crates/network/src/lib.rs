@@ -111,12 +111,14 @@ mod heartbeat;
 mod logging;
 mod sink;
 mod tls;
+mod writer;
 
 #[cfg(feature = "python")]
 pub mod python;
 
 pub use sink::{SocketState, SocketStateSink};
 pub use transport::{Message, TransportError};
+pub use writer::WriterSender;
 
 /// Sentinel message indicating that a WebSocket reconnection completed.
 pub const RECONNECTED: &str = "__RECONNECTED__";

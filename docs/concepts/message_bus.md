@@ -260,6 +260,12 @@ The Signal messaging approach works well when you need:
   always receive `signal.value` as a `str`; complex data structures are not preserved.
 - Differentiate between signals in the `on_signal` handler with `signal.name`.
 
+:::warning Signal callback reentry
+Signal publication can synchronously reenter an active actor, directly or through another subscriber,
+causing undefined behavior in Rust and Python-authored actors. **Releasing cache borrows does not make
+actor reentry safe.** Avoid publication cycles that invoke an actor before its current callback returns.
+:::
+
 #### Quick overview code
 
 ```python
@@ -406,7 +412,7 @@ separate Rust task. That task writes the message to Redis streams.
 Offloading I/O to a separate task keeps the publishing thread unblocked.
 
 With MessagePack or JSON, Rust-native external egress forwards serializable typed publications. This
-includes instruments, quotes, trades, bars, book deltas, depth-10 snapshots, mark/index/funding
+includes instruments, quotes, trades, bars, book deltas, variable-depth snapshots, mark/index/funding
 updates, option greeks (`OptionGreeks`), account state, portfolio snapshots, order events, position
 events, and custom data. With the `defi` feature this also includes DeFi blocks, pools, liquidity
 updates, fee collects, and flash events. Full order book snapshots, `GreeksData` records, option
@@ -419,7 +425,7 @@ position status reports, and execution mass-status reports. These payloads remai
 external streams are configured.
 
 With SBE or Cap'n Proto, Rust-native external egress forwards the built-in market data payloads with
-schema codecs: quotes, trades, bars, book deltas, depth-10 snapshots, mark price updates, index
+schema codecs: quotes, trades, bars, book deltas, variable-depth snapshots, mark price updates, index
 price updates, funding rate updates, and option greeks. Other payload types are dropped with a
 debug log when those schema encodings are selected.
 

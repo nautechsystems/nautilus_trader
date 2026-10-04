@@ -29,15 +29,16 @@ use std::{
 
 use async_stream::stream;
 use futures_util::{Sink, SinkExt, Stream, StreamExt, pin_mut};
-use message::WsMessage;
-use nautilus_core::string::urlencoding;
+use message::{WsMessage, decode_ws_message};
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, string::urlencoding};
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{self, protocol::frame::coding::CloseCode},
+    tungstenite::{self, client::IntoClientRequest, protocol::frame::coding::CloseCode},
 };
 use tokio_util::sync::CancellationToken;
 use types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions};
 
+use crate::common::enums::TardisExchange;
 pub use crate::machine::client::TardisMachineClient;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -48,6 +49,9 @@ pub enum Error {
     /// An error that could happen when an empty options array was given.
     #[error("Options cannot be empty")]
     EmptyOptions,
+    /// An exchange supported for replay but not real-time streaming.
+    #[error("Unsupported Tardis streaming exchange: {0} (historical-only; use replay options)")]
+    UnsupportedStreamingExchange(TardisExchange),
     /// An error when failed to connect to Tardis' websocket connection.
     #[error("Failed to connect: {0}")]
     ConnectFailed(#[from] tungstenite::Error),
@@ -99,16 +103,15 @@ pub async fn replay_normalized(
 ///
 /// # Errors
 ///
-/// Returns `Error::EmptyOptions` if no options provided,
+/// Returns `Error::EmptyOptions` if no options are provided,
+/// `Error::UnsupportedStreamingExchange` for BitMEX,
 /// or `Error::ConnectFailed`/`Error::ConnectRejected` if connection fails.
 pub async fn stream_normalized(
     base_url: &str,
     options: Vec<StreamNormalizedRequestOptions>,
     signal: Arc<AtomicBool>,
 ) -> Result<impl Stream<Item = Result<WsMessage>>> {
-    if options.is_empty() {
-        return Err(Error::EmptyOptions);
-    }
+    validate_stream_options(&options)?;
 
     let path = format!("{base_url}/ws-stream-normalized?options=");
     let options = serde_json::to_string(&options)?;
@@ -120,12 +123,39 @@ pub async fn stream_normalized(
     stream_from_websocket(base_url, url, signal).await
 }
 
+pub(crate) fn validate_stream_options(options: &[StreamNormalizedRequestOptions]) -> Result<()> {
+    if options.is_empty() {
+        return Err(Error::EmptyOptions);
+    }
+
+    for option in options {
+        if option.exchange == TardisExchange::Bitmex {
+            return Err(Error::UnsupportedStreamingExchange(option.exchange));
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn is_unsupported_streaming_error(reason: &str) -> bool {
+    reason
+        .strip_prefix("Error: ")
+        .unwrap_or(reason)
+        .starts_with("Real-time streaming is not supported for exchange ")
+}
+
 async fn stream_from_websocket(
     base_url: &str,
     url: String,
     signal: Arc<AtomicBool>,
 ) -> Result<impl Stream<Item = Result<WsMessage>>> {
-    let (ws_stream, ws_resp) = connect_async(url).await?;
+    let mut request = url.into_client_request()?;
+    request.headers_mut().insert(
+        tungstenite::http::header::USER_AGENT,
+        tungstenite::http::HeaderValue::from_static(NAUTILUS_USER_AGENT),
+    );
+
+    let (ws_stream, ws_resp) = connect_async(request).await?;
 
     handle_connection_response(&ws_resp)?;
     log::debug!("Connected to {base_url}");
@@ -189,7 +219,7 @@ async fn stream_from_websocket(
                         break;
                     }
                     tungstenite::Message::Text(msg) => {
-                        match serde_json::from_str::<WsMessage>(&msg) {
+                        match decode_ws_message(&msg) {
                             Ok(parsed_msg) => yield Ok(parsed_msg),
                             Err(e) => {
                                 log::error!("Failed to deserialize message: {msg}. Error: {e}");
@@ -278,7 +308,51 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
     use tokio_util::sync::CancellationToken;
 
-    use super::heartbeat;
+    use super::{
+        Arc, AtomicBool, Error, StreamNormalizedRequestOptions, TardisExchange, heartbeat,
+        stream_normalized,
+    };
+
+    #[rstest]
+    #[case(vec![TardisExchange::Bitmex])]
+    #[case(vec![TardisExchange::Deribit, TardisExchange::Bitmex])]
+    #[tokio::test]
+    async fn test_stream_rejects_bitmex_before_connect(#[case] exchanges: Vec<TardisExchange>) {
+        let options = exchanges
+            .into_iter()
+            .map(|exchange| StreamNormalizedRequestOptions {
+                exchange,
+                symbols: None,
+                data_types: vec!["trade".to_string()],
+                with_disconnect_messages: None,
+                timeout_interval_ms: None,
+            })
+            .collect();
+
+        let result =
+            stream_normalized("not a URL", options, Arc::new(AtomicBool::new(false))).await;
+
+        assert!(matches!(
+            result,
+            Err(Error::UnsupportedStreamingExchange(TardisExchange::Bitmex))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_stream_allows_deribit_to_reach_connect() {
+        let options = vec![StreamNormalizedRequestOptions {
+            exchange: TardisExchange::Deribit,
+            symbols: None,
+            data_types: vec!["book_change".to_string()],
+            with_disconnect_messages: None,
+            timeout_interval_ms: None,
+        }];
+
+        let result =
+            stream_normalized("not a URL", options, Arc::new(AtomicBool::new(false))).await;
+
+        assert!(matches!(result, Err(Error::ConnectFailed(_))));
+    }
 
     struct StallSink;
 

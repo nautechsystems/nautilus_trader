@@ -307,6 +307,7 @@ mod tests {
         collections::hash_map::DefaultHasher,
         ffi::CStr,
         hash::{Hash, Hasher},
+        mem::{align_of, size_of},
     };
 
     use proptest::prelude::*;
@@ -314,6 +315,23 @@ mod tests {
     use uuid;
 
     use super::*;
+
+    #[rstest]
+    fn uuid4_layout_stays_c_string_compatible() {
+        assert_eq!(size_of::<UUID4>(), 37);
+        assert_eq!(align_of::<UUID4>(), 1);
+
+        let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+        let text = uuid.as_str();
+
+        assert_eq!(text.len(), 36);
+        assert_eq!(&text[8..9], "-");
+        assert_eq!(&text[13..14], "-");
+        assert_eq!(&text[18..19], "-");
+        assert_eq!(&text[23..24], "-");
+        assert_eq!(&text[14..15], "4");
+        assert!(matches!(text.as_bytes()[19], b'8' | b'9' | b'a' | b'b'));
+    }
 
     #[rstest]
     fn test_new() {
@@ -460,10 +478,25 @@ mod tests {
     }
 
     #[rstest]
+    fn test_from_string() {
+        let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757".to_string());
+        assert_eq!(uuid.as_str(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
+    }
+
+    #[rstest]
     fn test_from_uuid() {
         let original = uuid::Uuid::new_v4();
         let uuid4 = UUID4::from(original);
         assert_eq!(uuid4.to_string(), original.to_string());
+    }
+
+    #[rstest]
+    fn test_into_uuid_roundtrip() {
+        let uuid_string = "2d89666b-1a1e-4a75-b193-4eb3b454c757";
+        let uuid4 = UUID4::from(uuid_string);
+        let uuid = uuid::Uuid::from(uuid4);
+        assert_eq!(uuid.to_string(), uuid_string);
+        assert_eq!(UUID4::from(uuid).as_str(), uuid_string);
     }
 
     #[rstest]

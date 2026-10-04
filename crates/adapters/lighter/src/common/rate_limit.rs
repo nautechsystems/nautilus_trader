@@ -18,10 +18,10 @@
 //! Lighter meters requests against both the caller IP and the account L1 address.
 //!
 //! REST reads draw on a per-client read quota. Transactions (`sendTx` /
-//! `sendTxBatch`) are metered in one venue bucket per account regardless of
-//! transport; single orders go over the WebSocket and batches over HTTP, so both
-//! share one [`LighterTxRateLimiter`] to keep their combined rate under the single
-//! venue transaction limit.
+//! `sendTxBatch`) are metered in one venue bucket per L1 address regardless of
+//! transport. Single orders and cancellation batches use WebSocket; HTTP
+//! submissions share the same [`LighterTxRateLimiter`] to pace both transports
+//! together.
 //!
 //! # WebSocket client messages
 //!
@@ -40,7 +40,7 @@
 //!   ack. Without it, a subscribe storm at startup or reconnect drives inflight
 //!   past 50 and the venue returns `30009` / `30010`.
 //!
-//! `sendTx` is metered in the transaction bucket, not the WS message bucket.
+//! `sendTx` and `sendTxBatch` use the transaction bucket, not the WS message bucket.
 
 use std::{
     num::NonZeroU32,

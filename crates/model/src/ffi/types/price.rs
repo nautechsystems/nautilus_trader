@@ -15,7 +15,11 @@
 
 use crate::types::price::{Price, PriceRaw};
 
-// TODO: Document panic
+/// Creates a new [`Price`] instance for FFI.
+///
+/// # Panics
+///
+/// Panics if a correctness check fails. See [`Price::new`] for more details.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn price_new(value: f64, precision: u8) -> Price {

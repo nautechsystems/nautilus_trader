@@ -109,9 +109,12 @@ print(len(lock_keys))
 PY
 )
 
+# The configured trusted base re-verifies entries a branch adds, so trust the
+# working tree instead; `git stash create` writes no ref and is empty when clean.
+db_base=$(git -C "$REPO_ROOT" stash create 2> /dev/null || true)
 status=0
 output=$(cd "$REPO_ROOT" &&
-  PATH="${fake_bin}:${PATH}" bash scripts/check-cargo-cooldown.sh --all) || status=$?
+  PATH="${fake_bin}:${PATH}" bash scripts/check-cargo-cooldown.sh --all --base "${db_base:-HEAD}") || status=$?
 if ((status != 0)) ||
   [[ "$output" != *"Publication dates: ${db_count} from the cooldown database, 0 from crates.io"* ]]; then
   printf 'Offline full cooldown check did not use the committed database: %s\n' "$output" >&2
@@ -127,10 +130,22 @@ fi
 
 hook_entry=$(awk '
   $0 ~ /- id: cargo-cooldown$/ { in_hook = 1; next }
-  in_hook && $1 == "entry:" { sub(/^[[:space:]]*entry: /, ""); print; exit }
+  in_hook && $1 == "entry:" { in_entry = 1; next }
+  in_entry && /^          [^ ]/ { sub(/^ +/, ""); entry = entry sep $0; sep = " "; next }
+  in_entry { print entry; exit }
 ' "$REPO_ROOT/.pre-commit-config.yaml")
-read -r -a hook_command <<< "$hook_entry"
-[[ ${#hook_command[@]} -gt 0 ]] || exit 1
+[[ -n "$hook_entry" ]] || exit 1
+hook_target="${test_root}/hook-target"
+
+# Pre-flight exports CARGO_TARGET_DIR; keep the hook cache inside the fixture
+run_hook() (
+  cd "$fixture_repo"
+  unset CARGO_TARGET_DIR
+  if [[ -n "${1:-}" ]]; then
+    export CARGO_TARGET_DIR="$1"
+  fi
+  PATH="${fake_bin}:${PATH}" eval "$hook_entry"
+)
 
 mkdir -p "${fixture_repo}/.supply-chain"
 cat >> "${fixture_repo}/Cargo.lock" << 'LOCK'
@@ -146,11 +161,23 @@ DATABASE
 git -C "$fixture_repo" add Cargo.lock .supply-chain/crate-dates.json
 
 status=0
-output=$(cd "$fixture_repo" && PATH="${fake_bin}:${PATH}" \
-  "${hook_command[@]}") || status=$?
+output=$(run_hook "$hook_target") || status=$?
 if ((status != 0)) || [[ -s "$COOLDOWN_NETWORK_LOG" ]] ||
   [[ "$output" != *"Publication dates: 1 from the cooldown database, 0 from crates.io"* ]]; then
   printf 'Cooldown hook re-fetched a date added since the base: %s\n' "$output" >&2
+  exit 1
+fi
+
+output=$(run_hook "$hook_target")
+if [[ ! -f "${hook_target}/.cargo-cooldown.json" ]] ||
+  [[ "$output" != "Cargo cooldown full-check cache matches"* ]]; then
+  printf 'Cooldown hook did not reuse its full-check cache: %s\n' "$output" >&2
+  exit 1
+fi
+
+run_hook > /dev/null
+if [[ ! -f "${fixture_repo}/target/.cargo-cooldown.json" ]]; then
+  echo "Cooldown hook did not cache under target/ without CARGO_TARGET_DIR" >&2
   exit 1
 fi
 
@@ -168,8 +195,7 @@ data["entries"]["cooldown-fixture@1.0.0"]["published"] = (
 path.write_text(json.dumps(data) + "\n")
 PY
 status=0
-output=$(cd "$fixture_repo" && PATH="${fake_bin}:${PATH}" \
-  "${hook_command[@]}") || status=$?
+output=$(run_hook "$hook_target") || status=$?
 if ((status != 1)) || [[ -s "$COOLDOWN_NETWORK_LOG" ]] ||
   [[ "$output" != *"FAIL: 1 crate(s) within the 3-day cooldown"* ]]; then
   printf 'Cooldown hook did not reject a fresh recorded crate offline: %s\n' "$output" >&2
@@ -184,6 +210,13 @@ cat > "$build_makefile" << 'BUILD_MAKEFILE'
 check-cargo-cooldown:
 	@printf '%s\n' cooldown >> "$(BUILD_LOG)"
 	@exit $(COOLDOWN_STATUS)
+.PHONY: print-build-targets
+print-build-targets:
+	@printf '%s\n' $(CARGO_BUILD_JOB_TARGETS) docker-build docker-build-force
+clean:
+	@printf '%s\n' clean >> "$(BUILD_LOG)"
+check-nextest-installed check-llvm-cov-installed check-hack-installed check-hawk-installed check-miri-installed clean-build-artifacts clean-caches clean-builds:
+	@:
 BUILD_MAKEFILE
 
 cat > "${fake_bin}/uv" << 'FAKE_UV'
@@ -199,6 +232,17 @@ printf '%s\n' "$*" >> "${BUILD_LOG:?}"
 FAKE_CARGO
 chmod +x "${fake_bin}/uv" "${fake_bin}/cargo"
 
+cat > "${fake_bin}/capnp" << 'FAKE_CAPNP'
+#!/bin/sh
+# Stop regeneration before it can remove source files if its gate regresses
+exit 1
+FAKE_CAPNP
+cat > "${fake_bin}/docker" << 'FAKE_DOCKER'
+#!/bin/sh
+printf '%s\n' "$*" >> "${BUILD_LOG:?}"
+FAKE_DOCKER
+chmod +x "${fake_bin}/capnp" "${fake_bin}/docker"
+
 run_build() {
   PATH="${fake_bin}:${PATH}" BUILD_LOG="$build_log" \
     make -C "$REPO_ROOT" --no-print-directory -j2 \
@@ -208,15 +252,6 @@ run_build() {
     "$@" > "${test_root}/make.log" 2>&1
 }
 
-if awk '
-  /^[^#[:space:]][^:]*:/ && !/^check-cargo-cooldown:/ &&
-    /:.*check-cargo-cooldown/ { found = 1 }
-  END { exit !found }
-' "$REPO_ROOT/Makefile"; then
-  echo "Routine Make targets still require the full cooldown check" >&2
-  exit 1
-fi
-
 for source in .github/actions/common-setup/action.yml .github/workflows/docker.yml; do
   if grep -Fq check-cargo-cooldown "$REPO_ROOT/$source"; then
     echo "Build setup still invokes the cooldown check: $source" >&2
@@ -224,19 +259,45 @@ for source in .github/actions/common-setup/action.yml .github/workflows/docker.y
   fi
 done
 
+build_targets=$(make -C "$REPO_ROOT" --no-print-directory -f Makefile -f "$build_makefile" print-build-targets 2> "${test_root}/make.log")
+for target in $build_targets; do
+  target=${target/\%/nautilus-core}
+  : > "$build_log"
+  if run_build COOLDOWN_STATUS=37 "$target"; then
+    echo "Build target accepted a failed cooldown check: $target" >&2
+    exit 1
+  fi
+  if [[ "$(grep -vx clean "$build_log" || true)" != cooldown || -e "$build_target/.py-stubs.stamp" ]]; then
+    cat "${test_root}/make.log" >&2
+    echo "Build target ran before the cooldown check passed: $target" >&2
+    exit 1
+  fi
+done
+
 : > "$build_log"
-run_build COOLDOWN_STATUS=37 build-wheel
-if grep -Fxq cooldown "$build_log" ||
+run_build COOLDOWN_STATUS=0 build-wheel
+if ! grep -Fxq cooldown "$build_log" ||
   ! grep -Fq 'maturin build --release --locked' "$build_log"; then
-  echo "Wheel build did not run independently of the cooldown check" >&2
+  echo "Successful cooldown check did not allow the build" >&2
   exit 1
 fi
 
+rm -f "$build_target/.py-stubs.stamp"
 : > "$build_log"
-run_build COOLDOWN_STATUS=37 py-stubs
-if grep -Fxq cooldown "$build_log" ||
+run_build COOLDOWN_STATUS=0 py-stubs
+if [[ "$(sed -n '1p' "$build_log")" != cooldown ]] ||
   ! grep -Fq generate_stubs.py "$build_log" || [[ ! -f "$build_target/.py-stubs.stamp" ]]; then
-  echo "Stub generation did not run independently of the cooldown check" >&2
+  echo "Successful cooldown check did not precede stub generation" >&2
+  exit 1
+fi
+
+# Serial Make runs sibling prerequisites in order, so the check would otherwise
+# write its cache before cleanup deletes the target directory.
+: > "$build_log"
+run_build -j1 COOLDOWN_STATUS=0 docker-build
+if [[ "$(sed -n '1p' "$build_log")" != clean || "$(sed -n '2p' "$build_log")" != cooldown ]]; then
+  cat "${test_root}/make.log" >&2
+  echo "Docker cleanup did not finish before the cooldown check" >&2
   exit 1
 fi
 

@@ -115,14 +115,22 @@ impl Debug for SandboxExecutionClient {
 }
 
 impl SandboxExecutionClient {
-    /// Creates a new [`SandboxExecutionClient`] instance.
-    #[must_use]
+    /// Creates a new [`SandboxExecutionClient`] with an explicitly configured fee model.
+    ///
+    /// The fee model is resolved once and shared across all matching engines for
+    /// this account, ensuring model state is shared within the account and isolated
+    /// across accounts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `config.fee_model` is `None`. A deliberate fee choice,
+    /// including an explicit zero-fee model, is required.
     pub fn new(
         core: ExecutionClientCore,
         config: SandboxExecutionClientConfig,
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let mut balances = AHashMap::new();
         for money in &config.starting_balances {
             balances.insert(money.currency.code.to_string(), *money);
@@ -133,12 +141,20 @@ impl SandboxExecutionClient {
             .clone()
             .map(FillModelHandle::from)
             .unwrap_or_default();
+
+        let fee_model = config.fee_model.clone().map(FeeModelHandle::from).ok_or_else(|| {
+            anyhow::anyhow!(
+                "SandboxExecutionClientConfig requires an explicit fee_model, including an explicit zero-fee model"
+            )
+        })?;
+
         let inner = Rc::new_cyclic(|weak: &std::rc::Weak<RefCell<SandboxInner>>| {
             RefCell::new(SandboxInner {
                 clock: clock.clone(),
                 cache: cache.clone(),
                 config: config.clone(),
                 fill_model,
+                fee_model,
                 matching_engines: AHashMap::new(),
                 next_engine_raw_id: 0,
                 balances,
@@ -159,7 +175,7 @@ impl SandboxExecutionClient {
             core.base_currency,
         );
 
-        Self {
+        Ok(Self {
             core: RefCell::new(core),
             factory,
             config,
@@ -167,7 +183,7 @@ impl SandboxExecutionClient {
             handlers: RefCell::new(None),
             clock,
             cache,
-        }
+        })
     }
 
     /// Returns a reference to the configuration.
@@ -577,6 +593,10 @@ impl ExecutionClient for SandboxExecutionClient {
         self.config.oms_type
     }
 
+    fn settles_contract_expirations(&self) -> bool {
+        true
+    }
+
     fn on_instrument(&mut self, instrument: InstrumentAny) {
         let instrument_id = instrument.id();
         let mut inner = self.inner.borrow_mut();
@@ -632,6 +652,8 @@ impl ExecutionClient for SandboxExecutionClient {
                 engine.set_event_handler(handler.clone());
             }
         }
+
+        self.inner.borrow_mut().load_open_orders();
 
         self.register_message_handlers();
         self.register_expiry_sweep_timer();
@@ -870,6 +892,7 @@ struct SandboxInner {
     cache: Rc<RefCell<Cache>>,
     config: SandboxExecutionClientConfig,
     fill_model: FillModelHandle,
+    fee_model: FeeModelHandle,
     matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
     next_engine_raw_id: u32,
     balances: AHashMap<String, Money>,
@@ -920,18 +943,57 @@ impl PartialEq for DelayedCommand {
 impl Eq for DelayedCommand {}
 
 impl SandboxInner {
+    fn load_open_orders(&mut self) {
+        let venue = self.config.venue;
+        let account_id = self.account_id;
+        let mut open_orders: Vec<(OrderAny, AccountId)> = {
+            let cache = self.cache.borrow();
+            cache
+                .orders_open(Some(&venue), None, None, Some(&account_id), None)
+                .into_iter()
+                .filter(|order| !order.is_emulated())
+                .filter_map(|order| {
+                    order
+                        .account_id()
+                        .map(|account_id| (order.clone(), account_id))
+                })
+                .collect()
+        };
+
+        open_orders.sort_by(|(a, _), (b, _)| {
+            a.ts_init()
+                .cmp(&b.ts_init())
+                .then_with(|| a.client_order_id().cmp(&b.client_order_id()))
+        });
+
+        for (order, account_id) in open_orders {
+            let instrument_id = order.instrument_id();
+            let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+            match instrument {
+                Some(instrument) => {
+                    self.ensure_matching_engine(&instrument);
+
+                    if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                        engine.restore_open_order(&order, account_id);
+                    }
+                }
+                None => {
+                    log::warn!(
+                        "No instrument for {instrument_id} to restore open order {}",
+                        order.client_order_id()
+                    );
+                }
+            }
+        }
+    }
+
     fn ensure_matching_engine(&mut self, instrument: &InstrumentAny) {
         let instrument_id = instrument.id();
 
         if !self.matching_engines.contains_key(&instrument_id) {
             let engine_config = self.config.to_matching_engine_config();
             let fill_model = self.fill_model.clone();
-            let fee_model = self
-                .config
-                .fee_model
-                .clone()
-                .map(FeeModelHandle::from)
-                .unwrap_or_default();
+            let fee_model = self.fee_model.clone();
             let raw_id = self.next_engine_raw_id;
             self.next_engine_raw_id = self.next_engine_raw_id.wrapping_add(1);
 

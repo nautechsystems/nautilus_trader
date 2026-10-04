@@ -92,6 +92,199 @@ case that produced the message.
 
 ---
 
+## Order book sync conformance
+
+Adapters that maintain order books from a venue stream must keep their output valid through venue
+and network faults. Unit and integration suites cannot reproduce venue timing,
+so changes to book sync and recovery machinery need a deterministic model check and live
+validation against a real venue. Live validation here means market-data-only observation:
+subscribe, request, and fault-inject, never place orders. A dark book is a subscribed book that
+never receives data.
+
+### Book stream contract
+
+`BookStreamChecker` in `nautilus_live::book::conformance`, enabled by the `nautilus-live`
+`test-support` feature, applies the contract to every emitted `OrderBookDeltas` batch:
+
+- A batch ends with `F_LAST`. Each `F_LAST` closes an event group, and the book must pass its
+  integrity check after every group because consumers observe it at those boundaries.
+- A snapshot group is a `Clear` followed by `Add` deltas, all flagged `F_SNAPSHOT`. A lone `Clear`
+  is an empty snapshot.
+- An incremental group carries neither `F_SNAPSHOT` nor `Clear`, and follows a snapshot.
+- Each incremental group's sequence exceeds the previous one when the venue sequence is monotonic
+  within a snapshot episode. OKX `seqId` can reset, and Polymarket, Hyperliquid, Betfair, and AX
+  Exchange books carry no venue sequence, so their checkers skip this rule and rely on the oracle.
+- A book emits nothing after its unsubscribe settles.
+
+### Validation levels
+
+Match the level to the riskiest aspect of the change; higher levels include the bars of every level
+below.
+
+| Level              | Trigger                                                                                          | Method                                                                                          | Acceptance                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| L0 Model           | Any change to `BookSync`, `BookRecovery`, or an adapter's use of them                            | Property test of the per-book state machine against a reference model, plus planted regressions | The property test passes, and reverting a known fix, such as the gap ownership rule, makes it fail                                    |
+| L1 Conformance     | Any change to previously validated sync/recovery code                                            | Rerun the venue's stress harness or established oracle                                          | PASS at the documented bar, zero checker violations, zero dark books, zero unexplained errors                                         |
+| L2 Edge probe      | Boundary behavior changes (timeouts, disabled paths, budget exhaustion, the retry ceiling)       | Targeted boundary scenarios, including each new tuning extreme                                  | Every scenario passes; disabled paths stay quiet; an exhausted budget reaches the ceiling and a late snapshot still restores the book |
+| L3 Race probe      | Concurrency or ordering changes (gates, epochs, reconnect interplay), or any live-found race fix | Fault injection plus subscribe churn under an independent oracle                                | Dozens of forced recoveries complete with zero dark books; the reported race scenario passes with no recurrence                       |
+| L4 Full validation | New sync/recovery implementation                                                                 | L1-L3 plus a sustained churn and reconnect-fault soak                                           | All lower bars hold for the full soak; recovery latencies stay bounded                                                                |
+
+The L0 property test is `schedule_keeps_sync_contract` in `crates/live/src/book/sync.rs`.
+Record the level, venue, oracle, and result with the change. A fix that live validation finds
+restarts at the level that found it: the rerun must clear the same bar, not a lighter one.
+
+### Fault catalog
+
+Every adapter must produce these outcomes, whichever
+[recovery family](adapters.md#order-book-recovery-ownership) it belongs to:
+
+| Fault                       | Required outcome                                                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sequence gap                | Output stops at the gap and resumes only after a fresh snapshot replaces the book.                                                                      |
+| Missing or late snapshot    | The snapshot deadline starts or retries recovery; a snapshot accepted between attempts ends it.                                                         |
+| Recovery cannot start       | The book stays unowned and requests recovery again on its next frame; a refused task cancels its claimed episode.                                       |
+| Rejected replacement        | Recovery retries; an error the classifier marks permanent skips the budget and retries at the ceiling.                                                  |
+| Retry budget exhausted      | One error log, then retries at the ceiling until a snapshot is accepted.                                                                                |
+| Reconnect mid-recovery      | The running recovery keeps its budget, ownership, and in-flight write, and its next ceiling wait ends at once; other books resync from fresh snapshots. |
+| Unsubscribe during recovery | Recovery and its pending writes stop, and the book emits nothing further.                                                                               |
+
+### Forcing techniques
+
+Prefer distinct orderings over raw volume: a probe earns its place by forcing an ordering the suite
+cannot produce (reconnect mid-recovery, a snapshot racing gate-open, an unsubscribe racing an
+in-flight subscribe), not by message count.
+
+| Technique                                                                   | Stresses                                                             | Figures that proved effective                                                           | Caught in practice                                                        |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Subscribe churn (rotating unsubscribe/resubscribe with periodic full flaps) | Recovery initiation, gate/epoch rollover, in-flight cancel races     | 20 s ticks over a 10-15 min run; dozens of forced recoveries (40+) with zero dark books | Duplicate-subscribe flaw that could not recover (forced a design revisit) |
+| Traffic freeze (STOP the tunnel ~40 s)                                      | Dead-connection detection, reconnect replay, post-reconnect recovery | 2-3 freezes per run, spaced minutes apart                                               | Proves reconnect recovery under total packet loss; no defect caught yet   |
+| Proxy fault injection (drop/hold/cut frames by rule)                        | Gap handling, held-frame release, oracle conformance                 | Thousands of oracle batches per run (6k+), per-round gap counts                         | Timeout-scaled harness race (fixed observe window vs new default)         |
+| Tuning extremes (0 plus a short non-default value)                          | Disabled-deadline branches, param threading end to end               | One short run per extreme (4-5 min) with churn active                                   | Confirmed the review-found zero-timeout fix live; proves threading        |
+| Client-issued reconnect (public reconnect command, then exercise)           | Reconnect recovery without touching host networking                  | 5+ consecutive reconnect/reconcile passes                                               | Proves recovery without host faults; no defect caught yet                 |
+| Serial repetition of the race scenario                                      | Scheduler sensitivity                                                | 5+ consecutive live passes; 100x repetition for deterministic harnesses                 | Flakes that pass once and fail rarely                                     |
+
+Route each venue through a network location it serves: Polymarket restricts access by region, while
+OKX, Lighter, Binance, Hyperliquid, and AX Exchange validate direct. Confirm the route delivers venue
+data before a long run: sockets can connect while the venue stays silent. Branches the venue never
+produces live belong in a captured-wire deterministic harness, not in the live run.
+
+### Oracles
+
+An oracle is an independent reconstruction of venue truth, compared with the emitted book through
+`BookStreamChecker::verify`:
+
+- Build it from a separate connection or a REST snapshot, never from the adapter's own state.
+- Compare at an aligned venue sequence. Skip a sample that cannot be aligned; it does not count as
+  a pass.
+- Count a snapshot episode verified once a comparison after its snapshot succeeds. A harness with
+  `Coverage::Episodes`, such as OKX, verifies each batch as it arrives and fails a session unless
+  every episode is verified. A harness with `Coverage::Samples`, such as Binance, matches oracle
+  samples by update ID after the fact, so it reports oracle checks and unmatched samples instead of
+  episode coverage.
+
+### Stress harnesses
+
+Stress harnesses are development tools for changes to book sync and recovery code. They are not
+part of the published crates and do not run in CI. The `BookStreamChecker` they use ships with
+`nautilus-live` under the `test-support` feature, so other tests can apply the same contract.
+
+An adapter that uses the shared book machinery keeps its live harness at
+`crates/adapters/<venue>/tests/stress/book_stress.rs`, registered as a test target named
+`<venue>-book-stress`:
+
+```toml
+[[test]]
+name = "okx-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]
+```
+
+`harness = false` lets the target own its runtime and arguments, and `test = false` keeps it out of
+default `cargo test` and nextest runs. Add `nautilus-live` with the `test-support` feature to the crate's
+dev-dependencies.
+
+The shared machinery is test source at `crates/live/tests/book/stress/`, which each harness compiles
+in with a path include:
+
+```rust
+#[path = "../../../../live/tests/book/stress/mod.rs"]
+mod stress;
+```
+
+The shared module runs the harness, and the venue supplies only its own pieces by implementing
+`StressVenue`:
+
+- A `WireCodec` that classifies each venue frame as a book snapshot, a book update, or an
+  unsubscribe acknowledgement, recording it in the oracle before any fault applies. It can also
+  rewrite a frame to plant a sequence gap or an in-band mismatch, and answer an adapter subscribe
+  with a venue rejection.
+- The proxy routes, the data client configuration, and any extra proxy routes, such as a REST
+  snapshot proxy.
+- The oracle comparison for each emitted batch, the condition for a healthy book, and a startup
+  self-check.
+- The scenarios, written against `Session`.
+
+`FaultProxy` relays the adapter's WebSocket traffic to the venue, or CRLF-delimited lines over raw
+TCP for a route whose upstream URL is not a WebSocket URL. A line route serves the proxy address
+alone, and the venue's `WireCodec::connect` opens its upstream connection, for example over TLS. It
+applies per-book `Fault` rules (drop snapshots or updates, corrupt, hold, silence, cut on
+unsubscribe, reject subscribes) and connection-wide cuts and freezes. `Session` passes every emitted batch through `BookStreamChecker` and the oracle, waits for
+books to heal, and checks at shutdown that every socket and reconnect handle is released.
+
+Every harness accepts the same flags, and venues add their own; `--help` lists them:
+
+| Flag              | Meaning                                                        | Default       |
+| ----------------- | -------------------------------------------------------------- | ------------- |
+| `--scenario NAME` | Scenario to run.                                               | `churn`       |
+| `--timeout SECS`  | `book_snapshot_timeout_secs`; `0` disables snapshot deadlines. | `10`          |
+| `--rounds N`      | Stress rounds.                                                 | Venue default |
+
+Run the harness explicitly, with adapter environment variables stripped:
+
+```bash
+CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-okx --features examples --test okx-book-stress -- --timeout 10 --rounds 18
+```
+
+Betfair streams market data only to logged-in accounts, so its harness runs with the Betfair
+credentials set; see [Live recovery validation](../integrations/betfair.md#live-recovery-validation).
+AX Exchange market data also requires authentication, so its harness reads sandbox credentials from
+the environment and runs without the wrapper.
+
+The harness writes one line per event to stderr, each led by a fixed word:
+
+| Line       | Meaning                                                                 |
+| ---------- | ----------------------------------------------------------------------- |
+| `START`    | The venue and arguments.                                                |
+| `CHECK`    | The startup self-check or a scenario probe passed.                      |
+| `ROUND`    | A stress round finished, with its counters.                             |
+| `SHUTDOWN` | A session stopped cleanly, with its counters and oracle coverage.       |
+| `PASS`     | The run finished; always the last line of a passing run.                |
+| `FAIL`     | A check failed or any thread panicked; the process exits with status 1. |
+
+A deadline failure reports the venue frames each proxy route received, which separates a silent
+route from an adapter failure. A `harness = false` target cannot run `#[test]` functions, so the
+venue proves its wire parsing and oracle in `StressVenue::self_check`, which runs before any venue
+traffic. The shared proxy, argument parsing, and wire book carry unit tests in the `nautilus-live`
+`book` test target, run with `cargo nextest run -p nautilus-live --features test-support --test book`.
+Document the harness in the adapter's integration guide under a `Live recovery validation` heading
+that covers what it checks, the faults it injects, the run command, its scenarios and flags, and the
+endpoints it requires. OKX, Binance, Lighter, Polymarket, Hyperliquid, Bybit, Betfair, and AX
+Exchange provide harnesses.
+
+### In-band verification
+
+When a venue publishes a book checksum or hash, validate it and treat a mismatch as a gap. It
+catches corruption in the data it covers that sequence checks miss, without an external oracle.
+Kraken validates the CRC32 checksum on each L3 update when `validate_l3_checksum` is enabled, which
+is the default. Polymarket validates the hash on each book snapshot that carries a hash and its full
+preimage (see [book snapshot validation](../integrations/polymarket.md#book-snapshot-validation)).
+OKX `books` frames carry a zero `checksum`, so OKX relies on its oracle instead.
+
+---
+
 Each group below begins with a summary table, followed by detailed test cards.
 Test IDs use spaced numbering to allow insertion without renumbering.
 
@@ -190,7 +383,7 @@ Test order book subscription modes and snapshot requests.
 | ------ | -------------------------- | ----------------------------------- | ----------------- |
 | TC-D10 | Subscribe book deltas      | Stream `OrderBookDeltas` updates.   | No book support.  |
 | TC-D11 | Subscribe book at interval | Periodic `OrderBook` snapshots.     | No book support.  |
-| TC-D12 | Subscribe book depth       | `OrderBookDepth10` snapshots.       | No book depth.    |
+| TC-D12 | Subscribe book depth       | `OrderBookDepth` snapshots.         | No book depth.    |
 | TC-D13 | Request book snapshot      | One-time book snapshot request.     | No book snapshot. |
 | TC-D14 | Managed book from deltas   | Build local book from delta stream. | No book support.  |
 
@@ -263,13 +456,19 @@ DataTesterConfig::builder()
 
 ### TC-D12: Subscribe book depth
 
-| Field              | Value                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------ |
-| **Prerequisite**   | Adapter connected, instrument loaded.                                                |
-| **Action**         | DataTester subscribes to `OrderBookDepth10` snapshots.                               |
-| **Event sequence** | `OrderBookDepth10` events received in `on_book_depth`.                               |
-| **Pass criteria**  | Depth snapshots received with up to 10 bid/ask levels; prices are correctly ordered. |
-| **Skip when**      | Adapter does not support book depth subscriptions.                                   |
+| Field              | Value                                                                            |
+| ------------------ | -------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded.                                            |
+| **Action**         | DataTester subscribes to `OrderBookDepth` snapshots.                             |
+| **Event sequence** | `OrderBookDepth` events received in `on_book_depth`.                             |
+| **Pass criteria**  | Depth snapshots respect the requested level limit; prices are correctly ordered. |
+| **Skip when**      | Adapter does not support book depth subscriptions.                               |
+
+Choose a depth supported by the venue; see the adapter guide for its limit. `book_depth` applies to
+all enabled book subscriptions and the book snapshot request. Omitting it uses the adapter default.
+When depth runs alongside deltas or interval books, DataTester
+subscribes to depth with `managed=False` so it cannot overwrite the delta-managed book. When only
+depth is enabled, its managed setting follows `manage_book`.
 
 **Python config:**
 
@@ -277,7 +476,6 @@ DataTesterConfig::builder()
 DataTesterConfig(
     instrument_ids=[instrument_id],
     subscribe_book_depth=True,
-    book_depth=10,
 )
 ```
 
@@ -289,7 +487,6 @@ DataTesterConfig::builder()
     .instrument_ids(vec![instrument_id])
     .subscribe_book_depth(true)
     .book_type(BookType::L2_MBP)
-    .book_depth(10)
     .build()?
 ```
 
@@ -855,6 +1052,8 @@ Test actor lifecycle behavior: unsubscribe handling, retirement cleanup, and cus
 | TC-D71 | Custom subscribe params | Adapter-specific subscription parameters.       | N/A.              |
 | TC-D72 | Custom request params   | Adapter-specific request parameters.            | N/A.              |
 | TC-D73 | Retirement cleanup      | Release an actor's retained data subscriptions. | N/A.              |
+| TC-D74 | DeFi shared pool demand | Keep shared pool feeds until the final owner.   | No DeFi support.  |
+| TC-D75 | DeFi bootstrap cancel   | Discard snapshots for canceled pool bootstraps. | No DeFi support.  |
 
 ### TC-D70: Unsubscribe on stop
 
@@ -977,6 +1176,48 @@ retires.
 - A failed `on_stop` or `on_fault` must not block retirement: disposal and deregistration must still
   complete from the corresponding transitional state.
 
+### TC-D74: DeFi shared pool demand
+
+| Field              | Value                                                                                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | A DeFi data client; two actors subscribe to the same pool, through the same or overlapping subscription types.             |
+| **Action**         | Retire or unsubscribe one actor, then the other, in each order.                                                            |
+| **Event sequence** | The first release sends no client unsubscribe for shared types; the final release unsubscribes and stops the pool updater. |
+| **Pass criteria**  | Pool events keep reaching the remaining actor and the profiler until the final release; none flow afterwards.              |
+| **Skip when**      | Adapter does not provide DeFi pool subscriptions.                                                                          |
+
+Cover these overlaps:
+
+- Two actors with the same subscription type, retired in either order.
+- `SubscribePool` with each narrower type (swaps, liquidity updates, fee collects, flash events),
+  unsubscribed in both orders. The narrower event filters must stay active while either
+  subscription remains.
+- The same pool on two data clients. Each client keeps its own demand, and the pool updater stays
+  active until both release.
+
+**Considerations:**
+
+- `DataTesterConfig` does not cover DeFi pool subscriptions. Create the actors manually.
+- A duplicate unsubscribe from one actor must not release another actor's demand.
+
+### TC-D75: DeFi bootstrap cancel
+
+| Field              | Value                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | A DeFi data client; the pool is absent from the cache, so a subscription requests a pool snapshot.    |
+| **Action**         | Subscribe, release the final owner before the pool definition arrives, then subscribe again.          |
+| **Event sequence** | Two snapshot requests are sent; the response to the first arrives after the second subscription.      |
+| **Pass criteria**  | The engine discards the first response; only the response to the current request installs a profiler. |
+| **Skip when**      | Adapter does not provide pool snapshots.                                                              |
+
+**Considerations:**
+
+- The second subscription requests a new snapshot only while the pool is absent from the cache. Once
+  the first request's pool definition arrives, a later subscription builds the profiler from the
+  cached pool instead, so the case needs a delayed response.
+- An engine reset or disconnect also cancels pending bootstraps. A response that arrives afterwards
+  must not install a profiler.
+
 ---
 
 ## DataTester configuration reference
@@ -1028,5 +1269,3 @@ The Rust builder also exposes these parameters:
 | `book_type`        | `BookType` | `L2_MBP` | 2              |
 | `subscribe_params` | `Params?`  | `None`   | 9              |
 | `request_params`   | `Params?`  | `None`   | 9              |
-
----

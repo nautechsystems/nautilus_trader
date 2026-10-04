@@ -26,7 +26,7 @@ use std::{
 
 use nautilus_core::string::{secret::SecretString, urlencoding};
 use nautilus_network::{
-    http::{HttpClient, Method},
+    http::{HttpClient, HttpRedirectPolicy, Method, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -142,6 +142,8 @@ impl BetfairHttpClient {
 
         Ok(Self {
             client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
+                .headers(create_standard_nautilus_headers().into_iter().collect())
                 .keyed_quotas(Self::rate_limiter_quotas(
                     request_rate_per_second.unwrap_or(5),
                     order_request_rate_per_second.unwrap_or(20),
@@ -620,7 +622,7 @@ impl BetfairHttpClient {
         if let Err(ref e) = result
             && should_retry(e)
         {
-            log::error!("Request exhausted retries: method={method}, error={e}");
+            log::warn!("Request exhausted retries: method={method}, error={e}");
         }
 
         result
@@ -738,6 +740,7 @@ fn map_retry_error(
 mod tests {
     use std::time::Duration;
 
+    use nautilus_testkit::http::assert_http_redirect_rejected;
     use parking_lot::Mutex;
     use proptest::prelude::*;
     use rstest::rstest;
@@ -762,6 +765,30 @@ mod tests {
                     .prop_map(|entries| serde_json::Value::Object(entries.into_iter().collect())),
             ]
         })
+    }
+
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects() {
+        let client = BetfairHttpClient::new(
+            BetfairCredential::new("user".into(), "password".into(), "app".into()),
+            Some(3),
+            Some(0),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
     }
 
     #[rstest]

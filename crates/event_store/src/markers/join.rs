@@ -152,7 +152,7 @@ fn replayable_data_class(data_cls: DataClass) -> Option<&'static str> {
         DataClass::Quote => Some("quotes"),
         DataClass::Trade => Some("trades"),
         DataClass::Bar => Some("bars"),
-        DataClass::BookDeltas | DataClass::BookDepth10 => None,
+        DataClass::BookDeltas | DataClass::BookDepth => None,
     }
 }
 
@@ -330,7 +330,7 @@ mod tests {
 
     #[rstest]
     #[case::deltas(DataClass::BookDeltas)]
-    #[case::depth10(DataClass::BookDepth10)]
+    #[case::depth(DataClass::BookDepth)]
     fn order_book_streams_resolve_order_only(#[case] data_cls: DataClass) {
         let order_book = dict(0, data_cls, "AUD/USD.SIM");
         let reader = reader_with(

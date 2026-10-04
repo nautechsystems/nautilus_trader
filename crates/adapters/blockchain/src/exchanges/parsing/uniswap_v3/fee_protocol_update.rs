@@ -142,6 +142,8 @@ pub fn parse_fee_protocol_update_event_rpc(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use rstest::*;
 
     use super::*;
@@ -167,7 +169,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_fee_protocol_update_event_hypersync(hypersync_log: HypersyncLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_fee_protocol_update_event_hypersync(dex, &hypersync_log).unwrap();
 
         assert_eq!(
@@ -183,7 +185,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_fee_protocol_update_event_rpc(rpc_log: RpcLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_fee_protocol_update_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
@@ -197,9 +199,9 @@ mod tests {
 
     #[rstest]
     fn test_hypersync_rpc_match(hypersync_log: HypersyncLog, rpc_log: RpcLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event_hypersync =
-            parse_fee_protocol_update_event_hypersync(dex.clone(), &hypersync_log).unwrap();
+            parse_fee_protocol_update_event_hypersync(Arc::clone(&dex), &hypersync_log).unwrap();
         let event_rpc = parse_fee_protocol_update_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);

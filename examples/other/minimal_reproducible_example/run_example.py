@@ -27,6 +27,7 @@ from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
@@ -137,6 +138,10 @@ def run_backtest() -> None:
         starting_balances=[Money.from_str("1000000 USD")],  # Initial account balance
         base_currency=USD,  # Base currency for account
         default_leverage=Decimal(1),  # No leverage used for account
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
     )
 
     # Step 3: Create instrument definition and add it to the engine

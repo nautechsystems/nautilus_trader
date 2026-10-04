@@ -22,6 +22,12 @@
 //! - BUY orders lock quote currency (cost of purchase).
 //! - SELL orders lock base currency (assets being sold).
 //!
+//! Instruments that model no base currency (binary options, equities, and the other types whose
+//! `base_currency()` is `None`) have no asset to reserve, so a SELL locks nothing rather than
+//! labeling the quantity as quote money. Inventory availability for those instruments is not
+//! tracked or checked locally, including across concurrent SELLs, and is left to the venue,
+//! whose rejections arrive through the normal order lifecycle.
+//!
 //! Callers must clear all existing locks via [`CashAccount::clear_balance_locked`]
 //! before applying new locks. This prevents stale currency entries when order
 //! compositions change.
@@ -127,8 +133,6 @@ impl CashAccount {
     /// # Errors
     ///
     /// Returns an error if `allow_borrowing` is false and any balance has a negative total.
-    ///
-    /// TODO: Force stop backtest engine on error (like Python's `set_backtest_force_stop`)
     pub fn update_balances(&mut self, balances: &[AccountBalance]) -> anyhow::Result<()> {
         if !self.allow_borrowing {
             for balance in balances {
@@ -271,20 +275,43 @@ mod tests {
     use indexmap::IndexMap;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use crate::{
         accounts::{Account, CashAccount, stubs::*},
         enums::{AccountType, CurrencyType, LiquiditySide, OrderSide, OrderType},
         events::{AccountState, account::stubs::*},
+        fees::MakerTakerFeeRates,
         identifiers::{AccountId, InstrumentId, position_id::PositionId, stubs::uuid4},
         instruments::{
-            Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity, Instrument,
-            InstrumentAny, stubs::*,
+            BinaryOption, Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair, Equity,
+            Instrument, InstrumentAny, stubs::*,
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
+
+    #[rstest]
+    fn test_account_type_predicates(cash_account: CashAccount) {
+        assert!(cash_account.is_cash_account());
+        assert!(!cash_account.is_margin_account());
+        assert!(cash_account.is_unleveraged());
+        assert!(Account::is_cash_account(&cash_account));
+        assert!(!Account::is_margin_account(&cash_account));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(cash_account_state: AccountState) {
+        let account = CashAccount::new(cash_account_state.clone(), true, false);
+        let same = CashAccount::new(cash_account_state.clone(), true, false);
+        let mut other_state = cash_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = CashAccount::new(other_state, true, false);
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
+    }
 
     #[rstest]
     fn test_display(cash_account: CashAccount) {
@@ -542,7 +569,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_balance_locked_buy_quanto_uses_quote_currency(
+    fn test_calculate_balance_locked_buy_quanto_uses_settlement_currency(
         cash_account_million_usd: CashAccount,
         ethbtc_quanto: CryptoFuture,
     ) {
@@ -555,7 +582,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("0.18 BTC"));
+        assert_eq!(balance_locked, Money::from("0.18 USDT"));
     }
 
     #[rstest]
@@ -565,11 +592,11 @@ mod tests {
         #[case] use_quote_for_inverse: bool,
         #[case] expected: Money,
         cash_account_million_usd: CashAccount,
-        xbtusd_inverse_perp: CryptoPerpetual,
+        btcusd_inverse_perp: CryptoPerpetual,
     ) {
         let balance_locked = cash_account_million_usd
             .calculate_balance_locked(
-                &xbtusd_inverse_perp.into_any(),
+                &btcusd_inverse_perp.into_any(),
                 OrderSide::Buy,
                 Quantity::from("100"),
                 Price::from("50000"),
@@ -610,7 +637,43 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("100 USD"));
+        assert_eq!(balance_locked, Money::zero(Currency::USD()));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_sell_binary_option_reserves_nothing(
+        cash_account_million_usd: CashAccount,
+        binary_option: BinaryOption,
+    ) {
+        // BinaryOption::base_currency() is None: there is no modeled asset to reserve, so a
+        // SELL must not reserve quote collateral.
+        let balance_locked = cash_account_million_usd
+            .calculate_balance_locked(
+                &InstrumentAny::BinaryOption(binary_option),
+                OrderSide::Sell,
+                Quantity::from("5.00"),
+                Price::from("0.500"),
+                None,
+            )
+            .unwrap();
+        assert_eq!(balance_locked, Money::zero(Currency::USDC()));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_buy_no_base_currency_still_reserves_notional(
+        cash_account_million_usd: CashAccount,
+        binary_option: BinaryOption,
+    ) {
+        let balance_locked = cash_account_million_usd
+            .calculate_balance_locked(
+                &binary_option.into_any(),
+                OrderSide::Buy,
+                Quantity::from("5"),
+                Price::from("0.500"),
+                None,
+            )
+            .unwrap();
+        assert_eq!(balance_locked, Money::new(2.5, Currency::USDC()));
     }
 
     #[rstest]
@@ -719,14 +782,16 @@ mod tests {
         #[case] use_quote_for_inverse: bool,
         #[case] expected: Money,
         cash_account_million_usd: CashAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
+        let fee_rates = MakerTakerFeeRates::new(dec!(-0.00025), dec!(0.00075));
         let result = cash_account_million_usd
             .calculate_commission(
-                &xbtusd_bitmex.into_any(),
+                &btcusd_bybit.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Maker,
+                fee_rates,
                 Some(use_quote_for_inverse),
             )
             .unwrap();
@@ -738,12 +803,14 @@ mod tests {
         cash_account_million_usd: CashAccount,
         audusd_sim: CurrencyPair,
     ) {
+        let fee_rates = MakerTakerFeeRates::new(dec!(0.00002), dec!(0.00002));
         let result = cash_account_million_usd
             .calculate_commission(
                 &audusd_sim.into_any(),
                 Quantity::from("1500000"),
                 Price::from("0.8005"),
                 LiquiditySide::Taker,
+                fee_rates,
                 None,
             )
             .unwrap();
@@ -753,14 +820,16 @@ mod tests {
     #[rstest]
     fn test_calculate_commission_crypto_taker(
         cash_account_million_usd: CashAccount,
-        xbtusd_bitmex: CryptoPerpetual,
+        btcusd_bybit: CryptoPerpetual,
     ) {
+        let fee_rates = MakerTakerFeeRates::new(dec!(-0.00025), dec!(0.00075));
         let result = cash_account_million_usd
             .calculate_commission(
-                &xbtusd_bitmex.into_any(),
+                &btcusd_bybit.into_any(),
                 Quantity::from("100000"),
                 Price::from("11450.50"),
                 LiquiditySide::Taker,
+                fee_rates,
                 None,
             )
             .unwrap();
@@ -770,12 +839,14 @@ mod tests {
     #[rstest]
     fn test_calculate_commission_fx_taker(cash_account_million_usd: CashAccount) {
         let instrument = usdjpy_idealpro();
+        let fee_rates = MakerTakerFeeRates::new(dec!(0.00002), dec!(0.00002));
         let result = cash_account_million_usd
             .calculate_commission(
                 &instrument.into_any(),
                 Quantity::from("2200000"),
                 Price::from("120.310"),
                 LiquiditySide::Taker,
+                fee_rates,
                 None,
             )
             .unwrap();

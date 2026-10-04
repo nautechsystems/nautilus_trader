@@ -17,17 +17,37 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
-use crate::{indicator::Indicator, momentum::roc::RateOfChange};
+use crate::{
+    indicator::Indicator,
+    momentum::roc::{RateOfChange, RateOfChangeMode},
+    python::float_precision,
+};
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl RateOfChangeMode {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl RateOfChange {
-    /// Creates a new `RateOfChange` instance.
+    /// Rate of change with configurable output units.
     #[new]
-    #[pyo3(signature = (period, use_log=None))]
-    #[must_use]
-    pub fn py_new(period: usize, use_log: Option<bool>) -> Self {
-        Self::new(period, use_log)
+    #[pyo3(signature = (period, use_log=None, mode=None))]
+    pub fn py_new(
+        period: usize,
+        use_log: Option<bool>,
+        mode: Option<RateOfChangeMode>,
+    ) -> PyResult<Self> {
+        let mode = mode.unwrap_or(if use_log.unwrap_or(false) {
+            RateOfChangeMode::Log
+        } else {
+            RateOfChangeMode::Percentage
+        });
+        Self::new_checked(period, mode).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -50,6 +70,12 @@ impl RateOfChange {
     #[pyo3(name = "use_log")]
     const fn py_use_log(&self) -> bool {
         self.use_log
+    }
+
+    #[getter]
+    #[pyo3(name = "mode")]
+    const fn py_mode(&self) -> RateOfChangeMode {
+        self.mode
     }
 
     #[getter]
@@ -86,8 +112,10 @@ impl RateOfChange {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

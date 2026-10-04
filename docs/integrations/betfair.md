@@ -84,6 +84,101 @@ When an OCM arrives during post-reconnect reconciliation, the adapter buffers th
 with its captured `ts_init`. Draining the buffer preserves the original receipt time instead of using
 the later replay time.
 
+## Order book recovery
+
+### Market images
+
+The data client streams every subscribed market on one market subscription per connection.
+Subscribing another market rewrites the subscription with every subscribed market, so Betfair
+images all of them again. The client queues each write at once, so subscriptions reach Betfair in
+command order and the latest carries every market.
+
+Betfair images whole markets: a market change with `img` set replaces the books of every runner in
+the market, so the adapter tracks book synchronization per market. A market emits no book deltas
+until its image arrives after the subscription write is queued. A market change that reaches a
+market before its image, or a runner change the adapter cannot parse, suppresses the market's book
+output and requests a fresh image. A request starts recovery only when no running recovery already
+owns the market.
+
+Each image replaces the book of every runner it carries. A runner that the image's market
+definition lists but the image omits receives an empty snapshot, since an image carries all of the
+market's prices. Betfair change messages carry no per-market sequence, so the stream connection's
+ordering stands in for gap detection. A market whose definition reports `CLOSED` stops tracking,
+since Betfair sends it no further changes or images.
+
+Book subscriptions last until the client disconnects: unsubscribing does not change the market
+subscription.
+
+### Snapshot deadlines
+
+Initial and recovery subscriptions wait up to `book_snapshot_timeout_secs` (default **10 seconds**)
+for each market's image after the subscription write is queued. A missing image starts or retries
+recovery.
+
+Set `book_snapshot_timeout_secs` to `0` to disable snapshot deadlines. A market change before an
+image still starts recovery, but a recovery attempt whose image never arrives then waits until the
+180-second retry budget ends, and each later attempt at the retry ceiling waits up to one minute.
+
+### Retry limits and reconnects
+
+Recovery reissues the market subscription without clocks under a new ID, and Betfair answers with a
+fresh image of every subscribed market, since each subscription replaces the last. A recovery joins
+a subscription written within the snapshot timeout whose image has not started instead of writing
+another, so markets that need recovery together share one image. With snapshot deadlines disabled,
+every attempt writes.
+
+Each recovery episode makes **up to eight attempts within 180 seconds**, with exponential backoff
+and jitter, then continues at an interval that doubles from one minute to fifteen minutes until an
+image is accepted. Recovery never ends in a failed state. Disconnect and shutdown cancel it. A venue
+rejection of a resubscription is logged, and the attempt retries once its snapshot deadline passes.
+
+A reconnect replays the market subscription with its latest `clk` and `initialClk`, so Betfair
+patches synced books in place with `RESUB_DELTA` changes and images any market it cannot patch.
+Synced books stay synced across the reconnect. A replayed subscription without clocks, such as a
+recovery subscription whose image has not arrived or one cleared after `INVALID_CLOCK`, receives a
+full image instead. A running
+recovery keeps its remaining budget, and one waiting between attempts after its budget retries at
+once on the new connection.
+
+See [Order book recovery ownership](../developer_guide/adapters.md#order-book-recovery-ownership)
+for the shared recovery machinery and adapter responsibilities.
+
+### Live recovery validation
+
+The `betfair-book-stress` harness is a development tool for changes to book synchronization and
+recovery. It connects to Betfair mainnet market data with account credentials and submits no orders.
+It subscribes every runner of the four most traded match odds markets that start between one hour
+ago and twelve hours ahead. It checks each runner's book against the book stream contract and
+against an independent reconstruction of its best 10 levels from the raw stream lines. The harness
+proxy relays the stream as CRLF-delimited lines, over plain TCP to the adapter and TLS to Betfair.
+
+From the repository root, with `BETFAIR_USERNAME`, `BETFAIR_PASSWORD`, and `BETFAIR_APP_KEY` set for
+a live application key, run:
+
+```bash
+CARGO_BUILD_JOBS=16 cargo test -p nautilus-betfair --features examples \
+  --test betfair-book-stress -- --timeout 10 --rounds 10
+```
+
+A delayed application key conflates the stream to three-minute updates, which outlast the
+harness's recovery limits.
+
+`--scenario` selects the run:
+
+- `churn` (default): rotates unparsable runner changes, rejected resubscriptions, resumed
+  reconnects, a reconnect during recovery, and either a 25-second traffic freeze or a connection
+  cut.
+- `boundaries`: probes retry exhaustion into the retry ceiling and shutdown during reconnects.
+
+`--timeout` sets the snapshot timeout in seconds, where `0` disables snapshot deadlines and the
+rejected-resubscription phase. `--rounds` sets the number of `churn` rounds (10 by default);
+`boundaries` runs its sequence once. `--markets` takes comma-separated open market IDs to test
+instead.
+
+The harness requires the Exchange Stream API and the Identity, Navigation, and Betting APIs, which
+log in, load the markets' instruments, and select the markets. See [Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for
+the shared flags and output format.
+
 ## Orders capability
 
 Betfair is a betting exchange, so several concepts from traditional financial venues do not apply.
@@ -108,6 +203,15 @@ BSP on-close instructions carry a **liability**, not a stake. For `MARKET_ON_CLO
 `LIMIT_ON_CLOSE` orders, the adapter sends the order quantity as the Betfair liability. Size a BSP
 order by the amount you are prepared to lose, not by the stake you want matched.
 :::
+
+BSP bets are irrevocable: once placed, the venue refuses cancel requests for them. While a BSP bet
+rests, both the stream and `listCurrentOrders` report it as `EXECUTION_COMPLETE` with zero matched,
+remaining, cancelled, lapsed, and voided sizes, carrying the liability separately. The adapter keeps
+such a bet `ACCEPTED` until BSP reconciliation, where a matched bet resolves `FILLED` and a lapsed
+bet resolves `CANCELED`. An explicit `CancelOrder` or `BatchCancelOrders` on a BSP bet emits
+`OrderCancelRejected` with the venue's `BET_TAKEN_OR_LAPSED` reason rather than closing the order;
+`CancelAllOrders` emits no per-order events, as described under
+[Cancel all orders](#cancel-all-orders).
 
 ### Time in force
 
@@ -189,7 +293,7 @@ Startup:
 1. Connect the HTTP client and fetch initial account funds.
 2. Seed OCM state from cached orders.
 3. Connect the Betfair execution stream and subscribe to order updates.
-4. Generate startup mass status from `listCurrentOrders`.
+4. Generate order and fill reports from the same `listCurrentOrders` observations.
 5. Reconcile order and fill reports into the execution engine.
 
 Cached open orders with venue identity are restored as already accepted. The adapter also restores
@@ -266,8 +370,8 @@ a recent window before allowing new submissions.
 | 1    | Transport loss or a server `connectionClosed` status. | Advances the reconciliation generation and halts new submissions immediately.                                        |
 | 2    | Replacement `Connection` message.                     | Marks authentication and retained subscriptions pending and raises `pending_resync`.                                 |
 | 3    | Complete `SUB_IMAGE` or `RESUB_DELTA`.                | Queues the current generation once. OCMs remain buffered until recovery completes.                                   |
-| 4    | Reconnect task receives the generation.               | Refreshes the session, requests `getAccountFunds`, then queries orders and fills with up to four bounded attempts.   |
-| 5    | Both `listCurrentOrders` queries succeed.             | Dispatches the complete mass status, commits fill deduplication, and reopens submissions under one generation check. |
+| 4    | Reconnect task receives the generation.               | Refreshes the session, requests `getAccountFunds`, then fetches one order snapshot with up to four bounded attempts. |
+| 5    | All snapshot pages succeed.                           | Dispatches the complete mass status, commits fill deduplication, and reopens submissions under one generation check. |
 
 The account-state refresh is best effort: a request or parse failure is logged but does not prevent
 mass-status dispatch or reopening the gate. A keep-alive failure other than `LoginFailed` continues
@@ -295,10 +399,58 @@ If the client disconnects while a reconciliation is still in flight, `clear_resy
 the active halt so a subsequent connect/submit cycle starts clean.
 
 The lookback window for the mass-status fetch is `stream_gap_recovery_lookback_mins` (default `10`).
-Fill recovery requests `OrderProjection::All`, orders results by match time, and bounds the request
-at the recovery timestamp. Betfair applies the date range to match time, so the result includes an
-order placed before the lookback when it matched during the gap, including execution-complete and
-settled orders still returned by `listCurrentOrders`.
+Order and fill reports use the same `OrderProjection::All` observations from one paginated
+`listCurrentOrders` traversal, batched in groups of up to 250 market IDs when a market filter is configured.
+If pages repeat a Bet ID, both reports use its last observation.
+Fill recovery selects orders locally by `matchedDate`, including both window bounds, and sorts them
+by match time. An order placed before the lookback remains eligible when it matched during the gap,
+including execution-complete and settled orders still returned by `listCurrentOrders`. Orders
+outside the fill window still contribute status and replacement history without advancing fill
+deduplication.
+
+Normal mass-status generation uses the caller's optional `lookback_mins` for its lower
+bound, with no upper bound. When no lookback is supplied, every order with a `matchedDate` is eligible.
+Normal generation commits deduplication only when the complete report is ready to return.
+
+## Open-only order discovery
+
+Open-only reconciliation discovers executable bets and all orders in BSP-enabled markets.
+
+### Replacement history
+
+The adapter queries known replacement Bet IDs for discovered orders and unresolved modifications.
+These extra lookups recover cumulative fills and confirmed quantities:
+
+- If required replacement or pending-modification Bet IDs remain missing after the extra queries,
+  the scan fails rather than treating their fills as zero.
+- A cached open order absent from venue discovery does not by itself cause this failure.
+
+### Market scope
+
+Discovery queries use the [configured reconciliation market scope](#execution-control-flow). A
+command for a specific instrument narrows discovery to that instrument's market and returns no
+reports when the market is outside the configured scope.
+
+Extra lookups by Bet ID and `customerOrderRef` are not market-filtered. They also query unresolved
+modifications for tracked orders outside the discovery scope. Those rows are excluded from reports,
+but missing required history still fails the scan.
+
+### Resting BSP bets
+
+To recover resting [BSP bets](#order-types), including bets the adapter does not track, the adapter
+also discovers BSP-enabled markets containing execution-complete account orders. It queries these
+markets with `listCurrentOrders` using `ALL` and reports resting BSP bets as `ACCEPTED`.
+
+BSP market discovery depends on the query scope:
+
+- **Account-wide:** `listEvents` finds events, then `listMarketCatalogue` queries each event with
+  `maxResults=1000`. If an event returns 1,000 markets, the scan fails rather than risking an
+  incomplete set of open orders.
+- **Market-scoped:** each catalog request contains at most 250 market IDs.
+
+Markets without BSP are not scanned for unrelated order history. Historical orders within discovered
+BSP-enabled markets, including ordinary limit bets, can still add required replacement history and
+increase scan work.
 
 ## Tick scheme and pricing
 
@@ -433,7 +585,9 @@ attempt has an unknown outcome, a later failed attempt cannot make the overall r
 Definitive placement, cancellation, and modification failures normally emit `OrderRejected`,
 `OrderCancelRejected`, and `OrderModifyRejected`, respectively. A definitive price replacement
 failure instead emits `OrderCanceled` once the old-bet cancel has arrived because that bet is no
-longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same terminal reason.
+longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same terminal reason,
+except on BSP bets, where the venue has not applied the cancel: there it emits
+`OrderCancelRejected` and the bet stays open until BSP reconciliation.
 
 ### JSON-RPC errors
 
@@ -686,6 +840,7 @@ The adapter configures stream liveness and message size as follows:
 | `subscription_delay_secs`           | `3`      | Delay before the first market subscription.                |
 | `subscribe_race_data`               | `False`  | Subscribe to RCM updates.                                  |
 | `subscribe_cricket_data`            | `False`  | Subscribe to cricket CCM updates.                          |
+| `book_snapshot_timeout_secs`        | `10`     | Initial and recovery market image wait; `0` disables it.   |
 
 :::warning
 When `stream_conflate_ms` is `None`, the adapter omits `conflateMs` from the subscription and leaves

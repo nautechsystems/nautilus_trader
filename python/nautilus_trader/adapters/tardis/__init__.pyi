@@ -14,8 +14,8 @@ __all__ = [
     "TardisDataClientFactory",
     "convert_tardis_options_chain_csv",
     "load_tardis_deltas",
-    "load_tardis_depth10_from_snapshot5",
-    "load_tardis_depth10_from_snapshot25",
+    "load_tardis_depth_from_snapshot5",
+    "load_tardis_depth_from_snapshot25",
     "load_tardis_funding_rates",
     "load_tardis_options_chain",
     "load_tardis_quotes",
@@ -23,8 +23,8 @@ __all__ = [
     "run_tardis_machine_replay",
     "stream_tardis_batched_deltas",
     "stream_tardis_deltas",
-    "stream_tardis_depth10_from_snapshot5",
-    "stream_tardis_depth10_from_snapshot25",
+    "stream_tardis_depth_from_snapshot5",
+    "stream_tardis_depth_from_snapshot25",
     "stream_tardis_funding_rates",
     "stream_tardis_options_chain",
     "stream_tardis_quotes",
@@ -69,6 +69,7 @@ class TardisDataClientConfig:
         options: typing.Sequence[ReplayNormalizedRequestOptions] | None = None,
         stream_options: typing.Sequence[StreamNormalizedRequestOptions] | None = None,
         extract_bbo_as_quotes: bool | None = None,
+        tardis_http_url: str | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -84,9 +85,9 @@ class TardisDeltaStreamIterator:
     def __next__(self) -> list[model.OrderBookDelta] | None: ...
 
 @typing.final
-class TardisDepth10StreamIterator:
-    def __iter__(self) -> TardisDepth10StreamIterator: ...
-    def __next__(self) -> list[model.OrderBookDepth10] | None: ...
+class TardisDepthStreamIterator:
+    def __iter__(self) -> TardisDepthStreamIterator: ...
+    def __next__(self) -> list[model.OrderBookDepth] | None: ...
 
 @typing.final
 class TardisFundingRateStreamIterator:
@@ -206,20 +207,20 @@ def load_tardis_deltas(
     instrument_id: model.InstrumentId | None = None,
     limit: int | None = None,
 ) -> list[model.OrderBookDelta]: ...
-def load_tardis_depth10_from_snapshot25(
+def load_tardis_depth_from_snapshot25(
     filepath: str | os.PathLike | pathlib.Path,
     price_precision: int | None = None,
     size_precision: int | None = None,
     instrument_id: model.InstrumentId | None = None,
     limit: int | None = None,
-) -> list[model.OrderBookDepth10]: ...
-def load_tardis_depth10_from_snapshot5(
+) -> list[model.OrderBookDepth]: ...
+def load_tardis_depth_from_snapshot5(
     filepath: str | os.PathLike | pathlib.Path,
     price_precision: int | None = None,
     size_precision: int | None = None,
     instrument_id: model.InstrumentId | None = None,
     limit: int | None = None,
-) -> list[model.OrderBookDepth10]: ...
+) -> list[model.OrderBookDepth]: ...
 def load_tardis_funding_rates(
     filepath: str | os.PathLike | pathlib.Path,
     instrument_id: model.InstrumentId | None = None,
@@ -263,22 +264,22 @@ def stream_tardis_deltas(
     instrument_id: model.InstrumentId | None = None,
     limit: int | None = None,
 ) -> TardisDeltaStreamIterator: ...
-def stream_tardis_depth10_from_snapshot25(
+def stream_tardis_depth_from_snapshot25(
     filepath: str | os.PathLike | pathlib.Path,
     chunk_size: int = 100000,
     price_precision: int | None = None,
     size_precision: int | None = None,
     instrument_id: model.InstrumentId | None = None,
     limit: int | None = None,
-) -> TardisDepth10StreamIterator: ...
-def stream_tardis_depth10_from_snapshot5(
+) -> TardisDepthStreamIterator: ...
+def stream_tardis_depth_from_snapshot5(
     filepath: str | os.PathLike | pathlib.Path,
     chunk_size: int = 100000,
     price_precision: int | None = None,
     size_precision: int | None = None,
     instrument_id: model.InstrumentId | None = None,
     limit: int | None = None,
-) -> TardisDepth10StreamIterator: ...
+) -> TardisDepthStreamIterator: ...
 def stream_tardis_funding_rates(
     filepath: str | os.PathLike | pathlib.Path,
     chunk_size: int = 100000,

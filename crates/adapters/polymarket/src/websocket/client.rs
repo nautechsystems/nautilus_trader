@@ -22,10 +22,12 @@ use std::sync::{
 
 use nautilus_live::{
     SocketControl,
+    book::snapshot::SnapshotGate,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
 };
 use nautilus_network::{
     SocketStateSink,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -85,6 +87,26 @@ impl WsSubscriptionHandle {
             .await
             .send(HandlerCommand::UnsubscribeMarket(asset_ids))
             .map_err(|e| anyhow::anyhow!("Failed to send UnsubscribeMarket: {e}"))
+    }
+
+    /// Sends a recovery subscription-cycle command to the handler.
+    pub async fn cycle_market_subscription(
+        &self,
+        asset_ids: Vec<String>,
+        cancel: tokio_util::sync::CancellationToken,
+        responder: tokio::sync::oneshot::Sender<super::handler::CycleMarketOutcome>,
+        gate: SnapshotGate,
+    ) -> anyhow::Result<()> {
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::CycleMarketSubscription {
+                asset_ids,
+                cancel,
+                responder,
+                gate,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send CycleMarketSubscription: {e}"))
     }
 
     // Constructs a handle around a raw command sender. Test-only: lets unit
@@ -348,10 +370,13 @@ impl PolymarketWebSocketClient {
 
             loop {
                 match handler.next().await {
-                    Some(PolymarketWsMessage::Reconnected) => {
+                    Some(PolymarketWsMessage::Reconnected { .. }) => {
                         log::info!("Polymarket WebSocket reconnected");
 
-                        if handler.send(PolymarketWsMessage::Reconnected).is_err() {
+                        if handler
+                            .send(PolymarketWsMessage::Reconnected { shard_id: None })
+                            .is_err()
+                        {
                             if handler.is_stopped() {
                                 log::debug!("Output channel closed, stopping handler");
                             } else {
@@ -396,9 +421,11 @@ impl PolymarketWebSocketClient {
             WsChannel::User => Some(POLYMARKET_HEARTBEAT_PAYLOAD.to_string()),
         };
 
+        let headers = create_standard_nautilus_headers();
+
         WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![],
+            headers,
             heartbeat_interval_secs: Some(POLYMARKET_HEARTBEAT_SECS),
             heartbeat_payload,
             connect_timeout_ms: Some(15_000),
@@ -409,8 +436,11 @@ impl PolymarketWebSocketClient {
             reconnect_max_attempts: None,
             heartbeat_timeout_secs: Some(POLYMARKET_HEARTBEAT_TIMEOUT_SECS),
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
             proxy_url: self.proxy_url.as_ref().map(|url| url.expose().to_string()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         }
     }
 
@@ -531,14 +561,20 @@ impl PolymarketWebSocketClient {
             .map_err(|e| anyhow::anyhow!("Failed to send SubscribeMarket: {e}"))
     }
 
-    /// Remove asset IDs from the active subscription set.
+    /// Queues removal of the given market asset subscriptions.
     ///
-    /// The IDs are dropped from the reconnect set so they will not be
-    /// re-subscribed after a reconnect. No wire message is sent.
+    /// The handler removes the IDs from reconnect replay and attempts a wire unsubscribe
+    /// on the current connection. If that connection changes before the write, the
+    /// unsubscribe is dropped rather than sent on the replacement connection.
+    ///
+    /// Success means the command was queued, not acknowledged by the venue. The handler
+    /// logs wire-send failures rather than returning them to the caller.
     ///
     /// # Errors
     ///
-    /// Returns an error if called on a user-channel client (incompatible channel).
+    /// Returns an error if:
+    /// - Called on a user-channel client.
+    /// - The command cannot be queued.
     pub async fn unsubscribe_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
         if self.channel != WsChannel::Market {
             anyhow::bail!(
@@ -710,7 +746,7 @@ mod tests {
 
         assert!(matches!(
             message,
-            Some(super::super::messages::PolymarketWsMessage::Reconnected)
+            Some(super::super::messages::PolymarketWsMessage::Reconnected { .. })
         ));
 
         client
@@ -746,7 +782,6 @@ mod tests {
         let market_debug = format!("{market:?}");
         let user_debug = format!("{user:?}");
         let assert_common = |config: &WebSocketConfig| {
-            assert_eq!(config.headers, Vec::<(String, String)>::new());
             assert_eq!(config.heartbeat_interval_secs, Some(10));
             assert_eq!(config.connect_timeout_ms, Some(15_000));
             assert_eq!(config.reconnect_delay_initial_ms, Some(250));

@@ -33,8 +33,6 @@ Examples include listed crypto futures calendar spreads.
 | `min_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`         | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`         | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`                | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
@@ -62,7 +60,6 @@ use nautilus_model::{
     instruments::CryptoFuturesSpread,
     types::{Currency, Price, Quantity},
 };
-use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 let activation: Timestamp = "2026-05-12T00:00:00Z".parse().unwrap();
@@ -85,8 +82,6 @@ let btc_spread = CryptoFuturesSpread::builder()
     .multiplier(Quantity::from("10"))
     .lot_size(Quantity::from("1"))
     .min_quantity(Quantity::from("1"))
-    .maker_fee(dec!(0.0003))
-    .taker_fee(dec!(0.0003))
     .ts_event(UnixNanos::default())
     .ts_init(UnixNanos::default())
     .build()
@@ -94,8 +89,6 @@ let btc_spread = CryptoFuturesSpread::builder()
 ```
 
 ```python tab="Python"
-from decimal import Decimal
-
 import pandas as pd
 
 from nautilus_trader.model import CryptoFuturesSpread
@@ -125,8 +118,6 @@ btc_spread = CryptoFuturesSpread(
     multiplier=Quantity.from_int(10),
     lot_size=Quantity.from_int(1),
     min_quantity=Quantity.from_int(1),
-    maker_fee=Decimal("0.0003"),
-    taker_fee=Decimal("0.0003"),
     ts_event=0,
     ts_init=0,
 )

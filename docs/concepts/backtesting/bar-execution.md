@@ -72,8 +72,11 @@ the first visited level determines which order can fill first.
 Configure adaptive ordering on the venue:
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
@@ -86,6 +89,10 @@ engine.add_venue(
     account_type=AccountType.CASH,
     starting_balances=[Money.from_str("10_000 USDT")],
     bar_adaptive_high_low_ordering=True,
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 
@@ -101,12 +108,17 @@ timestamp, the engine can release it from the venue's latency queue in two ways:
   timer events, the first bar at or after the arrival timestamp completes its OHLC sweep before the
   order settles, so the order sees that bar's close. Quote or trade ticks can release it earlier
   against the book state they establish.
-- An unrestricted settlement point, such as a timer, funding-rate settlement, or shutdown drain.
+- An unrestricted settlement point, such as an actor or strategy timer, funding-rate settlement, or shutdown drain.
   These points release all commands due at that time.
 
 Market data for another instrument does not release the delayed command against stale book state.
+Portfolio snapshot timers for daily equity curves and `PortfolioConfig.snapshot_interval_ms` samples
+do not release older delayed commands.
 
 ```python
+from decimal import Decimal
+
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.execution import StaticLatencyModel
 
 engine.add_venue(
@@ -115,6 +127,10 @@ engine.add_venue(
     account_type=AccountType.CASH,
     starting_balances=[Money.from_str("10_000 USDT")],
     latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal("0"),
+        taker_rate=Decimal("0"),
+    ),
 )
 ```
 

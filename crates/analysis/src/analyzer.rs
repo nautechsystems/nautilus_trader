@@ -1002,6 +1002,7 @@ mod tests {
         accounts::{AccountAny, CashAccount},
         enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide, PositionSide},
         events::{AccountState, OrderFilled, PortfolioSnapshot},
+        fees::MakerTakerFeeRates,
         identifiers::{
             AccountId, ClientOrderId,
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
@@ -1224,6 +1225,7 @@ mod tests {
             _: Quantity,
             _: Price,
             _: LiquiditySide,
+            _: MakerTakerFeeRates,
             _: Option<bool>,
         ) -> Result<Money, anyhow::Error> {
             todo!()

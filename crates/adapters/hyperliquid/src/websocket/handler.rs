@@ -27,6 +27,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, Params, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType},
     identifiers::{AccountId, InstrumentId},
@@ -55,7 +56,7 @@ use super::{
     },
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
-        parse_ws_order_book_deltas, parse_ws_order_book_depth10, parse_ws_order_status_report,
+        parse_ws_order_book_deltas, parse_ws_order_book_depth, parse_ws_order_status_report,
         parse_ws_public_trade, parse_ws_quote_tick, parse_ws_trade_tick, parse_ws_twap_history_row,
         parse_ws_twap_slice_fill,
     },
@@ -95,6 +96,18 @@ pub enum HandlerCommand {
     },
     /// Resubscribes without interleaving handler input between the two sends.
     Resubscribe { subscription: SubscriptionRequest },
+    /// Writes an `l2Book` subscription on the current connection, opening `gate` once written.
+    ///
+    /// With `replace`, sends the unsubscribe first so the venue restarts the stream with a
+    /// snapshot. The write always runs, since the stream registry already counts it; `cancel`
+    /// only keeps the gate closed.
+    WriteBook {
+        subscription: SubscriptionRequest,
+        replace: bool,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+        completion: tokio::sync::oneshot::Sender<Result<(), HyperliquidWsError>>,
+    },
     /// Send a WebSocket post request.
     Post {
         id: u64,
@@ -122,8 +135,8 @@ pub enum HandlerCommand {
     /// Cache spot fill coin mappings for instrument lookup.
     CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
     /// Flag whether the `l2Book` stream for `coin` should also be emitted
-    /// as [`NautilusWsMessage::Depth10`] snapshots.
-    SetDepth10Sub { coin: Ustr, subscribed: bool },
+    /// as [`NautilusWsMessage::Depth`] snapshots.
+    SetDepthSub { coin: Ustr, subscribed: bool },
 }
 
 #[derive(Default)]
@@ -252,7 +265,7 @@ pub(super) struct FeedHandler {
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
     trade_subs: AHashMap<Ustr, TradeStreamUses>,
     all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
-    depth10_subs: AHashSet<Ustr>,
+    depth_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
     processed_public_trade_ids: FifoCache<(Ustr, u64), 10_000>,
     asset_context_caches: AssetContextCaches,
@@ -306,7 +319,7 @@ impl FeedHandler {
             asset_context_subs: AHashMap::new(),
             trade_subs: AHashMap::new(),
             all_dex_asset_ctxs_instrument_ids: AHashMap::new(),
-            depth10_subs: AHashSet::new(),
+            depth_subs: AHashSet::new(),
             processed_trade_ids: FifoCache::new(),
             processed_public_trade_ids: FifoCache::new(),
             asset_context_caches: AssetContextCaches::default(),
@@ -396,6 +409,23 @@ impl FeedHandler {
                             self.unsubscribe(vec![subscription.clone()]).await;
                             self.subscribe(vec![subscription]).await;
                         }
+                        HandlerCommand::WriteBook {
+                            subscription,
+                            replace,
+                            cancel,
+                            gate,
+                            completion,
+                        } => {
+                            // The registry already counts the stream, so skipping or interrupting
+                            // the write could leave a stream that depth shares unsubscribed; a
+                            // later queued unsubscribe settles the final state instead.
+                            let result = self.write_book(subscription, replace).await;
+
+                            if result.is_ok() && !cancel.is_cancelled() {
+                                gate.open();
+                            }
+                            let _ = completion.send(result);
+                        }
                         HandlerCommand::Post {
                             id,
                             request,
@@ -444,7 +474,7 @@ impl FeedHandler {
                                     };
 
                                     if let Err(e) = result {
-                                        log::error!("Error sending post request id={id}: {e}");
+                                        log::warn!("Error sending post request id={id}: {e}");
                                         self.post_router
                                             .cancel_registration(id, &cancellation_token)
                                             .await;
@@ -504,11 +534,11 @@ impl FeedHandler {
                         HandlerCommand::CacheSpotFillCoins(_) => {
                             // No longer needed - raw_symbol now contains the proper format
                         }
-                        HandlerCommand::SetDepth10Sub { coin, subscribed } => {
+                        HandlerCommand::SetDepthSub { coin, subscribed } => {
                             if subscribed {
-                                self.depth10_subs.insert(coin);
+                                self.depth_subs.insert(coin);
                             } else {
-                                self.depth10_subs.remove(&coin);
+                                self.depth_subs.remove(&coin);
                             }
                         }
                     }
@@ -573,7 +603,7 @@ impl FeedHandler {
                                         ts_init,
                                         &self.asset_context_subs,
                                         &self.trade_subs,
-                                        &self.depth10_subs,
+                                        &self.depth_subs,
                                         &mut self.processed_trade_ids,
                                         &mut self.processed_public_trade_ids,
                                         &mut self.asset_context_caches,
@@ -658,6 +688,57 @@ impl FeedHandler {
         }
     }
 
+    async fn write_book(
+        &self,
+        subscription: SubscriptionRequest,
+        replace: bool,
+    ) -> Result<(), HyperliquidWsError> {
+        let client = self.client.as_ref().ok_or_else(|| {
+            HyperliquidWsError::ClientError("No WebSocket client available".to_string())
+        })?;
+
+        let key = subscription_to_key(&subscription);
+        let rate_key = self.rate_limits.message_key();
+        let rate_keys = Some(std::slice::from_ref(&rate_key));
+        let epoch = client.connection_epoch();
+
+        if replace {
+            // Keeps the stream desired for reconnect replay; its unsubscribe ack is then stale
+            self.subscriptions.mark_failure(&key);
+
+            let request = HyperliquidWsRequest::Unsubscribe {
+                subscription: subscription.clone(),
+            };
+
+            client
+                .send_text_on_connection(serialize_request(&request)?, rate_keys, epoch)
+                .await?;
+        } else {
+            self.subscriptions.mark_subscribe(&key);
+
+            if let Err(e) = self
+                .rate_limits
+                .reserve_subscription(self.client_id, &subscription)
+            {
+                self.subscriptions.mark_unsubscribe(&key);
+                self.subscriptions.confirm_unsubscribe(&key);
+                return Err(HyperliquidWsError::ClientError(e));
+            }
+        }
+
+        let request = HyperliquidWsRequest::Subscribe { subscription };
+
+        if let Err(e) = client
+            .send_text_on_connection(serialize_request(&request)?, rate_keys, epoch)
+            .await
+        {
+            self.subscriptions.mark_failure(&key);
+            return Err(e.into());
+        }
+
+        Ok(())
+    }
+
     async fn unsubscribe(&mut self, subscriptions: Vec<SubscriptionRequest>) {
         for subscription in subscriptions {
             let key = subscription_to_key(&subscription);
@@ -689,7 +770,7 @@ impl FeedHandler {
         ts_init: UnixNanos,
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
         trade_subs: &AHashMap<Ustr, TradeStreamUses>,
-        depth10_subs: &AHashSet<Ustr>,
+        depth_subs: &AHashSet<Ustr>,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
         processed_public_trade_ids: &mut FifoCache<(Ustr, u64), 10_000>,
         asset_context_caches: &mut AssetContextCaches,
@@ -843,7 +924,7 @@ impl FeedHandler {
                 result.extend(Self::handle_l2_book(
                     &data,
                     instruments,
-                    depth10_subs,
+                    depth_subs,
                     ts_init,
                 ));
             }
@@ -1072,7 +1153,7 @@ impl FeedHandler {
     fn handle_l2_book(
         data: &super::messages::WsBookData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        depth10_subs: &AHashSet<Ustr>,
+        depth_subs: &AHashSet<Ustr>,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
         let mut out = Vec::new();
@@ -1084,13 +1165,16 @@ impl FeedHandler {
 
         match parse_ws_order_book_deltas(data, instrument, ts_init) {
             Ok(deltas) => out.push(NautilusWsMessage::Deltas(deltas)),
-            Err(e) => log::error!("Error parsing order book deltas: {e}"),
+            Err(e) => {
+                log::error!("Error parsing order book deltas: {e}");
+                out.push(NautilusWsMessage::BookInvalid(instrument.id()));
+            }
         }
 
-        if depth10_subs.contains(&data.coin) {
-            match parse_ws_order_book_depth10(data, instrument, ts_init) {
-                Ok(depth) => out.push(NautilusWsMessage::Depth10(Box::new(depth))),
-                Err(e) => log::error!("Error parsing order book depth10: {e}"),
+        if depth_subs.contains(&data.coin) {
+            match parse_ws_order_book_depth(data, instrument, ts_init) {
+                Ok(depth) => out.push(NautilusWsMessage::Depth(Box::new(depth))),
+                Err(e) => log::error!("Error parsing order book depth: {e}"),
             }
         }
 
@@ -1622,6 +1706,11 @@ pub(crate) fn should_retry_hyperliquid_error(error: &HyperliquidWsError) -> bool
     }
 }
 
+fn serialize_request(request: &HyperliquidWsRequest) -> Result<String, HyperliquidWsError> {
+    serde_json::to_string(request)
+        .map_err(|e| HyperliquidWsError::MessageSerialization(e.to_string()))
+}
+
 /// Creates a timeout error for Hyperliquid retry logic.
 pub(crate) fn create_hyperliquid_timeout_error(msg: String) -> HyperliquidWsError {
     HyperliquidWsError::ClientError(msg)
@@ -1641,6 +1730,7 @@ mod tests {
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_common::cache::fifo::FifoCacheMap;
     use nautilus_core::nanos::UnixNanos;
+    use nautilus_live::book::snapshot::SnapshotGate;
     use nautilus_model::{
         data::Data,
         identifiers::{ClientOrderId, InstrumentId, Symbol},
@@ -1664,6 +1754,7 @@ mod tests {
     use super::{
         super::{
             client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
+            error::HyperliquidWsError,
             messages::{
                 HyperliquidWsRequest, NautilusWsMessage, PerpsAssetCtx, PostRequest,
                 SharedAssetCtx, SpotAssetCtx, SubscriptionRequest, WsActiveAssetCtxData,
@@ -1922,6 +2013,93 @@ mod tests {
             .await
             .expect("post id should be reusable after cancellation");
         assert!(task.await.unwrap().is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn write_book_opens_gate_only_after_completed_write() {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let cloid_cache: CloidCache = Arc::new(Mutex::new(FifoCacheMap::<
+            Ustr,
+            ClientOrderId,
+            CLOID_CACHE_CAPACITY,
+        >::new()));
+
+        let mut handler = FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            cloid_cache,
+            PostRouter::new(),
+            Arc::new(WebSocketRateLimits::new()),
+            1,
+        );
+
+        let subscription = || SubscriptionRequest::L2Book {
+            coin: Ustr::from("BTC"),
+            n_sig_figs: None,
+            mantissa: None,
+        };
+
+        let failed_gate = SnapshotGate::default();
+        failed_gate.lock().close();
+        let (failed_tx, failed_rx) = tokio::sync::oneshot::channel();
+        let cancelled_gate = SnapshotGate::default();
+        cancelled_gate.lock().close();
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
+
+        // No client is set, so the write fails before any send
+        cmd_tx
+            .send(HandlerCommand::WriteBook {
+                subscription: subscription(),
+                replace: false,
+                cancel: CancellationToken::new(),
+                gate: failed_gate.clone(),
+                completion: failed_tx,
+            })
+            .unwrap();
+
+        cmd_tx
+            .send(HandlerCommand::WriteBook {
+                subscription: subscription(),
+                replace: true,
+                cancel: cancelled,
+                gate: cancelled_gate.clone(),
+                completion: cancelled_tx,
+            })
+            .unwrap();
+
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let next = handler.next().await;
+        let failed = failed_rx.await.unwrap();
+        let attempted = cancelled_rx.await.unwrap();
+
+        assert!(next.is_none());
+        assert!(matches!(
+            failed,
+            Err(HyperliquidWsError::ClientError(message))
+                if message == "No WebSocket client available"
+        ));
+        assert!(failed_gate.lock().is_closed());
+        assert!(
+            matches!(
+                attempted,
+                Err(HyperliquidWsError::ClientError(message))
+                    if message == "No WebSocket client available"
+            ),
+            "a cancelled write still runs",
+        );
+        assert!(cancelled_gate.lock().is_closed());
     }
 
     fn retry_manager_with_backoff() -> RetryManager<PostSendError> {
@@ -2256,15 +2434,15 @@ mod tests {
     }
 
     #[rstest]
-    fn handle_l2_book_emits_deltas_only_when_not_in_depth10_subs() {
+    fn handle_l2_book_emits_deltas_only_when_not_in_depth_subs() {
         let mut instruments = AHashMap::new();
         instruments.insert(Ustr::from("BTC"), btc_perp());
-        let depth10_subs = AHashSet::<Ustr>::new();
+        let depth_subs = AHashSet::<Ustr>::new();
 
         let msgs = FeedHandler::handle_l2_book(
             &one_level_book(),
             &instruments,
-            &depth10_subs,
+            &depth_subs,
             UnixNanos::default(),
         );
 
@@ -2273,33 +2451,56 @@ mod tests {
     }
 
     #[rstest]
-    fn handle_l2_book_emits_deltas_and_depth10_when_coin_in_subs() {
+    fn handle_l2_book_emits_deltas_and_depth_when_coin_in_subs() {
         let mut instruments = AHashMap::new();
         instruments.insert(Ustr::from("BTC"), btc_perp());
-        let mut depth10_subs = AHashSet::<Ustr>::new();
-        depth10_subs.insert(Ustr::from("BTC"));
+        let mut depth_subs = AHashSet::<Ustr>::new();
+        depth_subs.insert(Ustr::from("BTC"));
 
         let msgs = FeedHandler::handle_l2_book(
             &one_level_book(),
             &instruments,
-            &depth10_subs,
+            &depth_subs,
             UnixNanos::default(),
         );
 
         assert_eq!(msgs.len(), 2);
         assert!(matches!(msgs[0], NautilusWsMessage::Deltas(_)));
-        assert!(matches!(msgs[1], NautilusWsMessage::Depth10(_)));
+        assert!(matches!(msgs[1], NautilusWsMessage::Depth(_)));
+    }
+
+    #[rstest]
+    fn handle_l2_book_reports_unparsable_frame_as_invalid_book() {
+        let instrument = btc_perp();
+        let instrument_id = instrument.id();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), instrument);
+        let mut book = one_level_book();
+        book.time = u64::MAX;
+
+        let msgs = FeedHandler::handle_l2_book(
+            &book,
+            &instruments,
+            &AHashSet::<Ustr>::new(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(
+            msgs[0],
+            NautilusWsMessage::BookInvalid(id) if id == instrument_id
+        ));
     }
 
     #[rstest]
     fn handle_l2_book_returns_empty_when_instrument_unknown() {
         let instruments = AHashMap::<Ustr, InstrumentAny>::new();
-        let depth10_subs = AHashSet::<Ustr>::new();
+        let depth_subs = AHashSet::<Ustr>::new();
 
         let msgs = FeedHandler::handle_l2_book(
             &one_level_book(),
             &instruments,
-            &depth10_subs,
+            &depth_subs,
             UnixNanos::default(),
         );
 

@@ -22,12 +22,14 @@ import importlib
 import subprocess
 import sys
 import textwrap
+from decimal import Decimal
 
 import pytest
 
 from nautilus_trader.analysis import PortfolioStatistic
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
@@ -181,6 +183,10 @@ def _engine_with_fills() -> BacktestEngine:
         account_type=AccountType.MARGIN,
         base_currency=usd,
         starting_balances=[Money(1_000_000.0, usd)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(audusd)
     engine.add_data(_quotes(audusd))

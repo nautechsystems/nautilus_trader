@@ -16,7 +16,9 @@
 use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{
+        IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err, to_pyruntime_err, to_pyvalue_err,
+    },
 };
 use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
@@ -25,10 +27,11 @@ use crate::{
     accounts::{Account, MarginAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
+    fees::MakerTakerFeeRates,
     identifiers::{AccountId, InstrumentId},
     instruments::InstrumentAny,
     position::Position,
-    python::instruments::pyobject_to_instrument_any,
+    python::{account::resolve_balance_currency, instruments::pyobject_to_instrument_any},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 
@@ -97,8 +100,9 @@ impl MarginAccount {
 
     #[pyo3(name = "balance_total")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
-        Account::balance_total(self, currency)
+    fn py_balance_total(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance_total(self, Some(currency)))
     }
 
     #[pyo3(name = "balances_total")]
@@ -108,8 +112,9 @@ impl MarginAccount {
 
     #[pyo3(name = "balance_free")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_free(&self, currency: Option<Currency>) -> Option<Money> {
-        Account::balance_free(self, currency)
+    fn py_balance_free(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance_free(self, Some(currency)))
     }
 
     #[pyo3(name = "balances_free")]
@@ -119,8 +124,9 @@ impl MarginAccount {
 
     #[pyo3(name = "balance_locked")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
-        Account::balance_locked(self, currency)
+    fn py_balance_locked(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance_locked(self, Some(currency)))
     }
 
     #[pyo3(name = "balances_locked")]
@@ -130,8 +136,9 @@ impl MarginAccount {
 
     #[pyo3(name = "balance")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance(&self, currency: Option<Currency>) -> Option<AccountBalance> {
-        Account::balance(self, currency).copied()
+    fn py_balance(&self, currency: Option<Currency>) -> PyResult<Option<AccountBalance>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance(self, Some(currency)).copied())
     }
 
     #[pyo3(name = "balances")]
@@ -193,13 +200,16 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "calculate_commission")]
-    #[pyo3(signature = (instrument, last_qty, last_px, liquidity_side, use_quote_for_inverse=None))]
+    #[pyo3(signature = (instrument, last_qty, last_px, liquidity_side, maker_rate, taker_rate, use_quote_for_inverse=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_calculate_commission(
         &self,
         instrument: Py<PyAny>,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        maker_rate: Decimal,
+        taker_rate: Decimal,
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
@@ -207,12 +217,14 @@ impl MarginAccount {
             return Err(to_pyvalue_err("Invalid liquidity side"));
         }
         let instrument = pyobject_to_instrument_any(py, instrument)?;
+        let fee_rates = MakerTakerFeeRates::new(maker_rate, taker_rate);
         Account::calculate_commission(
             self,
             &instrument,
             last_qty,
             last_px,
             liquidity_side,
+            fee_rates,
             use_quote_for_inverse,
         )
         .map_err(to_pyvalue_err)
@@ -246,8 +258,9 @@ impl MarginAccount {
 
     /// Sets the default leverage for the account.
     #[pyo3(name = "set_default_leverage")]
-    fn py_set_default_leverage(&mut self, default_leverage: Decimal) {
-        self.set_default_leverage(default_leverage);
+    fn py_set_default_leverage(&mut self, default_leverage: Decimal) -> PyResult<()> {
+        self.try_set_default_leverage(default_leverage)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     #[pyo3(name = "leverages")]
@@ -266,8 +279,9 @@ impl MarginAccount {
 
     /// Sets the leverage for a specific instrument.
     #[pyo3(name = "set_leverage")]
-    fn py_set_leverage(&mut self, instrument_id: InstrumentId, leverage: Decimal) {
-        self.set_leverage(instrument_id, leverage);
+    fn py_set_leverage(&mut self, instrument_id: InstrumentId, leverage: Decimal) -> PyResult<()> {
+        self.try_set_leverage(instrument_id, leverage)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     #[pyo3(name = "is_unleveraged")]

@@ -20,24 +20,28 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::{average::zscore::ZScore, indicator::Indicator};
+use crate::{average::zscore::ZScore, indicator::Indicator, python::float_precision};
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl ZScore {
-    /// Creates a new `ZScore` instance.
+    /// Z-Score: how many standard deviations the latest price sits from its rolling
+    /// mean.
     ///
-    /// Computes `(x - mean) / std` using sample standard deviation. The window
-    /// expands until `period` observations, then rolls at that length. With one
-    /// observation or a finite constant window, `mean` matches the input exactly,
-    /// while `std` and `value` are 0. Other zero `std` values produce `value` 0;
-    /// non-finite `std` values produce `value` `NaN`. `price_type` affects only
-    /// quote handling.
+    /// ```text
+    /// ZScore = (price - SMA(price, n)) / population_stddev(price, n)
+    /// ```
+    ///
+    /// A reading of `+2` means price is two standard deviations above its recent
+    /// average, statistically stretched to the upside; `-2` is the mirror. It is the
+    /// standard normalization behind mean-reversion strategies: a large magnitude
+    /// flags an extension, a return toward `0` flags reversion. A window with zero
+    /// dispersion yields `0` rather than dividing by zero.
     #[new]
     #[pyo3(signature = (period, price_type=None))]
     fn py_new(period: i64, price_type: Option<PriceType>) -> PyResult<Self> {
         if period < 0 {
-            return Err(to_pyvalue_err("`period` must be at least 2"));
+            return Err(to_pyvalue_err("`period` must be positive"));
         }
 
         let period = usize::try_from(period).map_err(to_pyvalue_err)?;
@@ -104,17 +108,22 @@ impl ZScore {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        float_precision::check_quote(quote)?;
         self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) -> PyResult<()> {
+        float_precision::check_trade(trade)?;
         self.handle_trade(trade);
+        Ok(())
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]
@@ -122,7 +131,7 @@ impl ZScore {
         self.reset();
     }
 
-    /// Updates the indicator with a raw observation.
+    /// Updates the indicator with the given raw price value.
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, value: f64) {
         self.update_raw(value);

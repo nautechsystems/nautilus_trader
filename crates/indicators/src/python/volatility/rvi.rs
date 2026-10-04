@@ -18,7 +18,8 @@ use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
 use crate::{
-    average::MovingAverageType, indicator::Indicator, volatility::rvi::RelativeVolatilityIndex,
+    average::MovingAverageType, indicator::Indicator, python::float_precision,
+    volatility::rvi::RelativeVolatilityIndex,
 };
 
 #[pymethods]
@@ -27,9 +28,12 @@ impl RelativeVolatilityIndex {
     /// An indicator which calculates a Relative Volatility Index (RVI) across a rolling window.
     #[new]
     #[pyo3(signature = (period, scalar=None, ma_type=None))]
-    #[must_use]
-    pub fn py_new(period: usize, scalar: Option<f64>, ma_type: Option<MovingAverageType>) -> Self {
-        Self::new(period, scalar, ma_type)
+    pub fn py_new(
+        period: usize,
+        scalar: Option<f64>,
+        ma_type: Option<MovingAverageType>,
+    ) -> PyResult<Self> {
+        Self::new_checked(period, scalar, ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -37,6 +41,12 @@ impl RelativeVolatilityIndex {
             "RelativeVolatilityIndex({},{},{})",
             self.period, self.scalar, self.ma_type,
         )
+    }
+
+    #[getter]
+    #[pyo3(name = "ma_type")]
+    const fn py_ma_type(&self) -> MovingAverageType {
+        self.ma_type
     }
 
     #[getter]
@@ -91,8 +101,10 @@ impl RelativeVolatilityIndex {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

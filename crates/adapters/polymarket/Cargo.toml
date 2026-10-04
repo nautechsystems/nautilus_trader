@@ -59,7 +59,6 @@ nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true, features = ["transport-sockudo"] }
-nautilus-persistence-macros = { workspace = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
@@ -204,3 +203,17 @@ name = "polymarket-new-market-monitor"
 path = "examples/new_market_monitor.rs"
 required-features = ["examples"]
 doc = false
+
+[[example]]
+name = "polymarket-session-keys"
+path = "examples/session_keys.rs"
+doc = false
+
+# Public market-data validation; explicitly connects to Polymarket mainnet from a served region.
+# Run with `cargo test --package nautilus-polymarket --features examples --test polymarket-book-stress -- --timeout 10 --rounds 12`
+[[test]]
+name = "polymarket-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

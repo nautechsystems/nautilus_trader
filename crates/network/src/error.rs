@@ -25,6 +25,9 @@ pub enum SendError {
     /// The send input is invalid.
     #[error("send failed: invalid input ({0})")]
     InvalidInput(String),
+    /// The writer has reached the message limit for this send.
+    #[error("send failed: writer buffer full")]
+    BufferFull,
     /// The client has been closed or is disconnecting.
     #[error("send failed: client closed or disconnecting")]
     Closed,

@@ -24,13 +24,14 @@ event-driven architecture, providing research-to-live semantic parity.
 This crate provides feature flags to control source code inclusion during compilation,
 depending on the intended use case:
 
+- `arrow`: Enables Apache Arrow and Parquet data support.
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision` (default): Enables
   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-- `replay` (default): Enables market data replay functionality.
+- `replay`: Enables market data replay functionality (implies `arrow`).
 
 ## Documentation
 

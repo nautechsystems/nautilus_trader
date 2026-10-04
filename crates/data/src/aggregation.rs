@@ -29,7 +29,7 @@ use std::{
 use ahash::AHashMap;
 use jiff::SignedDuration;
 use nautilus_common::{
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
@@ -1419,6 +1419,7 @@ impl BarAggregator for RenkoBarAggregator {
 
         // Always update the builder with the current tick
         self.core.builder.update(price, size, ts_init);
+        let price = self.core.builder.apply_adjustment_to_price(price);
         self.build_bricks(price, ts_init);
     }
 
@@ -1429,7 +1430,8 @@ impl BarAggregator for RenkoBarAggregator {
 
         // Always update the builder with the current bar
         self.core.builder.update_bar(bar, volume, ts_init);
-        self.build_bricks(bar.close, ts_init);
+        let close = self.core.builder.apply_adjustment_to_price(bar.close);
+        self.build_bricks(close, ts_init);
     }
 }
 
@@ -1705,7 +1707,10 @@ impl TimeBarAggregator {
 
     fn build_and_send(&mut self, ts_event: UnixNanos, ts_init: UnixNanos) {
         if self.skip_first_non_full_bar && ts_init <= self.first_close_ns {
-            self.core.builder.reset();
+            // Carry the skipped close so a following empty interval can build a flat bar
+            let builder = &mut self.core.builder;
+            builder.last_close = builder.close.or(builder.last_close);
+            builder.reset();
         } else {
             // Clear for the transition from historical to live data; subsequent
             // bars always emit regardless of timestamp.
@@ -1715,26 +1720,24 @@ impl TimeBarAggregator {
     }
 
     fn build_bar(&mut self, event: &TimeEvent) {
-        if !self.core.builder.initialized {
-            return;
-        }
-
-        if !self.build_with_no_updates && self.core.builder.count == 0 {
-            return; // Do not build bar when no update
-        }
-
-        let ts_init = event.ts_event;
-        let ts_event = if self.is_left_open {
-            if self.timestamp_on_close {
-                event.ts_event
+        // Skip the bar before the first update, or when there were no updates and empty bars
+        // are disabled, but still open the next interval and schedule its month/year alert
+        if self.core.builder.initialized
+            && (self.build_with_no_updates || self.core.builder.count > 0)
+        {
+            let ts_init = event.ts_event;
+            let ts_event = if self.is_left_open {
+                if self.timestamp_on_close {
+                    event.ts_event
+                } else {
+                    self.stored_open_ns
+                }
             } else {
                 self.stored_open_ns
-            }
-        } else {
-            self.stored_open_ns
-        };
+            };
 
-        self.build_and_send(ts_event, ts_init);
+            self.build_and_send(ts_event, ts_init);
+        }
 
         // Close time becomes the next open time
         self.stored_open_ns = event.ts_event;
@@ -1771,36 +1774,51 @@ impl TimeBarAggregator {
 
     fn preprocess_historical_events(&mut self, ts_init: UnixNanos) {
         if self.clock.borrow().timestamp_ns() == UnixNanos::default() {
-            // In historical mode, clock is always a TestClock (set by data engine)
+            // In historical mode, clock is always a VirtualClock (set by data engine)
             {
                 let mut clock_borrow = self.clock.borrow_mut();
                 let test_clock = clock_borrow
                     .as_any_mut()
-                    .downcast_mut::<TestClock>()
-                    .expect("Expected TestClock in historical mode");
+                    .downcast_mut::<VirtualClock>()
+                    .expect("Expected VirtualClock in historical mode");
                 test_clock.set_time(ts_init);
             }
             // In historical mode, weak reference should already be set
             self.start_timer_internal(None);
         }
 
-        // Advance this aggregator's independent clock and collect timer events.
-        let events = {
-            let mut clock_borrow = self.clock.borrow_mut();
-            let test_clock = clock_borrow
-                .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("Expected TestClock in historical mode");
-            test_clock.advance_time(ts_init, true)
-        };
+        // Advance this aggregator's independent clock and collect timer events. Month and year
+        // alerts re-arm from each built event, so repeat until none fall at or before `ts_init`
+        // and only then move the clock, otherwise a re-armed alert is clamped to `ts_init`.
+        loop {
+            let events = {
+                let mut clock_borrow = self.clock.borrow_mut();
+                let test_clock = clock_borrow
+                    .as_any_mut()
+                    .downcast_mut::<VirtualClock>()
+                    .expect("Expected VirtualClock in historical mode");
+                test_clock.advance_time(ts_init, false)
+            };
 
-        for event in events {
-            if event.ts_event == ts_init {
-                self.historical_event_at_ts_init = Some(event);
-            } else {
-                self.build_bar(&event);
+            if events.is_empty() {
+                break;
+            }
+
+            for event in events {
+                if event.ts_event == ts_init {
+                    self.historical_event_at_ts_init = Some(event);
+                } else {
+                    self.build_bar(&event);
+                }
             }
         }
+
+        let mut clock_borrow = self.clock.borrow_mut();
+        let test_clock = clock_borrow
+            .as_any_mut()
+            .downcast_mut::<VirtualClock>()
+            .expect("Expected VirtualClock in historical mode");
+        test_clock.set_time(ts_init);
     }
 
     fn postprocess_historical_events(&mut self, _ts_init: UnixNanos) {
@@ -2281,8 +2299,8 @@ impl SpreadQuoteAggregator {
             let mut clock_borrow = self.clock.borrow_mut();
             let test_clock = clock_borrow
                 .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("Expected TestClock in historical mode");
+                .downcast_mut::<VirtualClock>()
+                .expect("Expected VirtualClock in historical mode");
             test_clock.set_time(ts_init);
             drop(clock_borrow);
             self.start_timer(None);
@@ -2301,8 +2319,8 @@ impl SpreadQuoteAggregator {
             let mut clock_borrow = self.clock.borrow_mut();
             let test_clock = clock_borrow
                 .as_any_mut()
-                .downcast_mut::<TestClock>()
-                .expect("Expected TestClock in historical mode");
+                .downcast_mut::<VirtualClock>()
+                .expect("Expected VirtualClock in historical mode");
             test_clock.advance_time(ts_init, true)
         };
 
@@ -2515,7 +2533,7 @@ impl SpreadQuoteAggregator {
 mod tests {
     use std::sync::Arc;
 
-    use nautilus_common::{clock::TestClock, timer::TimeEvent};
+    use nautilus_common::{clock::VirtualClock, timer::TimeEvent};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{BarSpecification, BarType, QuoteTick},
@@ -4762,7 +4780,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut aggregator = TimeBarAggregator::new(
             bar_type,
@@ -4808,7 +4826,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let timer_name = format!("TIME_BAR_{bar_type}");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let aggregator = TimeBarAggregator::new(
             bar_type,
@@ -4844,7 +4862,7 @@ mod tests {
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let interval_ns = get_bar_interval_ns(&bar_type);
         let timer_name = format!("TIME_BAR_{bar_type}");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(1));
         let aggregator = TimeBarAggregator::new(
             bar_type,
@@ -4876,7 +4894,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut aggregator = TimeBarAggregator::new(
             bar_type,
@@ -4933,7 +4951,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut aggregator = TimeBarAggregator::new(
             bar_type,
             instrument.price_precision(),
@@ -4990,7 +5008,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         // First test with build_with_no_updates = false
         let mut aggregator = TimeBarAggregator::new(
@@ -5064,7 +5082,7 @@ mod tests {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let (handler, record) = recording_handler();
 
         let mut aggregator = TimeBarAggregator::new(
@@ -5248,6 +5266,98 @@ mod tests {
         assert_eq!(bar.volume, Quantity::from(2));
         assert_eq!(bar.ts_event, UnixNanos::from(1000));
         assert_eq!(bar.ts_init, UnixNanos::from(1000));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_applies_continuous_future_adjustment(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let (handler, record) = recording_handler();
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            record,
+        );
+        aggregator.set_adjustment(Decimal::ONE, ContinuousFutureAdjustmentType::BackwardSpread);
+
+        aggregator.update(
+            Price::from("1.00000"),
+            Quantity::from(1),
+            UnixNanos::default(),
+        );
+        aggregator.update(
+            Price::from("1.00010"),
+            Quantity::from(1),
+            UnixNanos::from(1000),
+        );
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].open, Price::from("2.00000"));
+        assert_eq!(bars[0].high, Price::from("2.00010"));
+        assert_eq!(bars[0].low, Price::from("2.00000"));
+        assert_eq!(bars[0].close, Price::from("2.00010"));
+        assert_eq!(bars[0].volume, Quantity::from(2));
+        assert_eq!(bars[0].ts_event, UnixNanos::from(1000));
+    }
+
+    #[rstest]
+    fn test_renko_bar_aggregator_handle_bar_applies_continuous_future_adjustment(
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Renko, PriceType::Mid);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+
+        let source_bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+            AggregationSource::Internal,
+        );
+        let (handler, record) = recording_handler();
+
+        let mut aggregator = RenkoBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            record,
+        );
+        aggregator.set_adjustment(Decimal::ONE, ContinuousFutureAdjustmentType::BackwardSpread);
+
+        aggregator.handle_bar(Bar::new(
+            source_bar_type,
+            Price::from("1.00000"),
+            Price::from("1.00005"),
+            Price::from("0.99995"),
+            Price::from("1.00000"),
+            Quantity::from(100),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ));
+        aggregator.handle_bar(Bar::new(
+            source_bar_type,
+            Price::from("1.00000"),
+            Price::from("1.00015"),
+            Price::from("0.99995"),
+            Price::from("1.00010"),
+            Quantity::from(50),
+            UnixNanos::from(60_000_000_000),
+            UnixNanos::from(60_000_000_000),
+        ));
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].open, Price::from("2.00000"));
+        assert_eq!(bars[0].high, Price::from("2.00010"));
+        assert_eq!(bars[0].low, Price::from("2.00000"));
+        assert_eq!(bars[0].close, Price::from("2.00010"));
+        assert_eq!(bars[0].volume, Quantity::from(150));
+        assert_eq!(bars[0].ts_event, UnixNanos::from(60_000_000_000));
     }
 
     #[rstest]
@@ -6577,7 +6687,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = TimeBarAggregator::new(
             bar_type,
@@ -6647,7 +6757,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -6701,7 +6811,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -6755,7 +6865,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 2_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -6808,7 +6918,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(0));
 
         let agg = SpreadQuoteAggregator::new(
@@ -6884,7 +6994,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -6957,7 +7067,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -7022,7 +7132,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut vega_provider = MapVegaProvider::new();
         vega_provider.insert(leg1, 0.15);
@@ -7084,7 +7194,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut vega_provider = MapVegaProvider::new();
         vega_provider.insert(leg1, 0.0);
@@ -7223,7 +7333,7 @@ mod tests {
             instrument.price_precision(),
             0,
             Box::new(record),
-            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(VirtualClock::new())),
             false,
             None,
             0,
@@ -7267,7 +7377,7 @@ mod tests {
         let spread_id = InstrumentId::from("SPREAD.XNAS");
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let rounder = FixedTickSchemeRounder::new(0.01).unwrap();
 
         let mut agg = SpreadQuoteAggregator::new(
@@ -7329,7 +7439,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(1_000_000_000));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7394,7 +7504,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(1_500_000_000));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7445,6 +7555,66 @@ mod tests {
     }
 
     #[rstest]
+    fn test_time_bar_skip_first_non_full_bar_then_empty_interval_builds_flat_bar(
+        equity_aapl: Equity,
+    ) {
+        // The skipped partial bar's close seeds the flat bar for the following empty interval
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let (handler, record) = recording_handler();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(1_500_000_000));
+        let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
+
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock,
+            record,
+            true, // build_with_no_updates
+            true, // timestamp_on_close
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            true, // skip_first_non_full_bar
+        );
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        rc.borrow_mut().update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(1_500_000_000),
+        );
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
+            UUID4::new(),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        ));
+        rc.borrow_mut().build_bar(&TimeEvent::new(
+            event_name,
+            UUID4::new(),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        ));
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].open, Price::from("100.00"));
+        assert_eq!(bars[0].high, Price::from("100.00"));
+        assert_eq!(bars[0].low, Price::from("100.00"));
+        assert_eq!(bars[0].close, Price::from("100.00"));
+        assert_eq!(bars[0].volume, Quantity::from(0));
+        assert_eq!(bars[0].ts_event, UnixNanos::from(3_000_000_000));
+        assert_eq!(bars[0].ts_init, UnixNanos::from(3_000_000_000));
+    }
+
+    #[rstest]
     fn test_time_bar_skip_first_non_full_bar_skips_every_call_before_first_close(
         equity_aapl: Equity,
     ) {
@@ -7455,7 +7625,7 @@ mod tests {
         let bar_spec = BarSpecification::new(10, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(5_000_000_000));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7527,7 +7697,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(2_000_000_000));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7602,7 +7772,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, aggregation, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         clock.borrow_mut().set_time(UnixNanos::from(start_ns));
         let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7648,7 +7818,7 @@ mod tests {
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
         let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
         let (handler, record) = recording_handler();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = TimeBarAggregator::new(
             bar_type,
@@ -7828,7 +7998,7 @@ mod tests {
             BarAggregation::Minute,
             AggregationSource::External,
         );
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let aggregator = TimeBarAggregator::new(
             bar_type,
@@ -7856,6 +8026,218 @@ mod tests {
         );
     }
 
+    const JAN_15_2024: u64 = 1_705_276_800_000_000_000;
+    const JAN_20_2024: u64 = 1_705_708_800_000_000_000;
+    const FEB_01_2024: u64 = 1_706_745_600_000_000_000;
+    const FEB_10_2024: u64 = 1_707_523_200_000_000_000;
+    const MAR_01_2024: u64 = 1_709_251_200_000_000_000;
+    const MAR_10_2024: u64 = 1_710_028_800_000_000_000;
+    const APR_01_2024: u64 = 1_711_929_600_000_000_000;
+
+    #[rstest]
+    fn test_time_bar_month_alert_rescheduled_after_month_without_updates(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Month, PriceType::Last);
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(JAN_15_2024));
+        let (rc, handler) = start_time_bar_aggregator(
+            &instrument,
+            bar_spec,
+            &clock,
+            false, // build_with_no_updates
+            BarIntervalType::LeftOpen,
+        );
+        let timer_name = format!("TIME_BAR_{}", rc.borrow().bar_type());
+
+        rc.borrow_mut().update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(JAN_20_2024),
+        );
+        advance_and_fire(&clock, UnixNanos::from(FEB_01_2024));
+        assert_eq!(handler.lock().len(), 1);
+
+        // February has no updates, so no bar is built at March 1
+        advance_and_fire(&clock, UnixNanos::from(MAR_01_2024));
+        assert_eq!(handler.lock().len(), 1);
+        let next_alert = clock.borrow().next_time_ns(&timer_name);
+
+        rc.borrow_mut().update(
+            Price::from("101.00"),
+            Quantity::from(1),
+            UnixNanos::from(MAR_10_2024),
+        );
+        advance_and_fire(&clock, UnixNanos::from(APR_01_2024));
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 2);
+        assert_eq!(bars[1].close, Price::from("101.00"));
+        assert_eq!(bars[1].ts_event, UnixNanos::from(MAR_01_2024));
+        assert_eq!(bars[1].ts_init, UnixNanos::from(APR_01_2024));
+        assert_eq!(next_alert, Some(UnixNanos::from(APR_01_2024)));
+    }
+
+    #[rstest]
+    fn test_time_bar_month_alert_rescheduled_when_first_month_has_no_data(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Month, PriceType::Last);
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(JAN_15_2024));
+        let (rc, handler) = start_time_bar_aggregator(
+            &instrument,
+            bar_spec,
+            &clock,
+            true, // build_with_no_updates
+            BarIntervalType::LeftOpen,
+        );
+        let timer_name = format!("TIME_BAR_{}", rc.borrow().bar_type());
+
+        // No data before the first alert, so the builder is not initialized
+        advance_and_fire(&clock, UnixNanos::from(FEB_01_2024));
+        assert_eq!(handler.lock().len(), 0);
+        let next_alert = clock.borrow().next_time_ns(&timer_name);
+
+        rc.borrow_mut().update(
+            Price::from("100.00"),
+            Quantity::from(1),
+            UnixNanos::from(FEB_10_2024),
+        );
+        advance_and_fire(&clock, UnixNanos::from(MAR_01_2024));
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].close, Price::from("100.00"));
+        assert_eq!(bars[0].ts_event, UnixNanos::from(FEB_01_2024));
+        assert_eq!(bars[0].ts_init, UnixNanos::from(MAR_01_2024));
+        assert_eq!(next_alert, Some(UnixNanos::from(MAR_01_2024)));
+    }
+
+    #[rstest]
+    fn test_time_bar_historical_month_keeps_calendar_alignment_across_gap(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Month, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let (handler, record) = recording_handler();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+        let mut agg = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock.clone(),
+            record,
+            true, // build_with_no_updates
+            true, // timestamp_on_close
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            false,
+        );
+        agg.historical_mode = true;
+        agg.set_clock_internal(clock);
+        let boxed: Box<dyn BarAggregator> = Box::new(agg);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().set_aggregator_weak(Rc::downgrade(&rc));
+
+        // The update after the gap crosses both the February and March alerts
+        for (price, ts) in [
+            ("100.00", JAN_15_2024),
+            ("101.00", MAR_10_2024),
+            ("102.00", APR_01_2024),
+        ] {
+            rc.borrow_mut()
+                .update(Price::from(price), Quantity::from(1), UnixNanos::from(ts));
+        }
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 3);
+        assert_eq!(bars[0].close, Price::from("100.00"));
+        assert_eq!(bars[0].volume, Quantity::from(1));
+        assert_eq!(bars[0].ts_event, UnixNanos::from(FEB_01_2024));
+        assert_eq!(bars[1].close, Price::from("100.00"));
+        assert_eq!(bars[1].volume, Quantity::from(0));
+        assert_eq!(bars[1].ts_event, UnixNanos::from(MAR_01_2024));
+        assert_eq!(bars[2].open, Price::from("101.00"));
+        assert_eq!(bars[2].close, Price::from("102.00"));
+        assert_eq!(bars[2].volume, Quantity::from(2));
+        assert_eq!(bars[2].ts_event, UnixNanos::from(APR_01_2024));
+    }
+
+    #[rstest]
+    fn test_time_bar_right_open_ts_event_after_interval_without_updates(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Minute, PriceType::Last);
+        // A start time of 0 means "now" to the clock, so offset from a real date
+        let secs = |s: u64| UnixNanos::from(JAN_15_2024 + s * 1_000_000_000);
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock.borrow_mut().set_time(secs(30));
+        let (rc, handler) = start_time_bar_aggregator(
+            &instrument,
+            bar_spec,
+            &clock,
+            false,                      // build_with_no_updates
+            BarIntervalType::RightOpen, // ts_event = interval open
+        );
+
+        rc.borrow_mut()
+            .update(Price::from("100.00"), Quantity::from(1), secs(40));
+        advance_and_fire(&clock, secs(60));
+
+        // No updates in [60s, 120s)
+        advance_and_fire(&clock, secs(120));
+
+        rc.borrow_mut()
+            .update(Price::from("101.00"), Quantity::from(1), secs(130));
+        advance_and_fire(&clock, secs(180));
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 2);
+        assert_eq!(bars[0].ts_event, secs(0));
+        assert_eq!(bars[0].ts_init, secs(60));
+        assert_eq!(bars[1].close, Price::from("101.00"));
+        assert_eq!(bars[1].ts_event, secs(120));
+        assert_eq!(bars[1].ts_init, secs(180));
+    }
+
+    // Starts the timer with timestamp_on_close=false so ts_event is the bar open
+    #[expect(clippy::type_complexity)]
+    fn start_time_bar_aggregator(
+        instrument: &InstrumentAny,
+        bar_spec: BarSpecification,
+        clock: &Rc<RefCell<VirtualClock>>,
+        build_with_no_updates: bool,
+        interval_type: BarIntervalType,
+    ) -> (Rc<RefCell<Box<dyn BarAggregator>>>, Arc<Mutex<Vec<Bar>>>) {
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let (handler, record) = recording_handler();
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock.clone(),
+            record,
+            build_with_no_updates,
+            false, // timestamp_on_close
+            interval_type,
+            None,
+            0,
+            false, // skip_first_non_full_bar
+        );
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+        (rc, handler)
+    }
+
+    fn advance_and_fire(clock: &Rc<RefCell<VirtualClock>>, to: UnixNanos) {
+        let events = clock.borrow_mut().advance_time(to, true);
+        // Release the clock borrow before month/year handlers reschedule their alerts
+        let handlers = clock.borrow().match_handlers(events);
+        for handler in handlers {
+            handler.run();
+        }
+    }
+
     pub(super) fn recording_handler<T: 'static>() -> (Arc<Mutex<Vec<T>>>, impl FnMut(T)) {
         let events = Arc::new(Mutex::new(Vec::new()));
         let recorded_events = Arc::clone(&events);
@@ -7867,7 +8249,7 @@ mod tests {
 mod property_tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{clock::TestClock, timer::TimeEvent};
+    use nautilus_common::{clock::VirtualClock, timer::TimeEvent};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{Bar, BarSpecification, BarType, TradeTick, bar::get_bar_interval_ns},
@@ -7913,7 +8295,7 @@ mod property_tests {
             let now_ns = UnixNanos::default() + interval_ns + interval_ns / 2;
 
             let (handler, record) = recording_handler();
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             clock.borrow_mut().set_time(now_ns);
             let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
@@ -7990,7 +8372,7 @@ mod property_tests {
             // bar that reaches build_and_send must emit regardless of skip_first.
             let now_ns = UnixNanos::default() + interval_ns;
             let (handler, record) = recording_handler();
-            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
             clock.borrow_mut().set_time(now_ns);
             let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 

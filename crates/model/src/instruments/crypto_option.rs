@@ -83,10 +83,6 @@ pub struct CryptoOption {
     pub margin_init: Decimal,
     /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
-    /// The fee rate for liquidity makers as a percentage of order value.
-    pub maker_fee: Decimal,
-    /// The fee rate for liquidity takers as a percentage of order value.
-    pub taker_fee: Decimal,
     /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
     /// The minimum allowable order quantity.
@@ -137,8 +133,6 @@ impl CryptoOption {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -188,12 +182,10 @@ impl CryptoOption {
             lot_size: lot_size.unwrap_or(Quantity::from(1)),
             margin_init: margin_init.unwrap_or_default(),
             margin_maint: margin_maint.unwrap_or_default(),
-            maker_fee: maker_fee.unwrap_or_default(),
-            taker_fee: taker_fee.unwrap_or_default(),
             max_notional,
             min_notional,
             max_quantity,
-            min_quantity: Some(min_quantity.unwrap_or(1.into())),
+            min_quantity,
             max_price,
             min_price,
             tick_scheme,
@@ -237,8 +229,6 @@ impl CryptoOption {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -269,8 +259,6 @@ impl CryptoOption {
             min_price,
             margin_init,
             margin_maint,
-            maker_fee,
-            taker_fee,
             tick_scheme,
             info,
             ts_event,
@@ -429,14 +417,6 @@ impl Instrument for CryptoOption {
     fn margin_maint(&self) -> Decimal {
         self.margin_maint
     }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
-    }
 }
 
 #[cfg(test)]
@@ -485,6 +465,35 @@ mod tests {
     }
 
     #[rstest]
+    #[case::unspecified(None)]
+    #[case::fractional(Some(Quantity::from("0.01")))]
+    #[case::whole(Some(Quantity::from("2")))]
+    fn test_builder_preserves_minimum_quantity(#[case] min_quantity: Option<Quantity>) {
+        let instrument = CryptoOption::builder()
+            .instrument_id(InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"))
+            .raw_symbol(Symbol::from("BTC-13JAN23-16000-P"))
+            .underlying(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::BTC())
+            .is_inverse(false)
+            .option_kind(OptionKind::Put)
+            .strike_price(Price::from("16000"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .price_precision(1)
+            .size_precision(2)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.01"))
+            .maybe_min_quantity(min_quantity)
+            .ts_event(3.into())
+            .ts_init(4.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(instrument.min_quantity(), min_quantity);
+    }
+
+    #[rstest]
     fn test_new_checked_price_precision_mismatch() {
         let result = CryptoOption::new_checked(
             InstrumentId::from("TEST.DERIBIT"),
@@ -501,8 +510,6 @@ mod tests {
             1,
             Price::from("0.001"),
             Quantity::from("0.1"),
-            None,
-            None,
             None,
             None,
             None,
@@ -550,8 +557,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
             0.into(),
             0.into(),
         );
@@ -577,8 +582,6 @@ mod tests {
             1,
             Price::from("0.1"),
             Quantity::from("0.1"),
-            None,
-            None,
             None,
             None,
             None,
@@ -639,8 +642,6 @@ mod tests {
             Some(Price::from("0.001")),
             Some(dec!(0.01)),
             Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
             None,
             None,
             1.into(),
@@ -673,8 +674,6 @@ mod tests {
             .min_price(Price::from("0.001"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .ts_event(1.into())
             .ts_init(2.into())
             .build()
