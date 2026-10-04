@@ -30,3 +30,4 @@ pub mod parse;
 
 pub(crate) mod checksum;
 pub(crate) mod level_2;
+pub(crate) mod resync;

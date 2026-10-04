@@ -278,8 +278,8 @@ Exchange provide harnesses.
 
 When a venue publishes a book checksum or hash, validate it and treat a mismatch as a gap. It
 catches corruption in the data it covers that sequence checks miss, without an external oracle.
-Kraken validates the CRC32 checksum on each L3 update when `validate_l3_checksum` is enabled, which
-is the default. Polymarket validates the hash on each book snapshot that carries a hash and its full
+Kraken validates the CRC32 checksum on each Spot L2 `book` and L3 message when
+`validate_l2_checksum` and `validate_l3_checksum` are enabled, both the default. Polymarket validates the hash on each book snapshot that carries a hash and its full
 preimage (see [book snapshot validation](../integrations/polymarket.md#book-snapshot-validation)).
 OKX `books` frames carry a zero `checksum`, so OKX relies on its oracle instead.
 

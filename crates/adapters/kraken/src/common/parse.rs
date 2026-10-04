@@ -326,6 +326,7 @@ pub fn parse_tokenized_instrument(
         .price_precision(price_increment.precision)
         .size_precision(size_increment.precision)
         .price_increment(price_increment)
+        .maybe_info(pair_info(pair_name, definition, price_increment.precision))
         .size_increment(size_increment)
         .maybe_min_quantity(min_quantity)
         .ts_event(ts_event)
@@ -2393,6 +2394,34 @@ mod tests {
         let result = truncate_cl_ord_id(&id);
         assert_eq!(result.len(), 18);
         assert!(result.starts_with('O'));
+    }
+
+    /// The wire price scale is recorded only when `pair_decimals` is finer than the tick size.
+    #[rstest]
+    fn test_pair_info_records_pair_decimals_only_when_finer_than_tick_size() {
+        let json = load_test_json("http_asset_pairs_tokenized.json");
+        let response: KrakenResponse<AssetPairsResponse> = serde_json::from_str(&json).unwrap();
+        let pairs = response.result.unwrap();
+        let (pair_name, definition) = pairs.iter().next().unwrap();
+
+        let same = parse_tokenized_instrument(pair_name, definition, TS, TS).unwrap();
+        assert!(
+            same.info()
+                .is_none_or(|info| !info.contains_key(KRAKEN_PAIR_DECIMALS_KEY)),
+            "a scale equal to the tick precision is not recorded"
+        );
+
+        let mut finer = definition.clone();
+        finer.pair_decimals = same.price_precision() + 1;
+        let tokenized = parse_tokenized_instrument(pair_name, &finer, TS, TS).unwrap();
+        let spot = parse_spot_instrument(pair_name, &finer, TS, TS).unwrap();
+        for instrument in [tokenized, spot] {
+            let recorded = instrument
+                .info()
+                .and_then(|info| info.get(KRAKEN_PAIR_DECIMALS_KEY))
+                .and_then(serde_json::Value::as_u64);
+            assert_eq!(recorded, Some(u64::from(finer.pair_decimals)));
+        }
     }
 
     #[rstest]

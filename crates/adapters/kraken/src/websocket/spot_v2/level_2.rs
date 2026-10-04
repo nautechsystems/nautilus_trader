@@ -28,7 +28,7 @@ use nautilus_model::{
 };
 
 use super::{
-    checksum::{crc32_ieee, format_scaled},
+    checksum::{crc32_ieee, push_scaled},
     messages::KrakenWsBookData,
     parse::parse_book_deltas,
 };
@@ -81,6 +81,12 @@ pub(crate) struct L2BookOutcome {
     pub(crate) resync: Option<L2ResyncRequest>,
 }
 
+/// Consecutive checksum mismatches after which an instrument's validation is switched off.
+///
+/// A book the venue hashes differently from the shadow book would otherwise resubscribe on every
+/// snapshot, forever. Three in a row with no valid message between them is not a transient gap.
+pub(crate) const MAX_CONSECUTIVE_CHECKSUM_MISMATCHES: u32 = 3;
+
 /// Shadow books for the Spot `book` channel, one per instrument.
 ///
 /// `Default` leaves checksum validation off; the data client enables it from its configuration.
@@ -88,9 +94,16 @@ pub(crate) struct L2BookOutcome {
 pub(crate) struct L2BookState {
     pub(crate) books: AHashMap<InstrumentId, OrderBook>,
     validate_checksum: bool,
-    /// Instruments whose book was cleared after a mismatch. Their updates are dropped until the
+    /// Wire scales per instrument, resolved once: price from `pair_decimals`, quantity from
+    /// `lot_decimals`.
+    scales: AHashMap<InstrumentId, (u8, u8)>,
+    /// Instruments with a cleared book after a mismatch. Their updates are dropped until the
     /// snapshot the resubscription produces, since they describe a stream the venue has ended.
     awaiting_snapshot: AHashSet<InstrumentId>,
+    /// Consecutive mismatches per instrument; a valid message resets the count.
+    mismatches: AHashMap<InstrumentId, u32>,
+    /// Instruments whose validation is off after too many consecutive mismatches.
+    validation_disabled: AHashSet<InstrumentId>,
 }
 
 impl Default for L2BookState {
@@ -104,7 +117,10 @@ impl L2BookState {
         Self {
             books: AHashMap::new(),
             validate_checksum,
+            scales: AHashMap::new(),
             awaiting_snapshot: AHashSet::new(),
+            mismatches: AHashMap::new(),
+            validation_disabled: AHashSet::new(),
         }
     }
 
@@ -157,44 +173,64 @@ impl L2BookState {
 
         // The venue hashes its top ten levels per side, which pruning to the subscribed depth
         // leaves intact, so the shadow book is compared after the message has been applied.
-        let mismatch = match (self.validate_checksum, book.checksum) {
+        let validate = self.validate_checksum && !self.validation_disabled.contains(&instrument_id);
+        let mismatch = match (validate, book.checksum) {
             (true, Some(remote)) => {
-                let local = compute_checksum(
-                    book_state,
-                    price_wire_scale(instrument),
-                    instrument.size_precision(),
-                );
+                let (price_scale, qty_scale) = *self
+                    .scales
+                    .entry(instrument_id)
+                    .or_insert_with(|| (price_wire_scale(instrument), instrument.size_precision()));
+                let local = compute_checksum(book_state, price_scale, qty_scale);
                 (local != remote).then_some((local, remote))
             }
             _ => None,
         };
 
         if let Some((local, remote)) = mismatch {
-            log::warn!(
-                "L2 book checksum mismatch: symbol={}, local={local}, remote={remote}, \
-                 bids={}, asks={}; clearing the book and resubscribing",
-                book.symbol,
-                book_state.bids(None).count(),
-                book_state.asks(None).count(),
-            );
-            self.books.remove(&instrument_id);
-            self.awaiting_snapshot.insert(instrument_id);
+            let bids = book_state.bids(None).count();
+            let asks = book_state.asks(None).count();
+            let consecutive = self.mismatches.entry(instrument_id).or_insert(0);
+            *consecutive += 1;
 
-            let ts_event = deltas.last().map_or(ts_init, |delta| delta.ts_event);
-            let mut clear = OrderBookDelta::clear(instrument_id, next_sequence, ts_event, ts_init);
-            next_sequence += 1;
-            clear.flags |= RecordFlag::F_LAST as u8;
+            if *consecutive >= MAX_CONSECUTIVE_CHECKSUM_MISMATCHES {
+                // The shadow book cannot reproduce the venue's hash for this instrument, so another
+                // resubscription would only repeat the cycle; keep the book and stop validating it.
+                log::error!(
+                    "L2 book checksum mismatched {consecutive} times in a row: symbol={}, \
+                     local={local}, remote={remote}; validation disabled for this instrument and \
+                     the book kept as received",
+                    book.symbol,
+                );
+                self.validation_disabled.insert(instrument_id);
+                self.mismatches.remove(&instrument_id);
+            } else {
+                log::warn!(
+                    "L2 book checksum mismatch: symbol={}, local={local}, remote={remote}, \
+                     bids={bids}, asks={asks}; clearing the book and resubscribing",
+                    book.symbol,
+                );
+                self.books.remove(&instrument_id);
+                self.awaiting_snapshot.insert(instrument_id);
 
-            return Ok(L2BookOutcome {
-                deltas: Some((
-                    OrderBookDeltas::new(instrument_id, vec![clear]),
-                    next_sequence,
-                )),
-                resync: Some(L2ResyncRequest {
-                    instrument_id,
-                    depth,
-                }),
-            });
+                let ts_event = deltas.last().map_or(ts_init, |delta| delta.ts_event);
+                let mut clear =
+                    OrderBookDelta::clear(instrument_id, next_sequence, ts_event, ts_init);
+                next_sequence += 1;
+                clear.flags |= RecordFlag::F_LAST as u8;
+
+                return Ok(L2BookOutcome {
+                    deltas: Some((
+                        OrderBookDeltas::new(instrument_id, vec![clear]),
+                        next_sequence,
+                    )),
+                    resync: Some(L2ResyncRequest {
+                        instrument_id,
+                        depth,
+                    }),
+                });
+            }
+        } else if validate && book.checksum.is_some() {
+            self.mismatches.remove(&instrument_id);
         }
 
         set_last_delta_flag(&mut deltas);
@@ -223,11 +259,17 @@ fn price_wire_scale(instrument: &InstrumentAny) -> u8 {
 /// Asks ascending then bids descending, each level as the wire-scale price followed by the
 /// wire-scale quantity, per the venue's documented algorithm.
 pub(crate) fn compute_checksum(book: &OrderBook, price_scale: u8, qty_scale: u8) -> u32 {
-    let mut s = String::new();
+    let mut s = String::with_capacity(512);
+    let mut scratch = String::with_capacity(32);
 
     for level in book.asks(Some(10)).chain(book.bids(Some(10))) {
-        s.push_str(&format_scaled(level.price.value.as_decimal(), price_scale));
-        s.push_str(&format_scaled(level.size_decimal(), qty_scale));
+        push_scaled(
+            &mut s,
+            &mut scratch,
+            level.price.value.as_decimal(),
+            price_scale,
+        );
+        push_scaled(&mut s, &mut scratch, level.size_decimal(), qty_scale);
     }
 
     crc32_ieee(s.as_bytes())
@@ -461,6 +503,79 @@ mod tests {
             fresh.deltas.is_some(),
             "the next snapshot resumes the stream"
         );
+    }
+
+    /// Three consecutive mismatches switch validation off for that instrument alone.
+    ///
+    /// A book the venue hashes differently would otherwise resubscribe on every snapshot; after the
+    /// third, the message is applied and kept and no resync is requested.
+    #[rstest]
+    fn test_repeated_mismatches_disable_validation_for_the_instrument() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let mut bad = book_data(GUIDE_SNAPSHOT);
+        bad.checksum = Some(1);
+
+        for strike in 1..MAX_CONSECUTIVE_CHECKSUM_MISMATCHES {
+            let outcome = state
+                .process_book(&bad, &instrument, 0, true, Some(10), TS)
+                .unwrap();
+            assert!(outcome.resync.is_some(), "strike {strike} resubscribes");
+        }
+
+        let final_strike = state
+            .process_book(&bad, &instrument, 0, true, Some(10), TS)
+            .unwrap();
+        assert!(
+            final_strike.resync.is_none(),
+            "the last strike stops resubscribing"
+        );
+        assert_eq!(
+            final_strike
+                .deltas
+                .expect("the message is kept")
+                .0
+                .deltas
+                .len(),
+            21
+        );
+        assert!(state.books.contains_key(&instrument.id()));
+
+        let again = state
+            .process_book(&bad, &instrument, 21, true, Some(10), TS)
+            .unwrap();
+        assert!(
+            again.resync.is_none(),
+            "validation stays off for this instrument"
+        );
+    }
+
+    /// A valid message resets the mismatch count, so sporadic mismatches never add up.
+    #[rstest]
+    fn test_a_valid_message_resets_the_mismatch_count() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let good = book_data(GUIDE_SNAPSHOT);
+        let mut bad = good.clone();
+        bad.checksum = Some(1);
+
+        for _ in 0..(MAX_CONSECUTIVE_CHECKSUM_MISMATCHES * 2) {
+            assert!(
+                state
+                    .process_book(&bad, &instrument, 0, true, Some(10), TS)
+                    .unwrap()
+                    .resync
+                    .is_some(),
+                "each mismatch after a valid message resubscribes"
+            );
+            assert!(
+                state
+                    .process_book(&good, &instrument, 0, true, Some(10), TS)
+                    .unwrap()
+                    .resync
+                    .is_none()
+            );
+        }
     }
 
     #[rstest]

@@ -72,11 +72,11 @@ use crate::{
         level_2::{L2BookState, L2Depths, L2ResyncRequest},
         level_3::{
             BookOrderIdHasher, KrakenL3WsMessage,
-            resync::retry_l3_resync,
             runtime::{L3Sink, L3State, process_l3_message},
         },
         messages::KrakenSpotWsMessage,
         parse::{parse_quote_tick, parse_trade_tick, parse_ws_bar},
+        resync::{retry_l2_resync, retry_l3_resync},
     },
 };
 
@@ -532,10 +532,10 @@ impl KrakenSpotDataClient {
                                     ohlc_buffer: &ohlc_buffer,
                                     clock,
                                 };
-                                let resync =
+                                let resyncs =
                                     Self::handle_ws_message(ws_msg, &context, &mut l2_books);
 
-                                if let Some(request) = resync {
+                                for request in resyncs {
                                     log::info!(
                                         "Resyncing Kraken L2 book after checksum mismatch: {}",
                                         request.instrument_id
@@ -545,15 +545,12 @@ impl KrakenSpotDataClient {
                                     if let Err(e) = session_spawner.spawn_named(
                                         "kraken-spot-l2-resync",
                                         async move {
-                                            if let Err(e) = client
-                                                .resync_book(request.instrument_id, request.depth)
-                                                .await
-                                            {
-                                                log::error!(
-                                                    "Failed to resync Kraken L2 book for {}: {e}",
-                                                    request.instrument_id
-                                                );
-                                            }
+                                            retry_l2_resync(
+                                                &client,
+                                                request.instrument_id,
+                                                request.depth,
+                                            )
+                                            .await;
                                         },
                                     ) {
                                         log::warn!(
@@ -592,8 +589,8 @@ impl KrakenSpotDataClient {
         msg: KrakenSpotWsMessage,
         context: &SpotMessageContext,
         l2_books: &mut L2BookState,
-    ) -> Option<L2ResyncRequest> {
-        let mut resync = None;
+    ) -> Vec<L2ResyncRequest> {
+        let mut resyncs = Vec::new();
         let ts_init = context.clock.get_time_ns();
 
         match msg {
@@ -675,9 +672,7 @@ impl KrakenSpotDataClient {
                                 }
                             }
 
-                            if outcome.resync.is_some() {
-                                resync = outcome.resync;
-                            }
+                            resyncs.extend(outcome.resync);
                         }
                         Err(e) => log::error!("Failed to parse book deltas: {e}"),
                     }
@@ -727,7 +722,7 @@ impl KrakenSpotDataClient {
             }
         }
 
-        resync
+        resyncs
     }
 }
 
@@ -1452,6 +1447,54 @@ mod tests {
         assert!(states["BTC/USD"].awaiting_snapshot);
         assert!(states["BTC/USD"].open_orders.is_empty());
         assert!(receiver.try_recv().is_err());
+    }
+
+    /// Every book in a message that mismatches gets its own resync request.
+    #[rstest]
+    fn test_l2_handler_returns_a_resync_request_per_mismatching_book() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let instruments = Arc::new(AtomicMap::new());
+        let instrument = make_instrument();
+        let instrument_id = instrument.id();
+        instruments.insert(instrument_id, instrument);
+
+        let book_sequence = Arc::new(AtomicU64::new(0));
+        let l2_depths = L2Depths::default();
+        l2_depths.insert("BTC/USD", 10);
+        let mut l2_books = L2BookState::new(true);
+        let ohlc_buffer = Arc::new(Mutex::new(AHashMap::new()));
+        let context = SpotMessageContext {
+            sender: &sender.into(),
+            instruments: &instruments,
+            book_sequence: &book_sequence,
+            l2_depths: &l2_depths,
+            ohlc_buffer: &ohlc_buffer,
+            clock: get_atomic_clock_realtime(),
+        };
+
+        let bad_snapshot = KrakenWsBookData {
+            symbol: Ustr::from("BTC/USD"),
+            bids: Some(vec![book_level(dec!(100), Decimal::ONE)]),
+            asks: Some(vec![book_level(dec!(101), Decimal::ONE)]),
+            checksum: Some(1),
+            timestamp: "2024-01-01T00:00:00Z".parse().unwrap(),
+        };
+
+        let resyncs = KrakenSpotDataClient::handle_ws_message(
+            KrakenSpotWsMessage::Book {
+                data: vec![bad_snapshot.clone(), bad_snapshot],
+                is_snapshot: true,
+            },
+            &context,
+            &mut l2_books,
+        );
+
+        assert_eq!(
+            resyncs.len(),
+            2,
+            "one request per mismatching book: {resyncs:?}"
+        );
+        assert!(resyncs.iter().all(|r| r.instrument_id == instrument_id));
     }
 
     #[rstest]
