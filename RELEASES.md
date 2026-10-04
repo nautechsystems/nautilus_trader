@@ -1,6 +1,6 @@
 # NautilusTrader 2.0.0rc6
 
-Released on TBD (UTC).
+Released on 4th October 2026 (UTC).
 
 ### Enhancements
 
@@ -102,18 +102,18 @@ Released on TBD (UTC).
 - Replaced `StreamingWriter` `backend` and `storage_options` with an optional `catalog` (#5115), thanks @faysou
 - Replaced `convert_stream_to_data` `subdirectory` with an `Environment` argument (#5115), thanks @faysou
 - Replaced Rust `ParquetDataCatalog::query_typed_data` and `query_typed` with `query`, which now returns `Vec<T>`
-- Renamed `OrderBookDepth10` to `OrderBookDepth` throughout Rust and Python, removing the compatibility alias and the deprecated `book_depth10_to_arrow_record_batch_bytes` API
-- Renamed actor and strategy `subscribe_book_depth10`/`unsubscribe_book_depth10` to `subscribe_book_depth`/`unsubscribe_book_depth`
+- Renamed `OrderBookDepth10` to `OrderBookDepth`, removing the alias and `book_depth10_to_arrow_record_batch_bytes`
+- Renamed actor `subscribe_book_depth10`/`unsubscribe_book_depth10` to `subscribe_book_depth`/`unsubscribe_book_depth`
 - Renamed `OrderBookDepth10DataWrangler` to `OrderBookDepthDataWrangler`
-- Renamed live `SubscribeBookDepth10`/`UnsubscribeBookDepth10` commands to `SubscribeBookDepth`/`UnsubscribeBookDepth`, with matching `_subscribe_book_depth`/`_unsubscribe_book_depth` data client hooks
+- Renamed `SubscribeBookDepth10`/`UnsubscribeBookDepth10` commands and their data client hooks, dropping the `10` suffix
 - Renamed Python persistence `NautilusDataType.OrderBookDepth10` to `NautilusDataType.OrderBookDepth`
 - Renamed `ParquetDataCatalog` method `instrument_id` parameters to `identifier`, matching v1
 - Renamed Rust `TestClock`/`TestTimer` to `VirtualClock`/`VirtualTimer` without compatibility aliases
 - Renamed Rust `extract_column_by_name_or_index` to `extract_column_by_name`, dropping the positional fallback
-- Renamed Databento `load_order_book_depth10` to `load_order_book_depth` and `get_order_book_depth10` to `get_order_book_depth`
+- Renamed Databento `load_order_book_depth10` and `get_order_book_depth10`, dropping the `10` suffix
 - Renamed the Databento publisher 142 venue from `DEF` to `CDEF`
 - Renamed Polymarket `SignatureType` to `PolymarketSignatureType`
-- Renamed Tardis `load_tardis_depth10_from_snapshot5`/`25` and `stream_tardis_depth10_from_snapshot5`/`25` to their `depth` spellings, and `TardisDepth10StreamIterator` to `TardisDepthStreamIterator`
+- Renamed Tardis `*_tardis_depth10_from_snapshot*` functions and `TardisDepth10StreamIterator`, dropping the `10` suffix
 - Changed custom fill-model hooks to receive optional best bid and ask prices
 - Changed socket and WebSocket sends to return `SendError::BufferFull` when writer capacity is exhausted
 - Changed `SocketClient::writer_tx` to `WriterSender`; update explicit sender types and handle `SendError`
@@ -145,13 +145,13 @@ Released on TBD (UTC).
 - Changed backtest venues to require an explicit `fee_model`, including an explicit zero-fee model
 - Changed fee models that read instrument fees to require explicit `maker_rate` and `taker_rate`
 - Changed account `calculate_commission` to require explicit `maker_rate` and `taker_rate`
-- Changed Rust `ExecutionEngine::register_client` to require explicit venue or default routing setup for commands that relied on automatic venue routing; live-node and backtest automatic routing remain unchanged
+- Changed Rust `ExecutionEngine::register_client` to stop adding venue routes; live and backtest nodes are unaffected
 - Changed `Cache.account_for_venue` and `account_id` to return `None` for shared venues; look up by account ID
 - Changed Rust `Portfolio` locked-balance and margin queries to take `account_id`; pass `None` for venue lookup
-- Changed `ParquetDataCatalog` file operations to take a `data_type` selector (`NautilusDataType`, `NautilusRecordType`, or `NautilusInstrumentType`) in place of the `data_cls` and `type_name` strings (#5027), thanks @faysou
-- Changed `ParquetDataCatalog.query` to take a `NautilusDataType` in place of a directory-name string (#5027), thanks @faysou
-- Changed `ParquetDataCatalog.delete_data_range` to take a `NautilusDataType`, excluding record selectors and rejecting instrument definitions (#5027), thanks @faysou
-- Changed `BacktestDataConfig.data_type` to take and return a `NautilusDataType` rather than a string, where `Instrument` loads every instrument class (#5027), thanks @faysou
+- Changed `ParquetDataCatalog` file methods to take `data_type`, not `data_cls`/`type_name` (#5027), thanks @faysou
+- Changed `ParquetDataCatalog.query` to take a `NautilusDataType`, not a directory name (#5027), thanks @faysou
+- Changed `ParquetDataCatalog.delete_data_range` to take a non-instrument `NautilusDataType` (#5027), thanks @faysou
+- Changed `BacktestDataConfig.data_type` to a `NautilusDataType`; `Instrument` loads all classes (#5027), thanks @faysou
 - Changed Rust `OrderCore.events` to read-only `events()`; construct cores with `OrderCore::new`
 - Changed `reconciliation_startup_delay_secs` to reject values above 86,400 seconds (one day)
 - Changed live node startup to fail when in-scope nonzero venue positions remain unrecovered
@@ -186,8 +186,8 @@ Released on TBD (UTC).
 - Changed logging init to fail on an unusable log file; lazy Rust init keeps console logging
 - Changed Rust `FileWriter::new` to return `anyhow::Result` instead of `Option`
 - Changed custom-data writes to require valid schemas; migrate legacy files with `nautilus catalog migrate-parquet`
-- Changed catalog depth display to nested bid and ask lists preserving all levels and order IDs; display requires current-format Arrow data (#4959), thanks @faysou
-- Changed Parquet prices, timestamps, enums, and JSON fields to the open Arrow catalog format; migrate existing catalogs (#4959), thanks @faysou
+- Changed catalog depth display to nested bid/ask lists with all levels and order IDs (#4959), thanks @faysou
+- Changed Parquet prices, timestamps, enums, and JSON to the open Arrow format; migrate catalogs (#4959), thanks @faysou
 - Changed custom data macros to separate model definitions from optional Arrow encoding (#4959), thanks @faysou
 - Changed catalog Arrow files to name their type in `type_name` metadata, replacing instrument `class`
 - Changed instrument status and option Greeks Arrow conversions to reject batches mixing instruments
@@ -244,8 +244,8 @@ Released on TBD (UTC).
 - Fixed `RetainUnresolved` locally closing unacknowledged orders after recovery exhaustion
 - Fixed `Strategy.cancel_all_orders` returning only the first individual cancellation error
 - Fixed `Strategy` ignoring `log_rejected_due_post_only_as_warning` for post-only rejections
-- Fixed silent Python strategy/algorithm errors (#5039), thanks for reporting @logeid and for the initial fix @costajohnt
-- Fixed execution mass-status reconciliation ignoring filled-quantity decreases without companion fills, thanks for reporting @kta1kri
+- Fixed silent Python strategy/algorithm errors (#5039), thanks for reporting @logeid and for initial fix @costajohnt
+- Fixed mass-status reconciliation ignoring filled-quantity decreases without fills, thanks for reporting @kta1kri
 - Fixed startup reconciliation dropping real fills for external `Accepted` and `Triggered` orders
 - Fixed overfill rejections leaving no warning (#5081), thanks @folknor
 - Fixed `RiskEngine` risk-limit bypasses through single and batch order modifications, thanks for reporting @kta1kri
@@ -258,7 +258,7 @@ Released on TBD (UTC).
 - Fixed Python `PositionStatusReport.to_dict` omitting `avg_px_open`
 - Fixed `RiskEngine` using the venue account, not the routed client's (#4946), thanks for reporting @Artur-Sulej
 - Fixed `RiskEngine` position-reducing checks counting positions and open orders of other accounts
-- Fixed later submits denying or double-routing orders already handed to an execution client (#5020), thanks @s1amese2003
+- Fixed later submits denying or double-routing orders already sent to an execution client (#5020), thanks @s1amese2003
 - Fixed overlapping mass-status snapshots reversing newer cached fills or fill voids
 - Fixed strategy-scoped cancel-all skipping locally active orders (#5120), thanks @ngarid
 - Fixed immediate-mode cancels leaving accepted orders open in the cache (#5120), thanks @ngarid
@@ -525,7 +525,7 @@ Released on TBD (UTC).
 - Added Bybit live book stress harness with fault injection and an independent book oracle
 - Added Hyperliquid live book stress harness with fault injection and an independent book oracle
 - Standardized `Data` and `NautilusDataType` ordering with `Custom` first
-- Standardized the variable-depth Cap'n Proto `OrderBookDepth10` schema declarations to `OrderBookDepth` while pinning node IDs and field ordinals for wire continuity
+- Standardized Cap'n Proto `OrderBookDepth10` schema to `OrderBookDepth`, pinning node IDs and field ordinals
 - Standardized network config field layouts across adapters: URL override block, then `proxy_url`
 - Standardized book recovery ownership and retry handling across Lighter and OKX
 - Standardized book snapshot timeouts on a shared 10s default across Lighter, OKX, and Polymarket
