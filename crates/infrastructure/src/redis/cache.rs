@@ -48,7 +48,9 @@ use bytes::Bytes;
 use nautilus_common::{
     cache::{
         CacheConfig,
-        database::{CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap},
+        database::{
+            CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap, register_loaded_currencies,
+        },
     },
     enums::SerializationEncoding,
     live::get_runtime,
@@ -1336,10 +1338,8 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
         // Currencies must be registered before the dependent payloads decode, because a `Money`
         // or a `Currency` in them resolves its code through the global registry.
-        let currencies = self.load_currencies().await?;
-        for currency in currencies.values() {
-            Currency::register(*currency, false)?;
-        }
+        let mut currencies = self.load_currencies().await?;
+        register_loaded_currencies(&mut currencies)?;
 
         let (
             instruments,

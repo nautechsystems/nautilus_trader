@@ -19,7 +19,10 @@ use ahash::AHashMap;
 use bytes::Bytes;
 use futures::future::join_all;
 use jiff::Timestamp;
-use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
+use nautilus_common::{
+    cache::database::{CacheMap, register_loaded_currencies},
+    enums::SerializationEncoding,
+};
 use nautilus_model::{
     accounts::AccountAny,
     data::{CustomData, DataType, HasTsInit, InstrumentClose},
@@ -315,10 +318,8 @@ impl DatabaseQueries {
     ) -> anyhow::Result<CacheMap> {
         // Currencies must be registered before the dependent payloads decode, because a `Money`
         // or a `Currency` in them resolves its code through the global registry.
-        let currencies = Self::load_currencies(con, trader_key, encoding).await?;
-        for currency in currencies.values() {
-            Currency::register(*currency, false)?;
-        }
+        let mut currencies = Self::load_currencies(con, trader_key, encoding).await?;
+        register_loaded_currencies(&mut currencies)?;
 
         let (instruments, instrument_closes, synthetics, accounts, orders, positions) =
             tokio::try_join!(
@@ -349,13 +350,13 @@ impl DatabaseQueries {
         })
     }
 
-    /// Decodes a persisted currency, accepting both the record and the legacy bare code.
+    /// Decodes a persisted currency, accepting both the record and a bare code.
     ///
-    /// Records written before the full record was stored hold only the code, which resolves if that
-    /// code is registered. The two failure kinds are kept apart because bulk loading treats them
-    /// differently: a record that decodes but describes an invalid currency is an error, since the
-    /// intent is recoverable and dropping it would omit a currency the dependent payloads need,
-    /// while bytes that decode as neither shape are skipped.
+    /// A bare-code entry holds only the code, which resolves if that code is registered. The two
+    /// failure kinds are kept apart because bulk loading treats them differently: a record that
+    /// decodes but describes an invalid currency is an error, since the intent is recoverable and
+    /// dropping it would omit a currency the dependent payloads need, while bytes that decode as
+    /// neither shape are skipped.
     fn decode_currency(encoding: SerializationEncoding, value_bytes: &Bytes) -> CurrencyDecode {
         match Self::deserialize_payload::<CurrencyRecord>(encoding, value_bytes) {
             Ok(record) => match Currency::try_from(record) {
@@ -364,7 +365,9 @@ impl DatabaseQueries {
             },
             Err(record_err) => match Self::deserialize_payload::<Currency>(encoding, value_bytes) {
                 Ok(currency) => CurrencyDecode::Currency(currency),
-                Err(_) => CurrencyDecode::Undecodable(record_err),
+                Err(code_err) => CurrencyDecode::Undecodable(anyhow::anyhow!(
+                    "neither a currency record ({record_err}) nor a registered code ({code_err})"
+                )),
             },
         }
     }
@@ -1261,19 +1264,14 @@ mod tests {
     ) {
         let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &"ZZQ2").unwrap());
 
-        assert!(matches!(
-            DatabaseQueries::decode_currency(encoding, &bytes),
-            CurrencyDecode::Undecodable(_)
-        ));
-    }
-
-    /// A persisted record must never displace a built-in constant.
-    #[rstest]
-    fn test_register_does_not_displace_a_builtin() {
-        let stale = Currency::new("USD", 8, 0, "Stale USD", CurrencyType::Crypto);
-        Currency::register(stale, false).unwrap();
-
-        assert_eq!(Currency::from_str("USD").unwrap().precision, 2);
+        let CurrencyDecode::Undecodable(error) = DatabaseQueries::decode_currency(encoding, &bytes)
+        else {
+            panic!("an unregistered bare code is undecodable");
+        };
+        assert!(
+            error.to_string().contains("ZZQ2"),
+            "the error names the code so the operator can register it: {error}"
+        );
     }
 
     #[derive(Debug, Deserialize, PartialEq, Eq)]

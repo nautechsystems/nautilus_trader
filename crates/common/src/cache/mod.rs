@@ -48,7 +48,7 @@ pub use api::CacheApi; // Re-export
 use bounded::BoundedVecDeque;
 use bytes::Bytes;
 pub use config::CacheConfig; // Re-export
-use database::{CacheDatabaseAdapter, CacheMap};
+use database::{CacheDatabaseAdapter, CacheMap, register_loaded_currencies};
 pub use error::{
     ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, CurrencyLookupError,
     INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND,
@@ -519,13 +519,9 @@ impl Cache {
             None => AHashMap::new(),
         };
 
-        // A loaded currency must reach the global registry, or a `Money` or `Currency` decoded
-        // afterwards cannot resolve its code.
-        for currency in self.currencies.values() {
-            Currency::register(*currency, false)?;
-        }
+        register_loaded_currencies(&mut self.currencies)?;
 
-        log::info!("Cached {} currencies from database", self.general.len());
+        log::info!("Cached {} currencies from database", self.currencies.len());
         Ok(())
     }
 
@@ -2610,12 +2606,14 @@ impl Cache {
     }
 
     /// Returns the currencies an `account` references.
-    fn account_currencies(account: &AccountAny) -> Vec<Currency> {
-        let mut currencies: Vec<Currency> = account.balances().into_keys().collect();
-        if let Some(base_currency) = account.base_currency() {
-            currencies.push(base_currency);
-        }
-        currencies
+    /// The currencies an account state references: its balances, its margins and its base currency.
+    fn state_currencies(state: &AccountState) -> impl Iterator<Item = Currency> + '_ {
+        state
+            .balances
+            .iter()
+            .map(|balance| balance.currency)
+            .chain(state.margins.iter().map(|margin| margin.currency))
+            .chain(state.base_currency)
     }
 
     /// Persists the currencies an account references, so a restart can restore them.
@@ -2625,7 +2623,11 @@ impl Cache {
     /// where that code was never registered. Mirrors what [`Self::add_instrument`] does for an
     /// instrument's base, quote and settlement currencies.
     fn add_account_currencies(&mut self, account: &AccountAny) -> anyhow::Result<()> {
-        for currency in Self::account_currencies(account) {
+        let Some(state) = account.last_event() else {
+            return Ok(());
+        };
+
+        for currency in Self::state_currencies(&state) {
             self.add_currency(currency)?;
         }
         Ok(())
@@ -3335,18 +3337,8 @@ impl Cache {
     /// Returns an error if updating the account in the database fails.
     pub fn update_account_owned(&mut self, account: AccountAny) -> anyhow::Result<()> {
         let account_id = account.id();
+        self.add_account_currencies(&account)?;
         self.cache_account_owned(account);
-
-        let currencies = {
-            let Some(account_cell) = self.accounts.get(&account_id) else {
-                anyhow::bail!("Account {account_id} not found after cache update");
-            };
-            Self::account_currencies(&account_cell.borrow())
-        };
-
-        for currency in currencies {
-            self.add_currency(currency)?;
-        }
 
         if let Some(database) = &mut self.database {
             let Some(account_cell) = self.accounts.get(&account_id) else {
@@ -3367,20 +3359,21 @@ impl Cache {
     ///
     /// Returns an error if applying or persisting the account state fails.
     pub fn update_account_state(&mut self, event: &AccountState) -> anyhow::Result<()> {
-        let Some(cell) = self.accounts.get(&event.account_id) else {
+        if !self.accounts.contains_key(&event.account_id) {
             return self.add_account(AccountAny::from_events(std::slice::from_ref(event))?);
-        };
+        }
 
-        cell.borrow_mut().apply(event.clone())?;
-
-        let currencies = Self::account_currencies(&cell.borrow());
-        for currency in currencies {
+        // The event carries every currency the account references after it, so the account
+        // itself is not cloned on this path.
+        for currency in Self::state_currencies(event) {
             self.add_currency(currency)?;
         }
 
         let Some(cell) = self.accounts.get(&event.account_id) else {
-            anyhow::bail!("Account {} not found after apply", event.account_id);
+            anyhow::bail!("Account {} not found", event.account_id);
         };
+
+        cell.borrow_mut().apply(event.clone())?;
 
         if let Some(database) = &mut self.database {
             database.update_account(&cell.borrow())?;

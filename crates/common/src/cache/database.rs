@@ -42,6 +42,42 @@ use ustr::Ustr;
 use super::config::CacheConfig;
 use crate::signal::Signal;
 
+/// Registers currencies loaded from a cache database, keeping the registry's definition.
+///
+/// A `Money` or `Currency` decoded afterwards resolves its code through the global registry, so a
+/// loaded currency must reach it before the dependent payloads are read. `Currency::register` does
+/// not overwrite, so a built-in constant or a currency an adapter registered first keeps its
+/// definition; the map takes that definition too, so the cache and the decoded payloads agree, and a
+/// stored record that differs from it is logged.
+///
+/// # Errors
+///
+/// Returns an error if the registry cannot be locked.
+pub fn register_loaded_currencies(currencies: &mut AHashMap<Ustr, Currency>) -> anyhow::Result<()> {
+    for (code, currency) in currencies.iter_mut() {
+        Currency::register(*currency, false)?;
+
+        let Some(registered) = Currency::try_from_str(code) else {
+            continue;
+        };
+        let same = registered.precision == currency.precision
+            && registered.iso4217 == currency.iso4217
+            && registered.name == currency.name
+            && registered.currency_type == currency.currency_type;
+
+        if !same {
+            log::warn!(
+                "Stored currency {code} differs from the registered definition (stored precision {}, registered {}); using the registered one",
+                currency.precision,
+                registered.precision,
+            );
+            *currency = registered;
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Default)]
 pub struct CacheMap {
     pub currencies: AHashMap<Ustr, Currency>,

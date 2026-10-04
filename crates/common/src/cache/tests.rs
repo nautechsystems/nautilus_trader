@@ -72,7 +72,7 @@ use nautilus_model::{
     position::{Position, PositionReplayEvent},
     stubs::TestDefault,
     types::{
-        AccountBalance, Currency, Money, Price, Quantity,
+        AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION},
         price::PriceRaw,
     },
@@ -4277,6 +4277,23 @@ fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
 
 // -- DATA ------------------------------------------------------------------------------------
 
+/// A stored record never displaces a registered definition, and the cache takes the registry's.
+///
+/// `Money` decoded from a payload resolves through the registry, so a cache map holding a different
+/// definition for the same code would disagree with every decoded amount.
+#[rstest]
+fn test_register_loaded_currencies_keeps_the_registered_definition() {
+    let stale = Currency::new("USD", 8, 0, "Stale USD", CurrencyType::Crypto);
+    let mut loaded: AHashMap<Ustr, Currency> = [(Ustr::from("USD"), stale)].into_iter().collect();
+
+    crate::cache::database::register_loaded_currencies(&mut loaded).unwrap();
+
+    assert_eq!(Currency::try_from_str("USD").unwrap().precision, 2);
+    let kept = loaded[&Ustr::from("USD")];
+    assert_eq!(kept.precision, 2, "the map takes the registered definition");
+    assert_eq!(kept.currency_type, Currency::USD().currency_type);
+}
+
 /// A loaded currency reaches the global registry, so a payload denominated in it decodes.
 ///
 /// The code is unregistered when loading begins; a built-in could not prove the order.
@@ -5743,6 +5760,55 @@ fn test_add_account_persists_account_currencies() {
     assert_eq!(found.precision, 4);
     assert_eq!(found.name.as_str(), "Account Fixture One");
     assert_eq!(found.currency_type, CurrencyType::Crypto);
+}
+
+/// A margin requirement's currency is persisted too, since a `MarginBalance` holds `Money`.
+#[rstest]
+fn test_add_account_persists_margin_currencies() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    let settlement = Currency::new(
+        "ZZACCT4",
+        4,
+        0,
+        "Account Fixture Four",
+        CurrencyType::Crypto,
+    );
+    let balance = AccountBalance::new(
+        Money::new(1_000.0, Currency::USD()),
+        Money::new(0.0, Currency::USD()),
+        Money::new(1_000.0, Currency::USD()),
+    );
+    let margin = MarginBalance::new(
+        Money::new(10.0, settlement),
+        Money::new(5.0, settlement),
+        None,
+    );
+    let event = AccountState::new(
+        AccountId::from("SIM-004"),
+        AccountType::Margin,
+        vec![balance],
+        vec![margin],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    cache
+        .add_account(AccountAny::from_events(std::slice::from_ref(&event)).unwrap())
+        .unwrap();
+
+    assert!(
+        calls
+            .lock()
+            .currencies
+            .iter()
+            .any(|c| c.code.as_str() == "ZZACCT4"),
+        "a margin's currency must be persisted"
+    );
 }
 
 /// The same holds when an account is replaced rather than added.
