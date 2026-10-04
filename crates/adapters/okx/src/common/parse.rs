@@ -88,8 +88,11 @@ pub(crate) fn prefer_rpi_response_fields(value: &mut serde_json::Value) {
                 }
             }
 
-            for nested in fields.values_mut() {
-                prefer_rpi_response_fields(nested);
+            for (name, nested) in fields.iter_mut() {
+                // Fee groups expose current and legacy rates independently
+                if name != "feeGroup" {
+                    prefer_rpi_response_fields(nested);
+                }
             }
         }
         serde_json::Value::Array(items) => {
@@ -3652,6 +3655,7 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: Some(Ustr::from("BTC-ABOVE-DAILY")),
             inst_category: Some(OKXInstrumentCategory::Crypto),
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -3880,6 +3884,7 @@ mod tests {
             inst_family: Ustr::from("BTC-USDT"),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -5494,6 +5499,7 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -5543,6 +5549,7 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -5592,6 +5599,7 @@ mod tests {
             inst_family: Ustr::from("BTC-USD"),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -5647,6 +5655,7 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: None,
             inst_category: None,
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),
@@ -6343,6 +6352,34 @@ mod tests {
         let parsed: OKXInstrumentCategory = serde_json::from_str(json).unwrap();
         assert_eq!(parsed, expected);
         assert_eq!(okx_inst_category_to_asset_class(Some(parsed)), asset_class);
+    }
+
+    #[rstest]
+    #[case::missing(None, None)]
+    #[case::empty(Some(""), None)]
+    #[case::zero(Some("0"), Some("0"))]
+    #[case::group(Some("101"), Some("101"))]
+    fn test_okx_instrument_preserves_raw_fee_group_id(
+        #[case] group_id: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let mut payload: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let item = &mut payload["data"][0];
+        item.as_object_mut().unwrap().remove("groupId");
+        if let Some(value) = group_id {
+            item["groupId"] = serde_json::json!(value);
+        }
+        item["instCategory"] = serde_json::json!("3");
+
+        let instrument: OKXInstrument = serde_json::from_value(item.clone()).unwrap();
+
+        assert_eq!(instrument.group_id, expected.map(Ustr::from));
+        assert_eq!(
+            instrument.inst_category,
+            Some(OKXInstrumentCategory::Equity)
+        );
+        assert_eq!(instrument.inst_type, OKXInstrumentType::Spot);
     }
 
     #[rstest]
