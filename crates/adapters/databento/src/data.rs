@@ -324,16 +324,23 @@ impl DatabentoDataClient {
         instrument_id: InstrumentId,
         schema: dbn::Schema,
     ) -> anyhow::Result<()> {
+        let symbol = instrument_id.symbol.to_string();
+        // Records resolve to the underlying contract, so a continuous or parent symbol would
+        // publish on topics that its subscriber does not listen on
+        anyhow::ensure!(
+            infer_symbology_type(&symbol) == dbn::SType::RawSymbol,
+            "Unsupported symbol {symbol} for a Databento {schema} subscription, only raw symbols \
+             are available (not continuous or parent symbols)",
+        );
+
         let dataset = self.get_dataset_for_venue(instrument_id.venue)?;
         let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
 
         self.symbol_venue_map
             .insert(instrument_id.symbol, instrument_id.venue);
 
-        let symbol = instrument_id.symbol.to_string();
         let subscription = Subscription::builder()
             .schema(schema)
-            .stype_in(infer_symbology_type(&symbol))
             .symbols(symbol)
             .build();
 
@@ -696,8 +703,8 @@ impl DataClient for DatabentoDataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the data type is not supported, the identifier is missing or not an
-    /// instrument ID, or the subscription request fails.
+    /// Returns an error if the data type is not supported, has metadata, has a missing or invalid
+    /// instrument ID identifier, or the subscription request fails.
     fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
         let schema = custom_data_schema(&cmd.data_type)?;
         let instrument_id = custom_data_instrument_id(&cmd.data_type)?;
@@ -708,7 +715,8 @@ impl DataClient for DatabentoDataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the requested depth is not 10 or the subscription request fails.
+    /// Returns an error if the requested depth is not 10, the symbol is not a raw symbol, or the
+    /// subscription request fails.
     fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
         if let Some(depth) = cmd.depth {
             anyhow::ensure!(
@@ -1546,6 +1554,16 @@ fn custom_data_schema(data_type: &DataType) -> anyhow::Result<dbn::Schema> {
 }
 
 fn custom_data_instrument_id(data_type: &DataType) -> anyhow::Result<InstrumentId> {
+    // Records are published without metadata, so metadata would change the subscribed topic
+    anyhow::ensure!(
+        data_type
+            .metadata()
+            .is_none_or(|metadata| metadata.is_empty()),
+        "{} subscriptions do not support metadata, received {}",
+        data_type.type_name(),
+        data_type.metadata_str(),
+    );
+
     let identifier = data_type.identifier().ok_or_else(|| {
         anyhow::anyhow!(
             "{} subscriptions require an instrument ID identifier",
@@ -1633,7 +1651,8 @@ mod tests {
     use std::{num::NonZeroUsize, path::PathBuf};
 
     use nautilus_common::{
-        live::runner::replace_data_event_sender, msgbus::switchboard::get_custom_topic,
+        live::runner::replace_data_event_sender,
+        msgbus::{self, switchboard::get_custom_topic},
     };
     use nautilus_core::UUID4;
     use nautilus_model::{
@@ -2222,14 +2241,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::raw_symbol("ESM4.GLBX", "ESM4", dbn::SType::RawSymbol)]
-    #[case::continuous("ES.c.0.GLBX", "ES.c.0", dbn::SType::Continuous)]
-    #[case::parent("ES.FUT.GLBX", "ES.FUT", dbn::SType::Parent)]
-    fn test_subscribe_schema_infers_symbology_type(
-        #[case] instrument_id: &str,
-        #[case] symbol: &str,
-        #[case] stype_in: dbn::SType,
-    ) {
+    fn test_subscribe_schema_sends_raw_symbol() {
         let client = test_data_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client
@@ -2238,17 +2250,84 @@ mod tests {
             .insert("GLBX.MDP3".to_string(), tx);
 
         client
-            .subscribe_schema(InstrumentId::from(instrument_id), dbn::Schema::Ohlcv1M)
+            .subscribe_schema(InstrumentId::from("ESM4.GLBX"), dbn::Schema::Ohlcv1M)
             .unwrap();
 
         let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
             panic!("expected subscription");
         };
-        assert_eq!(subscription.stype_in, stype_in);
+        assert_eq!(subscription.stype_in, dbn::SType::RawSymbol);
         assert_eq!(
             subscription.symbols,
-            databento::Symbols::Symbols(vec![symbol.to_string()])
+            databento::Symbols::Symbols(vec!["ESM4".to_string()])
         );
+    }
+
+    #[rstest]
+    #[case::continuous("ES.c.0.GLBX")]
+    #[case::parent("ES.FUT.GLBX")]
+    #[case::instrument_id("12345.GLBX")]
+    fn test_subscribe_schema_rejects_non_raw_symbols(#[case] instrument_id: &str) {
+        let client = test_data_client();
+
+        let result = client.subscribe_schema(InstrumentId::from(instrument_id), dbn::Schema::Mbp10);
+
+        assert!(result.is_err());
+        assert!(client.cmd_channels.lock().is_empty());
+    }
+
+    #[rstest]
+    fn test_subscribe_custom_data_rejects_metadata() {
+        let mut client = test_data_client();
+        let mut metadata = Params::new();
+        metadata.insert("venue".to_string(), json!("GLBX"));
+        let command = SubscribeCustomData::new(
+            Some(ClientId::from("DATABENTO-TEST")),
+            None,
+            DataType::new(
+                "DatabentoStatistics",
+                Some(metadata),
+                Some("ESM4.GLBX".to_string()),
+            ),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        assert!(client.subscribe(command).is_err());
+        assert!(client.cmd_channels.lock().is_empty());
+    }
+
+    #[rstest]
+    fn test_subscribed_custom_data_reaches_subscriber() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let subscribed = DataType::new("DatabentoStatistics", None, Some("ESM4.GLBX".to_string()));
+        let other = DataType::new("DatabentoStatistics", None, Some("ESU4.GLBX".to_string()));
+        let handler = msgbus::stubs::get_message_saving_handler::<CustomData>(None);
+        msgbus::subscribe_any(get_custom_topic(&subscribed).into(), handler.clone(), None);
+        let statistics = DatabentoStatistics::new(
+            instrument_id,
+            DatabentoStatisticType::SettlementPrice,
+            DatabentoStatisticUpdateAction::Added,
+            Some(Price::from("5000.25")),
+            None,
+            1,
+            2,
+            3,
+            UnixNanos::from(4),
+            5,
+            UnixNanos::from(6),
+            UnixNanos::from(7),
+            UnixNanos::from(8),
+        );
+        let custom = custom_data_for_instrument(Arc::new(statistics), instrument_id);
+
+        msgbus::publish_any(get_custom_topic(&custom.data_type), &custom);
+        msgbus::publish_any(get_custom_topic(&other), &custom);
+
+        let received = msgbus::stubs::get_saved_messages::<CustomData>(&handler);
+        assert_eq!(received, vec![custom]);
     }
 
     #[rstest]

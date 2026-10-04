@@ -361,24 +361,30 @@ depth of 10 only, so an explicit depth other than 10 is rejected. The bar aggreg
 `BarType` selects the OHLCV schema for `subscribe_bars()` (`ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, or
 `ohlcv-1d`). The step must be 1 and the price type must be `LAST`, the only price type the decoder
 emits. `subscribe_data()` streams `DatabentoStatistics` or `DatabentoImbalance` records, and the
-data type identifier is the instrument ID. Records are published with that identifier, so a
-subscriber receives only the records of its own instrument. These subscriptions infer the symbology
-type from the symbol, so continuous (`ES.c.0`) and parent (`ES.FUT`) symbols work:
+data type identifier is the instrument ID, and the data type must have no metadata. Records are
+published with that identifier, so a subscriber receives only the records of its own instrument.
+
+These three subscriptions accept raw symbols such as `ESM4.GLBX` only. Records resolve to the
+underlying contract, so continuous (`ES.c.0`) and parent (`ES.FUT`) symbols are rejected rather than
+published on topics the subscriber does not listen on. Use `subscribe_quotes()` or
+`subscribe_trades()` for those symbols. The examples use a raw symbol:
 
 ```python
+raw_instrument_id = InstrumentId.from_str("ESM4.GLBX")
+
 self.subscribe_book_depth(
-    instrument_id=instrument_id,
+    instrument_id=raw_instrument_id,
     book_type=BookType.L2_MBP,
     client_id=DATABENTO_CLIENT_ID,
 )
 
 self.subscribe_bars(
-    BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"),
+    BarType.from_str(f"{raw_instrument_id}-1-MINUTE-LAST-EXTERNAL"),
     client_id=DATABENTO_CLIENT_ID,
 )
 
 self.subscribe_data(
-    DataType("DatabentoStatistics", identifier=str(instrument_id)),
+    DataType("DatabentoStatistics", identifier=str(raw_instrument_id)),
     client_id=DATABENTO_CLIENT_ID,
 )
 ```
