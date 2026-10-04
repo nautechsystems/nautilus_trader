@@ -2891,14 +2891,14 @@ type AmountsByCode = AHashMap<Ustr, (Decimal, Decimal)>;
 /// reported at zero rather than left at its previous value: the engine only ever inserts
 /// balances, and nothing downstream can clear one.
 ///
-/// Margins are not combined. Single-collateral requirements are denominated in the wallet's own
-/// collateral while flex requirements are in USD, so their raw amounts cannot be added under one
-/// code; each wallet contributes its own entry.
+/// Margins are summed per currency the same way. A single-collateral wallet's requirement is in
+/// its `currency` and a flex wallet's in USD, and `MarginAccount` keys account-wide margins by
+/// currency, so two entries under one code would collapse by iteration order.
 fn parse_account_entries(
     accounts: &AHashMap<String, FuturesAccount>,
 ) -> (Vec<AccountBalance>, Vec<MarginBalance>) {
     let mut balances: AmountsByCode = AHashMap::new();
-    let mut margins: Vec<MarginBalance> = Vec::new();
+    let mut margins: AmountsByCode = AHashMap::new();
 
     for account in accounts.values() {
         match account.account_type {
@@ -2919,7 +2919,7 @@ fn parse_account_entries(
         }
     }
 
-    (emit_balances(&balances), margins)
+    (emit_balances(&balances), emit_margins(&margins))
 }
 
 /// Resolves the currency a futures balance is emitted in.
@@ -2927,8 +2927,9 @@ fn parse_account_entries(
 /// Every balance keeps an eight-decimal currency, so wallet amounts are never rounded; resolving
 /// USD to the registered two-decimal currency would round cash and single-collateral USD balances
 /// to cents.
-fn futures_balance_currency(code: &str) -> Currency {
-    Currency::new(code, 8, 0, code, CurrencyType::Crypto)
+fn futures_balance_currency(code: &str) -> anyhow::Result<Currency> {
+    Currency::new_checked(code, 8, 0, code, CurrencyType::Crypto)
+        .map_err(|e| anyhow::anyhow!("Invalid currency code {code:?}: {e}"))
 }
 
 /// Returns the codes of `amounts` in a stable order.
@@ -2943,7 +2944,9 @@ fn emit_balances(amounts: &AmountsByCode) -> Vec<AccountBalance> {
 
     for code in sorted_codes(amounts) {
         let (total, locked) = amounts[&code];
-        match aggregate_balance(total, locked, futures_balance_currency(code.as_str())) {
+        match futures_balance_currency(code.as_str())
+            .and_then(|currency| aggregate_balance(total, locked, currency))
+        {
             Ok(balance) => balances.push(balance),
             Err(e) => log::warn!("Skipping {code} balance: {e}"),
         }
@@ -3029,19 +3032,17 @@ fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Amou
     }
 }
 
-fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut Vec<MarginBalance>) {
+fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut AmountsByCode) {
     if let Some(initial_margin) = account.initial_margin
         && initial_margin > Decimal::ZERO
     {
-        let usd_currency = Currency::USD();
         let maintenance = account
             .margin_requirements
             .as_ref()
             .and_then(|mr| mr.mm)
             .unwrap_or(Decimal::ZERO);
-        // Kraken Futures reports cross-margin aggregates in USD; emit as an
-        // account-wide entry keyed by USD.
-        push_margin(margins, initial_margin, maintenance, usd_currency);
+        // The flex wallet reports its requirement in USD.
+        accumulate_margin(margins, "USD", initial_margin, maintenance);
     }
 }
 
@@ -3068,32 +3069,21 @@ fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut Amount
     }
 }
 
-/// Resolves the currency a single-collateral wallet's margin requirement is denominated in.
+/// Returns the currency a single-collateral wallet's figures are denominated in.
 ///
-/// The wallet's `currency` field states it, and the schema requires that field. A response without
-/// it falls back to the wallet's single funded asset key in `balances`, the contract-symbol keys
-/// being positions and a zero-valued key a currency no longer held. With neither, the denomination
-/// cannot be resolved and `None` is returned.
-fn margin_account_currency(account: &FuturesAccount) -> Option<Ustr> {
-    if let Some(currency) = &account.currency {
-        return Some(Ustr::from(&normalize_asset_key(currency)));
-    }
-
-    let mut funded_assets = account
-        .balances
-        .iter()
-        .filter(|(key, amount)| !key.contains('_') && !amount.is_zero())
-        .map(|(key, _)| key);
-    let key = funded_assets.next()?;
-
-    if funded_assets.next().is_some() {
-        return None;
-    }
-
-    Some(Ustr::from(&normalize_asset_key(key.as_str())))
+/// The wallet schema requires `currency` and states that `auxiliary` and `marginRequirements` are
+/// in it. Guessing it from the asset keys in `balances` could label a requirement with dust held in
+/// another asset, so a wallet without a usable field resolves to `None`.
+fn margin_account_currency(account: &FuturesAccount) -> Option<String> {
+    account
+        .currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|code| !code.is_empty())
+        .map(normalize_asset_key)
 }
 
-fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut Vec<MarginBalance>) {
+fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut AmountsByCode) {
     if let Some(ref mr) = account.margin_requirements {
         let im = mr.im.unwrap_or(Decimal::ZERO);
         let mm = mr.mm.unwrap_or(Decimal::ZERO);
@@ -3102,11 +3092,9 @@ fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut Vec<Marg
             // Labeling the requirement with a guessed currency would misstate it, so a wallet
             // whose currency cannot be resolved contributes no margin entry.
             match margin_account_currency(account) {
-                Some(code) => {
-                    push_margin(margins, im, mm, futures_balance_currency(code.as_str()));
-                }
+                Some(code) => accumulate_margin(margins, &code, im, mm),
                 None => log::warn!(
-                    "Skipping margin requirement for a single-collateral wallet with no currency field and no single funded asset: {:?}",
+                    "Skipping margin requirement for a single-collateral wallet without a currency field: balances {:?}",
                     account.balances.keys().collect::<Vec<_>>()
                 ),
             }
@@ -3114,22 +3102,38 @@ fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut Vec<Marg
     }
 }
 
-fn push_margin(
-    margins: &mut Vec<MarginBalance>,
+/// Adds one wallet's requirement to the entry for `code`.
+fn accumulate_margin(
+    margins: &mut AmountsByCode,
+    code: &str,
     initial: Decimal,
     maintenance: Decimal,
-    currency: Currency,
 ) {
-    let initial = Money::from_decimal(initial, currency);
-    let maintenance = Money::from_decimal(maintenance, currency);
+    let entry = margins
+        .entry(Ustr::from(code))
+        .or_insert((Decimal::ZERO, Decimal::ZERO));
+    entry.0 += initial;
+    entry.1 += maintenance;
+}
 
-    match (initial, maintenance) {
-        (Ok(initial), Ok(maintenance)) => {
-            margins.push(MarginBalance::new(initial, maintenance, None));
+fn emit_margins(amounts: &AmountsByCode) -> Vec<MarginBalance> {
+    let mut margins = Vec::with_capacity(amounts.len());
+
+    for code in sorted_codes(amounts) {
+        let (initial, maintenance) = amounts[&code];
+        let margin = futures_balance_currency(code.as_str()).and_then(|currency| {
+            let initial = Money::from_decimal(initial, currency)?;
+            let maintenance = Money::from_decimal(maintenance, currency)?;
+            Ok(MarginBalance::new(initial, maintenance, None))
+        });
+
+        match margin {
+            Ok(margin) => margins.push(margin),
+            Err(e) => log::warn!("Skipping {code} margin: {e}"),
         }
-        (Err(e), _) => log::warn!("Skipping margin balance with invalid initial margin: {e}"),
-        (_, Err(e)) => log::warn!("Skipping margin balance with invalid maintenance margin: {e}"),
     }
+
+    margins
 }
 
 fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut AmountsByCode) {
@@ -3513,10 +3517,10 @@ mod tests {
         assert_eq!(usd.total.as_decimal(), dec!(1234.56789012));
     }
 
-    /// Margins stay one entry per wallet: single-collateral requirements are denominated in the
-    /// wallet's currency and flex requirements in USD, so their amounts must not be added.
+    /// Margins are keyed by currency: a single-collateral wallet's in its `currency`, the flex
+    /// wallet's in USD, so requirements in different currencies stay apart.
     #[rstest]
-    fn test_parse_account_entries_keeps_margins_per_wallet() {
+    fn test_parse_account_entries_keeps_margins_per_currency() {
         let mut flex = flex_wallet(&[], Some(dec!(10000)));
         flex.initial_margin = Some(dec!(500));
         flex.margin_requirements = Some(FuturesMarginRequirements {
@@ -3558,7 +3562,7 @@ mod tests {
                 ("BTC".to_string(), dec!(0.1)),
                 ("USD".to_string(), dec!(500))
             ],
-            "each wallet's requirement keeps its own denomination"
+            "each currency keeps its own entry"
         );
     }
 
@@ -3592,154 +3596,80 @@ mod tests {
         assert_eq!(btc.total.as_decimal(), dec!(141.31756797));
     }
 
-    /// Without the `currency` field, the single funded asset key denominates the requirement.
+    /// A requirement whose currency cannot be resolved is skipped rather than labeled by a guess.
     ///
-    /// A zero-valued key is a currency no longer held, not a second candidate.
+    /// Without the `currency` field, or with an empty one, the funded `xbt` key beside dust in
+    /// `xrp` is not evidence of the denomination, and an empty code must not reach the currency
+    /// constructor.
     #[rstest]
-    fn test_parse_margin_account_margins_fall_back_to_the_funded_asset_key() {
-        let account = FuturesAccount {
-            account_type: KrakenFuturesAccountType::MarginAccount,
-            currency: None,
-            balances: [
-                ("xbt".to_string(), dec!(1.5)),
-                ("xrp".to_string(), Decimal::ZERO),
-                ("FI_XBTUSD_171215".to_string(), dec!(50000)),
-            ]
-            .into_iter()
-            .collect(),
-            currencies: AHashMap::new(),
-            auxiliary: None,
-            margin_requirements: Some(FuturesMarginRequirements {
-                im: Some(dec!(0.05)),
-                mm: Some(dec!(0.025)),
-                lt: None,
-                tt: None,
-            }),
-            portfolio_value: None,
-            available_margin: None,
-            initial_margin: None,
-            pnl: None,
-        };
-
-        let (_, margins) = entries_for(&[("fi_xbtusd", account)]);
-
-        assert_eq!(margins.len(), 1, "{margins:?}");
-        assert_eq!(margins[0].currency.code.as_str(), "BTC");
-        assert_eq!(margins[0].initial.as_decimal(), dec!(0.05));
-    }
-
-    /// A requirement whose currency cannot be resolved is skipped rather than labeled USD.
-    ///
-    /// No `currency` field, and either no funded asset key or two of them.
-    #[rstest]
-    fn test_parse_margin_account_margins_skip_a_wallet_whose_currency_is_unresolved() {
-        let requirement = Some(FuturesMarginRequirements {
-            im: Some(dec!(100)),
-            mm: Some(dec!(50)),
+    #[case::absent(None)]
+    #[case::empty(Some(""))]
+    #[case::blank(Some("  "))]
+    fn test_parse_margin_account_margins_skip_a_wallet_whose_currency_is_unresolved(
+        #[case] currency: Option<&str>,
+    ) {
+        let mut wallet = cash_wallet(&[("xbt", dec!(1.5)), ("xrp", Decimal::ZERO)]);
+        wallet.account_type = KrakenFuturesAccountType::MarginAccount;
+        wallet.currency = currency.map(str::to_string);
+        wallet.margin_requirements = Some(FuturesMarginRequirements {
+            im: Some(dec!(0.05)),
+            mm: Some(dec!(0.025)),
             lt: None,
             tt: None,
         });
-        let mut no_asset = cash_wallet(&[]);
-        no_asset.account_type = KrakenFuturesAccountType::MarginAccount;
-        no_asset.margin_requirements = requirement.clone();
-        let mut two_assets = cash_wallet(&[("xbt", dec!(1)), ("eth", dec!(1))]);
-        two_assets.account_type = KrakenFuturesAccountType::MarginAccount;
-        two_assets.margin_requirements = requirement;
 
-        let (_, margins) = entries_for(&[("fi_a", no_asset), ("fi_b", two_assets)]);
+        let (_, margins) = entries_for(&[("fi_xbtusd", wallet)]);
 
         assert!(margins.is_empty(), "no guessed denomination: {margins:?}");
     }
 
-    /// A single-collateral wallet keys positions by contract symbol, which are not balances.
+    /// Wallets sharing a currency sum into one margin entry.
+    ///
+    /// `MarginAccount` keys account-wide margins by currency, so two entries under one code would
+    /// survive by iteration order instead.
     #[rstest]
-    fn test_parse_account_entries_skips_contract_symbol_keys() {
-        let account = FuturesAccount {
-            account_type: KrakenFuturesAccountType::MarginAccount,
-            currency: None,
-            balances: [
-                ("FI_XBTUSD_171215".to_string(), dec!(50000)),
-                ("FI_XBTUSD_180615".to_string(), dec!(-15000)),
-                ("xbt".to_string(), dec!(141.31756797)),
-            ]
-            .into_iter()
-            .collect(),
-            currencies: AHashMap::new(),
-            auxiliary: None,
-            margin_requirements: None,
-            portfolio_value: None,
-            available_margin: None,
-            initial_margin: None,
-            pnl: None,
-        };
-
-        let (balances, _) = entries_for(&[("fi_xbtusd", account)]);
-
-        assert_eq!(
-            balances.len(),
-            1,
-            "expected only the asset balance: {balances:?}"
-        );
-        assert_eq!(balances[0].currency.code.as_str(), "BTC");
-        assert_eq!(balances[0].total.as_decimal(), dec!(141.31756797));
-    }
-
-    #[rstest]
-    fn test_parse_multi_collateral_margins() {
-        let account = FuturesAccount {
-            account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
-            currency: None,
-            balances: AHashMap::new(),
-            currencies: AHashMap::new(),
-            auxiliary: None,
-            margin_requirements: Some(FuturesMarginRequirements {
-                im: Some(dec!(500)),
-                mm: Some(dec!(250)),
+    fn test_parse_account_entries_sums_margins_of_wallets_sharing_a_currency() {
+        let requirement = |im: Decimal, mm: Decimal| {
+            Some(FuturesMarginRequirements {
+                im: Some(im),
+                mm: Some(mm),
                 lt: None,
                 tt: None,
-            }),
-            portfolio_value: Some(dec!(10000)),
-            available_margin: Some(dec!(9500)),
-            initial_margin: Some(dec!(500)),
-            pnl: None,
+            })
         };
+        let mut first = cash_wallet(&[("xbt", dec!(2))]);
+        first.account_type = KrakenFuturesAccountType::MarginAccount;
+        first.currency = Some("xbt".to_string());
+        first.margin_requirements = requirement(dec!(0.1), dec!(0.05));
+        let mut second = cash_wallet(&[("xbt", dec!(1))]);
+        second.account_type = KrakenFuturesAccountType::MarginAccount;
+        second.currency = Some("XBT".to_string());
+        second.margin_requirements = requirement(dec!(0.02), dec!(0.01));
 
-        let (_, margins) = entries_for(&[("wallet", account)]);
+        let (_, margins) = entries_for(&[("fi_a", first), ("fi_b", second)]);
 
-        assert_eq!(margins.len(), 1);
-        let margin = &margins[0];
-        assert!(margin.instrument_id.is_none());
-        assert_eq!(margin.currency.code, "USD");
-        assert_eq!(margin.initial.as_decimal(), dec!(500));
-        assert_eq!(margin.maintenance.as_decimal(), dec!(250));
+        assert_eq!(margins.len(), 1, "one entry per currency: {margins:?}");
+        assert_eq!(margins[0].currency.code.as_str(), "BTC");
+        assert_eq!(margins[0].initial.as_decimal(), dec!(0.12));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(0.06));
     }
 
+    /// An asset key the currency constructor rejects is skipped, not a panic.
     #[rstest]
-    fn test_parse_multi_collateral_margins_zero_skipped() {
-        let account = FuturesAccount {
-            account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
-            currency: None,
-            balances: AHashMap::new(),
-            currencies: AHashMap::new(),
-            auxiliary: None,
-            margin_requirements: None,
-            portfolio_value: None,
-            available_margin: None,
-            initial_margin: Some(Decimal::ZERO),
-            pnl: None,
-        };
+    fn test_parse_account_entries_skips_an_empty_asset_key() {
+        let (balances, _) =
+            entries_for(&[("cash", cash_wallet(&[("", dec!(1)), ("xbt", dec!(2))]))]);
 
-        let (_, margins) = entries_for(&[("wallet", account)]);
-
-        assert_eq!(margins.len(), 0);
+        assert_eq!(balances.len(), 1, "{balances:?}");
+        assert_eq!(balances[0].currency.code.as_str(), "BTC");
     }
 
     #[rstest]
     fn test_parse_margin_account_margins() {
         let account = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
-            currency: None,
-            balances: [("usd".to_string(), dec!(1000))].into_iter().collect(),
+            currency: Some("xbt".to_string()),
+            balances: [("xbt".to_string(), dec!(2))].into_iter().collect(),
             currencies: AHashMap::new(),
             auxiliary: None,
             margin_requirements: Some(FuturesMarginRequirements {
@@ -3758,7 +3688,7 @@ mod tests {
 
         assert_eq!(margins.len(), 1);
         let margin = &margins[0];
-        assert_eq!(margin.currency.code.as_str(), "USD");
+        assert_eq!(margin.currency.code.as_str(), "BTC");
         assert_eq!(margin.initial.as_decimal(), dec!(100));
         assert_eq!(margin.maintenance.as_decimal(), dec!(50));
     }
