@@ -2576,25 +2576,15 @@ mod tests {
     // every dex (180 default + 240 on a HIP-3 dex).
     #[rstest]
     fn test_parse_combined_unified_account_with_open_positions_uses_spot_usdc() {
-        let perp_json = r#"{
-            "assetPositions": [],
-            "crossMarginSummary": {
-                "accountValue": "210.5",
-                "totalNtlPos": "900.0",
-                "totalRawUsd": "-689.5",
-                "totalMarginUsed": "180.0"
-            },
-            "withdrawable": "30.5"
-        }"#;
-        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+        let perp_state: ClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_clearinghouse_state_unified_open_positions.json"
+        ))
+        .unwrap();
 
-        let spot_json = r#"{
-            "balances": [
-                {"coin": "USDC", "token": 0, "total": "512.25", "hold": "420.0", "entryNtl": "0.0"},
-                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
-            ]
-        }"#;
-        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+        let spot_state: SpotClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_spot_clearinghouse_state_unified_open_positions.json"
+        ))
+        .unwrap();
 
         let (balances, margins) = parse_combined_account_balances_and_margins(
             &perp_state,
@@ -2616,13 +2606,13 @@ mod tests {
 
     #[rstest]
     fn test_parse_combined_unified_account_flat_has_no_margin() {
-        let perp_state: ClearinghouseState = serde_json::from_str(
-            r#"{"assetPositions": [], "crossMarginSummary": {"accountValue": "0", "totalNtlPos": "0", "totalRawUsd": "0", "totalMarginUsed": "0"}, "withdrawable": "0"}"#,
-        )
+        let perp_state: ClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_clearinghouse_state_unified_flat.json"
+        ))
         .unwrap();
-        let spot_state: SpotClearinghouseState = serde_json::from_str(
-            r#"{"balances": [{"coin": "USDC", "token": 0, "total": "100", "hold": "0", "entryNtl": "0"}]}"#,
-        )
+        let spot_state: SpotClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_spot_clearinghouse_state_unified_flat.json"
+        ))
         .unwrap();
 
         let (balances, margins) = parse_combined_account_balances_and_margins(
@@ -2640,13 +2630,13 @@ mod tests {
 
     #[rstest]
     fn test_parse_combined_unified_account_without_usdc_ignores_perp_summary() {
-        let perp_state: ClearinghouseState = serde_json::from_str(
-            r#"{"assetPositions": [], "crossMarginSummary": {"accountValue": "10", "totalNtlPos": "60", "totalRawUsd": "-50", "totalMarginUsed": "5"}, "withdrawable": "1"}"#,
-        )
+        let perp_state: ClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_clearinghouse_state_unified_without_usdc.json"
+        ))
         .unwrap();
-        let spot_state: SpotClearinghouseState = serde_json::from_str(
-            r#"{"balances": [{"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}]}"#,
-        )
+        let spot_state: SpotClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_spot_clearinghouse_state_unified_without_usdc.json"
+        ))
         .unwrap();
 
         let (balances, margins) = parse_combined_account_balances_and_margins(
@@ -2668,16 +2658,13 @@ mod tests {
     // Portfolio margin borrows against other collateral, so spot USDC can go negative.
     #[rstest]
     fn test_parse_combined_portfolio_margin_uses_spot_including_negative_usdc() {
-        let perp_state: ClearinghouseState = serde_json::from_str(
-            r#"{"assetPositions": [], "crossMarginSummary": {"accountValue": "100", "totalNtlPos": "500", "totalRawUsd": "-400", "totalMarginUsed": "50"}, "withdrawable": "2"}"#,
-        )
+        let perp_state: ClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_clearinghouse_state_portfolio_margin_negative_usdc.json"
+        ))
         .unwrap();
-        let spot_state: SpotClearinghouseState = serde_json::from_str(
-            r#"{"balances": [
-                {"coin": "USDC", "token": 0, "total": "-25", "hold": "50", "entryNtl": "0"},
-                {"coin": "HYPE", "token": 150, "total": "10", "hold": "0", "entryNtl": "400"}
-            ]}"#,
-        )
+        let spot_state: SpotClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_spot_clearinghouse_state_portfolio_margin_negative_usdc.json"
+        ))
         .unwrap();
 
         let (balances, margins) = parse_combined_account_balances_and_margins(

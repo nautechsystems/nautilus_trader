@@ -1,0 +1,10 @@
+{
+  "assetPositions": [],
+  "crossMarginSummary": {
+    "accountValue": "10",
+    "totalNtlPos": "60",
+    "totalRawUsd": "-50",
+    "totalMarginUsed": "5"
+  },
+  "withdrawable": "1"
+}
