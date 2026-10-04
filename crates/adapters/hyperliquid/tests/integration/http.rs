@@ -1748,13 +1748,21 @@ async fn test_request_account_state_keeps_perp_usdc_when_spot_lists_usdc_at_zero
 }
 
 #[rstest]
+#[case::no_spot_rows(json!({"balances": []}))]
+#[case::zero_usdc_row(json!({"balances": [
+    {"coin": "USDC", "token": 0, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}
+]}))]
+#[case::zero_usdc_and_token_rows(json!({"balances": [
+    {"coin": "USDC", "token": 0, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"},
+    {"coin": "PURR", "token": 1, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}
+]}))]
 #[tokio::test]
-async fn test_request_account_state_without_perp_summary_keeps_usdc() {
-    // A response with no perp summary carries no USDC reading, so the previous balance is kept
-    // rather than zeroed
+async fn test_request_account_state_without_perp_summary_keeps_usdc(#[case] spot: Value) {
+    // A response with no perp summary carries no USDC reading, so the previous balance and its
+    // margin are kept rather than zeroed, whatever zero rows the spot state lists
     let state = TestServerState::default();
     *state.user_abstraction_response.lock().await = Some(json!("disabled"));
-    *state.clearinghouse_response.lock().await = Some(flat_perp_summary("500.0", "0.0"));
+    *state.clearinghouse_response.lock().await = Some(flat_perp_summary("500.0", "50.0"));
     *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
     let addr = start_mock_server(state.clone()).await;
     let client = create_domain_client(&addr);
@@ -1762,8 +1770,10 @@ async fn test_request_account_state_without_perp_summary_keeps_usdc() {
 
     let funded = client.request_account_state(user).await.unwrap();
     let mut account = MarginAccount::new(funded, true);
+    assert!(account.account_margin(&Currency::USDC()).is_some());
 
     *state.clearinghouse_response.lock().await = Some(json!({"assetPositions": []}));
+    *state.spot_clearinghouse_response.lock().await = Some(spot);
     let no_summary = client.request_account_state(user).await.unwrap();
     assert!(
         no_summary
@@ -1782,6 +1792,10 @@ async fn test_request_account_state_without_perp_summary_keeps_usdc() {
             .as_decimal(),
         rust_decimal_macros::dec!(500),
     );
+    let margin = account
+        .account_margin(&Currency::USDC())
+        .expect("previous USDC margin must be kept");
+    assert_eq!(margin.initial.as_decimal(), rust_decimal_macros::dec!(50));
 }
 
 #[rstest]
