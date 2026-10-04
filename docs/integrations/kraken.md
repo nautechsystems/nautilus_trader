@@ -566,9 +566,11 @@ cutoff avoids a report set that never existed at the venue, which a moving cutof
 Declaring the cutoff is what lets the engine apply its bounded-history rules; the completeness flag
 described below qualifies that set rather than gating it.
 
-Order and fill records contribute to the completeness flag: the set is incomplete when a record's
-instrument could not be resolved, or when a record could not be parsed. Position records do not
-currently contribute, and the futures position read still drops an unresolved symbol silently.
+An in-scope open order or position whose instrument cannot be resolved fails the read on both
+clients, as the adapter guide's scope table requires: dropped, it would read to reconciliation as
+an order or position the venue never had. Historical order and fill records contribute to the
+completeness flag instead: the set is incomplete when such a record's instrument could not be
+resolved, or when a record could not be parsed. Position records do not contribute to the flag.
 
 Spot closed-order and fill reads page through an offset until the venue returns an empty page, and
 stop after 500 pages. A read cut short by that cap logs a warning, and how it surfaces depends on

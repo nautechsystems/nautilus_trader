@@ -1247,6 +1247,101 @@ fn futures_open_orders_json(order_id: &str, symbol: &str) -> String {
     )
 }
 
+/// An in-scope open order the client cannot resolve fails the read, as it does on spot.
+///
+/// Dropped from a successful return, the order would read to reconciliation as one the venue never
+/// had, and a live order could be resolved as missing.
+#[rstest]
+#[tokio::test]
+async fn test_futures_open_order_reports_error_on_unresolved_symbol() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_open_orders_json("V-UNRESOLVED", "PF_UNKNOWNUSD"));
+
+    let error = client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect_err("an unresolvable in-scope open order must fail the read");
+
+    assert!(
+        error
+            .to_string()
+            .contains("OpenOrders: instrument not in cache for futures symbol PF_UNKNOWNUSD"),
+        "unexpected error: {error}"
+    );
+}
+
+/// An in-scope position the client cannot resolve fails the read as well.
+#[rstest]
+#[tokio::test]
+async fn test_futures_position_reports_error_on_unresolved_symbol() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_positions_json.lock().await = Some(
+        r#"{"result":"success","openPositions":[{"side":"long","symbol":"PF_UNKNOWNUSD","price":27500.5,"fillTime":"2023-04-07T15:45:10.739Z","size":1000,"unrealizedFunding":0.0}]}"#
+            .to_string(),
+    );
+
+    let error = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect_err("an unresolvable in-scope position must fail the read");
+
+    assert!(
+        error
+            .to_string()
+            .contains("OpenPositions: instrument not in cache for futures symbol PF_UNKNOWNUSD"),
+        "unexpected error: {error}"
+    );
+}
+
+/// Out of scope, an unresolvable row is skipped: a scoped read only reports its own instrument.
+#[rstest]
+#[tokio::test]
+async fn test_futures_scoped_open_order_read_skips_an_unresolved_row_of_another_symbol() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(
+        r#"{"result":"success","openOrders":[{"order_id":"V-HELD","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"},{"order_id":"V-UNRESOLVED","symbol":"PF_UNKNOWNUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}]}"#
+            .to_string(),
+    );
+
+    let reports = client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("a scoped read ignores rows of other symbols, resolvable or not");
+
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("V-HELD"));
+}
+
 /// A scoped futures position read must match the resolved instrument.
 ///
 /// This read is the one that used to return every futures position for a spot ID, since spot and

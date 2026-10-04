@@ -1805,11 +1805,12 @@ impl KrakenFuturesHttpClient {
                     }
                 }
             } else {
-                log::warn!(
-                    "Instrument not in cache for futures symbol {}, skipping order",
+                // An in-scope open order the client cannot resolve fails the read, as the spot
+                // client's does: dropped, it reads to reconciliation as an order the venue never had.
+                anyhow::bail!(
+                    "OpenOrders: instrument not in cache for futures symbol {}",
                     order.symbol
                 );
-                complete = false;
             }
         }
 
@@ -2053,18 +2054,21 @@ impl KrakenFuturesHttpClient {
                 continue;
             }
 
-            if let Some(instrument) = resolved {
-                match parse_futures_position_status_report(
-                    &position,
-                    &instrument,
-                    account_id,
-                    ts_init,
-                ) {
-                    Ok(report) => all_reports.push(report),
-                    Err(e) => {
-                        let symbol = &position.symbol;
-                        log::warn!("Failed to parse futures position {symbol}: {e}");
-                    }
+            let Some(instrument) = resolved else {
+                // An in-scope position the client cannot resolve fails the read; dropped, it reads
+                // to reconciliation as a position the venue does not hold.
+                anyhow::bail!(
+                    "OpenPositions: instrument not in cache for futures symbol {}",
+                    position.symbol
+                );
+            };
+
+            match parse_futures_position_status_report(&position, &instrument, account_id, ts_init)
+            {
+                Ok(report) => all_reports.push(report),
+                Err(e) => {
+                    let symbol = &position.symbol;
+                    log::warn!("Failed to parse futures position {symbol}: {e}");
                 }
             }
         }

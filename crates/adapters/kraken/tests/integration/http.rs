@@ -2299,9 +2299,17 @@ async fn test_futures_domain_request_order_status_reports_uses_position_size_for
     let instruments = client.request_instruments().await.unwrap();
     client.cache_instruments(&instruments);
 
+    // The fixture also lists a `PI_ETHUSD` order the fixture instruments do not hold; scoping the
+    // read to the instrument under test keeps that row out of scope.
     let account_id = AccountId::from("KRAKEN-001");
     let reports = client
-        .request_order_status_reports(account_id, None, None, None, true)
+        .request_order_status_reports(
+            account_id,
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+            true,
+        )
         .await
         .unwrap();
 
