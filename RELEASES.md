@@ -56,6 +56,7 @@ Released on TBD (UTC).
 - Added Lighter `use_gtd` to choose venue or local GTD expiry (#4997), thanks @graceyangfan
 - Added Lighter transport batching for batch cancellation and cancel-all requests (#4470)
 - Added OKX error codes to order, modify, and cancel rejection reasons as `OKX error <code>: <message>`
+- Added OKX scoped fee queries, instrument fee groups, and grouped fee responses (#5207), thanks @silarin
 - Added Polymarket session signing and owner-operated session key authorization, listing, and revocation
 - Added Polymarket book recovery with snapshot gating and stale-feed detection
 - Added Polymarket settlement evidence registry with targeted REST trade resolution (#4876)
@@ -199,6 +200,7 @@ Released on TBD (UTC).
 - Changed Deribit models to deserialize only from borrowed JSON, with `DeribitBookMsg` borrowing its levels
 - Changed Python Hyperliquid data and execution client config parameter order to `base_url_http` before `base_url_ws`
 - Changed Hyperliquid stale book-delta recovery to shared book recovery, which never requests a reconnect
+- Changed Rust `parse_combined_account_balances_and_margins` to require account mode (#5187), thanks @XBeg9
 - Changed Kraken legacy currency codes to standard codes; migrate stored currency data (#5155), thanks @zhaow-de
 - Changed Kraken EUR/USD quote currencies, REST fees, and PnL to 2 decimals, and JPY to 0 (#5155), thanks @zhaow-de
 - Changed Kraken futures balances to retain negative free amounts for wallet shortfalls (#5155), thanks @zhaow-de
@@ -452,6 +454,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid historical stop reports losing trigger metadata and blocking fills (#5191), thanks @XBeg9
 - Fixed Hyperliquid IOC canceled remainders reconciling as filled and staying open (#5191), thanks @XBeg9
 - Fixed Hyperliquid reduce-only quantities in startup reports with complete fill history (#5192), thanks @XBeg9
+- Fixed Hyperliquid unified and portfolio margin account balances to use spot collateral (#5187), thanks @XBeg9
 - Fixed Interactive Brokers contract details conversion raising `ModuleNotFoundError` (#5051), thanks @dfjmax
 - Fixed Kraken spot connect aborting when TradeVolume fails (#5005), thanks @zhaow-de
 - Fixed Kraken spot reports spelled with the pair altname not resolving to instruments (#5034), thanks @zhaow-de
@@ -459,6 +462,7 @@ Released on TBD (UTC).
 - Fixed Kraken spot report pagination continuing past 500 pages without reporting incomplete (#5062), thanks @zhaow-de
 - Fixed Kraken spot startup reconciliation omitting orders closed while the node was down (#5110), thanks @zhaow-de
 - Fixed Kraken spot margin reports omitting the surviving-lot entry average (#5065), thanks @zhaow-de
+- Fixed Kraken spot position coverage and false flat reports for unreported holdings (#5185), thanks @zhaow-de
 - Fixed Kraken scoped reads dropping altname pairs or returning every instrument (#5129), thanks @zhaow-de
 - Fixed Kraken currency normalization corrupting XTZ, ZRX, and XAUT codes (#5155), thanks @zhaow-de
 - Fixed Kraken fills booking fees in quote currency instead of the reported fee currency (#5155), thanks @zhaow-de
@@ -541,11 +545,13 @@ Released on TBD (UTC).
 - Improved the canceled HTTP request test to accept a connection reset (#5138), thanks @faysou
 - Improved WebSocket rate-limit tests to handshake on the real clock (#5146), thanks @faysou
 - Improved execution engine tests by collecting functions nested in another test (#5158), thanks @abhijeetvichare76
+- Improved unwritable log directory test portability on Windows and Linux (#5167), thanks @abhijeetvichare76
 - Improved PyO3 docstring generation for one-line parameter attributes (#5115), thanks @faysou
 - Improved Postgres connection string redaction test coverage
 - Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Improved Kraken futures scoped position and order read coverage (#5154), thanks @zhaow-de
 - Improved OKX live-node submission recovery and unresolved-shutdown regression coverage (#5178), thanks @silarin
+- Improved OKX fee response tests with canonical grouped-fee and instrument fixtures (#5212), thanks @silarin
 - Improved OKX public and spread book recovery with bounded retries and cancellation-safe resubscription
 - Improved OKX dispatch benchmarks with steady-state caches and WebSocket order-event coverage
 - Extracted `CacheApi` and `CacheView` from the cache module
@@ -562,6 +568,7 @@ Released on TBD (UTC).
 - Refined Windows logger test imports so Clippy passes (#5157), thanks @abhijeetvichare76
 - Refined the copyright hook's temporary files and Bash 3.2 lookups (#5118), thanks @seungpyoson
 - Refined blockchain ref-count clones to use `Arc::clone` and `Rc::clone` (#5175), thanks @mirooon
+- Refined HyperSync stream calls to avoid redundant `Arc` clones (#5206), thanks @mirooon
 - Refreshed Binance Spot WebSocket trading tests for SBE schema `3:5`
 - Optimized cache order queries and exchange rate lookups from bars
 - Optimized average-price calculation for orders with many fills
@@ -641,11 +648,13 @@ Released on TBD (UTC).
 - Documented Bybit order book recovery, retry limits, and live recovery validation
 - Documented Hyperliquid inferred-fill commissions as unset
 - Documented Hyperliquid order book recovery, stale stream escalation, and the book stress harness
+- Documented Hyperliquid reduce-only fill quantity clamps and fill history limits (#5203), thanks @XBeg9
 - Documented Kraken spot cancel-all instrument scope and the 500-page report cap (#5044, #5062), thanks @zhaow-de
 - Documented Kraken persisted currency migration and money precision changes (#5155), thanks @zhaow-de
 - Documented that Kraken spot report requests warn at the page cap without marking incomplete (#5091), thanks @zhaow-de
 - Documented Kraken scoped reads matching resolved instrument IDs (#5129), thanks @zhaow-de
 - Documented Kraken spot margin entry averages as opening-only (#5065), thanks @zhaow-de
+- Documented Kraken margin-only closed-lot reconciliation limits (#5185), thanks @zhaow-de
 - Documented Lighter active and pending order limits by account tier
 - Documented OKX order book recovery and retry limits
 - Documented OKX opt-in submission retention and incomplete-recovery shutdown errors (#5178), thanks @silarin
