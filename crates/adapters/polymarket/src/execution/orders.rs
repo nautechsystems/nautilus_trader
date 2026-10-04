@@ -981,6 +981,7 @@ impl PolymarketExecutionClient {
                 venue_order_id,
                 venue_leg_qty,
                 order.quantity().saturating_sub(venue_leg_qty),
+                prior_filled_qty,
                 cached_venue_leg_filled,
                 order.order_side(),
             );
@@ -1291,6 +1292,7 @@ impl PolymarketExecutionClient {
                     venue_order_id,
                     venue_leg_qty,
                     order.quantity().saturating_sub(venue_leg_qty),
+                    prior_filled_qty,
                     confirmed_venue_leg_filled,
                     order.order_side(),
                 );
@@ -1322,10 +1324,14 @@ impl PolymarketExecutionClient {
                 return Ok(());
             }
 
-            let Some(replacement_qty) = target_total_qty.checked_sub(final_filled_qty) else {
+            let non_reopened_voided_qty = order.non_reopened_voided_qty();
+            let Some(replacement_qty) = target_total_qty
+                .checked_sub(final_filled_qty)
+                .and_then(|qty| qty.checked_sub(non_reopened_voided_qty))
+            else {
                 reject_modify(
                     &format!(
-                        "Modify quantity {target_total_qty} is not greater than final filled quantity {final_filled_qty}"
+                        "Modify quantity {target_total_qty} is not greater than final filled quantity {final_filled_qty} plus non-reopened voided quantity {non_reopened_voided_qty}"
                     ),
                     true,
                     final_filled_qty < order.quantity(),
@@ -1336,7 +1342,7 @@ impl PolymarketExecutionClient {
             if replacement_qty.is_zero() {
                 reject_modify(
                     &format!(
-                        "Modify quantity {target_total_qty} equals final filled quantity {final_filled_qty}"
+                        "Modify quantity {target_total_qty} equals final filled quantity {final_filled_qty} plus non-reopened voided quantity {non_reopened_voided_qty}"
                     ),
                     true,
                     final_filled_qty < order.quantity(),
@@ -1378,8 +1384,9 @@ impl PolymarketExecutionClient {
             };
 
             let expected_venue_order_id = submission.expected_venue_order_id;
-            let Some(logical_total_qty) =
-                final_filled_qty.checked_add(submission.expected_base_qty)
+            let Some(logical_total_qty) = final_filled_qty
+                .checked_add(non_reopened_voided_qty)
+                .and_then(|qty| qty.checked_add(submission.expected_base_qty))
             else {
                 reject_modify(
                     "Replacement logical quantity overflow",
@@ -1394,6 +1401,7 @@ impl PolymarketExecutionClient {
                 expected_venue_order_id,
                 logical_total_qty,
                 submission.expected_base_qty,
+                final_filled_qty,
                 price,
             ) {
                 reject_modify(

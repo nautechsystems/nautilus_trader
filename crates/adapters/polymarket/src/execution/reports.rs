@@ -878,10 +878,7 @@ impl PolymarketExecutionClient {
                 continue;
             }
 
-            let filled_before_leg = promotion
-                .quantity
-                .checked_sub(promotion.leg_quantity)
-                .context("replacement venue-leg quantity exceeds logical quantity")?;
+            let filled_before_leg = promotion.prior_filled;
             report.client_order_id = Some(promotion.client_order_id);
             report.quantity = promotion.quantity;
             report.filled_qty = filled_before_leg

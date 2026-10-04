@@ -51,7 +51,8 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderDeniedReason, OrderEventAny, OrderPendingCancel, OrderPendingUpdate,
-        OrderUpdated, order::spec::OrderFilledSpec,
+        OrderUpdated,
+        order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
@@ -7084,6 +7085,311 @@ async fn test_modify_order_cancel_replace_uses_final_fills_and_rotates_venue_id(
     assert_eq!(report.filled_qty, Quantity::from("6.0000"));
 }
 
+/// A non-reopened `FillVoided` on the order shrinks the cancel-replace size, the same as if that
+/// quantity had been filled (2 filled + 1 non-reopened voided sizes the replacement identically
+/// to 3 filled, reusing this suite's known-good 12.0000 @ 0.6000 -> 9.0000 numbers). A reopened
+/// void does not: the replacement stays sized at 10.0000, the full unfilled remainder.
+#[rstest]
+#[case::non_reopened_void_excluded(false, "5400000", "9000000")]
+#[case::reopened_void_included(true, "6000000", "10000000")]
+#[tokio::test]
+async fn test_modify_order_replacement_size_accounts_for_fill_void(
+    #[case] is_reopened: bool,
+    #[case] expected_maker_amount: &str,
+    #[case] expected_taker_amount: &str,
+) {
+    let state = TestServerState::default();
+    let venue_order_id = "0xmodify-void";
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [venue_order_id],
+        "not_canceled": {}
+    }));
+    *state.single_order_response.lock().await = Some(canceled_order_response(
+        venue_order_id,
+        "10.0000",
+        "2.0000",
+        "0.5000",
+    ));
+    *state.trades_response_override.lock().await = Some(confirmed_taker_trade_response(
+        venue_order_id,
+        "modify-void-fill-1",
+        "2.0000",
+        "0.5000",
+    ));
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-MODIFY-VOID",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.5000"),
+        Quantity::from("10.0000"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id);
+    state
+        .open_order_ids
+        .lock()
+        .await
+        .insert(venue_order_id.to_string());
+
+    // A fill of 3.0000 with 1.0000 of it voided nets to the same 2.0000 filled_qty as the
+    // sibling cancel-replace test's plain 3.0000 fill.
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    let filled_event = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("modify-void-fill-1")),
+        None,
+        Some(Price::from("0.5000")),
+        Some(Quantity::from("3.0000")),
+        Some(LiquiditySide::Taker),
+        None,
+        None,
+        Some(AccountId::from("POLYMARKET-001")),
+    );
+    cache.borrow_mut().update_order(&filled_event).unwrap();
+    let OrderEventAny::Filled(fill) = &filled_event else {
+        unreachable!("TestOrderEventStubs::filled always returns Filled")
+    };
+    let fill_voided = OrderFillVoidedSpec::builder()
+        .trader_id(fill.trader_id)
+        .strategy_id(fill.strategy_id)
+        .instrument_id(fill.instrument_id)
+        .client_order_id(fill.client_order_id)
+        .venue_order_id(fill.venue_order_id)
+        .account_id(fill.account_id)
+        .trade_id(fill.trade_id)
+        .voided_qty(Quantity::from("1.0000"))
+        .order_side(fill.order_side)
+        .order_type(fill.order_type)
+        .last_px(fill.last_px)
+        .currency(fill.currency)
+        .liquidity_side(fill.liquidity_side)
+        .maybe_position_id(fill.position_id)
+        .is_reopened(is_reopened)
+        .build();
+    order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::FillVoided(fill_voided))
+        .unwrap();
+    assert_eq!(order.filled_qty(), Quantity::from("2.0000"));
+    assert_eq!(
+        order.non_reopened_voided_qty(),
+        if is_reopened {
+            Quantity::from("0.0000")
+        } else {
+            Quantity::from("1.0000")
+        }
+    );
+
+    client
+        .modify_order(make_modify_cmd(
+            "O-MODIFY-VOID",
+            instrument_id,
+            Some(Quantity::from("12.0000")),
+            Some(Price::from("0.6000")),
+        ))
+        .unwrap();
+
+    let fill = recv_execution_event(&mut rx).await;
+    match fill {
+        ExecutionEvent::Report(ExecutionReport::Fill(fill)) => {
+            assert_eq!(fill.client_order_id, Some(order.client_order_id()));
+            assert_eq!(fill.venue_order_id, VenueOrderId::from(venue_order_id));
+            assert_eq!(fill.last_qty, Quantity::from("2.0000"));
+        }
+        other => panic!("Expected reconciled fill report, was {other:?}"),
+    }
+
+    let updated_event = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    let OrderEventAny::Updated(updated) = &updated_event else {
+        unreachable!("assert_order_event checked the variant")
+    };
+    assert_eq!(updated.quantity, Quantity::from("12.0000"));
+
+    let request = state.last_body.lock().await.clone().expect("order request");
+    let signed_order = request.get("order").expect("signed order");
+    assert_eq!(
+        signed_order.get("makerAmount").and_then(Value::as_str),
+        Some(expected_maker_amount)
+    );
+    assert_eq!(
+        signed_order.get("takerAmount").and_then(Value::as_str),
+        Some(expected_taker_amount)
+    );
+    assert_no_execution_event(&mut rx).await;
+}
+
+/// After a non-reopened void and a first modify, a second modify sizes its replacement from the
+/// first replacement's venue leg (12.0000 less 2.0000 filled and 1.0000 voided is 9.0000), so it
+/// replaces the order rather than rejecting the modify and canceling it.
+#[rstest]
+#[tokio::test]
+async fn test_modify_order_twice_after_fill_void_replaces_order() {
+    let state = TestServerState::default();
+    let venue_order_id = "0xmodify-twice-void";
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [venue_order_id],
+        "not_canceled": {}
+    }));
+    *state.single_order_response.lock().await = Some(canceled_order_response(
+        venue_order_id,
+        "10.0000",
+        "2.0000",
+        "0.5000",
+    ));
+    *state.trades_response_override.lock().await = Some(confirmed_taker_trade_response(
+        venue_order_id,
+        "modify-twice-fill-1",
+        "2.0000",
+        "0.5000",
+    ));
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-MODIFY-TWICE-VOID",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.5000"),
+        Quantity::from("10.0000"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id);
+    state
+        .open_order_ids
+        .lock()
+        .await
+        .insert(venue_order_id.to_string());
+
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    let filled_event = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("modify-twice-fill-1")),
+        None,
+        Some(Price::from("0.5000")),
+        Some(Quantity::from("3.0000")),
+        Some(LiquiditySide::Taker),
+        None,
+        None,
+        Some(AccountId::from("POLYMARKET-001")),
+    );
+    cache.borrow_mut().update_order(&filled_event).unwrap();
+    let OrderEventAny::Filled(fill) = &filled_event else {
+        unreachable!("TestOrderEventStubs::filled always returns Filled")
+    };
+    let fill_voided = OrderFillVoidedSpec::builder()
+        .trader_id(fill.trader_id)
+        .strategy_id(fill.strategy_id)
+        .instrument_id(fill.instrument_id)
+        .client_order_id(fill.client_order_id)
+        .venue_order_id(fill.venue_order_id)
+        .account_id(fill.account_id)
+        .trade_id(fill.trade_id)
+        .voided_qty(Quantity::from("1.0000"))
+        .order_side(fill.order_side)
+        .order_type(fill.order_type)
+        .last_px(fill.last_px)
+        .currency(fill.currency)
+        .liquidity_side(fill.liquidity_side)
+        .maybe_position_id(fill.position_id)
+        .build();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::FillVoided(fill_voided))
+        .unwrap();
+
+    client
+        .modify_order(make_modify_cmd(
+            "O-MODIFY-TWICE-VOID",
+            instrument_id,
+            Some(Quantity::from("12.0000")),
+            Some(Price::from("0.6000")),
+        ))
+        .unwrap();
+
+    match recv_execution_event(&mut rx).await {
+        ExecutionEvent::Report(ExecutionReport::Fill(fill)) => {
+            assert_eq!(fill.last_qty, Quantity::from("2.0000"));
+        }
+        other => panic!("Expected reconciled fill report, was {other:?}"),
+    }
+    let first_update = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    let OrderEventAny::Updated(updated) = &first_update else {
+        unreachable!("assert_order_event checked the variant")
+    };
+    assert_eq!(updated.quantity, Quantity::from("12.0000"));
+    let replacement_venue_order_id = updated.venue_order_id.expect("replacement venue order ID");
+    cache.borrow_mut().update_order(&first_update).unwrap();
+
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [replacement_venue_order_id.as_str()],
+        "not_canceled": {}
+    }));
+    *state.single_order_response.lock().await = Some(canceled_order_response(
+        replacement_venue_order_id.as_str(),
+        "9.0000",
+        "0.0000",
+        "0.6000",
+    ));
+    *state.trades_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
+
+    client
+        .modify_order(make_modify_cmd(
+            "O-MODIFY-TWICE-VOID",
+            instrument_id,
+            Some(Quantity::from("14.0000")),
+            None,
+        ))
+        .unwrap();
+
+    let second_update = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    let OrderEventAny::Updated(updated) = &second_update else {
+        unreachable!("assert_order_event checked the variant")
+    };
+    assert_eq!(updated.quantity, Quantity::from("14.0000"));
+    assert_ne!(updated.venue_order_id, Some(replacement_venue_order_id));
+
+    let request = state.last_body.lock().await.clone().expect("order request");
+    let signed_order = request.get("order").expect("signed order");
+    assert_eq!(
+        signed_order.get("takerAmount").and_then(Value::as_str),
+        Some("11000000")
+    );
+    assert_no_execution_event(&mut rx).await;
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_modify_order_waits_for_canceled_status_before_replacing() {
@@ -7873,6 +8179,189 @@ async fn test_modify_order_ambiguous_replacement_is_recovered_by_order_reconcili
     );
     assert!(state.open_order_ids.lock().await.is_empty());
     assert_no_execution_event(&mut rx).await;
+}
+
+/// A non-reopened void on the first venue order stays out of both the promoted replacement's
+/// filled quantity and the venue-leg quantity later reports expect (3 filled + 1 voided of 12
+/// leaves the replacement 8).
+#[rstest]
+#[tokio::test]
+async fn test_modify_order_ambiguous_replacement_after_fill_void_reconciles_leg() {
+    let state = TestServerState::default();
+    let old_venue_order_id = "0xmodify-replacement-void";
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [old_venue_order_id],
+        "not_canceled": {}
+    }));
+    *state.single_order_response.lock().await = Some(canceled_order_response(
+        old_venue_order_id,
+        "10.0000",
+        "3.0000",
+        "0.5000",
+    ));
+    *state.trades_response_override.lock().await = Some(confirmed_taker_trade_response(
+        old_venue_order_id,
+        "modify-void-kept",
+        "3.0000",
+        "0.5000",
+    ));
+    *state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.http_timeout_secs = 1;
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-MODIFY-REPLACEMENT-VOID",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.5000"),
+        Quantity::from("10.0000"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, old_venue_order_id);
+    state
+        .open_order_ids
+        .lock()
+        .await
+        .insert(old_venue_order_id.to_string());
+
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+
+    for (trade_id, quantity) in [
+        ("modify-void-kept", "3.0000"),
+        ("modify-void-failed", "1.0000"),
+    ] {
+        let filled = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from(trade_id)),
+            None,
+            Some(Price::from("0.5000")),
+            Some(Quantity::from(quantity)),
+            Some(LiquiditySide::Taker),
+            None,
+            None,
+            Some(AccountId::from("POLYMARKET-001")),
+        );
+        order = cache.borrow_mut().update_order(&filled).unwrap();
+    }
+    let Some(OrderEventAny::Filled(fill)) = order.events().last().copied() else {
+        panic!("expected the failed trade's fill");
+    };
+    let fill_voided = OrderFillVoidedSpec::builder()
+        .trader_id(fill.trader_id)
+        .strategy_id(fill.strategy_id)
+        .instrument_id(fill.instrument_id)
+        .client_order_id(fill.client_order_id)
+        .venue_order_id(fill.venue_order_id)
+        .account_id(fill.account_id)
+        .trade_id(fill.trade_id)
+        .voided_qty(fill.last_qty)
+        .order_side(fill.order_side)
+        .order_type(fill.order_type)
+        .last_px(fill.last_px)
+        .currency(fill.currency)
+        .liquidity_side(fill.liquidity_side)
+        .maybe_position_id(fill.position_id)
+        .build();
+    order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::FillVoided(fill_voided))
+        .unwrap();
+    assert_eq!(order.filled_qty(), Quantity::from("3.0000"));
+    assert_eq!(order.non_reopened_voided_qty(), Quantity::from("1.0000"));
+    mark_order_pending_update(&cache, &mut order);
+
+    client
+        .modify_order(make_modify_cmd(
+            "O-MODIFY-REPLACEMENT-VOID",
+            instrument_id,
+            Some(Quantity::from("12.0000")),
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.order_post_count.lock().await == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    let open_order_ids = state.open_order_ids.lock().await.clone();
+    assert!(!open_order_ids.contains(old_venue_order_id));
+    let replacement_venue_order_id = open_order_ids.into_iter().next().unwrap();
+    tokio::time::sleep(Duration::from_millis(1_100)).await;
+
+    match recv_execution_event(&mut rx).await {
+        ExecutionEvent::Report(ExecutionReport::Fill(fill)) => {
+            assert_eq!(fill.trade_id, TradeId::from("modify-void-kept"));
+            assert_eq!(fill.last_qty, Quantity::from("3.0000"));
+        }
+        other => panic!("Expected reconciled fill report, was {other:?}"),
+    }
+    assert_no_execution_event(&mut rx).await;
+
+    let old_leg = canceled_order_response(old_venue_order_id, "10.0000", "3.0000", "0.5000");
+    let mut replacement =
+        canceled_order_response(&replacement_venue_order_id, "8.0000", "0.0000", "0.5000");
+    replacement["status"] = json!("LIVE");
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [old_leg, replacement],
+        "next_cursor": "LTE=",
+    }));
+    let generate = GenerateOrderStatusReports {
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        open_only: false,
+        instrument_id: Some(instrument_id),
+        start: None,
+        end: None,
+        params: None,
+        log_receipt_level: LogLevel::Info,
+        correlation_id: None,
+        causation_id: None,
+    };
+    let reports = client
+        .generate_order_status_reports(&generate)
+        .await
+        .unwrap();
+
+    let updated_event = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    let OrderEventAny::Updated(updated) = &updated_event else {
+        unreachable!("assert_order_event checked the variant")
+    };
+    assert_eq!(updated.quantity, Quantity::from("12.0000"));
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].quantity, Quantity::from("12.0000"));
+    assert_eq!(reports[0].filled_qty, Quantity::from("3.0000"));
+    assert_no_execution_event(&mut rx).await;
+
+    // Once the cache holds the replacement, its venue leg is expected to be the 8 submitted
+    cache.borrow_mut().update_order(&updated_event).unwrap();
+    let reports = client
+        .generate_order_status_reports(&generate)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].quantity, Quantity::from("12.0000"));
+    assert_eq!(reports[0].filled_qty, Quantity::from("3.0000"));
 }
 
 #[rstest]

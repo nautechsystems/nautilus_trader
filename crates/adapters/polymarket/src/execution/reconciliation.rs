@@ -28,7 +28,7 @@ use nautilus_core::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{InstrumentCloseType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
-    events::OrderEventAny,
+    events::{OrderEventAny, OrderFillVoided},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -74,15 +74,15 @@ pub(crate) fn venue_leg_filled_before_and_quantity(
     let mut filled = Decimal::ZERO;
 
     for event in order.events() {
-        match event {
-            OrderEventAny::Filled(event) if event.venue_order_id == venue_order_id => {
-                filled += event.last_qty.as_decimal();
-            }
-            OrderEventAny::FillVoided(event) if event.venue_order_id == venue_order_id => {
-                filled -= event.voided_qty.as_decimal();
-            }
-            _ => {}
+        if let OrderEventAny::Filled(event) = event
+            && event.venue_order_id == venue_order_id
+        {
+            filled += event.last_qty.as_decimal();
         }
+    }
+
+    for void in latest_leg_voids(order, venue_order_id).values() {
+        filled -= void.voided_qty.as_decimal();
     }
 
     anyhow::ensure!(filled >= Decimal::ZERO, "venue-leg fills are negative");
@@ -99,8 +99,41 @@ pub(crate) fn venue_leg_filled_before_and_quantity(
     let leg_quantity = order
         .quantity()
         .checked_sub(filled_before)
-        .context("fills before current venue leg exceed logical quantity")?;
+        .and_then(|qty| qty.checked_sub(non_reopened_voided_before_leg(order, venue_order_id)?))
+        .context("fills and voids before current venue leg exceed logical quantity")?;
     Ok((filled_before, leg_quantity))
+}
+
+/// Returns the non-reopened voided quantity of the venue orders before `venue_order_id`, which
+/// the logical order quantity still carries although none of it is filled.
+fn non_reopened_voided_before_leg(
+    order: &OrderAny,
+    venue_order_id: VenueOrderId,
+) -> Option<Quantity> {
+    let leg_voided = latest_leg_voids(order, venue_order_id)
+        .values()
+        .filter(|void| !void.is_reopened)
+        .fold(Quantity::zero(order.quantity().precision), |total, void| {
+            total + void.voided_qty
+        });
+    order.non_reopened_voided_qty().checked_sub(leg_voided)
+}
+
+// Fill-void corrections are cumulative per trade, so only each trade's latest revision counts
+fn latest_leg_voids(
+    order: &OrderAny,
+    venue_order_id: VenueOrderId,
+) -> AHashMap<TradeId, &OrderFillVoided> {
+    let mut voids = AHashMap::new();
+
+    for event in order.events() {
+        if let OrderEventAny::FillVoided(event) = event
+            && event.venue_order_id == venue_order_id
+        {
+            voids.insert(event.trade_id, event);
+        }
+    }
+    voids
 }
 
 /// Shared context for trade-to-fill-report conversion.

@@ -339,6 +339,7 @@ pub(super) fn confirm_modify_replacement(
         Some(promotion.client_order_id),
         promotion.leg_quantity,
         promotion.quantity.saturating_sub(promotion.leg_quantity),
+        promotion.prior_filled,
         context.identity.order_side,
     );
     let buffered = fill_tracker.take_pending_reports(&promotion.venue_order_id);
@@ -563,6 +564,7 @@ pub(super) fn drain_pending_reports_for_known_order(
             Some(order.client_order_id()),
             tracker_quantity,
             Quantity::zero(tracker_quantity.precision),
+            Quantity::zero(tracker_quantity.precision),
             order.order_side(),
         )
     } else {
@@ -685,6 +687,7 @@ pub(super) fn handle_order_response(
                         venue_order_id,
                         Some(order.client_order_id()),
                         order.quantity(),
+                        Quantity::zero(order.quantity().precision),
                         Quantity::zero(order.quantity().precision),
                         order.order_side(),
                     );
@@ -1199,6 +1202,7 @@ mod tests {
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
+        events::order::spec::OrderFillVoidedSpec,
         identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
@@ -1430,6 +1434,7 @@ mod tests {
             new_id,
             Quantity::from("120.000000"),
             Quantity::from("100.000000"),
+            Quantity::from("20.000000"),
             Price::from("0.5000"),
         ));
         let state = Arc::new(Mutex::new(state));
@@ -1454,6 +1459,240 @@ mod tests {
         assert_eq!(bumped, Some(Quantity::from("120.000058")));
     }
 
+    // Returns an order of 10 whose first venue order filled 3 and had 1 more voided without
+    // reopening
+    fn order_with_prior_leg_void(
+        client_order_id: &str,
+        instrument: &InstrumentAny,
+        account_id: AccountId,
+        venue_order_id: VenueOrderId,
+    ) -> OrderAny {
+        let mut order = test_limit_order_with(
+            client_order_id,
+            instrument.id(),
+            Quantity::from("10.000000"),
+            Price::new(0.50, 4),
+            TimeInForce::Gtc,
+        );
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        order.apply(submitted).unwrap();
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        order.apply(accepted).unwrap();
+        let mut last_fill = None;
+
+        for (trade_id, quantity) in [("trade-kept", "3.000000"), ("trade-failed", "1.000000")] {
+            let filled = TestOrderEventStubs::filled(
+                &order,
+                instrument,
+                Some(TradeId::from(trade_id)),
+                None,
+                Some(Price::new(0.50, 4)),
+                Some(Quantity::from(quantity)),
+                None,
+                None,
+                None,
+                Some(account_id),
+            );
+            order.apply(filled.clone()).unwrap();
+            last_fill = Some(filled);
+        }
+        let Some(OrderEventAny::Filled(fill)) = last_fill else {
+            panic!("expected the failed trade's fill");
+        };
+        let voided = OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(fill.last_qty)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .maybe_position_id(fill.position_id)
+            .build();
+        order.apply(OrderEventAny::FillVoided(voided)).unwrap();
+        assert_eq!(order.filled_qty(), Quantity::from("3.000000"));
+        assert_eq!(order.non_reopened_voided_qty(), Quantity::from("1.000000"));
+        order
+    }
+
+    // The first venue order filled 3 and had 1 more voided without reopening, so a modify to 12
+    // leaves 8 to the replacement. When the replacement ends with only dust unfilled, the terminal
+    // update closes the order at its filled quantity, without the voided 1.
+    #[rstest]
+    fn test_confirm_modify_replacement_dust_terminal_after_prior_void_closes_order() {
+        let instrument = test_instrument();
+        let account_id = AccountId::from("POLY-001");
+        let old_id = VenueOrderId::from("V-VOID-OLD");
+        let new_id = VenueOrderId::from("V-VOID-NEW");
+        let mut order = order_with_prior_leg_void("O-VOID-DUST", &instrument, account_id, old_id);
+
+        let registry = OrderContextRegistry::default();
+        registry.register_context(old_id, OrderContext::from(&order));
+        registry.mark_accepted(old_id);
+        let mut state = WsDispatchState::default();
+        assert!(state.begin_modify(order.client_order_id(), old_id, instrument.id()));
+        assert!(state.set_modify_replacement(
+            order.client_order_id(),
+            new_id,
+            Quantity::from("12.000000"),
+            Quantity::from("8.000000"),
+            Quantity::from("3.000000"),
+            Price::from("0.5000"),
+        ));
+        let state = Arc::new(Mutex::new(state));
+        let tracker = Arc::new(OrderFillTrackerMap::new());
+        tracker.buffer_fill_for_test(
+            new_id,
+            test_fill_report(
+                instrument.id(),
+                new_id,
+                Quantity::from("7.999990"),
+                UnixNanos::from(900u64),
+            ),
+        );
+        tracker.buffer_report_for_test(
+            new_id,
+            OrderStatusReport::new(
+                account_id,
+                instrument.id(),
+                Some(order.client_order_id()),
+                new_id,
+                OrderSide::Buy.into(),
+                OrderType::Limit,
+                TimeInForce::Gtc,
+                OrderStatus::Filled,
+                Quantity::from("8.000000"),
+                Quantity::from("7.999990"),
+                UnixNanos::from(1_000u64),
+                UnixNanos::from(1_000u64),
+                UnixNanos::from(1_000u64),
+                None,
+            ),
+        );
+        let settlement = SettlementRegistry::new(account_id);
+        let (emitter, mut receiver) = test_emitter();
+
+        assert!(confirm_modify_replacement(
+            &order,
+            new_id,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            &tracker,
+            &settlement,
+            &registry,
+            &state,
+        ));
+
+        let mut last_quantity = None;
+
+        while let Ok(event) = receiver.try_recv() {
+            if let ExecutionEvent::Order(event) = event {
+                if let OrderEventAny::Updated(updated) = &event {
+                    last_quantity = Some(updated.quantity);
+                }
+                order.apply(event).unwrap();
+            }
+        }
+        assert_eq!(last_quantity, Some(Quantity::from("10.999990")));
+        assert_eq!(order.filled_qty(), Quantity::from("10.999990"));
+        assert_eq!(order.status(), OrderStatus::Filled);
+    }
+
+    // As above, with the replacement's fill and terminal status arriving over the WebSocket after
+    // its submit response or its own first WebSocket message promotes it
+    #[rstest]
+    fn test_ws_dust_terminal_after_prior_void_closes_replacement_order(
+        #[values(false, true)] promoted_over_ws: bool,
+    ) {
+        let mut instrument = test_instrument();
+        let asset_id = instrument.id().symbol.inner();
+        let account_id = AccountId::from("POLY-001");
+        let old_id = VenueOrderId::from("V-WS-VOID-OLD");
+        let new_id = VenueOrderId::from("V-WS-VOID-NEW");
+        let mut order =
+            order_with_prior_leg_void("O-WS-VOID-DUST", &instrument, account_id, old_id);
+        let registry = OrderContextRegistry::default();
+        registry.register_context(old_id, OrderContext::from(&order));
+        registry.mark_accepted(old_id);
+        let mut state = WsDispatchState::default();
+        assert!(state.begin_modify(order.client_order_id(), old_id, instrument.id()));
+        assert!(state.set_modify_replacement(
+            order.client_order_id(),
+            new_id,
+            Quantity::from("12.000000"),
+            Quantity::from("8.000000"),
+            Quantity::from("3.000000"),
+            Price::from("0.5000"),
+        ));
+        let state = Arc::new(Mutex::new(state));
+        let trade = test_taker_trade(asset_id, new_id, "7.999990", "0.50");
+        bind_instrument_to_user_trade(&mut instrument, &trade);
+        let mut ws_order: PolymarketUserOrder = load("ws_user_order_matched.json");
+        ws_order.id = new_id.to_string();
+        ws_order.asset_id = asset_id;
+        ws_order.original_size = "8.000000".to_string();
+        ws_order.size_matched = "7.999990".to_string();
+        ws_order.associate_trades = Some(vec![trade.id.clone()]);
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(asset_id, instrument);
+        let tracker = Arc::new(OrderFillTrackerMap::new());
+        let settlement = SettlementRegistry::new(account_id);
+        settlement.mark_live();
+        settlement.note_order_submitted(new_id);
+        let pending_submits = PendingSubmitTracker::default();
+        let (emitter, mut receiver) = test_emitter();
+
+        if !promoted_over_ws {
+            assert!(confirm_modify_replacement(
+                &order,
+                new_id,
+                &emitter,
+                nautilus_core::time::get_atomic_clock_realtime(),
+                &tracker,
+                &settlement,
+                &registry,
+                &state,
+            ));
+        }
+
+        let ctx = WsDispatchContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &registry,
+            emitter: &emitter,
+            account_id,
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "00000000-0000-0000-0000-000000000001",
+        };
+        let mut state = state.lock();
+        dispatch_user_message(&UserWsMessage::Order(ws_order), &ctx, &mut state);
+        dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+
+        let mut last_update = None;
+
+        while let Ok(event) = receiver.try_recv() {
+            if let ExecutionEvent::Order(event) = event {
+                if let OrderEventAny::Updated(updated) = &event {
+                    last_update = Some((updated.quantity, updated.reconciliation));
+                }
+                order.apply(event).unwrap();
+            }
+        }
+        assert_eq!(last_update, Some((Quantity::from("10.999990"), true)));
+        assert_eq!(order.filled_qty(), Quantity::from("10.999990"));
+        assert_eq!(order.status(), OrderStatus::Filled);
+    }
+
     #[rstest]
     fn test_confirm_modify_replacement_preserves_shared_context(
         #[values(None, Some(false), Some(true))] late_submit_success: Option<bool>,
@@ -1475,6 +1714,7 @@ mod tests {
             new_id,
             quantity,
             Quantity::from("9.87"),
+            quantity - Quantity::from("9.87"),
             price,
         ));
         let state = Arc::new(Mutex::new(state));
