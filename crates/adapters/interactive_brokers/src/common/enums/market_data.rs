@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Interactive Brokers market data enumerations.
+
 use std::{fmt::Display, str::FromStr};
 
 /// Interactive Brokers historical tick request types.
