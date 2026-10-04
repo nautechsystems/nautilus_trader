@@ -23,6 +23,10 @@
     clippy::unused_self,
     reason = "PyO3 stub methods take &self for Python API parity even when the body is empty"
 )]
+#![allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "PyO3 enum methods must keep by-reference receivers for Python instance methods"
+)]
 
 pub mod average;
 pub mod book;

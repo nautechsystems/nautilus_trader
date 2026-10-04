@@ -65,7 +65,6 @@ const FLAT_WINDOW_VALUE: f64 = 50.0;
         frozen,
         eq,
         eq_int,
-        hash,
         module = "nautilus_trader.indicators",
         from_py_object,
     )

@@ -31,7 +31,6 @@ use crate::indicator::Indicator;
         frozen,
         eq,
         eq_int,
-        hash,
         module = "nautilus_trader.indicators",
         from_py_object,
     )
@@ -58,7 +57,6 @@ pub enum CandleBodySize {
         frozen,
         eq,
         eq_int,
-        hash,
         module = "nautilus_trader.indicators",
         from_py_object,
     )
@@ -83,7 +81,6 @@ pub enum CandleDirection {
         frozen,
         eq,
         eq_int,
-        hash,
         module = "nautilus_trader.indicators",
         from_py_object,
     )
@@ -112,7 +109,6 @@ pub enum CandleSize {
         frozen,
         eq,
         eq_int,
-        hash,
         module = "nautilus_trader.indicators",
         from_py_object,
     )

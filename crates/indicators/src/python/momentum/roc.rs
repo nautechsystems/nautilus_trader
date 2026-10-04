@@ -25,6 +25,14 @@ use crate::{
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl RateOfChangeMode {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl RateOfChange {
     /// Rate of change with configurable output units.
     #[new]

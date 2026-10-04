@@ -26,6 +26,14 @@ use crate::{
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl StochasticsDMethod {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Stochastics {
     /// Stochastic oscillator with smoothed K and D outputs.
     ///

@@ -353,6 +353,7 @@ Released on TBD (UTC).
 - Fixed indicators changing state on non-finite inputs or malformed candles (#5144), thanks @faysou
 - Fixed linear regression R-squared returning NaN for non-flat, low-variance windows (#5144), thanks @faysou
 - Fixed rolling indicator precision after large shifts in the window mean (#5144), thanks @faysou
+- Fixed Python indicator enums hashing differently from equal integers (#5144), thanks for reporting @faysou
 - Fixed option expiry settlement missing underlyings listed on another venue (#5035), thanks @AmitKumarDeoghoria
 - Fixed `CryptoOption` applying a one-contract minimum when `min_quantity` is unspecified
 - Fixed Postgres cache loading and overwriting another trader's orders, positions, and fills (#5070), thanks @utx0

@@ -29,7 +29,6 @@ use crate::{indicator::Indicator, support::MAX_PERIOD};
         frozen,
         eq,
         eq_int,
-        hash,
         module = "nautilus_trader.indicators",
         from_py_object
     )
