@@ -2095,7 +2095,8 @@ impl KrakenSpotHttpClient {
                 }
 
                 let locked = Decimal::from_str_exact(&entry.hold_trade).ok()?;
-                let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
+                let currency =
+                    Currency::new(normalized_code, 8, 0, normalized_code, CurrencyType::Crypto);
                 AccountBalance::from_total_and_locked(total, locked, currency).ok()
             })
             .chain(margin_entry)
