@@ -249,6 +249,9 @@ impl OrderStatus {
             (Self::PendingUpdate, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,  // Allow multiple requests
             (Self::PendingUpdate, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::PendingUpdate, OrderEventAny::ModifyRejected(_)) => Self::PendingUpdate,  // Handled by modify_rejected to restore previous_status
+            (Self::Accepted, OrderEventAny::ModifyRejected(_)) => Self::Accepted,
+            (Self::Triggered, OrderEventAny::ModifyRejected(_)) => Self::Triggered,
+            (Self::PartiallyFilled, OrderEventAny::ModifyRejected(_)) => Self::PartiallyFilled,
             (Self::PendingUpdate, OrderEventAny::Updated(_)) => Self::PendingUpdate,  // Handled by updated to restore previous_status
             (Self::PendingUpdate, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::PendingUpdate, OrderEventAny::FillVoided(_)) => Self::PendingUpdate,
@@ -911,7 +914,7 @@ impl OrderCore {
 
         let rejection_status = if matches!(
             (&event, self.status),
-            (OrderEventAny::ModifyRejected(_), _)
+            (OrderEventAny::ModifyRejected(_), OrderStatus::PendingUpdate)
                 | (OrderEventAny::CancelRejected(_), OrderStatus::PendingCancel)
         ) {
             self.previous_status.ok_or(OrderError::NoPreviousState)?
@@ -1027,9 +1030,9 @@ impl OrderCore {
         // Do nothing else
     }
 
-    fn modify_rejected(&mut self, _event: &OrderModifyRejected, previous_status: OrderStatus) {
-        if self.status != OrderStatus::PendingCancel {
-            self.status = previous_status;
+    fn modify_rejected(&mut self, _event: &OrderModifyRejected, rejection_status: OrderStatus) {
+        if self.status == OrderStatus::PendingUpdate {
+            self.status = rejection_status;
         }
     }
 
@@ -3987,6 +3990,87 @@ mod tests {
             .apply(OrderEventAny::ModifyRejected(modify_rejected))
             .unwrap();
         assert_eq!(order.status(), OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    fn test_modify_rejected_after_venue_initiated_update_is_delivered() {
+        // Reproduces #5134: a venue-initiated OrderUpdated (e.g. sync_reduce_only_orders
+        // resizing a resting reduce-only order after a fill) lands while the user's
+        // modify is PendingUpdate. The order returns to Accepted with the amended terms.
+        // The real OrderModifyRejected that follows must still apply and reach the
+        // strategy; previously it was dropped as InvalidStateTransition.
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(10))
+            .build();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
+        let pending_update = OrderPendingUpdateSpec::builder().build();
+        let venue_amend = OrderUpdatedSpec::builder()
+            .quantity(Quantity::from(20))
+            .build();
+        let modify_rejected = OrderModifyRejectedSpec::builder().build();
+
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order
+            .apply(OrderEventAny::PendingUpdate(pending_update))
+            .unwrap();
+        order.apply(OrderEventAny::Updated(venue_amend)).unwrap();
+
+        // Venue-initiated Updated settles PendingUpdate back to Accepted carrying the
+        // amended quantity.
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.quantity(), Quantity::from(20));
+
+        // The user's rejection then arrives: without the fix this would fail with
+        // InvalidStateTransition and the strategy would never learn its modify failed.
+        order
+            .apply(OrderEventAny::ModifyRejected(modify_rejected))
+            .expect(
+                "late ModifyRejected must apply after venue-initiated Updated settled the order",
+            );
+
+        // The rejection preserves the amended terms and the current status.
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.quantity(), Quantity::from(20));
+    }
+
+    #[rstest]
+    fn test_modify_rejected_preserves_partially_filled() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(10))
+            .build();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
+        let partial_fill = OrderFilledSpec::builder()
+            .last_qty(Quantity::from(3))
+            .build();
+        let pending_update = OrderPendingUpdateSpec::builder().build();
+        let venue_amend = OrderUpdatedSpec::builder()
+            .quantity(Quantity::from(20))
+            .build();
+        let modify_rejected = OrderModifyRejectedSpec::builder().build();
+
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(partial_fill)).unwrap();
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+
+        order
+            .apply(OrderEventAny::PendingUpdate(pending_update))
+            .unwrap();
+        order.apply(OrderEventAny::Updated(venue_amend)).unwrap();
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.quantity(), Quantity::from(20));
+
+        order
+            .apply(OrderEventAny::ModifyRejected(modify_rejected))
+            .expect("late ModifyRejected must apply on a PartiallyFilled order");
+
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.quantity(), Quantity::from(20));
     }
 
     #[rstest]
