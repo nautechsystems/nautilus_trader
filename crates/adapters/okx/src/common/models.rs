@@ -130,6 +130,9 @@ pub struct OKXInstrument {
     /// `category` field is intentionally ignored).
     #[serde(default)]
     pub inst_category: Option<OKXInstrumentCategory>,
+    /// Fee group ID, interpreted together with `inst_type` for fee queries.
+    #[serde(default, deserialize_with = "deserialize_empty_ustr_as_none")]
+    pub group_id: Option<Ustr>,
     /// Initial price-limit band for newly listed contracts.
     #[serde(default)]
     pub init_px_lmt_pct: String,

@@ -1860,6 +1860,9 @@ impl OKXRawHttpClient {
     /// Requests fee rates for the account.
     ///
     /// Returns fee rates for the specified instrument type and the user's VIP level.
+    /// Incentive-program rates require `inst_id` for SPOT/MARGIN or `inst_family` for
+    /// FUTURES/SWAP/OPTION; a `group_id` query alone does not provide equivalent rates.
+    /// Fee selection remains with the caller. The endpoint does not reflect zero-fee promotions.
     ///
     /// # Errors
     ///
@@ -1872,6 +1875,12 @@ impl OKXRawHttpClient {
         &self,
         params: GetTradeFeeParams,
     ) -> Result<Vec<OKXFeeRate>, OKXHttpError> {
+        if params.group_id.is_some() && (params.inst_id.is_some() || params.inst_family.is_some()) {
+            return Err(OKXHttpError::ValidationError(
+                "group_id cannot be combined with inst_id or inst_family".to_string(),
+            ));
+        }
+
         self.send_request(
             Method::GET,
             "/api/v5/account/trade-fee",
