@@ -9165,17 +9165,29 @@ async fn test_submit_market_order_sell_no_updated_event() {
 }
 
 #[rstest]
+#[case::whole_shares(0, Quantity::from("18"))]
+#[case::fractional_shares(2, Quantity::from("18.18"))]
 #[tokio::test]
-async fn test_submit_market_order_http_5xx_submit_outcome_unknown() {
+async fn test_submit_market_order_http_5xx_submit_outcome_unknown(
+    #[case] size_precision: u8,
+    #[case] expected_base_qty: Quantity,
+) {
     let state = TestServerState::default();
     *state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
     *state.order_response.lock().await = Some(load_json("http_order_response_error_500.json"));
+    *state.book_response.lock().await = Some(json!({
+        "bids": [{"price": "0.48", "size": "100.00"}],
+        "asks": [
+            {"price": "0.50", "size": "10.00"},
+            {"price": "0.55", "size": "100.00"},
+        ]
+    }));
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache(&cache, instrument_id);
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, size_precision);
 
     let order = make_market_order("O-MKT-UNKNOWN", instrument_id, OrderSide::Buy, true);
     cache
@@ -9187,7 +9199,11 @@ async fn test_submit_market_order_http_5xx_submit_outcome_unknown() {
     client.submit_order(cmd).unwrap();
 
     assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
-    assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    let updated = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+
+    let OrderEventAny::Updated(updated) = updated else {
+        panic!("Expected Updated event");
+    };
 
     wait_until_async(
         || {
@@ -9198,6 +9214,8 @@ async fn test_submit_market_order_http_5xx_submit_outcome_unknown() {
     )
     .await;
     assert_no_execution_event(&mut rx).await;
+    assert_eq!(updated.quantity, expected_base_qty);
+    assert!(!updated.is_quote_quantity);
 }
 
 #[rstest]

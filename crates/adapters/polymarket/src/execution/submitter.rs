@@ -90,7 +90,7 @@ pub(crate) struct MarketOrderSubmitResult {
 pub(crate) struct UnknownSubmitError {
     pub reason: String,
     pub expected_venue_order_id: VenueOrderId,
-    pub expected_base_qty: Option<Decimal>,
+    pub expected_base_qty: Decimal,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -272,7 +272,7 @@ impl OrderSubmitter {
                             expected_venue_order_id,
                         ),
                         expected_venue_order_id,
-                        expected_base_qty: Some(signed_base_qty),
+                        expected_base_qty: signed_base_qty,
                     }
                     .into());
                 }
@@ -285,7 +285,7 @@ impl OrderSubmitter {
                 return Err(UnknownSubmitError {
                     reason: e.to_string(),
                     expected_venue_order_id,
-                    expected_base_qty: Some(signed_base_qty),
+                    expected_base_qty: signed_base_qty,
                 }
                 .into());
             }
@@ -428,18 +428,17 @@ impl OrderSubmitter {
             .map_err(|e| anyhow::anyhow!("Failed to fetch order status: {e}"))
     }
 
-    /// Prepares multiple limit order submissions in parallel.
-    pub(crate) async fn prepare_limit_order_submissions(
+    pub(crate) fn prepare_limit_order_submissions(
         &self,
         requests: &[LimitOrderSubmitRequest],
     ) -> Vec<anyhow::Result<SignedLimitOrderSubmission>> {
-        let futures = requests
+        requests
             .iter()
-            .map(|request| self.prepare_limit_order_submission(request));
-        futures_util::future::join_all(futures).await
+            .map(|request| self.prepare_limit_order_submission(request))
+            .collect()
     }
 
-    pub(crate) async fn prepare_limit_order_submission(
+    pub(crate) fn prepare_limit_order_submission(
         &self,
         request: &LimitOrderSubmitRequest,
     ) -> anyhow::Result<SignedLimitOrderSubmission> {

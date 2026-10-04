@@ -34,19 +34,6 @@ use ustr::Ustr;
 use super::settlement::SettlementRegistry;
 use crate::common::consts::DUST_SNAP_THRESHOLD_DEC;
 
-/// Cumulative fill state for a single venue order.
-///
-/// A modified order continues on a replacement venue order, so `prior_qty` holds the order
-/// quantity carried by earlier venue orders, and the order quantity is `prior_qty` plus
-/// `submitted_qty`.
-#[derive(Debug, Clone, Copy)]
-struct OrderFillState {
-    submitted_qty: Quantity,
-    prior_qty: Quantity,
-    cumulative_filled: Quantity,
-    order_side: OrderSide,
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct FillCorrectionMetadata {
     pub venue_trade_id: String,
@@ -67,19 +54,6 @@ impl BufferedFill {
             settlement.claim_buffered_fill(&correction.venue_trade_id, &self.report.trade_id)
         })
     }
-}
-
-/// Registration map plus the fill and order-report buffers, all under one mutex.
-///
-/// Co-locating the buffers with the registration map is what closes the buffer-after-drain race:
-/// the WS dispatch's accepted-check and buffer, and the submit path's register and drain, are all
-/// single critical sections on this one lock, so a buffer can never slip between a register and the
-/// drain that follows it.
-#[derive(Debug, Default)]
-struct TrackerInner {
-    orders: AHashMap<VenueOrderId, OrderFillState>,
-    pending_fills: FifoCacheMap<VenueOrderId, Vec<BufferedFill>, 1_000>,
-    pending_reports: FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>,
 }
 
 /// Tracks per-order fill accumulation, detects dust residuals, and buffers WS messages that arrive
@@ -376,6 +350,32 @@ impl OrderFillTrackerMap {
         guard.orders.remove(venue_order_id);
         Some(remainder)
     }
+}
+
+/// Cumulative fill state for a single venue order.
+///
+/// A modified order continues on a replacement venue order, so `prior_qty` holds the order
+/// quantity carried by earlier venue orders, and the order quantity is `prior_qty` plus
+/// `submitted_qty`.
+#[derive(Debug, Clone, Copy)]
+struct OrderFillState {
+    submitted_qty: Quantity,
+    prior_qty: Quantity,
+    cumulative_filled: Quantity,
+    order_side: OrderSide,
+}
+
+/// Registration map plus the fill and order-report buffers, all under one mutex.
+///
+/// Co-locating the buffers with the registration map is what closes the buffer-after-drain race:
+/// the WS dispatch's accepted-check and buffer, and the submit path's register and drain, are all
+/// single critical sections on this one lock, so a buffer can never slip between a register and the
+/// drain that follows it.
+#[derive(Debug, Default)]
+struct TrackerInner {
+    orders: AHashMap<VenueOrderId, OrderFillState>,
+    pending_fills: FifoCacheMap<VenueOrderId, Vec<BufferedFill>, 1_000>,
+    pending_reports: FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>,
 }
 
 fn new_order_state(

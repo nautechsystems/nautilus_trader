@@ -36,66 +36,6 @@ use crate::{
     websocket::dispatch::WsDispatchState,
 };
 
-struct CancelCommandGuard {
-    state: Arc<Mutex<WsDispatchState>>,
-    client_order_ids: Vec<ClientOrderId>,
-    market: Option<InstrumentId>,
-}
-
-impl CancelCommandGuard {
-    fn orders(
-        state: Arc<Mutex<WsDispatchState>>,
-        orders: &[(ClientOrderId, InstrumentId)],
-    ) -> Option<Self> {
-        if !state.lock().begin_cancels(orders) {
-            return None;
-        }
-
-        Some(Self {
-            state,
-            client_order_ids: orders
-                .iter()
-                .map(|(client_order_id, _)| *client_order_id)
-                .collect(),
-            market: None,
-        })
-    }
-
-    fn available_orders(
-        state: Arc<Mutex<WsDispatchState>>,
-        orders: &[(ClientOrderId, InstrumentId)],
-    ) -> Option<Self> {
-        let client_order_ids = state.lock().begin_available_cancels(orders)?;
-        Some(Self {
-            state,
-            client_order_ids,
-            market: None,
-        })
-    }
-
-    fn market(state: Arc<Mutex<WsDispatchState>>, instrument_id: InstrumentId) -> Option<Self> {
-        if !state.lock().begin_market_cancel(instrument_id) {
-            return None;
-        }
-
-        Some(Self {
-            state,
-            client_order_ids: Vec::new(),
-            market: Some(instrument_id),
-        })
-    }
-}
-
-impl Drop for CancelCommandGuard {
-    fn drop(&mut self) {
-        let mut state = self.state.lock();
-        state.finish_cancels(&self.client_order_ids);
-        if let Some(instrument_id) = self.market {
-            state.finish_market_cancel(instrument_id);
-        }
-    }
-}
-
 impl PolymarketExecutionClient {
     pub(super) fn cancel_order_command(&self, cmd: &CancelOrder) {
         let order = self
@@ -536,6 +476,67 @@ impl PolymarketExecutionClient {
                     .venue_order_id(&order.client_order_id())
                     .copied()
             })
+    }
+}
+
+struct CancelCommandGuard {
+    state: Arc<Mutex<WsDispatchState>>,
+    client_order_ids: Vec<ClientOrderId>,
+    market: Option<InstrumentId>,
+}
+
+impl CancelCommandGuard {
+    fn orders(
+        state: Arc<Mutex<WsDispatchState>>,
+        orders: &[(ClientOrderId, InstrumentId)],
+    ) -> Option<Self> {
+        if !state.lock().begin_cancels(orders) {
+            return None;
+        }
+
+        Some(Self {
+            state,
+            client_order_ids: orders
+                .iter()
+                .map(|(client_order_id, _)| *client_order_id)
+                .collect(),
+            market: None,
+        })
+    }
+
+    fn available_orders(
+        state: Arc<Mutex<WsDispatchState>>,
+        orders: &[(ClientOrderId, InstrumentId)],
+    ) -> Option<Self> {
+        let client_order_ids = state.lock().begin_available_cancels(orders)?;
+        Some(Self {
+            state,
+            client_order_ids,
+            market: None,
+        })
+    }
+
+    fn market(state: Arc<Mutex<WsDispatchState>>, instrument_id: InstrumentId) -> Option<Self> {
+        if !state.lock().begin_market_cancel(instrument_id) {
+            return None;
+        }
+
+        Some(Self {
+            state,
+            client_order_ids: Vec::new(),
+            market: Some(instrument_id),
+        })
+    }
+}
+
+impl Drop for CancelCommandGuard {
+    fn drop(&mut self) {
+        let mut state = self.state.lock();
+        state.finish_cancels(&self.client_order_ids);
+
+        if let Some(instrument_id) = self.market {
+            state.finish_market_cancel(instrument_id);
+        }
     }
 }
 

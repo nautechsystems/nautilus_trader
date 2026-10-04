@@ -38,14 +38,6 @@ pub(crate) struct OrderContextRegistry {
     inner: Mutex<RegistryInner>,
 }
 
-#[derive(Debug, Default)]
-struct RegistryInner {
-    contexts: AHashMap<VenueOrderId, OrderContext>,
-    client_to_venue: AHashMap<ClientOrderId, VenueOrderId>,
-    accepted: AHashSet<VenueOrderId>,
-    closed: AHashSet<ClientOrderId>,
-}
-
 impl OrderContextRegistry {
     /// Records the context for a tracked order under its venue order ID.
     pub(crate) fn register_context(&self, venue_order_id: VenueOrderId, context: OrderContext) {
@@ -105,6 +97,14 @@ impl OrderContextRegistry {
             .get(&venue_order_id)
             .is_some_and(|context| guard.closed.contains(&context.identity.client_order_id))
     }
+}
+
+#[derive(Debug, Default)]
+struct RegistryInner {
+    contexts: AHashMap<VenueOrderId, OrderContext>,
+    client_to_venue: AHashMap<ClientOrderId, VenueOrderId>,
+    accepted: AHashSet<VenueOrderId>,
+    closed: AHashSet<ClientOrderId>,
 }
 
 #[cfg(test)]

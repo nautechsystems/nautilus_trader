@@ -136,7 +136,7 @@ impl PolymarketExecutionClient {
 
             emitter.emit_order_submitted(&order);
 
-            let submission = match submitter.prepare_limit_order_submission(&request).await {
+            let submission = match submitter.prepare_limit_order_submission(&request) {
                 Ok(submission) => submission,
                 Err(e) => {
                     reject_submit_order(&order, &format!("{e}"), &emitter, clock, &pending_cancels);
@@ -420,7 +420,7 @@ impl PolymarketExecutionClient {
                             is_quote_qty,
                             side,
                             amount,
-                            unknown.expected_base_qty.unwrap_or_default(),
+                            unknown.expected_base_qty,
                             true,
                             size_precision,
                             &emitter,
@@ -428,9 +428,8 @@ impl PolymarketExecutionClient {
                         );
 
                         let fill_tracker_quantity = if is_quote_qty && side == OrderSide::Buy {
-                            unknown
-                                .expected_base_qty
-                                .and_then(|qty| Quantity::from_decimal_dp(qty, size_precision).ok())
+                            Quantity::from_decimal_dp(unknown.expected_base_qty, size_precision)
+                                .ok()
                         } else {
                             None
                         };
@@ -678,7 +677,7 @@ impl PolymarketExecutionClient {
 
             let requests: Vec<LimitOrderSubmitRequest> =
                 batch_orders.iter().map(|bo| bo.request.clone()).collect();
-            let prepare_results = submitter.prepare_limit_order_submissions(&requests).await;
+            let prepare_results = submitter.prepare_limit_order_submissions(&requests);
 
             let mut prepared_orders = Vec::with_capacity(batch_orders.len());
             let mut submissions = Vec::with_capacity(batch_orders.len());
@@ -1363,7 +1362,7 @@ impl PolymarketExecutionClient {
                 size_precision,
             };
 
-            let submission = match submitter.prepare_limit_order_submission(&request).await {
+            let submission = match submitter.prepare_limit_order_submission(&request) {
                 Ok(submission) => submission,
                 Err(e) => {
                     reject_modify(

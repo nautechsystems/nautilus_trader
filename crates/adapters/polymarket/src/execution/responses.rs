@@ -131,7 +131,7 @@ pub(super) async fn handle_batch_order_responses(
         };
 
         if deferred_cancel.is_some() || fok_order_id.is_some() {
-            follow_ups.push((batch_order.clone(), deferred_cancel, fok_order_id));
+            follow_ups.push((batch_order, deferred_cancel, fok_order_id));
         }
     }
 
@@ -158,7 +158,7 @@ pub(super) async fn handle_batch_order_responses(
         );
 
         if deferred_cancel.is_some() {
-            follow_ups.push((batch_order.clone(), deferred_cancel, None));
+            follow_ups.push((batch_order, deferred_cancel, None));
         }
     }
 

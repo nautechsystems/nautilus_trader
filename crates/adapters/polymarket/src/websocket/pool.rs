@@ -86,7 +86,7 @@ struct PoolInner {
     closed: AtomicBool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct PoolState {
     shards: AHashMap<usize, ShardEntry>,
     assignments: AHashMap<Ustr, usize>,
@@ -100,24 +100,14 @@ struct PoolDrain<'a> {
 
 impl<'a> PoolDrain<'a> {
     fn take(owner: &'a Mutex<PoolState>) -> Self {
-        let state = std::mem::replace(&mut *owner.lock(), PoolState::new());
+        let state = std::mem::take(&mut *owner.lock());
         Self { owner, state }
     }
 }
 
 impl Drop for PoolDrain<'_> {
     fn drop(&mut self) {
-        *self.owner.lock() = std::mem::replace(&mut self.state, PoolState::new());
-    }
-}
-
-impl PoolState {
-    fn new() -> Self {
-        Self {
-            shards: AHashMap::new(),
-            assignments: AHashMap::new(),
-            shutdown_errors: Vec::new(),
-        }
+        *self.owner.lock() = std::mem::take(&mut self.state);
     }
 }
 
@@ -565,7 +555,7 @@ impl PoolInner {
             subscribe_new_markets,
             max_subscriptions,
             wire_mutex: tokio::sync::Mutex::new(()),
-            state: Mutex::new(PoolState::new()),
+            state: Mutex::new(PoolState::default()),
             out_tx: Mutex::new(None),
             out_rx: Mutex::new(None),
             socket_factory: Mutex::new(None),
@@ -1053,7 +1043,7 @@ mod tests {
 
     // Bare state with unconnected shards for pure capacity-accounting tests.
     fn state_with_shards(owned: &[usize]) -> PoolState {
-        let mut state = PoolState::new();
+        let mut state = PoolState::default();
 
         for (id, owned) in owned.iter().enumerate() {
             let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1139,6 +1129,53 @@ mod tests {
             ),
         );
         assert!(out_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn pool_drain_restores_remaining_state_on_drop() {
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = Handle::test_single_shard(cmd_tx, &["token-a"]);
+        handle
+            .inner
+            .state
+            .lock()
+            .shutdown_errors
+            .push("before drain".to_string());
+
+        {
+            let mut drain = PoolDrain::take(&handle.inner.state);
+            let owner = handle.inner.state.lock();
+            assert!(owner.shards.is_empty());
+            assert!(owner.assignments.is_empty());
+            assert!(owner.shutdown_errors.is_empty());
+            drop(owner);
+
+            assert_eq!(drain.state.shards.len(), 1);
+            assert_eq!(
+                drain.state.assignments,
+                AHashMap::from([(Ustr::from("token-a"), PRIMARY_SHARD_ID)]),
+            );
+            assert_eq!(drain.state.shutdown_errors, vec!["before drain"]);
+            drain.state.shutdown_errors.push("during drain".to_string());
+        }
+
+        let restored = handle.inner.state.lock();
+        assert_eq!(restored.shards.len(), 1);
+        let shard = restored
+            .shards
+            .get(&PRIMARY_SHARD_ID)
+            .expect("restored shard");
+        assert_eq!(shard.owned, 1);
+        assert!(!shard.closing);
+        assert_eq!(
+            restored.assignments,
+            AHashMap::from([(Ustr::from("token-a"), PRIMARY_SHARD_ID)]),
+        );
+        assert_eq!(
+            restored.shutdown_errors,
+            vec!["before drain", "during drain"]
+        );
     }
 
     #[rstest]
