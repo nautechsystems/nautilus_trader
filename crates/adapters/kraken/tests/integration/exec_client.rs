@@ -65,13 +65,18 @@ use nautilus_kraken::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, OrderStatus, TimeInForce},
+    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{AccountState, OrderAccepted, OrderEventAny, OrderSubmitted},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
+        TradeId, TraderId, VenueOrderId,
     },
-    orders::{LimitOrder, Order, OrderAny, OrderList},
-    types::{AccountBalance, Money, Price, Quantity},
+    instruments::{CurrencyPair, InstrumentAny},
+    orders::{
+        LimitOrder, Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs,
+    },
+    position::Position,
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -142,6 +147,8 @@ struct TestServerState {
     futures_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/derivatives/api/v3/openpositions` returns this JSON.
     futures_open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/0/private/OpenPositions` returns this JSON.
+    spot_open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/0/private/TradesHistory` returns this JSON once, then empty pages.
     trades_history_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When true, the `TradesHistory` override is served on every request instead of once,
@@ -163,6 +170,7 @@ impl Default for TestServerState {
         let (ws_message_tx, _) = tokio::sync::broadcast::channel(8);
         Self {
             command_responses: Arc::new(tokio::sync::Mutex::new(CommandResponses::default())),
+            spot_open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
             trades_history_json: Arc::new(tokio::sync::Mutex::new(None)),
             trades_history_repeat: Arc::new(AtomicBool::new(false)),
             trades_history_request_count: Arc::new(AtomicUsize::new(0)),
@@ -519,6 +527,17 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             value["result"]["count"] = json!(0);
             json_response(value.to_string())
         }
+        "/0/private/OpenPositions" => {
+            let response = state.spot_open_positions_json.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| r#"{"error":[],"result":{}}"#.to_string()),
+            )
+        }
+        "/0/private/TradeBalance" => {
+            json_response(load_test_data("http_spot_trade_balance.json"))
+        }
         "/0/private/Balance" => json_response(load_test_data("http_spot_balance.json")),
         "/0/private/BalanceEx" => json_response(load_test_data("http_spot_balance_ex.json")),
         "/0/private/AddOrder" => {
@@ -811,6 +830,120 @@ fn create_test_spot_execution_client(
     (client, rx, cache)
 }
 
+/// Builds a spot client in margin mode with no default leverage, which is the configuration that
+/// submits unleveraged orders while `OpenPositions` reports leveraged positions only.
+fn create_test_spot_margin_execution_client(
+    addr: SocketAddr,
+) -> (
+    KrakenSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+    let config = KrakenExecutionClientConfig {
+        spot_account_type: AccountType::Margin,
+        default_leverage: None,
+        ..create_test_spot_exec_config(addr)
+    };
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = KrakenSpotExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+
+    (client, rx, cache)
+}
+
+/// Builds an unstarted spot client for a config, for assertions that need no event stream.
+///
+/// `set_exec_event_sender` can only be called once per thread, so a test comparing several
+/// configurations cannot go through the started-client helpers.
+fn unstarted_spot_client(
+    addr: SocketAddr,
+    account_type: AccountType,
+    configure: impl FnOnce(&mut KrakenExecutionClientConfig),
+) -> KrakenSpotExecutionClient {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        account_type,
+        None,
+        cache,
+    );
+    let mut config = create_test_spot_exec_config(addr);
+    configure(&mut config);
+
+    KrakenSpotExecutionClient::new(core, config).unwrap()
+}
+
+/// Builds a started spot client that derives position reports from wallet balances.
+fn create_test_spot_wallet_execution_client(
+    addr: SocketAddr,
+) -> (
+    KrakenSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        AccountType::Cash,
+        None,
+        cache.clone(),
+    );
+    let config = KrakenExecutionClientConfig {
+        use_spot_position_reports: true,
+        ..create_test_spot_exec_config(addr)
+    };
+
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = KrakenSpotExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+
+    (client, rx, cache)
+}
+
+fn xbtusd_spot_instrument() -> (InstrumentId, InstrumentAny) {
+    let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
+    let instrument = InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("XXBTZUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    );
+    (instrument_id, instrument)
+}
+
 async fn connected_client_with_command_responses(
     responses: CommandResponses,
 ) -> (
@@ -924,6 +1057,182 @@ async fn test_spot_mass_status_incomplete_when_historical_fill_unparsable() {
     );
     let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
     assert_eq!(fills, 0);
+}
+
+/// A cached unleveraged spot position must survive a bulk read that cannot report it.
+///
+/// Under `spot_account_type=Margin` the only source is Kraken `OpenPositions`, which reports
+/// leveraged positions only. Reporting the cached position FLAT because it is absent there asserts
+/// a close the venue never confirmed, and the engine acts on that by fabricating a fill.
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_bulk_reports_leave_an_unleveraged_cached_position_alone() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (client, _rx, cache) = create_test_spot_margin_execution_client(addr);
+
+    let (instrument_id, instrument) = xbtusd_spot_instrument();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    // An unleveraged buy, which `OpenPositions` never returns.
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.5"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-SPOT-001")),
+        Some(PositionId::from("P-SPOT-001")),
+        Some(Price::from("29500.0")),
+        Some(Quantity::from("0.5")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("1 USD")),
+        None,
+        Some(test_account_id()),
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let reports = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert!(
+        reports.is_empty(),
+        "an empty `OpenPositions` must not report the cached spot position flat: {reports:?}"
+    );
+}
+
+/// The startup mass status must not invent a FLAT for a cached position either.
+///
+/// The sweep ran from two call sites; the periodic one is covered above, this is the startup one.
+/// It also pins the configuration the omission matters in: with a lookback declared, the engine
+/// projects a closing fill for an instrument carrying no position report as order-only, so the
+/// cached position keeps its quantity and its realized PnL. That is the shared engine's documented
+/// behavior for a missing report, and it is why absence must not be reported as FLAT here.
+#[rstest]
+#[tokio::test]
+async fn test_spot_margin_startup_mass_status_adds_no_synthetic_flat() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_spot_margin_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+
+    let (instrument_id, instrument) = xbtusd_spot_instrument();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.5"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-STARTUP-001")),
+        Some(PositionId::from("P-STARTUP-001")),
+        Some(Price::from("29500.0")),
+        Some(Quantity::from("0.5")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("1 USD")),
+        None,
+        Some(test_account_id()),
+    );
+    let position = Position::new(&instrument, fill.into());
+    let cached_qty = position.quantity;
+    let cached_realized = position.realized_pnl;
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        mass_status.position_reports().is_empty(),
+        "an empty `OpenPositions` must not put a synthetic FLAT in the startup mass status: {:?}",
+        mass_status.position_reports()
+    );
+    assert!(
+        mass_status.lookback_start().is_some(),
+        "the window must be declared, which is what makes an omitted report order-only"
+    );
+
+    let cache_ref = cache.borrow();
+    let cached = cache_ref
+        .position(&position.id)
+        .expect("the cached position must survive the read");
+    assert_eq!(cached.quantity, cached_qty);
+    assert_eq!(cached.realized_pnl, cached_realized);
+}
+
+/// Bulk position coverage must follow what the wallet read can actually report.
+///
+/// The read enumerates only pairs quoted in `spot_positions_quote_currency`, so coverage is
+/// per-instrument rather than per-mode. Claiming it for every instrument would let an absent
+/// report force-close a holding the read could never have reported.
+#[rstest]
+#[tokio::test]
+async fn test_spot_bulk_position_coverage_follows_the_wallet_read() {
+    let (addr, _state) = start_test_server().await.unwrap();
+
+    // Connected, so the instruments cache holds the listing the read would enumerate.
+    let (mut wallet, _rx, cache) = create_test_spot_wallet_execution_client(addr);
+    add_test_spot_account_to_cache(&cache);
+    wallet.connect().await.unwrap();
+
+    assert!(
+        wallet.provides_bulk_position_coverage(InstrumentId::from("BTC/USDT.KRAKEN")),
+        "a pair quoted in the configured currency is enumerated by the read"
+    );
+    assert!(
+        !wallet.provides_bulk_position_coverage(InstrumentId::from("AAPLx/USD.KRAKEN")),
+        "a pair quoted in anything else is skipped by the read, so its absence proves nothing"
+    );
+    assert!(
+        !wallet.provides_bulk_position_coverage(InstrumentId::from("SOL/USDT.KRAKEN")),
+        "an instrument the listing does not hold cannot be reported either"
+    );
+
+    // The two modes that report nothing the engine could read as flat.
+    let margin = unstarted_spot_client(addr, AccountType::Margin, |config| {
+        config.spot_account_type = AccountType::Margin;
+        config.default_leverage = None;
+    });
+    assert!(
+        !margin.provides_bulk_position_coverage(InstrumentId::from("BTC/USDT.KRAKEN")),
+        "margin mode reads `OpenPositions`, which omits unleveraged holdings"
+    );
+
+    let cash = unstarted_spot_client(addr, AccountType::Cash, |_| {});
+    assert!(
+        !cash.provides_bulk_position_coverage(InstrumentId::from("BTC/USDT.KRAKEN")),
+        "cash mode without `use_spot_position_reports` reports no positions at all"
+    );
 }
 
 fn futures_open_positions_json(symbol: &str) -> String {

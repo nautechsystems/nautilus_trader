@@ -2464,6 +2464,31 @@ impl KrakenSpotHttpClient {
         }
     }
 
+    /// Returns whether a bulk position read covers `instrument_id`, so that an absent report is
+    /// evidence the position is flat.
+    ///
+    /// This mirrors [`Self::request_position_status_reports`] with `instrument_id` left unset.
+    /// Margin mode reads `OpenPositions`, which reports leveraged positions only, and cash mode
+    /// without `use_spot_position_reports` reads nothing, so neither covers a spot holding. The
+    /// wallet read covers an instrument only when it would enumerate it, which one shared
+    /// predicate decides for the read and for this answer alike.
+    pub fn covers_bulk_position_reports(
+        &self,
+        instrument_id: InstrumentId,
+        account_type: AccountType,
+        use_spot_position_reports: bool,
+        quote_currency: Ustr,
+    ) -> bool {
+        if account_type == AccountType::Margin || !use_spot_position_reports {
+            return false;
+        }
+
+        self.get_cached_instrument(&instrument_id.symbol.inner())
+            .is_some_and(|instrument| {
+                wallet_report_base_currency(&instrument, quote_currency).is_some()
+            })
+    }
+
     /// Generates position reports from Kraken `OpenPositions` (margin mode).
     async fn generate_margin_position_reports(
         &self,
@@ -2692,20 +2717,11 @@ impl KrakenSpotHttpClient {
                 reports.push(report);
             }
         } else {
-            // Accept a configured code in either spelling, so an existing `ZEUR` setting keeps
-            // matching now that instruments carry the standard code.
-            let quote_filter = Ustr::from(normalize_currency_code(quote_currency.as_str()));
-
             let instruments_guard = self.instruments_cache.load();
             for instrument in instruments_guard.values() {
-                let quote_currency = match instrument.quote_currency() {
-                    currency if currency.code == quote_filter => currency,
-                    _ => continue,
-                };
-
-                let base_currency = match instrument.base_currency() {
-                    Some(currency) => currency,
-                    None => continue,
+                let Some(base_currency) = wallet_report_base_currency(instrument, quote_currency)
+                else {
+                    continue;
                 };
 
                 let coin = Ustr::from(base_currency.code.as_str());
@@ -2727,7 +2743,7 @@ impl KrakenSpotHttpClient {
                     "Spot position: {} {} (quote: {})",
                     quantity,
                     base_currency.code,
-                    quote_currency.code
+                    instrument.quote_currency().code
                 );
 
                 let report = PositionStatusReport::new(
@@ -3401,6 +3417,27 @@ struct TradeBalanceSnapshot {
     equity: Decimal,
 }
 
+/// Returns the base currency whose wallet balance the bulk position read reports for `instrument`,
+/// or `None` when the read skips it.
+///
+/// The read only covers pairs quoted in the configured `spot_positions_quote_currency`, and it
+/// needs a base currency to name the holding. A configured code matches in either spelling, so an
+/// existing `ZEUR` setting still selects euro-quoted instruments now that they carry `EUR`. Both
+/// decisions live here so that the coverage declared through
+/// [`KrakenSpotHttpClient::covers_bulk_position_reports`] cannot drift from what the read actually
+/// enumerates.
+fn wallet_report_base_currency(
+    instrument: &InstrumentAny,
+    quote_currency: Ustr,
+) -> Option<Currency> {
+    let quote_filter = Ustr::from(normalize_currency_code(quote_currency.as_str()));
+    if instrument.quote_currency().code != quote_filter {
+        return None;
+    }
+
+    instrument.base_currency()
+}
+
 /// Parses an optional `BalanceEx` credit amount, treating an absent field as zero.
 ///
 /// Kraken only includes `credit` and `credit_used` for accounts holding a credit line, so their
@@ -3781,6 +3818,91 @@ mod tests {
                 .to_string()
                 .contains("Unsupported trigger type for Kraken Spot")
         );
+    }
+
+    fn cache_spot_pair(
+        client: &KrakenSpotHttpClient,
+        symbol: &str,
+        quote: Currency,
+    ) -> InstrumentId {
+        let instrument_id = InstrumentId::from(symbol);
+
+        client.cache_instrument(InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new(instrument_id.symbol.as_str()))
+                .base_currency(Currency::BTC())
+                .quote_currency(quote)
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(0.into())
+                .ts_init(0.into())
+                .build()
+                .unwrap(),
+        ));
+
+        instrument_id
+    }
+
+    /// Bulk position coverage must answer for exactly the instruments the bulk read enumerates.
+    ///
+    /// The wallet read only reports pairs quoted in `spot_positions_quote_currency`, so claiming
+    /// coverage for every instrument would let an absent report force-close a holding the read
+    /// could never have reported.
+    #[rstest]
+    #[case(AccountType::Margin, true, "XBT/USDT.KRAKEN", false)]
+    #[case(AccountType::Margin, false, "XBT/USDT.KRAKEN", false)]
+    #[case(AccountType::Cash, false, "XBT/USDT.KRAKEN", false)]
+    #[case(AccountType::Cash, true, "XBT/USDT.KRAKEN", true)]
+    #[case(AccountType::Cash, true, "XBT/USD.KRAKEN", false)]
+    #[case(AccountType::Cash, true, "XBT/EUR.KRAKEN", false)]
+    fn test_covers_bulk_position_reports(
+        #[case] account_type: AccountType,
+        #[case] use_spot_position_reports: bool,
+        #[case] instrument: &str,
+        #[case] expected: bool,
+    ) {
+        let client = KrakenSpotHttpClient::default();
+        cache_spot_pair(&client, "XBT/USDT.KRAKEN", Currency::USDT());
+        cache_spot_pair(&client, "XBT/USD.KRAKEN", Currency::USD());
+
+        // `XBT/EUR` is never cached, standing for an instrument the read cannot enumerate.
+        let covered = client.covers_bulk_position_reports(
+            InstrumentId::from(instrument),
+            account_type,
+            use_spot_position_reports,
+            Ustr::from("USDT"),
+        );
+
+        assert_eq!(covered, expected);
+    }
+
+    /// A legacy quote code must select the same instruments as its standard spelling.
+    ///
+    /// Instruments now carry standard codes, so `ZEUR` has to normalize to `EUR` or an existing
+    /// setting would stop matching and an absent report could close a holding the read still sees.
+    #[rstest]
+    fn test_covers_bulk_position_reports_accepts_legacy_quote_code() {
+        let client = KrakenSpotHttpClient::default();
+        let eur = cache_spot_pair(&client, "XBT/EUR.KRAKEN", Currency::EUR());
+        cache_spot_pair(&client, "XBT/USDT.KRAKEN", Currency::USDT());
+
+        let legacy =
+            client.covers_bulk_position_reports(eur, AccountType::Cash, true, Ustr::from("ZEUR"));
+        let standard =
+            client.covers_bulk_position_reports(eur, AccountType::Cash, true, Ustr::from("EUR"));
+        let other = client.covers_bulk_position_reports(
+            InstrumentId::from("XBT/USDT.KRAKEN"),
+            AccountType::Cash,
+            true,
+            Ustr::from("ZEUR"),
+        );
+
+        assert!(legacy);
+        assert!(standard);
+        assert!(!other);
     }
 
     fn cache_test_spot_instrument(client: &KrakenSpotHttpClient) -> InstrumentId {

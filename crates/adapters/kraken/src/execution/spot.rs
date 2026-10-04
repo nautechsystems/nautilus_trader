@@ -47,8 +47,7 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
-        TriggerType,
+        AccountType, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::OrderEventAny,
     identifiers::{
@@ -71,10 +70,7 @@ use super::{
 use crate::{
     common::{
         consts::{KRAKEN_SPOT_POST_ONLY_ERROR, KRAKEN_VENUE},
-        enums::{
-            KrakenOrderSide, KrakenOrderType, KrakenProductType, KrakenSpotTrigger,
-            KrakenTimeInForce, product_type_from_symbol,
-        },
+        enums::{KrakenOrderSide, KrakenOrderType, KrakenSpotTrigger, KrakenTimeInForce},
         order_params::{
             build_add_order_params, build_amend_order_params, build_cancel_order_params,
             compute_ws_time_in_force, format_expire_time,
@@ -826,50 +822,6 @@ impl KrakenSpotExecutionClient {
         }
     }
 
-    fn sweep_stale_margin_positions(
-        &self,
-        account_id: AccountId,
-        reports: &mut Vec<PositionStatusReport>,
-    ) {
-        let reported: HashSet<InstrumentId> = reports
-            .iter()
-            .filter(|r| r.position_side != PositionSide::Flat)
-            .map(|r| r.instrument_id)
-            .collect();
-
-        let ts_now = self.clock.get_time_ns();
-        let cache = self.core.cache();
-        let open_positions =
-            cache.positions_open(Some(&*KRAKEN_VENUE), None, None, Some(&account_id), None);
-
-        for pos in open_positions {
-            let inst_id = pos.instrument_id;
-
-            if product_type_from_symbol(inst_id.symbol.inner().as_str()) != KrakenProductType::Spot
-            {
-                continue;
-            }
-
-            if reported.contains(&inst_id) {
-                continue;
-            }
-
-            let precision = cache.instrument(&inst_id).map_or(0, |i| i.size_precision());
-            log::debug!("Emitting synthetic FLAT for closed margin position {inst_id}");
-            reports.push(PositionStatusReport::new(
-                account_id,
-                inst_id,
-                PositionSide::Flat,
-                Quantity::zero(precision),
-                ts_now,
-                ts_now,
-                None,
-                None,
-                None,
-            ));
-        }
-    }
-
     fn batch_add_via_rest(
         &self,
         order_tuples: Vec<BatchOrderTuple>,
@@ -1102,6 +1054,17 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         self.core.oms_type
     }
 
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        // Deferred to the HTTP client so the answer is derived from the read that produces the
+        // reports, rather than restated here where it could drift.
+        self.http.covers_bulk_position_reports(
+            instrument_id,
+            self.config.spot_account_type,
+            self.config.use_spot_position_reports,
+            Ustr::from(self.config.spot_positions_quote_currency.as_str()),
+        )
+    }
+
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
     }
@@ -1323,8 +1286,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         );
 
         let account_id = self.core.account_id;
-        let mut reports = self
-            .http
+        self.http
             .request_position_status_reports(
                 account_id,
                 cmd.instrument_id,
@@ -1332,13 +1294,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 self.config.use_spot_position_reports,
                 Ustr::from(self.config.spot_positions_quote_currency.as_str()),
             )
-            .await?;
-
-        if cmd.instrument_id.is_none() && self.config.spot_account_type == AccountType::Margin {
-            self.sweep_stale_margin_positions(account_id, &mut reports);
-        }
-
-        Ok(reports)
+            .await
     }
 
     async fn generate_mass_status(
@@ -1368,7 +1324,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .http
             .request_fill_reports_checked(account_id, None, start, None)
             .await?;
-        let mut position_reports = self
+        let position_reports = self
             .http
             .request_position_status_reports(
                 account_id,
@@ -1378,10 +1334,6 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 Ustr::from(self.config.spot_positions_quote_currency.as_str()),
             )
             .await?;
-
-        if self.config.spot_account_type == AccountType::Margin {
-            self.sweep_stale_margin_positions(account_id, &mut position_reports);
-        }
 
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,

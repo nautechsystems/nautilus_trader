@@ -639,13 +639,40 @@ flag.
   a netting position's average. Reconciliation uses it to open a position from flat and never
   compares it. Futures keeps the default, since that endpoint reports one netted position whose
   price Kraken documents as the average entry price.
-- Synthetic FLAT cleanup: If the local cache has an open spot margin position
-  that no longer appears on the venue (Kraken omits closed positions from
-  `OpenPositions`), the adapter emits a synthetic FLAT report on the next
-  position-check tick so the engine reconciles to closed.
+- No synthetic FLAT cleanup: `OpenPositions` reports leveraged positions only, so an
+  unleveraged spot holding never appears there and its absence is not evidence that the
+  position is closed. The bulk read reports only what the venue returns.
 - Margin balances: `POST /0/private/TradeBalance` is called alongside the
   account-state refresh; used margin populates `MarginBalance.initial`, while
   equity and free margin populate the summary balance (see Spot margin trading).
+
+:::warning
+A leveraged position closed while the node was down is not recovered from its closing fill when
+`reconciliation_lookback_mins` is set. A fully closed lot is absent from `OpenPositions`, so the
+instrument carries no position report, and the engine projects that order's fill as order-only:
+the order reaches `FILLED`, while the cached position keeps both its quantity and its realized
+PnL, so the closing PnL is never recorded. This is the shared engine's documented behavior for an
+instrument with no in-scope position report, not a Kraken rule. See
+[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection).
+Removing the synthetic FLAT is what exposes Kraken spot margin to it, because the sweep previously
+supplied an explicit FLAT.
+
+A periodic position check does not recover it either, since margin mode declares no bulk position
+coverage, and that skip is logged at debug level. The condition also persists across restarts: the
+closing order is then cached as `FILLED` and matches the venue exactly, so reconciliation treats it
+as already in sync.
+
+Leaving `reconciliation_lookback_mins` unset avoids the projection but is not a general remedy.
+The closing order is external to the cache, so it is attributed to the `EXTERNAL` strategy and keys
+a netting position by instrument and strategy. Unless the cached position is itself `EXTERNAL`-owned
+or the instrument is claimed through `external_order_claim`, the recovered fill opens a second,
+opposite position rather than closing the cached one: net exposure reaches zero, but the stale
+position and its realized PnL remain.
+
+Until this is addressed, reconcile a margin position closed during downtime manually, or run
+`spot_account_type=Cash` with `use_spot_position_reports=True`, where the wallet read enumerates
+every holding it covers and an absent report is genuine evidence of flat.
+:::
 
 ### Futures reconciliation
 
@@ -688,6 +715,8 @@ trading).
 - When enabled, wallet balances are converted to `PositionStatusReport` objects.
 - Positive balances are reported as `LONG` positions.
 - Only instruments matching the configured quote currency are reported (default: `USDT`).
+  The same filter decides which instruments the client declares bulk position coverage for,
+  so an instrument quoted in anything else is never reconciled to flat from a missing report.
 - This prevents duplicate reports when the same asset is available with multiple
   quote currencies (e.g., BTC/USD, BTC/USDT, BTC/EUR).
 
@@ -789,10 +818,16 @@ that dictionary to `AccountState.info`.
 ### Position reconciliation
 
 Open spot margin positions are surfaced via `POST /0/private/OpenPositions`
-on each `position_check_interval_secs` tick. Closed positions on the venue
-that still appear open in the local cache are reconciled to FLAT on the next
-sweep. This path is independent of `use_spot_position_reports` (which is
-wallet-derived, cash-mode-only).
+on each `position_check_interval_secs` tick. This path is independent of
+`use_spot_position_reports` (which is wallet-derived, cash-mode-only).
+
+The spot client declares bulk position coverage per instrument, and only for instruments the
+read would actually enumerate: cash mode with `use_spot_position_reports=True`, and the
+instrument quoted in `spot_positions_quote_currency` (see Spot position reports, which applies
+the same filter). Under `spot_account_type=Margin` the source is `OpenPositions`, which omits
+unleveraged lots, and cash mode without wallet-derived reports returns nothing at all. Wherever
+coverage is not declared, an absent report leaves the cached position untouched instead of
+closing it.
 
 ## Funding rates
 
@@ -899,7 +934,7 @@ The product type for each client is specified via the `product_type` option.
 | `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reports. |
 | `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                |
 | `use_spot_position_reports`     | `False`   | Report wallet balances as positions; cash mode only.                  |
-| `spot_positions_quote_currency` | `"USDT"`  | Quote currency filter for spot wallet position reports.               |
+| `spot_positions_quote_currency` | `"USDT"`  | Quote filter for spot wallet position reports and their coverage.     |
 | `margin_balance_asset`          | `None`    | Summary asset for `TradeBalance`; `None` defaults to `ZUSD`.          |
 | `use_ws_trade`                  | `True`    | Use Spot WebSocket v2 for order operations when active.               |
 | `ws_request_timeout_secs`       | `5`       | Spot WebSocket order response timeout.                                |
