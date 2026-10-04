@@ -2087,9 +2087,6 @@ impl KrakenSpotHttpClient {
                 // Kraken defines available funds as `balance + credit - credit_used -
                 // hold_trade`, so net credit belongs in `total` for `free` to derive to it.
                 let total = balance + credit - credit_used;
-                if total.is_zero() {
-                    return None;
-                }
 
                 let normalized_code = normalize_currency_code(currency_code);
 

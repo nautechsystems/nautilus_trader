@@ -3846,6 +3846,62 @@ async fn test_spot_request_account_state_cash_includes_net_credit() {
     assert_eq!(eth.free.as_decimal().normalize(), dec!(2));
 }
 
+/// A wallet Kraken lists at zero reaches the engine as a zero balance.
+///
+/// `BaseAccount::update_balances` only inserts, so a currency omitted from the snapshot keeps its
+/// previous value; the zero is what clears it.
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_reports_zero_wallets() {
+    let server_state = Arc::new(TestServerState::default());
+    let app = create_router(server_state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    *server_state.balance_ex_json.lock().await = Some(
+        r#"{"error":[],"result":{
+            "ZUSD":{"balance":"1000.00","hold_trade":"0.0"},
+            "XETH":{"balance":"0.0000000000","hold_trade":"0.0000000000"}
+        }}"#
+        .to_string(),
+    );
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let state = client
+        .request_account_state(AccountId::new("KRAKEN-001"), AccountType::Cash, None)
+        .await
+        .unwrap();
+
+    let eth = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code == "ETH")
+        .expect("a wallet listed at zero must still be reported");
+    assert_eq!(eth.total.as_decimal(), Decimal::ZERO);
+    assert_eq!(eth.locked.as_decimal(), Decimal::ZERO);
+    assert_eq!(eth.free.as_decimal(), Decimal::ZERO);
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_spot_request_margin_metrics_returns_full_snapshot() {

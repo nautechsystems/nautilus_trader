@@ -2887,6 +2887,10 @@ type AmountsByCode = AHashMap<Ustr, (Decimal, Decimal)>;
 /// Pushing them into a flat vector instead would leave the surviving entry to iteration order,
 /// since the account keys its balances by currency.
 ///
+/// A wallet the venue lists at zero contributes a zero, so an asset drawn down to nothing is
+/// reported at zero rather than left at its previous value: the engine only ever inserts
+/// balances, and nothing downstream can clear one.
+///
 /// Margins are not combined. Single-collateral requirements are denominated in the wallet's own
 /// currency while flex requirements are in USD, so their raw amounts cannot be added under one
 /// code; they are pushed as reported, as before.
@@ -3001,10 +3005,6 @@ fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Amou
         .is_some_and(|value| value > Decimal::ZERO);
 
     for (currency_code, currency_info) in &account.currencies {
-        if currency_info.quantity.is_zero() {
-            continue;
-        }
-
         // The venue keys these by its own spelling and casing, so map to the standard code.
         let code = normalize_asset_key(currency_code.as_str());
 
@@ -3056,10 +3056,6 @@ fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut Amount
             continue;
         }
 
-        if amount.is_zero() {
-            continue;
-        }
-
         // The venue keys these by its own spelling and casing, so map to the standard code.
         let code = normalize_asset_key(currency_code.as_str());
 
@@ -3105,10 +3101,6 @@ fn push_margin(
 
 fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut AmountsByCode) {
     for (currency_code, &amount) in &account.balances {
-        if amount.is_zero() {
-            continue;
-        }
-
         // The venue keys these by its own spelling and casing, so map to the standard code.
         let code = normalize_asset_key(currency_code.as_str());
 
@@ -3715,7 +3707,7 @@ mod tests {
     fn test_parse_cash_account_balances() {
         let mut bals = AHashMap::new();
         bals.insert("ETH".to_string(), dec!(10));
-        bals.insert("BTC".to_string(), Decimal::ZERO); // zero, should be skipped
+        bals.insert("BTC".to_string(), Decimal::ZERO);
 
         let account = FuturesAccount {
             account_type: KrakenFuturesAccountType::CashAccount,
@@ -3731,10 +3723,85 @@ mod tests {
 
         let (balances, _) = entries_for(&[("wallet", account)]);
 
-        assert_eq!(balances.len(), 1);
-        let balance = &balances[0];
-        assert_eq!(balance.total.as_decimal(), dec!(10));
-        assert_eq!(balance.locked.as_decimal(), Decimal::ZERO);
+        assert_eq!(
+            balances.len(),
+            2,
+            "a wallet listed at zero is reported: {balances:?}"
+        );
+        let eth = balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == "ETH")
+            .expect("ETH balance");
+        assert_eq!(eth.total.as_decimal(), dec!(10));
+        assert_eq!(eth.locked.as_decimal(), Decimal::ZERO);
+        let btc = balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == "BTC")
+            .expect("BTC balance");
+        assert_eq!(btc.total.as_decimal(), Decimal::ZERO);
+        assert_eq!(btc.free.as_decimal(), Decimal::ZERO);
+    }
+
+    /// A flex collateral currency at zero quantity is reported at zero.
+    #[rstest]
+    fn test_parse_multi_collateral_balances_reports_zero_quantity() {
+        let (balances, _) = entries_for(&[("flex", flex_wallet(&[("XBT", Decimal::ZERO)], None))]);
+
+        assert_eq!(balances.len(), 1, "{balances:?}");
+        assert_eq!(balances[0].currency.code.as_str(), "BTC");
+        assert_eq!(balances[0].total.as_decimal(), Decimal::ZERO);
+        assert_eq!(balances[0].free.as_decimal(), Decimal::ZERO);
+    }
+
+    /// A single-collateral wallet drawn down to zero is reported at zero.
+    #[rstest]
+    fn test_parse_margin_account_balances_reports_zero_wallet() {
+        let mut wallet = cash_wallet(&[("xbt", Decimal::ZERO)]);
+        wallet.account_type = KrakenFuturesAccountType::MarginAccount;
+
+        let (balances, _) = entries_for(&[("fi_xbtusd", wallet)]);
+
+        assert_eq!(balances.len(), 1, "{balances:?}");
+        assert_eq!(balances[0].currency.code.as_str(), "BTC");
+        assert_eq!(balances[0].total.as_decimal(), Decimal::ZERO);
+        assert_eq!(balances[0].free.as_decimal(), Decimal::ZERO);
+    }
+
+    /// An empty wallet joins the per-currency sum, so it cannot displace a funded wallet.
+    #[rstest]
+    fn test_parse_account_entries_zero_wallet_does_not_displace_a_funded_one() {
+        let mut margin = cash_wallet(&[("xbt", dec!(1.5))]);
+        margin.account_type = KrakenFuturesAccountType::MarginAccount;
+
+        let (balances, _) = entries_for(&[
+            ("cash", cash_wallet(&[("xbt", Decimal::ZERO)])),
+            ("fi_xbtusd", margin),
+            ("flex", flex_wallet(&[("XBT", Decimal::ZERO)], None)),
+        ]);
+
+        assert_eq!(balances.len(), 1, "one BTC balance: {balances:?}");
+        assert_eq!(balances[0].currency.code.as_str(), "BTC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(1.5));
+        assert_eq!(balances[0].free.as_decimal(), dec!(1.5));
+    }
+
+    /// An asset every wallet lists at zero is reported once, at zero.
+    #[rstest]
+    fn test_parse_account_entries_reports_an_asset_all_wallets_hold_at_zero() {
+        let mut margin = cash_wallet(&[("xbt", Decimal::ZERO)]);
+        margin.account_type = KrakenFuturesAccountType::MarginAccount;
+
+        let (balances, _) = entries_for(&[
+            ("cash", cash_wallet(&[("xbt", Decimal::ZERO)])),
+            ("fi_xbtusd", margin),
+            ("flex", flex_wallet(&[("XBT", Decimal::ZERO)], None)),
+        ]);
+
+        assert_eq!(balances.len(), 1, "one BTC balance: {balances:?}");
+        assert_eq!(balances[0].currency.code.as_str(), "BTC");
+        assert_eq!(balances[0].total.as_decimal(), Decimal::ZERO);
+        assert_eq!(balances[0].locked.as_decimal(), Decimal::ZERO);
+        assert_eq!(balances[0].free.as_decimal(), Decimal::ZERO);
     }
 
     #[rstest]
