@@ -79,6 +79,15 @@ impl TryFrom<CurrencyRecord> for Currency {
     }
 }
 
+/// Outcome of decoding one persisted currency entry.
+enum CurrencyDecode {
+    Currency(Currency),
+    /// The record decoded but does not describe a valid currency.
+    InvalidRecord(anyhow::Error),
+    /// The bytes decode as neither the record nor a registered bare code.
+    Undecodable(anyhow::Error),
+}
+
 // Collection keys
 const INDEX: &str = "index";
 const GENERAL: &str = "general";
@@ -343,18 +352,20 @@ impl DatabaseQueries {
     /// Decodes a persisted currency, accepting both the record and the legacy bare code.
     ///
     /// Records written before the full record was stored hold only the code, which resolves if that
-    /// code is registered. A record that decodes but describes an invalid currency is an error
-    /// rather than a skip, since the intent is recoverable and silently dropping it would omit a
-    /// currency the dependent payloads need.
-    fn deserialize_currency(
-        encoding: SerializationEncoding,
-        value_bytes: &Bytes,
-    ) -> anyhow::Result<Currency> {
+    /// code is registered. The two failure kinds are kept apart because bulk loading treats them
+    /// differently: a record that decodes but describes an invalid currency is an error, since the
+    /// intent is recoverable and dropping it would omit a currency the dependent payloads need,
+    /// while bytes that decode as neither shape are skipped.
+    fn decode_currency(encoding: SerializationEncoding, value_bytes: &Bytes) -> CurrencyDecode {
         match Self::deserialize_payload::<CurrencyRecord>(encoding, value_bytes) {
-            Ok(record) => Currency::try_from(record),
-            Err(record_err) => {
-                Self::deserialize_payload::<Currency>(encoding, value_bytes).map_err(|_| record_err)
-            }
+            Ok(record) => match Currency::try_from(record) {
+                Ok(currency) => CurrencyDecode::Currency(currency),
+                Err(e) => CurrencyDecode::InvalidRecord(e),
+            },
+            Err(record_err) => match Self::deserialize_payload::<Currency>(encoding, value_bytes) {
+                Ok(currency) => CurrencyDecode::Currency(currency),
+                Err(_) => CurrencyDecode::Undecodable(record_err),
+            },
         }
     }
 
@@ -362,7 +373,8 @@ impl DatabaseQueries {
     ///
     /// # Errors
     ///
-    /// Returns an error if scanning keys or reading currency data fails.
+    /// Returns an error if scanning keys or reading currency data fails, or if a stored record
+    /// describes an invalid currency.
     pub async fn load_currencies(
         con: &ConnectionManager,
         trader_key: &str,
@@ -392,11 +404,14 @@ impl DatabaseQueries {
             };
 
             if let Some(value_bytes) = value_opt {
-                match Self::deserialize_currency(encoding, value_bytes) {
-                    Ok(currency) => {
+                match Self::decode_currency(encoding, value_bytes) {
+                    CurrencyDecode::Currency(currency) => {
                         currencies.insert(currency_code, currency);
                     }
-                    Err(e) => {
+                    CurrencyDecode::InvalidRecord(e) => {
+                        anyhow::bail!("Invalid currency record for {currency_code}: {e}");
+                    }
+                    CurrencyDecode::Undecodable(e) => {
                         log::error!("Failed to deserialize currency {currency_code}: {e}");
                     }
                 }
@@ -872,7 +887,12 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        Self::deserialize_currency(encoding, &result[0]).map(Some)
+        match Self::decode_currency(encoding, &result[0]) {
+            CurrencyDecode::Currency(currency) => Ok(Some(currency)),
+            CurrencyDecode::InvalidRecord(e) | CurrencyDecode::Undecodable(e) => {
+                Err(e.context(format!("Failed to load currency {code}")))
+            }
+        }
     }
 
     /// Loads a single instrument for `trader_key` and `instrument_id` using the specified `encoding`.
@@ -1157,7 +1177,7 @@ mod tests {
     use rstest::rstest;
     use serde::Deserialize;
 
-    use super::{CurrencyRecord, DatabaseQueries, parse_instrument_key};
+    use super::{CurrencyDecode, CurrencyRecord, DatabaseQueries, parse_instrument_key};
 
     /// A currency the process never registered must survive the round trip.
     ///
@@ -1183,8 +1203,11 @@ mod tests {
         let payload =
             DatabaseQueries::serialize_payload(encoding, &CurrencyRecord::from(&currency)).unwrap();
 
-        let restored =
-            DatabaseQueries::deserialize_currency(encoding, &Bytes::from(payload)).unwrap();
+        let CurrencyDecode::Currency(restored) =
+            DatabaseQueries::decode_currency(encoding, &Bytes::from(payload))
+        else {
+            panic!("a valid record decodes to a currency");
+        };
 
         assert_eq!(restored.code.as_str(), code);
         assert_eq!(restored.precision, 3);
@@ -1200,10 +1223,48 @@ mod tests {
     fn test_legacy_bare_code_still_loads(#[case] encoding: SerializationEncoding) {
         let payload = DatabaseQueries::serialize_payload(encoding, &Currency::USD()).unwrap();
 
-        let restored =
-            DatabaseQueries::deserialize_currency(encoding, &Bytes::from(payload)).unwrap();
+        let CurrencyDecode::Currency(restored) =
+            DatabaseQueries::decode_currency(encoding, &Bytes::from(payload))
+        else {
+            panic!("a registered bare code decodes to a currency");
+        };
 
         assert_eq!(restored, Currency::USD());
+    }
+
+    /// A record that decodes but fails validation is an error, not a skip.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_invalid_record_is_classified_as_invalid(#[case] encoding: SerializationEncoding) {
+        let record = CurrencyRecord {
+            code: "ZZQ1".to_string(),
+            precision: 20,
+            iso4217: 0,
+            name: "ZZQ1".to_string(),
+            currency_type: CurrencyType::Crypto,
+        };
+        let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &record).unwrap());
+
+        assert!(matches!(
+            DatabaseQueries::decode_currency(encoding, &bytes),
+            CurrencyDecode::InvalidRecord(_)
+        ));
+    }
+
+    /// Bytes that are neither a record nor a registered code are skipped by bulk loading.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_unknown_bare_code_is_classified_as_undecodable(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &"ZZQ2").unwrap());
+
+        assert!(matches!(
+            DatabaseQueries::decode_currency(encoding, &bytes),
+            CurrencyDecode::Undecodable(_)
+        ));
     }
 
     /// A persisted record must never displace a built-in constant.

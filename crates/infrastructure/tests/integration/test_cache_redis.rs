@@ -40,7 +40,10 @@ mod serial_tests {
             DataType, InstrumentClose,
             stubs::{ensure_stub_custom_data_registered, stub_custom_data},
         },
-        enums::{InstrumentCloseType, OrderSide, OrderStatus, OrderType, TimeInForce},
+        enums::{
+            AccountType, CurrencyType, InstrumentCloseType, OrderSide, OrderStatus, OrderType,
+            TimeInForce,
+        },
         events::{
             AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
             account::stubs::{
@@ -52,15 +55,15 @@ mod serial_tests {
         },
         identifiers::{
             AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
-            TradeId, TraderId, VenueOrderId,
+            Symbol, TradeId, TraderId, VenueOrderId,
         },
         instruments::{
-            Instrument, InstrumentAny, SyntheticInstrument,
+            CryptoPerpetual, Instrument, InstrumentAny, SyntheticInstrument,
             stubs::{binary_option, crypto_perpetual_ethusdt},
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{Currency, Money, Price, Quantity},
+        types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use redis::AsyncCommands;
 
@@ -2104,6 +2107,187 @@ mod serial_tests {
         assert!(adapter.load_funding_rates(&instrument.id()).is_err());
         assert!(adapter.load_bars(&instrument.id()).is_err());
         assert!(adapter.load_signals("signals").is_err());
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    /// A currency this process has never registered; a built-in could not prove load order.
+    fn unregistered_currency(code: &str) -> Currency {
+        assert!(
+            Currency::try_from_str(code).is_none(),
+            "{code} must start unregistered"
+        );
+        Currency::new(code, 6, 0, code, CurrencyType::Crypto)
+    }
+
+    fn instrument_quoted_in(currency: Currency) -> InstrumentAny {
+        let symbol = format!("ETH{}", currency.code);
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::from(
+                    format!("{symbol}-PERP.BINANCE").as_str(),
+                ))
+                .raw_symbol(Symbol::from(symbol.as_str()))
+                .base_currency(Currency::from("ETH"))
+                .quote_currency(currency)
+                .settlement_currency(currency)
+                .is_inverse(false)
+                .price_precision(2)
+                .size_precision(3)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.001"))
+                .min_notional(Money::new(10.0, currency))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn account_holding(currency: Currency, account_id: &str) -> AccountAny {
+        let balance = AccountBalance::new(
+            Money::new(10.0, currency),
+            Money::new(0.0, currency),
+            Money::new(10.0, currency),
+        );
+        AccountAny::from(AccountState::new(
+            AccountId::new(account_id),
+            AccountType::Cash,
+            vec![balance],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ))
+    }
+
+    /// Waits until the asynchronous writer has persisted the three keys.
+    async fn wait_until_persisted(
+        adapter: &RedisCacheDatabaseAdapter,
+        currency: &Currency,
+        instrument: &InstrumentAny,
+        account: &AccountAny,
+    ) {
+        let trader_key = adapter.database.trader_key.clone();
+        let instrument_key = format!("{trader_key}:instruments:{}", instrument.id());
+        let account_key = format!("{trader_key}:accounts:{}", account.id());
+        wait_until_async(
+            || async {
+                let mut con = adapter.database.con.clone();
+                adapter
+                    .load_currency(&currency.code)
+                    .await
+                    .is_ok_and(|loaded| loaded.is_some())
+                    && con
+                        .exists::<_, bool>(&instrument_key)
+                        .await
+                        .unwrap_or(false)
+                    && con.exists::<_, bool>(&account_key).await.unwrap_or(false)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+    }
+
+    /// `load_all` registers a stored currency before the payloads denominated in it decode.
+    ///
+    /// The instrument and account carry a code this process has never registered, so they decode
+    /// only if the stored currency reaches the registry first.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_adapter_load_all_registers_a_stored_currency_before_its_dependents() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let currency = unregistered_currency("ZZQ7");
+        let instrument = instrument_quoted_in(currency);
+        let account = account_holding(currency, "SIM-ZZQ7");
+
+        adapter.add_currency(&currency).unwrap();
+        adapter.add_instrument(&instrument).unwrap();
+        adapter.add_account(&account).unwrap();
+        wait_until_persisted(&adapter, &currency, &instrument, &account).await;
+
+        let loaded = adapter.load_all().await.unwrap();
+
+        assert_eq!(loaded.currencies.get(&currency.code), Some(&currency));
+        assert_eq!(loaded.instruments.get(&instrument.id()), Some(&instrument));
+        assert!(
+            loaded.accounts.contains_key(&account.id()),
+            "the account denominated in {} must survive the reload",
+            currency.code
+        );
+        assert_eq!(Currency::try_from_str("ZZQ7"), Some(currency));
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    /// The query-level `load_all` registers the currency first as well.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_queries_load_all_registers_a_stored_currency_before_its_dependents() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let currency = unregistered_currency("ZZQ8");
+        let instrument = instrument_quoted_in(currency);
+        let account = account_holding(currency, "SIM-ZZQ8");
+
+        adapter.add_currency(&currency).unwrap();
+        adapter.add_instrument(&instrument).unwrap();
+        adapter.add_account(&account).unwrap();
+        wait_until_persisted(&adapter, &currency, &instrument, &account).await;
+
+        let loaded = DatabaseQueries::load_all(
+            &adapter.database.con,
+            adapter.database.get_encoding(),
+            &adapter.database.trader_key,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(loaded.currencies.get(&currency.code), Some(&currency));
+        assert_eq!(loaded.instruments.get(&instrument.id()), Some(&instrument));
+        assert!(loaded.accounts.contains_key(&account.id()));
+        assert_eq!(Currency::try_from_str("ZZQ8"), Some(currency));
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    /// A stored record that describes an invalid currency fails the load rather than being skipped.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_all_fails_on_an_invalid_currency_record() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let encoding = adapter.database.get_encoding();
+        let record = serde_json::json!({
+            "code": "ZZQ5",
+            "precision": 20,
+            "iso4217": 0,
+            "name": "ZZQ5",
+            "currency_type": serde_json::to_value(CurrencyType::Crypto).unwrap(),
+        });
+        let payload = DatabaseQueries::serialize_payload(encoding, &record).unwrap();
+        let key = format!("{}:currencies:ZZQ5", adapter.database.trader_key);
+        let mut con = adapter.database.con.clone();
+        con.set::<_, _, ()>(&key, payload).await.unwrap();
+
+        let error = adapter
+            .load_all()
+            .await
+            .expect_err("an invalid currency record must fail the load");
+
+        assert!(
+            error.to_string().contains("ZZQ5"),
+            "the error names the record: {error}"
+        );
 
         let mut adapter = adapter;
         adapter.flush().unwrap();

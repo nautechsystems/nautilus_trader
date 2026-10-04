@@ -4277,6 +4277,35 @@ fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
 
 // -- DATA ------------------------------------------------------------------------------------
 
+/// A loaded currency reaches the global registry, so a payload denominated in it decodes.
+///
+/// The code is unregistered when loading begins; a built-in could not prove the order.
+#[rstest]
+fn test_cache_currencies_registers_an_unregistered_currency() {
+    let code = "ZZQ9";
+    assert!(
+        Currency::try_from_str(code).is_none(),
+        "the code must start unregistered"
+    );
+    let currency = Currency::new(code, 6, 0, code, CurrencyType::Crypto);
+    let database = SnapshotBlobTestDatabase {
+        currencies: [(Ustr::from(code), currency)].into_iter().collect(),
+        ..Default::default()
+    };
+    let mut cache = Cache::default();
+    cache.set_database(Box::new(database));
+
+    futures::executor::block_on(cache.cache_currencies()).unwrap();
+
+    assert_eq!(cache.currency(&Ustr::from(code)), Some(&currency));
+    assert_eq!(Currency::try_from_str(code), Some(currency));
+    assert_eq!(
+        Money::from("1.5 ZZQ9"),
+        Money::new(1.5, currency),
+        "a dependent payload resolves the code through the registry"
+    );
+}
+
 #[rstest]
 fn test_cache_currencies_when_no_database(mut cache: Cache) {
     assert!(futures::executor::block_on(cache.cache_currencies()).is_ok());
@@ -9622,6 +9651,7 @@ struct CacheDatabaseCallLog {
 #[derive(Default)]
 struct SnapshotBlobTestDatabase {
     general: AHashMap<String, Bytes>,
+    currencies: AHashMap<Ustr, Currency>,
     instrument_closes: Arc<Mutex<AHashMap<InstrumentId, InstrumentClose>>>,
     orders: AHashMap<ClientOrderId, OrderAny>,
     positions: AHashMap<PositionId, Position>,
@@ -9770,6 +9800,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
         Ok(CacheMap {
+            currencies: self.currencies.clone(),
             instrument_closes: self.instrument_closes.lock().clone(),
             orders: self.orders.clone(),
             positions: self.positions.clone(),
@@ -9782,7 +9813,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
-        Ok(AHashMap::new())
+        Ok(self.currencies.clone())
     }
 
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
