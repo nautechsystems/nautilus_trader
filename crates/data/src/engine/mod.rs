@@ -78,14 +78,15 @@ use nautilus_common::{
     logging::{RECV, RES},
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, CustomDataResponse, DataCommand,
-        DataResponse, FundingRatesResponse, OptionChainReferencePriceResponse, PARAMS_IS_PARENT,
-        QuotesResponse, RequestBars, RequestCommand, RequestJoin, RequestOptionChainReferencePrice,
-        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
-        SubscribeBookSnapshots, SubscribeCommand, SubscribeOptionChain, SubscribeOptionGreeks,
-        SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-        UnsubscribeBookDepth, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
-        UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+        DataResponse, FundingRatesResponse, OptionChainReferencePriceResponse,
+        PARAMS_FORCE_RESUBSCRIBE, PARAMS_IS_PARENT, QuotesResponse, RequestBars, RequestCommand,
+        RequestJoin, RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+        TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeInstrumentStatus,
+        UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+        is_parent_subscription,
     },
     msgbus::{
         self, BusPayloadType, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
@@ -1043,7 +1044,22 @@ impl DataEngine {
     ///
     /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
     /// or if the underlying client operation fails.
-    pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
+    pub fn execute_subscribe(&mut self, mut cmd: SubscribeCommand) -> anyhow::Result<()> {
+        if let SubscribeCommand::Bars(bars) = &mut cmd
+            && (bars.bar_type.is_internally_aggregated()
+                || has_continuous_future_params(bars.params.as_ref())
+                || bars
+                    .client_id
+                    .is_some_and(|id| self.external_clients.contains(&id)))
+            && let Some(params) = &mut bars.params
+            && params.shift_remove(PARAMS_FORCE_RESUBSCRIBE).is_some()
+        {
+            log::warn!(
+                "Forced re-subscription is unsupported for internally aggregated, continuous-future, or external-client bars: {}",
+                bars.bar_type
+            );
+        }
+
         if let Some(client_id) = cmd.client_id()
             && self.external_clients.contains(client_id)
         {

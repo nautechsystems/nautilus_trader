@@ -32,17 +32,17 @@ use nautilus_common::{
     enums::LogColor,
     log_info,
     messages::data::{
-        RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
-        RequestInstrument, RequestInstruments, RequestOptionChainReferencePrice, RequestQuotes,
-        RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand,
-        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-        SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCommand,
-        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        PARAMS_FORCE_RESUBSCRIBE, RequestBars, RequestBookDepth, RequestBookSnapshot,
+        RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
+        RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand, SubscribeCustomData,
+        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+        UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
 #[cfg(feature = "defi")]
@@ -219,14 +219,36 @@ impl DataClientAdapter {
 
     pub(crate) fn execute_subscribe_with_retained(
         &mut self,
-        cmd: SubscribeCommand,
-        retained: SubscribeCommand,
+        mut cmd: SubscribeCommand,
+        mut retained: SubscribeCommand,
         retain_on_failure: bool,
     ) {
+        let mut force_resubscribe = false;
+
+        if let SubscribeCommand::Bars(bars) = &mut cmd
+            && let Some(params) = &mut bars.params
+        {
+            force_resubscribe = params.get_bool(PARAMS_FORCE_RESUBSCRIBE).unwrap_or(false);
+            params.shift_remove(PARAMS_FORCE_RESUBSCRIBE);
+        }
+
+        if let SubscribeCommand::Bars(bars) = &mut retained
+            && let Some(params) = &mut bars.params
+        {
+            params.shift_remove(PARAMS_FORCE_RESUBSCRIBE);
+        }
+
         let key = SubscriptionKey::from_subscribe(&retained);
         if self.has_active_subscription(&retained) {
             self.subscriptions_active
                 .retain(key, retained.command_id(), retained);
+
+            if force_resubscribe
+                && let SubscribeCommand::Bars(bars) = &cmd
+                && let Err(e) = self.client.resubscribe_bars(bars)
+            {
+                log_command_error(&format!("{cmd:?}"), &e);
+            }
             return;
         }
 

@@ -52,10 +52,24 @@ use crate::{
 pub enum SpotHandlerCommand {
     SetClient(WebSocketClient),
     Disconnect,
-    Subscribe { payload: SecretString },
-    Unsubscribe { payload: SecretString },
-    Ping { payload: SecretString },
-    SendOrderRequest { req_id: u64, payload: SecretString },
+    Subscribe {
+        payload: SecretString,
+    },
+    Unsubscribe {
+        payload: SecretString,
+    },
+    ResubscribeBars {
+        topic: String,
+        unsubscribe: SecretString,
+        subscribe: SecretString,
+    },
+    Ping {
+        payload: SecretString,
+    },
+    SendOrderRequest {
+        req_id: u64,
+        payload: SecretString,
+    },
 }
 
 /// WebSocket message handler for Kraken Spot v2.
@@ -121,6 +135,29 @@ impl SpotFeedHandler {
                                 && let Err(e) = client.send_text(payload.expose_secret().to_owned(), Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice())).await
                             {
                                 log::error!("Failed to send text: {e}");
+                            }
+                        }
+                        SpotHandlerCommand::ResubscribeBars { topic, unsubscribe, subscribe } => {
+                            if self.subscriptions.get_reference_count(&topic) == 0 {
+                                continue;
+                            }
+
+                            if let Some(client) = &self.inner {
+                                let epoch = client.connection_epoch();
+                                self.subscriptions.mark_failure(&topic);
+
+                                for payload in [unsubscribe, subscribe] {
+                                    if let Err(e) = client.send_text_on_connection(
+                                        payload.expose_secret().to_owned(),
+                                        Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
+                                        epoch,
+                                    ).await {
+                                        log::error!("Failed to repair bar subscription {topic}: {e}");
+                                        break;
+                                    }
+                                }
+                            } else {
+                                log::warn!("Cannot repair bar subscription {topic}: no active connection");
                             }
                         }
                         SpotHandlerCommand::Ping { payload } => {
