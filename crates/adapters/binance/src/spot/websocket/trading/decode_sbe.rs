@@ -31,12 +31,15 @@ use crate::{
     common::enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
     spot::sbe::spot::{
         ReadBuf, balance_update_event_codec, bool_enum, execution_report_event_codec,
-        execution_type, expiry_reason, message_header_codec, order_side, order_status, order_type,
-        outbound_account_position_event_codec, time_in_force,
+        execution_type, expiry_reason, group_size_encoding_codec, message_header_codec, order_side,
+        order_status, order_type, outbound_account_position_event_codec, time_in_force,
     },
 };
 
 const HEADER_LEN: usize = message_header_codec::ENCODED_LENGTH;
+const ACCOUNT_POSITION_BLOCK_LENGTH_V0: usize = 16;
+const ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH: usize = 17;
+const BALANCE_UPDATE_BLOCK_LENGTH_V0: usize = 25;
 
 // Historical block lengths are not exposed by the generated codec
 const EXECUTION_REPORT_BLOCK_LENGTH_V0: usize = 268;
@@ -243,7 +246,7 @@ fn execution_report_min_block_length(version: u16) -> usize {
 /// # Errors
 ///
 /// Returns error if the buffer is too short, the template ID is wrong,
-/// or the schema ID does not match.
+/// the schema ID does not match, or balances framing is malformed.
 pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccountPositionMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -272,12 +275,54 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
         );
     }
 
-    let min_len = HEADER_LEN + block_length as usize;
+    let min_block_len = if version == 0 {
+        ACCOUNT_POSITION_BLOCK_LENGTH_V0
+    } else {
+        usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH)
+    };
+
+    if usize::from(block_length) < min_block_len {
+        anyhow::bail!(
+            "SBE account position block length too short: expected at least {min_block_len}, was {block_length}"
+        );
+    }
+
+    let min_len = HEADER_LEN + usize::from(block_length);
     if data.len() < min_len {
         anyhow::bail!(
             "Buffer too short for fixed block: expected {min_len}, was {}",
             data.len()
         );
+    }
+
+    let group_header_end = min_len + group_size_encoding_codec::ENCODED_LENGTH;
+    if data.len() < group_header_end {
+        anyhow::bail!(
+            "Buffer too short for balances group header: expected {group_header_end}, was {}",
+            data.len()
+        );
+    }
+
+    let entry_block_length = usize::from(buf.get_u16_at(min_len));
+    if entry_block_length < ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH {
+        anyhow::bail!(
+            "SBE balances entry block length too short: expected at least {ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH}, was {entry_block_length}"
+        );
+    }
+
+    let count = buf.get_u32_at(min_len + 2);
+    let mut entry_offset = group_header_end;
+
+    for index in 0..count {
+        let entry_end = entry_offset + entry_block_length;
+        if data.len() < entry_end {
+            anyhow::bail!(
+                "Buffer too short for balances entry {index}: expected {entry_end}, was {}",
+                data.len()
+            );
+        }
+
+        entry_offset = validate_asset(data, entry_end)?;
     }
 
     let dec = outbound_account_position_event_codec::OutboundAccountPositionEventDecoder::default()
@@ -324,7 +369,7 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
 /// # Errors
 ///
 /// Returns error if the buffer is too short, the template ID is wrong,
-/// or the schema ID does not match.
+/// the schema ID does not match, or asset framing is malformed.
 pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUpdateMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -353,13 +398,27 @@ pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUp
         );
     }
 
-    let min_len = HEADER_LEN + block_length as usize;
+    let min_block_len = if version == 0 {
+        BALANCE_UPDATE_BLOCK_LENGTH_V0
+    } else {
+        usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH)
+    };
+
+    if usize::from(block_length) < min_block_len {
+        anyhow::bail!(
+            "SBE balance update block length too short: expected at least {min_block_len}, was {block_length}"
+        );
+    }
+
+    let min_len = HEADER_LEN + usize::from(block_length);
     if data.len() < min_len {
         anyhow::bail!(
             "Buffer too short for fixed block: expected {min_len}, was {}",
             data.len()
         );
     }
+
+    validate_asset(data, min_len)?;
 
     let mut dec = balance_update_event_codec::BalanceUpdateEventDecoder::default().wrap(
         buf,
@@ -385,6 +444,26 @@ pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUp
         delta: mantissa_to_decimal_string(free_qty_delta, qty_exponent),
         clear_time: us_to_ms(clear_time_us),
     })
+}
+
+fn validate_asset(data: &[u8], offset: usize) -> anyhow::Result<usize> {
+    let Some(length) = data.get(offset) else {
+        anyhow::bail!(
+            "Buffer too short for asset length: expected {}, was {}",
+            offset + 1,
+            data.len()
+        );
+    };
+
+    let expected_len = offset + 1 + usize::from(*length);
+    if data.len() < expected_len {
+        anyhow::bail!(
+            "Buffer too short for asset: expected {expected_len}, was {}",
+            data.len()
+        );
+    }
+
+    Ok(expected_len)
 }
 
 fn map_execution_type(
@@ -1206,6 +1285,179 @@ mod tests {
         assert!(err.to_string().contains("Wrong template ID"));
     }
 
+    #[rstest]
+    #[case::zero_v0(0, 0)]
+    #[case::short_v0(0, ACCOUNT_POSITION_BLOCK_LENGTH_V0 as u16 - 1)]
+    #[case::zero_v1(1, 0)]
+    #[case::v0_width_in_v1(1, ACCOUNT_POSITION_BLOCK_LENGTH_V0 as u16)]
+    #[case::short_v1(1, outbound_account_position_event_codec::SBE_BLOCK_LENGTH - 1)]
+    #[case::short_current(5, outbound_account_position_event_codec::SBE_BLOCK_LENGTH - 1)]
+    #[case::short_future(6, outbound_account_position_event_codec::SBE_BLOCK_LENGTH - 1)]
+    fn test_decode_account_position_rejects_short_declared_block(
+        #[case] version: u16,
+        #[case] block_length: u16,
+    ) {
+        let mut data = encode_account_position(123000, 456000, &[("BTC", -2, 12345, 6789)]);
+        data[..2].copy_from_slice(&block_length.to_le_bytes());
+        data[6..8].copy_from_slice(&version.to_le_bytes());
+
+        let min_block_len = if version == 0 {
+            ACCOUNT_POSITION_BLOCK_LENGTH_V0
+        } else {
+            usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH)
+        };
+
+        let err = decode_account_position(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "SBE account position block length too short: expected at least {min_block_len}, was {block_length}"
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_decode_account_position_rejects_truncated_framing() {
+        let data = encode_account_position(
+            123000,
+            456000,
+            &[("BTC", -2, 12345, 6789), ("USDT", -3, 4321, 8765)],
+        );
+
+        for length in 0..data.len() {
+            assert!(
+                decode_account_position(&data[..length]).is_err(),
+                "Accepted truncated account position of length {length}"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::zero_empty(0, 0)]
+    #[case::zero_nonempty(0, 1)]
+    #[case::short_empty(ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH as u16 - 1, 0)]
+    #[case::short_nonempty(ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH as u16 - 1, 1)]
+    fn test_decode_account_position_rejects_short_entry_block(
+        #[case] block_length: u16,
+        #[case] count: u32,
+    ) {
+        let mut data = encode_account_position(123000, 456000, &[("BTC", -2, 12345, 6789)]);
+        let group_offset =
+            HEADER_LEN + usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH);
+        data[group_offset..group_offset + 2].copy_from_slice(&block_length.to_le_bytes());
+        data[group_offset + 2..group_offset + group_size_encoding_codec::ENCODED_LENGTH]
+            .copy_from_slice(&count.to_le_bytes());
+
+        let err = decode_account_position(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "SBE balances entry block length too short: expected at least {ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH}, was {block_length}"
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::first(0)]
+    #[case::second(1)]
+    fn test_decode_account_position_rejects_oversized_asset(#[case] index: usize) {
+        let mut data = encode_account_position(
+            123000,
+            456000,
+            &[("BTC", -2, 12345, 6789), ("USDT", -3, 4321, 8765)],
+        );
+        let mut asset_offset = HEADER_LEN
+            + usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH)
+            + group_size_encoding_codec::ENCODED_LENGTH
+            + ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH;
+
+        if index == 1 {
+            asset_offset += 1 + "BTC".len() + ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH;
+        }
+
+        data[asset_offset] = u8::MAX;
+
+        let err = decode_account_position(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "Buffer too short for asset: expected {}, was {}",
+                asset_offset + 1 + usize::from(u8::MAX),
+                data.len()
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::v0(
+        0,
+        ACCOUNT_POSITION_BLOCK_LENGTH_V0,
+        ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH
+    )]
+    #[case::v1(
+        1,
+        usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH),
+        ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH
+    )]
+    #[case::current(
+        5,
+        usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH),
+        ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH
+    )]
+    #[case::fixed_extension(5, usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH) + 4, ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH)]
+    #[case::entry_extension(5, usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH), ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH + 4)]
+    #[case::v0_extensions(0, ACCOUNT_POSITION_BLOCK_LENGTH_V0 + 4, ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH + 4)]
+    #[case::future_extensions(6, usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH) + 4, ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH + 4)]
+    fn test_decode_account_position_accepts_versioned_blocks(
+        #[case] version: u16,
+        #[case] block_length: usize,
+        #[case] entry_block_length: usize,
+    ) {
+        let balances = [("BTC", -2, 12345, 6789), ("USDT", -3, 4321, 8765)];
+        let original = encode_account_position(123000, 456000, &balances);
+        let group_offset =
+            HEADER_LEN + usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH);
+        let mut data = original[..HEADER_LEN + ACCOUNT_POSITION_BLOCK_LENGTH_V0].to_vec();
+        data.resize(HEADER_LEN + block_length, 0xA5);
+        data[..2].copy_from_slice(&(block_length as u16).to_le_bytes());
+        data[6..8].copy_from_slice(&version.to_le_bytes());
+        data.extend_from_slice(
+            &original[group_offset..group_offset + group_size_encoding_codec::ENCODED_LENGTH],
+        );
+        data[HEADER_LEN + block_length..HEADER_LEN + block_length + 2]
+            .copy_from_slice(&(entry_block_length as u16).to_le_bytes());
+        let mut entry_offset = group_offset + group_size_encoding_codec::ENCODED_LENGTH;
+
+        for (asset, _, _, _) in balances {
+            data.extend_from_slice(
+                &original[entry_offset..entry_offset + ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH],
+            );
+            data.resize(
+                data.len() + entry_block_length - ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH,
+                0xA5,
+            );
+            let asset_offset = entry_offset + ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH;
+            entry_offset = asset_offset + 1 + asset.len();
+            data.extend_from_slice(&original[asset_offset..entry_offset]);
+        }
+
+        let msg = decode_account_position(&data).unwrap();
+
+        assert_eq!(msg.event_type, "outboundAccountPosition");
+        assert_eq!(msg.event_time, 123);
+        assert_eq!(msg.last_update_time, 456);
+        assert_eq!(msg.balances.len(), balances.len());
+
+        for (balance, (asset, exponent, free, locked)) in msg.balances.iter().zip(balances) {
+            assert_eq!(balance.asset, asset);
+            assert_eq!(balance.free, Decimal::new(free, (-exponent) as u32));
+            assert_eq!(balance.locked, Decimal::new(locked, (-exponent) as u32));
+        }
+    }
+
     fn encode_balance_update(
         event_time_us: i64,
         clear_time_us: i64,
@@ -1265,6 +1517,96 @@ mod tests {
 
         let err = decode_balance_update(&data).unwrap_err();
         assert!(err.to_string().contains("Wrong template ID"));
+    }
+
+    #[rstest]
+    #[case::zero_v0(0, 0)]
+    #[case::short_v0(0, BALANCE_UPDATE_BLOCK_LENGTH_V0 as u16 - 1)]
+    #[case::zero_v1(1, 0)]
+    #[case::v0_width_in_v1(1, BALANCE_UPDATE_BLOCK_LENGTH_V0 as u16)]
+    #[case::short_v1(1, balance_update_event_codec::SBE_BLOCK_LENGTH - 1)]
+    #[case::short_current(5, balance_update_event_codec::SBE_BLOCK_LENGTH - 1)]
+    #[case::short_future(6, balance_update_event_codec::SBE_BLOCK_LENGTH - 1)]
+    fn test_decode_balance_update_rejects_short_declared_block(
+        #[case] version: u16,
+        #[case] block_length: u16,
+    ) {
+        let mut data = encode_balance_update(123000, 456000, -2, 12345, "BTC");
+        data[..2].copy_from_slice(&block_length.to_le_bytes());
+        data[6..8].copy_from_slice(&version.to_le_bytes());
+
+        let min_block_len = if version == 0 {
+            BALANCE_UPDATE_BLOCK_LENGTH_V0
+        } else {
+            usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH)
+        };
+
+        let err = decode_balance_update(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "SBE balance update block length too short: expected at least {min_block_len}, was {block_length}"
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_decode_balance_update_rejects_truncated_framing() {
+        let data = encode_balance_update(123000, 456000, -2, 12345, "BTC");
+
+        for length in 0..data.len() {
+            assert!(
+                decode_balance_update(&data[..length]).is_err(),
+                "Accepted length {length}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_decode_balance_update_rejects_oversized_asset() {
+        let mut data = encode_balance_update(123000, 456000, -2, 12345, "BTC");
+        let asset_offset = HEADER_LEN + usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH);
+        data[asset_offset] = u8::MAX;
+
+        let err = decode_balance_update(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "Buffer too short for asset: expected {}, was {}",
+                asset_offset + 1 + usize::from(u8::MAX),
+                data.len()
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::v0(0, BALANCE_UPDATE_BLOCK_LENGTH_V0)]
+    #[case::v1(1, usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH))]
+    #[case::current(5, usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH))]
+    #[case::v0_extension(0, BALANCE_UPDATE_BLOCK_LENGTH_V0 + 4)]
+    #[case::current_extension(5, usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH) + 4)]
+    #[case::future_extension(6, usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH) + 4)]
+    fn test_decode_balance_update_accepts_versioned_blocks(
+        #[case] version: u16,
+        #[case] block_length: usize,
+    ) {
+        let original = encode_balance_update(123000, 456000, -2, 12345, "BTC");
+        let asset_offset = HEADER_LEN + usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH);
+        let mut data = original[..HEADER_LEN + BALANCE_UPDATE_BLOCK_LENGTH_V0].to_vec();
+        data.resize(HEADER_LEN + block_length, 0xA5);
+        data[..2].copy_from_slice(&(block_length as u16).to_le_bytes());
+        data[6..8].copy_from_slice(&version.to_le_bytes());
+        data.extend_from_slice(&original[asset_offset..]);
+
+        let msg = decode_balance_update(&data).unwrap();
+
+        assert_eq!(msg.event_type, "balanceUpdate");
+        assert_eq!(msg.event_time, 123);
+        assert_eq!(msg.clear_time, 456);
+        assert_eq!(msg.asset, "BTC");
+        assert_eq!(msg.delta, "123.45");
     }
 
     #[rstest]
