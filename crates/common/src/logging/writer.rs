@@ -1107,8 +1107,13 @@ mod tests {
 
     #[rstest]
     fn test_file_writer_unwritable_directory_returns_error() {
+        let temp_dir = tempdir().unwrap();
+        let blocking_file = temp_dir.path().join("not_a_directory");
+        std::fs::write(&blocking_file, "I am a file").unwrap();
+        let directory = blocking_file.join("nested");
+
         let config = FileWriterConfig {
-            directory: Some("/nonexistent/path/that/should/not/exist".to_string()),
+            directory: Some(directory.to_str().unwrap().to_string()),
             file_name: Some("test".to_string()),
             file_format: None,
             file_rotate: None,
@@ -1125,7 +1130,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            "failed to create log directory /nonexistent/path/that/should/not/exist"
+            format!("failed to create log directory {}", directory.display())
         );
     }
 
