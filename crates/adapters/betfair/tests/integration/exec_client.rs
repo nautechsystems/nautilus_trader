@@ -31,9 +31,10 @@ use nautilus_betfair::{
     common::{
         consts::{
             BETFAIR_CLIENT_ID, BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_GET_ACCOUNT_FUNDS,
-            METHOD_LIST_CURRENT_ORDERS, METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
+            METHOD_LIST_CURRENT_ORDERS, METHOD_LIST_EVENTS, METHOD_LIST_MARKET_CATALOGUE,
+            METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
         },
-        parse::{make_customer_order_ref, parse_betfair_timestamp},
+        parse::{make_customer_order_ref, make_customer_order_ref_legacy, parse_betfair_timestamp},
     },
     config::BetfairExecutionClientConfig,
     execution::BetfairExecutionClient,
@@ -60,7 +61,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::Data,
@@ -71,9 +72,11 @@ use nautilus_model::{
         VenueOrderId,
     },
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder},
+    reports::OrderStatusReport,
     types::{Currency, Price, Quantity},
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 use ustr::Ustr;
@@ -3179,6 +3182,1161 @@ async fn test_generate_order_status_reports() {
 }
 
 #[rstest]
+#[case::small(0, false, false, 0.0)]
+#[case::large(30_000, false, false, 0.0)]
+#[case::unknown_successor(0, true, false, 0.0)]
+#[case::terminal_successor(30_000, true, true, 0.0)]
+#[case::voided_successor(0, false, false, 1.0)]
+#[tokio::test]
+async fn test_open_only_repeated_replacements_bound_history(
+    #[case] history_count: usize,
+    #[case] pending: bool,
+    #[case] terminal: bool,
+    #[case] voided: f64,
+) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-SCOPED-REPLACEMENTS";
+    let bet_ids = ["scoped-0", "scoped-1", "scoped-2"];
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, client_order_id, bet_ids[0], "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, client_order_id, bet_ids[0], "3.00"),
+        bet_ids[1],
+        false,
+    )
+    .await;
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, client_order_id, bet_ids[1], "4.00"),
+        bet_ids[2],
+        pending,
+    )
+    .await;
+
+    let mut successor = current_order_leg(
+        bet_ids[2],
+        client_order_id,
+        5.0,
+        if terminal { 5.0 } else { 1.0 },
+        if terminal { 0.0 } else { 4.0 - voided },
+        4.0,
+    );
+    successor["sizeVoided"] = Value::from(voided);
+    successor["sizeCancelled"] = Value::from(0.0);
+    let mut orders = vec![
+        current_order_leg(bet_ids[0], client_order_id, 10.0, 2.0, 0.0, 2.5),
+        current_order_leg(bet_ids[1], client_order_id, 8.0, 3.0, 0.0, 3.0),
+        successor.clone(),
+    ];
+    orders.extend((0..19).map(|index| {
+        current_order_leg(&format!("open-{index}"), "foreign-open", 7.0, 0.0, 7.0, 2.0)
+    }));
+
+    orders.extend((0..history_count).map(|index| {
+        current_order_leg(
+            &format!("history-{index}"),
+            "foreign-history",
+            9.0,
+            9.0,
+            0.0,
+            8.0,
+        )
+    }));
+
+    *state.betting_current_orders.lock() = Some(orders);
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let first = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let recovered = drain_events(&mut rx, Duration::from_millis(100)).await;
+    let updates = order_updates(&recovered);
+    assert_eq!(updates.len(), usize::from(pending));
+
+    if pending {
+        assert_eq!(
+            updates[0].venue_order_id,
+            Some(VenueOrderId::from(bet_ids[2]))
+        );
+        assert_eq!(updates[0].quantity, Quantity::from("10"));
+    }
+
+    assert_eq!(first.len(), if pending { 19 } else { 20 });
+
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let requests: Vec<_> = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect();
+    assert_eq!(reports.len(), if terminal { 19 } else { 20 });
+
+    let expected_requests = if pending && !terminal { 5 } else { 4 };
+    assert_eq!(requests.len(), expected_requests);
+
+    for params in &requests {
+        if params["orderProjection"] == "ALL" {
+            assert!(params["betIds"].is_array() || params["customerOrderRefs"].is_array());
+        } else {
+            assert_eq!(params["orderProjection"], "EXECUTABLE");
+        }
+    }
+
+    assert_eq!(requests[0]["orderProjection"], "EXECUTABLE");
+    assert_eq!(
+        requests[1]["betIds"],
+        serde_json::json!([bet_ids[0], bet_ids[1]])
+    );
+    assert_eq!(
+        state
+            .betting_current_orders_returned
+            .load(Ordering::Relaxed),
+        if !pending {
+            44
+        } else if terminal {
+            43
+        } else {
+            47
+        }
+    );
+    assert!(rx.try_recv().is_err());
+
+    if terminal {
+        let mut full = command.clone();
+        full.open_only = false;
+        let full_reports = client.generate_order_status_reports(&full).await.unwrap();
+        let report = full_reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == bet_ids[2])
+            .unwrap();
+        assert_replacement_report(
+            report,
+            successor,
+            client_order_id,
+            "10",
+            Decimal::new(34, 1),
+        );
+    } else {
+        let report = reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == bet_ids[2])
+            .unwrap();
+        assert_replacement_report(report, successor, client_order_id, "6", Decimal::from(3));
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+fn current_order_leg(
+    bet_id: &str,
+    client_order_id: &str,
+    quantity: f64,
+    matched: f64,
+    remaining: f64,
+    price: f64,
+) -> Value {
+    let mut order =
+        load_json_fixture("rest/list_current_orders_executable.json")["result"]["currentOrders"][0]
+            .clone();
+    order["betId"] = Value::from(bet_id);
+    order["marketId"] = Value::from("1.179082386");
+    order["selectionId"] = Value::from(235);
+    order["customerOrderRef"] = Value::from(client_order_id);
+    order["priceSize"]["price"] = Value::from(price);
+    order["priceSize"]["size"] = Value::from(quantity);
+    order["sizeMatched"] = Value::from(matched);
+    order["sizeRemaining"] = Value::from(remaining);
+    order["sizeCancelled"] = Value::from(quantity - matched - remaining);
+    order["averagePriceMatched"] = Value::from(price);
+    order["status"] = Value::from(if remaining == 0.0 {
+        "EXECUTION_COMPLETE"
+    } else {
+        "EXECUTABLE"
+    });
+
+    order
+}
+
+async fn replace_order_for_reports(
+    client: &BetfairExecutionClient,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    state: &MockState,
+    command: ModifyOrder,
+    successor: &str,
+    pending: bool,
+) {
+    let mut response =
+        load_json_fixture("rest/betting_replace_orders_success.json")["result"].clone();
+    response["instructionReports"][0]["placeInstructionReport"]["betId"] = Value::from(successor);
+    state
+        .betting_overrides
+        .lock()
+        .insert(METHOD_REPLACE_ORDERS.to_string(), response);
+
+    if pending {
+        state
+            .betting_status_overrides
+            .lock()
+            .insert(METHOD_REPLACE_ORDERS.to_string(), 502);
+    }
+
+    let previous_requests = betting_method_count(state, METHOD_REPLACE_ORDERS);
+    client.modify_order(command).unwrap();
+
+    if pending {
+        wait_for_mock_state(state, "ambiguous replace retries once", |state| {
+            betting_method_count(state, METHOD_REPLACE_ORDERS) == previous_requests + 2
+        })
+        .await;
+
+        assert!(
+            drain_events(rx, Duration::from_millis(100))
+                .await
+                .is_empty()
+        );
+        return;
+    }
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = event else {
+        panic!("expected successful replacement update, was {event:?}");
+    };
+
+    assert_eq!(updated.venue_order_id, Some(VenueOrderId::from(successor)));
+}
+
+fn assert_replacement_report(
+    report: &OrderStatusReport,
+    successor: Value,
+    client_order_id: &str,
+    filled: &str,
+    avg_px: Decimal,
+) {
+    let successor = serde_json::from_value(successor).unwrap();
+    let mut expected =
+        parse_current_order_report(&successor, report.account_id, report.ts_init).unwrap();
+    expected.report_id = report.report_id;
+    expected.client_order_id = Some(ClientOrderId::from(client_order_id));
+    expected.quantity = Quantity::from("10");
+    expected.filled_qty = Quantity::from(filled);
+    expected.avg_px = Some(avg_px);
+    assert_eq!(report, &expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_only_ambiguous_reference_preserves_known_bet_accounting() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let reference = "12345678901234567890123456789012";
+    let first = format!("{reference}-first");
+    let second = format!("{reference}-second");
+    let instrument_id = "1.179082386-235.BETFAIR";
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, &first, "ambiguous-old", "2.50", "10"),
+    );
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, &second, "ambiguous-other", "7.00", "13"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, &first, "ambiguous-old", "3.00"),
+        "ambiguous-new",
+        false,
+    )
+    .await;
+    let successor = current_order_leg("ambiguous-new", reference, 8.0, 1.0, 7.0, 3.0);
+    let other = current_order_leg("ambiguous-other", reference, 13.0, 4.0, 9.0, 7.0);
+    *state.betting_current_orders.lock() = Some(vec![
+        current_order_leg("ambiguous-old", reference, 10.0, 2.0, 0.0, 2.5),
+        successor.clone(),
+        other.clone(),
+    ]);
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+
+    let mut expected: Vec<_> = [successor, other]
+        .into_iter()
+        .zip(&reports)
+        .map(|(order, report)| {
+            let order = serde_json::from_value(order).unwrap();
+            let mut expected =
+                parse_current_order_report(&order, report.account_id, report.ts_init).unwrap();
+            expected.report_id = report.report_id;
+            expected.client_order_id = None;
+            expected
+        })
+        .collect();
+
+    expected[0].quantity = Quantity::from("10");
+    expected[0].filled_qty = Quantity::from("3");
+    expected[0].avg_px = Some(Decimal::from(8) / Decimal::from(3));
+    let requests: Vec<_> = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect();
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports, expected);
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0]["orderProjection"], "EXECUTABLE");
+    assert_eq!(requests[1]["orderProjection"], "ALL");
+    assert_eq!(requests[1]["betIds"], serde_json::json!(["ambiguous-old"]));
+    assert_eq!(
+        state
+            .betting_current_orders_returned
+            .load(Ordering::Relaxed),
+        3
+    );
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_only_missing_replacement_history_fails_without_consuming_recovery() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-MISSING-HISTORY";
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, client_order_id, "missing-old", "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, client_order_id, "missing-old", "3.00"),
+        "missing-new",
+        true,
+    )
+    .await;
+    let successor = current_order_leg("missing-new", client_order_id, 6.0, 2.0, 4.0, 3.0);
+    *state.betting_current_orders.lock() = Some(vec![successor.clone()]);
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let error = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Missing Betfair order history for tracked Bet ID missing-old"
+    );
+    assert!(rx.try_recv().is_err());
+
+    *state.betting_current_orders.lock() = Some(vec![
+        current_order_leg("missing-old", client_order_id, 10.0, 4.0, 0.0, 2.5),
+        successor.clone(),
+    ]);
+    let resolving = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let events = drain_events(&mut rx, Duration::from_millis(100)).await;
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    assert!(resolving.is_empty());
+    assert_eq!(order_updates(&events).len(), 1);
+    assert_eq!(reports.len(), 1);
+    assert_replacement_report(
+        &reports[0],
+        successor,
+        client_order_id,
+        "6",
+        Decimal::from(8) / Decimal::from(3),
+    );
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_only_supplemental_orders_preserve_reconcile_market_scope() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+
+    let config = BetfairExecutionClientConfig {
+        reconcile_market_ids_only: true,
+        reconcile_market_ids: Some(vec!["1.179082386".to_string()]),
+        ..Default::default()
+    };
+
+    let (mut client, mut rx, _data_rx, cache) =
+        create_test_execution_client_with_config(addr, stream_port, config);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(
+            "1.179082386-235.BETFAIR",
+            "O-MARKET-A",
+            "market-a",
+            "2.50",
+            "10",
+        ),
+    );
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(
+            "1.179082387-235.BETFAIR",
+            "O-MARKET-B",
+            "market-b",
+            "2.50",
+            "10",
+        ),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    state
+        .betting_status_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+    client
+        .modify_order(make_quantity_modify_order_cmd(
+            "1.179082387-235.BETFAIR",
+            "O-MARKET-B",
+            "market-b",
+            "4",
+        ))
+        .unwrap();
+    wait_for_mock_state(
+        &state,
+        "out-of-scope reduction remains ambiguous",
+        |state| betting_method_count(state, METHOD_CANCEL_ORDERS) == 2,
+    )
+    .await;
+    assert!(
+        drain_events(&mut rx, Duration::from_millis(100))
+            .await
+            .is_empty()
+    );
+    let first = current_order_leg("market-a", "O-MARKET-A", 10.0, 0.0, 10.0, 2.5);
+    let mut second = current_order_leg("market-b", "O-MARKET-B", 10.0, 0.0, 4.0, 2.5);
+    second["marketId"] = Value::from("1.179082387");
+    *state.betting_current_orders.lock() = Some(vec![first.clone(), second]);
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let requests: Vec<_> = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect();
+    assert_eq!(
+        requests,
+        vec![
+            serde_json::json!({"orderProjection": "EXECUTABLE", "marketIds": ["1.179082386"]}),
+            serde_json::json!({"orderProjection": "ALL", "betIds": ["market-b"]}),
+        ]
+    );
+    assert_eq!(
+        state
+            .betting_current_orders_returned
+            .load(Ordering::Relaxed),
+        2
+    );
+    assert_eq!(reports.len(), 1);
+    let first = serde_json::from_value(first).unwrap();
+    let mut expected =
+        parse_current_order_report(&first, reports[0].account_id, reports[0].ts_init).unwrap();
+    expected.client_order_id = Some(ClientOrderId::from("O-MARKET-A"));
+    expected.report_id = reports[0].report_id;
+    assert_eq!(reports[0], expected);
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::failed_fetch(false)]
+#[case::cancelled_fetch(true)]
+#[tokio::test]
+async fn test_open_only_interrupted_supplemental_fetch_preserves_pending_replace(
+    #[case] cancel_fetch: bool,
+) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-INTERRUPTED-REPLACE";
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(
+            instrument_id,
+            client_order_id,
+            "interrupted-old",
+            "2.50",
+            "10",
+        ),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, client_order_id, "interrupted-old", "3.00"),
+        "interrupted-new",
+        true,
+    )
+    .await;
+    let successor = current_order_leg("interrupted-new", client_order_id, 6.0, 2.0, 0.0, 3.0);
+    *state.betting_current_orders.lock() = Some(vec![
+        current_order_leg("interrupted-old", client_order_id, 10.0, 4.0, 0.0, 2.5),
+        successor.clone(),
+    ]);
+
+    let gate = MockResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(2)),
+    };
+
+    *state.betting_response_gate.lock() = Some(gate.clone());
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+    {
+        let pending = client.generate_order_status_reports(&command);
+        tokio::pin!(pending);
+        tokio::select! {
+            result = &mut pending => panic!("supplemental fetch completed before interruption: {result:?}"),
+            () = wait_for_mock_state(&state, "successor reference request blocked", |_| gate.waiters.load(Ordering::Relaxed) == 3) => {}
+        }
+
+        if !cancel_fetch {
+            state.betting_error_one_shot_overrides.lock().insert(
+                METHOD_LIST_CURRENT_ORDERS.to_string(),
+                betting_api_error("INVALID_INPUT_DATA"),
+            );
+            gate.semaphore.add_permits(1);
+            let error = pending.await.unwrap_err().to_string();
+            assert!(error.contains("INVALID_INPUT_DATA"), "{error}");
+        }
+    }
+
+    if cancel_fetch {
+        gate.semaphore.add_permits(1);
+        wait_for_mock_state(&state, "cancelled request settled", |state| {
+            state
+                .betting_current_orders_returned
+                .load(Ordering::Relaxed)
+                == 3
+        })
+        .await;
+    }
+
+    *state.betting_response_gate.lock() = None;
+    assert!(rx.try_recv().is_err());
+    let resolving = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let events = drain_events(&mut rx, Duration::from_millis(100)).await;
+    let updates = order_updates(&events);
+    let repeated = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let mut full = command;
+    full.open_only = false;
+    let reports = client.generate_order_status_reports(&full).await.unwrap();
+    assert!(resolving.is_empty());
+    assert!(repeated.is_empty());
+    assert_eq!(events.len(), 1);
+    assert_eq!(updates.len(), 1);
+    assert_eq!(
+        updates[0].client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(
+        updates[0].venue_order_id,
+        Some(VenueOrderId::from("interrupted-new"))
+    );
+    assert_eq!(updates[0].quantity, Quantity::from("10"));
+    assert_eq!(updates[0].price, Some(Price::from("3.00")));
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["interrupted-old", "interrupted-new"],
+    );
+    assert_replacement_report(
+        &reports[1],
+        successor,
+        client_order_id,
+        "6",
+        Decimal::from(8) / Decimal::from(3),
+    );
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::replacement(true, false)]
+#[case::reduction(false, false)]
+#[case::reduction_after_replacement(false, true)]
+#[tokio::test]
+async fn test_open_only_recovers_terminal_modifications(
+    #[case] replacement: bool,
+    #[case] replaced: bool,
+) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-TERMINAL-MODIFY";
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, client_order_id, "terminal-old", "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    if replaced {
+        replace_order_for_reports(
+            &client,
+            &mut rx,
+            &state,
+            make_price_modify_order_cmd(instrument_id, client_order_id, "terminal-old", "3.00"),
+            "terminal-new",
+            false,
+        )
+        .await;
+    }
+
+    if replacement {
+        replace_order_for_reports(
+            &client,
+            &mut rx,
+            &state,
+            make_price_modify_order_cmd(instrument_id, client_order_id, "terminal-old", "3.00"),
+            "terminal-new",
+            true,
+        )
+        .await;
+    } else {
+        state
+            .betting_status_overrides
+            .lock()
+            .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+        client
+            .modify_order(make_quantity_modify_order_cmd(
+                instrument_id,
+                client_order_id,
+                if replaced {
+                    "terminal-new"
+                } else {
+                    "terminal-old"
+                },
+                if replaced { "8" } else { "4" },
+            ))
+            .unwrap();
+
+        wait_for_mock_state(&state, "ambiguous reduction retries once", |state| {
+            betting_method_count(state, METHOD_CANCEL_ORDERS) == 2
+        })
+        .await;
+
+        assert!(
+            drain_events(&mut rx, Duration::from_millis(100))
+                .await
+                .is_empty()
+        );
+    }
+
+    let mut orders = vec![current_order_leg(
+        "terminal-old",
+        client_order_id,
+        10.0,
+        4.0,
+        0.0,
+        2.5,
+    )];
+
+    if replaced {
+        orders.push(current_order_leg(
+            "terminal-new",
+            client_order_id,
+            6.0,
+            4.0,
+            0.0,
+            3.0,
+        ));
+    }
+
+    *state.betting_current_orders.lock() = Some(orders);
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let repeated = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let requests: Vec<_> = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect();
+    assert!(reports.is_empty());
+    assert!(repeated.is_empty());
+    assert_eq!(requests.len(), if replacement { 4 } else { 3 });
+    assert_eq!(requests[0]["orderProjection"], "EXECUTABLE");
+    assert_eq!(
+        requests[1]["betIds"],
+        if replaced {
+            serde_json::json!(["terminal-new", "terminal-old"])
+        } else {
+            serde_json::json!(["terminal-old"])
+        }
+    );
+    assert_eq!(requests.last().unwrap()["orderProjection"], "EXECUTABLE");
+    assert!(rx.try_recv().is_err());
+    let mut full = command;
+    full.open_only = false;
+    let full_reports = client.generate_order_status_reports(&full).await.unwrap();
+    assert_eq!(
+        full_reports
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<Vec<_>>(),
+        if replaced {
+            vec!["terminal-old", "terminal-new"]
+        } else {
+            vec!["terminal-old"]
+        },
+    );
+    let report = full_reports.last().unwrap();
+    assert_eq!(
+        report.quantity,
+        Quantity::from(if replacement {
+            "10"
+        } else if replaced {
+            "8"
+        } else {
+            "4"
+        })
+    );
+    assert_eq!(
+        report.filled_qty,
+        Quantity::from(if replaced { "8" } else { "4" })
+    );
+    assert_eq!(
+        report.avg_px,
+        Some(Decimal::new(if replaced { 275 } else { 250 }, 2))
+    );
+
+    if replaced {
+        assert_eq!(report.venue_order_id, VenueOrderId::from("terminal-new"));
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::overlapping_pages(false, false)]
+#[case::empty_page(true, false)]
+#[case::session_refresh(false, true)]
+#[tokio::test]
+async fn test_open_only_supplemental_pages_preserve_last_observation_and_retry(
+    #[case] empty: bool,
+    #[case] retry: bool,
+) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-PAGED-REPLACEMENT";
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, client_order_id, "paged-old", "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, client_order_id, "paged-old", "3.00"),
+        "paged-new",
+        false,
+    )
+    .await;
+    let successor = current_order_leg("paged-new", client_order_id, 6.0, 2.0, 4.0, 3.0);
+
+    let first_page = if empty {
+        vec![]
+    } else {
+        vec![current_order_leg(
+            "paged-old",
+            client_order_id,
+            10.0,
+            3.0,
+            0.0,
+            2.5,
+        )]
+    };
+
+    state.betting_response_sequences.lock().insert(METHOD_LIST_CURRENT_ORDERS.to_string(), VecDeque::from([
+        serde_json::json!({"currentOrders": [successor.clone()], "moreAvailable": false}),
+        serde_json::json!({"currentOrders": first_page, "moreAvailable": true}),
+        serde_json::json!({"currentOrders": [current_order_leg("paged-old", client_order_id, 10.0, 4.0, 0.0, 2.5)], "moreAvailable": false}),
+    ]));
+
+    let gate = MockResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        waiters: Arc::new(AtomicUsize::new(0)),
+    };
+
+    if retry {
+        *state.betting_response_gate.lock() = Some(gate.clone());
+    }
+
+    let inject_session_error = async {
+        if !retry {
+            return;
+        }
+
+        wait_for_mock_state(&state, "supplemental request is blocked", |_| {
+            gate.waiters.load(Ordering::Relaxed) == 2
+        })
+        .await;
+
+        state.betting_error_one_shot_overrides.lock().insert(
+            METHOD_LIST_CURRENT_ORDERS.to_string(),
+            betting_api_error("NO_SESSION"),
+        );
+        gate.semaphore.add_permits(3);
+    };
+
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let (result, ()) = tokio::join!(
+        client.generate_order_status_reports(&command),
+        inject_session_error
+    );
+    let requests: Vec<_> = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect();
+
+    if empty {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "listCurrentOrders returned an empty page with moreAvailable=true"
+        );
+        assert_eq!(requests.len(), 2);
+    } else {
+        let reports = result.unwrap();
+        assert_eq!(reports.len(), 1);
+        assert_replacement_report(
+            &reports[0],
+            successor,
+            client_order_id,
+            "6",
+            Decimal::from(8) / Decimal::from(3),
+        );
+        assert_eq!(requests.len(), if retry { 4 } else { 3 });
+        assert_eq!(requests.last().unwrap()["fromRecord"], 1);
+    }
+
+    assert_eq!(
+        requests[0],
+        serde_json::json!({"orderProjection": "EXECUTABLE"})
+    );
+    assert_eq!(
+        requests[1],
+        serde_json::json!({"orderProjection": "ALL", "betIds": ["paged-old"]})
+    );
+    assert_eq!(
+        state.keep_alive_count.load(Ordering::Relaxed),
+        usize::from(retry)
+    );
+
+    if retry {
+        assert_eq!(requests[1], requests[2]);
+    }
+
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_only_supplemental_fetch_allows_stream_reduction_to_resolve_once() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let server = tokio::spawn(async move {
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
+
+        while let Some(line) = ocm_rx.recv().await {
+            write_half
+                .write_all(format!("{line}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-SCOPED-STREAM";
+    let bet_id = "stream-reduction";
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, client_order_id, bet_id, "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    state
+        .betting_status_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+    client
+        .modify_order(make_quantity_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            bet_id,
+            "4",
+        ))
+        .unwrap();
+    wait_for_mock_state(&state, "ambiguous reduction retries once", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) == 2
+    })
+    .await;
+
+    assert!(
+        drain_events(&mut rx, Duration::from_millis(100))
+            .await
+            .is_empty()
+    );
+    *state.betting_current_orders.lock() = Some(vec![current_order_leg(
+        bet_id,
+        client_order_id,
+        10.0,
+        4.0,
+        0.0,
+        2.5,
+    )]);
+
+    let gate = MockResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        waiters: Arc::new(AtomicUsize::new(0)),
+    };
+
+    *state.betting_response_gate.lock() = Some(gate.clone());
+
+    let stream_reduction = async {
+        wait_for_mock_state(
+            &state,
+            "supplemental query waits for stream overlap",
+            |_| gate.waiters.load(Ordering::Relaxed) == 2,
+        )
+        .await;
+        let mut ocm = load_json_fixture("stream/ocm_harness_open.json");
+        ocm["id"] = Value::from(2);
+        ocm["oc"][0]["id"] = Value::from("1.179082386");
+        ocm["oc"][0]["orc"][0]["id"] = Value::from(235);
+        let unmatched = &mut ocm["oc"][0]["orc"][0]["uo"][0];
+        unmatched["id"] = Value::from(bet_id);
+        unmatched["p"] = Value::from(2.5);
+        unmatched["side"] = Value::from("L");
+        unmatched["sr"] = Value::from(4.0);
+        unmatched["sc"] = Value::from(6.0);
+        unmatched["rfo"] = Value::from(client_order_id);
+        ocm_tx.send(ocm.to_string()).unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = event else {
+            panic!("expected stream reduction while REST remains blocked, was {event:?}");
+        };
+
+        gate.semaphore.add_permits(1);
+        updated
+    };
+
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let (reports, updated) = tokio::join!(
+        client.generate_order_status_reports(&command),
+        stream_reduction
+    );
+    assert!(reports.unwrap().is_empty());
+    assert_eq!(
+        updated.client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(updated.instrument_id, InstrumentId::from(instrument_id));
+    assert_eq!(updated.quantity, Quantity::from("4"));
+    assert_eq!(updated.venue_order_id, Some(VenueOrderId::from(bet_id)));
+    assert!(rx.try_recv().is_err());
+    assert_eq!(gate.waiters.load(Ordering::Relaxed), 2);
+    drop(ocm_tx);
+    client.disconnect().await.unwrap();
+    server.await.unwrap();
+}
+
+#[rstest]
 #[case::unfiltered(false, None, None, None, &[0, 1, 2])]
 #[case::open_only(true, None, None, None, &[0])]
 #[case::selection(false, Some("1.180575118-217709.BETFAIR"), None, None, &[1])]
@@ -3246,6 +4404,7 @@ async fn test_generate_order_status_reports_filters(
     server.await.unwrap();
 
     assert_eq!(reports.len(), expected_indices.len());
+
     for (report, index) in reports.iter().zip(expected_indices) {
         let order =
             serde_json::from_value(response["result"]["currentOrders"][*index].clone()).unwrap();
@@ -3426,7 +4585,9 @@ async fn test_generate_fill_reports_preserves_unrequested_fill_state(
         let _ = server_done_rx.await;
         drop(write_half);
     });
+
     connect_execution_ready(&mut client).await;
+
     let command = GenerateFillReports::new(
         UUID4::new(),
         UnixNanos::default(),
@@ -3438,6 +4599,7 @@ async fn test_generate_fill_reports_preserves_unrequested_fill_state(
         None,
     );
     let requested = client.generate_fill_reports(command).await.unwrap();
+
     let remaining = if mass_status {
         client
             .generate_mass_status(None)
@@ -3580,12 +4742,14 @@ async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
     let completed_orders = completed["result"]["currentOrders"]
         .as_array()
         .expect("currentOrders must be an array");
+
     let current_orders_page = |orders: Vec<Value>, more_available: bool| {
         serde_json::json!({
             "currentOrders": orders,
             "moreAvailable": more_available,
         })
     };
+
     state.betting_response_sequences.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         VecDeque::from([
@@ -3601,11 +4765,13 @@ async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
     let market_ids = (0..=250)
         .map(|index| format!("1.{index}"))
         .collect::<Vec<_>>();
+
     let config = BetfairExecutionClientConfig {
         reconcile_market_ids_only: true,
         reconcile_market_ids: Some(market_ids.clone()),
         ..Default::default()
     };
+
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx, _data_rx, _cache) =
         create_test_execution_client_with_config(addr, stream_port, config);
@@ -3654,19 +4820,21 @@ async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
     let expected_from_records = [None, Some(1), None, None, Some(1), None];
 
     assert_eq!(params.len(), 6);
+
     for ((params, expected_batch), expected_from_record) in params
         .iter()
         .zip(expected_batches)
         .zip(expected_from_records)
     {
         assert_eq!(&params["marketIds"], expected_batch);
+
         match expected_from_record {
             Some(from_record) => assert_eq!(params["fromRecord"], from_record),
             None => assert!(params.get("fromRecord").is_none()),
         }
     }
 
-    assert_eq!(params[0]["orderProjection"], "ALL");
+    assert_eq!(params[0]["orderProjection"], "EXECUTABLE");
     assert_eq!(params[3]["orderProjection"], "ALL");
     assert_eq!(params[3]["orderBy"], "BY_MATCH_TIME");
     assert_eq!(params[3]["sortDir"], "EARLIEST_TO_LATEST");
@@ -3760,6 +4928,7 @@ async fn test_query_order_emits_order_status_report() {
 
     let client_order_id = ClientOrderId::from("O-20260418-QUERY-001");
     let instrument_id = InstrumentId::from("1.180575118-39980.BETFAIR");
+
     let cmd = QueryOrder::new(
         TraderId::from("TESTER-001"),
         Some(*BETFAIR_CLIENT_ID),
@@ -3877,6 +5046,7 @@ async fn test_query_order_resolves_terminal_replacement_once() {
         ExecutionEvent::Order(OrderEventAny::Updated(update)) => update,
         other => panic!("expected replacement update before terminal report, was {other:?}"),
     };
+
     let report = match tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
         .expect("timed out waiting for terminal replacement report")
@@ -4005,6 +5175,7 @@ fn make_submit_order_list_cmd(
         UnixNanos::default(),
     );
     let order_inits = orders.iter().map(|o| o.init_event().clone()).collect();
+
     let cmd = SubmitOrderList::new(
         TraderId::from("TESTER-001"),
         Some(*BETFAIR_CLIENT_ID),
@@ -4236,6 +5407,7 @@ fn make_batch_cancel_cmd(
             )
         })
         .collect();
+
     BatchCancelOrders::new(
         TraderId::from("TESTER-001"),
         Some(*BETFAIR_CLIENT_ID),
@@ -4349,6 +5521,7 @@ async fn test_batch_cancel_orders_splits_more_than_sixty_instructions() {
             )
         })
         .collect();
+
     let cmd = make_batch_cancel_cmd("1.179082386-235-0.BETFAIR", cancels);
     client.batch_cancel_orders(cmd).unwrap();
 
@@ -4508,6 +5681,7 @@ async fn test_batch_cancel_missing_instruction_report_stays_ambiguous() {
             rejected_ids.push(rejected.client_order_id);
         }
     }
+
     assert_eq!(
         rejected_ids,
         vec![ClientOrderId::from("O-BC-REPORTED")],
@@ -4573,6 +5747,7 @@ async fn test_batch_cancel_orders_definitive_failure_rejects_each_instruction_on
             rejected_ids.push(rejected.client_order_id);
         }
     }
+
     assert_eq!(
         rejected_ids,
         vec![
@@ -4640,6 +5815,7 @@ async fn test_batch_cancel_orders_ambiguous_5xx_emits_no_rejections() {
             rejected_ids.push(rejected.client_order_id);
         }
     }
+
     assert!(
         rejected_ids.is_empty(),
         "ambiguous batch cancel 5xx must not emit CancelRejected, found: {rejected_ids:?}",
@@ -4686,6 +5862,7 @@ async fn test_batch_cancel_orders_missing_venue_id_emits_no_rejected_locally() {
             break;
         }
     }
+
     assert!(
         !rejected_seen,
         "local batch cancel validation failure must not emit CancelRejected",
@@ -5307,6 +6484,7 @@ async fn test_cancel_order_without_venue_id_emits_no_rejected_locally() {
             break;
         }
     }
+
     assert!(
         !rejected_seen,
         "local cancel validation failure must not emit CancelRejected",
@@ -5500,9 +6678,11 @@ async fn test_modify_price_dispatches_replace_orders_with_new_price() {
         .await
         .expect("timeout waiting for replace update")
         .expect("execution event channel closed");
+
     let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = event else {
         panic!("successful replace must emit OrderUpdated, was {event:?}");
     };
+
     assert_eq!(updated.client_order_id, ClientOrderId::from("O-MOD-PX"));
     assert_eq!(
         updated.venue_order_id,
@@ -5583,6 +6763,7 @@ async fn test_modify_price_cancelled_not_placed_emits_canceled_once() {
         }
         other => panic!("expected Canceled, found: {other:?}"),
     }
+
     assert!(
         tokio::time::timeout(Duration::from_millis(300), rx.recv())
             .await
@@ -5596,8 +6777,12 @@ async fn test_modify_price_cancelled_not_placed_emits_canceled_once() {
 }
 
 #[rstest]
+#[case::all(false)]
+#[case::open(true)]
 #[tokio::test]
-async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_reconciliation() {
+async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_reconciliation(
+    #[case] open_only: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -5681,17 +6866,11 @@ async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_rec
     unrelated_leg["customerOrderRef"] = Value::from("O-SOMEONE-ELSE");
 
     // List the superseded leg first to exercise order-independent resolution
-    state.betting_overrides.lock().insert(
-        METHOD_LIST_CURRENT_ORDERS.to_string(),
-        serde_json::json!({
-            "currentOrders": [old_leg, new_leg, unrelated_leg],
-            "moreAvailable": false,
-        }),
-    );
+    *state.betting_current_orders.lock() = Some(vec![old_leg, new_leg, unrelated_leg]);
 
     let reconcile = GenerateOrderStatusReportsBuilder::default()
         .ts_init(UnixNanos::default())
-        .open_only(false)
+        .open_only(open_only)
         .build()
         .unwrap();
     let reports = client
@@ -5758,8 +6937,12 @@ async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_rec
 }
 
 #[rstest]
+#[case::all(false)]
+#[case::open(true)]
 #[tokio::test]
-async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_active() {
+async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_active(
+    #[case] open_only: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -5813,17 +6996,11 @@ async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_acti
     old_leg["selectionId"] = Value::from(235);
     old_leg["priceSize"]["price"] = Value::from(2.58);
     old_leg["customerOrderRef"] = Value::from(client_order_id);
-    state.betting_overrides.lock().insert(
-        METHOD_LIST_CURRENT_ORDERS.to_string(),
-        serde_json::json!({
-            "currentOrders": [old_leg],
-            "moreAvailable": false,
-        }),
-    );
+    *state.betting_current_orders.lock() = Some(vec![old_leg]);
 
     let reconcile = GenerateOrderStatusReportsBuilder::default()
         .ts_init(UnixNanos::default())
-        .open_only(false)
+        .open_only(open_only)
         .build()
         .unwrap();
     let reports = client
@@ -5834,6 +7011,7 @@ async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_acti
         .await
         .expect("timeout waiting for reconciled modify rejection")
         .expect("execution event channel closed");
+
     let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event else {
         panic!("unchanged old bet must reject the ambiguous replace, was {event:?}");
     };
@@ -5964,6 +7142,7 @@ async fn test_modify_price_reconciliation_keeps_in_flight_request_pending() {
         .await
         .expect("timeout waiting for the delayed replace response")
         .expect("execution event channel closed");
+
     let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = event else {
         panic!("in-flight replace must resolve as an update: {event:?}");
     };
@@ -5982,8 +7161,12 @@ async fn test_modify_price_reconciliation_keeps_in_flight_request_pending() {
 }
 
 #[rstest]
+#[case::all(false)]
+#[case::open(true)]
 #[tokio::test]
-async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_http_reconciliation() {
+async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_http_reconciliation(
+    #[case] open_only: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -6046,17 +7229,11 @@ async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_http_
     reduced["sizeCancelled"] = Value::from(6.0);
     reduced["sizeRemaining"] = Value::from(4.0);
     reduced["customerOrderRef"] = Value::from(client_order_id);
-    state.betting_overrides.lock().insert(
-        METHOD_LIST_CURRENT_ORDERS.to_string(),
-        serde_json::json!({
-            "currentOrders": [reduced],
-            "moreAvailable": false,
-        }),
-    );
+    *state.betting_current_orders.lock() = Some(vec![reduced]);
 
     let reconcile = GenerateOrderStatusReportsBuilder::default()
         .ts_init(UnixNanos::default())
-        .open_only(false)
+        .open_only(open_only)
         .build()
         .unwrap();
     let mut unrelated = reconcile.clone();
@@ -6278,6 +7455,7 @@ async fn test_modify_price_instruction_failure_rejects() {
         .unwrap();
 
     let events = drain_events(&mut rx, Duration::from_secs(1)).await;
+
     let rejections: Vec<_> = events
         .iter()
         .filter_map(|event| match event {
@@ -6285,6 +7463,7 @@ async fn test_modify_price_instruction_failure_rejects() {
             _ => None,
         })
         .collect();
+
     assert_eq!(
         rejections.len(),
         1,
@@ -6354,6 +7533,7 @@ async fn test_modify_quantity_instruction_failure_rejects() {
         .unwrap();
 
     let events = drain_events(&mut rx, Duration::from_secs(1)).await;
+
     let rejections: Vec<_> = events
         .iter()
         .filter_map(|event| match event {
@@ -6361,6 +7541,7 @@ async fn test_modify_quantity_instruction_failure_rejects() {
             _ => None,
         })
         .collect();
+
     assert_eq!(
         rejections.len(),
         1,
@@ -6846,6 +8027,7 @@ async fn test_generate_order_status_reports_recovers_from_no_session() {
             state.login_count.load(Ordering::Relaxed) == 2
         })
         .await;
+
         drop(reader);
         drop(write_half);
 
@@ -7051,6 +8233,7 @@ async fn test_query_order_recovers_from_no_session() {
     // Total: 3 listCurrentOrders calls; the recovery happens exactly once.
     let client_order_id = ClientOrderId::from("O-20260418-QUERY-RECOVER");
     let instrument_id = InstrumentId::from("1.180575118-39980.BETFAIR");
+
     let cmd = QueryOrder::new(
         TraderId::from("TESTER-001"),
         Some(*BETFAIR_CLIENT_ID),
@@ -7152,6 +8335,7 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
             _ => break,
         }
     }
+
     assert!(accepted_seen, "order must be accepted before modify");
 
     // Modify with a new price -> dispatches replaceOrders. On success the
@@ -7199,6 +8383,7 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
             _ => break,
         }
     }
+
     assert!(
         updated_seen,
         "successful price replace must emit OrderUpdated promoting the new bet id"
@@ -7262,6 +8447,7 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
             _ => {}
         }
     }
+
     assert!(
         !cancel_event_seen,
         "OCM cancel for replaced bet must not emit a Cancel event"
@@ -7337,6 +8523,7 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
         response_gate_waiter_count(state) == 1
     })
     .await;
+
     assert_eq!(waiters.load(Ordering::Relaxed), 1);
 
     let mut replace_open = load_json_fixture("stream/ocm_harness_replace_open.json");
@@ -7358,6 +8545,7 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
             other => panic!("replacement OCM did not emit OrderUpdated: {other:?}"),
         }
     };
+
     assert_eq!(
         updated.venue_order_id,
         Some(VenueOrderId::from("240808766933"))
@@ -7392,6 +8580,7 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
             }
         }
     }
+
     assert!(
         duplicate_update.is_none(),
         "REST success duplicated the stream-first OrderUpdated: {duplicate_update:?}"
@@ -7404,6 +8593,1817 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
     drop(ocm_tx);
     client.disconnect().await.unwrap();
     server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_startup_restored_replace_rest_before_stream_emits_updated_once() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let server = tokio::spawn(async move {
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
+
+        while let Some(line) = ocm_rx.recv().await {
+            tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    let order = make_accepted_test_order(
+        "1.181005744-86362-0.BETFAIR",
+        "O-RPL-REST-FIRST",
+        "228302937743",
+        "2.58",
+        "10",
+    );
+    add_order_to_cache(&cache, order);
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let waiters = Arc::new(AtomicUsize::new(0));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+    *state.betting_response_gate.lock() = Some(MockResponseGate {
+        method: METHOD_REPLACE_ORDERS.to_string(),
+        waiters: Arc::clone(&waiters),
+        semaphore: Arc::clone(&semaphore),
+    });
+
+    client
+        .modify_order(ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*BETFAIR_CLIENT_ID),
+            StrategyId::from("S-001"),
+            InstrumentId::from("1.181005744-86362-0.BETFAIR"),
+            ClientOrderId::from("O-RPL-REST-FIRST"),
+            Some(VenueOrderId::from("228302937743")),
+            None,
+            Some(Price::from("3.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
+    .await;
+
+    assert_eq!(waiters.load(Ordering::Relaxed), 1);
+
+    semaphore.add_permits(1);
+
+    let updated = loop {
+        match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Updated(updated)))) => break updated,
+            Ok(Some(ExecutionEvent::Order(
+                OrderEventAny::Accepted(_) | OrderEventAny::ModifyRejected(_),
+            ))) => panic!("REST-first replace emitted acceptance or rejection"),
+            Ok(Some(_)) => {}
+            other => panic!("REST replace did not emit OrderUpdated before the stream: {other:?}"),
+        }
+    };
+
+    assert_eq!(
+        updated.venue_order_id,
+        Some(VenueOrderId::from("240808766933"))
+    );
+    assert_eq!(updated.price, Some(Price::from("3.00")));
+    assert_eq!(updated.quantity, Quantity::from("10"));
+
+    let mut replace_open = load_json_fixture("stream/ocm_harness_replace_open.json");
+    replace_open["id"] = Value::from(2);
+    replace_open["oc"][0]["id"] = Value::from("1.181005744");
+    replace_open["oc"][0]["orc"][0]["id"] = Value::from(86362);
+    replace_open["oc"][0]["orc"][0]["uo"][0]["p"] = Value::from(3.0);
+    replace_open["oc"][0]["orc"][0]["uo"][0]["side"] = Value::from("L");
+    replace_open["oc"][0]["orc"][0]["uo"][0]["rfo"] = Value::from("O-RPL-REST-FIRST");
+    ocm_tx.send(replace_open.to_string()).unwrap();
+
+    let settle = tokio::time::sleep(Duration::from_millis(500));
+    tokio::pin!(settle);
+    let mut duplicate_update = None;
+    let mut unexpected_event = false;
+
+    loop {
+        tokio::select! {
+            () = &mut settle => break,
+            event = rx.recv() => {
+                match event {
+                    Some(ExecutionEvent::Order(OrderEventAny::Updated(updated))) => {
+                        duplicate_update = Some(updated);
+                        break;
+                    }
+                    Some(ExecutionEvent::Order(
+                        OrderEventAny::Accepted(_) | OrderEventAny::ModifyRejected(_),
+                    )) => {
+                        unexpected_event = true;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    assert!(
+        duplicate_update.is_none(),
+        "stream duplicated the REST-first OrderUpdated: {duplicate_update:?}"
+    );
+    assert!(
+        !unexpected_event,
+        "REST-first replace emitted acceptance or rejection after the stream: {unexpected_event:?}",
+    );
+
+    drop(ocm_tx);
+    client.disconnect().await.unwrap();
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_only_supplemental_snapshot_includes_successor_bound_during_fetch() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let server = tokio::spawn(async move {
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
+
+        while let Some(line) = ocm_rx.recv().await {
+            tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-SNAP-RACE";
+    let mut order =
+        make_accepted_test_order(instrument_id, client_order_id, "hist-old", "2.50", "10");
+    order
+        .apply(OrderEventAny::Updated(OrderUpdated::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from(instrument_id),
+            ClientOrderId::from(client_order_id),
+            Quantity::from("10"),
+            UUID4::new(),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+            true,
+            Some(VenueOrderId::from("hist-live")),
+            Some(AccountId::from("BETFAIR-001")),
+            Some(Price::from("3.00")),
+            None,
+            None,
+            false,
+        )))
+        .unwrap();
+    add_order_to_cache(&cache, order);
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    *state.betting_current_orders.lock() = Some(vec![
+        current_order_leg("hist-old", client_order_id, 10.0, 4.0, 0.0, 2.5),
+        current_order_leg("hist-live", client_order_id, 6.0, 2.0, 4.0, 3.0),
+    ]);
+    state
+        .betting_status_overrides
+        .lock()
+        .insert(METHOD_REPLACE_ORDERS.to_string(), 500);
+
+    let gate = MockResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+    };
+
+    *state.betting_response_gate.lock() = Some(gate.clone());
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+
+    let _first = {
+        let pending = client.generate_order_status_reports(&command);
+        tokio::pin!(pending);
+        tokio::select! {
+            result = &mut pending => panic!("supplemental history query was not gated: {result:?}"),
+            () = wait_for_mock_state(&state, "supplemental history query blocked", |_| {
+                gate.waiters.load(Ordering::Relaxed) == 2
+            }) => {}
+        }
+
+        client
+            .modify_order(make_price_modify_order_cmd(
+                instrument_id,
+                client_order_id,
+                "hist-live",
+                "4.00",
+            ))
+            .unwrap();
+        wait_for_mock_state(
+            &state,
+            "replacement registered while history query waits",
+            |state| betting_method_count(state, METHOD_REPLACE_ORDERS) == 1,
+        )
+        .await;
+
+        let mut replacement = load_json_fixture("stream/ocm_harness_replace_open.json");
+        replacement["id"] = Value::from(2);
+        replacement["oc"][0]["id"] = Value::from("1.179082386");
+        replacement["oc"][0]["orc"][0]["id"] = Value::from(235);
+        let unmatched = &mut replacement["oc"][0]["orc"][0]["uo"][0];
+        unmatched["id"] = Value::from("hist-new");
+        unmatched["p"] = Value::from(4.0);
+        unmatched["s"] = Value::from(4);
+        unmatched["sm"] = Value::from(1);
+        unmatched["sr"] = Value::from(3);
+        unmatched["side"] = Value::from("L");
+        unmatched["rfo"] = Value::from(client_order_id);
+        ocm_tx.send(replacement.to_string()).unwrap();
+
+        let updated = loop {
+            match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
+                Ok(Some(ExecutionEvent::Order(OrderEventAny::Updated(updated)))) => break updated,
+                Ok(Some(_)) => {}
+                other => {
+                    panic!("successor was not bound while the history query waited: {other:?}")
+                }
+            }
+        };
+
+        assert_eq!(updated.venue_order_id, Some(VenueOrderId::from("hist-new")));
+
+        state
+            .betting_current_orders
+            .lock()
+            .as_mut()
+            .unwrap()
+            .push(current_order_leg(
+                "hist-new",
+                client_order_id,
+                4.0,
+                1.0,
+                3.0,
+                4.0,
+            ));
+        gate.semaphore.add_permits(1);
+        state.betting_response_gate.lock().take();
+        let first = pending.as_mut().await.unwrap();
+        assert!(
+            first
+                .iter()
+                .any(|report| report.venue_order_id.as_str() == "hist-new"),
+            "gated scan failed or omitted the successor bound during the fetch: {first:?}"
+        );
+        first
+    };
+
+    let second = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let report = second
+        .iter()
+        .find(|report| report.venue_order_id.as_str() == "hist-new")
+        .expect("subsequent scan omitted the successor");
+    assert_eq!(report.quantity, Quantity::from("10"));
+    assert_eq!(report.filled_qty, Quantity::from("7"));
+    assert_eq!(report.avg_px, Some(Decimal::from(20) / Decimal::from(7)));
+    assert!(
+        drain_events(&mut rx, Duration::from_millis(100))
+            .await
+            .iter()
+            .all(|event| { !matches!(event, ExecutionEvent::Order(OrderEventAny::Updated(_))) })
+    );
+
+    drop(ocm_tx);
+    client.disconnect().await.unwrap();
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::account(None, true)]
+#[case::settled(Some("1.179082386"), false)]
+#[case::live(Some("1.999999999"), true)]
+#[tokio::test]
+async fn test_open_only_regression_absent_cached_order_does_not_require_history(
+    #[case] market_id: Option<&str>,
+    #[case] expects_report: bool,
+) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let settled_instrument = InstrumentId::from("1.179082386-235.BETFAIR");
+    let live_instrument = InstrumentId::from("1.999999999-235.BETFAIR");
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(
+            &settled_instrument.to_string(),
+            "O-SETTLED-ABSENT",
+            "settled-absent",
+            "2.50",
+            "10",
+        ),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let mut live = current_order_leg("ordinary-live", "foreign-live", 7.0, 2.0, 5.0, 3.75);
+    live["marketId"] = Value::from("1.999999999");
+    *state.betting_current_orders.lock() = Some(vec![live.clone()]);
+    let live_order = serde_json::from_value(live).unwrap();
+
+    let instrument_id =
+        market_id.map(|market_id| InstrumentId::from(format!("{market_id}-235.BETFAIR")));
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .instrument_id(instrument_id)
+        .open_only(true)
+        .build()
+        .unwrap();
+
+    for _ in 0..2 {
+        state.betting_request_params.lock().clear();
+        let reports = client
+            .generate_order_status_reports(&command)
+            .await
+            .unwrap();
+
+        if expects_report {
+            assert_eq!(reports.len(), 1);
+            let report = &reports[0];
+            let mut expected = parse_current_order_report(
+                &live_order,
+                AccountId::from("BETFAIR-001"),
+                report.ts_init,
+            )
+            .unwrap();
+            expected.report_id = report.report_id;
+            assert_eq!(report, &expected);
+            assert_eq!(report.instrument_id, live_instrument);
+            assert_eq!(report.venue_order_id, VenueOrderId::from("ordinary-live"));
+            assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+            assert_eq!(report.quantity, Quantity::from("7"));
+            assert_eq!(report.filled_qty, Quantity::from("2"));
+            assert_eq!(report.avg_px, Some(Decimal::new(375, 2)));
+            assert!(report.ts_init >= command.ts_init);
+            assert!(report.ts_init <= get_atomic_clock_realtime().get_time_ns());
+        } else {
+            assert!(reports.is_empty());
+        }
+
+        let requests = state.betting_request_params.lock().clone();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, METHOD_LIST_CURRENT_ORDERS);
+        let mut expected = serde_json::json!({"orderProjection": "EXECUTABLE"});
+
+        if let Some(market_id) = market_id {
+            expected["marketIds"] = serde_json::json!([market_id]);
+            assert_eq!(requests[1].0, METHOD_LIST_MARKET_CATALOGUE);
+            assert_eq!(
+                requests[1].1["filter"],
+                serde_json::json!({"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"], "marketIds": [market_id]})
+            );
+            assert_eq!(requests[1].1["maxResults"], 1000);
+        } else {
+            assert_eq!(requests[1].0, METHOD_LIST_EVENTS);
+            assert_eq!(
+                requests[1].1,
+                serde_json::json!({"filter": {"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"]}})
+            );
+        }
+
+        assert_eq!(requests[0].1, expected);
+        assert!(rx.try_recv().is_err());
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_only_regression_refreshes_pending_reference_during_history_fetch() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-FRESH-REFERENCE";
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, client_order_id, "fresh-a", "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, client_order_id, "fresh-a", "3.00"),
+        "fresh-b",
+        false,
+    )
+    .await;
+
+    let predecessor = current_order_leg("fresh-a", client_order_id, 10.0, 4.0, 0.0, 2.5);
+    let current = current_order_leg("fresh-b", client_order_id, 6.0, 2.0, 4.0, 3.0);
+    *state.betting_current_orders.lock() = Some(vec![predecessor.clone(), current]);
+    state.betting_request_params.lock().clear();
+
+    let gate = MockResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+    };
+
+    *state.betting_response_gate.lock() = Some(gate.clone());
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let previous = current_order_leg("fresh-b", client_order_id, 6.0, 2.0, 0.0, 3.0);
+    let successor = current_order_leg("fresh-c", client_order_id, 4.0, 1.0, 0.0, 4.0);
+
+    let resolving = {
+        let pending = client.generate_order_status_reports(&command);
+        tokio::pin!(pending);
+        tokio::select! {
+            result = &mut pending => panic!("predecessor history query was not gated: {result:?}"),
+            () = wait_for_mock_state(&state, "predecessor history query blocked", |_| {
+                gate.waiters.load(Ordering::Relaxed) == 2
+            }) => {}
+        }
+        let requests = state.betting_request_params.lock().clone();
+        assert_eq!(requests.last().unwrap().0, METHOD_LIST_CURRENT_ORDERS);
+        assert_eq!(
+            requests.last().unwrap().1,
+            serde_json::json!({"orderProjection": "ALL", "betIds": ["fresh-a"]})
+        );
+        replace_order_for_reports(
+            &client,
+            &mut rx,
+            &state,
+            make_price_modify_order_cmd(instrument_id, client_order_id, "fresh-b", "4.00"),
+            "fresh-c",
+            true,
+        )
+        .await;
+        *state.betting_current_orders.lock() = Some(vec![
+            predecessor.clone(),
+            previous.clone(),
+            successor.clone(),
+        ]);
+        assert!(rx.try_recv().is_err());
+        state.betting_response_gate.lock().take();
+        gate.semaphore.add_permits(1);
+        pending.await.unwrap()
+    };
+
+    let events = drain_events(&mut rx, Duration::from_millis(100)).await;
+    let requests: Vec<_> = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .cloned()
+        .collect();
+
+    assert!(resolving.is_empty());
+    assert_eq!(gate.waiters.load(Ordering::Relaxed), 2);
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests[0].1,
+        serde_json::json!({"orderProjection": "EXECUTABLE"})
+    );
+    assert_eq!(
+        requests[1].1,
+        serde_json::json!({"orderProjection": "ALL", "betIds": ["fresh-a"]})
+    );
+    assert_eq!(
+        requests[2].1,
+        serde_json::json!({"orderProjection": "ALL", "customerOrderRefs": [make_customer_order_ref(client_order_id)]})
+    );
+    assert_eq!(events.len(), 1);
+    let updates = order_updates(&events);
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].instrument_id, InstrumentId::from(instrument_id));
+    assert_eq!(
+        updates[0].client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(
+        updates[0].venue_order_id,
+        Some(VenueOrderId::from("fresh-c"))
+    );
+    assert_eq!(updates[0].quantity, Quantity::from("10"));
+    assert_eq!(updates[0].price, Some(Price::from("4.00")));
+    assert_no_accept_or_modify_reject(&events);
+
+    let repeated = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let mut full = command;
+    full.open_only = false;
+    let reports = client.generate_order_status_reports(&full).await.unwrap();
+    assert!(repeated.is_empty());
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<HashSet<_>>(),
+        HashSet::from(["fresh-a", "fresh-b", "fresh-c"])
+    );
+
+    for leg in [predecessor, previous] {
+        let report = reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == leg["betId"].as_str().unwrap())
+            .unwrap();
+        let leg = serde_json::from_value(leg).unwrap();
+        let mut expected =
+            parse_current_order_report(&leg, AccountId::from("BETFAIR-001"), report.ts_init)
+                .unwrap();
+        expected.report_id = report.report_id;
+        assert_eq!(report, &expected);
+    }
+
+    assert_replacement_report(
+        reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == "fresh-c")
+            .unwrap(),
+        successor,
+        client_order_id,
+        "7",
+        Decimal::from(20) / Decimal::from(7),
+    );
+    assert!(
+        drain_events(&mut rx, Duration::from_millis(100))
+            .await
+            .is_empty()
+    );
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_only_refreshes_same_reference_for_successive_pending_replacements() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let server = tokio::spawn(async move {
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
+
+        while let Some(line) = ocm_rx.recv().await {
+            write_half
+                .write_all(format!("{line}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-20261004-550e8400-e29b-41d4-a716-446655440000";
+    let mut references = [
+        make_customer_order_ref(client_order_id),
+        make_customer_order_ref_legacy(client_order_id),
+    ];
+    references.sort();
+    assert_ne!(references[0], references[1]);
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, client_order_id, "same-ref-a", "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, client_order_id, "same-ref-a", "3.00"),
+        "same-ref-b",
+        true,
+    )
+    .await;
+
+    let predecessor = current_order_leg("same-ref-a", &references[0], 10.0, 4.0, 0.0, 2.5);
+    let current = current_order_leg("same-ref-b", &references[0], 6.0, 2.0, 4.0, 3.0);
+    state.betting_response_sequences.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        VecDeque::from([
+            serde_json::json!({"currentOrders": [current.clone()], "moreAvailable": false}),
+            serde_json::json!({"currentOrders": [predecessor.clone()], "moreAvailable": false}),
+            serde_json::json!({"currentOrders": [current], "moreAvailable": false}),
+            serde_json::json!({"currentOrders": [], "moreAvailable": false}),
+        ]),
+    );
+    *state.betting_current_orders.lock() = Some(vec![predecessor.clone()]);
+    state.betting_request_params.lock().clear();
+
+    let gate = MockResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(3)),
+    };
+
+    *state.betting_response_gate.lock() = Some(gate.clone());
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .instrument_id(Some(InstrumentId::from(instrument_id)))
+        .open_only(true)
+        .build()
+        .unwrap();
+    let previous = current_order_leg("same-ref-b", &references[0], 6.0, 2.0, 0.0, 3.0);
+    let successor = current_order_leg("same-ref-c", &references[0], 4.0, 1.0, 0.0, 4.0);
+
+    let resolving = {
+        let pending = client.generate_order_status_reports(&command);
+        tokio::pin!(pending);
+        tokio::select! {
+            result = &mut pending => panic!("second reference request was not gated: {result:?}"),
+            () = wait_for_mock_state(&state, "second reference query blocked after stale successor", |_| {
+                gate.waiters.load(Ordering::Relaxed) == 4
+            }) => {}
+        }
+        let requests: Vec<_> = state
+            .betting_request_params
+            .lock()
+            .iter()
+            .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+            .map(|(_, params)| params.clone())
+            .collect();
+        assert_eq!(
+            requests,
+            vec![
+                serde_json::json!({"orderProjection": "EXECUTABLE", "marketIds": ["1.179082386"]}),
+                serde_json::json!({"orderProjection": "ALL", "betIds": ["same-ref-a"]}),
+                serde_json::json!({"orderProjection": "ALL", "customerOrderRefs": [references[0]]}),
+                serde_json::json!({"orderProjection": "ALL", "customerOrderRefs": [references[1]]}),
+            ]
+        );
+
+        let mut replacement = load_json_fixture("stream/ocm_harness_replace_open.json");
+        replacement["id"] = Value::from(2);
+        replacement["oc"][0]["id"] = Value::from("1.179082386");
+        replacement["oc"][0]["orc"][0]["id"] = Value::from(235);
+        let unmatched = &mut replacement["oc"][0]["orc"][0]["uo"][0];
+        unmatched["id"] = Value::from("same-ref-b");
+        unmatched["p"] = Value::from(3.0);
+        unmatched["s"] = Value::from(6);
+        unmatched["sm"] = Value::from(2);
+        unmatched["sr"] = Value::from(4);
+        unmatched["avp"] = Value::from(3.0);
+        unmatched["side"] = Value::from("L");
+        unmatched["rfo"] = Value::from(references[0].clone());
+        ocm_tx.send(replacement.to_string()).unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = event else {
+            panic!("stream must resolve the first pending replacement: {event:?}");
+        };
+
+        assert_eq!(
+            updated.client_order_id,
+            ClientOrderId::from(client_order_id)
+        );
+        assert_eq!(
+            updated.venue_order_id,
+            Some(VenueOrderId::from("same-ref-b"))
+        );
+        assert_eq!(updated.quantity, Quantity::from("10"));
+        assert_eq!(updated.price, Some(Price::from("3.00")));
+        assert_no_accept_or_modify_reject(&drain_events(&mut rx, Duration::from_millis(100)).await);
+
+        replace_order_for_reports(
+            &client,
+            &mut rx,
+            &state,
+            make_price_modify_order_cmd(instrument_id, client_order_id, "same-ref-b", "4.00"),
+            "same-ref-c",
+            true,
+        )
+        .await;
+        *state.betting_current_orders.lock() = Some(vec![predecessor, previous, successor.clone()]);
+        assert!(rx.try_recv().is_err());
+        state.betting_response_gate.lock().take();
+        gate.semaphore.add_permits(1);
+        pending.await.unwrap()
+    };
+
+    let events = drain_events(&mut rx, Duration::from_millis(100)).await;
+    assert_no_accept_or_modify_reject(&events);
+    assert!(resolving.is_empty());
+    assert_eq!(events.len(), 1);
+    let updates = order_updates(&events);
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].instrument_id, InstrumentId::from(instrument_id));
+    assert_eq!(
+        updates[0].client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(
+        updates[0].venue_order_id,
+        Some(VenueOrderId::from("same-ref-c"))
+    );
+    assert_eq!(updates[0].quantity, Quantity::from("10"));
+    assert_eq!(updates[0].price, Some(Price::from("4.00")));
+    let requests: Vec<_> = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect();
+    assert_eq!(requests.len(), 6);
+    assert_eq!(requests[4], requests[2]);
+    assert_eq!(requests[5], requests[3]);
+    assert_eq!(gate.waiters.load(Ordering::Relaxed), 4);
+
+    let repeated = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let mut full = command;
+    full.open_only = false;
+    let reports = client.generate_order_status_reports(&full).await.unwrap();
+    assert!(repeated.is_empty());
+    assert_eq!(reports.len(), 3);
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<HashSet<_>>(),
+        HashSet::from(["same-ref-a", "same-ref-b", "same-ref-c"])
+    );
+    assert_replacement_report(
+        reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == "same-ref-c")
+            .unwrap(),
+        successor,
+        client_order_id,
+        "7",
+        Decimal::from(20) / Decimal::from(7),
+    );
+    assert!(
+        drain_events(&mut rx, Duration::from_millis(100))
+            .await
+            .is_empty()
+    );
+    drop(ocm_tx);
+    client.disconnect().await.unwrap();
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::market_on_close("MARKET_ON_CLOSE", OrderType::Market)]
+#[case::limit_on_close("LIMIT_ON_CLOSE", OrderType::Limit)]
+#[tokio::test]
+async fn test_open_only_bsp_discovery_recovers_tracked_and_untracked_orders(
+    #[case] venue_order_type: &str,
+    #[case] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-BSP-RESTING";
+    let mut order = OrderTestBuilder::new(order_type)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(InstrumentId::from(instrument_id))
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(side)
+        .price(Price::from("1.01"))
+        .quantity(Quantity::from("5"))
+        .time_in_force(TimeInForce::AtTheClose)
+        .build();
+    order
+        .apply(OrderEventAny::Accepted(OrderAccepted::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from(instrument_id),
+            ClientOrderId::from(client_order_id),
+            VenueOrderId::from("bsp-resting"),
+            AccountId::from("BETFAIR-001"),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            false,
+        )))
+        .unwrap();
+    add_order_to_cache(&cache, order);
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    let mut resting = resting_bsp_order("bsp-resting", client_order_id);
+    resting["orderType"] = Value::from(venue_order_type);
+    resting["side"] = Value::from(if side == OrderSide::Buy {
+        "LAY"
+    } else {
+        "BACK"
+    });
+
+    let mut foreign = resting.clone();
+    foreign["betId"] = Value::from("bsp-foreign");
+    foreign["customerOrderRef"] = Value::from("foreign-bsp");
+    let mut orders = vec![
+        resting.clone(),
+        foreign,
+        current_order_leg("ordinary-open", "ordinary-ref", 7.0, 2.0, 5.0, 2.5),
+    ];
+
+    for (bet_id, field) in [
+        ("bsp-matched", "sizeMatched"),
+        ("bsp-lapsed", "sizeLapsed"),
+        ("bsp-voided", "sizeVoided"),
+    ] {
+        let mut terminal = resting.clone();
+        terminal["betId"] = Value::from(bet_id);
+        terminal["customerOrderRef"] = Value::from(bet_id);
+        terminal[field] = Value::from(5.0);
+        orders.push(terminal);
+    }
+
+    *state.betting_current_orders.lock() = Some(orders);
+    state.betting_request_params.lock().clear();
+
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .open_only(true)
+        .build()
+        .unwrap();
+
+    for _ in 0..2 {
+        let reports = client
+            .generate_order_status_reports(&command)
+            .await
+            .unwrap();
+        assert_eq!(reports.len(), 3);
+        assert_eq!(
+            reports
+                .iter()
+                .map(|report| report.venue_order_id.as_str())
+                .collect::<HashSet<_>>(),
+            HashSet::from(["bsp-resting", "bsp-foreign", "ordinary-open"]),
+        );
+
+        for (bet_id, reference) in [
+            ("bsp-resting", client_order_id),
+            ("bsp-foreign", "foreign-bsp"),
+        ] {
+            let report = reports
+                .iter()
+                .find(|report| report.venue_order_id.as_str() == bet_id)
+                .unwrap();
+            assert_resting_bsp_report(
+                report,
+                instrument_id,
+                bet_id,
+                reference,
+                side,
+                order_type,
+                command.ts_init,
+            );
+        }
+
+        let ordinary = reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == "ordinary-open")
+            .unwrap();
+        let source = serde_json::from_value(current_order_leg(
+            "ordinary-open",
+            "ordinary-ref",
+            7.0,
+            2.0,
+            5.0,
+            2.5,
+        ))
+        .unwrap();
+        let mut expected =
+            parse_current_order_report(&source, AccountId::from("BETFAIR-001"), ordinary.ts_init)
+                .unwrap();
+        expected.report_id = ordinary.report_id;
+        assert_eq!(ordinary, &expected);
+        assert_eq!(ordinary.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(ordinary.quantity, Quantity::from("7"));
+        assert_eq!(ordinary.filled_qty, Quantity::from("2"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    let requests = state.betting_request_params.lock().clone();
+    assert_eq!(requests.len(), 8);
+
+    for scan in requests.as_chunks::<4>().0 {
+        assert_eq!(scan[0].0, METHOD_LIST_CURRENT_ORDERS);
+        assert_eq!(scan[0].1["orderProjection"], "EXECUTABLE");
+        assert_eq!(scan[1].0, METHOD_LIST_EVENTS);
+        assert_eq!(
+            scan[1].1["filter"],
+            serde_json::json!({"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"]})
+        );
+        assert_eq!(scan[2].0, METHOD_LIST_MARKET_CATALOGUE);
+        assert_eq!(
+            scan[2].1["filter"],
+            serde_json::json!({"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"], "eventIds": ["bsp-event"]})
+        );
+        assert_eq!(scan[2].1["maxResults"], 1000);
+        assert_eq!(scan[3].0, METHOD_LIST_CURRENT_ORDERS);
+        assert_eq!(scan[3].1["orderProjection"], "ALL");
+        assert_eq!(scan[3].1["marketIds"], serde_json::json!(["1.179082386"]));
+        assert!(scan[3].1.get("betIds").is_none());
+        assert!(scan[3].1.get("customerOrderRefs").is_none());
+    }
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::instrument(true)]
+#[case::reconcile_market(false)]
+#[tokio::test]
+async fn test_open_only_bsp_discovery_preserves_scope(#[case] instrument_scoped: bool) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+
+    let config = if instrument_scoped {
+        BetfairExecutionClientConfig::default()
+    } else {
+        BetfairExecutionClientConfig {
+            reconcile_market_ids_only: true,
+            reconcile_market_ids: Some(vec!["1.179082386".to_string()]),
+            ..Default::default()
+        }
+    };
+
+    let (mut client, mut rx, _data_rx, _cache) =
+        create_test_execution_client_with_config(addr, stream_port, config);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    let mut other_selection = resting_bsp_order("bsp-other-selection", "other-selection-ref");
+    other_selection["selectionId"] = Value::from(236);
+    let mut other_market = resting_bsp_order("bsp-other-market", "other-market-ref");
+    other_market["marketId"] = Value::from("1.999999999");
+    *state.betting_current_orders.lock() = Some(vec![
+        resting_bsp_order("bsp-resting", "foreign-bsp"),
+        other_selection,
+        other_market,
+    ]);
+    state.betting_request_params.lock().clear();
+
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .open_only(true)
+        .instrument_id(instrument_scoped.then(|| InstrumentId::from("1.179082386-235.BETFAIR")))
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), if instrument_scoped { 1 } else { 2 });
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<HashSet<_>>(),
+        if instrument_scoped {
+            HashSet::from(["bsp-resting"])
+        } else {
+            HashSet::from(["bsp-resting", "bsp-other-selection"])
+        }
+    );
+
+    for report in &reports {
+        let (instrument_id, reference) = match report.venue_order_id.as_str() {
+            "bsp-resting" => ("1.179082386-235.BETFAIR", "foreign-bsp"),
+            "bsp-other-selection" if !instrument_scoped => {
+                ("1.179082386-236.BETFAIR", "other-selection-ref")
+            }
+            other => panic!("out-of-scope BSP report: {other}"),
+        };
+
+        assert_resting_bsp_report(
+            report,
+            instrument_id,
+            report.venue_order_id.as_str(),
+            reference,
+            OrderSide::Buy,
+            OrderType::Market,
+            command.ts_init,
+        );
+    }
+
+    let requests = state.betting_request_params.lock().clone();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0].0, METHOD_LIST_CURRENT_ORDERS);
+    assert_eq!(requests[0].1["orderProjection"], "EXECUTABLE");
+    assert_eq!(requests[1].0, METHOD_LIST_MARKET_CATALOGUE);
+    assert_eq!(
+        requests[1].1["filter"],
+        serde_json::json!({"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"], "marketIds": ["1.179082386"]})
+    );
+    assert_eq!(requests[2].0, METHOD_LIST_CURRENT_ORDERS);
+    assert_eq!(requests[2].1["orderProjection"], "ALL");
+
+    for (_, params) in requests
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+    {
+        assert_eq!(params["marketIds"], serde_json::json!(["1.179082386"]));
+        assert!(params.get("betIds").is_none());
+        assert!(params.get("customerOrderRefs").is_none());
+    }
+
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_only_bsp_discovery_excluded_instrument_preserves_pending_replace() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+
+    let config = BetfairExecutionClientConfig {
+        reconcile_market_ids_only: true,
+        reconcile_market_ids: Some(vec!["1.179082386".to_string()]),
+        ..Default::default()
+    };
+
+    let (mut client, mut rx, _data_rx, cache) =
+        create_test_execution_client_with_config(addr, stream_port, config);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let reference = "O-BSP-EXCLUDED-REPLACE";
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, reference, "excluded-old", "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, reference, "excluded-old", "3.00"),
+        "excluded-new",
+        true,
+    )
+    .await;
+    let successor = current_order_leg("excluded-new", reference, 6.0, 2.0, 4.0, 3.0);
+    let mut outside = resting_bsp_order("bsp-outside", "outside-ref");
+    outside["marketId"] = Value::from("1.999999999");
+    *state.betting_current_orders.lock() = Some(vec![
+        current_order_leg("excluded-old", reference, 10.0, 4.0, 0.0, 2.5),
+        successor.clone(),
+        resting_bsp_order("bsp-resting", "foreign-bsp"),
+        outside,
+    ]);
+    state.betting_request_params.lock().clear();
+    state
+        .betting_current_orders_returned
+        .store(0, Ordering::Relaxed);
+    let requests_before = state.betting_request_count.load(Ordering::Relaxed);
+    let mut command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .open_only(true)
+        .instrument_id(Some(InstrumentId::from("1.999999999-235.BETFAIR")))
+        .build()
+        .unwrap();
+
+    for _ in 0..2 {
+        let reports = client
+            .generate_order_status_reports(&command)
+            .await
+            .unwrap();
+        assert!(reports.is_empty());
+        assert!(state.betting_request_params.lock().is_empty());
+        assert_eq!(
+            state.betting_request_count.load(Ordering::Relaxed),
+            requests_before
+        );
+        assert_eq!(
+            state
+                .betting_current_orders_returned
+                .load(Ordering::Relaxed),
+            0
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    command.instrument_id = Some(InstrumentId::from(instrument_id));
+    let resolving = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let events = drain_events(&mut rx, Duration::from_millis(100)).await;
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    assert_eq!(resolving.len(), 1);
+    assert_resting_bsp_report(
+        &resolving[0],
+        instrument_id,
+        "bsp-resting",
+        "foreign-bsp",
+        OrderSide::Buy,
+        OrderType::Market,
+        command.ts_init,
+    );
+    assert_eq!(events.len(), 1);
+    let updates = order_updates(&events);
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].client_order_id, ClientOrderId::from(reference));
+    assert_eq!(
+        updates[0].venue_order_id,
+        Some(VenueOrderId::from("excluded-new"))
+    );
+    assert_eq!(updates[0].quantity, Quantity::from("10"));
+    assert_eq!(updates[0].price, Some(Price::from("3.00")));
+    assert_eq!(reports.len(), 2);
+    assert_replacement_report(
+        reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == "excluded-new")
+            .unwrap(),
+        successor,
+        reference,
+        "6",
+        Decimal::from(8) / Decimal::from(3),
+    );
+    assert_resting_bsp_report(
+        reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == "bsp-resting")
+            .unwrap(),
+        instrument_id,
+        "bsp-resting",
+        "foreign-bsp",
+        OrderSide::Buy,
+        OrderType::Market,
+        command.ts_init,
+    );
+    let requests = state.betting_request_params.lock().clone();
+    assert_eq!(requests.len(), 7);
+    assert_eq!(requests[3].0, METHOD_LIST_CURRENT_ORDERS);
+    assert_eq!(
+        requests[3].1,
+        serde_json::json!({"orderProjection": "ALL", "customerOrderRefs": [make_customer_order_ref(reference)]})
+    );
+
+    for scan in [&requests[..3], &requests[4..]] {
+        assert_eq!(scan[0].0, METHOD_LIST_CURRENT_ORDERS);
+        assert_eq!(scan[0].1["orderProjection"], "EXECUTABLE");
+        assert_eq!(scan[0].1["marketIds"], serde_json::json!(["1.179082386"]));
+        assert_eq!(scan[1].0, METHOD_LIST_MARKET_CATALOGUE);
+        assert_eq!(
+            scan[1].1["filter"],
+            serde_json::json!({"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"], "marketIds": ["1.179082386"]})
+        );
+        assert_eq!(scan[2].0, METHOD_LIST_CURRENT_ORDERS);
+        assert_eq!(scan[2].1["orderProjection"], "ALL");
+        assert_eq!(scan[2].1["marketIds"], serde_json::json!(["1.179082386"]));
+    }
+
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::no_history(0)]
+#[case::unrelated_history(30_000)]
+#[tokio::test]
+async fn test_open_only_bsp_discovery_paginates_without_unrelated_history(
+    #[case] history_count: usize,
+) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let mut ordinary = current_order_leg("ordinary-open", "ordinary-ref", 7.0, 0.0, 7.0, 2.5);
+    ordinary["marketId"] = Value::from("1.888888888");
+    let mut history = current_order_leg("history", "history-ref", 9.0, 9.0, 0.0, 3.5);
+    history["marketId"] = Value::from("1.999999999");
+    let mut orders = vec![ordinary];
+    orders.extend((0..history_count).map(|index| {
+        let mut order = history.clone();
+        order["betId"] = Value::from(format!("history-{index}"));
+        order
+    }));
+
+    let resting = resting_bsp_order("bsp", "foreign-bsp");
+    orders.extend((0..1001).map(|index| {
+        let mut order = resting.clone();
+        order["betId"] = Value::from(format!("bsp-{index}"));
+        order["customerOrderRef"] = Value::from(format!("bsp-ref-{index}"));
+        order
+    }));
+
+    *state.betting_current_orders.lock() = Some(orders);
+    state.betting_request_params.lock().clear();
+    state
+        .betting_current_orders_returned
+        .store(0, Ordering::Relaxed);
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1002);
+    let by_bet_id: HashMap<_, _> = reports
+        .iter()
+        .map(|report| (report.venue_order_id.as_str(), report))
+        .collect();
+    assert_eq!(by_bet_id.len(), 1002);
+
+    for index in 0..1001 {
+        let bet_id = format!("bsp-{index}");
+        assert_resting_bsp_report(
+            by_bet_id[bet_id.as_str()],
+            "1.179082386-235.BETFAIR",
+            &bet_id,
+            &format!("bsp-ref-{index}"),
+            OrderSide::Buy,
+            OrderType::Market,
+            command.ts_init,
+        );
+    }
+
+    let ordinary = by_bet_id["ordinary-open"];
+    assert_eq!(
+        ordinary.instrument_id,
+        InstrumentId::from("1.888888888-235.BETFAIR")
+    );
+    assert_eq!(
+        ordinary.client_order_id,
+        Some(ClientOrderId::from("ordinary-ref"))
+    );
+    assert_eq!(ordinary.order_status, OrderStatus::Accepted);
+    assert_eq!(ordinary.quantity, Quantity::from("7"));
+    assert_eq!(ordinary.filled_qty, Quantity::from("0"));
+    let mut source = current_order_leg("ordinary-open", "ordinary-ref", 7.0, 0.0, 7.0, 2.5);
+    source["marketId"] = Value::from("1.888888888");
+    let source = serde_json::from_value(source).unwrap();
+    let mut expected =
+        parse_current_order_report(&source, AccountId::from("BETFAIR-001"), ordinary.ts_init)
+            .unwrap();
+    expected.report_id = ordinary.report_id;
+    assert_eq!(ordinary, &expected);
+    let requests = state.betting_request_params.lock().clone();
+    assert_eq!(requests.len(), 5);
+    assert_eq!(requests[0].0, METHOD_LIST_CURRENT_ORDERS);
+    assert_eq!(requests[0].1["orderProjection"], "EXECUTABLE");
+    assert_eq!(requests[1].0, METHOD_LIST_EVENTS);
+    assert_eq!(
+        requests[1].1["filter"],
+        serde_json::json!({"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"]})
+    );
+    assert_eq!(requests[2].0, METHOD_LIST_MARKET_CATALOGUE);
+    assert_eq!(
+        requests[2].1["filter"],
+        serde_json::json!({"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"], "eventIds": ["bsp-event"]})
+    );
+
+    for (index, (method, params)) in requests[3..].iter().enumerate() {
+        assert_eq!(method, METHOD_LIST_CURRENT_ORDERS);
+        assert_eq!(params["orderProjection"], "ALL");
+        assert_eq!(params["marketIds"], serde_json::json!(["1.179082386"]));
+        assert!(params.get("betIds").is_none());
+        assert!(params.get("customerOrderRefs").is_none());
+        assert!(params.get("recordCount").is_none());
+
+        if index == 0 {
+            assert!(params.get("fromRecord").is_none());
+        } else {
+            assert_eq!(params["fromRecord"], 1000);
+        }
+    }
+
+    assert_eq!(
+        state
+            .betting_current_orders_returned
+            .load(Ordering::Relaxed),
+        1002
+    );
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::events_error(METHOD_LIST_EVENTS, false)]
+#[case::catalogue_error(METHOD_LIST_MARKET_CATALOGUE, false)]
+#[case::catalogue_limit(METHOD_LIST_MARKET_CATALOGUE, true)]
+#[tokio::test]
+async fn test_open_only_bsp_discovery_failure_preserves_pending_replace(
+    #[case] method: &str,
+    #[case] saturated: bool,
+) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let reference = "O-BSP-DISCOVERY-REPLACE";
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, reference, "discovery-old", "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, reference, "discovery-old", "3.00"),
+        "discovery-new",
+        true,
+    )
+    .await;
+    let successor = current_order_leg("discovery-new", reference, 6.0, 2.0, 4.0, 3.0);
+    *state.betting_current_orders.lock() = Some(vec![
+        current_order_leg("discovery-old", reference, 10.0, 4.0, 0.0, 2.5),
+        successor.clone(),
+        resting_bsp_order("bsp-resting", "foreign-bsp"),
+    ]);
+
+    if saturated {
+        let catalogues: Vec<_> = (0..1000).map(|index| serde_json::json!({"marketId": format!("1.{index}"), "marketName": "BSP market"})).collect();
+        state
+            .betting_overrides
+            .lock()
+            .insert(method.to_string(), Value::from(catalogues));
+    } else {
+        state
+            .betting_error_overrides
+            .lock()
+            .insert(method.to_string(), betting_api_error("INVALID_INPUT_DATA"));
+    }
+
+    state.betting_request_params.lock().clear();
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let error = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap_err();
+
+    if saturated {
+        assert_eq!(
+            error.to_string(),
+            "Betfair BSP market discovery reached the catalogue limit for event Some([\"bsp-event\"])"
+        );
+    } else {
+        assert!(
+            error.to_string().contains("INVALID_INPUT_DATA"),
+            "unexpected discovery error: {error}"
+        );
+    }
+
+    assert!(rx.try_recv().is_err());
+    let failed_requests = state.betting_request_params.lock().clone();
+    assert_eq!(failed_requests.last().unwrap().0, method);
+    assert_eq!(
+        failed_requests
+            .iter()
+            .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+            .count(),
+        1
+    );
+    assert_eq!(failed_requests[0].1["orderProjection"], "EXECUTABLE");
+    state.betting_overrides.lock().remove(method);
+    state.betting_error_overrides.lock().remove(method);
+    let resolving = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let events = drain_events(&mut rx, Duration::from_millis(100)).await;
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    assert_eq!(resolving.len(), 1);
+    assert_resting_bsp_report(
+        &resolving[0],
+        instrument_id,
+        "bsp-resting",
+        "foreign-bsp",
+        OrderSide::Buy,
+        OrderType::Market,
+        command.ts_init,
+    );
+    assert_eq!(events.len(), 1);
+    let updates = order_updates(&events);
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].client_order_id, ClientOrderId::from(reference));
+    assert_eq!(
+        updates[0].venue_order_id,
+        Some(VenueOrderId::from("discovery-new"))
+    );
+    assert_eq!(updates[0].quantity, Quantity::from("10"));
+    assert_eq!(updates[0].price, Some(Price::from("3.00")));
+    assert_eq!(reports.len(), 2);
+    let report = reports
+        .iter()
+        .find(|report| report.venue_order_id.as_str() == "discovery-new")
+        .unwrap();
+    assert_replacement_report(
+        report,
+        successor,
+        reference,
+        "6",
+        Decimal::from(8) / Decimal::from(3),
+    );
+    assert_resting_bsp_report(
+        reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == "bsp-resting")
+            .unwrap(),
+        instrument_id,
+        "bsp-resting",
+        "foreign-bsp",
+        OrderSide::Buy,
+        OrderType::Market,
+        command.ts_init,
+    );
+    assert!(
+        state
+            .betting_request_params
+            .lock()
+            .iter()
+            .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+            .all(|(_, params)| params["orderProjection"] == "EXECUTABLE"
+                || params["marketIds"].is_array()
+                || params["betIds"].is_array()
+                || params["customerOrderRefs"].is_array())
+    );
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::events(METHOD_LIST_EVENTS)]
+#[case::catalogue(METHOD_LIST_MARKET_CATALOGUE)]
+#[tokio::test]
+async fn test_open_only_bsp_discovery_recovers_from_no_session(#[case] method: &str) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    *state.betting_current_orders.lock() =
+        Some(vec![resting_bsp_order("bsp-resting", "foreign-bsp")]);
+    state
+        .betting_error_one_shot_overrides
+        .lock()
+        .insert(method.to_string(), betting_api_error("NO_SESSION"));
+    state.betting_request_params.lock().clear();
+    let keep_alives_before = state.keep_alive_count.load(Ordering::Relaxed);
+    let logins_before = state.login_count.load(Ordering::Relaxed);
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_resting_bsp_report(
+        &reports[0],
+        "1.179082386-235.BETFAIR",
+        "bsp-resting",
+        "foreign-bsp",
+        OrderSide::Buy,
+        OrderType::Market,
+        command.ts_init,
+    );
+    let requests = state.betting_request_params.lock().clone();
+    assert_eq!(requests.len(), 5);
+    let retried: Vec<_> = requests
+        .iter()
+        .filter(|(request_method, _)| request_method == method)
+        .collect();
+    assert_eq!(retried.len(), 2);
+    assert_eq!(retried[0].1, retried[1].1);
+    assert_eq!(retried[0].1["filter"]["bspOnly"], true);
+    assert_eq!(
+        retried[0].1["filter"]["withOrders"],
+        serde_json::json!(["EXECUTION_COMPLETE"])
+    );
+    let current_orders: Vec<_> = requests
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .collect();
+    assert_eq!(current_orders.len(), 2);
+    assert_eq!(current_orders[0].1["orderProjection"], "EXECUTABLE");
+    assert_eq!(current_orders[1].1["orderProjection"], "ALL");
+    assert_eq!(
+        current_orders[1].1["marketIds"],
+        serde_json::json!(["1.179082386"])
+    );
+    assert!(current_orders[1].1.get("betIds").is_none());
+    assert!(current_orders[1].1.get("customerOrderRefs").is_none());
+    assert_eq!(
+        state.keep_alive_count.load(Ordering::Relaxed),
+        keep_alives_before + 1
+    );
+    assert_eq!(state.login_count.load(Ordering::Relaxed), logins_before);
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_only_bsp_discovery_partitions_more_than_1000_markets_by_event() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+    let market_ids: Vec<_> = (0..1001)
+        .map(|index| format!("1.{}", 500_000 + index))
+        .collect();
+    let resting = resting_bsp_order("bsp", "foreign-bsp");
+
+    let orders = market_ids
+        .iter()
+        .enumerate()
+        .map(|(index, market_id)| {
+            let mut order = resting.clone();
+            order["marketId"] = Value::from(market_id.clone());
+            order["betId"] = Value::from(format!("bsp-{index}"));
+            order["customerOrderRef"] = Value::from(format!("bsp-ref-{index}"));
+            order
+        })
+        .collect();
+
+    *state.betting_current_orders.lock() = Some(orders);
+    state.betting_overrides.lock().insert(
+        METHOD_LIST_EVENTS.to_string(),
+        serde_json::json!([
+            {"event": {"id": "bsp-event-first"}},
+            {"event": {"id": "bsp-event-second"}},
+        ]),
+    );
+
+    let catalogue = |market_ids: &[String]| {
+        Value::Array(market_ids.iter().map(|market_id| {
+        serde_json::json!({"marketId": market_id, "marketName": "BSP market"})
+    }).collect())
+    };
+
+    state.betting_response_sequences.lock().insert(
+        METHOD_LIST_MARKET_CATALOGUE.to_string(),
+        VecDeque::from([catalogue(&market_ids[..600]), catalogue(&market_ids[600..])]),
+    );
+    state.betting_request_params.lock().clear();
+    state
+        .betting_current_orders_returned
+        .store(0, Ordering::Relaxed);
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(get_atomic_clock_realtime().get_time_ns())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1001);
+    let by_bet_id: HashMap<_, _> = reports
+        .iter()
+        .map(|report| (report.venue_order_id.as_str(), report))
+        .collect();
+    assert_eq!(by_bet_id.len(), 1001);
+
+    for (index, market_id) in market_ids.iter().enumerate() {
+        let bet_id = format!("bsp-{index}");
+        assert_resting_bsp_report(
+            by_bet_id[bet_id.as_str()],
+            &format!("{market_id}-235.BETFAIR"),
+            &bet_id,
+            &format!("bsp-ref-{index}"),
+            OrderSide::Buy,
+            OrderType::Market,
+            command.ts_init,
+        );
+    }
+
+    let requests = state.betting_request_params.lock().clone();
+    assert_eq!(requests.len(), 9);
+    assert_eq!(requests[0].0, METHOD_LIST_CURRENT_ORDERS);
+    assert_eq!(requests[0].1["orderProjection"], "EXECUTABLE");
+    assert_eq!(requests[1].0, METHOD_LIST_EVENTS);
+    assert_eq!(
+        requests[1].1["filter"],
+        serde_json::json!({"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"]})
+    );
+
+    for ((method, params), event_id) in requests[2..4]
+        .iter()
+        .zip(["bsp-event-first", "bsp-event-second"])
+    {
+        assert_eq!(method, METHOD_LIST_MARKET_CATALOGUE);
+        assert_eq!(
+            params["filter"],
+            serde_json::json!({"bspOnly": true, "withOrders": ["EXECUTION_COMPLETE"], "eventIds": [event_id]})
+        );
+        assert_eq!(params["maxResults"], 1000);
+    }
+
+    for ((method, params), expected_markets) in requests[4..].iter().zip(market_ids.chunks(250)) {
+        assert_eq!(method, METHOD_LIST_CURRENT_ORDERS);
+        assert_eq!(params["orderProjection"], "ALL");
+        assert_eq!(params["marketIds"], serde_json::json!(expected_markets));
+        assert!(params.get("betIds").is_none());
+        assert!(params.get("customerOrderRefs").is_none());
+        assert!(params.get("fromRecord").is_none());
+    }
+
+    assert_eq!(
+        state
+            .betting_current_orders_returned
+            .load(Ordering::Relaxed),
+        1001
+    );
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+fn resting_bsp_order(bet_id: &str, client_order_id: &str) -> Value {
+    let mut order = current_order_leg(bet_id, client_order_id, 0.0, 0.0, 0.0, 1.01);
+    order["orderType"] = Value::from("MARKET_ON_CLOSE");
+    order["side"] = Value::from("LAY");
+    order["status"] = Value::from("EXECUTION_COMPLETE");
+    order["bspLiability"] = Value::from(5.0);
+    order["sizeLapsed"] = Value::from(0.0);
+    order["sizeVoided"] = Value::from(0.0);
+    order["averagePriceMatched"] = Value::from(0.0);
+    order
+}
+
+fn assert_resting_bsp_report(
+    report: &OrderStatusReport,
+    instrument_id: &str,
+    bet_id: &str,
+    reference: &str,
+    side: OrderSide,
+    order_type: OrderType,
+    ts_init: UnixNanos,
+) {
+    let ts_accepted = parse_betfair_timestamp("2021-03-24T06:47:02.000Z").unwrap();
+    assert!(report.ts_init >= ts_init);
+    assert!(report.ts_init <= get_atomic_clock_realtime().get_time_ns());
+    let mut expected = OrderStatusReport::new(
+        AccountId::from("BETFAIR-001"),
+        InstrumentId::from(instrument_id),
+        Some(ClientOrderId::from(reference)),
+        VenueOrderId::from(bet_id),
+        Some(side),
+        order_type,
+        TimeInForce::AtTheClose,
+        OrderStatus::Accepted,
+        Quantity::from("5"),
+        Quantity::from("0"),
+        ts_accepted,
+        ts_accepted,
+        report.ts_init,
+        Some(report.report_id),
+    )
+    .with_price(Price::from("1.01"));
+    expected.avg_px = Some(Decimal::ZERO);
+    assert_eq!(report, &expected);
 }
 
 /// A FOK limit order must serialize with `timeInForce=FILL_OR_KILL` and no

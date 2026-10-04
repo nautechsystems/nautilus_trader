@@ -2331,10 +2331,19 @@ async fn reports_reflect_replacement_history(
             .insert(0, old);
     }
 
-    h.mock_state
-        .betting_overrides
-        .lock()
-        .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), snapshot);
+    if filtered && !time_filtered {
+        *h.mock_state.betting_current_orders.lock() =
+            Some(snapshot["currentOrders"].as_array().unwrap().clone());
+        h.mock_state
+            .betting_overrides
+            .lock()
+            .remove(METHOD_LIST_CURRENT_ORDERS);
+    } else {
+        h.mock_state
+            .betting_overrides
+            .lock()
+            .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), snapshot);
+    }
 
     if filtered {
         let command = GenerateOrderStatusReports::new(
@@ -2347,15 +2356,27 @@ async fn reports_reflect_replacement_history(
             None,
             None,
         );
+        h.mock_state.betting_request_params.lock().clear();
         let reports = h.generate_order_status_reports(&command).await;
-        let requests = h.mock_state.betting_request_params.lock();
-        let (_, params) = requests
+        let requests: Vec<_> = h
+            .mock_state
+            .betting_request_params
+            .lock()
             .iter()
-            .rev()
-            .find(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
-            .unwrap();
-        assert_eq!(params["orderProjection"], "ALL");
-        drop(requests);
+            .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+            .map(|(_, params)| params.clone())
+            .collect();
+        assert_eq!(
+            requests,
+            if time_filtered {
+                vec![serde_json::json!({"orderProjection": "ALL"})]
+            } else {
+                vec![
+                    serde_json::json!({"orderProjection": "EXECUTABLE", "marketIds": ["1"]}),
+                    serde_json::json!({"orderProjection": "ALL", "betIds": ["228302937743"]}),
+                ]
+            }
+        );
         assert_eq!(reports.len(), 1);
 
         for report in reports {

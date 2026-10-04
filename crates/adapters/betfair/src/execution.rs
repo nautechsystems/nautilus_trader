@@ -113,7 +113,8 @@ use crate::{
     common::{
         consts::{
             BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_GET_ACCOUNT_FUNDS,
-            METHOD_LIST_CURRENT_ORDERS, METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
+            METHOD_LIST_CURRENT_ORDERS, METHOD_LIST_EVENTS, METHOD_LIST_MARKET_CATALOGUE,
+            METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
         },
         credential::BetfairCredential,
         enums::{
@@ -138,10 +139,11 @@ use crate::{
         error::BetfairHttpError,
         models::{
             AccountFundsResponse, CancelExecutionReport, CancelInstruction, CancelOrdersParams,
-            CurrentOrderSummary, CurrentOrderSummaryReport, LimitOnCloseOrder, LimitOrder,
-            ListCurrentOrdersParams, MarketOnCloseOrder, MarketVersion, PlaceExecutionReport,
-            PlaceInstruction, PlaceInstructionReport, PlaceOrdersParams, ReplaceExecutionReport,
-            ReplaceInstruction, ReplaceInstructionReport, ReplaceOrdersParams, TimeRange,
+            CurrentOrderSummary, CurrentOrderSummaryReport, Event, LimitOnCloseOrder, LimitOrder,
+            ListCurrentOrdersParams, ListMarketCatalogueParams, MarketCatalogue, MarketFilter,
+            MarketOnCloseOrder, MarketVersion, PlaceExecutionReport, PlaceInstruction,
+            PlaceInstructionReport, PlaceOrdersParams, ReplaceExecutionReport, ReplaceInstruction,
+            ReplaceInstructionReport, ReplaceOrdersParams, TimeRange,
         },
         parse::{parse_current_order_fill_report, parse_current_order_report},
     },
@@ -3761,13 +3763,30 @@ async fn fetch_order_status_reports_http(
     stream_session: StreamSession<'_>,
     session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<Vec<OrderStatusReport>> {
-    // Closed replacement legs must contribute before status and time filtering
+    let market_ids = if let Some(instrument_id) = filter
+        .filter(|filter| filter.open_only)
+        .and_then(|filter| filter.instrument_id)
+    {
+        let market_id = extract_market_id(&instrument_id)?;
+
+        if market_ids
+            .as_ref()
+            .is_some_and(|market_ids| !market_ids.contains(&market_id))
+        {
+            return Ok(Vec::new());
+        }
+
+        Some(vec![market_id])
+    } else {
+        market_ids
+    };
+
     let mut fetched = fetch_order_status_reports_snapshot_http(
         http_client,
         account_id,
         ts_init,
         market_ids,
-        false,
+        filter.is_some_and(|filter| filter.open_only),
         ocm_state,
         stream_session,
         session_refresh,
@@ -3818,56 +3837,120 @@ async fn fetch_order_status_reports_snapshot_http(
         Some(OrderProjection::All)
     };
 
-    let mut orders = Vec::new();
-    let mut indexes = AHashMap::new();
-    let market_id_batches = list_current_orders_market_id_batches(market_ids);
+    let market_id_batches = list_current_orders_market_id_batches(market_ids.clone());
     let merge_batches = market_id_batches.len() > 1;
 
-    for market_ids in market_id_batches {
-        let mut from_record: u32 = 0;
+    let queries = market_id_batches
+        .into_iter()
+        .map(|market_ids| list_current_orders_filter_markets(market_ids, order_projection))
+        .collect();
+
+    let mut orders = Vec::new();
+    let mut indexes = AHashMap::new();
+    fetch_order_status_pages_http(
+        http_client,
+        queries,
+        &mut orders,
+        &mut indexes,
+        stream_session,
+        session_refresh,
+    )
+    .await?;
+
+    if open_only {
+        let bsp_market_ids = fetch_bsp_market_ids_http(
+            http_client,
+            market_ids.clone(),
+            stream_session,
+            session_refresh,
+        )
+        .await?;
+
+        let queries = bsp_market_ids
+            .chunks(MAX_LIST_CURRENT_ORDERS_MARKET_IDS)
+            .map(|market_ids| {
+                list_current_orders_filter_markets(
+                    Some(market_ids.to_vec()),
+                    Some(OrderProjection::All),
+                )
+            })
+            .collect();
+
+        fetch_order_status_pages_http(
+            http_client,
+            queries,
+            &mut orders,
+            &mut indexes,
+            stream_session,
+            session_refresh,
+        )
+        .await?;
+
+        let discovered_bet_ids: AHashSet<_> = indexes.keys().cloned().collect();
+        let (bet_ids, customer_order_refs) = order_status_supplemental_ids(&orders, ocm_state);
+        let mut queried_customer_order_refs = customer_order_refs.clone();
+        let queries = list_current_orders_supplemental_queries(
+            bet_ids.difference(&discovered_bet_ids).cloned().collect(),
+            customer_order_refs.into_keys().collect(),
+        );
+        fetch_order_status_pages_http(
+            http_client,
+            queries,
+            &mut orders,
+            &mut indexes,
+            stream_session,
+            session_refresh,
+        )
+        .await?;
 
         loop {
-            let params = ListCurrentOrdersParams {
-                bet_ids: None,
-                market_ids: market_ids.clone(),
-                order_projection,
-                customer_order_refs: None,
-                customer_strategy_refs: None,
-                date_range: None,
-                order_by: None,
-                sort_dir: None,
-                from_record: (from_record > 0).then_some(from_record),
-                record_count: None,
-            };
+            let (required_bet_ids, pending_customer_order_refs) =
+                order_status_supplemental_ids(&orders, ocm_state);
+            let missing: AHashSet<String> = required_bet_ids
+                .into_iter()
+                .filter(|bet_id| !indexes.contains_key(bet_id))
+                .collect();
 
-            let response = list_current_orders_with_retry(
+            let customer_order_refs: AHashSet<_> = pending_customer_order_refs
+                .iter()
+                .filter(|&(customer_order_ref, bet_ids)| {
+                    queried_customer_order_refs.get(customer_order_ref) != Some(bet_ids)
+                })
+                .map(|(customer_order_ref, _)| customer_order_ref.clone())
+                .collect();
+
+            if missing.is_empty() && customer_order_refs.is_empty() {
+                break;
+            }
+
+            let before = indexes.len();
+            queried_customer_order_refs.extend(pending_customer_order_refs);
+            let queries = list_current_orders_supplemental_queries(missing, customer_order_refs);
+            fetch_order_status_pages_http(
                 http_client,
-                &params,
+                queries,
+                &mut orders,
+                &mut indexes,
                 stream_session,
                 session_refresh,
             )
             .await?;
-            let page_size = response.current_orders.len() as u32;
 
-            if response.more_available && page_size == 0 {
-                anyhow::bail!("listCurrentOrders returned an empty page with moreAvailable=true");
-            }
-
-            for order in response.current_orders {
-                if let Some(&index) = indexes.get(&order.bet_id) {
-                    // Offset pages can repeat a bet; retain its last complete observation
-                    orders[index] = order;
-                } else {
-                    indexes.insert(order.bet_id.clone(), orders.len());
-                    orders.push(order);
+            if indexes.len() == before {
+                let (required_bet_ids, _) = order_status_supplemental_ids(&orders, ocm_state);
+                if let Some(bet_id) = required_bet_ids
+                    .iter()
+                    .find(|bet_id| !indexes.contains_key(*bet_id))
+                {
+                    anyhow::bail!("Missing Betfair order history for tracked Bet ID {bet_id}");
                 }
             }
+        }
 
-            if !response.more_available {
-                break;
-            }
-
-            from_record += page_size;
+        if let Some(market_ids) = market_ids {
+            orders.retain(|order| {
+                discovered_bet_ids.contains(&order.bet_id) || market_ids.contains(&order.market_id)
+            });
         }
     }
 
@@ -3903,6 +3986,181 @@ async fn fetch_order_status_reports_snapshot_http(
         reports,
         active_quantities,
     })
+}
+
+fn order_status_supplemental_ids(
+    orders: &[CurrentOrderSummary],
+    ocm_state: &Arc<Mutex<OcmState>>,
+) -> (AHashSet<String>, AHashMap<String, AHashSet<String>>) {
+    let state = ocm_state.lock();
+
+    let client_order_ids = orders
+        .iter()
+        .filter_map(|order| {
+            state
+                .resolve_order_owner(order.customer_order_ref.as_deref(), &order.bet_id)
+                .and_then(CustomerOrderRefResolution::client_order_id)
+                .or_else(|| state.client_order_id_by_venue_order_id(&order.bet_id))
+        })
+        .collect();
+
+    state.order_status_supplemental_ids(client_order_ids)
+}
+
+fn list_current_orders_supplemental_queries(
+    bet_ids: AHashSet<String>,
+    customer_order_refs: AHashSet<String>,
+) -> Vec<ListCurrentOrdersParams> {
+    let mut bet_ids: Vec<_> = bet_ids.into_iter().collect();
+    bet_ids.sort();
+    let mut customer_order_refs: Vec<_> = customer_order_refs.into_iter().collect();
+    customer_order_refs.sort();
+    let mut queries = Vec::new();
+
+    for batch in bet_ids.chunks(MAX_LIST_CURRENT_ORDERS_MARKET_IDS) {
+        let mut params = list_current_orders_filter_bet_id(batch[0].clone());
+        params.bet_ids = Some(batch.to_vec());
+        params.order_projection = Some(OrderProjection::All);
+        queries.push(params);
+    }
+
+    for customer_order_ref in customer_order_refs {
+        let mut params = list_current_orders_filter_ref(customer_order_ref);
+        params.order_projection = Some(OrderProjection::All);
+        queries.push(params);
+    }
+
+    queries
+}
+
+#[derive(serde::Deserialize)]
+struct BspEvent {
+    event: Event,
+}
+
+async fn fetch_bsp_market_ids_http(
+    http_client: &Arc<BetfairHttpClient>,
+    market_ids: Option<Vec<String>>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
+) -> anyhow::Result<Vec<String>> {
+    const CATALOGUE_LIMIT: u32 = 1000;
+
+    let filter = MarketFilter {
+        bsp_only: Some(true),
+        with_orders: Some(vec![BetfairOrderStatus::ExecutionComplete.to_string()]),
+        ..Default::default()
+    };
+
+    let filters = if let Some(market_ids) = market_ids {
+        market_ids
+            .chunks(MAX_LIST_CURRENT_ORDERS_MARKET_IDS)
+            .map(|market_ids| MarketFilter {
+                market_ids: Some(market_ids.to_vec()),
+                ..filter.clone()
+            })
+            .collect::<Vec<_>>()
+    } else {
+        let events: Vec<BspEvent> = send_betting_with_retry(
+            http_client,
+            METHOD_LIST_EVENTS,
+            &serde_json::json!({"filter": filter}),
+            stream_session,
+            session_refresh,
+        )
+        .await?;
+        events
+            .into_iter()
+            .map(|event| {
+                let event_id = event.event.id.ok_or_else(|| {
+                    anyhow::anyhow!("Betfair BSP event discovery returned an event without an ID")
+                })?;
+
+                Ok(MarketFilter {
+                    event_ids: Some(vec![event_id]),
+                    ..filter.clone()
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?
+    };
+
+    let mut bsp_market_ids = AHashSet::new();
+
+    for filter in filters {
+        let market_scoped = filter.market_ids.is_some();
+
+        let params = ListMarketCatalogueParams {
+            filter,
+            market_projection: None,
+            sort: None,
+            max_results: Some(CATALOGUE_LIMIT),
+            locale: None,
+        };
+
+        let catalogues: Vec<MarketCatalogue> = send_betting_with_retry(
+            http_client,
+            METHOD_LIST_MARKET_CATALOGUE,
+            &params,
+            stream_session,
+            session_refresh,
+        )
+        .await?;
+        anyhow::ensure!(
+            market_scoped || catalogues.len() < CATALOGUE_LIMIT as usize,
+            "Betfair BSP market discovery reached the catalogue limit for event {:?}",
+            params.filter.event_ids,
+        );
+        bsp_market_ids.extend(catalogues.into_iter().map(|market| market.market_id));
+    }
+
+    let mut bsp_market_ids: Vec<_> = bsp_market_ids.into_iter().collect();
+    bsp_market_ids.sort_unstable();
+    Ok(bsp_market_ids)
+}
+
+async fn fetch_order_status_pages_http(
+    http_client: &Arc<BetfairHttpClient>,
+    queries: Vec<ListCurrentOrdersParams>,
+    orders: &mut Vec<CurrentOrderSummary>,
+    indexes: &mut AHashMap<String, usize>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
+) -> anyhow::Result<()> {
+    for mut params in queries {
+        let mut from_record = 0;
+
+        loop {
+            params.from_record = (from_record > 0).then_some(from_record);
+            let response = list_current_orders_with_retry(
+                http_client,
+                &params,
+                stream_session,
+                session_refresh,
+            )
+            .await?;
+            let page_size = response.current_orders.len() as u32;
+            if response.more_available && page_size == 0 {
+                anyhow::bail!("listCurrentOrders returned an empty page with moreAvailable=true");
+            }
+
+            for order in response.current_orders {
+                if let Some(&index) = indexes.get(&order.bet_id) {
+                    orders[index] = order;
+                } else {
+                    indexes.insert(order.bet_id.clone(), orders.len());
+                    orders.push(order);
+                }
+            }
+
+            if !response.more_available {
+                break;
+            }
+
+            from_record += page_size;
+        }
+    }
+
+    Ok(())
 }
 
 fn resolve_pending_modifies(
@@ -4408,6 +4666,24 @@ async fn fetch_fill_orders_http(
 
 const MAX_LIST_CURRENT_ORDERS_MARKET_IDS: usize = 250;
 
+fn list_current_orders_filter_markets(
+    market_ids: Option<Vec<String>>,
+    order_projection: Option<OrderProjection>,
+) -> ListCurrentOrdersParams {
+    ListCurrentOrdersParams {
+        bet_ids: None,
+        market_ids,
+        order_projection,
+        customer_order_refs: None,
+        customer_strategy_refs: None,
+        date_range: None,
+        order_by: None,
+        sort_dir: None,
+        from_record: None,
+        record_count: None,
+    }
+}
+
 fn list_current_orders_market_id_batches(
     market_ids: Option<Vec<String>>,
 ) -> Vec<Option<Vec<String>>> {
@@ -4829,12 +5105,26 @@ async fn list_current_orders_with_retry(
     stream_session: StreamSession<'_>,
     session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<CurrentOrderSummaryReport> {
+    send_betting_with_retry(
+        http_client,
+        METHOD_LIST_CURRENT_ORDERS,
+        params,
+        stream_session,
+        session_refresh,
+    )
+    .await
+}
+
+async fn send_betting_with_retry<T: serde::de::DeserializeOwned, P: serde::Serialize>(
+    http_client: &Arc<BetfairHttpClient>,
+    method: &str,
+    params: &P,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
+) -> anyhow::Result<T> {
     const RATE_LIMIT_RETRY_DELAY_SECS: u64 = 5;
 
-    match http_client
-        .send_betting(METHOD_LIST_CURRENT_ORDERS, params)
-        .await
-    {
+    match http_client.send_betting(method, params).await {
         Ok(r) => Ok(r),
         Err(e) if e.is_session_error() || e.is_rate_limit_error() => {
             if e.is_rate_limit_error() {
@@ -4858,7 +5148,7 @@ async fn list_current_orders_with_retry(
                 }
             }
             http_client
-                .send_betting(METHOD_LIST_CURRENT_ORDERS, params)
+                .send_betting(method, params)
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))
         }
@@ -9906,6 +10196,76 @@ mod tests {
         assert!(params.sort_dir.is_none());
         assert!(params.from_record.is_none());
         assert!(params.record_count.is_none());
+    }
+
+    #[rstest]
+    fn test_list_current_orders_supplemental_queries_batch_and_deduplicate_ids() {
+        let bet_ids: Vec<_> = (0..251).map(|index| format!("bet-{index:03}")).collect();
+        let queries = list_current_orders_supplemental_queries(
+            bet_ids.iter().chain(&bet_ids).cloned().collect(),
+            ["reference-b", "reference-a", "reference-a"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+        );
+        let actual: Vec<_> = queries
+            .into_iter()
+            .map(|query| serde_json::to_value(query).unwrap())
+            .collect();
+        assert_eq!(
+            actual,
+            vec![
+                serde_json::json!({"betIds": bet_ids[..250], "orderProjection": "ALL"}),
+                serde_json::json!({"betIds": bet_ids[250..], "orderProjection": "ALL"}),
+                serde_json::json!({"customerOrderRefs": ["reference-a"], "orderProjection": "ALL"}),
+                serde_json::json!({"customerOrderRefs": ["reference-b"], "orderProjection": "ALL"}),
+            ]
+        );
+        assert!(
+            list_current_orders_supplemental_queries(AHashSet::new(), AHashSet::new()).is_empty()
+        );
+    }
+
+    #[rstest]
+    fn test_order_status_supplemental_ids_use_known_bet_when_reference_is_ambiguous() {
+        let first = ClientOrderId::from("12345678901234567890123456789012-first");
+        let second = ClientOrderId::from("12345678901234567890123456789012-second");
+        let mut state = OcmState::default();
+        state.restore_order(
+            first,
+            StrategyId::from("S-001"),
+            VenueOrderId::from("first-old"),
+        );
+        state.register_pending_replace(first, "first-old".to_string(), Some(Quantity::from(10)));
+        state
+            .complete_pending_replace(first, "first-old", VenueOrderId::from("first-new"))
+            .unwrap();
+        state.restore_order(
+            second,
+            StrategyId::from("S-002"),
+            VenueOrderId::from("second-new"),
+        );
+        let mut order = make_summary(
+            "first-new",
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::Executable,
+            "2026-10-01T00:00:00Z",
+        );
+        order.customer_order_ref = Some(make_customer_order_ref_legacy(first.as_str()));
+        assert_eq!(
+            state.customer_order_ref_resolution(order.customer_order_ref.as_ref().unwrap()),
+            Some(CustomerOrderRefResolution::Ambiguous)
+        );
+        let state = Arc::new(Mutex::new(state));
+        assert_eq!(
+            order_status_supplemental_ids(&[order], &state),
+            (
+                AHashSet::from_iter(["first-old".to_string(), "first-new".to_string(),]),
+                AHashMap::new()
+            )
+        );
     }
 
     #[rstest]
