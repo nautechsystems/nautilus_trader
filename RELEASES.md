@@ -474,6 +474,7 @@ Released on TBD (UTC).
 - Fixed OKX filled spot market buys remaining `PARTIALLY_FILLED` (#5105), thanks for reporting @BioxMech
 - Fixed OKX `activate_feature` rate limit exceeding the published 5 requests per 2 seconds
 - Fixed OKX HTTP errors without `data` hiding the venue error code, such as invalid API keys
+- Fixed OKX `open_only` order status reports fetching regular and spread order history
 - Fixed Polymarket order modifications blocked after a deferred cancel with an unresolved venue outcome
 - Fixed Polymarket maker rebates and taker fees zeroing on incomplete schedules
 - Fixed Polymarket submits with an unknown outcome staying `SUBMITTED` after missed WebSocket updates

@@ -123,6 +123,7 @@ use nautilus_okx::{
     },
 };
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::json;
 use ustr::Ustr;
 
@@ -3120,6 +3121,10 @@ async fn start_exec_session_failure_server() -> (SocketAddr, Arc<WsTeardownState
     reason = "field names document which report route each captured query belongs to"
 )]
 struct ReportRouteState {
+    include_regular_orders: bool,
+    regular_child_response: Option<serde_json::Value>,
+    regular_pending_response: Option<serde_json::Value>,
+    regular_order_detail_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     algo_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
@@ -3184,6 +3189,7 @@ async fn start_exec_report_test_server(state: Arc<ReportRouteState>) -> SocketAd
 }
 
 fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
+    let regular_detail_state = Arc::clone(&state);
     let regular_pending_state = Arc::clone(&state);
     let regular_history_state = Arc::clone(&state);
     let algo_pending_state = Arc::clone(&state);
@@ -3197,15 +3203,43 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
     Router::new()
         .route("/health", get(|| async { Json(json!({"ok": true})) }))
         .route(
+            "/api/v5/trade/order",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&regular_detail_state);
+                async move {
+                    state.regular_order_detail_queries.lock().await.push(params);
+                    Json(
+                        state
+                            .regular_child_response
+                            .clone()
+                            .unwrap_or_else(|| json!({"code": "0", "msg": "", "data": []})),
+                    )
+                    .into_response()
+                }
+            }),
+        )
+        .route(
             "/api/v5/trade/orders-pending",
             get(move |Query(params): Query<HashMap<String, String>>| {
                 let state = Arc::clone(&regular_pending_state);
                 async move {
+                    let is_swap = params.get("instType").is_some_and(|value| value == "SWAP");
+                    let is_spot = params.get("instType").is_some_and(|value| value == "SPOT");
                     state
                         .regular_order_pending_queries
                         .lock()
                         .await
                         .push(params);
+
+                    if state.include_regular_orders && is_swap {
+                        return Json(load_test_data("http_get_orders_pending.json"))
+                            .into_response();
+                    }
+
+                    if is_spot && let Some(response) = &state.regular_pending_response {
+                        return Json(response.clone()).into_response();
+                    }
+
                     Json(json!({"code": "0", "msg": "", "data": []})).into_response()
                 }
             }),
@@ -3216,11 +3250,17 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
                 let state = Arc::clone(&regular_history_state);
                 async move {
                     let is_spot = params.get("instType").is_some_and(|value| value == "SPOT");
+                    let is_swap = params.get("instType").is_some_and(|value| value == "SWAP");
                     state
                         .regular_order_history_queries
                         .lock()
                         .await
                         .push(params);
+
+                    if state.include_regular_orders && is_swap {
+                        return Json(load_test_data("http_get_orders_history.json"))
+                            .into_response();
+                    }
 
                     if !is_spot {
                         return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
@@ -3300,7 +3340,11 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
                 let state = Arc::clone(&spread_history_state);
                 async move {
                     state.spread_order_history_queries.lock().await.push(params);
-                    Json(load_test_data("http_get_spread_orders.json")).into_response()
+                    let mut response = load_test_data("http_get_spread_orders.json");
+                    response["data"][0]["ordId"] = json!("12346");
+                    response["data"][0]["clOrdId"] = json!("O-spread-closed");
+                    response["data"][0]["state"] = json!("canceled");
+                    Json(response).into_response()
                 }
             }),
         )
@@ -3943,8 +3987,333 @@ async fn test_query_order_adopted_external_regular_uses_cached_venue_order_id(
 }
 
 #[rstest]
+#[case::instrument(Some("BTC-USDT-SWAP.OKX"))]
+#[case::instrument_type(None)]
 #[tokio::test]
-async fn test_generate_order_status_reports_includes_spreads_when_enabled() {
+async fn test_generate_order_status_reports_honors_open_only(
+    #[case] instrument_id: Option<&str>,
+    #[values(true, false)] open_only: bool,
+) {
+    let state = Arc::new(ReportRouteState {
+        include_regular_orders: true,
+        ..Default::default()
+    });
+
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+
+    client.on_instrument(btc_usdt_swap_instrument());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        open_only,
+        instrument_id.map(InstrumentId::from),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let mut reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    reports.sort_by_key(|report| report.venue_order_id);
+    let pending_queries = state.regular_order_pending_queries.lock().await;
+    let history_queries = state.regular_order_history_queries.lock().await;
+    let mut expected_query = HashMap::from([("instType".to_string(), "SWAP".to_string())]);
+
+    if instrument_id.is_some() {
+        expected_query.insert("instId".to_string(), "BTC-USDT-SWAP".to_string());
+    }
+
+    let expected_reports = if open_only { 1 } else { 2 };
+    assert_eq!(reports.len(), expected_reports);
+    assert_eq!(pending_queries.as_slice(), [expected_query.clone()]);
+    assert_eq!(history_queries.len(), usize::from(!open_only));
+
+    if !open_only {
+        assert_eq!(history_queries.as_slice(), [expected_query]);
+    }
+
+    assert_eq!(state.spread_order_pending_queries.lock().await.len(), 0);
+    assert_eq!(state.spread_order_history_queries.lock().await.len(), 0);
+
+    let pending = &reports[0];
+    let mut expected_pending = OrderStatusReport::new(
+        AccountId::from("OKX-001"),
+        InstrumentId::from("BTC-USDT-SWAP.OKX"),
+        Some(ClientOrderId::from("client-order-1")),
+        VenueOrderId::from("1234567890123456789"),
+        Some(OrderSide::Buy),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        Quantity::from("0.10"),
+        Quantity::from("0"),
+        UnixNanos::from(1_746_947_317_000_000_000),
+        UnixNanos::from(1_746_947_317_000_000_000),
+        pending.ts_init,
+        Some(pending.report_id),
+    )
+    .with_price(Price::from("103500"));
+    expected_pending.avg_px = Some(dec!(0));
+    assert_eq!(pending, &expected_pending);
+
+    if !open_only {
+        let historical = &reports[1];
+
+        let mut expected_historical = OrderStatusReport::new(
+            AccountId::from("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            None,
+            VenueOrderId::from("2497956918703120384"),
+            Some(OrderSide::Buy),
+            OrderType::Market,
+            TimeInForce::Gtc,
+            OrderStatus::Filled,
+            Quantity::from("0.03"),
+            Quantity::from("0.03"),
+            UnixNanos::from(1_746_947_317_401_000_000),
+            UnixNanos::from(1_746_947_317_402_000_000),
+            historical.ts_init,
+            Some(historical.report_id),
+        );
+        expected_historical.avg_px = Some(dec!(103698.9));
+        assert_eq!(historical, &expected_historical);
+    }
+}
+
+#[rstest]
+#[case::filled("filled", None)]
+#[case::canceled("canceled", None)]
+#[case::live("live", Some(OrderStatus::Triggered))]
+#[case::partially_filled("partially_filled", Some(OrderStatus::PartiallyFilled))]
+#[tokio::test]
+async fn test_generate_open_order_reports_recovers_triggered_child(
+    #[case] child_state: &str,
+    #[case] expected_status: Option<OrderStatus>,
+    #[values(Some("ETH-USDT.OKX"), None)] instrument_id: Option<&str>,
+    #[values(false, true)] child_in_pending: bool,
+) {
+    let mut response = load_test_data("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+    response["code"] = json!("0");
+    response["msg"] = json!("");
+    response["data"][0]["state"] = json!(child_state);
+    response["data"][0]["sz"] = json!("0.007");
+    response["data"][0]["px"] = json!("1901.25");
+    response["data"][0]["reduceOnly"] = json!("true");
+    response["data"][0]["accFillSz"] = json!(match child_state {
+        "filled" => "0.007",
+        "partially_filled" => "0.002",
+        _ => "0",
+    });
+    response["data"][0]["avgPx"] = json!(if child_state == "partially_filled" {
+        "1900.75"
+    } else {
+        "0"
+    });
+
+    let regular_pending_response = child_in_pending.then(|| {
+        let mut pending = response.clone();
+        pending["data"][0]["state"] = json!("live");
+        pending["data"][0]["accFillSz"] = json!("0");
+        pending["data"][0]["avgPx"] = json!("0");
+        pending
+    });
+
+    let state = Arc::new(ReportRouteState {
+        regular_child_response: Some(response),
+        regular_pending_response,
+        ..Default::default()
+    });
+
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Margin];
+            config.margin_mode = Some(OKXMarginMode::Cross);
+            config.use_spot_margin = true;
+        });
+
+    client.on_instrument(make_margin_spot_report_instrument());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        instrument_id.map(InstrumentId::from),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let detail_queries = state.regular_order_detail_queries.lock().await;
+    assert_eq!(
+        detail_queries.as_slice(),
+        [HashMap::from([
+            ("instId".to_string(), "ETH-USDT".to_string()),
+            (
+                "ordId".to_string(),
+                MARGIN_SPOT_CHILD_VENUE_ORDER_ID.to_string()
+            ),
+        ])],
+    );
+    assert_eq!(state.regular_order_history_queries.lock().await.len(), 0);
+    assert_eq!(state.spread_order_history_queries.lock().await.len(), 0);
+    assert_eq!(
+        state.regular_order_pending_queries.lock().await.len(),
+        if instrument_id.is_some() { 1 } else { 2 },
+    );
+    assert_eq!(reports.len(), usize::from(expected_status.is_some()));
+
+    if let Some(order_status) = expected_status {
+        let report = &reports[0];
+        let triggered = order_status == OrderStatus::Triggered;
+
+        let mut expected = OrderStatusReport::new(
+            AccountId::from("OKX-001"),
+            InstrumentId::from("ETH-USDT.OKX"),
+            Some(ClientOrderId::from(MARGIN_SPOT_PARENT_CLIENT_ORDER_ID)),
+            VenueOrderId::from(MARGIN_SPOT_CHILD_VENUE_ORDER_ID),
+            Some(OrderSide::Buy),
+            if triggered {
+                OrderType::StopLimit
+            } else {
+                OrderType::Limit
+            },
+            TimeInForce::Gtc,
+            order_status,
+            Quantity::from("0.007"),
+            Quantity::from(if triggered { "0" } else { "0.002" }),
+            UnixNanos::from(if triggered {
+                1_622_559_930_237_000_000
+            } else {
+                1_786_550_400_000_000_000
+            }),
+            UnixNanos::from(1_786_550_400_100_000_000),
+            report.ts_init,
+            Some(report.report_id),
+        )
+        .with_price(Price::from("1901.25"));
+
+        expected.reduce_only = true;
+
+        if triggered {
+            expected.trigger_price = Some(Price::from("1887.00"));
+            expected.trigger_type = Some(TriggerType::MarkPrice);
+        } else {
+            expected.avg_px = Some(dec!(1900.75));
+        }
+
+        assert_eq!(report, &expected);
+    }
+}
+
+#[rstest]
+#[case::not_found(json!({"code": "0", "msg": "", "data": []}))]
+#[case::error(json!({"code": "50000", "msg": "Order detail unavailable", "data": []}))]
+#[tokio::test]
+async fn test_generate_open_order_reports_omits_unresolved_triggered_child(
+    #[case] response: serde_json::Value,
+    #[values(Some("ETH-USDT.OKX"), None)] instrument_id: Option<&str>,
+    #[values(false, true)] child_in_pending: bool,
+) {
+    let regular_pending_response = child_in_pending.then(|| {
+        let mut pending = load_test_data("ws_orders_algo_child_filled_empty_cl_ord_id.json");
+        pending["code"] = json!("0");
+        pending["msg"] = json!("");
+        pending["data"][0]["state"] = json!("live");
+        pending["data"][0]["accFillSz"] = json!("0");
+        pending["data"][0]["avgPx"] = json!("0");
+        pending
+    });
+
+    let state = Arc::new(ReportRouteState {
+        regular_child_response: Some(response),
+        regular_pending_response,
+        ..Default::default()
+    });
+
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Margin];
+            config.margin_mode = Some(OKXMarginMode::Cross);
+            config.use_spot_margin = true;
+            config.max_retries = 0;
+        });
+
+    client.on_instrument(make_margin_spot_report_instrument());
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        instrument_id.map(InstrumentId::from),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let detail_queries = state.regular_order_detail_queries.lock().await;
+    assert_eq!(reports.len(), usize::from(child_in_pending));
+
+    if child_in_pending {
+        let report = &reports[0];
+        let mut expected = OrderStatusReport::new(
+            AccountId::from("OKX-001"),
+            InstrumentId::from("ETH-USDT.OKX"),
+            Some(ClientOrderId::from(MARGIN_SPOT_PARENT_CLIENT_ORDER_ID)),
+            VenueOrderId::from(MARGIN_SPOT_CHILD_VENUE_ORDER_ID),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("0.003"),
+            Quantity::from("0"),
+            UnixNanos::from(1_786_550_400_000_000_000),
+            UnixNanos::from(1_786_550_400_100_000_000),
+            report.ts_init,
+            Some(report.report_id),
+        )
+        .with_price(Price::from("1886.00"));
+
+        expected.avg_px = Some(dec!(0));
+
+        assert_eq!(report, &expected);
+    }
+
+    assert_eq!(
+        detail_queries.as_slice(),
+        [HashMap::from([
+            ("instId".to_string(), "ETH-USDT".to_string()),
+            (
+                "ordId".to_string(),
+                MARGIN_SPOT_CHILD_VENUE_ORDER_ID.to_string()
+            ),
+        ])],
+    );
+    assert_eq!(state.regular_order_history_queries.lock().await.len(), 0);
+    assert_eq!(state.spread_order_history_queries.lock().await.len(), 0);
+}
+
+#[rstest]
+#[case::unscoped(None)]
+#[case::instrument(Some("ETH-USD-SWAP_ETH-USD-231229.OKX"))]
+#[tokio::test]
+async fn test_generate_order_status_reports_includes_spreads_when_enabled(
+    #[case] instrument_id: Option<&str>,
+    #[values(true, false)] open_only: bool,
+) {
     let state = Arc::new(ReportRouteState::default());
     let addr = start_exec_report_test_server(Arc::clone(&state)).await;
     let base_url = format!("http://{addr}");
@@ -3957,35 +4326,78 @@ async fn test_generate_order_status_reports_includes_spreads_when_enabled() {
     let cmd = GenerateOrderStatusReports::new(
         UUID4::new(),
         UnixNanos::default(),
-        false,
-        None,
+        open_only,
+        instrument_id.map(InstrumentId::from),
         None,
         None,
         None,
         None,
     );
 
-    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let mut reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    reports.sort_by_key(|report| report.venue_order_id);
     let regular_pending_queries = state.regular_order_pending_queries.lock().await;
     let regular_history_queries = state.regular_order_history_queries.lock().await;
     let spread_pending_queries = state.spread_order_pending_queries.lock().await;
     let spread_history_queries = state.spread_order_history_queries.lock().await;
 
-    assert_eq!(reports.len(), 1);
+    assert_eq!(reports.len(), if open_only { 1 } else { 2 });
     assert_eq!(
-        reports[0].instrument_id,
-        InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX")
+        regular_pending_queries.len(),
+        usize::from(instrument_id.is_none())
     );
     assert_eq!(
-        reports[0].client_order_id,
-        Some(ClientOrderId::from("O-spread-entry"))
+        regular_history_queries.len(),
+        usize::from(instrument_id.is_none() && !open_only)
     );
-    assert_eq!(regular_pending_queries.len(), 1);
-    assert_eq!(regular_history_queries.len(), 1);
     assert_eq!(spread_pending_queries.len(), 1);
-    assert_eq!(spread_history_queries.len(), 1);
-    assert!(!spread_pending_queries[0].contains_key("sprdId"));
-    assert!(!spread_history_queries[0].contains_key("sprdId"));
+    assert_eq!(spread_history_queries.len(), usize::from(!open_only));
+
+    let expected_query = if instrument_id.is_some() {
+        HashMap::from([(
+            "sprdId".to_string(),
+            "ETH-USD-SWAP_ETH-USD-231229".to_string(),
+        )])
+    } else {
+        HashMap::new()
+    };
+
+    assert_eq!(
+        spread_pending_queries.as_slice(),
+        std::slice::from_ref(&expected_query)
+    );
+
+    if !open_only {
+        assert_eq!(spread_history_queries.as_slice(), [expected_query]);
+    }
+
+    for (index, report) in reports.iter().enumerate() {
+        let (client_order_id, venue_order_id, status) = if index == 0 {
+            ("O-spread-entry", "12345", OrderStatus::PartiallyFilled)
+        } else {
+            ("O-spread-closed", "12346", OrderStatus::Canceled)
+        };
+
+        let mut expected = OrderStatusReport::new(
+            AccountId::from("OKX-001"),
+            InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
+            Some(ClientOrderId::from(client_order_id)),
+            VenueOrderId::from(venue_order_id),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            status,
+            Quantity::from("10"),
+            Quantity::from("5"),
+            UnixNanos::from(1_700_000_000_000_000_000),
+            UnixNanos::from(1_700_000_001_000_000_000),
+            report.ts_init,
+            Some(report.report_id),
+        )
+        .with_price(Price::from("1.25"));
+        expected.avg_px = Some(dec!(1.20));
+        assert_eq!(report, &expected);
+    }
 }
 
 #[rstest]
@@ -4793,6 +5205,16 @@ async fn test_generate_mass_status_sets_report_window(
 
     assert_eq!(mass_status.lookback_start(), Some(expected_start));
     assert!(mass_status.reports_complete());
+    let expected_order_query = HashMap::from([("instType".to_string(), "SWAP".to_string())]);
+    assert_eq!(
+        state.regular_order_pending_queries.lock().await.as_slice(),
+        std::slice::from_ref(&expected_order_query)
+    );
+    assert_eq!(
+        state.regular_order_history_queries.lock().await.as_slice(),
+        [expected_order_query]
+    );
+
     let fill_query = if expected_mins <= OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS {
         assert_eq!(recent_fill_queries.len(), 1);
         assert!(extended_fill_queries.is_empty());

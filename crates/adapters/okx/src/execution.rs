@@ -315,7 +315,7 @@ impl OKXExecutionClient {
                     Some(instrument_id),
                     start,
                     end,
-                    false,
+                    cmd.open_only,
                     None,
                     Some(scope),
                 )
@@ -386,7 +386,7 @@ impl OKXExecutionClient {
                         None,
                         start,
                         end,
-                        false,
+                        cmd.open_only,
                         None,
                         Some(scope),
                     )
@@ -444,33 +444,43 @@ impl OKXExecutionClient {
                     }
                 }
             }
+        }
 
-            if self.config.load_spreads {
-                match self
-                    .http_client
-                    .request_order_status_reports_scoped(
-                        self.core.account_id,
-                        None,
-                        None,
-                        start,
-                        end,
-                        false,
-                        None,
-                        Some(scope),
-                    )
-                    .await
-                {
-                    Ok(sweep) => {
-                        reports.extend(sweep.reports);
-                        complete &= sweep.complete;
-                    }
-                    Err(e) if is_instrument_cache_miss(&e) => return Err(e),
-                    Err(e) => {
-                        log::warn!("Failed to fetch spread order status reports: {e}");
-                        complete = false;
-                    }
+        if cmd.instrument_id.is_none() && self.config.load_spreads {
+            match self
+                .http_client
+                .request_order_status_reports_scoped(
+                    self.core.account_id,
+                    None,
+                    None,
+                    start,
+                    end,
+                    cmd.open_only,
+                    None,
+                    Some(scope),
+                )
+                .await
+            {
+                Ok(sweep) => {
+                    reports.extend(sweep.reports);
+                    complete &= sweep.complete;
+                }
+                Err(e) if is_instrument_cache_miss(&e) => return Err(e),
+                Err(e) => {
+                    log::warn!("Failed to fetch spread order status reports: {e}");
+                    complete = false;
                 }
             }
+        }
+
+        if cmd.open_only {
+            complete &= self
+                .recover_triggered_child_order_reports(
+                    &mut reports,
+                    &ambiguous_triggered_child_ids,
+                    &regular_by_venue_order_id,
+                )
+                .await;
         }
 
         retain_order_status_reports(&mut reports, cmd);
