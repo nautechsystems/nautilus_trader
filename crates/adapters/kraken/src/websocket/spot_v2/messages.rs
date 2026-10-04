@@ -777,9 +777,9 @@ mod tests {
         assert_eq!(book.timestamp.as_nanosecond(), 1_696_613_755_440_295_000);
 
         let bids = book.bids.unwrap();
-        assert_eq!(bids.len(), 3);
-        assert_eq!(bids[0].price, dec!(105944.20));
-        assert_eq!(bids[0].qty, dec!(0.136));
+        assert_eq!(bids.len(), 10);
+        assert_eq!(bids[0].price, dec!(45283.5));
+        assert_eq!(bids[0].qty, dec!(0.10000000));
     }
 
     #[rstest]

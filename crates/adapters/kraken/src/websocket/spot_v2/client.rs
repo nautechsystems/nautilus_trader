@@ -1341,6 +1341,84 @@ impl KrakenSpotWebSocketClient {
         Ok(())
     }
 
+    /// Returns whether L2 `book` checksum validation is enabled for this client.
+    pub fn validate_l2_checksum(&self) -> bool {
+        self.config.validate_l2_checksum
+    }
+
+    /// Resubscribes the `book` channel for `instrument_id` after a checksum mismatch.
+    ///
+    /// The logical subscription is kept throughout, so the reconnect path still replays it, and
+    /// each step re-checks that the user has not unsubscribed meanwhile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either command fails to send.
+    pub async fn resync_book(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> Result<(), KrakenWsError> {
+        let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
+        let depth = depth.unwrap_or(10);
+        let channel_str = KrakenWsChannel::Book.as_ref();
+        let key = format!("{channel_str}:{symbol}");
+
+        if !self.subscriptions_contains(&key) {
+            log::debug!("Skipping L2 resync: subscription cancelled, symbol={symbol}");
+            return Ok(());
+        }
+
+        let unsub = KrakenWsRequest {
+            method: KrakenWsMethod::Unsubscribe,
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
+                channel: KrakenWsChannel::Book,
+                symbol: Some(vec![symbol]),
+                snapshot: None,
+                depth: None,
+                interval: None,
+                event_trigger: None,
+                token: None,
+                snap_orders: None,
+                snap_trades: None,
+            })),
+            req_id: Some(self.get_next_req_id()),
+        };
+        self.send_command(&unsub).await?;
+
+        if !self.subscriptions_contains(&key) {
+            log::debug!("Skipping L2 resync resubscribe: cancelled before send, symbol={symbol}");
+            return Ok(());
+        }
+
+        let sub = KrakenWsRequest {
+            method: KrakenWsMethod::Subscribe,
+            params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
+                channel: KrakenWsChannel::Book,
+                symbol: Some(vec![symbol]),
+                snapshot: None,
+                depth: Some(depth),
+                interval: None,
+                event_trigger: None,
+                token: None,
+                snap_orders: None,
+                snap_trades: None,
+            })),
+            req_id: Some(self.get_next_req_id()),
+        };
+        let payload = self.send_command(&sub).await?;
+
+        if self.subscriptions_contains(&key) {
+            self.subscription_payloads
+                .write()
+                .await
+                .insert(key, payload);
+            self.l2_depths.insert(symbol.as_str(), depth);
+        }
+
+        Ok(())
+    }
+
     /// Returns whether L3 checksum validation is enabled for this client.
     pub fn validate_l3_checksum(&self) -> bool {
         self.config.validate_l3_checksum

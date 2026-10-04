@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::{AtomicMap, UnixNanos};
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas},
@@ -27,7 +27,12 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 
-use super::{messages::KrakenWsBookData, parse::parse_book_deltas};
+use super::{
+    checksum::{crc32_ieee, format_scaled},
+    messages::KrakenWsBookData,
+    parse::parse_book_deltas,
+};
+use crate::common::consts::KRAKEN_PAIR_DECIMALS_KEY;
 
 #[derive(Debug, Clone)]
 pub(crate) struct L2Depths {
@@ -62,12 +67,47 @@ impl L2Depths {
     }
 }
 
+/// A resubscription the data client issues after a checksum mismatch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct L2ResyncRequest {
+    pub(crate) instrument_id: InstrumentId,
+    pub(crate) depth: Option<u32>,
+}
+
+/// What processing one `book` message produced.
 #[derive(Debug, Default)]
+pub(crate) struct L2BookOutcome {
+    pub(crate) deltas: Option<(OrderBookDeltas, u64)>,
+    pub(crate) resync: Option<L2ResyncRequest>,
+}
+
+/// Shadow books for the Spot `book` channel, one per instrument.
+///
+/// `Default` leaves checksum validation off; the data client enables it from its configuration.
+#[derive(Debug)]
 pub(crate) struct L2BookState {
     pub(crate) books: AHashMap<InstrumentId, OrderBook>,
+    validate_checksum: bool,
+    /// Instruments whose book was cleared after a mismatch. Their updates are dropped until the
+    /// snapshot the resubscription produces, since they describe a stream the venue has ended.
+    awaiting_snapshot: AHashSet<InstrumentId>,
+}
+
+impl Default for L2BookState {
+    fn default() -> Self {
+        Self::new(false)
+    }
 }
 
 impl L2BookState {
+    pub(crate) fn new(validate_checksum: bool) -> Self {
+        Self {
+            books: AHashMap::new(),
+            validate_checksum,
+            awaiting_snapshot: AHashSet::new(),
+        }
+    }
+
     pub(crate) fn process_book(
         &mut self,
         book: &KrakenWsBookData,
@@ -76,11 +116,22 @@ impl L2BookState {
         is_snapshot: bool,
         depth: Option<u32>,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Option<(OrderBookDeltas, u64)>> {
+    ) -> anyhow::Result<L2BookOutcome> {
         let instrument_id = instrument.id();
+
+        if is_snapshot {
+            self.awaiting_snapshot.remove(&instrument_id);
+        } else if self.awaiting_snapshot.contains(&instrument_id) {
+            log::debug!(
+                "Dropping L2 update for {} while awaiting the snapshot after a checksum mismatch",
+                book.symbol
+            );
+            return Ok(L2BookOutcome::default());
+        }
+
         let mut deltas = parse_book_deltas(book, instrument, sequence, is_snapshot, ts_init)?;
         if deltas.is_empty() {
-            return Ok(None);
+            return Ok(L2BookOutcome::default());
         }
 
         let mut next_sequence = sequence + deltas.len() as u64;
@@ -104,12 +155,82 @@ impl L2BookState {
             );
         }
 
+        // The venue hashes its top ten levels per side, which pruning to the subscribed depth
+        // leaves intact, so the shadow book is compared after the message has been applied.
+        let mismatch = match (self.validate_checksum, book.checksum) {
+            (true, Some(remote)) => {
+                let local = compute_checksum(
+                    book_state,
+                    price_wire_scale(instrument),
+                    instrument.size_precision(),
+                );
+                (local != remote).then_some((local, remote))
+            }
+            _ => None,
+        };
+
+        if let Some((local, remote)) = mismatch {
+            log::warn!(
+                "L2 book checksum mismatch: symbol={}, local={local}, remote={remote}, \
+                 bids={}, asks={}; clearing the book and resubscribing",
+                book.symbol,
+                book_state.bids(None).count(),
+                book_state.asks(None).count(),
+            );
+            self.books.remove(&instrument_id);
+            self.awaiting_snapshot.insert(instrument_id);
+
+            let ts_event = deltas.last().map_or(ts_init, |delta| delta.ts_event);
+            let mut clear = OrderBookDelta::clear(instrument_id, next_sequence, ts_event, ts_init);
+            next_sequence += 1;
+            clear.flags |= RecordFlag::F_LAST as u8;
+
+            return Ok(L2BookOutcome {
+                deltas: Some((
+                    OrderBookDeltas::new(instrument_id, vec![clear]),
+                    next_sequence,
+                )),
+                resync: Some(L2ResyncRequest {
+                    instrument_id,
+                    depth,
+                }),
+            });
+        }
+
         set_last_delta_flag(&mut deltas);
-        Ok(Some((
-            OrderBookDeltas::new(instrument_id, deltas),
-            next_sequence,
-        )))
+        Ok(L2BookOutcome {
+            deltas: Some((OrderBookDeltas::new(instrument_id, deltas), next_sequence)),
+            resync: None,
+        })
     }
+}
+
+/// The scale the venue sends prices at.
+///
+/// `AssetPairs` declares it as `pair_decimals`, carried on the instrument only when it differs from
+/// the tick-size precision the instrument's prices use.
+fn price_wire_scale(instrument: &InstrumentAny) -> u8 {
+    instrument
+        .info()
+        .and_then(|info| info.get(KRAKEN_PAIR_DECIMALS_KEY))
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|scale| u8::try_from(scale).ok())
+        .unwrap_or_else(|| instrument.price_precision())
+}
+
+/// Computes Kraken's `book` checksum over the top ten levels of each side of `book`.
+///
+/// Asks ascending then bids descending, each level as the wire-scale price followed by the
+/// wire-scale quantity, per the venue's documented algorithm.
+pub(crate) fn compute_checksum(book: &OrderBook, price_scale: u8, qty_scale: u8) -> u32 {
+    let mut s = String::new();
+
+    for level in book.asks(Some(10)).chain(book.bids(Some(10))) {
+        s.push_str(&format_scaled(level.price.value.as_decimal(), price_scale));
+        s.push_str(&format_scaled(level.size_decimal(), qty_scale));
+    }
+
+    crc32_ieee(s.as_bytes())
 }
 
 fn prune_deltas_to_depth(
@@ -169,5 +290,226 @@ fn set_last_delta_flag(deltas: &mut [OrderBookDelta]) {
 
     if let Some(last) = deltas.last_mut() {
         last.flags |= RecordFlag::F_LAST as u8;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use indexmap::IndexMap;
+    use nautilus_core::params::Params;
+    use nautilus_model::{
+        enums::BookAction,
+        identifiers::Symbol,
+        instruments::currency_pair::CurrencyPair,
+        types::{Currency, Price, Quantity},
+    };
+    use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+    use ustr::Ustr;
+
+    use super::*;
+    use crate::{
+        common::consts::KRAKEN_VENUE,
+        websocket::spot_v2::messages::{KrakenWsBookLevel, KrakenWsRawMessage},
+    };
+
+    const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
+
+    /// Kraken's documented `book` checksum example: BTC/USD, ten levels a side, 3310070434.
+    const GUIDE_SNAPSHOT: &str = include_str!("../../../test_data/ws_book_snapshot.json");
+    /// The guide snapshot with the best bid's quantity changed to 0.2; checksum from an independent
+    /// implementation of the documented algorithm.
+    const GUIDE_UPDATE: &str = include_str!("../../../test_data/ws_book_update.json");
+
+    fn instrument(price_precision: u8, pair_decimals: Option<u8>) -> InstrumentAny {
+        let info = pair_decimals.map(|scale| {
+            let mut map = IndexMap::new();
+            map.insert(
+                KRAKEN_PAIR_DECIMALS_KEY.to_string(),
+                serde_json::Value::from(u64::from(scale)),
+            );
+            Params::from_index_map(map)
+        });
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::new(Symbol::new("BTC/USD"), *KRAKEN_VENUE))
+                .raw_symbol(Symbol::new("XXBTZUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .price_precision(price_precision)
+                .size_precision(8)
+                .price_increment(Price::new(
+                    10f64.powi(-i32::from(price_precision)),
+                    price_precision,
+                ))
+                .size_increment(Quantity::from("0.00000001"))
+                .maybe_info(info)
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn book_data(json: &str) -> KrakenWsBookData {
+        let message: KrakenWsRawMessage = serde_json::from_str(json).unwrap();
+        serde_json::from_str(message.data[0].get()).unwrap()
+    }
+
+    fn level(price: Decimal, qty: Decimal) -> KrakenWsBookLevel {
+        KrakenWsBookLevel { price, qty }
+    }
+
+    #[rstest]
+    fn test_guide_snapshot_checksum_matches() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let snapshot = book_data(GUIDE_SNAPSHOT);
+        assert_eq!(snapshot.checksum, Some(3_310_070_434));
+
+        let outcome = state
+            .process_book(&snapshot, &instrument, 0, true, Some(10), TS)
+            .unwrap();
+
+        assert!(
+            outcome.resync.is_none(),
+            "the documented example must validate"
+        );
+        let (deltas, _) = outcome.deltas.expect("snapshot deltas");
+        assert_eq!(deltas.deltas.len(), 21);
+        let book = &state.books[&instrument.id()];
+        assert_eq!(compute_checksum(book, 1, 8), 3_310_070_434);
+    }
+
+    #[rstest]
+    fn test_update_checksum_is_computed_over_the_shadow_book() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        state
+            .process_book(
+                &book_data(GUIDE_SNAPSHOT),
+                &instrument,
+                0,
+                true,
+                Some(10),
+                TS,
+            )
+            .unwrap();
+
+        let update = book_data(GUIDE_UPDATE);
+        assert_eq!(update.checksum, Some(38_355_977));
+        let outcome = state
+            .process_book(&update, &instrument, 21, false, Some(10), TS)
+            .unwrap();
+
+        assert!(
+            outcome.resync.is_none(),
+            "an update validated against the whole book"
+        );
+        assert_eq!(outcome.deltas.expect("update deltas").0.deltas.len(), 1);
+    }
+
+    /// A mismatch clears the book, emits one `Clear`, requests a resubscription, and drops updates
+    /// until the next snapshot.
+    #[rstest]
+    fn test_mismatch_clears_the_book_and_requests_resync() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let mut snapshot = book_data(GUIDE_SNAPSHOT);
+        snapshot.checksum = Some(1);
+
+        let outcome = state
+            .process_book(&snapshot, &instrument, 0, true, Some(25), TS)
+            .unwrap();
+
+        assert_eq!(
+            outcome.resync,
+            Some(L2ResyncRequest {
+                instrument_id: instrument.id(),
+                depth: Some(25),
+            })
+        );
+        let (deltas, next_sequence) = outcome.deltas.expect("a clear is emitted");
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert!(RecordFlag::F_LAST.matches(deltas.deltas[0].flags));
+        assert_eq!(
+            next_sequence, 22,
+            "the clear takes the sequence after the applied deltas"
+        );
+        assert!(!state.books.contains_key(&instrument.id()));
+
+        let update = book_data(GUIDE_UPDATE);
+        let dropped = state
+            .process_book(&update, &instrument, 22, false, Some(25), TS)
+            .unwrap();
+        assert!(dropped.deltas.is_none() && dropped.resync.is_none());
+
+        let fresh = state
+            .process_book(
+                &book_data(GUIDE_SNAPSHOT),
+                &instrument,
+                22,
+                true,
+                Some(25),
+                TS,
+            )
+            .unwrap();
+        assert!(fresh.resync.is_none());
+        assert!(
+            fresh.deltas.is_some(),
+            "the next snapshot resumes the stream"
+        );
+    }
+
+    #[rstest]
+    fn test_validation_disabled_ignores_a_bad_checksum() {
+        let mut state = L2BookState::new(false);
+        let instrument = instrument(1, None);
+        let mut snapshot = book_data(GUIDE_SNAPSHOT);
+        snapshot.checksum = Some(1);
+
+        let outcome = state
+            .process_book(&snapshot, &instrument, 0, true, Some(10), TS)
+            .unwrap();
+
+        assert!(outcome.resync.is_none());
+        assert_eq!(outcome.deltas.expect("deltas").0.deltas.len(), 21);
+    }
+
+    /// Prices are hashed at the wire scale, which `pair_decimals` gives when the tick size is a
+    /// digit coarser; hashing at the instrument's precision would mismatch on every message.
+    #[rstest]
+    fn test_price_scale_comes_from_pair_decimals() {
+        let message = KrakenWsBookData {
+            symbol: Ustr::from("BTC/USD"),
+            bids: Some(vec![level(dec!(0.000122), dec!(75))]),
+            asks: Some(vec![
+                level(dec!(0.000123), dec!(100)),
+                level(dec!(0.000124), dec!(50)),
+            ]),
+            // Over "0.0001230", "0.0001240", "0.0001220" and eight-decimal quantities.
+            checksum: Some(2_896_240_975),
+            timestamp: book_data(GUIDE_SNAPSHOT).timestamp,
+        };
+
+        let mut with_scale = L2BookState::new(true);
+        let outcome = with_scale
+            .process_book(&message, &instrument(6, Some(7)), 0, true, Some(10), TS)
+            .unwrap();
+        assert!(
+            outcome.resync.is_none(),
+            "seven-decimal prices match the venue"
+        );
+
+        let mut without_scale = L2BookState::new(true);
+        let outcome = without_scale
+            .process_book(&message, &instrument(6, None), 0, true, Some(10), TS)
+            .unwrap();
+        assert!(
+            outcome.resync.is_some(),
+            "six-decimal prices cannot reproduce the venue's checksum"
+        );
     }
 }

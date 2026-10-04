@@ -39,7 +39,7 @@ use rust_decimal_macros::dec;
 
 use crate::{
     common::{
-        consts::{KRAKEN_ALTNAME_KEY, KRAKEN_VENUE},
+        consts::{KRAKEN_ALTNAME_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE},
         enums::{
             KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenInstrumentType,
             KrakenPositionSide, KrakenSpotTrigger, KrakenTriggerSignal,
@@ -266,7 +266,7 @@ pub fn parse_spot_instrument(
         .price_increment(price_increment)
         .size_increment(size_increment)
         .maybe_min_quantity(min_quantity)
-        .maybe_info(pair_altname_info(pair_name, definition.altname.as_str()))
+        .maybe_info(pair_info(pair_name, definition, price_increment.precision))
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -683,16 +683,29 @@ pub fn parse_millis_timestamp(value: f64, field: &str) -> anyhow::Result<UnixNan
 /// The key is the instrument `raw_symbol`, while `OpenOrders`, `ClosedOrders` and `TradesHistory`
 /// spell the pair with the altname. A client whose instruments arrive through the cache APIs never
 /// sees the `AssetPairs` response, so the alias has to travel with the instrument.
-fn pair_altname_info(pair_name: &str, altname: &str) -> Option<Params> {
-    if altname == pair_name {
+/// Builds the instrument `info` for a Spot pair: the altname when it differs from the pair name, and
+/// the wire price scale when it differs from the tick-size precision.
+fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -> Option<Params> {
+    let mut map = IndexMap::new();
+
+    if definition.altname.as_str() != pair_name {
+        map.insert(
+            KRAKEN_ALTNAME_KEY.to_string(),
+            serde_json::Value::String(definition.altname.to_string()),
+        );
+    }
+
+    if definition.pair_decimals != price_precision {
+        map.insert(
+            KRAKEN_PAIR_DECIMALS_KEY.to_string(),
+            serde_json::Value::from(u64::from(definition.pair_decimals)),
+        );
+    }
+
+    if map.is_empty() {
         return None;
     }
 
-    let mut map = IndexMap::new();
-    map.insert(
-        KRAKEN_ALTNAME_KEY.to_string(),
-        serde_json::Value::String(altname.to_string()),
-    );
     Some(Params::from_index_map(map))
 }
 

@@ -55,6 +55,9 @@ pub struct KrakenDataClientConfig {
     /// Validate Kraken's CRC32 checksum on each L3 update.
     #[builder(default = true)]
     pub validate_l3_checksum: bool,
+    /// Validate Kraken's CRC32 checksum on each Spot L2 `book` snapshot and update.
+    #[builder(default = true)]
+    pub validate_l2_checksum: bool,
     #[builder(default = 30)]
     pub timeout_secs: u64,
     #[builder(default = 30)]
@@ -91,6 +94,7 @@ nautilus_core::impl_pyo3_config_getters!(KrakenDataClientConfig {
     environment: KrakenEnvironment,
     base_url: Option<String>,
     validate_l3_checksum: bool,
+    validate_l2_checksum: bool,
     timeout_secs: u64,
     heartbeat_interval_secs: u64,
     ws_idle_timeout_ms: u64,

@@ -265,6 +265,22 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 | `OrderBook` (snapshot) | ✓    | ✓       | Via HTTP depth endpoint.               |
 | `FundingRateUpdate`    | -    | ✓       | Client-side start/end/limit filtering. |
 
+### L2 book checksum validation
+
+Kraken sends a CRC32 checksum with each Spot `book` snapshot and update, computed over the top ten
+levels of each side at the venue's wire scales. By default the adapter validates it against its
+shadow book, rendering prices at `pair_decimals` and quantities at `lot_decimals` from
+`AssetPairs`; for a handful of pairs the price scale is one digit finer than the tick size, so the
+instrument carries it when the two differ. On mismatch the adapter emits a `Clear` delta, drops the
+shadow book, resubscribes the symbol, and ignores further updates until the fresh snapshot arrives.
+To disable validation:
+
+```python
+config = KrakenDataClientConfig(
+    validate_l2_checksum=False,
+)
+```
+
 ## L3 order book (market-by-order)
 
 Kraken exposes Spot per-order book data via the WebSocket v2 `level3` channel at
@@ -921,23 +937,24 @@ The product type for each client is specified via the `product_type` option.
 
 ### Data client configuration options
 
-| Option                    | Default   | Description                                                    |
-| ------------------------- | --------- | -------------------------------------------------------------- |
-| `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).            |
-| `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures. |
-| `api_key`                 | `None`    | API key for Spot L3 data.                                      |
-| `api_secret`              | `None`    | API secret for Spot L3 data.                                   |
-| `base_url`                | `None`    | Override for the Kraken REST base URL.                         |
-| `ws_public_url`           | `None`    | Override for the public WebSocket URL.                         |
-| `ws_private_url`          | `None`    | Override for the private WebSocket URL.                        |
-| `ws_l3_url`               | `None`    | Override for the Spot L3 WebSocket URL.                        |
-| `validate_l3_checksum`    | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.      |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.          |
-| `timeout_secs`            | `30`      | HTTP request timeout in seconds.                               |
-| `heartbeat_interval_secs` | `30`      | WebSocket heartbeat interval in seconds.                       |
-| `ws_idle_timeout_ms`      | `10,000`  | Data-silence timeout for the Spot v2 WebSocket; `0` disables.  |
-| `max_requests_per_second` | `None`    | Per-client request throttle; default is 5 req/s.               |
-| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                   |
+| Option                    | Default   | Description                                                      |
+| ------------------------- | --------- | ---------------------------------------------------------------- |
+| `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).              |
+| `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.   |
+| `api_key`                 | `None`    | API key for Spot L3 data.                                        |
+| `api_secret`              | `None`    | API secret for Spot L3 data.                                     |
+| `base_url`                | `None`    | Override for the Kraken REST base URL.                           |
+| `ws_public_url`           | `None`    | Override for the public WebSocket URL.                           |
+| `ws_private_url`          | `None`    | Override for the private WebSocket URL.                          |
+| `ws_l3_url`               | `None`    | Override for the Spot L3 WebSocket URL.                          |
+| `validate_l3_checksum`    | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.        |
+| `validate_l2_checksum`    | `True`    | Validate Kraken Spot L2 `book` checksums and resync on mismatch. |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.            |
+| `timeout_secs`            | `30`      | HTTP request timeout in seconds.                                 |
+| `heartbeat_interval_secs` | `30`      | WebSocket heartbeat interval in seconds.                         |
+| `ws_idle_timeout_ms`      | `10,000`  | Data-silence timeout for the Spot v2 WebSocket; `0` disables.    |
+| `max_requests_per_second` | `None`    | Per-client request throttle; default is 5 req/s.                 |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                     |
 
 ### Execution client configuration options
 

@@ -801,7 +801,7 @@ mod tests {
         assert_eq!(first_delta.instrument_id, instrument.id());
         assert_eq!(first_delta.action, BookAction::Update);
         assert_eq!(first_delta.order.side, OrderSide::Buy.into());
-        assert_eq!(first_delta.order.price, Price::from("105944.20"));
+        assert_eq!(first_delta.order.price, Price::from("45283.5"));
         assert!(RecordFlag::F_MBP.matches(first_delta.flags));
         assert!(RecordFlag::F_LAST.matches(first_delta.flags));
         assert!(!RecordFlag::F_SNAPSHOT.matches(first_delta.flags));

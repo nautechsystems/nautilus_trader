@@ -35,6 +35,8 @@ class KrakenDataClientConfig:
     @property
     def validate_l3_checksum(self) -> bool: ...
     @property
+    def validate_l2_checksum(self) -> bool: ...
+    @property
     def timeout_secs(self) -> int: ...
     @property
     def heartbeat_interval_secs(self) -> int: ...
@@ -55,6 +57,7 @@ class KrakenDataClientConfig:
         ws_private_url: str | None = None,
         ws_l3_url: str | None = None,
         validate_l3_checksum: bool | None = None,
+        validate_l2_checksum: bool | None = None,
         proxy_url: str | None = None,
         timeout_secs: int | None = None,
         heartbeat_interval_secs: int | None = None,

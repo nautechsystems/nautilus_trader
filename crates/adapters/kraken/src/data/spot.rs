@@ -69,7 +69,7 @@ use crate::{
     http::{KrakenSpotHttpClient, spot::client::KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND},
     websocket::spot_v2::{
         client::KrakenSpotWebSocketClient,
-        level_2::{L2BookState, L2Depths},
+        level_2::{L2BookState, L2Depths, L2ResyncRequest},
         level_3::{
             BookOrderIdHasher, KrakenL3WsMessage,
             resync::retry_l3_resync,
@@ -501,12 +501,18 @@ impl KrakenSpotDataClient {
         let book_sequence = Arc::new(AtomicU64::new(0));
         let ohlc_buffer: OhlcBuffer = Arc::new(Mutex::new(AHashMap::new()));
         let l2_depths = self.ws.l2_depths_handle();
+        let validate_l2_checksum = self.ws.validate_l2_checksum();
+        let resync_client = self.ws.clone();
+        let session_spawner = self
+            .session_tasks
+            .spawner()
+            .context("failed to acquire a task spawner for Kraken Spot L2 resync")?;
         let cancellation_token = self.cancellation_token.clone();
         let clock = self.clock;
 
         let future = async move {
             tokio::pin!(stream);
-            let mut l2_books = L2BookState::default();
+            let mut l2_books = L2BookState::new(validate_l2_checksum);
 
             loop {
                 tokio::select! {
@@ -526,7 +532,35 @@ impl KrakenSpotDataClient {
                                     ohlc_buffer: &ohlc_buffer,
                                     clock,
                                 };
-                                Self::handle_ws_message(ws_msg, &context, &mut l2_books);
+                                let resync =
+                                    Self::handle_ws_message(ws_msg, &context, &mut l2_books);
+
+                                if let Some(request) = resync {
+                                    log::info!(
+                                        "Resyncing Kraken L2 book after checksum mismatch: {}",
+                                        request.instrument_id
+                                    );
+                                    let client = resync_client.clone();
+
+                                    if let Err(e) = session_spawner.spawn_named(
+                                        "kraken-spot-l2-resync",
+                                        async move {
+                                            if let Err(e) = client
+                                                .resync_book(request.instrument_id, request.depth)
+                                                .await
+                                            {
+                                                log::error!(
+                                                    "Failed to resync Kraken L2 book for {}: {e}",
+                                                    request.instrument_id
+                                                );
+                                            }
+                                        },
+                                    ) {
+                                        log::warn!(
+                                            "Skipping Kraken L2 resync after shutdown began: {e}"
+                                        );
+                                    }
+                                }
                             }
                             None => {
                                 log::debug!("Spot WebSocket stream ended");
@@ -558,7 +592,8 @@ impl KrakenSpotDataClient {
         msg: KrakenSpotWsMessage,
         context: &SpotMessageContext,
         l2_books: &mut L2BookState,
-    ) {
+    ) -> Option<L2ResyncRequest> {
+        let mut resync = None;
         let ts_init = context.clock.get_time_ns();
 
         match msg {
@@ -626,19 +661,24 @@ impl KrakenSpotDataClient {
                         depth,
                         ts_init,
                     ) {
-                        Ok(Some((deltas, next_sequence))) => {
-                            context
-                                .book_sequence
-                                .store(next_sequence, Ordering::Relaxed);
+                        Ok(outcome) => {
+                            if let Some((deltas, next_sequence)) = outcome.deltas {
+                                context
+                                    .book_sequence
+                                    .store(next_sequence, Ordering::Relaxed);
 
-                            if let Err(e) = context
-                                .sender
-                                .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
-                            {
-                                log::error!("Failed to send deltas: {e}");
+                                if let Err(e) = context
+                                    .sender
+                                    .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
+                                {
+                                    log::error!("Failed to send deltas: {e}");
+                                }
+                            }
+
+                            if outcome.resync.is_some() {
+                                resync = outcome.resync;
                             }
                         }
-                        Ok(None) => {}
                         Err(e) => log::error!("Failed to parse book deltas: {e}"),
                     }
                 }
@@ -686,6 +726,8 @@ impl KrakenSpotDataClient {
                 log::info!("Spot WebSocket reconnected");
             }
         }
+
+        resync
     }
 }
 

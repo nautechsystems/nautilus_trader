@@ -40,6 +40,7 @@ impl KrakenDataClientConfig {
         ws_private_url = None,
         ws_l3_url = None,
         validate_l3_checksum = None,
+        validate_l2_checksum = None,
         proxy_url = None,
         timeout_secs = None,
         heartbeat_interval_secs = None,
@@ -58,6 +59,7 @@ impl KrakenDataClientConfig {
         ws_private_url: Option<String>,
         ws_l3_url: Option<String>,
         validate_l3_checksum: Option<bool>,
+        validate_l2_checksum: Option<bool>,
         proxy_url: Option<String>,
         timeout_secs: Option<u64>,
         heartbeat_interval_secs: Option<u64>,
@@ -76,6 +78,7 @@ impl KrakenDataClientConfig {
             ws_private_url,
             ws_l3_url,
             validate_l3_checksum: validate_l3_checksum.unwrap_or(defaults.validate_l3_checksum),
+            validate_l2_checksum: validate_l2_checksum.unwrap_or(defaults.validate_l2_checksum),
             proxy_url: proxy_url.map(SecretString::from),
             timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
             heartbeat_interval_secs: heartbeat_interval_secs
