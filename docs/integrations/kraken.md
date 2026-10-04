@@ -668,6 +668,14 @@ flag.
 - Open positions: Fetches all active futures positions.
 - Real-time data: Includes unrealized funding, average price, and position size.
 
+**Account state:**
+
+- Balances: One entry per asset across wallets, as described under Currency codes.
+- Margins: One entry per wallet. A flex wallet's requirement is in USD. A single-collateral
+  wallet's requirement is in that wallet's collateral, taken from the one asset key in its
+  balances, so a `fi_xbtusd` requirement is reported in BTC. A wallet whose collateral cannot be
+  resolved contributes no margin entry and logs a warning.
+
 :::note
 **Futures time filtering**: The Kraken Futures fills endpoint does not support
 server-side time range filtering. The adapter implements client-side filtering
