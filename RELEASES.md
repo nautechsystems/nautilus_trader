@@ -222,6 +222,8 @@ Released on TBD (UTC).
 - Fixed Python float conversions of precision 17 and 18 prices, quantities, and money aborting release builds
 - Fixed `Cache.price` mid prices of precision 16 quotes aborting greeks calculations in release builds
 - Fixed `Cache.price` midpoints at the precision ceiling panicking the process (#5084), thanks @folknor
+- Fixed Python raw and pickle reconstruction of quotes, trades, bars, and price updates aborting release builds
+- Fixed Python account balance queries, leverage setters, and `balance_impact` aborting release builds
 - Hardened HTTP and socket transport clients against URL credential leaks into logs, errors, and `Debug` output
 - Hardened `DataCatalogConfig` and `BacktestDataConfig` `repr()` and `Debug` against storage option leaks
 - Hardened TLS `certs_dir` loading by logging each trusted root at INFO with its SHA-256 fingerprint

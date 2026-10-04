@@ -35,7 +35,9 @@ use std::{
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
-use nautilus_core::correctness::{CorrectnessResultExt, FAILED, check_positive_decimal};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_positive_decimal,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -126,20 +128,46 @@ impl MarginAccount {
     ///
     /// # Panics
     ///
-    /// Panics if `leverage` is not positive.
+    /// Panics if `leverage` is not positive. See [`Self::try_set_default_leverage`].
     pub fn set_default_leverage(&mut self, leverage: Decimal) {
-        check_positive_decimal(leverage, "leverage").expect_display(FAILED);
+        self.try_set_default_leverage(leverage)
+            .expect_display(FAILED);
+    }
+
+    /// Sets the default leverage for the account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `leverage` is not positive, leaving the account unchanged.
+    pub fn try_set_default_leverage(&mut self, leverage: Decimal) -> CorrectnessResult<()> {
+        check_positive_decimal(leverage, "leverage")?;
         self.default_leverage = leverage;
+        Ok(())
     }
 
     /// Sets the leverage for a specific instrument.
     ///
     /// # Panics
     ///
-    /// Panics if `leverage` is not positive.
+    /// Panics if `leverage` is not positive. See [`Self::try_set_leverage`].
     pub fn set_leverage(&mut self, instrument_id: InstrumentId, leverage: Decimal) {
-        check_positive_decimal(leverage, "leverage").expect_display(FAILED);
+        self.try_set_leverage(instrument_id, leverage)
+            .expect_display(FAILED);
+    }
+
+    /// Sets the leverage for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `leverage` is not positive, leaving the account unchanged.
+    pub fn try_set_leverage(
+        &mut self,
+        instrument_id: InstrumentId,
+        leverage: Decimal,
+    ) -> CorrectnessResult<()> {
+        check_positive_decimal(leverage, "leverage")?;
         self.leverages.insert(instrument_id, leverage);
+        Ok(())
     }
 
     #[must_use]
@@ -659,6 +687,7 @@ impl Hash for MarginAccount {
 
 #[cfg(test)]
 mod tests {
+    use ahash::AHashMap;
     use indexmap::IndexMap;
     use nautilus_core::UnixNanos;
     use rstest::rstest;
@@ -811,6 +840,36 @@ mod tests {
         assert_eq!(
             margin_account.get_leverage(&instrument_id_aud_usd_sim),
             Decimal::from(10)
+        );
+    }
+
+    #[rstest]
+    #[case(dec!(0))]
+    #[case(dec!(-2.5))]
+    fn test_try_leverage_setters_reject_non_positive_without_mutation(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+        #[case] leverage: Decimal,
+    ) {
+        margin_account
+            .try_set_leverage(instrument_id_aud_usd_sim, dec!(10))
+            .unwrap();
+        margin_account.try_set_default_leverage(dec!(5)).unwrap();
+
+        let default_error = margin_account
+            .try_set_default_leverage(leverage)
+            .unwrap_err();
+        let instrument_error = margin_account
+            .try_set_leverage(instrument_id_aud_usd_sim, leverage)
+            .unwrap_err();
+
+        let expected = format!("invalid Decimal for 'leverage' not positive, was {leverage}");
+        assert_eq!(default_error.to_string(), expected);
+        assert_eq!(instrument_error.to_string(), expected);
+        assert_eq!(margin_account.default_leverage, dec!(5));
+        assert_eq!(
+            margin_account.leverages,
+            AHashMap::from([(instrument_id_aud_usd_sim, dec!(10))])
         );
     }
 

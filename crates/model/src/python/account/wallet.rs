@@ -28,7 +28,7 @@ use crate::{
     fees::MakerTakerFeeRates,
     identifiers::AccountId,
     position::Position,
-    python::instruments::pyobject_to_instrument_any,
+    python::{account::resolve_balance_currency, instruments::pyobject_to_instrument_any},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
@@ -107,8 +107,9 @@ impl WalletAccount {
 
     #[pyo3(name = "balance_total")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
-        self.balance_total(currency)
+    fn py_balance_total(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(self.balance_total(Some(currency)))
     }
 
     #[pyo3(name = "balances_total")]
@@ -118,8 +119,9 @@ impl WalletAccount {
 
     #[pyo3(name = "balance_free")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_free(&self, currency: Option<Currency>) -> Option<Money> {
-        self.balance_free(currency)
+    fn py_balance_free(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(self.balance_free(Some(currency)))
     }
 
     #[pyo3(name = "balances_free")]
@@ -129,8 +131,9 @@ impl WalletAccount {
 
     #[pyo3(name = "balance_locked")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
-        self.balance_locked(currency)
+    fn py_balance_locked(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(self.balance_locked(Some(currency)))
     }
 
     #[pyo3(name = "balances_locked")]
@@ -140,8 +143,9 @@ impl WalletAccount {
 
     #[pyo3(name = "balance")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance(&self, currency: Option<Currency>) -> Option<AccountBalance> {
-        Account::balance(self, currency).copied()
+    fn py_balance(&self, currency: Option<Currency>) -> PyResult<Option<AccountBalance>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance(self, Some(currency)).copied())
     }
 
     #[pyo3(name = "balances")]

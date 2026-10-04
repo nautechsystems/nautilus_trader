@@ -16,6 +16,11 @@
 Test index price behavior.
 """
 
+import pickle
+import re
+
+import pytest
+
 from nautilus_trader.model import IndexPriceUpdate
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
@@ -103,3 +108,65 @@ def test_equality() -> None:
     )
 
     assert update1 == update2
+
+
+def test_pickle_roundtrip() -> None:
+    """
+    Test pickle roundtrip.
+    """
+    update = IndexPriceUpdate(
+        instrument_id=BTCUSDT_BINANCE,
+        value=Price.from_str("100000.000000000000000001"),
+        ts_event=1,
+        ts_init=2,
+    )
+
+    restored = pickle.loads(pickle.dumps(update))
+
+    assert restored == update
+    assert restored.value.precision == 18
+    assert restored.ts_event == 1
+    assert restored.ts_init == 2
+
+
+@pytest.mark.parametrize(
+    ("index", "value", "message"),
+    [
+        (
+            1,
+            -170_141_183_460_460_000_000_000_000_001,
+            "raw value -170141183460460000000000000001 outside valid range "
+            "[-170141183460460000000000000000, 170141183460460000000000000000]",
+        ),
+        (2, 255, "`precision` exceeded maximum `WEI_PRECISION` (18), was 255"),
+    ],
+)
+def test_setstate_rejects_invalid_state_without_mutation(
+    index: int,
+    value: object,
+    message: str,
+) -> None:
+    """
+    Test setstate rejects invalid state without mutation.
+    """
+    update = IndexPriceUpdate(
+        instrument_id=BTCUSDT_BINANCE,
+        value=Price.from_str("100000.00"),
+        ts_event=1,
+        ts_init=2,
+    )
+    other = IndexPriceUpdate(
+        instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
+        value=Price.from_str("3500.000"),
+        ts_event=5,
+        ts_init=6,
+    )
+    original_state = update.__getstate__()
+    state = list(other.__getstate__())
+    state[index] = value
+
+    with pytest.raises(ValueError, match=re.escape(message)) as exc_info:
+        update.__setstate__(tuple(state))
+
+    assert str(exc_info.value) == message
+    assert update.__getstate__() == original_state
