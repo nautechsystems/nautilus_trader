@@ -55,7 +55,7 @@ use nautilus_core::{
 use nautilus_live::task::TaskGroup;
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType, custom::CustomDataTrait},
-    enums::BarAggregation,
+    enums::{BarAggregation, PriceType},
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -67,12 +67,13 @@ use crate::{
     historical::{DatabentoHistoricalClient, RangeQueryParams},
     live::{DatabentoFeedHandler, DatabentoMessage, HandlerCommand},
     loader::DatabentoDataLoader,
-    symbology::instrument_id_to_symbol_string,
+    symbology::{infer_symbology_type, instrument_id_to_symbol_string},
     types::{DatabentoImbalance, DatabentoStatistics, Dataset, PublisherId},
 };
 
 const PRICE_PRECISION_PARAM: &str = "price_precision";
 const SCHEMA_PARAM: &str = "schema";
+const MBP10_DEPTH: usize = 10;
 const QUOTE_SCHEMAS: &[dbn::Schema] = &[
     dbn::Schema::Mbp1,
     dbn::Schema::Bbo1S,
@@ -329,9 +330,11 @@ impl DatabentoDataClient {
         self.symbol_venue_map
             .insert(instrument_id.symbol, instrument_id.venue);
 
+        let symbol = instrument_id.symbol.to_string();
         let subscription = Subscription::builder()
             .schema(schema)
-            .symbols(instrument_id.symbol.to_string())
+            .stype_in(infer_symbology_type(&symbol))
+            .symbols(symbol)
             .build();
 
         self.send_subscription_to_dataset(&dataset, None, subscription, start_after_subscribe)
@@ -429,14 +432,16 @@ impl DatabentoDataClient {
                             }
                             Some(DatabentoMessage::Imbalance(imbalance)) => {
                                 log::debug!("Received imbalance: {imbalance:?}");
-                                let data = Data::Custom(CustomData::from_arc(Arc::new(imbalance)));
+                                let instrument_id = imbalance.instrument_id;
+                                let data = Data::Custom(custom_data_for_instrument(Arc::new(imbalance), instrument_id));
                                 if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                                     log::error!("Failed to send imbalance data event: {e}");
                                 }
                             }
                             Some(DatabentoMessage::Statistics(statistics)) => {
                                 log::debug!("Received statistics: {statistics:?}");
-                                let data = Data::Custom(CustomData::from_arc(Arc::new(statistics)));
+                                let instrument_id = statistics.instrument_id;
+                                let data = Data::Custom(custom_data_for_instrument(Arc::new(statistics), instrument_id));
                                 if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                                     log::error!("Failed to send statistics data event: {e}");
                                 }
@@ -703,8 +708,15 @@ impl DataClient for DatabentoDataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription request fails.
+    /// Returns an error if the requested depth is not 10 or the subscription request fails.
     fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
+        if let Some(depth) = cmd.depth {
+            anyhow::ensure!(
+                depth.get() == MBP10_DEPTH,
+                "Unsupported book depth {depth} for Databento `mbp-10`, only a depth of {MBP10_DEPTH} is available",
+            );
+        }
+
         self.subscribe_schema(cmd.instrument_id, dbn::Schema::Mbp10)
     }
 
@@ -1513,6 +1525,14 @@ fn price_precision_from_params(params: Option<&Params>) -> anyhow::Result<Option
     })?))
 }
 
+fn custom_data_for_instrument(
+    data: Arc<dyn CustomDataTrait>,
+    instrument_id: InstrumentId,
+) -> CustomData {
+    let data_type = DataType::new(data.type_name(), None, Some(instrument_id.to_string()));
+    CustomData::new(data, data_type)
+}
+
 fn custom_data_schema(data_type: &DataType) -> anyhow::Result<dbn::Schema> {
     match data_type.type_name() {
         name if name == DatabentoStatistics::type_name_static() => Ok(dbn::Schema::Statistics),
@@ -1539,6 +1559,10 @@ fn custom_data_instrument_id(data_type: &DataType) -> anyhow::Result<InstrumentI
 
 fn ohlcv_schema(bar_type: BarType) -> anyhow::Result<dbn::Schema> {
     let spec = bar_type.spec();
+    anyhow::ensure!(
+        spec.price_type == PriceType::Last,
+        "Unsupported bar price type for Databento OHLCV: {spec}, only LAST is emitted",
+    );
     anyhow::ensure!(
         spec.step.get() == 1,
         "Unsupported bar step for Databento OHLCV: {spec}, only a step of 1 is available",
@@ -1606,9 +1630,11 @@ fn send_subscription_commands(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{num::NonZeroUsize, path::PathBuf};
 
-    use nautilus_common::live::runner::replace_data_event_sender;
+    use nautilus_common::{
+        live::runner::replace_data_event_sender, msgbus::switchboard::get_custom_topic,
+    };
     use nautilus_core::UUID4;
     use nautilus_model::{
         data::OrderBookDelta,
@@ -1621,6 +1647,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
 
     #[derive(Clone, Copy)]
     enum SubscribeKind {
@@ -1760,6 +1787,21 @@ mod tests {
             UnixNanos::default(),
             None,
             params,
+        )
+    }
+
+    fn subscribe_book_depth_cmd(depth: Option<NonZeroUsize>) -> SubscribeBookDepth {
+        SubscribeBookDepth::new(
+            InstrumentId::from("ESM4.GLBX"),
+            BookType::L2_MBP,
+            Some(ClientId::from("DATABENTO-TEST")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            depth,
+            true,
+            None,
+            None,
         )
     }
 
@@ -2084,6 +2126,8 @@ mod tests {
     #[rstest]
     #[case::step("ESM4.GLBX-5-MINUTE-LAST-EXTERNAL")]
     #[case::aggregation("ESM4.GLBX-100-TICK-LAST-EXTERNAL")]
+    #[case::bid("ESM4.GLBX-1-MINUTE-BID-EXTERNAL")]
+    #[case::mid("ESM4.GLBX-1-MINUTE-MID-EXTERNAL")]
     fn test_ohlcv_schema_rejects_unsupported_bar_type(#[case] bar_type: &str) {
         assert!(ohlcv_schema(BarType::from(bar_type)).is_err());
     }
@@ -2148,6 +2192,98 @@ mod tests {
     }
 
     #[rstest]
+    fn test_custom_data_for_instrument_matches_subscribed_topic() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let statistics = DatabentoStatistics::new(
+            instrument_id,
+            DatabentoStatisticType::SettlementPrice,
+            DatabentoStatisticUpdateAction::Added,
+            Some(Price::from("5000.25")),
+            None,
+            1,
+            2,
+            3,
+            UnixNanos::from(4),
+            5,
+            UnixNanos::from(6),
+            UnixNanos::from(7),
+            UnixNanos::from(8),
+        );
+        let subscribed = DataType::new("DatabentoStatistics", None, Some("ESM4.GLBX".to_string()));
+
+        let custom = custom_data_for_instrument(Arc::new(statistics), instrument_id);
+
+        assert_eq!(custom.data_type, subscribed);
+        assert_eq!(
+            get_custom_topic(&custom.data_type),
+            get_custom_topic(&subscribed)
+        );
+        assert_eq!(custom.data_type.identifier(), Some("ESM4.GLBX"));
+    }
+
+    #[rstest]
+    #[case::raw_symbol("ESM4.GLBX", "ESM4", dbn::SType::RawSymbol)]
+    #[case::continuous("ES.c.0.GLBX", "ES.c.0", dbn::SType::Continuous)]
+    #[case::parent("ES.FUT.GLBX", "ES.FUT", dbn::SType::Parent)]
+    fn test_subscribe_schema_infers_symbology_type(
+        #[case] instrument_id: &str,
+        #[case] symbol: &str,
+        #[case] stype_in: dbn::SType,
+    ) {
+        let client = test_data_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client
+            .cmd_channels
+            .lock()
+            .insert("GLBX.MDP3".to_string(), tx);
+
+        client
+            .subscribe_schema(InstrumentId::from(instrument_id), dbn::Schema::Ohlcv1M)
+            .unwrap();
+
+        let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
+            panic!("expected subscription");
+        };
+        assert_eq!(subscription.stype_in, stype_in);
+        assert_eq!(
+            subscription.symbols,
+            databento::Symbols::Symbols(vec![symbol.to_string()])
+        );
+    }
+
+    #[rstest]
+    fn test_subscribe_book_depth_accepts_depth_ten() {
+        let mut client = test_data_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client
+            .cmd_channels
+            .lock()
+            .insert("GLBX.MDP3".to_string(), tx);
+
+        client
+            .subscribe_book_depth(subscribe_book_depth_cmd(NonZeroUsize::new(10)))
+            .unwrap();
+
+        let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
+            panic!("expected subscription");
+        };
+        assert_eq!(subscription.schema, dbn::Schema::Mbp10);
+    }
+
+    #[rstest]
+    #[case::five(5)]
+    #[case::twenty(20)]
+    fn test_subscribe_book_depth_rejects_other_depths(#[case] depth: usize) {
+        let mut client = test_data_client();
+
+        let result =
+            client.subscribe_book_depth(subscribe_book_depth_cmd(NonZeroUsize::new(depth)));
+
+        assert!(result.is_err());
+        assert!(client.cmd_channels.lock().is_empty());
+    }
+
+    #[rstest]
     fn test_subscribe_bars_sends_ohlcv_subscription() {
         let mut client = test_data_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2186,20 +2322,9 @@ mod tests {
             .cmd_channels
             .lock()
             .insert("GLBX.MDP3".to_string(), tx);
-        let command = SubscribeBookDepth::new(
-            InstrumentId::from("ESM4.GLBX"),
-            BookType::L2_MBP,
-            Some(ClientId::from("DATABENTO-TEST")),
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            true,
-            None,
-            None,
-        );
-
-        client.subscribe_book_depth(command).unwrap();
+        client
+            .subscribe_book_depth(subscribe_book_depth_cmd(None))
+            .unwrap();
 
         let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
             panic!("expected subscription");

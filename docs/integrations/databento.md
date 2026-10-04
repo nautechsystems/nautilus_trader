@@ -356,10 +356,14 @@ self.subscribe_instrument_status(
 
 ### Depth, bar, and custom data subscriptions
 
-`subscribe_book_depth()` streams `mbp-10` depth snapshots for one instrument. The bar aggregation in
-the `BarType` selects the OHLCV schema for `subscribe_bars()` (`ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`,
-or `ohlcv-1d`), and the step must be 1. `subscribe_data()` streams `DatabentoStatistics` or
-`DatabentoImbalance` records, and the data type identifier is the instrument ID:
+`subscribe_book_depth()` streams `mbp-10` depth snapshots for one instrument. Databento serves a
+depth of 10 only, so an explicit depth other than 10 is rejected. The bar aggregation in the
+`BarType` selects the OHLCV schema for `subscribe_bars()` (`ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, or
+`ohlcv-1d`). The step must be 1 and the price type must be `LAST`, the only price type the decoder
+emits. `subscribe_data()` streams `DatabentoStatistics` or `DatabentoImbalance` records, and the
+data type identifier is the instrument ID. Records are published with that identifier, so a
+subscriber receives only the records of its own instrument. These subscriptions infer the symbology
+type from the symbol, so continuous (`ES.c.0`) and parent (`ES.FUT`) symbols work:
 
 ```python
 self.subscribe_book_depth(
