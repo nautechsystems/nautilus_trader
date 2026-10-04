@@ -245,7 +245,8 @@ impl HyperSyncClient {
         );
 
         let chain = self.chain.name;
-        let mut rx = Arc::clone(&self.client)
+        let mut rx = self
+            .client
             .stream(query, StreamConfig::default())
             .await
             .expect("Failed to create stream");
@@ -311,7 +312,8 @@ impl HyperSyncClient {
         to_block: Option<u64>,
     ) -> impl Stream<Item = Block> {
         let query = Self::construct_block_query(from_block, to_block);
-        let mut rx = Arc::clone(&self.client)
+        let mut rx = self
+            .client
             .stream(query, StreamConfig::default())
             .await
             .unwrap();
