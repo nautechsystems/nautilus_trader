@@ -224,6 +224,7 @@ Released on TBD (UTC).
 - Fixed `Cache.price` midpoints at the precision ceiling panicking the process (#5084), thanks @folknor
 - Fixed Python raw and pickle reconstruction of quotes, trades, bars, and price updates aborting release builds
 - Fixed Python account balance queries, leverage setters, and `balance_impact` aborting release builds
+- Fixed Redis connections leaking passwords to debug logs and panicking on some non-ASCII passwords
 - Hardened HTTP and socket transport clients against URL credential leaks into logs, errors, and `Debug` output
 - Hardened `DataCatalogConfig` and `BacktestDataConfig` `repr()` and `Debug` against storage option leaks
 - Hardened TLS `certs_dir` loading by logging each trusted root at INFO with its SHA-256 fingerprint
@@ -540,6 +541,7 @@ Released on TBD (UTC).
 - Improved WebSocket rate-limit tests to handshake on the real clock (#5146), thanks @faysou
 - Improved execution engine tests by collecting functions nested in another test (#5158), thanks @abhijeetvichare76
 - Improved PyO3 docstring generation for one-line parameter attributes (#5115), thanks @faysou
+- Improved Postgres connection string redaction test coverage
 - Improved Architect AX protocol regression coverage with sanitized HTTP and WebSocket captures
 - Improved Kraken futures scoped position and order read coverage (#5154), thanks @zhaow-de
 - Improved OKX live-node submission recovery and unresolved-shutdown regression coverage (#5178), thanks @silarin
