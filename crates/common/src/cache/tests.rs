@@ -42,9 +42,9 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
-        GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide, MarketStatusAction,
-        OmsType, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, PriceType,
-        TimeInForce, TriggerType,
+        CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide,
+        MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
+        PriceType, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEmulated,
@@ -5691,6 +5691,116 @@ fn test_cache_accounts_when_no_database(mut cache: Cache) {
     assert!(futures::executor::block_on(cache.cache_accounts()).is_ok());
 }
 
+/// An account's currencies must be persisted, or a restart cannot decode the account.
+///
+/// A `Currency` persists as its bare code, and an account can hold collateral in a currency no
+/// instrument carries, so the currency record is the only way back.
+#[rstest]
+fn test_add_account_persists_account_currencies() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    // A code the process has never registered, distinct per test: `CURRENCY_MAP` is global.
+    let collateral = Currency::new("ZZACCT1", 4, 0, "Account Fixture One", CurrencyType::Crypto);
+    let account = cash_account_with_balance(collateral);
+
+    cache.add_account(account).unwrap();
+
+    let persisted = calls.lock().currencies.clone();
+    let found = persisted
+        .iter()
+        .find(|c| c.code.as_str() == "ZZACCT1")
+        .expect("the account's balance currency must be persisted");
+    assert_eq!(found.precision, 4);
+    assert_eq!(found.name.as_str(), "Account Fixture One");
+    assert_eq!(found.currency_type, CurrencyType::Crypto);
+}
+
+/// The same holds when an account is replaced rather than added.
+#[rstest]
+fn test_update_account_persists_account_currencies() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    let collateral = Currency::new("ZZACCT2", 4, 0, "Account Fixture Two", CurrencyType::Crypto);
+    let account = cash_account_with_balance(collateral);
+
+    cache.update_account(&account).unwrap();
+
+    assert!(
+        calls
+            .lock()
+            .currencies
+            .iter()
+            .any(|c| c.code.as_str() == "ZZACCT2"),
+        "updating an account must persist its balance currencies"
+    );
+}
+
+/// And when a later state event introduces a currency the account did not hold before.
+///
+/// This is the load-bearing case: collateral can arrive after the account exists, so persisting
+/// only on `add_account` would miss it.
+#[rstest]
+fn test_update_account_state_persists_a_new_balance_currency() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    let initial = Currency::USD();
+    let account = cash_account_with_balance(initial);
+    let account_id = account.id();
+    cache.add_account(account).unwrap();
+
+    let arrived = Currency::new(
+        "ZZACCT3",
+        4,
+        0,
+        "Account Fixture Three",
+        CurrencyType::Crypto,
+    );
+    let event = account_state_with_balances(account_id, &[initial, arrived]);
+    cache.update_account_state(&event).unwrap();
+
+    assert!(
+        calls
+            .lock()
+            .currencies
+            .iter()
+            .any(|c| c.code.as_str() == "ZZACCT3"),
+        "a currency introduced by an account state event must be persisted"
+    );
+}
+
+fn account_state_with_balances(account_id: AccountId, currencies: &[Currency]) -> AccountState {
+    let balances = currencies
+        .iter()
+        .map(|currency| {
+            AccountBalance::new(
+                Money::new(1_000.0, *currency),
+                Money::new(0.0, *currency),
+                Money::new(1_000.0, *currency),
+            )
+        })
+        .collect();
+
+    AccountState::new(
+        account_id,
+        AccountType::Cash,
+        balances,
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn cash_account_with_balance(currency: Currency) -> AccountAny {
+    let event = account_state_with_balances(AccountId::from("SIM-001"), &[currency]);
+    AccountAny::from_events(std::slice::from_ref(&event)).unwrap()
+}
+
 #[rstest]
 fn test_cache_add_account(mut cache: Cache) {
     let account = AccountAny::default();
@@ -9506,6 +9616,7 @@ struct CacheDatabaseCallLog {
     strategy_updates: Vec<(StrategyId, AHashMap<String, Bytes>)>,
     order_snapshots: Vec<OrderAny>,
     position_snapshots: Vec<(Position, UnixNanos, Option<Money>)>,
+    currencies: Vec<Currency>,
 }
 
 #[derive(Default)]
@@ -9807,7 +9918,8 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(())
     }
 
-    fn add_currency(&self, _currency: &Currency) -> anyhow::Result<()> {
+    fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
+        self.database_calls.lock().currencies.push(*currency);
         Ok(())
     }
 
