@@ -662,12 +662,14 @@ coverage, and that skip is logged at debug level. The condition also persists ac
 closing order is then cached as `FILLED` and matches the venue exactly, so reconciliation treats it
 as already in sync.
 
-Leaving `reconciliation_lookback_mins` unset avoids the projection but is not a general remedy.
-The closing order is external to the cache, so it is attributed to the `EXTERNAL` strategy and keys
-a netting position by instrument and strategy. Unless the cached position is itself `EXTERNAL`-owned
-or the instrument is claimed through `external_order_claim`, the recovered fill opens a second,
-opposite position rather than closing the cached one: net exposure reaches zero, but the stale
-position and its realized PnL remain.
+Leaving `reconciliation_lookback_mins` unset avoids the projection, and a closing order the cache
+already holds, such as a strategy exit submitted before the outage, then recovers into its
+position: the fill applies to the cached order and closes the position it belongs to. It is not a
+general remedy, because a closing order absent from the cache is attributed to the `EXTERNAL`
+strategy and keys a netting position by instrument and strategy. Unless the cached position is
+itself `EXTERNAL`-owned or the instrument is claimed through `external_order_claim`, that recovered
+fill opens a second, opposite position rather than closing the cached one: net exposure reaches
+zero, but the stale position and its realized PnL remain.
 
 Until this is addressed, reconcile a margin position closed during downtime manually, or run
 `spot_account_type=Cash` with `use_spot_position_reports=True`, where the wallet read enumerates
