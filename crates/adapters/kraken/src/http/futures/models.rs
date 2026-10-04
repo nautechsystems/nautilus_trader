@@ -762,6 +762,10 @@ pub enum KrakenFuturesAccountType {
 pub struct FuturesAccount {
     #[serde(rename = "type")]
     pub account_type: KrakenFuturesAccountType,
+    /// Currency of a single-collateral margin account; its `auxiliary` and `marginRequirements`
+    /// figures are in this currency. Absent on cash and flex accounts.
+    #[serde(default)]
+    pub currency: Option<String>,
     /// Balances for margin accounts (symbol -> amount).
     #[serde(default, with = "decimal_map")]
     pub balances: AHashMap<String, Decimal>,

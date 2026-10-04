@@ -706,9 +706,9 @@ every holding it covers and an absent report is genuine evidence of flat.
 
 - Balances: One entry per asset across wallets, as described under Currency codes.
 - Margins: One entry per wallet. A flex wallet's requirement is in USD. A single-collateral
-  wallet's requirement is in that wallet's collateral, taken from the one asset key in its
-  balances, so a `fi_xbtusd` requirement is reported in BTC. A wallet whose collateral cannot be
-  resolved contributes no margin entry and logs a warning.
+  wallet's requirement is in the wallet's `currency`, so a `fi_xbtusd` requirement is reported in
+  BTC at eight decimals. A response without that field falls back to the wallet's single funded
+  asset key; a wallet with neither contributes no margin entry and logs a warning.
 
 :::note
 **Futures time filtering**: The Kraken Futures fills endpoint does not support
