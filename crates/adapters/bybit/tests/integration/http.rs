@@ -48,7 +48,7 @@ use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol},
-    instruments::{CurrencyPair, InstrumentAny},
+    instruments::{CurrencyPair, Equity, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -2896,6 +2896,47 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
 
     assert_eq!(eth_report.position_side, PositionSide::Short);
     assert_eq!(eth_report.quantity, Quantity::new(0.06142, 5));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_position_report_missing_base_currency_returns_error() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+    client.set_use_spot_position_reports(true);
+    let instrument_id = InstrumentId::from("ETHUSDT-SPOT.BYBIT");
+    let instrument = Equity::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol("ETHUSDT".into())
+        .currency(Currency::from("USDT"))
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap();
+    client.cache_instrument(InstrumentAny::Equity(instrument));
+    let error = client
+        .request_position_status_reports(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Spot,
+            Some(instrument_id),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("ETHUSDT-SPOT.BYBIT"));
+    assert!(error.to_string().contains("base currency"));
 }
 
 #[rstest]
