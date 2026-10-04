@@ -9211,7 +9211,7 @@ mod rust_tests {
             .message_handler(handler)
             .connect()
             .await
-            .unwrap();
+            .expect("Initial WebSocket connection should succeed before triggering reconnect");
         wait_until_async(|| async { client.is_active() }, Duration::from_secs(2)).await;
         release_first_tx
             .send(())
@@ -9228,11 +9228,16 @@ mod rust_tests {
                 }
             }
         })
-        .await;
+        .await
+        .expect("Timed out waiting for a message from the replacement WebSocket connection");
 
         assert!(
-            matches!(received, Ok(true)),
-            "Reconnect should complete despite a timeout shorter than the swap ceremony"
+            received,
+            "Replacement WebSocket message channel closed before delivering the reconnect message"
+        );
+        assert!(
+            client.is_active(),
+            "WebSocket client should be active after delivering the reconnect message"
         );
 
         client.disconnect().await;
