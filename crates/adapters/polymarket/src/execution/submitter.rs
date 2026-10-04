@@ -871,6 +871,69 @@ mod tests {
     }
 
     #[rstest]
+    #[case::mismatched(
+        true,
+        Some("0xother"),
+        Some("rejected"),
+        "earlier attempt was ambiguous; final response returned an unexpected order ID"
+    )]
+    #[case::matching(
+        true,
+        Some("0xexpected"),
+        Some("rejected"),
+        "earlier attempt was ambiguous; final response: rejected"
+    )]
+    #[case::missing(
+        true,
+        None,
+        Some("rejected"),
+        "earlier attempt was ambiguous; final response: rejected"
+    )]
+    #[case::no_reason(
+        true,
+        Some("0xexpected"),
+        None,
+        "earlier attempt was ambiguous; final response: no venue rejection reason"
+    )]
+    #[case::invalid_id(
+        true,
+        Some("not ASCII \u{00e9}"),
+        Some("rejected"),
+        "earlier attempt was ambiguous; final response: rejected"
+    )]
+    #[case::first_attempt(
+        false,
+        None,
+        None,
+        "response contained neither a non-empty order ID nor a venue rejection reason"
+    )]
+    fn test_submit_response_unknown_reason(
+        #[case] earlier_attempt_unknown: bool,
+        #[case] order_id: Option<&str>,
+        #[case] error_msg: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let response = OrderResponse {
+            success: false,
+            order_id: order_id.map(str::to_string),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
+            error_msg: error_msg.map(str::to_string),
+        };
+
+        let reason = submit_response_unknown_reason(
+            &response,
+            earlier_attempt_unknown,
+            VenueOrderId::from("0xexpected"),
+        );
+
+        assert_eq!(reason, expected);
+    }
+
+    #[rstest]
     fn test_submit_response_matched_fok_confirms_expected_order_id() {
         let expected_venue_order_id = VenueOrderId::from("0xmatched-fok");
         let response = OrderResponse {

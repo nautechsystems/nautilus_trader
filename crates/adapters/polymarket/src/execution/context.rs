@@ -181,6 +181,35 @@ mod tests {
     #[case(TimeInForce::Gtc)]
     #[case(TimeInForce::Fok)]
     #[case(TimeInForce::Ioc)]
+    fn test_recovered_context_preserves_current_economics(#[case] time_in_force: TimeInForce) {
+        let registry = OrderContextRegistry::default();
+        let venue_order_id = VenueOrderId::from("V-RECOVERED");
+        let captured = test_context();
+
+        let current = OrderContext {
+            quantity: Quantity::from("23.45"),
+            price: Some(Price::from("0.6789")),
+            time_in_force,
+            is_post_only: false,
+            ..captured
+        };
+
+        registry.register_context(venue_order_id, current);
+
+        registry.recover_context(venue_order_id, captured);
+        registry.recover_context(venue_order_id, captured);
+
+        assert_eq!(registry.get(&venue_order_id), Some(current));
+        assert_eq!(
+            registry.venue_order_id(&captured.identity.client_order_id),
+            Some(venue_order_id)
+        );
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Gtc)]
+    #[case(TimeInForce::Fok)]
+    #[case(TimeInForce::Ioc)]
     fn test_register_and_get(#[case] time_in_force: TimeInForce) {
         let registry = OrderContextRegistry::default();
         let vid = VenueOrderId::from("V-1");

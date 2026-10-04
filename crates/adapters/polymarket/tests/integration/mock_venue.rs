@@ -132,6 +132,8 @@ pub(super) struct TestServerState {
     pub(super) last_headers: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
     pub(super) last_path: Arc<tokio::sync::Mutex<String>>,
     pub(super) last_query: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+    pub(super) trade_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    pub(super) balance_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) version_response: Arc<tokio::sync::Mutex<Value>>,
     pub(super) version_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
@@ -206,6 +208,8 @@ impl Default for TestServerState {
             last_headers: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_path: Arc::new(tokio::sync::Mutex::new(String::new())),
             last_query: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            trade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            balance_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
             version_response: Arc::new(tokio::sync::Mutex::new(load_json(
                 "http_version_response.json",
@@ -385,6 +389,7 @@ async fn handle_get_trades(
     let after = query
         .get("after")
         .and_then(|value| value.parse::<u64>().ok());
+    state.trade_queries.lock().await.push(query.clone());
     *state.last_query.lock().await = query;
     if let Some(override_value) = state.trades_response_override.lock().await.as_ref() {
         let mut page = override_value.clone();
@@ -411,7 +416,9 @@ async fn handle_get_balance(
     State(state): State<TestServerState>,
     uri: Uri,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Response {
+    state.balance_queries.lock().await.push(query);
     *state.last_path.lock().await = uri.path().to_string();
     state
         .startup_request_paths

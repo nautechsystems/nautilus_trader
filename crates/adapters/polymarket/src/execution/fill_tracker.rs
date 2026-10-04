@@ -753,6 +753,73 @@ mod tests {
     }
 
     #[rstest]
+    #[case::missing(None, true)]
+    #[case::registered_empty(Some("0.000000"), false)]
+    #[case::partial(Some("25.123456"), true)]
+    #[case::fully_filled(Some("100.000000"), true)]
+    fn test_has_fills_or_settled(#[case] filled: Option<&str>, #[case] expected: bool) {
+        let tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("V-FILL-STATUS");
+
+        if let Some(filled) = filled {
+            tracker.restore_order(
+                venue_order_id,
+                Quantity::from("100.000000"),
+                Quantity::from("13.000000"),
+                Quantity::from(filled),
+                OrderSide::Buy,
+            );
+        }
+
+        let result = tracker.has_fills_or_settled(&venue_order_id);
+
+        assert_eq!(result, expected);
+        assert_eq!(
+            tracker.get_cumulative_filled(&venue_order_id),
+            filled.map(Quantity::from)
+        );
+    }
+
+    #[rstest]
+    #[case::partial(true, "7.000001", Some("18.123455"))]
+    #[case::exact(true, "25.123456", Some("0.000000"))]
+    #[case::excess(true, "30.000000", Some("0.000000"))]
+    #[case::zero(true, "0.000000", Some("25.123456"))]
+    #[case::missing(false, "7.000001", None)]
+    fn test_reverse_fill_preserves_remaining_quantity(
+        #[case] registered: bool,
+        #[case] reversed: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("V-FILL-REVERSAL");
+
+        if registered {
+            tracker.restore_order(
+                venue_order_id,
+                Quantity::from("100.000000"),
+                Quantity::from("13.000000"),
+                Quantity::from("25.123456"),
+                OrderSide::Buy,
+            );
+        }
+
+        tracker.reverse_fill(&venue_order_id, Quantity::from(reversed));
+
+        let remaining = tracker.get_cumulative_filled(&venue_order_id);
+        assert_eq!(remaining, expected.map(Quantity::from));
+        assert_eq!(
+            remaining.map(|quantity| quantity.precision),
+            expected.map(|_| 6)
+        );
+        assert_eq!(tracker.contains(&venue_order_id), registered);
+        assert_eq!(
+            tracker.submitted_qty(&venue_order_id),
+            registered.then(|| Quantity::from("100.000000"))
+        );
+    }
+
+    #[rstest]
     fn test_check_dust_no_residual() {
         let tracker = OrderFillTrackerMap::new();
         let vid = VenueOrderId::from("order-1");
@@ -1139,12 +1206,12 @@ mod tests {
             order_side: OrderSide::Buy,
             last_qty: Quantity::from("714.285714"),
             last_px: Price::from("0.014"),
-            commission: Money::zero(pusd()),
+            commission: Money::from("0.12345 pUSD"),
             liquidity_side: LiquiditySide::Taker,
             avg_px: None,
             report_id: UUID4::new(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
+            ts_event: UnixNanos::from(12_345_678u64),
+            ts_init: UnixNanos::from(93_456_789u64),
             client_order_id: None,
             venue_position_id: None,
         };
@@ -1189,7 +1256,14 @@ mod tests {
         );
 
         assert_eq!(drained.len(), 1);
-        assert_eq!(drained[0].report.last_qty, Quantity::from("714.285714"));
+
+        let expected_report = FillReport {
+            client_order_id: Some(ClientOrderId::from("O-BUFFERED-OVERFILL")),
+            ..report
+        };
+
+        assert_eq!(drained[0].report, expected_report);
+        assert!(drained[0].correction.is_none());
         assert!(emitted);
         assert_eq!(
             emitted_qty.get(),

@@ -674,6 +674,7 @@ async fn stalled_submit_query_and_buffered_trade_apply_fill_once(
     venue_order["size_matched"] = json!("25.0000");
     venue_order["status"] = json!("CANCELED");
     *h.mock_state.single_order_response.lock().await = Some(venue_order);
+    h.mock_state.trade_queries.lock().await.clear();
     h.exec_engine()
         .borrow()
         .execute(TradingCommand::QueryOrder(QueryOrder::new(
@@ -714,16 +715,19 @@ async fn stalled_submit_query_and_buffered_trade_apply_fill_once(
         cached.trade_ids(),
         vec![&TradeId::from("trade-0xabcdef1234")]
     );
-    let cache = h.cache().borrow();
-    let positions = cache.positions_open(
-        None,
-        Some(&h.instrument_id()),
-        None,
-        Some(&h.account_id()),
-        None,
-    );
-    assert_eq!(positions.len(), 1);
-    assert_eq!(positions[0].quantity, Quantity::from("25"));
+    {
+        let cache = h.cache().borrow();
+        let positions = cache.positions_open(
+            None,
+            Some(&h.instrument_id()),
+            None,
+            Some(&h.account_id()),
+            None,
+        );
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("25"));
+    }
+
     assert_eq!(cached.filled_qty(), Quantity::from("25"));
     assert_eq!(cached.status(), OrderStatus::Canceled);
     assert_eq!(
@@ -733,6 +737,19 @@ async fn stalled_submit_query_and_buffered_trade_apply_fill_once(
     assert_eq!(
         event_count(&cached, |event| matches!(event, OrderEventAny::Accepted(_))),
         1
+    );
+    assert!(
+        h.mock_state
+            .trade_queries
+            .lock()
+            .await
+            .contains(&std::collections::HashMap::from([
+                (
+                    "market".to_string(),
+                    crate::mock_venue::TEST_CONDITION_ID.to_string()
+                ),
+                ("next_cursor".to_string(), "MA==".to_string()),
+            ]))
     );
 }
 
@@ -1270,6 +1287,20 @@ async fn ambiguous_submit_resolves_trade_matched_before_order_creation() {
 
     assert_eq!(fill_trade_ids, vec![TradeId::from("trade-0xfull")]);
     assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+    assert!(
+        h.mock_state
+            .trade_queries
+            .lock()
+            .await
+            .contains(&std::collections::HashMap::from([
+                (
+                    "market".to_string(),
+                    crate::mock_venue::TEST_CONDITION_ID.to_string()
+                ),
+                ("after".to_string(), "1704067201".to_string()),
+                ("next_cursor".to_string(), "MA==".to_string()),
+            ]))
+    );
 }
 
 #[rstest]
@@ -1383,11 +1414,24 @@ async fn stream_failed_trade_confirmed_by_rest_keeps_fill_and_resumes_reports() 
         )),
         0,
     );
-    let cache = h.cache().borrow();
-    let positions = cache.positions_open(None, Some(&h.instrument_id()), None, None, None);
-    assert_eq!(positions.len(), 1);
-    assert_eq!(positions[0].quantity, Quantity::from("100.0000"));
+    {
+        let cache = h.cache().borrow();
+        let positions = cache.positions_open(None, Some(&h.instrument_id()), None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("100.0000"));
+    }
+
     assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+    assert!(
+        h.mock_state
+            .trade_queries
+            .lock()
+            .await
+            .contains(&std::collections::HashMap::from([
+                ("id".to_string(), "trade-0xfull".to_string()),
+                ("next_cursor".to_string(), "MA==".to_string()),
+            ]))
+    );
 }
 
 #[rstest]

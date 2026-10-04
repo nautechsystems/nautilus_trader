@@ -447,6 +447,36 @@ async fn test_connect_emits_user_socket_state_change() {
 }
 
 #[rstest]
+#[case::taker(LiquiditySide::Taker, "0.224 pUSD")]
+#[case::maker(LiquiditySide::Maker, "0 pUSD")]
+fn test_calculate_commission_returns_fee_in_quote_currency(
+    #[case] liquidity_side: LiquiditySide,
+    #[case] expected: &str,
+) {
+    let (client, _rx, _cache) = create_test_execution_client("127.0.0.1:1".parse().unwrap());
+    let mut binary = nautilus_model::instruments::stubs::binary_option();
+    binary.currency = Currency::pUSD();
+    let mut info = Params::new();
+    info.insert(
+        "fee_schedule".into(),
+        json!({"rate": "0.07", "exponent": "2"}),
+    );
+    binary.info = Some(info);
+    let instrument = InstrumentAny::BinaryOption(binary);
+
+    let commission = client
+        .calculate_commission(
+            &instrument,
+            Quantity::from("125.000000"),
+            Price::from("0.2000"),
+            liquidity_side,
+        )
+        .unwrap();
+
+    assert_eq!(commission, Some(Money::from(expected)));
+}
+
+#[rstest]
 #[case::malformed_spender(json!({
     "balance": "37506152",
     "allowances": {"exchange": "1000"},
@@ -473,6 +503,13 @@ async fn test_connect_checks_v2_before_websocket_and_uses_balance_projection(
     assert_eq!(
         state.startup_request_paths.lock().await.as_slice(),
         ["/version", "/ws", "/balance-allowance"]
+    );
+    assert_eq!(
+        state.balance_queries.lock().await.as_slice(),
+        [std::collections::HashMap::from([
+            ("asset_type".to_string(), "COLLATERAL".to_string()),
+            ("signature_type".to_string(), "0".to_string()),
+        ])]
     );
 
     client.disconnect().await.unwrap();
@@ -8711,6 +8748,13 @@ async fn test_submit_market_order_buy_uses_balance_projection() {
         .unwrap()
         .unwrap();
     assert_order_event(event, "Accepted");
+    assert_eq!(
+        state.balance_queries.lock().await.as_slice(),
+        [std::collections::HashMap::from([
+            ("asset_type".to_string(), "COLLATERAL".to_string()),
+            ("signature_type".to_string(), "0".to_string()),
+        ])]
+    );
 }
 
 #[rstest]

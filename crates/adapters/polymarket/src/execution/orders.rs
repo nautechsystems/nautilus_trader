@@ -28,8 +28,6 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
-#[cfg(test)]
-use rust_decimal_macros::dec;
 
 use super::{
     PolymarketExecutionClient,
@@ -1574,7 +1572,7 @@ pub(super) fn calculate_commission(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::instruments::stubs::binary_option;
+    use nautilus_model::{instruments::stubs::binary_option, types::Currency};
     use rstest::rstest;
 
     use super::*;
@@ -1591,7 +1589,7 @@ mod tests {
         )
         .expect("a zero commission is representable");
 
-        assert_eq!(commission.as_decimal(), dec!(0));
+        assert_eq!(commission, Money::zero(Currency::USDC()));
     }
 
     #[rstest]
@@ -1606,6 +1604,36 @@ mod tests {
         )
         .expect("a zero commission is representable");
 
-        assert_eq!(commission.as_decimal(), dec!(0));
+        assert_eq!(commission, Money::zero(Currency::USDC()));
+    }
+
+    #[rstest]
+    #[case::taker_linear(LiquiditySide::Taker, "1", "1.4 pUSD")]
+    #[case::taker_quadratic(LiquiditySide::Taker, "2", "0.224 pUSD")]
+    #[case::maker_with_fee_schedule(LiquiditySide::Maker, "2", "0 pUSD")]
+    fn test_calculate_commission_uses_fee_schedule_and_quote_currency(
+        #[case] liquidity_side: LiquiditySide,
+        #[case] exponent: &str,
+        #[case] expected: &str,
+    ) {
+        let mut binary = binary_option();
+        binary.currency = Currency::pUSD();
+        let mut info = nautilus_core::Params::new();
+        info.insert(
+            "fee_schedule".into(),
+            serde_json::json!({"rate": "0.07", "exponent": exponent}),
+        );
+        binary.info = Some(info);
+        let instrument = InstrumentAny::BinaryOption(binary);
+
+        let commission = calculate_commission(
+            &instrument,
+            Quantity::from("125.000000"),
+            Price::from("0.2000"),
+            liquidity_side,
+        )
+        .unwrap();
+
+        assert_eq!(commission, Money::from(expected));
     }
 }

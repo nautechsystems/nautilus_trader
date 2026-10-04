@@ -1600,11 +1600,23 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from(
+                "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12"
+            )
+        );
         assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.order_status, OrderStatus::Accepted);
-        assert!(report.price.is_some());
+        assert_eq!(report.price, Some(Price::from("0.5000")));
+        assert_eq!(report.price.unwrap().precision, 4);
+        assert_eq!(report.quantity, Quantity::from("100.000000"));
+        assert_eq!(report.quantity.precision, 6);
+        assert_eq!(report.filled_qty, Quantity::from("25.000000"));
+        assert_eq!(report.filled_qty.precision, 6);
         assert_eq!(
             report.ts_accepted,
             UnixNanos::from(1_703_875_200_000_000_000u64)
@@ -1837,41 +1849,49 @@ mod tests {
     }
 
     #[rstest]
-    #[case::negative_rate(dec!(-0.1), dec!(1), dec!(10), dec!(0.5))]
-    #[case::negative_exponent(dec!(0.1), dec!(-1), dec!(10), dec!(0.5))]
-    #[case::negative_size(dec!(0.1), dec!(1), dec!(-10), dec!(0.5))]
-    #[case::invalid_price(dec!(0.1), dec!(1), dec!(10), dec!(1.1))]
-    #[case::overflow(Decimal::MAX, dec!(0), dec!(10), dec!(0.5))]
+    #[case::negative_rate(dec!(-0.1), dec!(1), dec!(10), dec!(0.5), "fee rate must be non-negative")]
+    #[case::negative_exponent(dec!(0.1), dec!(-1), dec!(10), dec!(0.5), "fee exponent must be a non-negative whole number, was -1")]
+    #[case::fractional_exponent(dec!(0.1), dec!(1.5), dec!(10), dec!(0.5), "fee exponent must be a non-negative whole number, was 1.5")]
+    #[case::negative_size(dec!(0.1), dec!(1), dec!(-10), dec!(0.5), "fee quantity must be non-negative")]
+    #[case::invalid_price(dec!(0.1), dec!(1), dec!(10), dec!(1.1), "fee price must be in [0, 1]")]
+    #[case::overflow(Decimal::MAX, dec!(0), dec!(10), dec!(0.5), "commission calculation overflow")]
     fn test_commission_rejects_invalid_values(
         #[case] rate: Decimal,
         #[case] exponent: Decimal,
         #[case] size: Decimal,
         #[case] price: Decimal,
+        #[case] expected: &str,
     ) {
-        assert!(compute_commission(rate, exponent, size, price, LiquiditySide::Taker).is_err());
+        let error =
+            compute_commission(rate, exponent, size, price, LiquiditySide::Taker).unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
     }
 
     #[rstest]
-    #[case::negative_amount(dec!(-1), dec!(10), dec!(0))]
-    #[case::negative_balance(dec!(1), dec!(-10), dec!(0))]
-    #[case::negative_builder(dec!(1), dec!(10), dec!(-0.1))]
-    #[case::overflow(Decimal::MAX, Decimal::MAX, dec!(1))]
+    #[case::negative_amount(dec!(-1), dec!(10), dec!(0), "market-buy amount must be positive")]
+    #[case::zero_amount(dec!(0), dec!(10), dec!(0), "market-buy amount must be positive")]
+    #[case::negative_balance(dec!(1), dec!(-10), dec!(0), "market-buy balance must be positive")]
+    #[case::zero_balance(dec!(1), dec!(0), dec!(0), "market-buy balance must be positive")]
+    #[case::negative_builder(dec!(1), dec!(10), dec!(-0.1), "builder fee rate must be non-negative")]
+    #[case::overflow(Decimal::MAX, Decimal::MAX, dec!(1), "market-buy platform fee overflow")]
     fn test_market_buy_rejects_invalid_values(
         #[case] amount: Decimal,
         #[case] balance: Decimal,
         #[case] builder: Decimal,
+        #[case] expected: &str,
     ) {
-        assert!(
-            adjust_market_buy_amount(
-                amount,
-                balance,
-                dec!(0.5),
-                dec!(0.07),
-                Decimal::ONE,
-                builder
-            )
-            .is_err()
-        );
+        let error = adjust_market_buy_amount(
+            amount,
+            balance,
+            dec!(0.5),
+            dec!(0.07),
+            Decimal::ONE,
+            builder,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
     }
 
     #[rstest]
