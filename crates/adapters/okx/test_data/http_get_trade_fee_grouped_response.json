@@ -1,0 +1,31 @@
+{
+  "code": "0",
+  "data": [
+    {
+      "category": "1",
+      "delivery": "",
+      "exercise": "",
+      "feeGroup": [
+        {
+          "elpMaker": "-0.0008",
+          "rpiMaker": "-0.0008",
+          "groupId": "1",
+          "maker": "-0.0008",
+          "taker": "-0.001"
+        }
+      ],
+      "fiat": [],
+      "instType": "SPOT",
+      "level": "Lv1",
+      "maker": "-0.0008",
+      "makerU": "",
+      "makerUSDC": "",
+      "ruleType": "normal",
+      "taker": "-0.001",
+      "takerU": "",
+      "takerUSDC": "",
+      "ts": "1763979985847"
+    }
+  ],
+  "msg": ""
+}
