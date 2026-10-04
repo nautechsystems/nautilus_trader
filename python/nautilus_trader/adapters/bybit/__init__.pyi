@@ -17,6 +17,7 @@ __all__ = [
     "BybitEnvironment",
     "BybitExecutionClientConfig",
     "BybitExecutionClientFactory",
+    "BybitLiquidation",
     "BybitMarginAction",
     "BybitMarginBorrowResult",
     "BybitMarginRepayResult",
@@ -342,6 +343,38 @@ class BybitHttpClient:
         product_type: BybitProductType,
         instrument_id: model.InstrumentId | None = None,
     ) -> typing.Any: ...
+
+@typing.final
+class BybitLiquidation:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def position_side(self) -> model.PositionSide: ...
+    @property
+    def bankruptcy_price(self) -> model.Price: ...
+    @property
+    def quantity(self) -> model.Quantity: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+    def __new__(
+        cls,
+        instrument_id: model.InstrumentId,
+        position_side: model.PositionSide,
+        bankruptcy_price: model.Price,
+        quantity: model.Quantity,
+        ts_event: int,
+        ts_init: int,
+    ) -> BybitLiquidation: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class BybitMarginBorrowResult:
