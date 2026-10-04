@@ -55,7 +55,7 @@ use nautilus_okx::{
         enums::{
             OKXAccountLevel, OKXAlgoOrderStatus, OKXApiKeyPermission, OKXEnvironment, OKXFeeType,
             OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
-            OKXRpiPermission, OKXSide, OKXTradeMode, OKXTriggerType,
+            OKXRpiPermission, OKXSide, OKXTradeMode, OKXTriggerType, OKXVipLevel,
         },
         failure::classify_okx_http_failure,
         models::OKXInstrument,
@@ -5534,6 +5534,58 @@ async fn test_http_trade_fee_rejects_conflicting_scope_before_request(
     assert!(state.trade_fee_request.lock().await.is_none());
 }
 
+#[tokio::test]
+async fn test_http_trade_fee_documented_response() {
+    let state = Arc::new(TestServerState::default());
+    *state.trade_fee_response.lock().await = Some(
+        serde_json::from_str(include_str!(
+            "../../test_data/http_get_trade_fee_grouped_response.json"
+        ))
+        .unwrap(),
+    );
+    let client = trade_fee_client(state, OKXEnvironment::Demo).await;
+    let params = GetTradeFeeParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Spot)
+        .build()
+        .unwrap();
+
+    let fees = client.get_trade_fee(params).await.unwrap();
+
+    assert_eq!(fees.len(), 1);
+    let fee = &fees[0];
+    assert_eq!(fee.level, OKXVipLevel::Vip1);
+    assert_eq!(fee.inst_type, OKXInstrumentType::Spot);
+    assert_eq!(fee.category, "1");
+    assert_eq!(fee.ts, 1_763_979_985_847);
+    assert_eq!(fee.maker, "-0.0008");
+    assert_eq!(fee.taker, "-0.001");
+    assert!(fee.maker_u.is_empty());
+    assert!(fee.taker_u.is_empty());
+    assert!(fee.delivery.is_empty());
+    assert!(fee.exercise.is_empty());
+    assert!(fee.settle.is_empty());
+    assert_eq!(fee.rpi_maker, None);
+    assert_eq!(fee.fee_group.len(), 1);
+    let group = &fee.fee_group[0];
+    assert_eq!(group.group_id, "1");
+    assert_eq!(
+        group.maker,
+        Some(Decimal::from_str_exact("-0.0008").unwrap())
+    );
+    assert_eq!(
+        group.taker,
+        Some(Decimal::from_str_exact("-0.001").unwrap())
+    );
+    assert_eq!(
+        group.rpi_maker,
+        Some(Decimal::from_str_exact("-0.0008").unwrap())
+    );
+    assert_eq!(
+        group.elp_maker,
+        Some(Decimal::from_str_exact("-0.0008").unwrap())
+    );
+}
+
 #[rstest]
 #[case::rpi_only(Some("-0.00015"), None)]
 #[case::elp_only(None, Some("-0.00016"))]
@@ -5547,23 +5599,40 @@ async fn test_http_trade_fee_grouped_response_without_legacy_scalars(
     #[case] elp: Option<&str>,
 ) {
     let state = Arc::new(TestServerState::default());
-    let mut first_group = json!({"groupId": "1", "maker": "0.0002", "taker": "-0.001"});
+    let mut response: Value = serde_json::from_str(include_str!(
+        "../../test_data/http_get_trade_fee_grouped_response.json"
+    ))
+    .unwrap();
+    let fee = response["data"][0].as_object_mut().unwrap();
+
+    // Derive grouped-only and edge-rate cases from the documented response
+    for field in [
+        "maker",
+        "taker",
+        "makerU",
+        "takerU",
+        "makerUSDC",
+        "takerUSDC",
+    ] {
+        fee.remove(field);
+    }
+
+    let groups = fee.get_mut("feeGroup").unwrap().as_array_mut().unwrap();
+    let first_group = groups[0].as_object_mut().unwrap();
+    first_group.insert("maker".to_string(), json!("0.0002"));
+    first_group.remove("rpiMaker");
+    first_group.remove("elpMaker");
+
     if let Some(value) = rpi {
-        first_group["rpiMaker"] = json!(value);
+        first_group.insert("rpiMaker".to_string(), json!(value));
     }
 
     if let Some(value) = elp {
-        first_group["elpMaker"] = json!(value);
+        first_group.insert("elpMaker".to_string(), json!(value));
     }
-    *state.trade_fee_response.lock().await = Some(json!({
-        "code": "0", "msg": "", "data": [{
-            "level": "Lv1", "instType": "SPOT", "ts": "1763979985847",
-            "feeGroup": [
-                first_group,
-                {"groupId": "2", "maker": "0", "taker": "", "rpiMaker": ""}
-            ]
-        }]
-    }));
+
+    groups.push(json!({"groupId": "2", "maker": "0", "taker": "", "rpiMaker": ""}));
+    *state.trade_fee_response.lock().await = Some(response);
     let client = trade_fee_client(state, OKXEnvironment::Demo).await;
     let params = GetTradeFeeParamsBuilder::default()
         .inst_type(OKXInstrumentType::Spot)
