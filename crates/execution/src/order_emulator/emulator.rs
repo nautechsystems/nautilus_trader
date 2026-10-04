@@ -41,7 +41,9 @@ use nautilus_core::{UUID4, WeakCell};
 use nautilus_model::{
     data::{OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
-    events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderReleased, OrderUpdated},
+    events::{
+        OrderCanceled, OrderEmulated, OrderEventAny, OrderInitialized, OrderReleased, OrderUpdated,
+    },
     identifiers::{ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId},
     instruments::Instrument,
     orders::{LimitOrder, MarketOrder, Order, OrderAny},
@@ -1339,7 +1341,7 @@ impl OrderEmulator {
             }
         };
 
-        let command = match self
+        let mut command = match self
             .manager
             .pop_submit_order_command(order.client_order_id())
         {
@@ -1366,6 +1368,7 @@ impl OrderEmulator {
         let original_events = order.events();
 
         transformed.prepend_events(original_events.into_iter().cloned());
+        command.order_init = OrderInitialized::from(&transformed);
 
         let add_result = {
             let mut cache = self.cache.borrow_mut();
@@ -1456,7 +1459,7 @@ impl OrderEmulator {
                 None => return, // Order stays queued for retry
             };
 
-        let command = self
+        let mut command = self
             .manager
             .pop_submit_order_command(order.client_order_id())
             .expect("invalid operation `fill_market_order` with no command");
@@ -1500,6 +1503,7 @@ impl OrderEmulator {
             let original_events = order.events();
 
             transformed.prepend_events(original_events.into_iter().cloned());
+            command.order_init = OrderInitialized::from(&transformed);
 
             let add_result = {
                 let mut cache = self.cache.borrow_mut();
@@ -3475,6 +3479,106 @@ mod tests {
                 .order_exists(client_order_id)
         );
         assert!(exec_commands.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_release_market_order_sends_transformed_command_to_execution(
+        instrument: CryptoPerpetual,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.market_command");
+        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let mut command = create_submit_order(&instrument, &order);
+        command.client_id = Some(ClientId::from("EXECUTION-001"));
+        command.position_id = Some(PositionId::from("P-001"));
+        command.correlation_id = Some(UUID4::new());
+        command.causation_id = Some(UUID4::new());
+        let original_command = command.clone();
+        cache
+            .borrow_mut()
+            .add_order(order, command.position_id, command.client_id, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+        {
+            let mut emulator = emulator.borrow_mut();
+            emulator
+                .matching_cores
+                .get_mut(&instrument.id())
+                .unwrap()
+                .set_ask_raw(Price::from("5100.00"));
+            emulator.fill_market_order(client_order_id);
+        }
+
+        let commands = exec_commands.get_messages();
+        let [TradingCommand::SubmitOrder(released_command)] = commands.as_slice() else {
+            panic!("expected one released SubmitOrder, was {commands:?}");
+        };
+        let released_order = OrderAny::try_from(released_command.order_init.clone()).unwrap();
+        let mut expected_command = original_command;
+        expected_command.order_init = released_command.order_init.clone();
+
+        assert_eq!(released_order.order_type(), OrderType::Market);
+        assert!(released_order.emulation_trigger().is_none());
+        assert_eq!(released_command, &expected_command);
+    }
+
+    #[rstest]
+    fn test_release_limit_order_sends_transformed_command_to_execution(
+        instrument: CryptoPerpetual,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.limit_command");
+        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+        let order = create_stop_limit_order(&instrument, TriggerType::BidAsk);
+        let client_order_id = order.client_order_id();
+        let mut command = create_submit_order(&instrument, &order);
+        command.client_id = Some(ClientId::from("EXECUTION-001"));
+        command.position_id = Some(PositionId::from("P-001"));
+        command.correlation_id = Some(UUID4::new());
+        command.causation_id = Some(UUID4::new());
+        let original_command = command.clone();
+        cache
+            .borrow_mut()
+            .add_order(order, command.position_id, command.client_id, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+        {
+            let mut emulator = emulator.borrow_mut();
+            emulator
+                .matching_cores
+                .get_mut(&instrument.id())
+                .unwrap()
+                .set_ask_raw(Price::from("5100.00"));
+            emulator.fill_limit_order(client_order_id);
+        }
+
+        let commands = exec_commands.get_messages();
+        let [TradingCommand::SubmitOrder(released_command)] = commands.as_slice() else {
+            panic!("expected one released SubmitOrder, was {commands:?}");
+        };
+        let released_order = OrderAny::try_from(released_command.order_init.clone()).unwrap();
+        let mut expected_command = original_command;
+        expected_command.order_init = released_command.order_init.clone();
+
+        assert_eq!(released_order.order_type(), OrderType::Limit);
+        assert!(released_order.emulation_trigger().is_none());
+        assert_eq!(released_command, &expected_command);
     }
 
     #[rstest]
