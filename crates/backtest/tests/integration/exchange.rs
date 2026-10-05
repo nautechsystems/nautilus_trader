@@ -1924,6 +1924,137 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
     assert_eq!(settlement_saver.get_messages().len(), 1);
 }
 
+// Two open long positions on the instrument, in the order the exchange settles them, with
+// the cache backed by a recording test database and a mark price to value them at
+fn setup_two_position_funding(
+    instrument: &CryptoPerpetual,
+) -> (Rc<RefCell<Cache>>, TestCacheDatabaseControl, Vec<Position>) {
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_any = InstrumentAny::CryptoPerpetual(instrument.clone());
+    let (database, database_control) = TestCacheDatabaseControl::create();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    pre_populate_margin_account_with_balance(&mut cache, "BINANCE-001", Money::from("1000 USDT"));
+    cache.add_instrument(instrument_any.clone()).unwrap();
+
+    for (index, position_id) in ["P-FUND-1", "P-FUND-2"].into_iter().enumerate() {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from(format!("O-FUND-{index}").as_str()))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument_any,
+            Some(TradeId::from(format!("T-FUND-{index}").as_str())),
+            Some(PositionId::from(position_id)),
+            Some(Price::from("1000.00")),
+            Some(Quantity::from("1.000")),
+            None,
+            Some(Money::from("0 USDT")),
+            Some(UnixNanos::from(1)),
+            Some(account_id),
+        );
+        let position = Position::new(&instrument_any, fill.into());
+        cache.add_position(&position, OmsType::Hedging).unwrap();
+    }
+    cache
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id,
+            Price::from("1000.00"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let positions: Vec<Position> = cache
+        .positions_open(
+            Some(&instrument.id.venue),
+            Some(&instrument.id),
+            None,
+            Some(&account_id),
+            None,
+        )
+        .into_iter()
+        .map(|position| position.clone_without_events())
+        .collect();
+    assert_eq!(positions.len(), 2);
+
+    (Rc::new(RefCell::new(cache)), database_control, positions)
+}
+
+fn settle_funding_once(cache: &Rc<RefCell<Cache>>, instrument: &CryptoPerpetual) {
+    let exchange = build_exchange_with_options(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        false,
+        false,
+        cache.clone(),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(instrument.clone()))
+        .unwrap();
+    let settlement_ns = UnixNanos::from(3);
+    exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            instrument.id,
+            Decimal::from_str("0.001").unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(instrument.id, settlement_ns)
+        .unwrap();
+}
+
+fn assert_position_restored(
+    cache: &Rc<RefCell<Cache>>,
+    database_control: &TestCacheDatabaseControl,
+    original: &Position,
+) {
+    let cached = cache.borrow().position_owned(&original.id).unwrap();
+    assert!(cached.adjustments.is_empty());
+    assert_eq!(cached.realized_pnl, original.realized_pnl);
+
+    // The database must not keep the adjusted state of a settlement that was rolled back
+    let persisted = database_control
+        .updated_positions()
+        .into_iter()
+        .rfind(|position| position.id == original.id)
+        .unwrap();
+    assert!(persisted.adjustments.is_empty());
+    assert_eq!(persisted.realized_pnl, original.realized_pnl);
+}
+
+#[rstest]
+fn test_process_funding_rate_restores_persisted_positions_when_later_update_fails(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let (cache, database_control, positions) =
+        setup_two_position_funding(&crypto_perpetual_ethusdt);
+    let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
+    msgbus::subscribe_any(
+        "events.funding_settlements.*".into(),
+        settlement_handler,
+        None,
+    );
+    database_control.set_fail_update_position_id(Some(positions[1].id));
+
+    settle_funding_once(&cache, &crypto_perpetual_ethusdt);
+
+    assert_position_restored(&cache, &database_control, &positions[0]);
+    let cached = cache.borrow().position_owned(&positions[1].id).unwrap();
+    assert!(cached.adjustments.is_empty());
+    assert_eq!(cached.realized_pnl, positions[1].realized_pnl);
+    assert!(settlement_saver.get_messages().is_empty());
+}
+
 #[rstest]
 fn test_process_funding_rate_returns_instrument_boundary() {
     let exchange = get_exchange(

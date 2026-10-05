@@ -76,7 +76,7 @@ use nautilus_model::{
         AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
         PriceType,
     },
-    events::{AccountState, OrderEventAny, OrderFilled},
+    events::{AccountState, OrderEventAny, OrderFilled, PositionAdjusted},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
         PositionId, StrategyId, Venue, VenueOrderId,
@@ -3618,6 +3618,59 @@ impl Cache {
         }
 
         Ok(position)
+    }
+
+    /// Updates a cached position by applying an adjustment in place.
+    ///
+    /// The canonical cached position retains its complete history. As with
+    /// [`Self::update_position_from_fill`], a failed database update leaves the adjustment
+    /// applied; callers that need to roll back use [`Self::revert_position_adjustment`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position is not already held in the cache, or if updating the
+    /// position in the database fails.
+    pub fn update_position_from_adjustment(
+        &mut self,
+        position_id: PositionId,
+        adjustment: PositionAdjusted,
+    ) -> anyhow::Result<()> {
+        let Some(position_cell) = self.positions.get(&position_id).cloned() else {
+            anyhow::bail!("Cannot update position {position_id}: not found in cache");
+        };
+
+        position_cell.borrow_mut().apply_adjustment(adjustment);
+        self.refresh_position_indexes(&position_cell.borrow());
+
+        if let Some(database) = &mut self.database {
+            database.update_position(&position_cell.borrow())?;
+        }
+
+        Ok(())
+    }
+
+    /// Reverts the last adjustment applied to a cached position in place.
+    ///
+    /// Restores the position state from `prior`, the snapshot taken before the adjustment was
+    /// applied, then refreshes the position indexes and persists the restored position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position is not held in the cache, or if updating the position
+    /// in the database fails.
+    pub fn revert_position_adjustment(&mut self, prior: &Position) -> anyhow::Result<()> {
+        let Some(position_cell) = self.positions.get(&prior.id).cloned() else {
+            anyhow::bail!("Cannot revert position {}: not found in cache", prior.id);
+        };
+
+        position_cell.borrow_mut().revert_last_adjustment(prior);
+        self.refresh_position_indexes(&position_cell.borrow());
+
+        if let Some(database) = &mut self.database {
+            database.update_position(&position_cell.borrow())?;
+        }
+
+        Ok(())
     }
 
     /// Updates a cached position by applying an authoritative instrument close in place.

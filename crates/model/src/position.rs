@@ -763,6 +763,29 @@ impl Position {
         self.apply_adjustment_state(adjustment, true);
     }
 
+    /// Reverts the most recent adjustment applied with [`Self::apply_adjustment`].
+    ///
+    /// `prior` is a snapshot of this position taken before that adjustment was applied, for
+    /// example with [`Self::clone_without_events`]; the state an adjustment changes is restored
+    /// from it, and the adjustment is removed from the position history.
+    pub fn revert_last_adjustment(&mut self, prior: &Self) {
+        debug_assert_eq!(self.id, prior.id);
+        debug_assert!(matches!(
+            self.replay_events.last(),
+            Some(PositionReplayEvent::Adjusted(_))
+        ));
+        self.adjustments.pop();
+        self.replay_events.pop();
+        self.signed_qty = prior.signed_qty;
+        self.quantity = prior.quantity;
+        self.peak_qty = prior.peak_qty;
+        self.side = prior.side;
+        self.realized_pnl = prior.realized_pnl;
+        self.ts_last = prior.ts_last;
+
+        self.debug_assert_invariants();
+    }
+
     fn apply_adjustment_state(&mut self, adjustment: PositionAdjusted, record_replay: bool) {
         if record_replay {
             self.replay_events

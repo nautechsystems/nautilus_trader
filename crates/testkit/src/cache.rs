@@ -60,6 +60,8 @@ struct TestCacheDatabaseState {
     fail_update_actor: bool,
     fail_update_strategy: bool,
     fail_update_position: bool,
+    fail_update_position_id: Option<PositionId>,
+    updated_positions: Vec<Position>,
 }
 
 /// Shared control and observation handle for [`TestCacheDatabase`].
@@ -153,6 +155,17 @@ impl TestCacheDatabaseControl {
     /// Configures position updates to fail.
     pub fn set_fail_update_position(&self, fail: bool) {
         self.state.lock().fail_update_position = fail;
+    }
+
+    /// Configures updates of a single position to fail.
+    pub fn set_fail_update_position_id(&self, position_id: Option<PositionId>) {
+        self.state.lock().fail_update_position_id = position_id;
+    }
+
+    /// Returns the positions persisted by successful updates, in update order.
+    #[must_use]
+    pub fn updated_positions(&self) -> Vec<Position> {
+        self.state.lock().updated_positions.clone()
     }
 }
 
@@ -471,10 +484,12 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
         Ok(())
     }
 
-    fn update_position(&self, _position: &Position) -> anyhow::Result<()> {
-        if self.control.state.lock().fail_update_position {
+    fn update_position(&self, position: &Position) -> anyhow::Result<()> {
+        let mut state = self.control.state.lock();
+        if state.fail_update_position || state.fail_update_position_id == Some(position.id) {
             anyhow::bail!("test position update failure");
         }
+        state.updated_positions.push(position.clone());
         Ok(())
     }
 

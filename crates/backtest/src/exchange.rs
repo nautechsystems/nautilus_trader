@@ -1301,6 +1301,8 @@ impl SimulatedExchange {
             }
         }
 
+        // Snapshots without history: valuation reads only position state, and the snapshot is the
+        // rollback point if settlement fails after the cached positions are adjusted in place
         let open_positions: Vec<Position> = {
             let cache = self.cache.borrow();
             cache
@@ -1312,7 +1314,7 @@ impl SimulatedExchange {
                     None,
                 )
                 .into_iter()
-                .map(|position| position.cloned())
+                .map(|position| position.clone_without_events())
                 .collect()
         };
 
@@ -1471,13 +1473,12 @@ impl SimulatedExchange {
         );
         let mut adjusted_positions = Vec::with_capacity(valued_positions.len());
         for (original, pnl_change) in valued_positions {
-            let mut adjusted = original.clone();
             let adjustment = PositionAdjusted::new(
                 settlement.trader_id,
-                adjusted.strategy_id,
-                adjusted.instrument_id,
-                adjusted.id,
-                adjusted.account_id,
+                original.strategy_id,
+                original.instrument_id,
+                original.id,
+                original.account_id,
                 PositionAdjustmentType::Funding,
                 None,
                 Some(pnl_change),
@@ -1489,31 +1490,27 @@ impl SimulatedExchange {
                 settlement.ts_event,
                 settlement.ts_init,
             );
-            adjusted.apply_adjustment(adjustment);
-            adjusted_positions.push((original, adjusted, adjustment));
+            adjusted_positions.push((original, adjustment));
         }
 
         {
             let mut cache = self.cache.borrow_mut();
 
-            for (index, (_, adjusted, _)) in adjusted_positions.iter().enumerate() {
-                if let Err(e) = cache.update_position(adjusted) {
+            for (index, (original, adjustment)) in adjusted_positions.iter().enumerate() {
+                if let Err(e) = cache.update_position_from_adjustment(original.id, *adjustment) {
                     log::error!(
                         "Cannot update position {} after funding settlement: {e}",
-                        adjusted.id
+                        original.id
                     );
 
-                    // Inclusive of `index`: the failed update commits the adjusted position
-                    // to the cache before attempting to persist it, so the position whose
-                    // update returned the error also needs restoring.
-                    for (original, _, _) in adjusted_positions[..=index].iter().rev() {
-                        if let Err(rollback_error) = cache.update_position(original) {
-                            log::error!(
-                                "Cannot roll back position {} after failed funding settlement: {rollback_error}",
-                                original.id
-                            );
-                        }
-                    }
+                    // Inclusive of `index`: the failed update applies the adjustment to the
+                    // cached position before attempting to persist it, so the position whose
+                    // update returned the error also needs reverting.
+                    revert_funding_adjustments(
+                        &mut cache,
+                        &adjusted_positions[..=index],
+                        "funding settlement",
+                    );
                     return false;
                 }
             }
@@ -1522,14 +1519,7 @@ impl SimulatedExchange {
         for adjustment in &account_adjustments {
             if !self.adjust_account(*adjustment) {
                 let mut cache = self.cache.borrow_mut();
-                for (original, _, _) in adjusted_positions.iter().rev() {
-                    if let Err(e) = cache.update_position(original) {
-                        log::error!(
-                            "Cannot roll back position {} after failed account adjustment: {e}",
-                            original.id
-                        );
-                    }
-                }
+                revert_funding_adjustments(&mut cache, &adjusted_positions, "account adjustment");
                 return false;
             }
         }
@@ -1538,7 +1528,7 @@ impl SimulatedExchange {
         let settlement_topic = switchboard::get_funding_settlement_topic(settlement.instrument_id);
         msgbus::publish_any(settlement_topic, &settlement);
 
-        for (_, _, adjustment) in adjusted_positions {
+        for (_, adjustment) in adjusted_positions {
             let event = PositionEvent::PositionAdjusted(adjustment);
             let PositionEvent::PositionAdjusted(adjustment) = &event else {
                 continue;
@@ -2086,6 +2076,23 @@ impl DeferEventsGuard {
 impl Drop for DeferEventsGuard {
     fn drop(&mut self) {
         self.deferring.set(false);
+    }
+}
+
+// Reverts funding adjustments applied in place, newest first, restoring and persisting each
+// position from the snapshot taken before settlement
+fn revert_funding_adjustments(
+    cache: &mut Cache,
+    adjusted: &[(Position, PositionAdjusted)],
+    failed_step: &str,
+) {
+    for (original, _) in adjusted.iter().rev() {
+        if let Err(e) = cache.revert_position_adjustment(original) {
+            log::error!(
+                "Cannot roll back position {} after failed {failed_step}: {e}",
+                original.id
+            );
+        }
     }
 }
 
