@@ -152,6 +152,23 @@ and closing the parent only shrinks them:
 - Canceling or expiring the parent cancels held children, so a partially filled parent that closes
   this way under `OtoTriggerMode.FULL` leaves its fills without children.
 
+The venue compares quantities in the parent's units:
+
+- A child that still holds a quote quantity, under a parent whose quantity is in base, is compared
+  as the base quantity at its price, else its trigger price, else the best bid for a sell or the
+  best ask for a buy in the parent's book. It holds that base quantity once the venue resizes it,
+  and whenever the parent closes as above, so a later conversion cannot take it past the parent's
+  fills. Without such a price it is not resized.
+- A parent that still holds a quote quantity, such as a stop that converts when it fills, resizes
+  only the children that hold one too.
+- Inverse instruments have no quote conversion, so their quantities compare as they are.
+- Reduce-only resizing assigns a base quantity without clearing a quote denomination, and the
+  comparison above does not correct a child that it has already resized.
+- A child on another instrument covers the parent's quantity one to one. Once its own
+  instrument's engine matches it, what remains for it to cover is rounded down to that
+  instrument's size precision, and a quote quantity converts by that instrument, at its own price
+  or trigger price only.
+
 Reduce-only children also track the position between these events, as described in
 [Backtest reduce-only resizing](#backtest-reduce-only-resizing).
 
