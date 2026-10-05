@@ -976,20 +976,30 @@ from nautilus_trader.model import ClientId
 # In your `on_start` method
 self.subscribe_data(
     data_type=DataType(
-        BinanceFuturesMarkPriceUpdate.__name__, metadata={"instrument_id": self.instrument.id}
+        BinanceFuturesMarkPriceUpdate.__name__,
+        metadata={"instrument_id": str(self.instrument.id)},
     ),
     client_id=ClientId("BINANCE"),
 )
 ```
 
 Received `BinanceFuturesMarkPriceUpdate` objects are passed to your `on_data`
-method. Check the type, as this method handles all custom/generic data.
+method wrapped in `CustomData`. Unwrap the payload with `data.data` and check its
+type, as this method handles all custom/generic data.
 
 ```python
-def on_data(self, data):
-    # First check the type of data
-    if isinstance(data, BinanceFuturesMarkPriceUpdate):
-        # Do something with the data
+from nautilus_trader.adapters.binance import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.model import CustomData
+
+
+def on_data(self, data: CustomData) -> None:
+    # Unwrap the payload, then check its type
+    payload = data.data
+    if isinstance(payload, BinanceFuturesMarkPriceUpdate):
+        self.log.info(
+            f"{payload.instrument_id} mark_price={payload.mark_price} "
+            f"funding_rate={payload.funding_rate}",
+        )
 ```
 
 ### `BinanceFuturesLiquidation`
