@@ -283,12 +283,10 @@ pub fn parse_configured_contract_from_json(json: &Value) -> anyhow::Result<Confi
         }
     }
 
-    for key in ["strike"] {
-        if let Some(value) = obj.get(key)
-            && !value.is_number()
-        {
-            anyhow::bail!("Configured contract field '{key}' must be a number");
-        }
+    if let Some(value) = obj.get("strike")
+        && !value.is_number()
+    {
+        anyhow::bail!("Configured contract field 'strike' must be a number");
     }
 
     if let Some(value) = obj.get("includeExpired")
