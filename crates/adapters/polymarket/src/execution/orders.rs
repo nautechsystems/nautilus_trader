@@ -32,7 +32,7 @@ use rust_decimal::Decimal;
 use super::{
     PolymarketExecutionClient,
     cancellations::execute_deferred_cancel,
-    order_builder::PolymarketOrderBuilder,
+    order_builder::{PolymarketOrderBuilder, signed_limit_order_quantity},
     parse::{
         InvalidMarketPriceError, compute_commission, instrument_fee_exponent, instrument_taker_fee,
     },
@@ -55,7 +55,7 @@ use super::{
     types::{BatchLimitOrderContext, LimitOrderSubmitRequest, classify_http_command_failure},
 };
 use crate::{
-    common::consts::BATCH_ORDER_LIMIT,
+    common::consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE},
     http::{
         error::{Error as HttpError, sanitize_error_text},
         query::GetTradesParams,
@@ -923,11 +923,29 @@ impl PolymarketExecutionClient {
         }
 
         let target_total_qty = cmd.quantity.unwrap_or_else(|| order.quantity());
-        if target_total_qty <= order.filled_qty() {
-            reject(&format!(
-                "Modify quantity {target_total_qty} must be greater than filled quantity {}",
-                order.filled_qty()
-            ));
+        let filled_qty = order.filled_qty();
+        let non_reopened_voided_qty = order.non_reopened_voided_qty();
+        let replacement_qty = target_total_qty
+            .checked_sub(filled_qty)
+            .and_then(|qty| qty.checked_sub(non_reopened_voided_qty))
+            .filter(|qty| !qty.is_zero());
+
+        let Some(replacement_qty) = replacement_qty else {
+            let reason = if non_reopened_voided_qty.is_zero() {
+                format!(
+                    "Modify quantity {target_total_qty} must be greater than filled quantity {filled_qty}"
+                )
+            } else {
+                format!(
+                    "Modify quantity {target_total_qty} must be greater than filled quantity {filled_qty} plus non-reopened voided quantity {non_reopened_voided_qty}"
+                )
+            };
+            reject(&reason);
+            return;
+        };
+
+        if let Some(reason) = replacement_below_lot_size_reason(replacement_qty) {
+            reject(&reason);
             return;
         }
 
@@ -950,8 +968,7 @@ impl PolymarketExecutionClient {
             }
         };
 
-        let cached_venue_leg_filled = order
-            .filled_qty()
+        let cached_venue_leg_filled = filled_qty
             .checked_sub(prior_filled_qty)
             .expect("venue-leg quantity calculation validated cumulative fills");
 
@@ -1321,7 +1338,6 @@ impl PolymarketExecutionClient {
                 return Ok(());
             }
 
-            let non_reopened_voided_qty = order.non_reopened_voided_qty();
             let Some(replacement_qty) = target_total_qty
                 .checked_sub(final_filled_qty)
                 .and_then(|qty| qty.checked_sub(non_reopened_voided_qty))
@@ -1344,6 +1360,11 @@ impl PolymarketExecutionClient {
                     true,
                     final_filled_qty < order.quantity(),
                 );
+                return Ok(());
+            }
+
+            if let Some(reason) = replacement_below_lot_size_reason(replacement_qty) {
+                reject_modify(&reason, true, final_filled_qty < order.quantity());
                 return Ok(());
             }
 
@@ -1495,6 +1516,18 @@ impl PolymarketExecutionClient {
     ) -> anyhow::Result<Money> {
         calculate_commission(instrument, last_qty, last_px, liquidity_side)
     }
+}
+
+/// Returns the rejection reason for a replacement quantity below the lot size, which would sign
+/// for zero shares.
+fn replacement_below_lot_size_reason(replacement_qty: Quantity) -> Option<String> {
+    signed_limit_order_quantity(replacement_qty.as_decimal())
+        .is_zero()
+        .then(|| {
+            format!(
+                "Polymarket replacement amount {replacement_qty} shares truncates to zero at {LOT_SIZE_SCALE} decimal places"
+            )
+        })
 }
 
 #[expect(clippy::too_many_arguments)]

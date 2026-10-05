@@ -1579,7 +1579,8 @@ mod tests {
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
         enums::{
-            AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, PositionSide, TimeInForce,
+            AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+            TimeInForce,
         },
         events::{
             OrderEventAny, PositionClosed, PositionEvent,
@@ -1593,7 +1594,7 @@ mod tests {
             TraderId, VenueOrderId,
         },
         instruments::stubs::binary_option,
-        orders::{LimitOrder, Order, OrderAny, stubs::TestOrderEventStubs},
+        orders::{LimitOrder, Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{Currency, Money, Price, Price as ModelPrice, Quantity, Quantity as ModelQuantity},
     };
@@ -1793,7 +1794,10 @@ mod tests {
     }
 
     fn cache_accepted_open_order(cache: &mut Cache, instrument_id: InstrumentId) -> OrderAny {
-        let mut order = open_limit_order(instrument_id);
+        cache_accepted(cache, open_limit_order(instrument_id))
+    }
+
+    fn cache_accepted(cache: &mut Cache, mut order: OrderAny) -> OrderAny {
         cache.add_order(order.clone(), None, None, false).unwrap();
 
         let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("POLYMARKET-001"));
@@ -2105,6 +2109,140 @@ mod tests {
 
         assert_eq!(prior_filled, Some(ModelQuantity::from("3")));
         assert_eq!(bumped, Some(ModelQuantity::from("9")));
+    }
+
+    // The first venue order filled 30 and had more voided, and the replacement of 10 filled 9.9950
+    // before its terminal update closed the order at the 39.9950 filled, without the voided
+    // quantity, which is more or less than the replacement filled
+    #[rstest]
+    #[case::voided_above_replacement_fills("50.0000")]
+    #[case::voided_below_replacement_fills("5.0000")]
+    fn load_orders_from_cache_restores_dust_terminal_after_prior_leg_void(
+        #[case] voided_qty: &str,
+    ) {
+        let (client, cache) = test_client();
+        let instrument = test_binary_option("0xDUST-AFTER-VOID", false, false);
+        let new_venue_order_id = VenueOrderId::from("V-002");
+        let voided_qty = ModelQuantity::from(voided_qty);
+
+        let order = {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(instrument.clone()).unwrap();
+            let mut order = cache_accepted(
+                &mut cache,
+                OrderTestBuilder::new(OrderType::Limit)
+                    .instrument_id(instrument.id())
+                    .side(OrderSide::Buy)
+                    .price(ModelPrice::from("0.5000"))
+                    .quantity(ModelQuantity::from("100.0000"))
+                    .build(),
+            );
+
+            for (trade_id, quantity) in [
+                ("trade-kept", ModelQuantity::from("30.0000")),
+                ("trade-voided", voided_qty),
+            ] {
+                let filled = TestOrderEventStubs::filled(
+                    &order,
+                    &instrument,
+                    Some(TradeId::from(trade_id)),
+                    None,
+                    Some(ModelPrice::from("0.5000")),
+                    Some(quantity),
+                    None,
+                    None,
+                    None,
+                    Some(AccountId::from("POLYMARKET-001")),
+                );
+                order = cache.update_order(&filled).unwrap();
+            }
+            let Some(OrderEventAny::Filled(filled)) = order.events().last().copied() else {
+                panic!("expected the voided trade's fill");
+            };
+            let voided = OrderFillVoidedSpec::builder()
+                .trader_id(filled.trader_id)
+                .strategy_id(filled.strategy_id)
+                .instrument_id(filled.instrument_id)
+                .client_order_id(filled.client_order_id)
+                .venue_order_id(filled.venue_order_id)
+                .account_id(filled.account_id)
+                .trade_id(filled.trade_id)
+                .voided_qty(filled.last_qty)
+                .order_side(filled.order_side)
+                .order_type(filled.order_type)
+                .last_px(filled.last_px)
+                .currency(filled.currency)
+                .liquidity_side(filled.liquidity_side)
+                .maybe_position_id(filled.position_id)
+                .build();
+            order = cache
+                .update_order(&OrderEventAny::FillVoided(voided))
+                .unwrap();
+            let updated = |order: &OrderAny, quantity: ModelQuantity, reconciliation: bool| {
+                OrderEventAny::Updated(
+                    OrderUpdatedSpec::builder()
+                        .trader_id(order.trader_id())
+                        .strategy_id(order.strategy_id())
+                        .instrument_id(order.instrument_id())
+                        .client_order_id(order.client_order_id())
+                        .account_id(client.core.account_id)
+                        .venue_order_id(new_venue_order_id)
+                        .quantity(quantity)
+                        .price(ModelPrice::from("0.6000"))
+                        .reconciliation(reconciliation)
+                        .build(),
+                )
+            };
+            let replaced = updated(&order, ModelQuantity::from("40.0000") + voided_qty, false);
+            order = cache.update_order(&replaced).unwrap();
+            let filled = TestOrderEventStubs::filled(
+                &order,
+                &instrument,
+                Some(TradeId::from("trade-replacement")),
+                None,
+                Some(ModelPrice::from("0.6000")),
+                Some(ModelQuantity::from("9.9950")),
+                None,
+                None,
+                None,
+                Some(AccountId::from("POLYMARKET-001")),
+            );
+            order = cache.update_order(&filled).unwrap();
+            let terminal = updated(&order, order.filled_qty(), true);
+            cache.update_order(&terminal).unwrap()
+        };
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.quantity(), ModelQuantity::from("39.9950"));
+        assert_eq!(order.non_reopened_voided_qty(), voided_qty);
+
+        client.load_orders_from_cache();
+
+        assert_eq!(
+            [
+                leg_application(&client.settlement, &TradeId::from("trade-kept")),
+                leg_application(&client.settlement, &TradeId::from("trade-voided")),
+                leg_application(&client.settlement, &TradeId::from("trade-replacement")),
+            ],
+            [
+                Some(LegApplication::FillObserved),
+                Some(LegApplication::VoidObserved),
+                Some(LegApplication::FillObserved),
+            ]
+        );
+        assert_eq!(
+            client.fill_tracker.prior_filled(&new_venue_order_id),
+            Some(ModelQuantity::from("30.0000"))
+        );
+        assert_eq!(
+            client.fill_tracker.submitted_qty(&new_venue_order_id),
+            Some(ModelQuantity::from("9.9950"))
+        );
+        assert_eq!(
+            client
+                .fill_tracker
+                .get_cumulative_filled(&new_venue_order_id),
+            Some(ModelQuantity::from("9.9950"))
+        );
     }
 
     // A trade's fill-void revisions are cumulative, so voiding 1 and then 2 of a 4 fill leaves 2

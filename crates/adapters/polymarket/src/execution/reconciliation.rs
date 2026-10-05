@@ -104,19 +104,33 @@ pub(crate) fn venue_leg_filled_before_and_quantity(
     Ok((filled_before, leg_quantity))
 }
 
-/// Returns the non-reopened voided quantity of the venue orders before `venue_order_id`, which
-/// the logical order quantity still carries although none of it is filled.
+/// Returns the non-reopened voided quantity of the venue orders before `venue_order_id` when the
+/// logical order quantity includes it although none of it is filled.
+///
+/// Returns zero when the order quantity is below the filled plus non-reopened voided quantity. A
+/// terminal update leaves an order there: it closes the order at its filled quantity, without the
+/// voided quantity.
 fn non_reopened_voided_before_leg(
     order: &OrderAny,
     venue_order_id: VenueOrderId,
 ) -> Option<Quantity> {
+    let voided = order.non_reopened_voided_qty();
+    let includes_voided = order
+        .quantity()
+        .checked_sub(order.filled_qty())
+        .is_some_and(|unfilled| unfilled >= voided);
+
+    if !includes_voided {
+        return Some(Quantity::zero(order.quantity().precision));
+    }
+
     let leg_voided = latest_leg_voids(order, venue_order_id)
         .values()
         .filter(|void| !void.is_reopened)
         .fold(Quantity::zero(order.quantity().precision), |total, void| {
             total + void.voided_qty
         });
-    order.non_reopened_voided_qty().checked_sub(leg_voided)
+    voided.checked_sub(leg_voided)
 }
 
 // Fill-void corrections are cumulative per trade, so only each trade's latest revision counts
@@ -1753,11 +1767,12 @@ fn cap_order_reports_to_confirmed_fills<'a>(
     let confirmed_by_order = settlement.report_filled_quantities(fill_reports, orders)?;
 
     for report in order_reports {
-        let local_filled = Quantity::zero(report.quantity.precision);
+        let zero = Quantity::zero(report.quantity.precision);
         cap_order_report_filled_qty(
             report,
-            local_filled,
+            zero,
             confirmed_by_order.get(&report.venue_order_id).copied(),
+            zero,
         );
     }
 
@@ -1779,16 +1794,20 @@ pub(crate) fn cap_order_report_filled_qty(
     report: &mut OrderStatusReport,
     local_filled: Quantity,
     confirmed_filled: Option<Decimal>,
+    non_reopened_voided: Quantity,
 ) {
     let confirmed_filled = confirmed_filled
         .and_then(|qty| Quantity::from_decimal_dp(qty, report.quantity.precision).ok())
         .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
     let capped = report.filled_qty.min(local_filled.max(confirmed_filled));
     report.filled_qty = capped;
-    normalize_terminal_order_report_quantity(report);
+    normalize_terminal_order_report_quantity(report, non_reopened_voided);
 }
 
-pub(crate) fn normalize_terminal_order_report_quantity(report: &mut OrderStatusReport) {
+pub(crate) fn normalize_terminal_order_report_quantity(
+    report: &mut OrderStatusReport,
+    non_reopened_voided: Quantity,
+) {
     if report.order_status != OrderStatus::Filled
         || report.filled_qty.is_zero()
         || report.filled_qty == report.quantity
@@ -1796,23 +1815,29 @@ pub(crate) fn normalize_terminal_order_report_quantity(report: &mut OrderStatusR
         return;
     }
 
-    if report.filled_qty > report.quantity {
+    // The report quantity includes the order's non-reopened voided quantity, which cannot fill
+    let Some(filled_and_voided) = report.filled_qty.checked_add(non_reopened_voided) else {
+        return;
+    };
+
+    if filled_and_voided > report.quantity {
         // A BUY is bounded by its pUSD spend, so it can fill more shares than it signed
         if report.order_side == Some(OrderSide::Buy) {
             log::debug!(
-                "Raising terminal BUY order report {} quantity from {} to venue fills {}",
+                "Raising terminal BUY order report {} quantity from {} to {} for venue fills {}",
                 report.venue_order_id,
                 report.quantity,
+                filled_and_voided,
                 report.filled_qty,
             );
-            report.quantity = report.filled_qty;
+            report.quantity = filled_and_voided;
         }
 
         return;
     }
 
-    let leaves = report.quantity.as_decimal() - report.filled_qty.as_decimal();
-    if leaves < DUST_SNAP_THRESHOLD_DEC {
+    let leaves = report.quantity.as_decimal() - filled_and_voided.as_decimal();
+    if leaves > Decimal::ZERO && leaves < DUST_SNAP_THRESHOLD_DEC {
         log::debug!(
             "Normalizing terminal order report {} quantity from {} to confirmed fills {}",
             report.venue_order_id,
@@ -2576,16 +2601,24 @@ mod tests {
     }
 
     #[rstest]
-    #[case::buy_overfill_raises(OrderSide::Buy, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(714.285714))]
-    #[case::sell_overfill_unchanged(OrderSide::Sell, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(714.285710))]
-    #[case::buy_overfill_not_filled(OrderSide::Buy, OrderStatus::PartiallyFilled, dec!(714.285710), dec!(714.285714), dec!(714.285710))]
-    #[case::dust_underfill_lowers(OrderSide::Sell, OrderStatus::Filled, dec!(100.000000), dec!(99.995000), dec!(99.995000))]
-    #[case::real_underfill_unchanged(OrderSide::Buy, OrderStatus::Filled, dec!(100.000000), dec!(99.000000), dec!(100.000000))]
+    #[case::buy_overfill_raises(OrderSide::Buy, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(0), dec!(714.285714))]
+    #[case::sell_overfill_unchanged(OrderSide::Sell, OrderStatus::Filled, dec!(714.285710), dec!(714.285714), dec!(0), dec!(714.285710))]
+    #[case::buy_overfill_not_filled(OrderSide::Buy, OrderStatus::PartiallyFilled, dec!(714.285710), dec!(714.285714), dec!(0), dec!(714.285710))]
+    #[case::dust_underfill_lowers(OrderSide::Sell, OrderStatus::Filled, dec!(100.000000), dec!(99.995000), dec!(0), dec!(99.995000))]
+    #[case::real_underfill_unchanged(OrderSide::Buy, OrderStatus::Filled, dec!(100.000000), dec!(99.000000), dec!(0), dec!(100.000000))]
+    #[case::dust_underfill_after_voided_lowers(OrderSide::Buy, OrderStatus::Filled, dec!(90.000000), dec!(39.995000), dec!(50), dec!(39.995000))]
+    #[case::real_underfill_after_voided_unchanged(OrderSide::Buy, OrderStatus::Filled, dec!(90.000000), dec!(39.000000), dec!(50), dec!(90.000000))]
+    #[case::buy_overfill_after_voided_raises(OrderSide::Buy, OrderStatus::Filled, dec!(90.000000), dec!(40.500000), dec!(50), dec!(90.500000))]
+    #[case::sell_overfill_after_voided_unchanged(OrderSide::Sell, OrderStatus::Filled, dec!(90.000000), dec!(40.500000), dec!(50), dec!(90.000000))]
+    #[case::exact_fill_after_voided_unchanged(OrderSide::Buy, OrderStatus::Filled, dec!(90.000000), dec!(40.000000), dec!(50), dec!(90.000000))]
+    #[case::one_cent_underfill_after_voided_unchanged(OrderSide::Buy, OrderStatus::Filled, dec!(90.000000), dec!(39.990000), dec!(50), dec!(90.000000))]
+    #[case::closed_at_filled_after_voided_unchanged(OrderSide::Buy, OrderStatus::Filled, dec!(39.995000), dec!(39.995000), dec!(50), dec!(39.995000))]
     fn test_normalize_terminal_order_report_quantity(
         #[case] order_side: OrderSide,
         #[case] order_status: OrderStatus,
         #[case] quantity: Decimal,
         #[case] filled_qty: Decimal,
+        #[case] non_reopened_voided: Decimal,
         #[case] expected_qty: Decimal,
     ) {
         let mut report = OrderStatusReport::new(
@@ -2605,7 +2638,10 @@ mod tests {
             None,
         );
 
-        normalize_terminal_order_report_quantity(&mut report);
+        normalize_terminal_order_report_quantity(
+            &mut report,
+            Quantity::from_decimal_dp(non_reopened_voided, 6).unwrap(),
+        );
 
         assert_eq!(report.quantity.as_decimal(), expected_qty);
         assert_eq!(report.filled_qty.as_decimal(), filled_qty);

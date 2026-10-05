@@ -761,6 +761,11 @@ The replacement keeps the `ClientOrderId` and receives a new `VenueOrderId`. The
 quantity reflects the exact signed base quantity after venue precision normalization, so it can be
 slightly lower than the requested target.
 
+The target must leave a replacement of at least one 0.01 lot after the filled quantity and any
+quantity voided without reopening. The adapter rejects a modify that does not before it cancels
+the venue order. Fills that arrive while the cancel is in flight can still take the replacement
+below a lot, in which case the modify is rejected and the order closes as canceled.
+
 The adapter submits no replacement unless the cancel response, canceled order state, and confirmed
 trade totals agree. An ambiguous cancel emits `OrderModifyRejected`. An ambiguous replacement stays
 in flight under its deterministic signed order hash so a later order update, fill, or order
@@ -1645,11 +1650,12 @@ recorded in the order's history like any other amendment:
 
 - WebSocket fills: the adapter emits `OrderUpdated` with the cumulative filled quantity, then
   `OrderFilled`, so the order reaches `Filled`.
-- REST reports: a `Filled` BUY status report carries its evidence-capped filled quantity as its
-  quantity. Reconciliation sees that it differs from the cached order and applies a reconciliation
-  `OrderUpdated` before the fills. Status checks accept the raised quantity.
-- Modified orders: the raised quantity covers the whole order, including fills on earlier venue
-  orders.
+- REST reports: a `Filled` BUY status report carries its evidence-capped filled quantity, plus any
+  quantity voided without reopening, as its quantity. Reconciliation sees that it differs from the
+  cached order and applies a reconciliation `OrderUpdated` before the fills. Status checks accept
+  the raised quantity.
+- Modified orders: the raised quantity covers the whole order, including fills and quantity voided
+  without reopening on earlier venue orders.
 
 Commission is computed on the venue fill quantity.
 

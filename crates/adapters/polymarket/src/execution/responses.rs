@@ -1184,7 +1184,12 @@ fn handle_fok_rest_status(
                 None,
             );
             report.price = Some(price);
-            cap_order_report_filled_qty(&mut report, confirmed_filled, None);
+            cap_order_report_filled_qty(
+                &mut report,
+                confirmed_filled,
+                None,
+                Quantity::zero(ctx.size_precision),
+            );
 
             log::debug!(
                 "FOK order {order_id} resolved via REST as Filled; deferring fill quantity until confirmation"

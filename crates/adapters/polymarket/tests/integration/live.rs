@@ -22,7 +22,7 @@ use axum::http::StatusCode;
 use nautilus_common::{
     actor::DataActor,
     cache::Cache,
-    messages::execution::{QueryOrder, TradingCommand},
+    messages::execution::{GenerateOrderStatusReport, QueryOrder, TradingCommand},
     msgbus::{self, TypedHandler},
     testing::wait_until_async,
 };
@@ -39,7 +39,7 @@ use nautilus_model::{
     },
     instruments::InstrumentAny,
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
-    reports::ExecutionMassStatus,
+    reports::{ExecutionMassStatus, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -2178,81 +2178,338 @@ async fn replacement_dust_terminal_after_prior_void_closes_order() {
     let mut h = harness::Harness::build().await;
     let order = harness::limit_order(h.instrument_id(), "O-1");
     submit_until_accepted(&mut h, &order).await;
-    let old_venue_order_id = cached_order(&h, &order).venue_order_id();
-    serve_rest_trades(
-        &h,
-        &[
-            sized_trade("trade-kept", "3.0000", "CONFIRMED"),
-            sized_trade("trade-failed", "1.0000", "FAILED"),
-        ],
-    )
-    .await;
-    h.mock_state
-        .send_user(sized_trade("trade-kept", "3.0000", "CONFIRMED"))
-        .await;
-    h.mock_state
-        .send_user(sized_trade("trade-failed", "1.0000", "MATCHED"))
-        .await;
-    h.mock_state
-        .send_user(sized_trade("trade-failed", "1.0000", "FAILED"))
-        .await;
-    assert!(
-        h.pump_until(DEADLINE, |cache| {
-            cache.order(&order.client_order_id()).is_some_and(|cached| {
-                cached.filled_qty() == Quantity::from("3.0000")
-                    && cached.non_reopened_voided_qty() == Quantity::from("1.0000")
-            })
-        })
-        .await,
-        "first venue order did not settle at 3 filled and 1 voided",
-    );
+    settle_first_leg_with_void(&mut h, &order, "3.0000", "1.0000").await;
 
-    let mut canceled = load_json("http_canceled_orders_harness.json")["data"][0].clone();
-    canceled["size_matched"] = json!("3.0000");
-    *h.mock_state.single_order_response.lock().await = Some(canceled);
-    h.mock_state
-        .order_response_uses_request_hash
-        .store(true, std::sync::atomic::Ordering::Release);
-    h.modify_via_risk(&order, None, Some(Quantity::from("12.0000")));
-    assert!(
-        h.pump_until(DEADLINE, |cache| {
-            cache.order(&order.client_order_id()).is_some_and(|cached| {
-                cached.quantity() == Quantity::from("12.0000")
-                    && cached.venue_order_id() != old_venue_order_id
-            })
-        })
-        .await,
-        "replacement did not update the cached order",
-    );
-    let replacement_venue_order_id = cached_order(&h, &order).venue_order_id().unwrap();
-
-    let mut trade = owned_maker_trade("CONFIRMED");
-    trade["id"] = json!("trade-replacement");
-    trade["size"] = json!("47.9950");
-    trade["maker_orders"][1]["order_id"] = json!(replacement_venue_order_id.as_str());
-    trade["maker_orders"][1]["matched_amount"] = json!("7.9950");
-    h.mock_state.send_user(trade).await;
-    let mut matched = load_json("ws_user_order_matched.json");
-    matched["id"] = json!(replacement_venue_order_id.as_str());
-    matched["event_type"] = json!("order");
-    matched["original_size"] = json!("8.0000");
-    matched["size_matched"] = json!("7.9950");
-    matched["associate_trades"] = json!(["trade-replacement"]);
-    h.mock_state.send_user(matched).await;
-    let filled = h
-        .pump_until(DEADLINE, |cache| {
-            order_reached(cache, &order, OrderStatus::Filled)
-        })
-        .await;
+    replace_and_fill_to_dust(&mut h, &order, "12.0000", "8.0000", "7.9950").await;
 
     let cached = cached_order(&h, &order);
-    assert!(filled, "order ended {:?}, not Filled", cached.status());
     assert_eq!(cached.filled_qty(), Quantity::from("10.9950"));
     let Some(OrderEventAny::Updated(updated)) = cached.events().last().copied() else {
         panic!("expected the terminal quantity update last");
     };
     assert!(updated.reconciliation);
     assert_eq!(updated.quantity, Quantity::from("10.9950"));
+}
+
+// The replacement of 10 fills 9.9950 after the first venue order filled 30 and had 50 voided, but
+// its MATCHED order message never arrives. A status report reads the order at the 90 that includes
+// the voided quantity, and still closes it at the 39.9950 filled.
+#[rstest]
+#[case::query(true)]
+#[case::status_report(false)]
+#[tokio::test]
+async fn reported_dust_terminal_after_prior_void_closes_order(#[case] queried: bool) {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    settle_first_leg_with_void(&mut h, &order, "30.0000", "50.0000").await;
+    let replacement_venue_order_id = replace_order(&mut h, &order, "90.0000").await;
+    let trade = replacement_trade(replacement_venue_order_id, "9.9950");
+    serve_rest_trades(
+        &h,
+        &[
+            sized_trade("trade-kept", "30.0000", "CONFIRMED"),
+            sized_trade("trade-failed", "50.0000", "FAILED"),
+            trade.clone(),
+        ],
+    )
+    .await;
+    h.mock_state.send_user(trade).await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            cache
+                .order(&order.client_order_id())
+                .is_some_and(|cached| cached.filled_qty() == Quantity::from("39.9950"))
+        })
+        .await,
+        "replacement fill was not applied",
+    );
+    let open = cached_order(&h, &order);
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["id"] = json!(replacement_venue_order_id.as_str());
+    venue_order["status"] = json!("MATCHED");
+    venue_order["original_size"] = json!("10.0000");
+    venue_order["size_matched"] = json!("9.9950");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+
+    if queried {
+        h.exec_engine()
+            .borrow()
+            .execute(TradingCommand::QueryOrder(QueryOrder::new(
+                order.trader_id(),
+                Some(h.client_id()),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )));
+    } else {
+        let report = generate_order_status_report(&h, &order, replacement_venue_order_id).await;
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.quantity, Quantity::from("39.9950"));
+        assert_eq!(report.filled_qty, Quantity::from("39.9950"));
+        h.exec_engine()
+            .borrow_mut()
+            .reconcile_order_status_report(&report);
+    }
+    let closed = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+
+    let cached = cached_order(&h, &order);
+    assert_eq!(open.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(open.quantity(), Quantity::from("90.0000"));
+    assert_eq!(open.leaves_qty(), Quantity::from("0.0050"));
+    assert!(closed, "order ended {:?}, not Filled", cached.status());
+    assert_eq!(cached.events().len(), open.events().len() + 1);
+    let Some(OrderEventAny::Updated(updated)) = cached.events().last().copied() else {
+        panic!("expected the terminal quantity update last");
+    };
+    assert!(updated.reconciliation);
+    assert_eq!(updated.quantity, Quantity::from("39.9950"));
+    assert_eq!(cached.quantity(), Quantity::from("39.9950"));
+    assert_eq!(cached.filled_qty(), Quantity::from("39.9950"));
+    assert_eq!(cached.leaves_qty(), Quantity::from("0.0000"));
+}
+
+// A dust terminal closes the order at the 39.9950 filled after an earlier venue order had 50
+// voided. A new session restores its fills and its void, so the trades the stream replays do not
+// change the order: the confirmed ones need no REST read, and the failed one is read once.
+#[rstest]
+#[tokio::test]
+async fn restart_restores_dust_terminal_after_prior_void() {
+    let order = harness::limit_order(InstrumentId::from(harness::INSTRUMENT_ID), "O-1");
+    let (closed, [replacement, matched]) = {
+        let mut h = harness::Harness::build().await;
+        submit_until_accepted(&mut h, &order).await;
+        settle_first_leg_with_void(&mut h, &order, "30.0000", "50.0000").await;
+        let replayed =
+            replace_and_fill_to_dust(&mut h, &order, "90.0000", "10.0000", "9.9950").await;
+        (cached_order(&h, &order), replayed)
+    };
+    assert_eq!(closed.quantity(), Quantity::from("39.9950"));
+    assert_eq!(closed.filled_qty(), Quantity::from("39.9950"));
+    assert_eq!(closed.non_reopened_voided_qty(), Quantity::from("50.0000"));
+
+    let mut h = restart_with_order(&order, &closed).await;
+    serve_rest_trades(&h, &[sized_trade("trade-failed", "50.0000", "FAILED")]).await;
+    let declined = record_declined_fills();
+    let restored = cached_order(&h, &order);
+    let trade_queries = h.mock_state.trade_queries.clone();
+
+    for message in [
+        sized_trade("trade-kept", "30.0000", "CONFIRMED"),
+        sized_trade("trade-failed", "50.0000", "MATCHED"),
+        sized_trade("trade-failed", "50.0000", "FAILED"),
+        replacement,
+        matched,
+    ] {
+        h.mock_state.send_user(message).await;
+    }
+    let failed_trade_read = pump_until_venue(&mut h, || {
+        trade_queries.try_lock().is_ok_and(|queries| {
+            queries
+                .iter()
+                .any(|query| query.get("id").is_some_and(|id| id == "trade-failed"))
+        })
+    })
+    .await;
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    let replayed = cached_order(&h, &order);
+    let trade_reads: Vec<_> = trade_queries
+        .lock()
+        .await
+        .iter()
+        .filter_map(|query| query.get("id").cloned())
+        .collect();
+    assert_eq!(restored.events(), closed.events());
+    assert!(failed_trade_read, "failed trade was not read from REST");
+    assert!(resumed, "reports stayed blocked");
+    assert_eq!(trade_reads, ["trade-failed"]);
+    assert_eq!(replayed.events(), closed.events());
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+// The venue order fills 30 and has 10 more voided when its trade fails. A modify to the 40 they
+// account for, or to less, leaves nothing to replace, so it is rejected while the venue order
+// still works, and a modify to 50 then replaces it with 10.
+#[rstest]
+#[case::equal("40.0000")]
+#[case::below("35.0000")]
+#[tokio::test]
+async fn modify_within_filled_and_voided_is_rejected_before_cancel(#[case] target: &str) {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    settle_first_leg_with_void(&mut h, &order, "30.0000", "10.0000").await;
+    let before = cached_order(&h, &order);
+
+    h.modify_via_risk(&order, None, Some(Quantity::from(target)));
+    let rejected = h
+        .pump_until(DEADLINE, |cache| {
+            cache.order(&order.client_order_id()).is_some_and(|cached| {
+                event_count(&cached, |event| {
+                    matches!(event, OrderEventAny::ModifyRejected(_))
+                }) == 1
+            })
+        })
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+
+    let after = cached_order(&h, &order);
+    let reasons: Vec<_> = after
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::ModifyRejected(event) => Some(event.reason.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert!(rejected, "modify was not rejected");
+    assert_eq!(*h.mock_state.cancel_delete_count.lock().await, 0);
+    assert_eq!(
+        reasons,
+        [format!(
+            "Modify quantity {target} must be greater than filled quantity 30.0000 plus \
+             non-reopened voided quantity 10.0000"
+        )],
+    );
+    assert_eq!(after.status(), before.status());
+    assert_eq!(after.venue_order_id(), before.venue_order_id());
+    assert_eq!(after.quantity(), Quantity::from("100.0000"));
+    assert_eq!(after.leaves_qty(), Quantity::from("60.0000"));
+
+    let replacement_venue_order_id = replace_order(&mut h, &order, "50.0000").await;
+
+    let replaced = cached_order(&h, &order);
+    assert_eq!(*h.mock_state.cancel_delete_count.lock().await, 1);
+    assert_eq!(replaced.venue_order_id(), Some(replacement_venue_order_id));
+    assert_eq!(replaced.leaves_qty(), Quantity::from("10.0000"));
+}
+
+// Starts a new session on a cache holding the order as its events left it
+async fn restart_with_order(order: &OrderAny, closed: &OrderAny) -> harness::Harness {
+    harness::Harness::build_with_cache(|execution| {
+        execution
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(execution.client_id()), false)
+            .unwrap();
+        let mut engine = execution.exec_engine().borrow_mut();
+
+        for event in closed.events().into_iter().skip(1) {
+            engine.process(event);
+        }
+    })
+    .await
+}
+
+// Fills `kept` of the accepted venue order, then matches and fails a trade of `voided`
+async fn settle_first_leg_with_void(
+    h: &mut harness::Harness,
+    order: &OrderAny,
+    kept: &str,
+    voided: &str,
+) {
+    let kept_trade = sized_trade("trade-kept", kept, "CONFIRMED");
+    let failed_trade = sized_trade("trade-failed", voided, "FAILED");
+    serve_rest_trades(h, &[kept_trade.clone(), failed_trade.clone()]).await;
+
+    for trade in [
+        kept_trade,
+        sized_trade("trade-failed", voided, "MATCHED"),
+        failed_trade,
+    ] {
+        h.mock_state.send_user(trade).await;
+    }
+
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            cache.order(&order.client_order_id()).is_some_and(|cached| {
+                cached.filled_qty() == Quantity::from(kept)
+                    && cached.non_reopened_voided_qty() == Quantity::from(voided)
+            })
+        })
+        .await,
+        "first venue order did not settle at {kept} filled and {voided} voided",
+    );
+}
+
+// Modifies the order to `target` once the venue reports its canceled order at the cached filled
+// quantity. Returns the replacement's venue order ID.
+async fn replace_order(h: &mut harness::Harness, order: &OrderAny, target: &str) -> VenueOrderId {
+    let replaced = cached_order(h, order);
+    let mut canceled = load_json("http_canceled_orders_harness.json")["data"][0].clone();
+    canceled["size_matched"] = json!(replaced.filled_qty().to_string());
+    *h.mock_state.single_order_response.lock().await = Some(canceled);
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+    h.modify_via_risk(order, None, Some(Quantity::from(target)));
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            cache.order(&order.client_order_id()).is_some_and(|cached| {
+                cached.quantity() == Quantity::from(target)
+                    && cached.venue_order_id() != replaced.venue_order_id()
+            })
+        })
+        .await,
+        "replacement did not update the cached order",
+    );
+    cached_order(h, order).venue_order_id().unwrap()
+}
+
+// A confirmed trade in which the replacement venue order is the owned maker for `filled`
+fn replacement_trade(venue_order_id: VenueOrderId, filled: &str) -> Value {
+    let mut trade = owned_maker_trade("CONFIRMED");
+    trade["id"] = json!("trade-replacement");
+    trade["size"] = json!((Quantity::from("40.0000") + Quantity::from(filled)).to_string());
+    trade["maker_orders"][1]["order_id"] = json!(venue_order_id.as_str());
+    trade["maker_orders"][1]["matched_amount"] = json!(filled);
+    trade
+}
+
+// Modifies the order to `target`, then fills `filled` of the replacement's `size` as a maker and
+// reports it MATCHED, which closes the order. Returns the trade and the order message.
+async fn replace_and_fill_to_dust(
+    h: &mut harness::Harness,
+    order: &OrderAny,
+    target: &str,
+    size: &str,
+    filled: &str,
+) -> [Value; 2] {
+    let replacement_venue_order_id = replace_order(h, order, target).await;
+
+    let trade = replacement_trade(replacement_venue_order_id, filled);
+    h.mock_state.send_user(trade.clone()).await;
+    let mut matched = load_json("ws_user_order_matched.json");
+    matched["id"] = json!(replacement_venue_order_id.as_str());
+    matched["event_type"] = json!("order");
+    matched["original_size"] = json!(size);
+    matched["size_matched"] = json!(filled);
+    matched["associate_trades"] = json!(["trade-replacement"]);
+    h.mock_state.send_user(matched.clone()).await;
+    let closed = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, order, OrderStatus::Filled)
+        })
+        .await;
+
+    assert!(
+        closed,
+        "order ended {:?}, not Filled",
+        cached_order(h, order).status(),
+    );
+    [trade, matched]
 }
 
 async fn submit_until_accepted(h: &mut harness::Harness, order: &OrderAny) {
@@ -2316,6 +2573,34 @@ async fn serve_rest_trades(h: &harness::Harness, trades: &[Value]) {
     *h.mock_state.orders_response_override.lock().await = Some(load_json("http_empty_page.json"));
     *h.mock_state.trades_response_override.lock().await =
         Some(json!({ "data": trades, "next_cursor": "LTE=" }));
+}
+
+#[allow(
+    clippy::await_holding_refcell_ref,
+    reason = "single-threaded test harness only runs mock venue tasks during the await"
+)]
+async fn generate_order_status_report(
+    h: &harness::Harness,
+    order: &OrderAny,
+    venue_order_id: VenueOrderId,
+) -> OrderStatusReport {
+    h.exec_engine()
+        .borrow()
+        .get_client(&h.client_id())
+        .expect("execution client is registered")
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(order.instrument_id()),
+            client_order_id: Some(order.client_order_id()),
+            venue_order_id: Some(venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("order status report request should succeed")
+        .expect("order status report request should return a report")
 }
 
 #[allow(
