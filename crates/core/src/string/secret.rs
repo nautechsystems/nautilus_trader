@@ -102,17 +102,19 @@ pub fn zeroize_json_value(value: &mut serde_json::Value) {
 #[must_use]
 pub fn mask_api_key(key: &str) -> String {
     // Work with Unicode scalars to avoid panicking on multibyte characters.
-    let chars: Vec<char> = key.chars().collect();
-    let len = chars.len();
+    let len = key.chars().count();
 
     if len <= 8 {
         return "*".repeat(len);
     }
 
-    let first: String = chars[..4].iter().collect();
-    let last: String = chars[len - 4..].iter().collect();
-
-    format!("{first}...{last}")
+    let first_end: usize = key.chars().take(4).map(char::len_utf8).sum();
+    let last_len: usize = key.chars().rev().take(4).map(char::len_utf8).sum();
+    let mut masked = String::with_capacity(first_end + 3 + last_len);
+    masked.push_str(&key[..first_end]);
+    masked.push_str("...");
+    masked.push_str(&key[key.len() - last_len..]);
+    masked
 }
 
 #[cfg(test)]
@@ -180,5 +182,28 @@ mod tests {
     #[rstest]
     fn test_redact_option_absent() {
         assert_eq!(redact_option(None::<&str>), None);
+    }
+}
+
+#[cfg(test)]
+mod contracts {
+    use proptest::prelude::*;
+    use rstest::rstest;
+
+    use crate::string::secret::mask_api_key;
+
+    proptest! {
+        #[rstest]
+        fn prop_mask_preserves_unicode_scalars(key in "\\PC{0,128}") {
+            let chars: Vec<char> = key.chars().collect();
+            let expected = if chars.len() <= 8 {
+                "*".repeat(chars.len())
+            } else {
+                let first: String = chars[..4].iter().collect();
+                let last: String = chars[chars.len() - 4..].iter().collect();
+                format!("{first}...{last}")
+            };
+            prop_assert_eq!(mask_api_key(&key), expected);
+        }
     }
 }
