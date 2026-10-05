@@ -13,8 +13,11 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Upgraded Rust (MSRV) to 1.99.0
+- Upgraded `prek` tool to v0.5.4
+- Upgraded `uv` tool and pre-commit hook to v0.12.22
 - Upgraded `hyper-util` crate to v0.1.21
 - Upgraded `tokio-rustls` crate to v0.26.6
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.16.10
 - Upgraded `ty` package (dev) to v0.0.84
 - Upgraded `uvicorn` package (test) to v0.54.0
 

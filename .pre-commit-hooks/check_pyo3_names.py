@@ -33,7 +33,6 @@ PUBLIC_SUFFIX_NAMES = frozenset(
         "encode_record_batch_py",
     },
 )
-PYMETHOD_MACRO_PATH = "persistence/macros/src/custom.rs"
 RAW_STRING_PATTERN = re.compile(r'(?:br|rb|r)(?P<hashes>#+)?"')
 
 
@@ -218,7 +217,6 @@ def _check_file(path: Path) -> list[str]:
                 for _, _, masked_attribute, _ in attributes
             )
             or any(start < match.start() < end for start, end in pymethod_ranges)
-            or path.as_posix().endswith(PYMETHOD_MACRO_PATH)
         ):
             continue
 
