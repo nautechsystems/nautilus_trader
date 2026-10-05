@@ -347,7 +347,8 @@ impl GreeksCalculator {
     /// # Errors
     ///
     /// Returns an error if the instrument definition is not found, an option instrument
-    /// has no underlying identifier, or greeks calculation fails.
+    /// has no underlying identifier, its underlying symbol matches instruments on more
+    /// than one other venue, or greeks calculation fails.
     #[expect(clippy::too_many_arguments)]
     pub fn instrument_greeks(
         &self,
@@ -401,7 +402,7 @@ impl GreeksCalculator {
         }
 
         let underlying_instrument_id =
-            Self::resolve_underlying_instrument_id(&instrument, instrument_id)?;
+            self.resolve_underlying_instrument_id(&instrument, instrument_id)?;
         let mut greeks_data = self.calculate_option_greeks(
             &instrument,
             instrument_id,
@@ -445,6 +446,7 @@ impl GreeksCalculator {
     }
 
     fn resolve_underlying_instrument_id(
+        &self,
         instrument: &InstrumentAny,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<InstrumentId> {
@@ -452,10 +454,36 @@ impl GreeksCalculator {
             anyhow::bail!("Instrument {instrument_id} has no underlying identifier");
         };
 
-        Ok(InstrumentId::from(format!(
-            "{}.{}",
-            underlying, instrument_id.venue
-        )))
+        let same_venue_id = InstrumentId::from(format!("{underlying}.{}", instrument_id.venue));
+        let cache = self.cache.borrow();
+
+        if cache.instrument(&same_venue_id).is_some() {
+            return Ok(same_venue_id);
+        }
+
+        // An option can list on a different venue than its underlying, so accept a unique
+        // exact-symbol match. Without one, keep the option's venue so the cached futures
+        // spread fallback still applies.
+        let mut matches: Vec<InstrumentId> = cache
+            .instrument_ids(None)
+            .into_iter()
+            .filter(|id| id.symbol.inner() == underlying)
+            .copied()
+            .collect();
+
+        match matches.len() {
+            0 => Ok(same_venue_id),
+            1 => Ok(matches[0]),
+            _ => {
+                matches.sort();
+                let names = matches
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                anyhow::bail!("Ambiguous underlying for option {instrument_id}: {names}")
+            }
+        }
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -1775,16 +1803,159 @@ mod tests {
     #[rstest]
     fn test_resolve_underlying_instrument_id_errors_without_underlying() {
         let instrument = InstrumentAny::Equity(equity_aapl_opra());
-        let error = GreeksCalculator::resolve_underlying_instrument_id(
-            &instrument,
-            InstrumentId::from("AAPL.OPRA"),
-        )
-        .unwrap_err();
+        let error = create_test_calculator()
+            .resolve_underlying_instrument_id(&instrument, InstrumentId::from("AAPL.OPRA"))
+            .unwrap_err();
 
         assert_eq!(
             error.to_string(),
             "Instrument AAPL.OPRA has no underlying identifier"
         );
+    }
+
+    fn equity_with_id(instrument_id: &str) -> Equity {
+        let instrument_id = InstrumentId::from(instrument_id);
+        Equity::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(instrument_id.symbol)
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
+    }
+
+    fn calculator_with_option_and_equities(
+        option: OptionContract,
+        equity_ids: &[&str],
+    ) -> GreeksCalculator {
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::OptionContract(option))
+            .unwrap();
+
+        for equity_id in equity_ids {
+            cache
+                .borrow_mut()
+                .add_instrument(InstrumentAny::Equity(equity_with_id(equity_id)))
+                .unwrap();
+        }
+
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        GreeksCalculator::new(cache, clock)
+    }
+
+    #[rstest]
+    #[case::same_venue_preferred(&["AAPL.XNAS", "AAPL.OPRA", "AAPL.ARCX"], "AAPL.OPRA")]
+    #[case::unique_cross_venue_match(&["AAPL.XNAS", "MSFT.XNAS"], "AAPL.XNAS")]
+    #[case::no_match_keeps_option_venue(&["MSFT.XNAS"], "AAPL.OPRA")]
+    fn test_resolve_underlying_instrument_id(#[case] equity_ids: &[&str], #[case] expected: &str) {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, equity_ids);
+
+        let underlying_id = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        assert_eq!(underlying_id, InstrumentId::from(expected));
+    }
+
+    #[rstest]
+    fn test_resolve_underlying_instrument_id_errors_when_cross_venue_match_is_ambiguous() {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS", "AAPL.ARCX"]);
+
+        let error = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Ambiguous underlying for option AAPL250417C00150000.OPRA: AAPL.ARCX, AAPL.XNAS"
+        );
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_prices_underlying_on_another_venue() {
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry = now + jiff::SignedDuration::from_hours(24 * 30);
+        let now_ns = UnixNanos::from(now);
+        let expiry_ns = UnixNanos::from(expiry);
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
+        let option_id = option.id();
+        let same_venue_cache = setup_cache_with_option_and_quotes(
+            option.clone(),
+            InstrumentId::from("AAPL.OPRA"),
+            now_ns,
+        );
+        let cross_venue_cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cross_venue_cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::OptionContract(option))
+            .unwrap();
+        cross_venue_cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity_with_id("AAPL.XNAS")))
+            .unwrap();
+
+        for (instrument_id, bid, ask) in [
+            (option_id, "10.50", "10.60"),
+            (InstrumentId::from("AAPL.XNAS"), "150.00", "150.10"),
+        ] {
+            cross_venue_cache
+                .borrow_mut()
+                .add_quote(QuoteTick::new(
+                    instrument_id,
+                    Price::from(bid),
+                    Price::from(ask),
+                    Quantity::from(100),
+                    Quantity::from(100),
+                    now_ns,
+                    now_ns,
+                ))
+                .unwrap();
+        }
+
+        let greeks_for = |cache: Rc<RefCell<Cache>>| {
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
+            GreeksCalculator::new(cache, clock)
+                .instrument_greeks(
+                    option_id,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(now_ns),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+        };
+
+        let expected = greeks_for(same_venue_cache);
+        let greeks = greeks_for(cross_venue_cache);
+
+        assert_eq!(greeks.underlying_price, expected.underlying_price);
+        assert_eq!(greeks.vol, expected.vol);
+        assert_eq!(greeks.price, expected.price);
+        assert_eq!(greeks.greeks, expected.greeks);
     }
 
     fn future_with_expiration(

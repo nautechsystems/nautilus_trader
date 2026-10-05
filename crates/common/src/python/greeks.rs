@@ -349,6 +349,32 @@ mod tests {
     }
 
     #[rstest]
+    fn test_py_instrument_greeks_resolves_underlying_on_another_venue() {
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let option = option_contract_appl();
+        let option_id = option.id();
+        let equity = equity_aapl();
+        let equity_id = equity.id();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::OptionContract(option))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity))
+            .unwrap();
+        add_quote(&cache, option_id, "10.50");
+        add_quote(&cache, equity_id, "150.00");
+        let calculator = make_calculator(cache);
+
+        let greeks = py_instrument_greeks(&calculator, option_id, None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(greeks.underlying_price, 150.0);
+    }
+
+    #[rstest]
     fn test_py_instrument_greeks_raises_when_instrument_missing() {
         Python::initialize();
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
