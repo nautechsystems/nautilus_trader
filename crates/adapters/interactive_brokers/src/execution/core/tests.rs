@@ -3099,6 +3099,13 @@ fn test_cached_instrument_ids_for_preload_includes_non_spread_orders() {
     assert_eq!(spread_ids, vec![instrument_id]);
 }
 
+fn report_context(client: &InteractiveBrokersExecutionClient) -> IbReportContext {
+    IbReportContext::new(
+        Arc::clone(&client.instrument_provider),
+        client.core.account_id,
+    )
+}
+
 #[rstest]
 fn test_parse_historical_fill_report_uses_provider_resolved_stock_venue() {
     let (client, _, _) = create_test_execution_client();
@@ -3113,7 +3120,7 @@ fn test_parse_historical_fill_report_uses_provider_resolved_stock_venue() {
         .build()
         .unwrap();
 
-    let report = client
+    let report = report_context(&client)
         .parse_historical_fill_report(&cmd, &exec_data, 1.25, "USD", UnixNanos::default())
         .unwrap();
 
@@ -3137,7 +3144,7 @@ fn test_report_contract_resolution_preserves_canonical_opra_id() {
         .insert_test_contract_id_mapping(12_345, instrument_id);
     let exec_data = create_test_execution_data(123, "exec-opra-001", 1.0, 1.25, "BOT");
 
-    let resolved = client
+    let resolved = report_context(&client)
         .resolve_report_contract_instrument_id(&exec_data.contract)
         .unwrap();
 
@@ -3165,7 +3172,7 @@ fn test_parse_historical_fill_report_uses_cached_bag_spread_id() {
         .build()
         .unwrap();
 
-    let report = client
+    let report = report_context(&client)
         .parse_historical_fill_report(&cmd, &exec_data, 2.00, "USD", UnixNanos::default())
         .unwrap();
 
@@ -4684,4 +4691,62 @@ fn test_account_state_sender_delivers_from_worker_thread() {
         }
         other => panic!("expected account state, was {other:?}"),
     }
+}
+
+#[rstest]
+fn test_report_hooks_fall_back_to_inline_collection_while_disconnected() {
+    let (client, _, _) = create_test_execution_client();
+    let order_cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let orders_cmd = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .build()
+        .unwrap();
+    let fills_cmd = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let positions_cmd = GeneratePositionStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+
+    assert!(
+        client
+            .generate_order_status_report_task(&order_cmd)
+            .is_none()
+    );
+    assert!(
+        client
+            .generate_order_status_reports_task(&orders_cmd)
+            .is_none()
+    );
+    assert!(client.generate_fill_reports_task(&fills_cmd).is_none());
+    assert!(
+        client
+            .generate_position_status_reports_task(&positions_cmd)
+            .is_none()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_inline_reports_report_not_connected_while_disconnected() {
+    let (client, _, _) = create_test_execution_client();
+    let fills_cmd = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+
+    let error = client.generate_fill_reports(fills_cmd).await.unwrap_err();
+
+    assert_eq!(error.to_string(), "IB client not connected");
 }
