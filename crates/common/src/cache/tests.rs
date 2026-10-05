@@ -4314,8 +4314,16 @@ fn test_cache_currencies_registers_an_unregistered_currency() {
 
     futures::executor::block_on(cache.cache_currencies()).unwrap();
 
-    assert_eq!(cache.currency(&Ustr::from(code)), Some(&currency));
-    assert_eq!(Currency::try_from_str(code), Some(currency));
+    let cached = cache.currency(&Ustr::from(code)).expect("cached");
+    let registered = Currency::try_from_str(code).expect("registered");
+    for restored in [cached, &registered] {
+        assert_eq!(
+            restored.precision, 6,
+            "equality is by code; the fields must round-trip"
+        );
+        assert_eq!(restored.name.as_str(), code);
+        assert_eq!(restored.currency_type, CurrencyType::Crypto);
+    }
     assert_eq!(
         Money::from("1.5 ZZQ9"),
         Money::new(1.5, currency),
@@ -5760,6 +5768,39 @@ fn test_add_account_persists_account_currencies() {
     assert_eq!(found.precision, 4);
     assert_eq!(found.name.as_str(), "Account Fixture One");
     assert_eq!(found.currency_type, CurrencyType::Crypto);
+}
+
+/// A currency only an earlier state references is persisted too.
+///
+/// The database stores and decodes the account's whole event history, so a currency absent from
+/// the latest state still has to resolve on load.
+#[rstest]
+fn test_add_account_persists_currencies_of_earlier_events() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    let earlier = Currency::new(
+        "ZZACCT7",
+        4,
+        0,
+        "Account Fixture Seven",
+        CurrencyType::Crypto,
+    );
+    let account_id = AccountId::from("SIM-007");
+    let first = account_state_with_balances(account_id, &[Currency::USD(), earlier]);
+    let second = account_state_with_balances(account_id, &[Currency::USD()]);
+    let account = AccountAny::from_events(&[first, second]).unwrap();
+
+    cache.add_account(account).unwrap();
+
+    assert!(
+        calls
+            .lock()
+            .currencies
+            .iter()
+            .any(|c| c.code.as_str() == "ZZACCT7"),
+        "a currency held only in an earlier state must be persisted"
+    );
 }
 
 /// A margin requirement's currency is persisted too, since a `MarginBalance` holds `Money`.

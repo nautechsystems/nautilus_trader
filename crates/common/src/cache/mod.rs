@@ -2640,7 +2640,14 @@ impl Cache {
     pub fn add_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         log::debug!("Adding `Account` {}", account.id());
 
-        self.add_account_currencies(&account)?;
+        // The database stores the account's whole event history and decodes all of it on load,
+        // so a currency only an earlier state references must be persisted too. The update paths
+        // persist each state as it is applied, so only this one-time add walks the history.
+        for state in account.events() {
+            for currency in Self::state_currencies(&state) {
+                self.add_currency(currency)?;
+            }
+        }
 
         if let Some(database) = &mut self.database {
             database.add_account(&account)?;

@@ -2213,14 +2213,26 @@ mod serial_tests {
 
         let loaded = adapter.load_all().await.unwrap();
 
-        assert_eq!(loaded.currencies.get(&currency.code), Some(&currency));
+        let restored = loaded
+            .currencies
+            .get(&currency.code)
+            .expect("the currency is loaded");
+        assert_eq!(
+            restored.precision, currency.precision,
+            "equality is by code only"
+        );
+        assert_eq!(restored.name, currency.name);
+        assert_eq!(restored.currency_type, currency.currency_type);
         assert_eq!(loaded.instruments.get(&instrument.id()), Some(&instrument));
         assert!(
             loaded.accounts.contains_key(&account.id()),
             "the account denominated in {} must survive the reload",
             currency.code
         );
-        assert_eq!(Currency::try_from_str("ZZQ7"), Some(currency));
+        assert_eq!(
+            Currency::try_from_str("ZZQ7").map(|c| c.precision),
+            Some(currency.precision)
+        );
 
         let mut adapter = adapter;
         adapter.flush().unwrap();
@@ -2250,10 +2262,59 @@ mod serial_tests {
         .await
         .unwrap();
 
-        assert_eq!(loaded.currencies.get(&currency.code), Some(&currency));
+        let restored = loaded
+            .currencies
+            .get(&currency.code)
+            .expect("the currency is loaded");
+        assert_eq!(
+            restored.precision, currency.precision,
+            "equality is by code only"
+        );
+        assert_eq!(restored.name, currency.name);
+        assert_eq!(restored.currency_type, currency.currency_type);
         assert_eq!(loaded.instruments.get(&instrument.id()), Some(&instrument));
         assert!(loaded.accounts.contains_key(&account.id()));
-        assert_eq!(Currency::try_from_str("ZZQ8"), Some(currency));
+        assert_eq!(
+            Currency::try_from_str("ZZQ8").map(|c| c.precision),
+            Some(currency.precision)
+        );
+
+        let mut adapter = adapter;
+        adapter.flush().unwrap();
+    }
+
+    /// A record filed under a key for another code fails the load.
+    ///
+    /// The key is what the dependents resolve, so the mismatch would register one currency and
+    /// index another.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_all_fails_on_a_record_filed_under_another_code() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let encoding = adapter.database.get_encoding();
+        let record = serde_json::json!({
+            "code": "ZZQ6",
+            "precision": 4,
+            "iso4217": 0,
+            "name": "ZZQ6",
+            "currency_type": serde_json::to_value(CurrencyType::Crypto).unwrap(),
+        });
+        let payload = DatabaseQueries::serialize_payload(encoding, &record).unwrap();
+        let key = format!("{}:currencies:ZZQ9X", adapter.database.trader_key);
+        let mut con = adapter.database.con.clone();
+        con.set::<_, _, ()>(&key, payload).await.unwrap();
+
+        let error = adapter
+            .load_all()
+            .await
+            .expect_err("a record under another code's key must fail the load");
+
+        assert!(
+            error.to_string().contains("ZZQ9X") && error.to_string().contains("ZZQ6"),
+            "the error names both codes: {error}"
+        );
 
         let mut adapter = adapter;
         adapter.flush().unwrap();

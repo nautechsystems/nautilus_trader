@@ -61,16 +61,39 @@ pub fn register_loaded_currencies(currencies: &mut AHashMap<Ustr, Currency>) -> 
         let Some(registered) = Currency::try_from_str(code) else {
             continue;
         };
-        let same = registered.precision == currency.precision
-            && registered.iso4217 == currency.iso4217
-            && registered.name == currency.name
-            && registered.currency_type == currency.currency_type;
+        let mut differences: Vec<String> = Vec::new();
+        if registered.precision != currency.precision {
+            differences.push(format!(
+                "precision {} vs registered {}",
+                currency.precision, registered.precision
+            ));
+        }
 
-        if !same {
+        if registered.iso4217 != currency.iso4217 {
+            differences.push(format!(
+                "iso4217 {} vs registered {}",
+                currency.iso4217, registered.iso4217
+            ));
+        }
+
+        if registered.name != currency.name {
+            differences.push(format!(
+                "name {} vs registered {}",
+                currency.name, registered.name
+            ));
+        }
+
+        if registered.currency_type != currency.currency_type {
+            differences.push(format!(
+                "type {:?} vs registered {:?}",
+                currency.currency_type, registered.currency_type
+            ));
+        }
+
+        if !differences.is_empty() {
             log::warn!(
-                "Stored currency {code} differs from the registered definition (stored precision {}, registered {}); using the registered one",
-                currency.precision,
-                registered.precision,
+                "Stored currency {code} differs from the registered definition ({}); using the registered one",
+                differences.join(", "),
             );
             *currency = registered;
         }

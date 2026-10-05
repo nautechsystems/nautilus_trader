@@ -352,21 +352,26 @@ impl DatabaseQueries {
 
     /// Decodes a persisted currency, accepting both the record and a bare code.
     ///
-    /// A bare-code entry holds only the code, which resolves if that code is registered. The two
-    /// failure kinds are kept apart because bulk loading treats them differently: a record that
-    /// decodes but describes an invalid currency is an error, since the intent is recoverable and
-    /// dropping it would omit a currency the dependent payloads need, while bytes that decode as
-    /// neither shape are skipped.
+    /// A bare-code entry holds only the code, which resolves if that code is registered; an
+    /// unregistered one is skipped by bulk loading, since the entry holds nothing recoverable. Anything
+    /// that is not a bare code is a record, and a record that does not decode or describes an
+    /// invalid currency is an error, since the intent is recoverable and dropping it would omit a
+    /// currency the dependent payloads need.
     fn decode_currency(encoding: SerializationEncoding, value_bytes: &Bytes) -> CurrencyDecode {
         match Self::deserialize_payload::<CurrencyRecord>(encoding, value_bytes) {
             Ok(record) => match Currency::try_from(record) {
                 Ok(currency) => CurrencyDecode::Currency(currency),
                 Err(e) => CurrencyDecode::InvalidRecord(e),
             },
-            Err(record_err) => match Self::deserialize_payload::<Currency>(encoding, value_bytes) {
-                Ok(currency) => CurrencyDecode::Currency(currency),
-                Err(code_err) => CurrencyDecode::Undecodable(anyhow::anyhow!(
-                    "neither a currency record ({record_err}) nor a registered code ({code_err})"
+            Err(record_err) => match Self::deserialize_payload::<String>(encoding, value_bytes) {
+                Ok(code) => match Currency::try_from_str(&code) {
+                    Some(currency) => CurrencyDecode::Currency(currency),
+                    None => CurrencyDecode::Undecodable(anyhow::anyhow!(
+                        "bare currency code {code} is not registered"
+                    )),
+                },
+                Err(_) => CurrencyDecode::InvalidRecord(anyhow::anyhow!(
+                    "payload is not a bare code and does not decode as a currency record: {record_err}"
                 )),
             },
         }
@@ -409,6 +414,14 @@ impl DatabaseQueries {
             if let Some(value_bytes) = value_opt {
                 match Self::decode_currency(encoding, value_bytes) {
                     CurrencyDecode::Currency(currency) => {
+                        // The key names the code the dependents resolve, so a record filed under
+                        // another code would register one currency and index another.
+                        if currency.code != currency_code {
+                            anyhow::bail!(
+                                "Currency record under key {currency_code} holds code {}",
+                                currency.code
+                            );
+                        }
                         currencies.insert(currency_code, currency);
                     }
                     CurrencyDecode::InvalidRecord(e) => {
@@ -1255,7 +1268,32 @@ mod tests {
         ));
     }
 
-    /// Bytes that are neither a record nor a registered code are skipped by bulk loading.
+    /// A record-shaped payload that does not decode as a record is an error, not a bare code.
+    ///
+    /// A record written by a build with a currency type this one lacks must fail the load rather
+    /// than vanish, or the payloads denominated in it vanish with it.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_record_with_an_unknown_currency_type_is_invalid(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let record = serde_json::json!({
+            "code": "ZZQ3",
+            "precision": 6,
+            "iso4217": 0,
+            "name": "ZZQ3",
+            "currency_type": "STABLECOIN",
+        });
+        let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &record).unwrap());
+
+        assert!(matches!(
+            DatabaseQueries::decode_currency(encoding, &bytes),
+            CurrencyDecode::InvalidRecord(_)
+        ));
+    }
+
+    /// An unregistered bare code is skipped by bulk loading: the entry holds nothing recoverable.
     #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
