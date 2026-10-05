@@ -1,3 +1,28 @@
+# NautilusTrader 2.0.0rc7
+
+Released on TBD (UTC).
+
+### Enhancements
+
+### Breaking Changes
+
+### Security
+
+### Fixes
+
+### Internal Improvements
+
+- Upgraded `hyper-util` crate to v0.1.21
+- Upgraded `tokio-rustls` crate to v0.26.6
+- Upgraded `ty` package (dev) to v0.0.84
+- Upgraded `uvicorn` package (test) to v0.54.0
+
+### Documentation Updates
+
+### Deprecations
+
+---
+
 # NautilusTrader 2.0.0rc6
 
 Released on 4th October 2026 (UTC).

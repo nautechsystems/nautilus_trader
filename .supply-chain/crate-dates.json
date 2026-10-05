@@ -160,9 +160,9 @@
       "published": "2026-09-23T09:24:01.592699Z",
       "verified_at": "2026-09-29T01:12:23Z"
     },
-    "alloy-trie@0.9.7": {
-      "published": "2026-09-21T16:26:30.065918Z",
-      "verified_at": "2026-09-29T01:12:23Z"
+    "alloy-trie@0.9.8": {
+      "published": "2026-09-29T12:39:32.779006Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
     "alloy-tx-macros@2.5.0": {
       "published": "2026-09-23T09:19:02.773143Z",
@@ -386,7 +386,7 @@
     },
     "async-compression@0.4.44": {
       "published": "2026-09-02T16:05:28.674815Z",
-      "verified_at": "2026-09-29T01:34:18Z"
+      "verified_at": "2026-10-05T03:34:03Z"
     },
     "async-lock@3.4.2": {
       "published": "2025-12-21T16:24:46.954239Z",
@@ -462,7 +462,7 @@
     },
     "bigdecimal@0.4.10": {
       "published": "2025-12-27T23:58:11.318859Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+      "verified_at": "2026-10-05T03:52:03Z"
     },
     "bincode@1.3.3": {
       "published": "2021-04-10T10:57:13.181871Z",
@@ -694,7 +694,7 @@
     },
     "compression-codecs@0.4.39": {
       "published": "2026-09-02T16:05:24.693770Z",
-      "verified_at": "2026-09-29T01:34:18Z"
+      "verified_at": "2026-10-05T03:34:03Z"
     },
     "compression-core@0.4.33": {
       "published": "2026-09-02T16:05:19.162370Z",
@@ -902,7 +902,7 @@
     },
     "databento@0.62.0": {
       "published": "2026-09-22T19:50:41.482589Z",
-      "verified_at": "2026-09-25T00:22:07Z"
+      "verified_at": "2026-10-05T03:34:03Z"
     },
     "datafusion-catalog-listing@55.1.0": {
       "published": "2026-09-11T15:02:00.737836Z",
@@ -1030,11 +1030,11 @@
     },
     "dbn-macros@0.70.0": {
       "published": "2026-09-18T17:08:13.882643Z",
-      "verified_at": "2026-09-25T00:22:07Z"
+      "verified_at": "2026-10-05T03:34:03Z"
     },
     "dbn@0.70.0": {
       "published": "2026-09-18T17:08:28.793750Z",
-      "verified_at": "2026-09-25T00:22:07Z"
+      "verified_at": "2026-10-05T03:34:03Z"
     },
     "defmt-macros@1.1.1": {
       "published": "2026-07-03T14:14:21.833924Z",
@@ -1239,10 +1239,6 @@
     "fiat-crypto@0.3.0": {
       "published": "2025-06-04T02:42:06.808859Z",
       "verified_at": "2026-09-13T06:09:27Z"
-    },
-    "find-msvc-tools@0.1.13": {
-      "published": "2026-09-18T13:26:25.874635Z",
-      "verified_at": "2026-09-24T00:16:49Z"
     },
     "find-msvc-tools@0.1.14": {
       "published": "2026-09-25T10:09:48.951244Z",
@@ -1694,7 +1690,7 @@
     },
     "keccak-asm@0.1.8": {
       "published": "2026-06-10T12:27:19.231141Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+      "verified_at": "2026-10-05T03:52:03Z"
     },
     "keccak@0.2.2": {
       "published": "2026-08-21T12:55:13.628790Z",
@@ -1712,9 +1708,9 @@
       "published": "2024-02-29T05:24:56.067147Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "lazy_static@1.5.0": {
-      "published": "2024-06-21T22:48:42.440092Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "lazy_static@1.5.1": {
+      "published": "2026-10-01T07:18:53.602470Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
     "lexical-core@1.0.6": {
       "published": "2025-09-21T03:35:41.665207Z",
@@ -2056,9 +2052,9 @@
       "published": "2026-05-13T18:32:09.030433Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "pin-utils@0.1.0": {
-      "published": "2020-04-22T16:13:27.095776Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "pin-utils@0.1.1": {
+      "published": "2026-10-01T07:13:59.339322Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
     "pkcs8@0.10.2": {
       "published": "2023-04-05T00:01:55.909808Z",
@@ -2154,19 +2150,19 @@
     },
     "pyo3-build-config@0.29.2": {
       "published": "2026-08-05T19:54:16.731390Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+      "verified_at": "2026-10-05T03:52:03Z"
     },
     "pyo3-ffi@0.29.2": {
       "published": "2026-08-05T19:54:35.147092Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+      "verified_at": "2026-10-05T03:52:03Z"
     },
     "pyo3-macros-backend@0.29.2": {
       "published": "2026-08-05T19:54:24.425087Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+      "verified_at": "2026-10-05T03:52:03Z"
     },
     "pyo3-macros@0.29.2": {
       "published": "2026-08-05T19:54:31.665175Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+      "verified_at": "2026-10-05T03:52:03Z"
     },
     "pyo3-stub-gen-derive@0.20.0": {
       "published": "2026-03-23T03:55:05.092824Z",
@@ -2174,19 +2170,19 @@
     },
     "pyo3@0.29.2": {
       "published": "2026-08-05T19:54:41.868247Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+      "verified_at": "2026-10-05T03:52:03Z"
     },
     "quick-xml@0.39.4": {
       "published": "2026-05-08T19:31:15.163358Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "quinn-proto@0.11.18": {
-      "published": "2026-09-14T10:08:32.833754Z",
-      "verified_at": "2026-09-19T22:29:50Z"
+    "quinn-proto@0.11.19": {
+      "published": "2026-09-30T09:13:59.040527Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
-    "quinn-udp@0.5.15": {
-      "published": "2026-07-04T19:17:31.033662Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "quinn-udp@0.5.16": {
+      "published": "2026-09-30T09:14:07.548366Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
     "quinn@0.11.12": {
       "published": "2026-09-14T10:08:47.662258Z",
@@ -2568,13 +2564,13 @@
       "published": "2022-01-17T11:26:21.628923Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "serde_with@3.23.0": {
-      "published": "2026-09-07T23:03:03.817937Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "serde_with@3.24.0": {
+      "published": "2026-09-26T16:44:06.919544Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
-    "serde_with_macros@3.23.0": {
-      "published": "2026-09-07T23:02:58.516992Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "serde_with_macros@3.24.0": {
+      "published": "2026-09-26T16:44:01.690749Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
     "serde_yaml@0.9.34+deprecated": {
       "published": "2024-03-25T00:50:19.759577Z",
@@ -2604,9 +2600,9 @@
       "published": "2022-01-06T18:32:21.638830Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "sha3-asm@0.1.8": {
-      "published": "2026-06-10T12:27:17.250355Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "sha3-asm@0.1.9": {
+      "published": "2026-09-29T17:05:10.146854Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
     "sha3@0.11.0": {
       "published": "2026-04-02T19:08:41.704262Z",
@@ -2888,9 +2884,9 @@
       "published": "2026-07-29T13:15:27.042096Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "tokio-rustls@0.26.5": {
-      "published": "2026-09-04T08:52:06.163215Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "tokio-rustls@0.26.6": {
+      "published": "2026-09-28T09:18:10.392472Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
     "tokio-stream@0.1.19": {
       "published": "2026-07-22T08:19:01.447272Z",
@@ -3340,9 +3336,9 @@
       "published": "2026-08-06T16:08:01.866097Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "xxhash-rust@0.8.18": {
-      "published": "2026-07-21T10:54:28.375103Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "xxhash-rust@0.8.19": {
+      "published": "2026-09-28T13:16:18.201165Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
     "yansi@1.0.1": {
       "published": "2024-03-13T07:48:07.624195Z",
@@ -3352,9 +3348,9 @@
       "published": "2026-03-14T04:29:57.441431Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "yoke-derive@0.8.3": {
-      "published": "2026-09-15T21:39:18.642203Z",
-      "verified_at": "2026-09-19T22:29:50Z"
+    "yoke-derive@0.8.4": {
+      "published": "2026-09-30T13:19:39.412870Z",
+      "verified_at": "2026-10-05T03:27:26Z"
     },
     "yoke@0.8.3": {
       "published": "2026-06-03T20:59:17.678438Z",
