@@ -228,6 +228,12 @@ pub struct OrderContext {
 /// Order fields used to identify a venue amendment.
 pub type OrderSignature = (Decimal, Option<Decimal>, Option<Decimal>);
 
+/// Deribit rejects messages over 32 KB; 400 channel names stay well under it.
+const MAX_CHANNELS_PER_SUBSCRIBE: usize = 400;
+
+/// How long a subscribe waits for the ones right behind it.
+const SUBSCRIBE_COALESCE_WINDOW: std::time::Duration = std::time::Duration::from_millis(50);
+
 /// Deribit WebSocket feed handler.
 ///
 /// Runs in a dedicated Tokio task, processing commands and raw WebSocket messages.
@@ -261,6 +267,8 @@ pub struct DeribitWsFeedHandler {
     pending_book_resync: Vec<String>,
     pending_outgoing: VecDeque<NautilusWsMessage>,
     subscribe_errors: Arc<Mutex<Vec<String>>>,
+    // Commands drained while coalescing subscribes, run before reading cmd_rx again.
+    deferred_cmds: VecDeque<HandlerCommand>,
 }
 
 impl DeribitWsFeedHandler {
@@ -308,6 +316,7 @@ impl DeribitWsFeedHandler {
             pending_book_resync: Vec::new(),
             pending_outgoing: VecDeque::new(),
             subscribe_errors,
+            deferred_cmds: VecDeque::new(),
         }
     }
 
@@ -859,9 +868,27 @@ impl DeribitWsFeedHandler {
                 self.instruments_cache
                     .insert(instrument.raw_symbol().inner(), *instrument);
             }
-            HandlerCommand::Subscribe { channels } => {
-                if let Err(e) = self.handle_subscribe(channels).await {
-                    log::error!("Subscribe failed: {e}");
+            HandlerCommand::Subscribe { mut channels } => {
+                // Coalesce the subscribes arriving within a short window and send them in chunks:
+                // one request per channel trips Deribit's rate limit (a full chain is ~1,800), and
+                // one request for everything exceeds its 32 KB message limit after a reconnect.
+                let deadline = tokio::time::Instant::now() + SUBSCRIBE_COALESCE_WINDOW;
+                loop {
+                    match tokio::time::timeout_at(deadline, self.cmd_rx.recv()).await {
+                        Ok(Some(HandlerCommand::Subscribe { channels: more })) => {
+                            channels.extend(more);
+                        }
+                        Ok(Some(other)) => {
+                            self.deferred_cmds.push_back(other);
+                            break;
+                        }
+                        Ok(None) | Err(_) => break,
+                    }
+                }
+                for chunk in channels.chunks(MAX_CHANNELS_PER_SUBSCRIBE) {
+                    if let Err(e) = self.handle_subscribe(chunk.to_vec()).await {
+                        log::error!("Subscribe failed: {e}");
+                    }
                 }
             }
             HandlerCommand::Unsubscribe { channels } => {
@@ -2701,6 +2728,11 @@ impl DeribitWsFeedHandler {
                         continue;
                     }
                 }
+            }
+
+            if let Some(cmd) = self.deferred_cmds.pop_front() {
+                self.process_command(cmd).await;
+                continue;
             }
 
             tokio::select! {
