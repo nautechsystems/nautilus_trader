@@ -82,6 +82,11 @@ path = "benches/time.rs"
 harness = false
 
 [[bench]]
+name = "nanos_parsing"
+path = "benches/nanos_parsing.rs"
+harness = false
+
+[[bench]]
 name = "datetime"
 path = "benches/datetime.rs"
 harness = false
