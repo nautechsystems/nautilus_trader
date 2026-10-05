@@ -609,9 +609,10 @@ pub fn parse_ticker_to_option_greeks(
         instrument_id,
         convention: GreeksConvention::BlackScholes,
         greeks: deribit_greeks.to_greek_values(),
-        mark_iv: msg.mark_iv.and_then(|v| v.to_f64()),
-        bid_iv: msg.bid_iv.and_then(|v| v.to_f64()),
-        ask_iv: msg.ask_iv.and_then(|v| v.to_f64()),
+        // Deribit quotes IV in percent; OptionGreeks carries fractions (as OKX and Bybit do).
+        mark_iv: msg.mark_iv.and_then(|v| v.to_f64()).map(|v| v / 100.0),
+        bid_iv: msg.bid_iv.and_then(|v| v.to_f64()).map(|v| v / 100.0),
+        ask_iv: msg.ask_iv.and_then(|v| v.to_f64()).map(|v| v / 100.0),
         underlying_price: msg.underlying_price.and_then(|v| v.to_f64()),
         open_interest: Some(msg.open_interest.to_f64().unwrap_or(0.0)),
         ts_event,
@@ -1908,6 +1909,29 @@ mod tests {
             mark_price.ts_event,
             UnixNanos::new(1_765_541_474_086_000_000)
         );
+    }
+
+    #[rstest]
+    fn test_parse_ticker_to_option_greeks_reports_iv_as_fraction() {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_ticker.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let mut data = response["params"]["data"].clone();
+        // Deribit sends IV in percent.
+        data["mark_iv"] = serde_json::json!(55.2);
+        data["bid_iv"] = serde_json::json!(54.0);
+        data["ask_iv"] = serde_json::json!(56.5);
+        data["greeks"] = serde_json::json!({
+            "delta": 0.5, "gamma": 0.001, "vega": 1.9, "theta": -3.6, "rho": 0.4
+        });
+        let msg: DeribitTickerMsg = serde_json::from_str(&data.to_string()).unwrap();
+
+        let greeks =
+            parse_ticker_to_option_greeks(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        assert!((greeks.mark_iv.unwrap() - 0.552).abs() < 1e-12);
+        assert!((greeks.bid_iv.unwrap() - 0.54).abs() < 1e-12);
+        assert!((greeks.ask_iv.unwrap() - 0.565).abs() < 1e-12);
     }
 
     #[rstest]
