@@ -63,7 +63,7 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::{Credential, DATABENTO_VENUE},
+    common::{Credential, DATABENTO_VENUE, ohlcv_schema_from_aggregation},
     historical::{DatabentoHistoricalClient, RangeQueryParams},
     live::{DatabentoFeedHandler, DatabentoMessage, HandlerCommand},
     loader::DatabentoDataLoader,
@@ -1586,15 +1586,7 @@ fn ohlcv_schema(bar_type: BarType) -> anyhow::Result<dbn::Schema> {
         "Unsupported bar step for Databento OHLCV: {spec}, only a step of 1 is available",
     );
 
-    match spec.aggregation {
-        BarAggregation::Second => Ok(dbn::Schema::Ohlcv1S),
-        BarAggregation::Minute => Ok(dbn::Schema::Ohlcv1M),
-        BarAggregation::Hour => Ok(dbn::Schema::Ohlcv1H),
-        BarAggregation::Day => Ok(dbn::Schema::Ohlcv1D),
-        aggregation => {
-            anyhow::bail!("Unsupported bar aggregation for Databento OHLCV: {aggregation:?}")
-        }
-    }
+    ohlcv_schema_from_aggregation(spec.aggregation)
 }
 
 fn schema_from_params(

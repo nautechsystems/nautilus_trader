@@ -32,7 +32,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::{Credential, get_date_time_range},
+    common::{Credential, get_date_time_range, ohlcv_schema_from_aggregation},
     decode::{
         MboDeltaBuffer, decode_imbalance_msg, decode_instrument_def_msg, decode_mbo_msg,
         decode_mbp10_msg, decode_record, decode_statistics_msg, decode_status_msg,
@@ -770,13 +770,7 @@ impl DatabentoHistoricalClient {
             .first()
             .ok_or_else(|| anyhow::anyhow!("No symbols provided"))?;
         let stype_in = infer_symbology_type(first_symbol);
-        let schema = match aggregation {
-            BarAggregation::Second => dbn::Schema::Ohlcv1S,
-            BarAggregation::Minute => dbn::Schema::Ohlcv1M,
-            BarAggregation::Hour => dbn::Schema::Ohlcv1H,
-            BarAggregation::Day => dbn::Schema::Ohlcv1D,
-            _ => anyhow::bail!("Invalid `BarAggregation` for request, was {aggregation}"),
-        };
+        let schema = ohlcv_schema_from_aggregation(aggregation)?;
 
         let end = params.end.unwrap_or_else(|| self.clock.get_time_ns());
         let time_range = get_date_time_range(params.start, end)?;

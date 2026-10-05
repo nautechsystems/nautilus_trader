@@ -152,8 +152,8 @@ the `u8` Arrow column width used for persistence.
   bars use `ohlcv-1d`; use `statistics` for official settlements and open
   interest.
 - **Imbalance and statistics**: Venue operational data with no built-in Nautilus
-  equivalent. Reach them through the historical client, the data loader, or the
-  direct live client, not through node subscriptions or requests (see
+  equivalent. Subscribe through `subscribe_data()`, or reach them through the
+  historical client, the data loader, or the direct live client (see
   [Imbalance and statistics](#imbalance-and-statistics)).
 - **Status**: Venue trading-state updates. Subscribe via
   `subscribe_instrument_status`.
@@ -227,18 +227,23 @@ already carries the data needed by the strategy.
 
 Nautilus subscription methods map to Databento schemas as follows:
 
-| Nautilus subscription method    | Default schema | Available Databento schemas                                                  | Nautilus data type |
-| :------------------------------ | :------------- | :--------------------------------------------------------------------------- | :----------------- |
-| `subscribe_instrument()`        | `definition`   | `definition`                                                                 | `Instrument`       |
-| `subscribe_quotes()`            | `mbp-1`        | `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo` | `QuoteTick`        |
-| `subscribe_trades()`            | `trades`       | `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`                                 | `TradeTick`        |
-| `subscribe_book_deltas()`       | `mbo`          | `mbo`                                                                        | `OrderBookDeltas`  |
-| `subscribe_instrument_status()` | `status`       | `status`                                                                     | `InstrumentStatus` |
+| Nautilus subscription method    | Default schema | Available Databento schemas                                                  | Nautilus data type                          |
+| :------------------------------ | :------------- | :--------------------------------------------------------------------------- | :------------------------------------------ |
+| `subscribe_instrument()`        | `definition`   | `definition`                                                                 | `Instrument`                                |
+| `subscribe_quotes()`            | `mbp-1`        | `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo` | `QuoteTick`                                 |
+| `subscribe_trades()`            | `trades`       | `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`                                 | `TradeTick`                                 |
+| `subscribe_book_deltas()`       | `mbo`          | `mbo`                                                                        | `OrderBookDeltas`                           |
+| `subscribe_book_depth()`        | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth10`                          |
+| `subscribe_bars()`              | none           | `ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, `ohlcv-1d`                               | `Bar`                                       |
+| `subscribe_data()`              | none           | `statistics`, `imbalance`                                                    | `DatabentoStatistics`, `DatabentoImbalance` |
+| `subscribe_instrument_status()` | `status`       | `status`                                                                     | `InstrumentStatus`                          |
 
 Pass a non-default schema through the `schema` subscription parameter, as shown in the examples
-below. Only `subscribe_quotes()` and `subscribe_trades()` accept a choice; the other methods always
-use the single schema listed. The matching historical requests, `request_quotes()` and
-`request_trades()`, take the same `schema` values and defaults.
+below. Only `subscribe_quotes()` and `subscribe_trades()` accept a choice. `subscribe_bars()` takes
+its schema from the bar aggregation, and `subscribe_data()` from the data type name
+(`DatabentoStatistics` or `DatabentoImbalance`). The other methods always use the single schema
+listed. The matching historical requests, `request_quotes()` and `request_trades()`, take the same
+`schema` values and defaults.
 
 :::warning
 The "Available Databento schemas" column lists adapter-supported choices for
@@ -366,8 +371,7 @@ published with that identifier, so a subscriber receives only the records of its
 
 These three subscriptions accept raw symbols such as `ESM4.GLBX` only. Records resolve to the
 underlying contract, so continuous (`ES.c.0`) and parent (`ES.FUT`) symbols are rejected rather than
-published on topics the subscriber does not listen on. Use `subscribe_quotes()` or
-`subscribe_trades()` for those symbols. The examples use a raw symbol:
+published on topics the subscriber does not listen on. The examples use a raw symbol:
 
 ```python
 raw_instrument_id = InstrumentId.from_str("ESM4.GLBX")
