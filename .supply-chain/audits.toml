@@ -2707,6 +2707,12 @@ criteria = "safe-to-deploy"
 delta = "0.7.0 -> 0.7.1"
 notes = "Adds a serde alias for Arbitrum Nitro's miscased L1BlockNumber receipt field plus regression fixtures. No new dependencies, unsafe, build script, filesystem, network, process, credential, or data-exfiltration behavior."
 
+[[audits.ibapi]]
+who = "Faysal Aberkane <faysal.aberkane@gmail.com>"
+criteria = "safe-to-deploy"
+version = "5.0.0"
+notes = "Recorded at the PR author's direction, who states they vetted this release. Temporary acceptance so CI can run inside the 3 day cooldown; remove the cooldown allow entry once 5.0.0 is 3 days old."
+
 [[audits.icu_collections]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
