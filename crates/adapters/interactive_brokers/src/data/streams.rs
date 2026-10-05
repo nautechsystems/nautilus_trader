@@ -4182,6 +4182,7 @@ mod tests {
         assert!(matches!(action, StreamAction::Resubscribe));
 
         let mut deltas = Vec::new();
+
         while let Ok(event) = receiver.try_recv() {
             match event {
                 DataEvent::Data(Data::BookDelta(delta)) => deltas.push(delta),
