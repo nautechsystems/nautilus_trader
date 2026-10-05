@@ -2087,9 +2087,6 @@ impl KrakenSpotHttpClient {
                 // Kraken defines available funds as `balance + credit - credit_used -
                 // hold_trade`, so net credit belongs in `total` for `free` to derive to it.
                 let total = balance + credit - credit_used;
-                if total.is_zero() {
-                    return None;
-                }
 
                 let normalized_code = normalize_currency_code(currency_code);
 
@@ -2098,7 +2095,8 @@ impl KrakenSpotHttpClient {
                 }
 
                 let locked = Decimal::from_str_exact(&entry.hold_trade).ok()?;
-                let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
+                let currency =
+                    Currency::new(normalized_code, 8, 0, normalized_code, CurrencyType::Crypto);
                 AccountBalance::from_total_and_locked(total, locked, currency).ok()
             })
             .chain(margin_entry)
