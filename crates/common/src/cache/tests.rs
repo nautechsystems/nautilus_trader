@@ -5811,6 +5811,73 @@ fn test_add_account_persists_margin_currencies() {
     );
 }
 
+/// A database failure while saving currencies must not lose the in-memory update.
+///
+/// The event is applied before the currencies are persisted, as `update_account` orders it.
+#[rstest]
+fn test_update_account_state_applies_the_event_before_persisting_currencies() {
+    let mut cache = Cache::default();
+    let account = cash_account_with_balance(Currency::USD());
+    let account_id = account.id();
+    cache.add_account(account).unwrap();
+    cache.set_database(Box::new(SnapshotBlobTestDatabase {
+        fail_add_currency: true,
+        ..Default::default()
+    }));
+
+    let arrived = Currency::new(
+        "ZZACCT5",
+        4,
+        0,
+        "Account Fixture Five",
+        CurrencyType::Crypto,
+    );
+    let event = account_state_with_balances(account_id, &[Currency::USD(), arrived]);
+
+    let result = cache.update_account_state(&event);
+
+    assert!(result.is_err(), "the database failure is reported");
+    let account = cache
+        .account_owned(&account_id)
+        .expect("the account stays cached");
+    assert!(
+        account.balances().contains_key(&arrived),
+        "the event is applied in memory before the currencies are persisted"
+    );
+}
+
+/// The owned path keeps an account the caller took out, even when saving currencies fails.
+#[rstest]
+fn test_update_account_owned_keeps_the_account_when_persisting_currencies_fails() {
+    let mut cache = Cache::default();
+    let account = cash_account_with_balance(Currency::USD());
+    let account_id = account.id();
+    cache.add_account(account).unwrap();
+    cache.set_database(Box::new(SnapshotBlobTestDatabase {
+        fail_add_currency: true,
+        ..Default::default()
+    }));
+
+    let arrived = Currency::new("ZZACCT6", 4, 0, "Account Fixture Six", CurrencyType::Crypto);
+    let mut taken = cache
+        .take_account(&account_id)
+        .expect("the fill path takes the account");
+    taken
+        .apply(account_state_with_balances(
+            account_id,
+            &[Currency::USD(), arrived],
+        ))
+        .unwrap();
+
+    let result = cache.update_account_owned(taken);
+
+    assert!(result.is_err(), "the database failure is reported");
+    let account = cache
+        .account_owned(&account_id)
+        .expect("the account is back in the cache despite the failure");
+    assert!(account.balances().contains_key(&arrived));
+}
+
 /// The same holds when an account is replaced rather than added.
 #[rstest]
 fn test_update_account_persists_account_currencies() {
@@ -9727,6 +9794,7 @@ struct SnapshotBlobTestDatabase {
     strategy_state: AHashMap<String, Bytes>,
     database_calls: CacheDatabaseCalls,
     fail_add: bool,
+    fail_add_currency: bool,
     fail_flush: bool,
     fail_add_instrument_close: bool,
     fail_add_order: bool,
@@ -10016,6 +10084,9 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
+        if self.fail_add_currency {
+            anyhow::bail!("add_currency failed");
+        }
         self.database_calls.lock().currencies.push(*currency);
         Ok(())
     }

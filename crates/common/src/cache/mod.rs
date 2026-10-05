@@ -2605,7 +2605,6 @@ impl Cache {
         Ok(())
     }
 
-    /// Returns the currencies an `account` references.
     /// The currencies an account state references: its balances, its margins and its base currency.
     fn state_currencies(state: &AccountState) -> impl Iterator<Item = Currency> + '_ {
         state
@@ -3337,8 +3336,17 @@ impl Cache {
     /// Returns an error if updating the account in the database fails.
     pub fn update_account_owned(&mut self, account: AccountAny) -> anyhow::Result<()> {
         let account_id = account.id();
-        self.add_account_currencies(&account)?;
+        // The in-memory account is updated before anything can fail, so a database failure while
+        // saving its currencies never drops an account the caller has taken out of the cache.
+        let currencies: Vec<Currency> = account
+            .last_event()
+            .map(|state| Self::state_currencies(&state).collect())
+            .unwrap_or_default();
         self.cache_account_owned(account);
+
+        for currency in currencies {
+            self.add_currency(currency)?;
+        }
 
         if let Some(database) = &mut self.database {
             let Some(account_cell) = self.accounts.get(&account_id) else {
@@ -3359,9 +3367,13 @@ impl Cache {
     ///
     /// Returns an error if applying or persisting the account state fails.
     pub fn update_account_state(&mut self, event: &AccountState) -> anyhow::Result<()> {
-        if !self.accounts.contains_key(&event.account_id) {
+        let Some(cell) = self.accounts.get(&event.account_id) else {
             return self.add_account(AccountAny::from_events(std::slice::from_ref(event))?);
-        }
+        };
+
+        // The event is applied before anything can fail, so a database failure while saving its
+        // currencies leaves the in-memory account current.
+        cell.borrow_mut().apply(event.clone())?;
 
         // The event carries every currency the account references after it, so the account
         // itself is not cloned on this path.
@@ -3370,10 +3382,8 @@ impl Cache {
         }
 
         let Some(cell) = self.accounts.get(&event.account_id) else {
-            anyhow::bail!("Account {} not found", event.account_id);
+            anyhow::bail!("Account {} not found after apply", event.account_id);
         };
-
-        cell.borrow_mut().apply(event.clone())?;
 
         if let Some(database) = &mut self.database {
             database.update_account(&cell.borrow())?;

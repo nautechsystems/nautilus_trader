@@ -52,7 +52,8 @@ use crate::signal::Signal;
 ///
 /// # Errors
 ///
-/// Returns an error if the registry cannot be locked.
+/// Returns an error if `Currency::register` does; it does not at present, so the result only
+/// keeps callers forward-compatible.
 pub fn register_loaded_currencies(currencies: &mut AHashMap<Ustr, Currency>) -> anyhow::Result<()> {
     for (code, currency) in currencies.iter_mut() {
         Currency::register(*currency, false)?;
