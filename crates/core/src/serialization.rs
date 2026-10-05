@@ -203,10 +203,21 @@ impl<'de> Visitor<'de> for OptionalDecimalVisitor {
 }
 
 fn json_token_text(raw: &RawValue) -> serde_json::Result<Cow<'_, str>> {
-    if raw.get().starts_with('"') {
-        serde_json::from_str::<String>(raw.get()).map(Cow::Owned)
+    let text = raw.get();
+    if text.starts_with('"') {
+        // Generic deserializers can supply RawValue text without lexical validation.
+        if let Some(contents) = text
+            .strip_prefix('"')
+            .and_then(|text| text.strip_suffix('"'))
+            && !contents
+                .bytes()
+                .any(|byte| byte < 0x20 || byte == b'"' || byte == b'\\')
+        {
+            return Ok(Cow::Borrowed(contents));
+        }
+        serde_json::from_str::<String>(text).map(Cow::Owned)
     } else {
-        Ok(Cow::Borrowed(raw.get()))
+        Ok(Cow::Borrowed(text))
     }
 }
 
@@ -986,6 +997,25 @@ mod tests {
     }
 
     impl Serializable for SerializableTestStruct {}
+
+    #[rstest]
+    #[case("\"")]
+    #[case("\"1x")]
+    #[case("\"1\u{e9}")]
+    #[case("\"1\0")]
+    #[case("\"1\n")]
+    #[case("\"1\"\"")]
+    #[case("\"1\0\"")]
+    #[case("\"1\n\"")]
+    fn test_json_decimal_rejects_malformed_raw_strings(#[case] raw: &str) {
+        // A generic deserializer can supply RawValue text without serde_json's lexical validation.
+        let expected = serde_json::from_str::<String>(raw).unwrap_err().to_string();
+        let deserializer = serde::de::value::MapDeserializer::<_, ValueError>::new(
+            [("$serde_json::private::RawValue", raw)].into_iter(),
+        );
+        let error = decimal::deserialize_json(deserializer).unwrap_err();
+        assert_eq!(error.to_string(), expected);
+    }
 
     #[rstest]
     #[case("0.125", "0.125", 3)]
@@ -2063,5 +2093,44 @@ mod tests {
                 ),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod contracts {
+    use rstest::rstest;
+    use rust_decimal::Decimal;
+    use serde::Deserialize;
+
+    use crate::serialization::deserialize_decimal_token_borrowed;
+
+    #[derive(Debug, Deserialize)]
+    struct Token(#[serde(deserialize_with = "deserialize_decimal_token_borrowed")] Decimal);
+
+    #[rstest]
+    #[case(r#""1.2300""#, 12300, 4)]
+    #[case(r#""\u0031.2300""#, 12300, 4)]
+    #[case(r#""1.2300\u0030""#, 123_000, 5)]
+    #[case(r#""-0.00001000""#, -1000, 8)]
+    #[case("9007199254740993", 9_007_199_254_740_993, 0)]
+    #[case("18446744073709551617", 18_446_744_073_709_551_617, 0)]
+    fn test_decimal_token_preserves_digits_and_scale(
+        #[case] json: &str,
+        #[case] mantissa: i128,
+        #[case] scale: u32,
+    ) {
+        let value = serde_json::from_str::<Token>(json).unwrap().0;
+        assert_eq!(value.mantissa(), mantissa);
+        assert_eq!(value.scale(), scale);
+    }
+
+    #[rstest]
+    #[case(r#""\uD800""#)]
+    #[case(r#""\uDC00""#)]
+    #[case(r#""\q""#)]
+    #[case(r#""1.2\n3""#)]
+    #[case(r#""1.2\"3""#)]
+    fn test_decimal_token_rejects_invalid_strings(#[case] json: &str) {
+        assert!(serde_json::from_str::<Token>(json).is_err());
     }
 }
