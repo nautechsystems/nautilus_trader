@@ -158,7 +158,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           enable-cache: true
@@ -179,7 +179,7 @@ jobs:
           (github.event_name != 'pull_request' ||
           !github.event.pull_request.head.repo.fork)
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: zizmor.sarif
           category: zizmor
@@ -210,10 +210,12 @@ jobs:
 
       - name: Set up Rust toolchain
         # https://github.com/actions-rust-lang/setup-rust-toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           toolchain: ${{ steps.rust-toolchain.outputs.toolchain }}
           override: true
+          rustflags: -D warnings
+          build-warnings: ""
 
       - name: Cache supply-chain tools
         # https://github.com/actions/cache
@@ -234,7 +236,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv-version.outputs.version }}
           prune-cache: true

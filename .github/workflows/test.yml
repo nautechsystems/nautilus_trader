@@ -48,11 +48,13 @@ jobs:
 
       - name: Set up Rust toolchain
         # https://github.com/actions-rust-lang/setup-rust-toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           toolchain: ${{ env.TOOLCHAIN }}
           cache: false
           override: true
+          rustflags: -D warnings
+          build-warnings: ""
 
       - name: Check jiff features
         run: make check-jiff-features
@@ -103,7 +105,7 @@ jobs:
 
       - name: Install lychee
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: lychee@${{ env.LYCHEE_VERSION }}
         env:
@@ -117,7 +119,7 @@ jobs:
 
       - name: Install cargo-machete
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
 
