@@ -12,6 +12,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Upgraded Rust (MSRV) to 1.99.0
 - Upgraded `hyper-util` crate to v0.1.21
 - Upgraded `tokio-rustls` crate to v0.26.6
 - Upgraded `ty` package (dev) to v0.0.84
