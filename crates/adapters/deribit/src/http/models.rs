@@ -1077,8 +1077,12 @@ pub struct DeribitPosition {
     )]
     pub initial_margin: Decimal,
     /// Leverage used for the position
-    #[serde(default)]
-    pub leverage: Option<i64>,
+    #[serde(
+        default,
+        serialize_with = "decimal::serialize_optional",
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
+    pub leverage: Option<Decimal>,
     /// Current unrealized profit/loss
     #[serde(
         serialize_with = "decimal::serialize",
@@ -1295,5 +1299,36 @@ mod tests {
         let expirations = response.expirations_for_currency("any").unwrap();
         assert_eq!(expirations.option, vec!["20MAY26", "26JUN26"]);
         assert_eq!(expirations.future, vec!["20MAY26", "PERPETUAL"]);
+    }
+
+    #[rstest]
+    #[case(r#""leverage": 34,"#, Some(dec!(34)))]
+    #[case(r#""leverage": 25.0,"#, Some(dec!(25)))]
+    #[case("", None)]
+    fn test_deserialize_position_leverage(
+        #[case] leverage: &str,
+        #[case] expected: Option<Decimal>,
+    ) {
+        let json = format!(
+            r#"{{
+                {leverage}
+                "average_price": 2710.5,
+                "direction": "buy",
+                "floating_profit_loss": 0.006,
+                "index_price": 2708.82,
+                "initial_margin": 5.85,
+                "instrument_name": "ETH-25DEC26",
+                "kind": "future",
+                "maintenance_margin": 2.92,
+                "mark_price": 2733.4,
+                "realized_profit_loss": 0.0,
+                "size": 399958.0,
+                "size_currency": 146.322528719,
+                "total_profit_loss": 0.006
+            }}"#
+        );
+
+        let position: DeribitPosition = serde_json::from_str(&json).unwrap();
+        assert_eq!(position.leverage, expected);
     }
 }
