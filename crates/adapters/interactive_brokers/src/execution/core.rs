@@ -61,7 +61,6 @@ pub(super) use nautilus_common::{
             SubmitOrder, SubmitOrderList,
         },
     },
-    msgbus::{send_account_state, switchboard::MessagingSwitchboard},
 };
 pub(super) use nautilus_core::{
     DurationNanos, Params, UUID4, UnixNanos,
@@ -78,9 +77,9 @@ pub(super) use nautilus_model::{
         LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TrailingOffsetType,
     },
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderDeniedReason, OrderEventAny, OrderFilled, OrderModifyRejected, OrderPendingCancel,
-        OrderRejected, OrderSubmitted, OrderUpdated,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderDeniedReason,
+        OrderEventAny, OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderRejected,
+        OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
@@ -99,8 +98,9 @@ pub(super) use ustr::Ustr;
 
 pub(super) use super::{
     account::{
-        PositionTracker, create_position_tracker, ib_account_code, initialize_position_tracking,
-        record_own_fill, subscribe_account_summary, subscribe_positions,
+        AccountSnapshot, PositionTracker, create_position_tracker, ib_account_code,
+        initialize_position_tracking, record_own_fill, stream_account_summary,
+        subscribe_account_summary, subscribe_positions,
     },
     parse,
     parse::{
@@ -1024,33 +1024,22 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         log::debug!("Starting IB order update stream");
         self.start_order_updates().await?;
 
-        // Subscribe to account summary and generate initial account state
-        // Wait for initial account summary to load before proceeding
-        let client_for_account = Arc::clone(&client);
+        // Subscribe to account summary and keep it open so the account state follows the broker
+        // Wait for the initial account summary to load before proceeding
         let account_id = self.core.account_id;
-        let _exec_client_core = self.core.clone(); // Clone core to generate account state
         log::debug!("Subscribing to IB account summary for {account_id}");
 
-        match subscribe_account_summary(&client_for_account, self.ib_account).await {
-            Ok((balances, margins, info)) => {
-                tracing::debug!(
-                    "Received account summary: {} balances, {} margins",
-                    balances.len(),
-                    margins.len()
-                );
-                // Generate account state event like Python version
-                let ts_event = get_atomic_clock_realtime().get_time_ns();
+        let send_account_state = self.account_state_sender();
 
-                if let Err(e) = ExecutionClient::generate_account_state(
-                    self, balances, margins, true, // reported
-                    ts_event, info,
-                ) {
-                    tracing::warn!("Failed to generate account state: {}", e);
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Failed to subscribe to account summary: {}", e);
-            }
+        if let Err(e) = stream_account_summary(
+            &client,
+            self.ib_account,
+            &self.session_tasks,
+            send_account_state,
+        )
+        .await
+        {
+            tracing::warn!("Failed to subscribe to account summary: {}", e);
         }
 
         // Initialize position tracking with existing positions
@@ -1583,12 +1572,9 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
         let client_clone = client.as_arc().clone();
-        let account_id = self.core.account_id;
         let ib_account = self.ib_account;
-        let account_type = self.core.account_type;
-        let base_currency = self.core.base_currency;
-        let clock = get_atomic_clock_realtime();
         let request_timeout_secs = self.config.request_timeout;
+        let send_account_state = self.account_state_sender();
 
         let future = async move {
             let timeout_dur = Duration::from_secs(request_timeout_secs);
@@ -1599,26 +1585,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .await;
 
             match result {
-                Ok(Ok((balances, margins, info))) => {
-                    let ts_event = clock.get_time_ns();
-                    let ts_now = clock.get_time_ns();
-
-                    let account_state = AccountState::new(
-                        account_id,
-                        account_type,
-                        balances,
-                        margins,
-                        true,
-                        UUID4::new(),
-                        ts_event,
-                        ts_now,
-                        base_currency,
-                    )
-                    .with_info(info);
-
-                    let endpoint = MessagingSwitchboard::portfolio_update_account();
-                    send_account_state(endpoint, &account_state);
-                }
+                Ok(Ok(snapshot)) => send_account_state(snapshot),
                 Ok(Err(e)) => {
                     tracing::error!("Failed to query account state: {e}");
                 }
@@ -2247,6 +2214,29 @@ fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
 }
 
 impl InteractiveBrokersExecutionClient {
+    // Captures the thread-local exec event sender here so tokio worker threads, which have no
+    // sender or message bus of their own, can still deliver account states.
+    fn account_state_sender(&self) -> impl Fn(AccountSnapshot) + Send + 'static {
+        let factory = OrderEventFactory::new(
+            self.core.trader_id,
+            self.core.account_id,
+            self.core.account_type,
+            self.core.base_currency,
+        );
+        let exec_sender = get_exec_event_sender();
+        let clock = get_atomic_clock_realtime();
+
+        move |(balances, margins, info)| {
+            let ts_now = clock.get_time_ns();
+            let state =
+                factory.generate_account_state(balances, margins, true, ts_now, ts_now, info);
+
+            if let Err(e) = exec_sender.send(ExecutionEvent::Account(state)) {
+                tracing::warn!("Failed to send account state: {e}");
+            }
+        }
+    }
+
     pub(super) fn execution_filter(ib_account: Ustr, start: Option<UnixNanos>) -> ExecutionFilter {
         let time = start.map_or_else(String::new, |start| {
             start

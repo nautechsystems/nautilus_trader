@@ -4655,3 +4655,33 @@ fn held_fills_start_one_resolution_per_order() {
     assert_eq!(held, vec![TradeId::from("T-1"), TradeId::from("T-2")]);
     assert!(state.fills_held[&IbOrderSelector::PermId(303)].is_empty());
 }
+
+#[rstest]
+fn test_account_state_sender_delivers_from_worker_thread() {
+    let (client, mut rx, _cache) = create_test_execution_client();
+    let send_account_state = client.account_state_sender();
+    let balances = vec![
+        AccountBalance::from_total_and_free(
+            Decimal::new(100050, 2),
+            Decimal::new(90025, 2),
+            Currency::USD(),
+        )
+        .unwrap(),
+    ];
+
+    std::thread::spawn({
+        let balances = balances.clone();
+        move || send_account_state((balances, Vec::new(), None))
+    })
+    .join()
+    .unwrap();
+
+    match rx.try_recv().unwrap() {
+        ExecutionEvent::Account(state) => {
+            assert_eq!(state.account_id, AccountId::from("IB-001"));
+            assert_eq!(state.balances, balances);
+            assert!(state.is_reported);
+        }
+        other => panic!("expected account state, was {other:?}"),
+    }
+}

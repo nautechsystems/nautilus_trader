@@ -290,16 +290,6 @@ pub enum IbRealtimeBarSize {
     Sec5,
 }
 
-impl IbRealtimeBarSize {
-    /// Converts to the rust-ibapi realtime bar-size enum.
-    #[must_use]
-    pub const fn ibapi_bar_size(self) -> ibapi::market_data::realtime::BarSize {
-        match self {
-            Self::Sec5 => ibapi::market_data::realtime::BarSize::Sec5,
-        }
-    }
-}
-
 impl Display for IbRealtimeBarSize {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -15,9 +15,10 @@
 
 //! Account management for Interactive Brokers execution client.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::Context;
+use futures_util::Stream;
 use ibapi::{
     accounts::{
         AccountSummary, AccountSummaryResult, AccountSummaryTags, AccountUpdate, AccountValue,
@@ -27,6 +28,7 @@ use ibapi::{
     contracts::Contract,
     orders::ExecutionSide,
     prelude::{StreamExt, SubscriptionItemStreamExt},
+    subscriptions::{FilterDataStream, Subscription},
 };
 use nautilus_common::{
     cache::fifo::FifoCache,
@@ -63,6 +65,20 @@ pub(crate) fn ib_account_code(configured: Option<&str>, account_id: AccountId) -
     }
 }
 
+// Rows of one IB refresh batch arrive within milliseconds of each other.
+const ACCOUNT_SUMMARY_QUIET: Duration = Duration::from_secs(1);
+
+pub type AccountSnapshot = (Vec<AccountBalance>, Vec<MarginBalance>, Option<Params>);
+
+type AccountSummaryStream = FilterDataStream<Subscription<AccountSummaryResult>>;
+
+#[derive(Default)]
+struct AccountSummaryAccumulator {
+    balances: Vec<AccountSummaryBalance>,
+    margins: Vec<MarginBalance>,
+    info: Params,
+}
+
 /// Subscribe to account summary and parse to balances and margins.
 ///
 /// The returned `info` also carries one `reqAccountUpdates` snapshot, because IB serves
@@ -74,8 +90,67 @@ pub(crate) fn ib_account_code(configured: Option<&str>, account_id: AccountId) -
 pub async fn subscribe_account_summary(
     client: &Arc<Client>,
     ib_account: Ustr,
-) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>, Option<Params>)> {
-    let raw_account_id = ib_account.as_str();
+) -> anyhow::Result<AccountSnapshot> {
+    let mut subscription = open_account_summary(client, ib_account).await?;
+    let mut accumulator = AccountSummaryAccumulator::default();
+    read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+    account_snapshot(client, ib_account, &accumulator).await
+}
+
+/// Subscribe to account summary, deliver the first snapshot, and keep the subscription open.
+///
+/// IB repeats the summary about every 3 minutes on a live `reqAccountSummary` subscription. A
+/// session task delivers one further snapshot per refresh cycle through `on_snapshot` until
+/// the subscription ends.
+///
+/// # Errors
+///
+/// Returns an error if the subscription fails or the first snapshot cannot be built.
+pub async fn stream_account_summary<F>(
+    client: &Arc<Client>,
+    ib_account: Ustr,
+    session_tasks: &TaskGroup,
+    on_snapshot: F,
+) -> anyhow::Result<()>
+where
+    F: Fn(AccountSnapshot) + Send + 'static,
+{
+    let mut subscription = open_account_summary(client, ib_account).await?;
+    let mut accumulator = AccountSummaryAccumulator::default();
+    read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+    on_snapshot(account_snapshot(client, ib_account, &accumulator).await?);
+
+    let client = Arc::clone(client);
+    let future = async move {
+        while read_account_summary_cycle(
+            &mut subscription,
+            ib_account,
+            &mut accumulator,
+            Some(ACCOUNT_SUMMARY_QUIET),
+        )
+        .await
+        {
+            match account_snapshot(&client, ib_account, &accumulator).await {
+                Ok(snapshot) => on_snapshot(snapshot),
+                Err(e) => tracing::warn!("Failed to build account snapshot: {}", e),
+            }
+        }
+        tracing::warn!(
+            "IB account summary stream ended for account: {}",
+            ib_account
+        );
+    };
+    session_tasks
+        .spawn(future)
+        .context("Failed to register IB account summary task")?;
+
+    Ok(())
+}
+
+async fn open_account_summary(
+    client: &Arc<Client>,
+    ib_account: Ustr,
+) -> anyhow::Result<AccountSummaryStream> {
     // Request key account summary tags (includes TotalCashValue to match Python account summary info dict).
     let tags = &[
         AccountSummaryTags::NET_LIQUIDATION,
@@ -95,34 +170,58 @@ pub async fn subscribe_account_summary(
         .account_summary(&group, tags)
         .await
         .context("Failed to subscribe to account summary")?;
-    let mut subscription = subscription.filter_data();
 
     tracing::debug!("Subscribed to account summary for account: {}", ib_account);
 
-    // Process initial account summary snapshot
-    // We collect all summary items until the API sends AccountSummaryResult::End, so the
-    // returned balances/margins are complete (matches Python behavior of waiting for all tags).
-    let mut balance_summaries = Vec::new();
-    let mut margins: Vec<MarginBalance> = Vec::new();
-    let mut info = Params::new();
+    Ok(subscription.filter_data())
+}
 
-    while let Some(result) = subscription.next().await {
-        match result {
-            Ok(AccountSummaryResult::Summary(summary)) => {
+// Folds summary rows into the accumulator until the API sends AccountSummaryResult::End, so
+// each snapshot is complete (matches Python behavior of waiting for all tags). After the
+// initial snapshot IB pushes changed values without a further End, so a refresh passes
+// `quiet` and completes once rows stop arriving for that long. Returns false when the stream
+// closes before a snapshot completes.
+async fn read_account_summary_cycle<S>(
+    subscription: &mut S,
+    ib_account: Ustr,
+    accumulator: &mut AccountSummaryAccumulator,
+    quiet: Option<Duration>,
+) -> bool
+where
+    S: Stream<Item = Result<AccountSummaryResult, ibapi::Error>> + Unpin,
+{
+    let raw_account_id = ib_account.as_str();
+    let mut received_rows = false;
+
+    loop {
+        let next = match quiet {
+            Some(quiet) if received_rows => {
+                match tokio::time::timeout(quiet, subscription.next()).await {
+                    Ok(next) => next,
+                    Err(_) => return true,
+                }
+            }
+            _ => subscription.next().await,
+        };
+
+        match next {
+            Some(Ok(AccountSummaryResult::Summary(summary))) => {
                 // Filter for the specific account
                 if summary.account != raw_account_id {
                     continue;
                 }
 
+                received_rows = true;
+
                 // Record the raw summary tag so the account state carries the
                 // venue-reported values (for example TotalCashValue) that do not
                 // map to the typed balances and margins.
-                info.insert(
+                accumulator.info.insert(
                     summary.tag.clone(),
                     serde_json::Value::from(summary.value.as_str()),
                 );
 
-                if let Err(e) = merge_account_summary_balance(&mut balance_summaries, &summary) {
+                if let Err(e) = merge_account_summary_balance(&mut accumulator.balances, &summary) {
                     tracing::warn!("Failed to parse account summary: {}", e);
                 }
 
@@ -130,22 +229,30 @@ pub async fn subscribe_account_summary(
                 // and MAINT_MARGIN_REQ as separate summary entries; merge them into one
                 // `MarginBalance` per currency so neither half overwrites the other when
                 // the account-wide margin store keys by `Currency`.
-                merge_account_summary_margin(&mut margins, &summary);
+                merge_account_summary_margin(&mut accumulator.margins, &summary);
             }
-            Ok(AccountSummaryResult::End) => {
-                break;
-            }
-            Err(e) => {
+            Some(Ok(AccountSummaryResult::End)) => return true,
+            Some(Err(e)) => {
                 tracing::warn!("Error receiving account summary: {}", e);
             }
+            None => return false,
         }
     }
+}
 
-    if let Err(e) = merge_account_updates_snapshot(client, raw_account_id, &mut info).await {
+async fn account_snapshot(
+    client: &Arc<Client>,
+    ib_account: Ustr,
+    accumulator: &AccountSummaryAccumulator,
+) -> anyhow::Result<AccountSnapshot> {
+    let mut info = accumulator.info.clone();
+
+    if let Err(e) = merge_account_updates_snapshot(client, ib_account.as_str(), &mut info).await {
         tracing::warn!("Failed to collect account updates: {}", e);
     }
 
-    let balances = finalize_account_summary_balances(balance_summaries)?;
+    let balances = finalize_account_summary_balances(accumulator.balances.clone())?;
+    let mut margins = accumulator.margins.clone();
     margins.sort_by(|a, b| a.currency.code.as_str().cmp(b.currency.code.as_str()));
 
     tracing::debug!(
@@ -250,6 +357,7 @@ fn merge_account_summary_margin(margins: &mut Vec<MarginBalance>, summary: &Acco
     }
 }
 
+#[derive(Clone)]
 struct AccountSummaryBalance {
     currency: Currency,
     net_liquidation: Option<Decimal>,
@@ -712,8 +820,11 @@ fn parse_currency(currency: &str) -> anyhow::Result<Currency> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use futures_util::{StreamExt, stream};
     use ibapi::{
-        accounts::{AccountSummary, AccountValue},
+        accounts::{AccountSummary, AccountSummaryResult, AccountValue},
         orders::ExecutionSide,
     };
     use nautilus_core::Params;
@@ -725,9 +836,10 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::{
-        AccountSummaryTags, check_external_position_change, create_position_tracker,
-        finalize_account_summary_balances, ib_account_code, merge_account_summary_balance,
-        merge_account_summary_margin, merge_account_value, parse_currency, record_own_fill,
+        AccountSummaryAccumulator, AccountSummaryTags, check_external_position_change,
+        create_position_tracker, finalize_account_summary_balances, ib_account_code,
+        merge_account_summary_balance, merge_account_summary_margin, merge_account_value,
+        parse_currency, read_account_summary_cycle, record_own_fill,
     };
 
     fn margin_summary(tag: &str, value: &str, currency: &str) -> AccountSummary {
@@ -875,6 +987,94 @@ mod tests {
         assert_eq!(merged.total.as_decimal(), "100.00".parse().unwrap());
         assert_eq!(merged.locked.as_decimal(), "0.00".parse().unwrap());
         assert_eq!(merged.free.as_decimal(), "100.00".parse().unwrap());
+    }
+
+    fn net_liquidation_summary(value: &str) -> AccountSummaryResult {
+        AccountSummaryResult::Summary(margin_summary("NetLiquidation", value, "USD"))
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_read_account_summary_cycle_refreshes_on_each_end() {
+        let mut subscription = stream::iter([
+            Ok(net_liquidation_summary("1000.50")),
+            Ok(AccountSummaryResult::End),
+            Ok(net_liquidation_summary("1100.25")),
+            Ok(AccountSummaryResult::End),
+        ]);
+        let ib_account = ustr::Ustr::from("DU123");
+        let mut accumulator = AccountSummaryAccumulator::default();
+
+        let first =
+            read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+        let first_balances =
+            finalize_account_summary_balances(accumulator.balances.clone()).unwrap();
+        let second =
+            read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+        let second_balances =
+            finalize_account_summary_balances(accumulator.balances.clone()).unwrap();
+        let closed =
+            read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+
+        assert!(first);
+        assert_eq!(
+            first_balances,
+            vec![
+                AccountBalance::from_total_and_free(
+                    Decimal::new(100050, 2),
+                    Decimal::new(100050, 2),
+                    Currency::USD()
+                )
+                .unwrap()
+            ]
+        );
+        assert!(second);
+        assert_eq!(
+            second_balances,
+            vec![
+                AccountBalance::from_total_and_free(
+                    Decimal::new(110025, 2),
+                    Decimal::new(110025, 2),
+                    Currency::USD()
+                )
+                .unwrap()
+            ]
+        );
+        assert!(!closed);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_read_account_summary_cycle_flushes_refresh_without_end() {
+        let mut subscription = stream::iter([
+            Ok(net_liquidation_summary("1000.50")),
+            Ok(net_liquidation_summary("1100.25")),
+        ])
+        .chain(stream::pending());
+        let ib_account = ustr::Ustr::from("DU123");
+        let mut accumulator = AccountSummaryAccumulator::default();
+
+        let flushed = read_account_summary_cycle(
+            &mut subscription,
+            ib_account,
+            &mut accumulator,
+            Some(Duration::from_secs(1)),
+        )
+        .await;
+        let balances = finalize_account_summary_balances(accumulator.balances.clone()).unwrap();
+
+        assert!(flushed);
+        assert_eq!(
+            balances,
+            vec![
+                AccountBalance::from_total_and_free(
+                    Decimal::new(110025, 2),
+                    Decimal::new(110025, 2),
+                    Currency::USD()
+                )
+                .unwrap()
+            ]
+        );
     }
 
     #[rstest]

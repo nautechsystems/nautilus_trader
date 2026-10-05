@@ -1987,6 +1987,15 @@ where
             }
             depth_result = subscription.next() => {
                 match depth_result {
+                    Some(Ok(SubscriptionItem::Data(MarketDepths::Reset))) => {
+                        monitor.received_data();
+                        l2_order_ids.clear();
+                        sequence += 1;
+
+                        if !send_depth_stream_clear(instrument_id, sequence, data_sender, clock) {
+                            return Ok(StreamAction::Stop);
+                        }
+                    }
                     Some(Ok(SubscriptionItem::Data(MarketDepths::MarketDepth(depth)))) => {
                         monitor.received_data();
                         let ts_event = clock.get_time_ns();
@@ -3820,7 +3829,6 @@ mod tests {
 
         trade_sender
             .send(Ok(Trade {
-                tick_type: String::from("Last"),
                 time: time::OffsetDateTime::UNIX_EPOCH,
                 price: 4500.25,
                 size: 3.0,
@@ -4128,6 +4136,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_process_market_depth_stream_clears_book_on_reset() {
+        let instrument_id = instrument_id();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let cancellation_token = CancellationToken::new();
+        let clock = get_atomic_clock_realtime();
+        let data_farm_state = DataFarmConnectionState::default();
+        let (depth_sender, depth_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let mut subscription = ChannelSubscription::new(depth_receiver);
+        depth_sender
+            .send(Ok(MarketDepths::MarketDepth(MarketDepth {
+                position: 1,
+                operation: 0,
+                side: 1,
+                price: 100.0,
+                size: 5.0,
+            })))
+            .unwrap();
+        depth_sender.send(Ok(MarketDepths::Reset)).unwrap();
+        depth_sender
+            .send(Ok(MarketDepths::MarketDepth(MarketDepth {
+                position: 1,
+                operation: 0,
+                side: 1,
+                price: 101.0,
+                size: 6.0,
+            })))
+            .unwrap();
+        drop(depth_sender);
+
+        let action = process_market_depth_stream(
+            &mut subscription,
+            instrument_id,
+            2,
+            0,
+            &sender.clone().into(),
+            clock,
+            &cancellation_token,
+            &data_farm_state,
+            data_farm_state.recovery_generation(),
+            disabled_monitor(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(action, StreamAction::Resubscribe));
+
+        let mut deltas = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            match event {
+                DataEvent::Data(Data::BookDelta(delta)) => deltas.push(delta),
+                other => panic!("unexpected event: {other:?}"),
+            }
+        }
+
+        let observed: Vec<_> = deltas
+            .iter()
+            .map(|delta| (delta.action, delta.sequence, delta.order.price.as_f64()))
+            .collect();
+        assert_eq!(
+            observed,
+            vec![
+                (BookAction::Clear, 0, 0.0),
+                (BookAction::Add, 1, 100.0),
+                (BookAction::Clear, 2, 0.0),
+                (BookAction::Add, 3, 101.0),
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn test_process_trade_stream_emits_negative_price_and_skips_sentinel() {
         let instrument_id = instrument_id();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -4140,7 +4217,6 @@ mod tests {
         for (price, size) in [(-1.0, 0.0), (-1.0, 3.0), (-1.25, 2.0)] {
             trade_sender
                 .send(Ok(Trade {
-                    tick_type: String::from("Last"),
                     time: time::OffsetDateTime::UNIX_EPOCH,
                     price,
                     size,
