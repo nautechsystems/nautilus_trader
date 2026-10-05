@@ -32,7 +32,7 @@ use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
-use crate::hex::ENCODE_PAIR;
+use crate::hex::{DECODE_NIBBLE, ENCODE_PAIR};
 
 /// The maximum length of ASCII characters for a `UUID4` string value (includes null terminator).
 pub(crate) const UUID4_LEN: usize = 37;
@@ -130,18 +130,45 @@ impl UUID4 {
 
     /// Returns the raw UUID bytes (16 bytes).
     ///
-    /// Parses the stored string representation on each call; cache the result
-    /// when the bytes are needed repeatedly in hot paths.
+    /// Decodes the canonical stored hexadecimal representation on each call;
+    /// cache the result when the bytes are needed repeatedly in hot paths.
     ///
     /// # Panics
     ///
-    /// Never panics in practice: the stored byte representation is a valid
-    /// UTF-8 UUID v4 string produced by [`UUID4::new`] or deserialization paths.
+    /// Panics if the internal representation is not a valid C string, UTF-8 or UUID.
     #[must_use]
     pub fn as_bytes(&self) -> [u8; 16] {
-        let uuid_str = self.to_cstr().to_str().expect("Valid UTF-8");
-        let uuid = Uuid::parse_str(uuid_str).expect("Valid UUID4");
-        *uuid.as_bytes()
+        // Constructors normalize the text to lowercase, hyphenated ASCII.
+        const BYTE_POSITIONS: [usize; 16] =
+            [0, 2, 4, 6, 9, 11, 14, 16, 19, 21, 24, 26, 28, 30, 32, 34];
+        let mut bytes = [0u8; 16];
+        let mut invalid_nibbles = 0u8;
+
+        for (byte, pos) in bytes.iter_mut().zip(BYTE_POSITIONS) {
+            let hi = DECODE_NIBBLE[self.value[pos] as usize];
+            let lo = DECODE_NIBBLE[self.value[pos + 1] as usize];
+            invalid_nibbles |= hi | lo;
+            *byte = (hi << 4) | lo;
+        }
+
+        let invalid_delimiters = self.value[36]
+            | (self.value[8] ^ b'-')
+            | (self.value[13] ^ b'-')
+            | (self.value[18] ^ b'-')
+            | (self.value[23] ^ b'-');
+        if (invalid_nibbles & 0xf0) | invalid_delimiters != 0 {
+            return self.as_bytes_checked();
+        }
+
+        bytes
+    }
+
+    #[cold]
+    #[track_caller]
+    fn as_bytes_checked(&self) -> [u8; 16] {
+        // Values crossing the C ABI retain the original validation and panic priority.
+        let text = self.to_cstr().to_str().expect("Valid UTF-8");
+        *Uuid::parse_str(text).expect("Valid UUID4").as_bytes()
     }
 
     fn validate_v4(uuid: &Uuid) {
@@ -588,6 +615,52 @@ mod tests {
         let deserialized: UUID4 = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(uuid, deserialized);
+    }
+
+    fn uuid_bytes_outcome(
+        convert: impl FnOnce() -> [u8; 16] + std::panic::UnwindSafe,
+    ) -> Result<[u8; 16], String> {
+        std::panic::catch_unwind(convert).map_err(|payload| {
+            if let Some(message) = payload.downcast_ref::<String>() {
+                message.clone()
+            } else {
+                payload.downcast_ref::<&str>().unwrap().to_string()
+            }
+        })
+    }
+
+    #[rstest]
+    #[case(36, b'x')]
+    #[case(9, 0)]
+    #[case(8, b'_')]
+    #[case(0, b'g')]
+    #[case(0, 0xff)]
+    fn test_as_bytes_preserves_raw_representation_errors(
+        #[case] position: usize,
+        #[case] replacement: u8,
+    ) {
+        // UUID4 also crosses the C ABI by value, without a constructor-enforced representation.
+        let mut value = *b"2d89666b-1a1e-4a75-b193-4eb3b454c757\0";
+        value[position] = replacement;
+        let uuid = UUID4 { value };
+        let expected = uuid_bytes_outcome(|| {
+            let text = uuid.to_cstr().to_str().expect("Valid UTF-8");
+            *Uuid::parse_str(text).expect("Valid UUID4").as_bytes()
+        });
+        assert!(expected.is_err());
+        assert_eq!(uuid_bytes_outcome(|| uuid.as_bytes()), expected);
+    }
+
+    #[rstest]
+    fn test_as_bytes_preserves_raw_uuid_version_and_variant() {
+        let mut value = *b"2d89666b-1a1e-4a75-b193-4eb3b454c757\0";
+        value[14] = b'1';
+        value[19] = b'0';
+        let uuid = UUID4 { value };
+        let expected = *Uuid::parse_str(uuid.to_cstr().to_str().unwrap())
+            .unwrap()
+            .as_bytes();
+        assert_eq!(uuid.as_bytes(), expected);
     }
 
     #[rstest]

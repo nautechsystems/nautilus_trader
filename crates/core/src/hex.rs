@@ -29,7 +29,7 @@ pub(crate) const ENCODE_PAIR: [[u8; 2]; 256] = {
 };
 
 // 0xFF sentinel marks invalid hex characters
-const DECODE_NIBBLE: [u8; 256] = {
+pub(crate) const DECODE_NIBBLE: [u8; 256] = {
     let mut table = [0xFFu8; 256];
     let mut i = 0u8;
     while i < 10 {
