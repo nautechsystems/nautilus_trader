@@ -132,6 +132,7 @@ fn create_tracked_order_context(
         pending_modify: None,
         perm_id: 0,
         spread_fill_ids: ahash::AHashSet::new(),
+        spread_fills_held: HeldSpreadFills::default(),
         last_update: None,
     }
 }
@@ -3967,20 +3968,16 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
 #[tokio::test]
 async fn test_process_order_update_stream_retains_terminal_combo_routing() {
     let instrument_provider = create_test_instrument_provider();
-    let equity = equity_aapl();
     let spread = create_test_option_spread();
     let order_id = 7007;
-    let contract_id = 12345;
     let client_order_id = ClientOrderId::from("O-STREAM-LATE-COMBO");
     let instrument_id = spread.id;
     let orders = OrderTracker::new(NATIVE_CLIENT_ID);
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
-    let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
-    let mut subscription = ChannelSubscription::new(update_receiver);
 
-    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
+    let (long_leg, short_leg) = insert_test_spread_legs(&instrument_provider);
     instrument_provider.insert_test_instrument(InstrumentAny::from(spread), 54321, 1);
     insert_tracked_order(
         &orders,
@@ -3991,49 +3988,22 @@ async fn test_process_order_update_stream_retains_terminal_combo_routing() {
     let mut status = create_test_order_status(order_id, "Filled");
     status.filled = 1.0;
     status.average_fill_price = Some(2.25);
-    let mut exec_data =
-        create_test_execution_data(order_id, "exec-stream-late-combo", 1.0, 5.25, "BOT");
-    exec_data.contract.contract_id = 54321;
-    exec_data.contract.security_type = SecurityType::Spread;
-    exec_data.contract.combo_legs = create_test_bag_execution_data(order_id, "unused")
-        .contract
-        .combo_legs;
-    exec_data.execution.order_reference.clear();
-    let replay_exec_data = exec_data.clone();
+    let executions = create_test_combo_executions(order_id, "exec-stream-late-combo", 1.0);
+    let replayed_executions = executions.clone();
+    let mut updates = vec![OrderUpdate::OrderStatus(status)];
+    updates.extend(executions);
 
-    update_sender
-        .send(Ok(OrderUpdate::OrderStatus(status)))
-        .unwrap();
-    update_sender
-        .send(Ok(OrderUpdate::ExecutionData(exec_data)))
-        .unwrap();
-    update_sender
-        .send(Ok(OrderUpdate::CommissionReport(CommissionReport {
-            execution_id: String::from("exec-stream-late-combo"),
-            commission: 1.25,
-            currency: String::from("USD"),
-            realized_pnl: None,
-            yields: None,
-            yield_redemption_date: String::new(),
-        })))
-        .unwrap();
-    drop(update_sender);
-
-    InteractiveBrokersExecutionClient::process_order_update_stream(
-        &mut subscription,
+    run_order_update_stream(
+        updates,
         &orders,
         &instrument_provider,
-        &exec_sender.clone().into(),
-        nautilus_core::time::get_atomic_clock_realtime(),
-        AccountId::from("IB-001"),
-        Ustr::from("001"),
+        &exec_sender,
         &commission_cache,
         &pending_execution_cache,
-        &create_position_tracker(),
-        None,
     )
     .await;
 
+    // IB reports the combo execution first; its fill goes out after both leg fills
     assert!(matches!(
         exec_receiver.try_recv().unwrap(),
         ExecutionEvent::Order(OrderEventAny::Accepted(event))
@@ -4042,9 +4012,26 @@ async fn test_process_order_update_stream_retains_terminal_combo_routing() {
     assert!(matches!(
         exec_receiver.try_recv().unwrap(),
         ExecutionEvent::Order(OrderEventAny::Filled(event))
+            if event.instrument_id == short_leg
+                && event.order_side == OrderSide::Sell
+                && event.last_px == Price::from("1.25")
+                && event.commission == Some(Money::from("0.80 USD"))
+    ));
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Filled(event))
+            if event.instrument_id == long_leg
+                && event.order_side == OrderSide::Buy
+                && event.last_px == Price::from("3.50")
+                && event.commission == Some(Money::from("0.80 USD"))
+    ));
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Filled(event))
             if event.client_order_id == client_order_id
                 && event.instrument_id == instrument_id
-                && event.last_px == Price::from("5.25")
+                && event.last_px == Price::from("2.25")
+                && event.commission == Some(Money::from("0.00 USD"))
     ));
     assert!(exec_receiver.try_recv().is_err());
     {
@@ -4053,39 +4040,252 @@ async fn test_process_order_update_stream_retains_terminal_combo_routing() {
         assert!(state.terminal_orders.contains_key(&order_id));
     }
 
-    let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
-    let mut subscription = ChannelSubscription::new(update_receiver);
-    update_sender
-        .send(Ok(OrderUpdate::ExecutionData(replay_exec_data)))
-        .unwrap();
-    update_sender
-        .send(Ok(OrderUpdate::CommissionReport(CommissionReport {
-            execution_id: String::from("exec-stream-late-combo"),
-            commission: 1.25,
-            currency: String::from("USD"),
-            realized_pnl: None,
-            yields: None,
-            yield_redemption_date: String::new(),
-        })))
-        .unwrap();
-    drop(update_sender);
-
-    InteractiveBrokersExecutionClient::process_order_update_stream(
-        &mut subscription,
+    run_order_update_stream(
+        replayed_executions,
         &orders,
         &instrument_provider,
-        &exec_sender.clone().into(),
-        nautilus_core::time::get_atomic_clock_realtime(),
-        AccountId::from("IB-001"),
-        Ustr::from("001"),
+        &exec_sender,
         &commission_cache,
         &pending_execution_cache,
-        &create_position_tracker(),
-        None,
     )
     .await;
 
     assert!(exec_receiver.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn test_spread_fill_waits_for_split_leg_executions() {
+    let instrument_provider = create_test_instrument_provider();
+    let spread = create_test_option_spread();
+    let order_id = 7008;
+    let client_order_id = ClientOrderId::from("O-SPLIT-LEGS");
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let exec_sender: EventSender<ExecutionEvent> = exec_sender.into();
+    let (long_leg, short_leg) = insert_test_spread_legs(&instrument_provider);
+    let fill = create_test_held_spread_fill(client_order_id, spread.id, 2);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, spread.id),
+    );
+
+    InteractiveBrokersExecutionClient::hold_spread_fill(
+        &orders,
+        order_id,
+        fill.clone(),
+        &exec_sender,
+    )
+    .unwrap();
+    InteractiveBrokersExecutionClient::record_spread_leg_fill(
+        &orders,
+        order_id,
+        long_leg,
+        2.0,
+        &exec_sender,
+    )
+    .unwrap();
+    InteractiveBrokersExecutionClient::record_spread_leg_fill(
+        &orders,
+        order_id,
+        short_leg,
+        1.0,
+        &exec_sender,
+    )
+    .unwrap();
+    let held_after_partial_leg = exec_receiver.try_recv().is_err();
+    InteractiveBrokersExecutionClient::record_spread_leg_fill(
+        &orders,
+        order_id,
+        short_leg,
+        1.0,
+        &exec_sender,
+    )
+    .unwrap();
+
+    assert!(held_after_partial_leg);
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Filled(released)) if released == fill
+    ));
+    let state = orders.lock().unwrap();
+    let held = &state.order(order_id).unwrap().spread_fills_held;
+    assert!(held.fills.is_empty());
+    assert!(held.leg_quantities.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_spread_fill_without_legs_is_flushed_after_timeout() {
+    let instrument_provider = create_test_instrument_provider();
+    let spread = create_test_option_spread();
+    let order_id = 7009;
+    let client_order_id = ClientOrderId::from("O-MISSING-LEGS");
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let exec_sender: EventSender<ExecutionEvent> = exec_sender.into();
+    insert_test_spread_legs(&instrument_provider);
+    let fill = create_test_held_spread_fill(client_order_id, spread.id, 1);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, spread.id),
+    );
+
+    InteractiveBrokersExecutionClient::hold_spread_fill(
+        &orders,
+        order_id,
+        fill.clone(),
+        &exec_sender,
+    )
+    .unwrap();
+    tokio::time::advance(Duration::from_millis(4_999)).await;
+    InteractiveBrokersExecutionClient::flush_spread_fills_without_legs(&orders, &exec_sender)
+        .unwrap();
+    let held_before_timeout = exec_receiver.try_recv().is_err();
+    tokio::time::advance(Duration::from_millis(1)).await;
+    InteractiveBrokersExecutionClient::flush_spread_fills_without_legs(&orders, &exec_sender)
+        .unwrap();
+
+    assert!(held_before_timeout);
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Filled(released)) if released == fill
+    ));
+    assert!(exec_receiver.try_recv().is_err());
+}
+
+// Inserts the `SPY C400` and `SPY C410` legs of the test spread under contract IDs 12345 and
+// 67890, returning their instrument IDs
+fn insert_test_spread_legs(
+    instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
+) -> (InstrumentId, InstrumentId) {
+    let mut long_leg = equity_aapl();
+    long_leg.id = create_test_leg_instrument();
+    let mut short_leg = equity_aapl();
+    short_leg.id = InstrumentId::new(Symbol::from("SPY C410"), Venue::from("SMART"));
+    let ids = (long_leg.id, short_leg.id);
+    instrument_provider.insert_test_instrument(InstrumentAny::from(long_leg), 12345, 1);
+    instrument_provider.insert_test_instrument(InstrumentAny::from(short_leg), 67890, 1);
+    ids
+}
+
+// IB's order for a filled combo: the combo execution without a commission report, then each
+// leg execution followed by its commission report
+fn create_test_combo_executions(
+    order_id: i32,
+    execution_prefix: &str,
+    quantity: f64,
+) -> Vec<OrderUpdate> {
+    let mut combo = create_test_execution_data(
+        order_id,
+        &format!("{execution_prefix}.01"),
+        quantity,
+        2.25,
+        "BOT",
+    );
+    combo.contract.contract_id = 54321;
+    combo.contract.security_type = SecurityType::Spread;
+    combo.contract.combo_legs = create_test_bag_execution_data(order_id, "unused")
+        .contract
+        .combo_legs;
+    combo.execution.order_reference.clear();
+    let mut short_leg = create_test_execution_data(
+        order_id,
+        &format!("{execution_prefix}.02"),
+        quantity,
+        1.25,
+        "SLD",
+    );
+    short_leg.contract.contract_id = 67890;
+    short_leg.contract.local_symbol = String::from("SPY C410");
+    short_leg.execution.order_reference.clear();
+    let mut long_leg = create_test_execution_data(
+        order_id,
+        &format!("{execution_prefix}.03"),
+        quantity,
+        3.50,
+        "BOT",
+    );
+    long_leg.execution.order_reference.clear();
+    let commission = |execution_id: String| {
+        OrderUpdate::CommissionReport(CommissionReport {
+            execution_id,
+            commission: 0.80,
+            currency: String::from("USD"),
+            realized_pnl: None,
+            yields: None,
+            yield_redemption_date: String::new(),
+        })
+    };
+
+    vec![
+        OrderUpdate::ExecutionData(combo),
+        OrderUpdate::ExecutionData(short_leg.clone()),
+        commission(short_leg.execution.execution_id),
+        OrderUpdate::ExecutionData(long_leg.clone()),
+        commission(long_leg.execution.execution_id),
+    ]
+}
+
+fn create_test_held_spread_fill(
+    client_order_id: ClientOrderId,
+    spread_instrument_id: InstrumentId,
+    quantity: u64,
+) -> OrderFilled {
+    OrderFilled::new(
+        TraderId::from("TRADER-001"),
+        StrategyId::from("STRATEGY-001"),
+        spread_instrument_id,
+        client_order_id,
+        VenueOrderId::from("PERM-1"),
+        AccountId::from("IB-001"),
+        TradeId::from("exec-combo"),
+        OrderSide::Buy,
+        OrderType::Limit,
+        Quantity::from(quantity),
+        Price::from("2.25"),
+        Currency::USD(),
+        LiquiditySide::NoLiquiditySide,
+        UUID4::new(),
+        UnixNanos::new(1),
+        UnixNanos::new(2),
+        false,
+        None,
+        Some(Money::from("0.00 USD")),
+        None,
+    )
+}
+
+async fn run_order_update_stream(
+    updates: Vec<OrderUpdate>,
+    orders: &OrderTracker,
+    instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
+    exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+    commission_cache: &Arc<Mutex<CommissionCache>>,
+    pending_execution_cache: &Arc<Mutex<PendingExecutionCache>>,
+) {
+    let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut subscription = ChannelSubscription::new(update_receiver);
+
+    for update in updates {
+        update_sender.send(Ok(update)).unwrap();
+    }
+    drop(update_sender);
+
+    InteractiveBrokersExecutionClient::process_order_update_stream(
+        &mut subscription,
+        orders,
+        instrument_provider,
+        &exec_sender.clone().into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        Ustr::from("001"),
+        commission_cache,
+        pending_execution_cache,
+        &create_position_tracker(),
+        None,
+    )
+    .await;
 }
 
 #[tokio::test]

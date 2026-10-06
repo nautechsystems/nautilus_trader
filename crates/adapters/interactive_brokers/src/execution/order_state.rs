@@ -420,6 +420,7 @@ impl InteractiveBrokersExecutionClient {
                 pending_modify: None,
                 perm_id: 0,
                 spread_fill_ids: ahash::AHashSet::new(),
+                spread_fills_held: HeldSpreadFills::default(),
                 last_update: None,
             },
         );
@@ -467,6 +468,7 @@ impl InteractiveBrokersExecutionClient {
                         pending_modify: None,
                         perm_id,
                         spread_fill_ids: ahash::AHashSet::new(),
+                        spread_fills_held: HeldSpreadFills::default(),
                         last_update: None,
                     });
                 return Ok(());
@@ -490,6 +492,7 @@ impl InteractiveBrokersExecutionClient {
                 pending_modify: None,
                 perm_id,
                 spread_fill_ids: ahash::AHashSet::new(),
+                spread_fills_held: HeldSpreadFills::default(),
                 last_update: Some((
                     target_order.quantity(),
                     target_order.price(),

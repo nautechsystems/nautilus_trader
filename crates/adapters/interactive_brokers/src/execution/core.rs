@@ -320,8 +320,20 @@ pub(super) struct TrackedOrder {
     pub(super) pending_modify: Option<PendingModifyValues>,
     pub(super) perm_id: i64,
     pub(super) spread_fill_ids: ahash::AHashSet<String>,
+    pub(super) spread_fills_held: HeldSpreadFills,
     /// Quantity, price, and trigger price of the last `OrderUpdated` sent from an openOrder.
     pub(super) last_update: Option<(Quantity, Option<Price>, Option<Price>)>,
+}
+
+/// Spread fills waiting for their leg fills, so a spread fill is the last event of its group.
+///
+/// IB reports the combo execution before the leg executions, and leg fills carry the account
+/// changes, so a spread fill only goes out once the legs cover its quantity.
+#[derive(Clone, Debug, Default)]
+pub(super) struct HeldSpreadFills {
+    pub(super) fills: std::collections::VecDeque<(tokio::time::Instant, OrderFilled)>,
+    /// Leg quantity sent but not yet matched to a spread fill.
+    pub(super) leg_quantities: AHashMap<InstrumentId, f64>,
 }
 
 /// Requested modify values in IB units, kept until an openOrder reflects them or the
@@ -739,6 +751,7 @@ impl InteractiveBrokersExecutionClient {
                         pending_modify: None,
                         perm_id: data.order.perm_id,
                         spread_fill_ids: AHashSet::new(),
+                        spread_fills_held: HeldSpreadFills::default(),
                         last_update: Some((order.quantity(), order.price(), order.trigger_price())),
                     });
             }

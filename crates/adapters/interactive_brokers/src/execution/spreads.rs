@@ -17,7 +17,10 @@ use crate::{
     execution::parse,
 };
 
+const SPREAD_LEG_FILLS_TIMEOUT: Duration = Duration::from_secs(5);
+
 impl InteractiveBrokersExecutionClient {
+    // Returns the leg instrument of a new leg execution, or `None` for a duplicate
     pub(super) async fn handle_spread_execution(
         exec_data: &ExecutionData,
         fill: &SpreadFillContext<'_>,
@@ -25,7 +28,7 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &EventSender<ExecutionEvent>,
         orders: &OrderTracker,
         context: &TrackedOrder,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<InstrumentId>> {
         let trade_id = TradeId::new(&exec_data.execution.execution_id);
         let fill_id = trade_id.to_string();
 
@@ -44,7 +47,7 @@ impl InteractiveBrokersExecutionClient {
                     fill_id,
                     fill.client_order_id,
                 );
-                return Ok(());
+                return Ok(None);
             }
 
             order.spread_fill_ids.insert(fill_id);
@@ -74,6 +77,137 @@ impl InteractiveBrokersExecutionClient {
             exec_sender,
         )?;
 
+        Ok(Some(leg_id))
+    }
+
+    pub(super) fn hold_spread_fill(
+        orders: &OrderTracker,
+        order_id: i32,
+        fill: OrderFilled,
+        exec_sender: &EventSender<ExecutionEvent>,
+    ) -> anyhow::Result<()> {
+        let released = {
+            let mut state = orders.lock()?;
+            let order = state.order_mut(order_id).with_context(|| {
+                format!("Tracked state not found for Interactive Brokers order {order_id}")
+            })?;
+            order
+                .spread_fills_held
+                .fills
+                .push_back((tokio::time::Instant::now(), fill));
+            Self::release_spread_fills(&mut order.spread_fills_held)?
+        };
+        Self::send_spread_fills(released, exec_sender)
+    }
+
+    pub(super) fn record_spread_leg_fill(
+        orders: &OrderTracker,
+        order_id: i32,
+        leg_instrument_id: InstrumentId,
+        quantity: f64,
+        exec_sender: &EventSender<ExecutionEvent>,
+    ) -> anyhow::Result<()> {
+        let released = {
+            let mut state = orders.lock()?;
+            let order = state.order_mut(order_id).with_context(|| {
+                format!("Tracked state not found for Interactive Brokers order {order_id}")
+            })?;
+            *order
+                .spread_fills_held
+                .leg_quantities
+                .entry(leg_instrument_id)
+                .or_default() += quantity;
+            Self::release_spread_fills(&mut order.spread_fills_held)?
+        };
+        Self::send_spread_fills(released, exec_sender)
+    }
+
+    // Sends spread fills held longer than the timeout without their legs, so a lost leg
+    // execution cannot leave the spread order unfilled
+    pub(super) fn flush_spread_fills_without_legs(
+        orders: &OrderTracker,
+        exec_sender: &EventSender<ExecutionEvent>,
+    ) -> anyhow::Result<()> {
+        let released = {
+            let mut state = orders.lock()?;
+            let order_ids: Vec<i32> = state
+                .active_orders
+                .iter()
+                .chain(state.terminal_orders.iter())
+                .filter(|(_, order)| !order.spread_fills_held.fills.is_empty())
+                .map(|(order_id, _)| *order_id)
+                .collect();
+            let mut released = Vec::new();
+
+            for order_id in order_ids {
+                let Some(order) = state.order_mut(order_id) else {
+                    continue;
+                };
+                let held = &mut order.spread_fills_held.fills;
+
+                while held
+                    .front()
+                    .is_some_and(|(held_at, _)| held_at.elapsed() >= SPREAD_LEG_FILLS_TIMEOUT)
+                {
+                    let (_, fill) = held.pop_front().expect("front checked above");
+                    tracing::warn!(
+                        trade_id = %fill.trade_id,
+                        "IB leg executions for spread fill did not arrive within 5 seconds; \
+                         emitting the spread fill",
+                    );
+                    released.push(fill);
+                }
+            }
+            released
+        };
+        Self::send_spread_fills(released, exec_sender)
+    }
+
+    // Releases held spread fills in arrival order while the sent leg quantities cover them
+    fn release_spread_fills(held: &mut HeldSpreadFills) -> anyhow::Result<Vec<OrderFilled>> {
+        const QUANTITY_TOLERANCE: f64 = 1e-9;
+        let mut released = Vec::new();
+
+        while let Some((_, fill)) = held.fills.front() {
+            let required: Vec<(InstrumentId, f64)> =
+                parse_spread_instrument_id_to_legs(&fill.instrument_id)?
+                    .into_iter()
+                    .map(|(leg_id, ratio)| {
+                        (
+                            leg_id,
+                            fill.last_qty.as_f64() * f64::from(ratio.unsigned_abs()),
+                        )
+                    })
+                    .collect();
+            let covered = required.iter().all(|(leg_id, quantity)| {
+                held.leg_quantities.get(leg_id).copied().unwrap_or_default()
+                    >= quantity - QUANTITY_TOLERANCE
+            });
+
+            if !covered {
+                break;
+            }
+
+            for (leg_id, quantity) in required {
+                if let Some(sent) = held.leg_quantities.get_mut(&leg_id) {
+                    *sent -= quantity;
+                }
+            }
+            held.leg_quantities
+                .retain(|_, quantity| *quantity > QUANTITY_TOLERANCE);
+            let (_, fill) = held.fills.pop_front().expect("front checked above");
+            released.push(fill);
+        }
+        Ok(released)
+    }
+
+    fn send_spread_fills(
+        fills: Vec<OrderFilled>,
+        exec_sender: &EventSender<ExecutionEvent>,
+    ) -> anyhow::Result<()> {
+        for fill in fills {
+            exec_sender.send(ExecutionEvent::Order(OrderEventAny::Filled(fill)))?;
+        }
         Ok(())
     }
 

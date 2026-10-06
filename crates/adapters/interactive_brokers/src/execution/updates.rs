@@ -343,6 +343,10 @@ impl InteractiveBrokersExecutionClient {
                     {
                         tracing::error!("Error flushing IB executions without commission: {e}");
                     }
+
+                    if let Err(e) = Self::flush_spread_fills_without_legs(orders, exec_sender) {
+                        tracing::error!("Error flushing IB spread fills without legs: {e}");
+                    }
                 }
             }
         }
@@ -1047,7 +1051,10 @@ impl InteractiveBrokersExecutionClient {
                     average_price = exec_data.execution.average_price,
                     "Received IB execDetails",
                 );
-                let has_commission = commission_cache.lock().contains_key(&execution_id);
+                // IB sends no commissionReport for the combo execution of a spread, its
+                // commission arrives on the leg executions
+                let has_commission = parse::is_combo_execution(exec_data)
+                    || commission_cache.lock().contains_key(&execution_id);
 
                 if !has_commission {
                     tracing::debug!(
@@ -1844,7 +1851,7 @@ impl InteractiveBrokersExecutionClient {
                 account_id,
             };
 
-            if let Err(e) = Self::handle_spread_execution(
+            match Self::handle_spread_execution(
                 exec_data,
                 &fill,
                 instrument_provider,
@@ -1854,11 +1861,23 @@ impl InteractiveBrokersExecutionClient {
             )
             .await
             {
-                tracing::warn!(
-                    "Error handling spread execution, falling back to regular fill: {e}"
-                );
-            } else {
-                return Ok(());
+                Err(e) => {
+                    tracing::warn!(
+                        "Error handling spread execution, falling back to regular fill: {e}"
+                    );
+                }
+                Ok(leg_instrument_id) => {
+                    if let Some(leg_instrument_id) = leg_instrument_id {
+                        Self::record_spread_leg_fill(
+                            orders,
+                            tracking_order_id,
+                            leg_instrument_id,
+                            exec_data.execution.shares,
+                            exec_sender,
+                        )?;
+                    }
+                    return Ok(());
+                }
             }
         }
 
@@ -1912,7 +1931,12 @@ impl InteractiveBrokersExecutionClient {
                 Some(fill_report.commission),
                 None,
             );
-            exec_sender.send(ExecutionEvent::Order(OrderEventAny::Filled(event)))?;
+
+            if is_bag && is_spread {
+                Self::hold_spread_fill(orders, tracking_order_id, event, exec_sender)?;
+            } else {
+                exec_sender.send(ExecutionEvent::Order(OrderEventAny::Filled(event)))?;
+            }
         } else {
             let target = if exec_data.execution.perm_id > 0 {
                 IbOrderSelector::PermId(exec_data.execution.perm_id)
