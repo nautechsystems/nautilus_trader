@@ -225,9 +225,13 @@ pub enum DecodeError {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write;
+
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
+    use crate::hex;
 
     #[rstest]
     #[case(b"", "")]
@@ -313,16 +317,6 @@ mod tests {
         let data = b"The quick brown fox jumps over the lazy dog";
         assert_eq!(decode(encode(data)).unwrap(), data);
     }
-}
-
-#[cfg(test)]
-mod contracts {
-    use std::fmt::Write;
-
-    use proptest::prelude::*;
-    use rstest::rstest;
-
-    use crate::hex::{self, DecodeError};
 
     fn decode_oracle(input: &[u8]) -> Result<Vec<u8>, DecodeError> {
         if !input.len().is_multiple_of(2) {
