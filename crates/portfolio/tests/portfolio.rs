@@ -27,11 +27,14 @@ use nautilus_core::{DurationNanos, UUID4, UnixNanos, approx_eq, datetime::NANOSE
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Bar, BarType, MarkPriceUpdate, QuoteTick},
-    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType, PositionSide},
+    enums::{
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderType, PositionAdjustmentType,
+        PositionSide,
+    },
     events::{
         AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel,
-        OrderPendingUpdate, OrderSubmitted, PortfolioSnapshot, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened,
+        OrderPendingUpdate, OrderSubmitted, PortfolioSnapshot, PositionAdjusted, PositionChanged,
+        PositionClosed, PositionEvent, PositionOpened,
         account::stubs::cash_account_state,
         order::{
             spec::{
@@ -1975,6 +1978,79 @@ fn test_margin_fill_endpoint_then_position_publishes_account_state_once(
     assert_eq!(captured.len(), 1);
     assert_eq!(captured[0].account_id, account_id);
     assert_eq!(captured[0].event_id, account_last_event.event_id);
+}
+
+#[rstest]
+#[case::pnl_only(None, 0)]
+#[case::quantity_change(Some(dec!(-1)), 1)]
+fn test_margin_position_adjusted_recomputes_account_only_for_quantity_change(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+    instrument_audusd: InstrumentAny,
+    #[case] quantity_change: Option<Decimal>,
+    #[case] expected_publishes: usize,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let account_id = AccountId::new("SIM-001");
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    let account_state = get_margin_account(Some(account_id.as_str()));
+    portfolio.update_account(&account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let fill = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("1.00000"),
+        PositionId::new("P-ADJUSTED"),
+    );
+    let position = Position::new(&instrument_audusd, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = Rc::clone(&captured);
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    let adjustment = PositionAdjusted::new(
+        position.trader_id,
+        position.strategy_id,
+        position.instrument_id,
+        position.id,
+        account_id,
+        PositionAdjustmentType::Funding,
+        quantity_change,
+        Some(Money::from("-1 USD")),
+        None,
+        UUID4::new(),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    portfolio.update_position(&PositionEvent::PositionAdjusted(adjustment));
+
+    assert_eq!(captured.borrow().len(), expected_publishes);
 }
 
 #[rstest]

@@ -3916,6 +3916,16 @@ fn update_position(
             .insert(event.instrument_id());
     }
 
+    // A PnL-only adjustment such as a funding payment leaves margins unchanged, and the balance
+    // change already produced its own account state. Recomputing a margin account would add a
+    // copy of that state under a new event id, and other accounts would republish their last
+    // state, so skip the account update
+    if let PositionEvent::PositionAdjusted(adjustment) = event
+        && adjustment.quantity_change.is_none()
+    {
+        return;
+    }
+
     // Peek under a borrow: the account event log grows per fill, so a clone here was O(n)
     let peek = {
         let cache_ref = cache.borrow();

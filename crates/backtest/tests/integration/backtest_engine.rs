@@ -1909,6 +1909,87 @@ fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: Cry
 }
 
 #[rstest]
+fn test_funding_settlement_generates_one_account_state(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    // Same setup as `test_run_processes_scheduled_funding_settlement`, so the balance after the
+    // funding payment matches the one asserted there
+    let mut engine = create_engine_with_fee_model(
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0004))).into(),
+    );
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let settlement_ns = UnixNanos::from(4_000_000_000);
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        Data::MarkPrice(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1000.00"),
+            UnixNanos::from(2_500_000_000),
+            UnixNanos::from(2_500_000_000),
+        )),
+        Data::FundingRate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        )),
+        quote(instrument_id, "1000.00", "1001.00", 5_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    let [position] = positions.as_slice() else {
+        panic!("expected one open position");
+    };
+    let [adjustment] = position.adjustments.as_slice() else {
+        panic!("expected one position adjustment");
+    };
+    assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
+
+    let account = cache.account(&position.account_id).unwrap();
+    let settlement_states: Vec<_> = account
+        .events()
+        .into_iter()
+        .filter(|state| state.ts_event == settlement_ns)
+        .collect();
+
+    // The funding payment changes the balance once and leaves the margins unchanged
+    assert_eq!(
+        settlement_states.len(),
+        1,
+        "funding settlement generated {} account states; identical balances and margins: {}",
+        settlement_states.len(),
+        settlement_states
+            .windows(2)
+            .all(|pair| pair[0].balances == pair[1].balances && pair[0].margins == pair[1].margins),
+    );
+
+    let state = &settlement_states[0];
+    let prior_state = account
+        .events()
+        .into_iter()
+        .rfind(|state| state.ts_event < settlement_ns)
+        .expect("expected an account state before the funding settlement");
+    let [balance] = state.balances.as_slice() else {
+        panic!("expected one balance");
+    };
+    assert_eq!(balance.total, Money::from("999998.5996 USDT"));
+    assert_eq!(state.margins, prior_state.margins);
+}
+
+#[rstest]
 fn test_run_settles_distinct_funding_boundaries() {
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
