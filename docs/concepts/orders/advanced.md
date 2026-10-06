@@ -137,6 +137,41 @@ The default `BacktestVenueConfig` mode is `OtoTriggerMode.PARTIAL`. Set `oto_tri
 promise pro rata child sizing. Verify child quantities when the parent fills partially.
 :::
 
+With `support_contingent_orders` enabled, the backtest venue sizes each child as if it covers the
+parent's whole quantity. When the parent is modified or closes, each child's remaining quantity
+covers what the parent can still hold, less what the children have filled between them: the
+parent's quantity while it works, and its filled quantity once it is canceled, expires, or is
+reduced to its filled quantity. A modify grows children only when it raises the parent's quantity,
+and closing the parent only shrinks them:
+
+- Released children keep working for the parent's filled quantity. A child with nothing left to
+  cover is canceled.
+- Reducing the parent to its filled quantity completes it, so `OtoTriggerMode.FULL` releases held
+  children at that quantity, and a child that fills on release leaves the others only what it did
+  not fill.
+- Canceling or expiring the parent cancels held children, so a partially filled parent that closes
+  this way under `OtoTriggerMode.FULL` leaves its fills without children.
+
+The venue compares quantities in the parent's units:
+
+- A child that still holds a quote quantity, under a parent whose quantity is in base, is compared
+  as the base quantity at its price, else its trigger price, else the best bid for a sell or the
+  best ask for a buy in the parent's book. It holds that base quantity once the venue resizes it,
+  and whenever the parent closes as above, so a later conversion cannot take it past the parent's
+  fills. Without such a price it is not resized.
+- A parent that still holds a quote quantity, such as a stop that converts when it fills, resizes
+  only the children that hold one too.
+- Inverse instruments have no quote conversion, so their quantities compare as they are.
+- Reduce-only resizing assigns a base quantity without clearing a quote denomination, and the
+  comparison above does not correct a child that it has already resized.
+- A child on another instrument covers the parent's quantity one to one. Once its own
+  instrument's engine matches it, what remains for it to cover is rounded down to that
+  instrument's size precision, and a quote quantity converts by that instrument, at its own price
+  or trigger price only.
+
+Reduce-only children also track the position between these events, as described in
+[Backtest reduce-only resizing](#backtest-reduce-only-resizing).
+
 #### Enforcing a full-fill trigger in strategy code
 
 If the execution context does not provide the required full-fill behavior:
