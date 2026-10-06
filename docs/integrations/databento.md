@@ -365,8 +365,8 @@ self.subscribe_instrument_status(
 depth of 10 only, so an explicit depth other than 10 is rejected. The bar aggregation in the
 `BarType` selects the OHLCV schema for `subscribe_bars()` (`ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, or
 `ohlcv-1d`). The step must be 1 and the price type must be `LAST`, the only price type the decoder
-emits. `subscribe_data()` streams `DatabentoStatistics` or `DatabentoImbalance` records, and the
-data type identifier is the instrument ID, and the data type must have no metadata. Records are
+emits. `subscribe_data()` streams `DatabentoStatistics` or `DatabentoImbalance` records for the
+instrument ID given as the data type identifier, and rejects a data type with metadata. Records are
 published with that identifier, so a subscriber receives only the records of its own instrument.
 
 These three subscriptions accept raw symbols such as `ESM4.GLBX` only. Records resolve to the
@@ -601,8 +601,9 @@ defaulting to USD precision.
 Call `subscribe_instrument()` for each instrument at strategy start so definition
 messages populate the live precision map. The feed handler keeps a
 `price_precision` override per symbol for the whole dataset session, so passing it
-once on a quote or trade subscription also covers order book deltas for that
-symbol. `InstrumentStatus` carries no prices and needs no precision.
+once on a quote or trade subscription also covers order book deltas, depth, bars,
+statistics, and imbalance for that symbol. `InstrumentStatus` carries no prices and
+needs no precision.
 :::
 
 ### MBO (market by order)
