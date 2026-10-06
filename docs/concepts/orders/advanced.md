@@ -162,8 +162,6 @@ The venue compares quantities in the parent's units:
 - A parent that still holds a quote quantity, such as a stop that converts when it fills, resizes
   only the children that hold one too.
 - Inverse instruments have no quote conversion, so their quantities compare as they are.
-- Reduce-only resizing assigns a base quantity without clearing a quote denomination, and the
-  comparison above does not correct a child that it has already resized.
 - A child on another instrument covers the parent's quantity one to one. Once its own
   instrument's engine matches it, what remains for it to cover is rounded down to that
   instrument's size precision, and a quote quantity converts by that instrument, at its own price
@@ -228,6 +226,10 @@ Siblings do not need to be `reduce_only`. Each sibling's quantity update follows
 
 The order already being filled retains its active fill loop's quantity rules. This propagation does
 not trigger matching itself.
+
+Resized quantities are in base. An order that still holds a quote quantity, such as an untriggered
+stop, takes its resized quantity in base, so its trigger does not convert it again. Inverse
+instruments have no quote conversion, so the order keeps its quantity denomination.
 
 #### Backtest cancellation at zero capacity
 
