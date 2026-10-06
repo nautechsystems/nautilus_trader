@@ -6229,6 +6229,110 @@ fn test_submit_order_list_leg_with_uncached_instrument(
     );
 }
 
+/// Every event takes the execution channel, so a bracket's reduce-only exits are validated before
+/// the cache applies the entry fill and must count that fill as the position they reduce.
+#[rstest]
+fn test_submit_order_list_bracket_reduce_only_exits_accepted_after_entry_fill(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+    #[values(OmsType::Netting, OmsType::Hedging)] oms_type: OmsType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] entry_side: OrderSide,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.oms_type = oms_type;
+    });
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    context.client.start().unwrap();
+    context
+        .client
+        .process_quote_tick(&create_quote_tick(instrument.id(), 1000.0, 1001.0))
+        .unwrap();
+
+    let (exit_side, sl_trigger, tp_price) = match entry_side {
+        OrderSide::Buy => (OrderSide::Sell, "900.00", "1100.00"),
+        _ => (OrderSide::Buy, "1100.00", "900.00"),
+    };
+    let entry_id = ClientOrderId::from("O-BRACKET-ENTRY");
+    let sl_id = ClientOrderId::from("O-BRACKET-SL");
+    let tp_id = ClientOrderId::from("O-BRACKET-TP");
+    let entry = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .side(entry_side)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(entry_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![sl_id, tp_id])
+        .build();
+    let sl = OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .side(exit_side)
+        .trigger_price(Price::from(sl_trigger))
+        .quantity(Quantity::from("1.000"))
+        .reduce_only(true)
+        .client_order_id(sl_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![tp_id])
+        .build();
+    let tp = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .side(exit_side)
+        .price(Price::from(tp_price))
+        .quantity(Quantity::from("1.000"))
+        .reduce_only(true)
+        .client_order_id(tp_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![sl_id])
+        .build();
+    let orders = [entry, sl, tp];
+
+    for order in &orders {
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &orders,
+        ))
+        .unwrap();
+
+    let events = apply_order_events_from_channel(&context.cache, &mut rx);
+    let rejected: Vec<_> = events
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Rejected(_)))
+        .collect();
+    assert!(rejected.is_empty(), "{rejected:?}");
+
+    let cache = context.cache.borrow();
+    assert_eq!(
+        cache.order(&entry_id).unwrap().status(),
+        OrderStatus::Filled
+    );
+    assert_eq!(cache.order(&sl_id).unwrap().status(), OrderStatus::Accepted);
+    assert_eq!(cache.order(&tp_id).unwrap().status(), OrderStatus::Accepted);
+}
+
 /// A zero-leg command is due on arrival, so it is applied inline ahead of a command still in
 /// flight and arms nothing; behind a command already due but not yet released it joins the queue,
 /// so the two apply in `(due_ns, seq)` order and the alert is never re-armed at a time the clock

@@ -19791,6 +19791,247 @@ fn test_deferred_oto_children_wait_for_parent_fills(
     assert!(!engine.order_exists(parent_id));
 }
 
+// A margin engine whose events queue until the test drains them, as the sandbox sends them
+// through the live execution channel
+fn deferred_margin_engine(
+    instrument: &InstrumentAny,
+    oms_type: OmsType,
+    cache: &Rc<RefCell<Cache>>,
+    pending: &Rc<RefCell<Vec<OrderEventAny>>>,
+) -> OrderMatchingEngine {
+    let mut engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L1_MBP,
+        oms_type,
+        AccountType::Margin,
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        engine_config(),
+    );
+    let events = pending.clone();
+    engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument.id(),
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    ));
+    engine
+}
+
+fn event_types_for(
+    events: &[OrderEventAny],
+    client_order_id: ClientOrderId,
+) -> Vec<OrderEventType> {
+    events
+        .iter()
+        .filter(|event| event.client_order_id() == client_order_id)
+        .map(|event| event.event_type())
+        .collect()
+}
+
+// A submit-order-list validates every leg before the cache applies the entry fill, so the
+// reduce-only exits must count the fill the engine has emitted
+#[rstest]
+fn test_deferred_bracket_reduce_only_exits_count_unapplied_entry_fill(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OmsType::Netting, OmsType::Hedging)] oms_type: OmsType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] entry_side: OrderSide,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    let mut engine = deferred_margin_engine(&instrument_eth_usdt, oms_type, &cache, &pending);
+    let (exit_side, sl_trigger, tp_price) = match entry_side {
+        OrderSide::Buy => (OrderSide::Sell, "1400.00", "1600.00"),
+        _ => (OrderSide::Buy, "1600.00", "1400.00"),
+    };
+    let entry_id = ClientOrderId::from("O-DEFERRED-BRACKET-ENTRY");
+    let sl_id = ClientOrderId::from("O-DEFERRED-BRACKET-SL");
+    let tp_id = ClientOrderId::from("O-DEFERRED-BRACKET-TP");
+    let entry = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(entry_side)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(entry_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![sl_id, tp_id])
+        .submit(true)
+        .build();
+    let sl = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(exit_side)
+        .trigger_price(Price::from(sl_trigger))
+        .quantity(Quantity::from("1.000"))
+        .reduce_only(true)
+        .client_order_id(sl_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![tp_id])
+        .submit(true)
+        .build();
+    let tp = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(exit_side)
+        .price(Price::from(tp_price))
+        .quantity(Quantity::from("1.000"))
+        .reduce_only(true)
+        .client_order_id(tp_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![sl_id])
+        .submit(true)
+        .build();
+    let mut orders = [entry, sl, tp];
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    for order in &mut orders {
+        engine.process_order(order, account_id);
+    }
+
+    let events = pending.borrow();
+    assert_eq!(
+        event_types_for(&events, entry_id),
+        vec![OrderEventType::Filled]
+    );
+    assert_eq!(
+        event_types_for(&events, sl_id),
+        vec![OrderEventType::Accepted]
+    );
+    assert_eq!(
+        event_types_for(&events, tp_id),
+        vec![OrderEventType::Accepted]
+    );
+}
+
+#[rstest]
+#[case::reduces(OrderSide::Sell, OrderEventType::Accepted)]
+#[case::increases(OrderSide::Buy, OrderEventType::Rejected)]
+fn test_deferred_reduce_only_order_checks_side_of_unapplied_fill(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] side: OrderSide,
+    #[case] expected: OrderEventType,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    let mut engine =
+        deferred_margin_engine(&instrument_eth_usdt, OmsType::Netting, &cache, &pending);
+    let price = match side {
+        OrderSide::Buy => "1400.00",
+        _ => "1600.00",
+    };
+    let entry = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(ClientOrderId::from("O-DEFERRED-OPEN"))
+        .submit(true)
+        .build();
+    let reduce_only = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .price(Price::from(price))
+        .quantity(Quantity::from("1.000"))
+        .reduce_only(true)
+        .client_order_id(ClientOrderId::from("O-DEFERRED-REDUCE-ONLY"))
+        .submit(true)
+        .build();
+    let mut orders = [entry, reduce_only];
+
+    for order in &mut orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        engine.process_order(order, account_id);
+    }
+
+    assert_eq!(
+        event_types_for(&pending.borrow(), orders[1].client_order_id()),
+        vec![expected]
+    );
+}
+
+// Fills the cache has applied must not count again, or a position closed by a deferred fill
+// would read as open in that fill's direction
+#[rstest]
+fn test_reduce_only_order_after_deferred_close_is_rejected(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_position(cache.clone(), instrument_eth_usdt.clone());
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        Some(AccountType::Margin),
+        Some(engine_config()),
+    );
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    ));
+    let market = |client_order_id: &str, side: OrderSide| {
+        OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(side)
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .submit(true)
+            .build()
+    };
+
+    for (client_order_id, side) in [("O-OPEN", OrderSide::Buy), ("O-CLOSE", OrderSide::Sell)] {
+        run_with_dispatch(&mut engine, true, |engine| {
+            engine.process_order(&mut market(client_order_id, side), account_id);
+        });
+    }
+    let position_id = PositionId::new(format!(
+        "{}-{}",
+        instrument_eth_usdt.id(),
+        StrategyId::test_default()
+    ));
+    assert!(cache.borrow().position(&position_id).unwrap().is_closed());
+
+    let reduce_only_id = ClientOrderId::from("O-REDUCE-ONLY");
+    run_with_dispatch(&mut engine, true, |engine| {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .price(Price::from("1400.00"))
+            .quantity(Quantity::from("1.000"))
+            .reduce_only(true)
+            .client_order_id(reduce_only_id)
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, account_id);
+    });
+
+    assert_eq!(
+        event_types_for(&get_order_event_handler_messages(&handler), reduce_only_id),
+        vec![OrderEventType::Rejected]
+    );
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "rstest strips function attributes; cases vary exit policy, identity, quantity, and acknowledgement"

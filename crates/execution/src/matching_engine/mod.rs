@@ -3211,7 +3211,12 @@ impl OrderMatchingEngine {
     }
 
     fn order_position_rejection(&mut self, order: &OrderAny) -> anyhow::Result<Option<Ustr>> {
-        if self.restricts_short_selling() {
+        let checks_reduce_only = self.config.use_reduce_only
+            && order.is_reduce_only()
+            && !order.is_closed()
+            && !(self.restricts_short_selling() && order.is_sell());
+
+        if self.restricts_short_selling() || checks_reduce_only {
             self.purge_applied_fills();
         }
 
@@ -3222,25 +3227,24 @@ impl OrderMatchingEngine {
             return Ok(Some(reason));
         }
 
-        if self.config.use_reduce_only
-            && order.is_reduce_only()
-            && !order.is_closed()
-            && !(self.restricts_short_selling() && order.is_sell())
-            && position.as_ref().is_none_or(|pos| {
-                pos.is_closed()
-                    || (order.is_buy() && pos.is_long())
-                    || (order.is_sell() && pos.is_short())
-            })
-        {
-            return Ok(Some(
-                format!(
-                    "Reduce-only order {} ({}-{}) would have increased position",
-                    order.client_order_id(),
-                    order.order_type().to_string().to_uppercase(),
-                    order.order_side().to_string().to_uppercase()
-                )
-                .into(),
-            ));
+        if checks_reduce_only {
+            // Includes fills the cache has not applied yet, so under deferred dispatch the exits
+            // of an entry that filled earlier in the same submission see its position
+            let quantity = self.position_quantity(&cache, order, position.as_ref())?;
+
+            if (order.is_buy() && quantity >= Decimal::ZERO)
+                || (order.is_sell() && quantity <= Decimal::ZERO)
+            {
+                return Ok(Some(
+                    format!(
+                        "Reduce-only order {} ({}-{}) would have increased position",
+                        order.client_order_id(),
+                        order.order_type().to_string().to_uppercase(),
+                        order.order_side().to_string().to_uppercase()
+                    )
+                    .into(),
+                ));
+            }
         }
 
         Ok(None)
