@@ -324,7 +324,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     .unwrap_or_else(|| r#"{"result":"success","fills":[]}"#.to_string()),
             )
         }
-        "/api/history/v2/orders" => json_response(r#"{"orderEvents":[]}"#.to_string()),
+        "/api/history/v3/orders" => json_response(r#"{"elements":[]}"#.to_string()),
         "/derivatives/api/v3/sendorder" => {
             state.submit_request_count.fetch_add(1, Ordering::Relaxed);
             match state.command_responses.lock().await.submit {

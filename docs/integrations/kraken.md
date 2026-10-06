@@ -696,7 +696,7 @@ every holding it covers and an absent report is genuine evidence of flat.
 
 - Open orders: Fetches all currently active futures orders.
 - Historical orders: Fetches closed and filled orders when `open_only=False`.
-- Order events: Full order lifecycle history via `/api/history/v2/orders`
+- Order events: Full order lifecycle history via `/api/history/v3/orders`
   endpoint.
 
 **Fill reports:**

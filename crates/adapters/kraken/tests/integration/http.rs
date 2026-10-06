@@ -658,9 +658,9 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
         };
     }
 
-    if path.starts_with("/api/history/v2/") || path.starts_with("/api/history/v3/") {
+    if path.starts_with("/api/history/v3/") {
         return match path {
-            p if p.starts_with("/api/history/v2/orders") => mock_futures_order_events().await,
+            p if p.starts_with("/api/history/v3/orders") => mock_futures_order_events().await,
             p if p.contains("/market/") && p.contains("/executions") => {
                 let params = Query::<HashMap<String, String>>::try_from_uri(req.uri())
                     .map(|q| q.0)
@@ -2509,6 +2509,7 @@ async fn test_futures_raw_get_order_events() {
     assert_eq!(first_event.quantity, dec!(5000));
 
     let third_event = &response.order_events[2].order;
+    assert_eq!(third_event.symbol, "PI_XBTUSD");
     assert_eq!(third_event.filled, dec!(0));
     assert!(third_event.reduce_only);
 }

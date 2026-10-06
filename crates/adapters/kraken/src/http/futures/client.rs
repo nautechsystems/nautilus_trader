@@ -769,7 +769,7 @@ impl KrakenFuturesRawHttpClient {
             ));
         }
 
-        let endpoint = "/api/history/v2/orders";
+        let endpoint = "/api/history/v3/orders";
         let mut query_params = Vec::new();
 
         if let Some(before_ts) = before {
@@ -794,7 +794,10 @@ impl KrakenFuturesRawHttpClient {
 
         // For signing: query params go in postData, not endpoint
         // Kraken: message = postData + nonce + endpoint
-        self.send_get_with_query(endpoint, url, &query_string).await
+        let response: FuturesOrderHistoryResponse = self
+            .send_get_with_query(endpoint, url, &query_string)
+            .await?;
+        Ok(response.into())
     }
 
     /// Requests the status of specific orders (requires authentication).

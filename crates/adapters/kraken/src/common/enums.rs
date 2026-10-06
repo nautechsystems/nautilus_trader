@@ -816,6 +816,66 @@ impl From<KrakenOrderStatus> for OrderStatus {
     }
 }
 
+/// Order direction as the Kraken Futures order history reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum KrakenFuturesHistoryDirection {
+    Buy,
+    Sell,
+    /// The venue could not decode the source value.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Order type as the Kraken Futures order history reports it.
+///
+/// The venue-initiated kinds (liquidation, assignment, unwind, block, RFQ and the hedge
+/// variants) execute against the account at market, so they map to a market order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum KrakenFuturesHistoryOrderType {
+    Limit,
+    #[serde(rename = "IoC")]
+    Ioc,
+    Post,
+    Market,
+    Stop,
+    FillOrKill,
+    Liquidation,
+    PartialLiquidation,
+    CoveredLiquidation,
+    Assignment,
+    HedgeAssignment,
+    HedgeImmediateOrCancel,
+    Unwind,
+    Block,
+    Rfq,
+    #[serde(other)]
+    Unknown,
+}
+
+impl From<KrakenFuturesHistoryOrderType> for KrakenFuturesOrderType {
+    fn from(value: KrakenFuturesHistoryOrderType) -> Self {
+        match value {
+            KrakenFuturesHistoryOrderType::Limit => Self::Limit,
+            KrakenFuturesHistoryOrderType::Ioc | KrakenFuturesHistoryOrderType::FillOrKill => {
+                Self::Ioc
+            }
+            KrakenFuturesHistoryOrderType::Post => Self::Post,
+            KrakenFuturesHistoryOrderType::Stop => Self::Stop,
+            KrakenFuturesHistoryOrderType::Market
+            | KrakenFuturesHistoryOrderType::Liquidation
+            | KrakenFuturesHistoryOrderType::PartialLiquidation
+            | KrakenFuturesHistoryOrderType::CoveredLiquidation
+            | KrakenFuturesHistoryOrderType::Assignment
+            | KrakenFuturesHistoryOrderType::HedgeAssignment
+            | KrakenFuturesHistoryOrderType::HedgeImmediateOrCancel
+            | KrakenFuturesHistoryOrderType::Unwind
+            | KrakenFuturesHistoryOrderType::Block
+            | KrakenFuturesHistoryOrderType::Rfq => Self::Market,
+            KrakenFuturesHistoryOrderType::Unknown => Self::Unknown,
+        }
+    }
+}
+
 impl From<KrakenFuturesOrderType> for OrderType {
     fn from(value: KrakenFuturesOrderType) -> Self {
         match value {
