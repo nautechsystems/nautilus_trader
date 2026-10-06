@@ -430,6 +430,8 @@ impl BybitWebSocketClient {
 
     /// Establishes the WebSocket connection.
     ///
+    /// Clears subscription state from earlier sessions, so callers resubscribe after connecting.
+    ///
     /// # Errors
     ///
     /// Returns an error if the underlying WebSocket connection cannot be established,
@@ -519,11 +521,19 @@ impl BybitWebSocketClient {
         self.out_rx = Some(Arc::new(out_rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        *self.cmd_tx.write().await = cmd_tx.clone();
 
-        let cmd = HandlerCommand::SetClient(client);
+        // Queue the client first so no subscribe reaches the handler before it
+        cmd_tx
+            .send(HandlerCommand::SetClient(client))
+            .map_err(|e| BybitWsError::Send(e.to_string()))?;
 
-        self.send_cmd(cmd).await?;
+        {
+            // Commands sent before this swap went to a closed channel and close skips
+            // unsubscribes, so the new session starts from clean subscription state.
+            let _guard = self.subscription_guard.lock().await;
+            *self.cmd_tx.write().await = cmd_tx.clone();
+            self.subscriptions.clear();
+        }
 
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
