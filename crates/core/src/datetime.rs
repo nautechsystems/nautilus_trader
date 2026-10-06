@@ -1343,17 +1343,6 @@ mod tests {
     fn test_floor_to_nearest_microsecond(#[case] input: u64, #[case] expected: u64) {
         assert_eq!(floor_to_nearest_microsecond(input), expected);
     }
-}
-
-#[cfg(test)]
-mod contracts {
-    use jiff::Timestamp;
-    use rstest::rstest;
-
-    use crate::{
-        UnixNanos,
-        datetime::{NANOSECONDS_IN_DAY, unix_nanos_to_iso8601, unix_nanos_to_iso8601_millis},
-    };
 
     #[rstest]
     fn test_formatters_match_jiff_on_every_representable_utc_day() {
