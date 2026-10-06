@@ -43,7 +43,7 @@ use nautilus_execution::trailing::{
     trailing_stop_calculate_with_bid_ask, trailing_stop_calculate_with_last,
 };
 use nautilus_model::{
-    accounts::{Account, AccountAny},
+    accounts::{Account, AccountAny, WalletAccount},
     enums::{
         AggregationSource, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
         TradingState, TrailingOffsetType, TriggerType,
@@ -55,7 +55,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{LIMIT_ORDER_TYPES, Order, OrderAny, STOP_ORDER_TYPES},
-    types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
+    types::{Currency, Money, Price, Quantity, fixed::raw_scales_match, quantity::QuantityRaw},
 };
 use nautilus_portfolio::Portfolio;
 use rust_decimal::Decimal;
@@ -2082,18 +2082,31 @@ impl AccountRisk<'_> {
         self.unreflected
             .iter()
             .filter(|amount| amount.currency == currency)
-            .try_fold(free, |free, amount| free.checked_sub(*amount))
-            .ok_or_else(|| {
+            .try_fold(free, |free, amount| self.deduct_reservation(free, *amount))
+            .map_err(|detail| {
                 self.check.reject(
                     self.engine,
                     order,
-                    &OrderDeniedReason::NotionalCalculationFailed {
-                        detail: "reserved balance exceeds Money bounds or has incompatible scale"
-                            .to_string(),
-                    }
-                    .to_string(),
+                    &OrderDeniedReason::NotionalCalculationFailed { detail }.to_string(),
                 );
             })
+    }
+
+    // A wallet can observe a token at a different raw scale than the instrument uses for the
+    // same currency code, so its reservations are deducted at the observed balance precision
+    fn deduct_reservation(&self, free: Money, amount: Money) -> Result<Money, String> {
+        let amount = if matches!(self.account, AccountAny::Wallet(_))
+            && !raw_scales_match(free.currency.precision, amount.currency.precision)
+        {
+            WalletAccount::normalize_reservation(amount, free.currency)
+                .map_err(|e| e.to_string())?
+        } else {
+            amount
+        };
+
+        free.checked_sub(amount).ok_or_else(|| {
+            "reserved balance exceeds Money bounds or has incompatible scale".to_string()
+        })
     }
 
     fn reserve_balance(&mut self, order: &OrderAny, amount: Money) {

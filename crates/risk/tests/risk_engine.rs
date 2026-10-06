@@ -7555,6 +7555,97 @@ fn test_submit_order_counts_approved_orders_not_yet_reflected_in_free_balance(
     assert_eq!(commands, vec![first_command]);
 }
 
+// A wallet can observe a token at a different precision than the instrument uses for the same
+// currency code, so reservations are deducted at the observed balance precision
+#[rstest]
+#[case::observed_finer(sell_balance_precision(), FIXED_PRECISION)]
+#[case::observed_coarser(FIXED_PRECISION, sell_balance_precision())]
+fn test_submit_order_deducts_reservations_from_mixed_precision_wallet_balance(
+    #[case] observed_precision: u8,
+    #[case] instrument_precision: u8,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let token = |precision| Currency::new("TOKEN", precision, 0, "Token", CurrencyType::Crypto);
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("ETH/TOKEN.BINANCE"))
+        .raw_symbol(Symbol::from("ETH/TOKEN"))
+        .base_currency(Currency::ETH())
+        .quote_currency(token(instrument_precision))
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .size_precision(0)
+        .size_increment(Quantity::from("1"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let observed = token(observed_precision);
+    let total = Money::from_decimal(dec!(10), observed).unwrap();
+    let state = AccountState::new(
+        AccountId::from("BINANCE-001"),
+        AccountType::Wallet,
+        vec![AccountBalance::new(total, Money::zero(observed), total)],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    let mut cache = Cache::default();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    cache
+        .add_account(AccountAny::Wallet(WalletAccount::new(state, true)))
+        .unwrap();
+    let buy = |client_order_id: &str, quantity: &str| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(quantity))
+            .price(Price::from("1.00"))
+            .build()
+    };
+    let orders = [buy("O-001", "6"), buy("O-002", "1"), buy("O-003", "4")];
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let approved = vec![
+        submit_order_command(&orders[0]),
+        submit_order_command(&orders[1]),
+    ];
+
+    for command in &approved {
+        risk_engine.execute(command.clone());
+    }
+    risk_engine.execute(submit_order_command(&orders[2]));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    let reason = OrderDeniedReason::NotionalExceedsFreeBalance {
+        free_balance: Money::from_decimal(dec!(3), observed).unwrap(),
+        notional: Money::from_decimal(dec!(4), instrument.quote_currency).unwrap(),
+    };
+    let actual: Vec<_> = events
+        .iter()
+        .map(|event| (event.client_order_id(), event.event_type(), event.message()))
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![(
+            orders[2].client_order_id(),
+            OrderEventType::Denied,
+            Some(Ustr::from(&reason.to_string()))
+        )]
+    );
+    assert_eq!(commands, approved);
+}
+
 #[rstest]
 #[case::accepted(true, "400")]
 #[case::rejected(false, "1000")]
