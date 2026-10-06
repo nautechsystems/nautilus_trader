@@ -981,10 +981,9 @@ fn dispatch_trade_update(
                 return None;
             }
             Err(AdmissionError::Unowned) => {
-                log::warn!(
-                    "Dropping trade {} holding no legs owned by the account",
-                    trade.id
-                );
+                ctx.settlement.quarantine_known_trade(&trade.id);
+
+                log::warn!("Stream trade {} has no owned legs", trade.id);
                 return None;
             }
             Err(AdmissionError::Untimestamped(e) | AdmissionError::Invalid(e)) => {
@@ -1934,6 +1933,7 @@ fn emit_order_rejected(
 
 #[cfg(test)]
 mod tests {
+    use futures_util::FutureExt;
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
     use nautilus_core::time::AtomicTime;
     use nautilus_live::execution::context::OrderIdentity;
@@ -1942,7 +1942,7 @@ mod tests {
         events::OrderEventAny,
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
         orders::{Order, builder::OrderTestBuilder},
-        types::Currency,
+        types::{Currency, Money},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -2050,6 +2050,306 @@ mod tests {
             AccountType::Cash,
             Some(Currency::pUSD()),
         )
+    }
+
+    #[rstest]
+    #[case::matching(|_: &mut PolymarketUserTrade, _: &mut InstrumentAny| {}, false, dec!(0))]
+    #[case::quantity(|trade: &mut PolymarketUserTrade, _: &mut InstrumentAny| trade.size = "26.0".to_string(), true, dec!(0))]
+    #[case::price(|trade: &mut PolymarketUserTrade, _: &mut InstrumentAny| trade.price = "0.6".to_string(), true, dec!(0))]
+    #[case::side(|trade: &mut PolymarketUserTrade, _: &mut InstrumentAny| trade.side = PolymarketOrderSide::Sell, true, dec!(0))]
+    #[case::fee_schedule(|_: &mut PolymarketUserTrade, instrument: &mut InstrumentAny| set_taker_fee_rate(instrument, dec!(0.01)), true, dec!(0.0625))]
+    fn test_dispatch_conflicting_trade_after_applied_fill(
+        #[case] change: fn(&mut PolymarketUserTrade, &mut InstrumentAny),
+        #[case] conflicts: bool,
+        #[case] commission: Decimal,
+    ) {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.status = PolymarketTradeStatus::Matched;
+        let instrument = instrument_for_trade(&trade);
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.asset_id, instrument.clone());
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let fill_tracker = OrderFillTrackerMap::new();
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("100.000000"),
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let pending_submits = PendingSubmitTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
+            venue_order_id,
+            instrument.id(),
+            "O-CONFLICT",
+        );
+        order_contexts.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.begin_session();
+        settlement.note_order_submitted(venue_order_id);
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: trade.maker_address.as_str(),
+            user_api_key: trade.owner.as_str(),
+        };
+
+        let mut state = WsDispatchState::default();
+        dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = receiver.try_recv().unwrap()
+        else {
+            panic!("expected original fill");
+        };
+
+        settlement.observe_fill_applied(&fill);
+        let mut incoming = trade.clone();
+        incoming.status = PolymarketTradeStatus::Confirmed;
+        let mut updated_instrument = instrument;
+        change(&mut incoming, &mut updated_instrument);
+        token_instruments.insert(trade.asset_id, updated_instrument);
+        let admitted =
+            admit_trade_evidence(TradeEvidence::Stream(&incoming), &ctx.admission_context())
+                .unwrap();
+
+        dispatch_user_message(&UserWsMessage::Trade(incoming), &ctx, &mut state);
+
+        assert_eq!(fill.trade_id, TradeId::from(trade.id.as_str()));
+        assert_eq!(fill.last_qty, Quantity::from("25.000000"));
+        assert_eq!(fill.last_px.as_decimal(), dec!(0.5));
+        assert_eq!(fill.order_side, OrderSide::Buy);
+        assert_eq!(fill.commission, Some(Money::zero(Currency::pUSD())));
+        assert_eq!(admitted.legs[0].commission.as_decimal(), commission);
+        assert!(receiver.try_recv().is_err());
+        assert_eq!(
+            settlement_state(&settlement, &trade.id),
+            Some(if conflicts {
+                SettlementState::Quarantined
+            } else {
+                SettlementState::StreamConfirmed
+            })
+        );
+        assert_eq!(
+            settlement.pending_resolutions(),
+            if conflicts {
+                vec![trade.id.clone()]
+            } else {
+                vec![]
+            }
+        );
+        assert_eq!(trade_hard_fault(&settlement, &trade.id), None);
+        assert_eq!(
+            settlement.ensure_resolved(None, "mass status").is_ok(),
+            !conflicts
+        );
+
+        if commission != Decimal::ZERO {
+            let mut rest: PolymarketTradeReport = load("http_trade_report.json");
+            rest.id = trade.id.clone();
+            rest.taker_order_id = trade.taker_order_id.clone();
+            let rest_evidence =
+                admit_trade_evidence(TradeEvidence::Rest(&rest), &ctx.admission_context()).unwrap();
+            assert_eq!(rest_evidence.legs[0].commission.as_decimal(), commission);
+
+            apply_rest_trade_evidence(&rest, &ctx, &mut state);
+
+            assert_eq!(
+                trade_hard_fault(&settlement, &trade.id),
+                Some(format!(
+                    "terminal REST CONFIRMED evidence for trade {} contradicts the applied \
+                     fill on order {venue_order_id}",
+                    trade.id,
+                ))
+            );
+            assert_eq!(
+                settlement_state(&settlement, &trade.id),
+                Some(SettlementState::RestConfirmed)
+            );
+            assert_eq!(settlement.pending_resolutions(), Vec::<String>::new());
+            assert!(settlement.ensure_resolved(None, "mass status").is_err());
+            assert!(receiver.try_recv().is_err());
+            assert_eq!(
+                fill_tracker.get_cumulative_filled(&venue_order_id),
+                Some(fill.last_qty)
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::unknown(false, false, false)]
+    #[case::applied_unowned_rest(true, false, false)]
+    #[case::applied_matching_rest(true, false, true)]
+    #[case::settled_unowned_rest(true, true, false)]
+    #[case::settled_matching_rest(true, true, true)]
+    fn test_dispatch_trade_missing_all_owned_legs(
+        #[case] known: bool,
+        #[case] rest_settled: bool,
+        #[case] rest_owned: bool,
+    ) {
+        let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.side = PolymarketOrderSide::Sell;
+        trade.status = PolymarketTradeStatus::Matched;
+        let user_address = trade.maker_orders[0].maker_address.clone();
+        let api_key = trade.maker_orders[0].owner.clone();
+        let venue_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+        let instrument = instrument_for_trade(&trade);
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.asset_id, instrument.clone());
+        let fill_tracker = OrderFillTrackerMap::new();
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("100.000000"),
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let pending_submits = PendingSubmitTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+        register_context(
+            &order_contexts,
+            venue_order_id,
+            instrument.id(),
+            "O-MISSING-MAKER",
+        );
+        order_contexts.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.begin_session();
+        settlement.note_order_submitted(venue_order_id);
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: user_address.as_str(),
+            user_api_key: api_key.as_str(),
+        };
+
+        let mut state = WsDispatchState::default();
+
+        if known {
+            dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+
+            let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = receiver.try_recv().unwrap()
+            else {
+                panic!("expected original maker fill");
+            };
+
+            assert_eq!(fill.venue_order_id, venue_order_id);
+            assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
+            settlement.observe_fill_applied(&fill);
+        }
+
+        if rest_settled {
+            let mut admitted =
+                admit_trade_evidence(TradeEvidence::Stream(&trade), &ctx.admission_context())
+                    .unwrap();
+            admitted.status = PolymarketTradeStatus::Confirmed;
+            settlement.admit_rest_result(&admitted);
+        }
+
+        let mut rest: PolymarketTradeReport = load("http_trade_report.json");
+        rest.id = trade.id.clone();
+        rest.taker_order_id = trade.taker_order_id.clone();
+        rest.trader_side = trade.trader_side;
+        rest.side = trade.side;
+        rest.maker_orders = trade.maker_orders.clone();
+        for maker in &mut rest.maker_orders {
+            maker.side = Some(PolymarketOrderSide::Buy);
+        }
+
+        if !rest_owned {
+            rest.maker_orders.clear();
+        }
+
+        trade.maker_orders.clear();
+        trade.status = PolymarketTradeStatus::Confirmed;
+        assert!(settlement.resolution_requested().now_or_never().is_none());
+
+        dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+
+        assert_eq!(
+            settlement.resolution_requested().now_or_never().is_some(),
+            known
+        );
+        assert!(receiver.try_recv().is_err());
+        assert_eq!(settlement.record_count(), usize::from(known));
+
+        let expected = known.then_some(if rest_settled {
+            SettlementState::RestConfirmed
+        } else {
+            SettlementState::Quarantined
+        });
+
+        assert_eq!(settlement_state(&settlement, &trade.id), expected);
+        assert_eq!(
+            settlement.pending_resolutions(),
+            if known {
+                vec![trade.id.clone()]
+            } else {
+                vec![]
+            }
+        );
+        assert_eq!(trade_hard_fault(&settlement, &trade.id), None);
+        assert_eq!(
+            settlement.ensure_resolved(None, "mass status").is_ok(),
+            !known
+        );
+
+        if known {
+            apply_rest_trade_evidence(&rest, &ctx, &mut state);
+
+            assert!(receiver.try_recv().is_err());
+            assert_eq!(
+                settlement_state(&settlement, &trade.id),
+                Some(if rest_settled || rest_owned {
+                    SettlementState::RestConfirmed
+                } else {
+                    SettlementState::Quarantined
+                })
+            );
+            assert_eq!(
+                settlement.pending_resolutions(),
+                if rest_owned {
+                    vec![]
+                } else {
+                    vec![trade.id.clone()]
+                }
+            );
+            assert_eq!(trade_hard_fault(&settlement, &trade.id), None);
+            assert_eq!(
+                settlement.ensure_resolved(None, "mass status").is_ok(),
+                rest_owned
+            );
+            assert_eq!(
+                fill_tracker.get_cumulative_filled(&venue_order_id),
+                Some(Quantity::from("25.000000"))
+            );
+        }
     }
 
     #[rstest]
@@ -3384,14 +3684,39 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_matched_fill_confirmed_by_rest_at_wire_precision_does_not_conflict() {
+    #[case::taker(false)]
+    #[case::maker(true)]
+    fn test_dispatch_matched_fill_confirmed_by_rest_at_wire_precision_does_not_conflict(
+        #[case] maker: bool,
+    ) {
         let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
         trade.status = PolymarketTradeStatus::Matched;
+
+        if maker {
+            trade.trader_side = PolymarketLiquiditySide::Maker;
+            trade.side = PolymarketOrderSide::Sell;
+        }
+
+        let (order_id, user_address, api_key) = if maker {
+            let leg = &trade.maker_orders[0];
+            (
+                leg.order_id.as_str(),
+                leg.maker_address.as_str(),
+                leg.owner.as_str(),
+            )
+        } else {
+            (
+                trade.taker_order_id.as_str(),
+                trade.maker_address.as_str(),
+                trade.owner.as_str(),
+            )
+        };
+
         let instrument = instrument_for_trade(&trade);
         let token_instruments = AtomicMap::new();
         token_instruments.insert(trade.asset_id, instrument.clone());
         let fill_tracker = OrderFillTrackerMap::new();
-        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let venue_order_id = VenueOrderId::from(order_id);
         fill_tracker.register(
             venue_order_id,
             Quantity::from("100"),
@@ -3426,8 +3751,8 @@ mod tests {
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
-            user_address: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
-            user_api_key: "00000000-0000-0000-0000-000000000001",
+            user_address,
+            user_api_key: api_key,
         };
 
         let mut state = WsDispatchState::default();
@@ -3446,6 +3771,13 @@ mod tests {
                 .expect("REST trade fixture");
         rest_confirmed.id = trade.id.clone();
         rest_confirmed.taker_order_id = trade.taker_order_id.clone();
+        rest_confirmed.trader_side = trade.trader_side;
+        rest_confirmed.side = trade.side;
+
+        if maker {
+            rest_confirmed.maker_orders[0].side = Some(PolymarketOrderSide::Buy);
+        }
+
         let rest_evidence = admit_trade_evidence(
             TradeEvidence::Rest(&rest_confirmed),
             &ctx.admission_context(),
@@ -3460,6 +3792,23 @@ mod tests {
         );
 
         assert_eq!(rest_evidence.legs[0].last_px, filled.last_px);
+        assert_eq!(rest_evidence.legs[0].venue_order_id, filled.venue_order_id);
+        assert_eq!(rest_evidence.legs[0].trade_id, filled.trade_id);
+        assert_eq!(rest_evidence.legs[0].instrument_id, filled.instrument_id);
+        assert_eq!(rest_evidence.legs[0].order_side, OrderSide::Buy);
+        assert_eq!(filled.order_side, OrderSide::Buy);
+
+        let liquidity = if maker {
+            LiquiditySide::Maker
+        } else {
+            LiquiditySide::Taker
+        };
+
+        assert_eq!(rest_evidence.legs[0].liquidity_side, liquidity);
+        assert_eq!(filled.liquidity_side, liquidity);
+        assert_eq!(rest_evidence.legs[0].last_qty, filled.last_qty);
+        assert_eq!(rest_evidence.legs[0].commission, filled.commission.unwrap());
+        assert_eq!(rest_evidence.legs[0].ts_event, filled.ts_event);
         assert_ne!(
             rest_evidence.legs[0].last_px.precision,
             filled.last_px.precision

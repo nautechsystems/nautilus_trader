@@ -378,17 +378,18 @@ impl SettlementRegistry {
             return;
         }
 
-        if let Some(record) = inner.records.get_mut(venue_trade_id)
-            && record.hard_fault.is_none()
-        {
-            if record.settlement.is_rest_terminal() {
-                record.refresh_requested = true;
-            } else {
-                enter_quarantined(record);
-            }
+        self.quarantine_record(&mut inner, venue_trade_id);
+    }
+
+    /// Requests terminal REST resolution for contradictory unowned evidence of a known trade.
+    /// Unknown unowned trades do not create settlement records.
+    pub(crate) fn quarantine_known_trade(&self, venue_trade_id: &str) {
+        let mut inner = self.inner.lock();
+        if inner.client_fault.is_some() {
+            return;
         }
 
-        self.wake_if_awaiting_resolution(&inner, venue_trade_id);
+        self.quarantine_record(&mut inner, venue_trade_id);
     }
 
     /// Marks the leg for an `OrderFilled` sent to core as pending application.
@@ -600,7 +601,7 @@ impl SettlementRegistry {
     ///
     /// Contradictory retained evidence fails the report closed; only a targeted complete-trade
     /// REST result may transition or hard-fault the trade.
-    /// Observed core fill economics take precedence over non-terminal REST copies.
+    /// Retained leg economics take precedence over non-terminal REST copies.
     pub(crate) fn build_fill_report(
         &self,
         venue_trade_id: &str,
@@ -828,6 +829,27 @@ impl SettlementRegistry {
         Ok(())
     }
 
+    fn quarantine_record(&self, inner: &mut RegistryInner, venue_trade_id: &str) {
+        if let Some(record) = inner.records.get_mut(venue_trade_id)
+            && record.hard_fault.is_none()
+        {
+            if record.settlement.is_rest_terminal() {
+                if !record.refresh_requested {
+                    log::warn!(
+                        "Requesting terminal REST refresh for Polymarket trade {venue_trade_id} \
+                         after invalid or contradictory stream evidence"
+                    );
+                }
+
+                record.refresh_requested = true;
+            } else {
+                enter_quarantined(record);
+            }
+        }
+
+        self.wake_if_awaiting_resolution(inner, venue_trade_id);
+    }
+
     fn wake_if_awaiting_resolution(&self, inner: &RegistryInner, key: &str) {
         if inner
             .records
@@ -1045,7 +1067,11 @@ fn enter_rest_confirmed(
         };
 
         if leg.awaits_application() {
-            // Terminal REST economics are authoritative for a leg never sent to core
+            // Terminal REST evidence is authoritative for a leg never sent to core
+            inner.leg_trade_ids.remove(&leg.trade_id);
+            inner
+                .leg_trade_ids
+                .insert(incoming.trade_id, key.to_string());
             *leg = SettlementLeg::from_admitted(incoming);
             leg.authorized = true;
             actions.push(SettlementAction::ApplyLeg {
@@ -1053,7 +1079,7 @@ fn enter_rest_confirmed(
                 leg: incoming.clone(),
             });
         } else if (leg.application != LegApplication::Absent || leg.authorized)
-            && admitted_economics_diverge(leg, incoming)
+            && leg_evidence_conflicts(leg, incoming, true)
         {
             divergent_order = Some(leg.venue_order_id);
             break;
@@ -1120,7 +1146,7 @@ fn enter_rest_failed(
 
 fn stream_evidence_conflicts(record: &SettlementRecord, admitted: &AdmittedTrade) -> bool {
     record.legs.iter().any(|stored| {
-        if stored.report_routed || stored.applied_fill.is_some() {
+        if stored.report_routed || !stored.venue_evidence {
             return false;
         }
 
@@ -1435,6 +1461,7 @@ fn observed_leg(fill: &OrderFilled) -> SettlementLeg {
         applied_fill: Some(Box::new(fill.clone())),
         authorized: false,
         report_routed: false,
+        venue_evidence: false,
     }
 }
 
@@ -1478,7 +1505,7 @@ pub(crate) mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::execution::get_pusd_currency;
+    use crate::execution::{get_pusd_currency, parse::make_composite_trade_id};
 
     pub(crate) fn settlement_state(
         registry: &SettlementRegistry,
@@ -2019,6 +2046,480 @@ pub(crate) mod tests {
         registry.note_leg_enqueued(&leg.trade_id);
         registry.observe_fill_applied(&applied_fill(&leg, Some(TRADE)));
         leg
+    }
+
+    #[rstest]
+    #[case::matching(|_: &mut AdmittedLeg| {}, false)]
+    #[case::quantity(|leg: &mut AdmittedLeg| leg.last_qty = Quantity::from("9.00"), true)]
+    #[case::price(|leg: &mut AdmittedLeg| leg.last_px = Price::from("0.60"), true)]
+    #[case::commission(|leg: &mut AdmittedLeg| leg.commission = Money::from("0.01 pUSD"), true)]
+    #[case::timestamp(|leg: &mut AdmittedLeg| leg.ts_event = UnixNanos::from(2_000), true)]
+    #[case::side(|leg: &mut AdmittedLeg| leg.order_side = OrderSide::Sell, true)]
+    #[case::instrument(|leg: &mut AdmittedLeg| leg.instrument_id = InstrumentId::from("TOKEN-B.POLYMARKET"), true)]
+    #[case::liquidity(|leg: &mut AdmittedLeg| leg.liquidity_side = LiquiditySide::Maker, true)]
+    #[case::trade_id(|leg: &mut AdmittedLeg| leg.trade_id = TradeId::from("different-trade"), true)]
+    fn test_stream_conflicts_after_fill_application(
+        #[case] change: fn(&mut AdmittedLeg),
+        #[case] conflicts: bool,
+        #[values(PolymarketTradeStatus::Matched, PolymarketTradeStatus::Confirmed)]
+        status: PolymarketTradeStatus,
+        #[values(false, true)] rest_settled: bool,
+    ) {
+        let registry = live_registry();
+        let original = applied_taker(&registry);
+
+        if rest_settled {
+            registry.admit_rest_result(&trade(
+                PolymarketTradeStatus::Confirmed,
+                vec![original.clone()],
+            ));
+        }
+
+        let mut incoming = original.clone();
+        change(&mut incoming);
+
+        let actions = registry.admit_stream_trade(&trade(status, vec![incoming]));
+
+        let expected = if rest_settled {
+            SettlementState::RestConfirmed
+        } else if conflicts {
+            SettlementState::Quarantined
+        } else if status == PolymarketTradeStatus::Confirmed {
+            SettlementState::StreamConfirmed
+        } else {
+            SettlementState::Provisional
+        };
+
+        assert!(actions.is_empty());
+        assert_eq!(settlement_state(&registry, TRADE), Some(expected));
+        assert_eq!(trade_hard_fault(&registry, TRADE), None);
+        assert_eq!(
+            registry.pending_resolutions(),
+            if conflicts {
+                vec![TRADE.to_string()]
+            } else {
+                vec![]
+            }
+        );
+        assert_eq!(
+            registry.ensure_resolved(None, "mass status").is_ok(),
+            !conflicts
+        );
+        assert_eq!(
+            leg_application(&registry, &original.trade_id),
+            Some(LegApplication::FillObserved)
+        );
+        let inner = registry.inner.lock();
+        let stored = &inner.records[TRADE].legs[0];
+        assert_eq!(stored.last_qty, original.last_qty);
+        assert_eq!(stored.last_px, original.last_px);
+        assert_eq!(stored.commission, original.commission);
+        assert_eq!(stored.ts_event, original.ts_event);
+        assert_eq!(stored.trade_id, original.trade_id);
+        assert_eq!(stored.venue_order_id, original.venue_order_id);
+        assert_eq!(stored.instrument_id, original.instrument_id);
+        assert_eq!(stored.order_side, original.order_side);
+        assert_eq!(stored.liquidity_side, original.liquidity_side);
+    }
+
+    #[rstest]
+    #[case::matching(|_: &mut AdmittedLeg| {}, false)]
+    #[case::quantity(|leg: &mut AdmittedLeg| leg.last_qty = Quantity::from("9.00"), true)]
+    #[case::price(|leg: &mut AdmittedLeg| leg.last_px = Price::from("0.60"), true)]
+    #[case::commission(|leg: &mut AdmittedLeg| leg.commission = Money::from("0.01 pUSD"), true)]
+    #[case::timestamp(|leg: &mut AdmittedLeg| leg.ts_event = UnixNanos::from(2_000), true)]
+    #[case::side(|leg: &mut AdmittedLeg| leg.order_side = OrderSide::Sell, true)]
+    #[case::instrument(|leg: &mut AdmittedLeg| leg.instrument_id = InstrumentId::from("TOKEN-B.POLYMARKET"), true)]
+    #[case::liquidity(|leg: &mut AdmittedLeg| leg.liquidity_side = LiquiditySide::Maker, true)]
+    #[case::trade_id(|leg: &mut AdmittedLeg| leg.trade_id = TradeId::from("different-trade"), true)]
+    fn test_first_rest_confirmation_checks_full_leg_evidence(
+        #[case] change: fn(&mut AdmittedLeg),
+        #[case] conflicts: bool,
+        #[values(
+            LegApplication::Absent,
+            LegApplication::FillPending,
+            LegApplication::FillObserved
+        )]
+        application: LegApplication,
+    ) {
+        let registry = live_registry();
+        let original = taker_leg();
+        registry.note_order_submitted(original.venue_order_id);
+        registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Matched,
+            vec![original.clone()],
+        ));
+
+        if application != LegApplication::Absent {
+            registry.note_leg_enqueued(&original.trade_id);
+        }
+
+        if application == LegApplication::FillObserved {
+            registry.observe_fill_applied(&applied_fill(&original, Some(TRADE)));
+        }
+
+        let mut incoming = original.clone();
+        change(&mut incoming);
+
+        let actions = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+        let duplicate = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+
+        assert!(actions.is_empty());
+        assert!(duplicate.is_empty());
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        let expected_fault = conflicts.then(|| format!("terminal REST CONFIRMED evidence for trade {TRADE} contradicts the applied fill on order {}", original.venue_order_id));
+        assert_eq!(trade_hard_fault(&registry, TRADE), expected_fault);
+        assert_eq!(
+            registry.ensure_resolved(None, "mass status").is_ok(),
+            !conflicts && application != LegApplication::FillPending
+        );
+        assert_eq!(
+            registry.inner.lock().records[TRADE].terminal_rest_legs,
+            Some(vec![incoming])
+        );
+        assert_eq!(
+            leg_application(&registry, &original.trade_id),
+            Some(application)
+        );
+    }
+
+    #[rstest]
+    #[case::new_leg(false)]
+    #[case::unattempted_leg(true)]
+    fn test_rest_identity_conflict_suppresses_other_legs(
+        #[case] stored: bool,
+        #[values(false, true)] conflict_first: bool,
+    ) {
+        let registry = live_registry();
+        let original = applied_taker(&registry);
+        let original_fill = registry.inner.lock().records[TRADE].legs[0]
+            .applied_fill
+            .clone();
+        let other = maker_leg("0xmaker-a");
+
+        if stored {
+            registry.admit_stream_trade(&trade(
+                PolymarketTradeStatus::Matched,
+                vec![original.clone(), other.clone()],
+            ));
+        }
+
+        let mut incoming = original.clone();
+        incoming.order_side = OrderSide::Sell;
+
+        let legs = if conflict_first {
+            vec![incoming, other]
+        } else {
+            vec![other, incoming]
+        };
+
+        let actions =
+            registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, legs.clone()));
+        let duplicate =
+            registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, legs.clone()));
+
+        assert!(actions.is_empty());
+        assert!(duplicate.is_empty());
+        assert_eq!(
+            trade_hard_fault(&registry, TRADE),
+            Some(format!(
+                "terminal REST CONFIRMED evidence for trade {TRADE} contradicts the applied \
+                 fill on order {}",
+                original.venue_order_id,
+            ))
+        );
+        assert!(registry.ensure_resolved(None, "mass status").is_err());
+        let inner = registry.inner.lock();
+        let record = &inner.records[TRADE];
+        assert_eq!(record.terminal_rest_legs, Some(legs));
+        assert_eq!(record.legs[0].application, LegApplication::FillObserved);
+        assert_eq!(record.legs[0].applied_fill, original_fill);
+    }
+
+    #[rstest]
+    #[case::observed(false, false)]
+    #[case::declined(true, false)]
+    #[case::report_routed(false, true)]
+    fn test_rest_confirmed_replaces_unattempted_leg_evidence(
+        #[case] declined: bool,
+        #[case] report_routed: bool,
+    ) {
+        let registry = live_registry();
+        let mut original = taker_leg();
+        original.commission = Money::from("0.02 pUSD");
+        registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Matched,
+            vec![original.clone()],
+        ));
+
+        let incoming = AdmittedLeg {
+            venue_order_id: original.venue_order_id,
+            trade_id: make_composite_trade_id(TRADE, original.venue_order_id.as_str()),
+            instrument_id: InstrumentId::from("TOKEN-B.POLYMARKET"),
+            order_side: OrderSide::Sell,
+            liquidity_side: LiquiditySide::Maker,
+            last_qty: Quantity::from("9.00"),
+            last_px: Price::from("0.60"),
+            commission: Money::zero(get_pusd_currency()),
+            ts_event: UnixNanos::from(2_000),
+        };
+
+        let actions = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+        let duplicate = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+
+        let [
+            SettlementAction::ApplyLeg {
+                venue_trade_id,
+                leg,
+            },
+        ] = actions.as_slice()
+        else {
+            panic!("expected one REST fill action");
+        };
+
+        assert_eq!(venue_trade_id, TRADE);
+        assert_eq!(leg, &incoming);
+        assert!(duplicate.is_empty());
+        assert_eq!(trade_hard_fault(&registry, TRADE), None);
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert_eq!(registry.pending_resolutions(), Vec::<String>::new());
+        assert_eq!(
+            registry.inner.lock().records[TRADE].terminal_rest_legs,
+            Some(vec![incoming.clone()])
+        );
+        assert_eq!(leg_application(&registry, &original.trade_id), None);
+        assert_eq!(
+            leg_application(&registry, &incoming.trade_id),
+            Some(LegApplication::Absent)
+        );
+        {
+            let inner = registry.inner.lock();
+            assert_eq!(inner.leg_trade_ids.get(&original.trade_id), None);
+            assert_eq!(
+                inner
+                    .leg_trade_ids
+                    .get(&incoming.trade_id)
+                    .map(String::as_str),
+                Some(TRADE)
+            );
+        }
+
+        if report_routed {
+            registry.note_leg_reported(&incoming.trade_id);
+            let inner = registry.inner.lock();
+            let stored = &inner.records[TRADE].legs[0];
+            assert!(stored.report_routed);
+            assert!(!stored.authorized);
+        } else {
+            registry.note_leg_enqueued(&incoming.trade_id);
+            assert_eq!(
+                leg_application(&registry, &incoming.trade_id),
+                Some(LegApplication::FillPending)
+            );
+            assert!(registry.ensure_resolved(None, "mass status").is_err());
+        }
+
+        let fill = applied_fill(&incoming, Some(TRADE));
+
+        if declined {
+            registry.observe_fill_declined(&OrderEventAny::Filled(fill));
+        } else {
+            assert_eq!(registry.observe_fill_applied(&fill), None);
+        }
+
+        assert_eq!(
+            leg_application(&registry, &incoming.trade_id),
+            Some(if declined {
+                LegApplication::Absent
+            } else {
+                LegApplication::FillObserved
+            })
+        );
+        assert_eq!(
+            trade_hard_fault(&registry, TRADE),
+            declined.then(|| format!(
+                "core declined the fill for trade {TRADE} leg {}",
+                incoming.trade_id
+            ))
+        );
+        assert_eq!(
+            registry.ensure_resolved(None, "mass status").is_ok(),
+            !declined
+        );
+    }
+
+    #[rstest]
+    fn test_stream_missing_applied_maker_leg_quarantines_whole_trade() {
+        let registry = live_registry();
+        let first = maker_leg("0xmaker-a");
+        let second = maker_leg("0xmaker-b");
+        for leg in [&first, &second] {
+            registry.note_order_submitted(leg.venue_order_id);
+        }
+
+        registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Matched,
+            vec![first.clone(), second.clone()],
+        ));
+        registry.note_leg_enqueued(&first.trade_id);
+        registry.observe_fill_applied(&applied_fill(&first, Some(TRADE)));
+
+        let actions = registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![second.clone()],
+        ));
+
+        assert!(actions.is_empty());
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::Quarantined)
+        );
+        assert_eq!(registry.pending_resolutions(), vec![TRADE.to_string()]);
+        assert_eq!(
+            leg_application(&registry, &first.trade_id),
+            Some(LegApplication::FillObserved)
+        );
+        assert_eq!(
+            leg_application(&registry, &second.trade_id),
+            Some(LegApplication::Absent)
+        );
+        assert_eq!(trade_hard_fault(&registry, TRADE), None);
+    }
+
+    #[rstest]
+    #[case::core_only(false)]
+    #[case::report_routed(true)]
+    fn test_restored_normalized_fill_keeps_stream_economics_exemption(#[case] report_routed: bool) {
+        let registry = live_registry();
+        let mut applied = taker_leg();
+        applied.last_qty = Quantity::from("714.285710");
+
+        if report_routed {
+            registry.note_order_submitted(applied.venue_order_id);
+            registry.admit_stream_trade(&trade(
+                PolymarketTradeStatus::Matched,
+                vec![applied.clone()],
+            ));
+            registry.note_leg_reported(&applied.trade_id);
+        }
+
+        registry.hydrate_fill(&applied_fill(&applied, Some(TRADE)));
+        let mut incoming = applied.clone();
+        incoming.last_qty = Quantity::from("714.285714");
+
+        let actions =
+            registry.admit_stream_trade(&trade(PolymarketTradeStatus::Confirmed, vec![incoming]));
+
+        assert!(actions.is_empty());
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::StreamConfirmed)
+        );
+        assert_eq!(registry.pending_resolutions(), Vec::<String>::new());
+        assert_eq!(trade_hard_fault(&registry, TRADE), None);
+        assert!(registry.ensure_resolved(None, "mass status").is_ok());
+        assert_eq!(
+            registry.inner.lock().records[TRADE].legs[0].last_qty,
+            applied.last_qty
+        );
+    }
+
+    #[rstest]
+    #[case::exact_quantity("714.285714", "7.142850", false)]
+    #[case::trimmed_quantity("714.285710", "7.142850", true)]
+    #[case::rounded_commission("714.285714", "7.142860", true)]
+    fn test_hydrated_legacy_economics_require_terminal_rest_agreement(
+        #[case] applied_quantity: &str,
+        #[case] applied_commission: &str,
+        #[case] conflicts: bool,
+    ) {
+        let registry = live_registry();
+        registry.mark_hydrating();
+        let mut historical = taker_leg();
+        historical.last_qty = Quantity::from(applied_quantity);
+        historical.commission = Money::from_decimal(
+            Decimal::from_str_exact(applied_commission).unwrap(),
+            get_pusd_currency(),
+        )
+        .unwrap();
+        let fill = applied_fill(&historical, Some(TRADE));
+        registry.hydrate_fill(&fill);
+        registry.mark_live();
+        let mut incoming = historical.clone();
+        incoming.last_qty = Quantity::from("714.285714");
+        incoming.commission = Money::from("7.142850 pUSD");
+
+        let actions =
+            registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![incoming]));
+
+        let expected_fault = conflicts.then(|| format!("terminal REST CONFIRMED evidence for trade {TRADE} contradicts the applied fill on order {}", historical.venue_order_id));
+        assert!(actions.is_empty());
+        assert_eq!(trade_hard_fault(&registry, TRADE), expected_fault);
+        assert_eq!(
+            registry.ensure_resolved(None, "mass status").is_ok(),
+            !conflicts
+        );
+        let inner = registry.inner.lock();
+        let retained = &inner.records[TRADE].legs[0];
+        assert_eq!(retained.last_qty, historical.last_qty);
+        assert_eq!(retained.commission, historical.commission);
+        assert_eq!(retained.applied_fill.as_deref(), Some(&fill));
+        assert_eq!(retained.application, LegApplication::FillObserved);
+    }
+
+    #[rstest]
+    fn test_core_normalization_preserves_original_venue_evidence() {
+        let registry = live_registry();
+        let mut venue = taker_leg();
+        venue.last_qty = Quantity::from("714.285714");
+        registry.note_order_submitted(venue.venue_order_id);
+        registry.admit_stream_trade(&trade(PolymarketTradeStatus::Matched, vec![venue.clone()]));
+        registry.note_leg_enqueued(&venue.trade_id);
+        let mut normalized = venue.clone();
+        normalized.last_qty = Quantity::from("714.285710");
+        let fill = applied_fill(&normalized, Some(TRADE));
+        registry.observe_fill_applied(&fill);
+
+        let stream = registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![venue.clone()],
+        ));
+        let rest = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![venue.clone()],
+        ));
+
+        assert!(stream.is_empty());
+        assert!(rest.is_empty());
+        assert_eq!(trade_hard_fault(&registry, TRADE), None);
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert!(registry.ensure_resolved(None, "mass status").is_ok());
+        let inner = registry.inner.lock();
+        let stored = &inner.records[TRADE].legs[0];
+        assert_eq!(stored.last_qty, venue.last_qty);
+        assert_eq!(stored.applied_fill.as_deref(), Some(&fill));
+        assert_eq!(stored.application, LegApplication::FillObserved);
     }
 
     #[rstest]
