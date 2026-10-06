@@ -515,8 +515,8 @@ impl HyperliquidExecutionClient {
             parse_combined_account_balances_and_margins(&perp_state, &spot_state, abstraction)
                 .context("failed to parse combined account balances and margins")?;
 
-        // Emit even when both sides are empty so the account registers for
-        // await_account_registered on unfunded wallets.
+        // Emit for unfunded wallets too, which carry only zero balances, so the account
+        // registers for await_account_registered.
         let ts_event = self.clock.get_time_ns();
         self.emitter
             .emit_account_state(balances, margins, true, ts_event, None);
