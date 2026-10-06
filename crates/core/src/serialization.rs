@@ -2094,15 +2094,6 @@ mod tests {
             }
         }
     }
-}
-
-#[cfg(test)]
-mod contracts {
-    use rstest::rstest;
-    use rust_decimal::Decimal;
-    use serde::Deserialize;
-
-    use crate::serialization::deserialize_decimal_token_borrowed;
 
     #[derive(Debug, Deserialize)]
     struct Token(#[serde(deserialize_with = "deserialize_decimal_token_borrowed")] Decimal);
