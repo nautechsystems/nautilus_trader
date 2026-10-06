@@ -140,8 +140,3 @@ harness = false
 name = "urlencoding"
 path = "benches/urlencoding.rs"
 harness = false
-
-[[bench]]
-name = "string_utilities"
-path = "benches/string_utilities.rs"
-harness = false

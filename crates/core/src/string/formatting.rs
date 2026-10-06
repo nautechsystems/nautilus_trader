@@ -101,6 +101,7 @@ impl Separable for &str {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
@@ -138,14 +139,6 @@ mod tests {
         assert_eq!("1234567".separate_with_commas(), "1,234,567");
         assert_eq!("1234.5678".separate_with_underscores(), "1_234.5678");
     }
-}
-
-#[cfg(test)]
-mod contracts {
-    use proptest::prelude::*;
-    use rstest::rstest;
-
-    use crate::string::formatting::Separable;
 
     proptest! {
         #[rstest]

@@ -24,13 +24,12 @@
 )]
 fn clamp_precision_with_log(len: usize, context: &str, input: &str) -> u8 {
     if len > u8::MAX as usize {
-        // The previous parser lowercased the input before formatting diagnostic messages.
         log::debug!(
             "{} precision clamped from {} to {} for input: {}",
             context,
             len,
             u8::MAX,
-            input.to_ascii_lowercase()
+            input
         );
     }
     len.min(u8::MAX as usize) as u8
@@ -86,11 +85,9 @@ fn precision_from_scientific(
             return Some(if is_negative { u8::MAX } else { 0 });
         }
 
-        // Preserve the lowercase exponent in the previous parser's panic message.
         assert!(
             !strict,
-            "Invalid scientific notation exponent '{}': must be a valid number",
-            exponent_str.to_ascii_lowercase()
+            "Invalid scientific notation exponent '{exponent_str}': must be a valid number"
         );
         return None;
     };
@@ -322,25 +319,18 @@ mod tests {
         let result = min_increment_precision_from_str("1e-");
         assert_eq!(result, 0);
     }
-}
-
-#[cfg(test)]
-mod contracts {
-    use rstest::rstest;
-
-    use crate::string::parsing::{min_increment_precision_from_str, precision_from_str};
 
     #[rstest]
     #[case(
         "1E-ABC",
-        "Invalid scientific notation exponent '-abc': must be a valid number"
+        "Invalid scientific notation exponent '-ABC': must be a valid number"
     )]
     #[case(
         "1eE-2",
-        "Invalid scientific notation exponent 'e-2': must be a valid number"
+        "Invalid scientific notation exponent 'E-2': must be a valid number"
     )]
     #[case("1E-", "Invalid scientific notation format: missing exponent value")]
-    fn test_scientific_precision_preserves_error_behavior(
+    fn test_scientific_precision_reports_original_exponent(
         #[case] input: &str,
         #[case] expected: &str,
     ) {

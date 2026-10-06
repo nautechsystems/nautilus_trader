@@ -119,6 +119,7 @@ pub fn mask_api_key(key: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use rstest::rstest;
     use zeroize::ZeroizeOnDrop;
 
@@ -183,14 +184,6 @@ mod tests {
     fn test_redact_option_absent() {
         assert_eq!(redact_option(None::<&str>), None);
     }
-}
-
-#[cfg(test)]
-mod contracts {
-    use proptest::prelude::*;
-    use rstest::rstest;
-
-    use crate::string::secret::mask_api_key;
 
     proptest! {
         #[rstest]
