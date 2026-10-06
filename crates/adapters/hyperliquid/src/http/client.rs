@@ -2652,6 +2652,8 @@ impl HyperliquidHttpClient {
         // without trigger fields (trigger_px, tpsl, is_market, trailing_stop).
         // Closed trigger orders will report as Limit type. This is an exchange
         // API limitation: trigger metadata is only available on open orders.
+        // The reduce-only flag is carried through so reconciliation can clamp a
+        // reduce-only fill to its fills.
         let basic = WsBasicOrderData {
             coin: entry.order.coin,
             side: entry.order.side,
@@ -2662,7 +2664,7 @@ impl HyperliquidHttpClient {
             orig_sz: entry.order.orig_sz,
             cloid: entry.order.cloid,
             tif: None,
-            reduce_only: None,
+            reduce_only: entry.order.reduce_only,
             trigger_px: None,
             is_market: None,
             tpsl: None,

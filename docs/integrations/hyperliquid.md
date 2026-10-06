@@ -373,11 +373,12 @@ an empty one.
 #### Reduce-only fill quantity
 
 Hyperliquid can report a reduce-only order as `filled` with nothing remaining once it closes a
-position smaller than the order. During startup mass status the adapter clamps such an order to
-the total of its fills, so it closes `Filled` at a quantity smaller than the size originally
-submitted. The clamp applies only when the `userFills` history is complete and under its
-2,000-record limit. Otherwise the adapter keeps the venue's quantity, and reconciliation can infer
-the missing fill.
+position smaller than the order. During startup mass status, and when it looks up a single order
+by venue order ID, the adapter clamps such an order to the total of its fills, so it closes
+`Filled` at a quantity smaller than the size originally submitted. The clamp applies only when the
+`userFills` history is complete and under its 2,000-record limit. Otherwise the adapter keeps the
+venue's quantity, and reconciliation can infer the missing fill. A single-order lookup fetches
+`userFills` only for a reduce-only order reported `Filled`.
 
 #### Command and direct requests
 
