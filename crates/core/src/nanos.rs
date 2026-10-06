@@ -1130,6 +1130,7 @@ fn parse_ascii_digits(bytes: &[u8]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use jiff::SignedDuration;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
@@ -2032,8 +2033,6 @@ mod tests {
         let _ = nanos.as_i64();
     }
 
-    use proptest::prelude::*;
-
     fn unix_nanos_strategy() -> impl Strategy<Value = UnixNanos> {
         prop_oneof![
             // Small values
@@ -2507,14 +2506,6 @@ mod tests {
     fn test_from_micros_overflow_panics() {
         let _ = UnixNanos::from_micros(u64::MAX / 1_000 + 1);
     }
-}
-
-#[cfg(test)]
-mod contracts {
-    use proptest::prelude::*;
-    use rstest::rstest;
-
-    use crate::UnixNanos;
 
     #[rstest]
     #[case("0000000000000000")]
