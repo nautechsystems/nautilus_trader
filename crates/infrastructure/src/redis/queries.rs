@@ -85,9 +85,9 @@ impl TryFrom<CurrencyRecord> for Currency {
 /// Outcome of decoding one persisted currency entry.
 enum CurrencyDecode {
     Currency(Currency),
-    /// The record decoded but does not describe a valid currency.
+    /// A record, or a payload that is not a bare code, that does not yield a valid currency.
     InvalidRecord(anyhow::Error),
-    /// The bytes decode as neither the record nor a registered bare code.
+    /// A bare code that is not registered, so the entry holds nothing recoverable.
     Undecodable(anyhow::Error),
 }
 
@@ -389,7 +389,8 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
         let mut currencies = AHashMap::new();
-        let pattern = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}*");
+        let prefix = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}{REDIS_DELIMITER}");
+        let pattern = format!("{prefix}*");
         log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -404,11 +405,14 @@ impl DatabaseQueries {
 
         // Process the bulk results
         for (key, value_opt) in keys.iter().zip(bulk_values.iter()) {
-            let currency_code = if let Some(code) = key.as_str().rsplit(':').next() {
-                Ustr::from(code)
-            } else {
-                log::error!("Invalid key format: {key}");
-                continue;
+            // A code can contain the delimiter (Hyperliquid HIP-3 assets such as `xyz:TSLA`), so
+            // the code is everything after the collection prefix, not the last segment.
+            let currency_code = match key.as_str().strip_prefix(prefix.as_str()) {
+                Some(code) if !code.is_empty() => Ustr::from(code),
+                _ => {
+                    log::error!("Invalid key format: {key}");
+                    continue;
+                }
             };
 
             if let Some(value_bytes) = value_opt {
@@ -428,7 +432,9 @@ impl DatabaseQueries {
                         anyhow::bail!("Invalid currency record for {currency_code}: {e}");
                     }
                     CurrencyDecode::Undecodable(e) => {
-                        log::error!("Failed to deserialize currency {currency_code}: {e}");
+                        log::error!(
+                            "Skipping currency {currency_code}: {e}; payloads denominated in it will not decode"
+                        );
                     }
                 }
             } else {

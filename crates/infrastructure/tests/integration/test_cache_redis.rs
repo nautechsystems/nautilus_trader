@@ -2283,6 +2283,42 @@ mod serial_tests {
         adapter.flush().unwrap();
     }
 
+    /// A code containing the key delimiter round-trips through the bulk load.
+    ///
+    /// Hyperliquid HIP-3 base currencies look like `xyz:TSLA`, so the code is read from the whole
+    /// key after the collection prefix rather than its last segment.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_all_round_trips_a_code_containing_the_delimiter() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut adapter = get_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let currency = Currency::new("zzq:ZZQA", 4, 0, "zzq:ZZQA", CurrencyType::Crypto);
+        adapter.add_currency(&currency).unwrap();
+        wait_until_async(
+            || async {
+                adapter
+                    .load_currency(&currency.code)
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let loaded = adapter.load_all().await.unwrap();
+
+        let restored = loaded
+            .currencies
+            .get(&currency.code)
+            .expect("the full code is the key");
+        assert_eq!(restored.code, currency.code);
+        assert_eq!(restored.precision, currency.precision);
+
+        adapter.flush().unwrap();
+    }
+
     /// A record filed under a key for another code fails the load.
     ///
     /// The key is what the dependents resolve, so the mismatch would register one currency and

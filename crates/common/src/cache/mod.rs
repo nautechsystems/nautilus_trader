@@ -472,11 +472,14 @@ impl Cache {
     ///
     /// Returns an error if loading cache data fails.
     pub async fn cache_all(&mut self) -> anyhow::Result<()> {
-        let cache_map = match &self.database {
+        let mut cache_map = match &self.database {
             Some(db) => db.load_all().await?,
             None => CacheMap::default(),
         };
 
+        // An adapter registers the loaded currencies before decoding their dependents; repeating
+        // it here keeps the cached map consistent with the registry whatever the adapter did.
+        register_loaded_currencies(&mut cache_map.currencies)?;
         self.currencies = cache_map.currencies;
         self.instruments = cache_map.instruments;
         self.instrument_closes = cache_map.instrument_closes;
@@ -2640,14 +2643,7 @@ impl Cache {
     pub fn add_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         log::debug!("Adding `Account` {}", account.id());
 
-        // The database stores the account's whole event history and decodes all of it on load,
-        // so a currency only an earlier state references must be persisted too. The update paths
-        // persist each state as it is applied, so only this one-time add walks the history.
-        for state in account.events() {
-            for currency in Self::state_currencies(&state) {
-                self.add_currency(currency)?;
-            }
-        }
+        self.add_account_currencies(&account)?;
 
         if let Some(database) = &mut self.database {
             database.add_account(&account)?;

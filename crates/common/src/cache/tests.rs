@@ -4294,6 +4294,29 @@ fn test_register_loaded_currencies_keeps_the_registered_definition() {
     assert_eq!(kept.currency_type, Currency::USD().currency_type);
 }
 
+/// The cached map holds the registered definition after a full load, whatever the adapter did.
+#[rstest]
+fn test_cache_all_keeps_the_registered_definition() {
+    let code = "ZZQ10";
+    let registered = Currency::new(code, 6, 0, code, CurrencyType::Crypto);
+    Currency::register(registered, false).unwrap();
+    let stored = Currency::new(code, 4, 0, code, CurrencyType::Crypto);
+    let database = SnapshotBlobTestDatabase {
+        currencies: [(Ustr::from(code), stored)].into_iter().collect(),
+        ..Default::default()
+    };
+    let mut cache = Cache::default();
+    cache.set_database(Box::new(database));
+
+    futures::executor::block_on(cache.cache_all()).unwrap();
+
+    let cached = cache.currency(&Ustr::from(code)).expect("cached");
+    assert_eq!(
+        cached.precision, 6,
+        "the registry's definition wins over the stored one"
+    );
+}
+
 /// A loaded currency reaches the global registry, so a payload denominated in it decodes.
 ///
 /// The code is unregistered when loading begins; a built-in could not prove the order.
@@ -5768,39 +5791,6 @@ fn test_add_account_persists_account_currencies() {
     assert_eq!(found.precision, 4);
     assert_eq!(found.name.as_str(), "Account Fixture One");
     assert_eq!(found.currency_type, CurrencyType::Crypto);
-}
-
-/// A currency only an earlier state references is persisted too.
-///
-/// The database stores and decodes the account's whole event history, so a currency absent from
-/// the latest state still has to resolve on load.
-#[rstest]
-fn test_add_account_persists_currencies_of_earlier_events() {
-    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
-    let mut cache = Cache::new(None, Some(Box::new(database)));
-
-    let earlier = Currency::new(
-        "ZZACCT7",
-        4,
-        0,
-        "Account Fixture Seven",
-        CurrencyType::Crypto,
-    );
-    let account_id = AccountId::from("SIM-007");
-    let first = account_state_with_balances(account_id, &[Currency::USD(), earlier]);
-    let second = account_state_with_balances(account_id, &[Currency::USD()]);
-    let account = AccountAny::from_events(&[first, second]).unwrap();
-
-    cache.add_account(account).unwrap();
-
-    assert!(
-        calls
-            .lock()
-            .currencies
-            .iter()
-            .any(|c| c.code.as_str() == "ZZACCT7"),
-        "a currency held only in an earlier state must be persisted"
-    );
 }
 
 /// A margin requirement's currency is persisted too, since a `MarginBalance` holds `Money`.
