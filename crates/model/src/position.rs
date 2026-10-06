@@ -768,12 +768,48 @@ impl Position {
     /// `prior` is a snapshot of this position taken before that adjustment was applied, for
     /// example with [`Self::clone_without_events`]; the state an adjustment changes is restored
     /// from it, and the adjustment is removed from the position history.
-    pub fn revert_last_adjustment(&mut self, prior: &Self) {
-        debug_assert_eq!(self.id, prior.id);
-        debug_assert!(matches!(
-            self.replay_events.last(),
-            Some(PositionReplayEvent::Adjusted(_))
-        ));
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `prior` is a snapshot of a different position, the last replay event
+    /// is not the latest adjustment (for example a fill was applied after it), or applying that
+    /// adjustment to `prior` does not reproduce the current state. An error leaves the position
+    /// unchanged.
+    pub fn revert_last_adjustment(&mut self, prior: &Self) -> CorrectnessResult<()> {
+        check_equal(&self.id, &prior.id, "self.id", "prior.id")?;
+
+        let adjustment = match (self.replay_events.last(), self.adjustments.last()) {
+            (Some(PositionReplayEvent::Adjusted(replayed)), Some(latest)) if replayed == latest => {
+                *latest
+            }
+            _ => {
+                return Err(CorrectnessError::PredicateViolation {
+                    message: format!(
+                        "cannot revert adjustment for position {}: the last replay event is not its latest adjustment",
+                        self.id
+                    ),
+                });
+            }
+        };
+
+        let mut expected = prior.clone_without_events();
+        expected.apply_adjustment_state(adjustment, false);
+
+        if expected.signed_qty != self.signed_qty
+            || expected.quantity != self.quantity
+            || expected.peak_qty != self.peak_qty
+            || expected.side != self.side
+            || expected.realized_pnl != self.realized_pnl
+            || expected.ts_last != self.ts_last
+        {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "cannot revert adjustment {} for position {}: `prior` is not the state before it",
+                    adjustment.event_id, self.id
+                ),
+            });
+        }
+
         self.adjustments.pop();
         self.replay_events.pop();
         self.signed_qty = prior.signed_qty;
@@ -784,6 +820,7 @@ impl Position {
         self.ts_last = prior.ts_last;
 
         self.debug_assert_invariants();
+        Ok(())
     }
 
     fn apply_adjustment_state(&mut self, adjustment: PositionAdjusted, record_replay: bool) {
@@ -6553,6 +6590,100 @@ mod tests {
             (position.quantity.as_f64() - 1.998).abs() < 1e-9,
             "Quantity should be 2.0 - 0.002 commission"
         );
+    }
+
+    fn btcusdt_fill(trade_id: &str, client_order_id: &str, quantity: &str) -> OrderFilled {
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(quantity))
+            .client_order_id(ClientOrderId::new(client_order_id))
+            .build();
+
+        TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new(trade_id)),
+            None,
+            Some(Price::from("50000.0")),
+            Some(Quantity::from(quantity)),
+            None,
+            Some(Money::new(1.0, instrument.quote_currency())),
+            None,
+            None,
+        )
+        .into()
+    }
+
+    fn funding_payment(position: &Position, pnl: f64) -> PositionAdjusted {
+        PositionAdjusted::new(
+            position.trader_id,
+            position.strategy_id,
+            position.instrument_id,
+            position.id,
+            position.account_id,
+            PositionAdjustmentType::Funding,
+            None,
+            Some(Money::new(pnl, position.settlement_currency)),
+            None,
+            uuid4(),
+            UnixNanos::from(5),
+            UnixNanos::from(5),
+        )
+    }
+
+    fn btcusdt_position() -> Position {
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        Position::new(&instrument, btcusdt_fill("1", "O-001", "1.0"))
+    }
+
+    #[rstest]
+    fn test_revert_last_adjustment_restores_prior_state() {
+        let mut position = btcusdt_position();
+        let before = serde_json::to_value(&position).unwrap();
+        let prior = position.clone_without_events();
+        position.apply_adjustment(funding_payment(&position, -10.0));
+
+        position.revert_last_adjustment(&prior).unwrap();
+
+        assert_eq!(serde_json::to_value(&position).unwrap(), before);
+    }
+
+    #[rstest]
+    fn test_revert_last_adjustment_rejects_snapshot_of_another_position() {
+        let mut position = btcusdt_position();
+        let mut prior = position.clone_without_events();
+        prior.id = PositionId::new("P-OTHER");
+        position.apply_adjustment(funding_payment(&position, -10.0));
+        let after = serde_json::to_value(&position).unwrap();
+
+        assert!(position.revert_last_adjustment(&prior).is_err());
+        assert_eq!(serde_json::to_value(&position).unwrap(), after);
+    }
+
+    #[rstest]
+    fn test_revert_last_adjustment_rejects_after_later_fill() {
+        let mut position = btcusdt_position();
+        let prior = position.clone_without_events();
+        position.apply_adjustment(funding_payment(&position, -10.0));
+        position.apply(&btcusdt_fill("2", "O-002", "0.5"));
+        let after = serde_json::to_value(&position).unwrap();
+
+        assert!(position.revert_last_adjustment(&prior).is_err());
+        assert_eq!(serde_json::to_value(&position).unwrap(), after);
+    }
+
+    #[rstest]
+    fn test_revert_last_adjustment_rejects_stale_snapshot() {
+        let mut position = btcusdt_position();
+        let prior = position.clone_without_events();
+        position.apply_adjustment(funding_payment(&position, -10.0));
+        position.apply_adjustment(funding_payment(&position, -5.0));
+        let after = serde_json::to_value(&position).unwrap();
+
+        assert!(position.revert_last_adjustment(&prior).is_err());
+        assert_eq!(serde_json::to_value(&position).unwrap(), after);
     }
 
     #[rstest]

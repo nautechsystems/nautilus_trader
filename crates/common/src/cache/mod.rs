@@ -3656,14 +3656,15 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if the position is not held in the cache, or if updating the position
-    /// in the database fails.
+    /// Returns an error if the position is not held in the cache, if `prior` cannot revert its
+    /// last adjustment (see [`Position::revert_last_adjustment`]), or if updating the position in
+    /// the database fails.
     pub fn revert_position_adjustment(&mut self, prior: &Position) -> anyhow::Result<()> {
         let Some(position_cell) = self.positions.get(&prior.id).cloned() else {
             anyhow::bail!("Cannot revert position {}: not found in cache", prior.id);
         };
 
-        position_cell.borrow_mut().revert_last_adjustment(prior);
+        position_cell.borrow_mut().revert_last_adjustment(prior)?;
         self.refresh_position_indexes(&position_cell.borrow());
 
         if let Some(database) = &mut self.database {
