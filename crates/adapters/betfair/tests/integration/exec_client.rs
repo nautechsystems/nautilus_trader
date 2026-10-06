@@ -53,7 +53,9 @@ use nautilus_common::{
             modify::ModifyOrder,
             query::QueryOrder,
             report::{
-                GenerateFillReports, GenerateFillReportsBuilder, GenerateOrderStatusReportsBuilder,
+                GenerateFillReports, GenerateFillReportsBuilder, GenerateOrderStatusReportBuilder,
+                GenerateOrderStatusReports, GenerateOrderStatusReportsBuilder,
+                GeneratePositionStatusReportsBuilder,
             },
             submit::{SubmitOrder, SubmitOrderList},
         },
@@ -65,15 +67,15 @@ use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::Data,
-    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderAccepted, OrderDeniedReason, OrderEventAny, OrderUpdated},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId,
-        VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId,
+        TraderId, VenueOrderId,
     },
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder},
-    reports::OrderStatusReport,
-    types::{Currency, Price, Quantity},
+    reports::{FillReport, OrderStatusReport},
+    types::{Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -82,6 +84,77 @@ use tokio::io::AsyncWriteExt;
 use ustr::Ustr;
 
 use crate::common::*;
+
+async fn generate_test_order_reports(
+    client: &BetfairExecutionClient,
+    command: &GenerateOrderStatusReports,
+    worker: bool,
+) -> anyhow::Result<Vec<OrderStatusReport>> {
+    if !worker {
+        return client.generate_order_status_reports(command).await;
+    }
+
+    let task = client.generate_order_status_reports_task(command).unwrap();
+
+    nautilus_common::live::get_runtime()
+        .spawn(task.collection)
+        .await?;
+    task.result.await
+}
+
+async fn generate_test_fill_reports(
+    client: &BetfairExecutionClient,
+    command: GenerateFillReports,
+    worker: bool,
+) -> anyhow::Result<Vec<FillReport>> {
+    if !worker {
+        return client.generate_fill_reports(command).await;
+    }
+
+    let task = client.generate_fill_reports_task(&command).unwrap();
+
+    nautilus_common::live::get_runtime()
+        .spawn(task.collection)
+        .await?;
+    task.result.await
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_unsupported_report_hooks_remain_inline_and_return_errors() {
+    let (addr, _state) = start_mock_http().await;
+    let (stream_port, _listener) = start_mock_stream().await;
+    let (client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let order_command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let position_command = GeneratePositionStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let order_hook = client.generate_order_status_report_task(&order_command);
+    let position_hook = client.generate_position_status_reports_task(&position_command);
+    let order_error = client
+        .generate_order_status_report(&order_command)
+        .await
+        .unwrap_err();
+    let position_error = client
+        .generate_position_status_reports(&position_command)
+        .await
+        .unwrap_err();
+
+    assert!(order_hook.is_none());
+    assert!(position_hook.is_none());
+    assert_eq!(
+        order_error.to_string(),
+        "Betfair single-order status reports are not supported"
+    );
+    assert_eq!(
+        position_error.to_string(),
+        "Betfair position status reports are not supported"
+    );
+}
 
 fn create_test_execution_client_with_config(
     addr: SocketAddr,
@@ -3132,7 +3205,7 @@ async fn test_ocm_filled_no_avp_uses_order_price() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_reports() {
+async fn test_generate_order_status_reports(#[values(false, true)] worker: bool) {
     let (addr, state) = start_mock_http().await;
 
     // Override listCurrentOrders to return executable orders
@@ -3164,7 +3237,9 @@ async fn test_generate_order_status_reports() {
         .build()
         .unwrap();
 
-    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let reports = generate_test_order_reports(&client, &cmd, worker)
+        .await
+        .unwrap();
 
     assert!(
         !reports.is_empty(),
@@ -3462,7 +3537,9 @@ fn assert_replacement_report(
 
 #[rstest]
 #[tokio::test]
-async fn test_open_only_ambiguous_reference_preserves_known_bet_accounting() {
+async fn test_open_only_ambiguous_reference_preserves_known_bet_accounting(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -3510,8 +3587,7 @@ async fn test_open_only_ambiguous_reference_preserves_known_bet_accounting() {
         .open_only(true)
         .build()
         .unwrap();
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
 
@@ -3558,7 +3634,9 @@ async fn test_open_only_ambiguous_reference_preserves_known_bet_accounting() {
 
 #[rstest]
 #[tokio::test]
-async fn test_open_only_missing_replacement_history_fails_without_consuming_recovery() {
+async fn test_open_only_missing_replacement_history_fails_without_consuming_recovery(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -3595,8 +3673,7 @@ async fn test_open_only_missing_replacement_history_fails_without_consuming_reco
         .open_only(true)
         .build()
         .unwrap();
-    let error = client
-        .generate_order_status_reports(&command)
+    let error = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap_err();
     assert_eq!(
@@ -3609,13 +3686,11 @@ async fn test_open_only_missing_replacement_history_fails_without_consuming_reco
         current_order_leg("missing-old", client_order_id, 10.0, 4.0, 0.0, 2.5),
         successor.clone(),
     ]);
-    let resolving = client
-        .generate_order_status_reports(&command)
+    let resolving = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     let events = drain_events(&mut rx, Duration::from_millis(100)).await;
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     assert!(resolving.is_empty());
@@ -3635,7 +3710,9 @@ async fn test_open_only_missing_replacement_history_fails_without_consuming_reco
 
 #[rstest]
 #[tokio::test]
-async fn test_open_only_supplemental_orders_preserve_reconcile_market_scope() {
+async fn test_open_only_supplemental_orders_preserve_reconcile_market_scope(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
 
@@ -3710,8 +3787,7 @@ async fn test_open_only_supplemental_orders_preserve_reconcile_market_scope() {
         .open_only(true)
         .build()
         .unwrap();
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     let requests: Vec<_> = state
@@ -3752,6 +3828,7 @@ async fn test_open_only_supplemental_orders_preserve_reconcile_market_scope() {
 #[case::cancelled_fetch(true)]
 #[tokio::test]
 async fn test_open_only_interrupted_supplemental_fetch_preserves_pending_replace(
+    #[values(false, true)] worker: bool,
     #[case] cancel_fetch: bool,
 ) {
     let (addr, state) = start_mock_http().await;
@@ -3808,7 +3885,7 @@ async fn test_open_only_interrupted_supplemental_fetch_preserves_pending_replace
         .build()
         .unwrap();
     {
-        let pending = client.generate_order_status_reports(&command);
+        let pending = generate_test_order_reports(&client, &command, worker);
         tokio::pin!(pending);
         tokio::select! {
             result = &mut pending => panic!("supplemental fetch completed before interruption: {result:?}"),
@@ -3839,19 +3916,19 @@ async fn test_open_only_interrupted_supplemental_fetch_preserves_pending_replace
 
     *state.betting_response_gate.lock() = None;
     assert!(rx.try_recv().is_err());
-    let resolving = client
-        .generate_order_status_reports(&command)
+    let resolving = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     let events = drain_events(&mut rx, Duration::from_millis(100)).await;
     let updates = order_updates(&events);
-    let repeated = client
-        .generate_order_status_reports(&command)
+    let repeated = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     let mut full = command;
     full.open_only = false;
-    let reports = client.generate_order_status_reports(&full).await.unwrap();
+    let reports = generate_test_order_reports(&client, &full, worker)
+        .await
+        .unwrap();
     assert!(resolving.is_empty());
     assert!(repeated.is_empty());
     assert_eq!(events.len(), 1);
@@ -3892,6 +3969,7 @@ async fn test_open_only_interrupted_supplemental_fetch_preserves_pending_replace
 #[case::reduction_after_replacement(false, true)]
 #[tokio::test]
 async fn test_open_only_recovers_terminal_modifications(
+    #[values(false, true)] worker: bool,
     #[case] replacement: bool,
     #[case] replaced: bool,
 ) {
@@ -3994,12 +4072,10 @@ async fn test_open_only_recovers_terminal_modifications(
         .open_only(true)
         .build()
         .unwrap();
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
-    let repeated = client
-        .generate_order_status_reports(&command)
+    let repeated = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     let requests: Vec<_> = state
@@ -4025,7 +4101,9 @@ async fn test_open_only_recovers_terminal_modifications(
     assert!(rx.try_recv().is_err());
     let mut full = command;
     full.open_only = false;
-    let full_reports = client.generate_order_status_reports(&full).await.unwrap();
+    let full_reports = generate_test_order_reports(&client, &full, worker)
+        .await
+        .unwrap();
     assert_eq!(
         full_reports
             .iter()
@@ -4072,6 +4150,7 @@ async fn test_open_only_recovers_terminal_modifications(
 #[case::session_refresh(false, true)]
 #[tokio::test]
 async fn test_open_only_supplemental_pages_preserve_last_observation_and_retry(
+    #[values(false, true)] worker: bool,
     #[case] empty: bool,
     #[case] retry: bool,
 ) {
@@ -4158,7 +4237,7 @@ async fn test_open_only_supplemental_pages_preserve_last_observation_and_retry(
         .build()
         .unwrap();
     let (result, ()) = tokio::join!(
-        client.generate_order_status_reports(&command),
+        generate_test_order_reports(&client, &command, worker),
         inject_session_error
     );
     let requests: Vec<_> = state
@@ -4214,7 +4293,9 @@ async fn test_open_only_supplemental_pages_preserve_last_observation_and_retry(
 
 #[rstest]
 #[tokio::test]
-async fn test_open_only_supplemental_fetch_allows_stream_reduction_to_resolve_once() {
+async fn test_open_only_supplemental_fetch_allows_stream_reduction_to_resolve_once(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -4318,7 +4399,7 @@ async fn test_open_only_supplemental_fetch_allows_stream_reduction_to_resolve_on
         .build()
         .unwrap();
     let (reports, updated) = tokio::join!(
-        client.generate_order_status_reports(&command),
+        generate_test_order_reports(&client, &command, worker),
         stream_reduction
     );
     assert!(reports.unwrap().is_empty());
@@ -4361,6 +4442,7 @@ async fn test_open_only_supplemental_fetch_allows_stream_reduction_to_resolve_on
 )]
 #[tokio::test]
 async fn test_generate_order_status_reports_filters(
+    #[values(false, true)] worker: bool,
     #[case] open_only: bool,
     #[case] instrument_id: Option<&str>,
     #[case] start: Option<&str>,
@@ -4394,8 +4476,7 @@ async fn test_generate_order_status_reports_filters(
         .end(end.map(|s| parse_betfair_timestamp(s).unwrap()))
         .build()
         .unwrap();
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
 
@@ -4501,7 +4582,7 @@ async fn test_mass_status_failed_fetch_preserves_fills(#[case] cancel_fetch: boo
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_fill_reports() {
+async fn test_generate_fill_reports(#[values(false, true)] worker: bool) {
     let (addr, state) = start_mock_http().await;
 
     // Override listCurrentOrders to return executed orders with fills
@@ -4532,22 +4613,53 @@ async fn test_generate_fill_reports() {
         .build()
         .unwrap();
 
-    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let reports = generate_test_fill_reports(&client, cmd, worker)
+        .await
+        .unwrap();
 
-    assert!(
-        !reports.is_empty(),
-        "Expected at least one fill report from executed orders"
-    );
+    let expected_fills = [
+        (
+            "228059821049",
+            OrderSide::Sell,
+            "1.90",
+            "2021-03-24T06:49:41Z",
+        ),
+        (
+            "228059869313",
+            OrderSide::Buy,
+            "1.92",
+            "2021-03-24T06:51:50Z",
+        ),
+    ];
+    assert_eq!(reports.len(), expected_fills.len());
 
-    for report in &reports {
-        assert!(report.last_qty.as_f64() > 0.0);
+    for (report, (bet_id, side, price, matched_date)) in reports.iter().zip(expected_fills) {
+        let expected = FillReport::new(
+            AccountId::from("BETFAIR-001"),
+            InstrumentId::from("1.180575118-217709.BETFAIR"),
+            VenueOrderId::from(bet_id),
+            TradeId::from(format!("{bet_id}-10.00")),
+            side,
+            Quantity::from("10.00"),
+            Price::from(price),
+            Money::zero(Currency::GBP()),
+            LiquiditySide::NoLiquiditySide,
+            None,
+            None,
+            parse_betfair_timestamp(matched_date).unwrap(),
+            report.ts_init,
+            Some(report.report_id),
+        );
+        assert_eq!(*report, expected);
     }
 
     let replay_cmd = GenerateFillReportsBuilder::default()
         .ts_init(UnixNanos::default())
         .build()
         .unwrap();
-    let replayed = client.generate_fill_reports(replay_cmd).await.unwrap();
+    let replayed = generate_test_fill_reports(&client, replay_cmd, worker)
+        .await
+        .unwrap();
     assert!(
         replayed.is_empty(),
         "unchanged cumulative order state must not replay fill reports",
@@ -4559,12 +4671,180 @@ async fn test_generate_fill_reports() {
 }
 
 #[rstest]
+#[case::fills(true)]
+#[case::orders(false)]
+#[tokio::test]
+async fn test_report_collection_with_borrowed_cache_and_dropped_result(#[case] fills: bool) {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_json_fixture("rest/list_current_orders_execution_complete.json");
+    state.betting_overrides.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        fixture["result"].clone(),
+    );
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut receiver, _data_rx, cache) =
+        create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while receiver.try_recv().is_ok() {}
+    let fill_command = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let order_command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .build()
+        .unwrap();
+
+    let collection = if fills {
+        let task = client.generate_fill_reports_task(&fill_command).unwrap();
+        drop(task.result);
+        task.collection
+    } else {
+        let task = client
+            .generate_order_status_reports_task(&order_command)
+            .unwrap();
+        drop(task.result);
+        task.collection
+    };
+
+    collect_report_with_borrowed_cache(collection, &cache).await;
+    let fills_after_drop = generate_test_fill_reports(&client, fill_command, true)
+        .await
+        .unwrap();
+    let orders_after_drop = generate_test_order_reports(&client, &order_command, true)
+        .await
+        .unwrap();
+
+    assert_eq!(fills_after_drop.len(), 2);
+    assert_eq!(fills_after_drop[0].last_qty, Quantity::from("10.00"));
+    assert_eq!(fills_after_drop[1].last_qty, Quantity::from("10.00"));
+    assert_eq!(orders_after_drop.len(), 3);
+    assert!(receiver.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[expect(
+    clippy::await_holding_refcell_ref,
+    reason = "the cache borrow proves worker collection does not access core-thread state"
+)]
+async fn collect_report_with_borrowed_cache(
+    collection: impl std::future::Future<Output = ()> + Send + 'static,
+    cache: &RefCell<Cache>,
+) {
+    let _borrowed_cache = cache.borrow_mut();
+
+    let collection = nautilus_common::live::get_runtime().spawn(collection);
+    tokio::time::timeout(Duration::from_secs(5), collection)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fill_report_task_finishes_after_stream_fill_without_replay() {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_json_fixture("rest/list_current_orders_execution_complete.json");
+    let mut current_order = fixture["result"]["currentOrders"][1].clone();
+    let client_order_id = "O-REPORT-STREAM";
+    let bet_id = "228059821049";
+    let instrument_id = "1.180575118-217709.BETFAIR";
+    let customer_order_ref = make_customer_order_ref(client_order_id);
+    current_order["customerOrderRef"] = Value::from(customer_order_ref.clone());
+    state.betting_overrides.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        serde_json::json!({"currentOrders": [current_order], "moreAvailable": false}),
+    );
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut receiver, _data_rx, cache) =
+        create_test_execution_client(addr, stream_port);
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, client_order_id, bet_id, "1.90", "10"),
+    );
+    let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let server = tokio::spawn(async move {
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
+
+        while let Some(line) = ocm_rx.recv().await {
+            write_half
+                .write_all(format!("{line}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while receiver.try_recv().is_ok() {}
+    let command = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let task = client.generate_fill_reports_task(&command).unwrap();
+    nautilus_common::live::get_runtime()
+        .spawn(task.collection)
+        .await
+        .unwrap();
+    let mut stream_fill = load_json_fixture("stream/ocm_harness_fill.json");
+    stream_fill["id"] = Value::from(2);
+    stream_fill["oc"][0]["id"] = Value::from("1.180575118");
+    stream_fill["oc"][0]["orc"][0]["id"] = Value::from(217709);
+    let unmatched = &mut stream_fill["oc"][0]["orc"][0]["uo"][0];
+    unmatched["id"] = Value::from(bet_id);
+    unmatched["p"] = Value::from(1.9);
+    unmatched["avp"] = Value::from(1.9);
+    unmatched["rfo"] = Value::from(customer_order_ref);
+    ocm_tx.send(stream_fill.to_string()).unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = event else {
+        panic!("expected stream fill before finalization, was {event:?}");
+    };
+
+    let reports = task.result.await.unwrap();
+    let replayed = generate_test_fill_reports(&client, command, true)
+        .await
+        .unwrap();
+
+    assert_eq!(fill.client_order_id, ClientOrderId::from(client_order_id));
+    assert_eq!(fill.venue_order_id, VenueOrderId::from(bet_id));
+    assert_eq!(fill.last_qty, Quantity::from("10.00"));
+    assert_eq!(fill.last_px, Price::from("1.90"));
+    assert!(reports.is_empty());
+    assert!(replayed.is_empty());
+    assert!(receiver.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    drop(ocm_tx);
+    server.await.unwrap();
+}
+
+#[rstest]
 #[case::order(true, false, false)]
 #[case::instrument(false, true, false)]
 #[case::order_and_instrument(true, true, false)]
 #[case::mass_status(true, true, true)]
 #[tokio::test]
 async fn test_generate_fill_reports_preserves_unrequested_fill_state(
+    #[values(false, true)] worker: bool,
     #[case] filter_order: bool,
     #[case] filter_instrument: bool,
     #[case] mass_status: bool,
@@ -4598,7 +4878,9 @@ async fn test_generate_fill_reports_preserves_unrequested_fill_state(
         None,
         None,
     );
-    let requested = client.generate_fill_reports(command).await.unwrap();
+    let requested = generate_test_fill_reports(&client, command, worker)
+        .await
+        .unwrap();
 
     let remaining = if mass_status {
         client
@@ -4671,6 +4953,7 @@ async fn test_generate_fill_reports_preserves_unrequested_fill_state(
 )]
 #[tokio::test]
 async fn test_generate_fill_reports_preserves_partial_date_range(
+    #[values(false, true)] worker: bool,
     #[case] start_ns: Option<u64>,
     #[case] end_ns: Option<u64>,
     #[case] expected_from: Option<&str>,
@@ -4705,7 +4988,9 @@ async fn test_generate_fill_reports_preserves_partial_date_range(
         None,
         None,
     );
-    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let reports = generate_test_fill_reports(&client, cmd, worker)
+        .await
+        .unwrap();
     let params = state
         .betting_request_params
         .lock()
@@ -4732,7 +5017,9 @@ async fn test_generate_fill_reports_preserves_partial_date_range(
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
+async fn test_generate_reports_batches_market_ids_and_resets_pagination(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let executable = load_json_fixture("rest/list_current_orders_executable.json");
     let executable_orders = executable["result"]["currentOrders"]
@@ -4790,15 +5077,16 @@ async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
         .open_only(true)
         .build()
         .unwrap();
-    let order_reports = client
-        .generate_order_status_reports(&order_cmd)
+    let order_reports = generate_test_order_reports(&client, &order_cmd, worker)
         .await
         .unwrap();
     let fill_cmd = GenerateFillReportsBuilder::default()
         .ts_init(UnixNanos::default())
         .build()
         .unwrap();
-    let fill_reports = client.generate_fill_reports(fill_cmd).await.unwrap();
+    let fill_reports = generate_test_fill_reports(&client, fill_cmd, worker)
+        .await
+        .unwrap();
 
     let params = state
         .betting_request_params
@@ -6941,6 +7229,7 @@ async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_rec
 #[case::open(true)]
 #[tokio::test]
 async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_active(
+    #[values(false, true)] worker: bool,
     #[case] open_only: bool,
 ) {
     let (addr, state) = start_mock_http().await;
@@ -7003,8 +7292,7 @@ async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_acti
         .open_only(open_only)
         .build()
         .unwrap();
-    let reports = client
-        .generate_order_status_reports(&reconcile)
+    let reports = generate_test_order_reports(&client, &reconcile, worker)
         .await
         .unwrap();
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -7037,8 +7325,7 @@ async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_acti
     );
     assert!(rejected.reconciliation);
 
-    let repeated = client
-        .generate_order_status_reports(&reconcile)
+    let repeated = generate_test_order_reports(&client, &reconcile, worker)
         .await
         .unwrap();
     assert_eq!(repeated.len(), 1);
@@ -7988,7 +8275,9 @@ async fn test_modify_quantity_rejection_discards_the_pending_reduction() {
 /// of them protects the shared error-classification path.
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_reports_recovers_from_no_session() {
+async fn test_generate_order_status_reports_recovers_from_no_session(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_mock_http().await;
 
     // Make `listCurrentOrders` fail once with NO_SESSION; the next call
@@ -8076,7 +8365,9 @@ async fn test_generate_order_status_reports_recovers_from_no_session() {
         .open_only(true)
         .build()
         .unwrap();
-    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let reports = generate_test_order_reports(&client, &cmd, worker)
+        .await
+        .unwrap();
 
     assert!(
         !reports.is_empty(),
@@ -8119,7 +8410,7 @@ async fn test_generate_order_status_reports_recovers_from_no_session() {
 /// still goes green; cover it with the same one-shot setup.
 #[rstest]
 #[tokio::test]
-async fn test_generate_fill_reports_recovers_from_no_session() {
+async fn test_generate_fill_reports_recovers_from_no_session(#[values(false, true)] worker: bool) {
     let (addr, state) = start_mock_http().await;
 
     state.betting_error_one_shot_overrides.lock().insert(
@@ -8156,7 +8447,9 @@ async fn test_generate_fill_reports_recovers_from_no_session() {
         .ts_init(UnixNanos::default())
         .build()
         .unwrap();
-    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let reports = generate_test_fill_reports(&client, cmd, worker)
+        .await
+        .unwrap();
 
     assert!(
         !reports.is_empty(),
@@ -9007,7 +9300,9 @@ async fn test_open_only_regression_absent_cached_order_does_not_require_history(
 
 #[rstest]
 #[tokio::test]
-async fn test_open_only_regression_refreshes_pending_reference_during_history_fetch() {
+async fn test_open_only_regression_refreshes_pending_reference_during_history_fetch(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -9059,7 +9354,7 @@ async fn test_open_only_regression_refreshes_pending_reference_during_history_fe
     let successor = current_order_leg("fresh-c", client_order_id, 4.0, 1.0, 0.0, 4.0);
 
     let resolving = {
-        let pending = client.generate_order_status_reports(&command);
+        let pending = generate_test_order_reports(&client, &command, worker);
         tokio::pin!(pending);
         tokio::select! {
             result = &mut pending => panic!("predecessor history query was not gated: {result:?}"),
@@ -9133,13 +9428,14 @@ async fn test_open_only_regression_refreshes_pending_reference_during_history_fe
     assert_eq!(updates[0].price, Some(Price::from("4.00")));
     assert_no_accept_or_modify_reject(&events);
 
-    let repeated = client
-        .generate_order_status_reports(&command)
+    let repeated = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     let mut full = command;
     full.open_only = false;
-    let reports = client.generate_order_status_reports(&full).await.unwrap();
+    let reports = generate_test_order_reports(&client, &full, worker)
+        .await
+        .unwrap();
     assert!(repeated.is_empty());
     assert_eq!(
         reports
@@ -9184,7 +9480,9 @@ async fn test_open_only_regression_refreshes_pending_reference_during_history_fe
 
 #[rstest]
 #[tokio::test]
-async fn test_open_only_refreshes_same_reference_for_successive_pending_replacements() {
+async fn test_open_only_refreshes_same_reference_for_successive_pending_replacements(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -9257,7 +9555,7 @@ async fn test_open_only_refreshes_same_reference_for_successive_pending_replacem
     let successor = current_order_leg("same-ref-c", &references[0], 4.0, 1.0, 0.0, 4.0);
 
     let resolving = {
-        let pending = client.generate_order_status_reports(&command);
+        let pending = generate_test_order_reports(&client, &command, worker);
         tokio::pin!(pending);
         tokio::select! {
             result = &mut pending => panic!("second reference request was not gated: {result:?}"),
@@ -9362,13 +9660,14 @@ async fn test_open_only_refreshes_same_reference_for_successive_pending_replacem
     assert_eq!(requests[5], requests[3]);
     assert_eq!(gate.waiters.load(Ordering::Relaxed), 4);
 
-    let repeated = client
-        .generate_order_status_reports(&command)
+    let repeated = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     let mut full = command;
     full.open_only = false;
-    let reports = client.generate_order_status_reports(&full).await.unwrap();
+    let reports = generate_test_order_reports(&client, &full, worker)
+        .await
+        .unwrap();
     assert!(repeated.is_empty());
     assert_eq!(reports.len(), 3);
     assert_eq!(
@@ -9403,6 +9702,7 @@ async fn test_open_only_refreshes_same_reference_for_successive_pending_replacem
 #[case::limit_on_close("LIMIT_ON_CLOSE", OrderType::Limit)]
 #[tokio::test]
 async fn test_open_only_bsp_discovery_recovers_tracked_and_untracked_orders(
+    #[values(false, true)] worker: bool,
     #[case] venue_order_type: &str,
     #[case] order_type: OrderType,
     #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
@@ -9487,8 +9787,7 @@ async fn test_open_only_bsp_discovery_recovers_tracked_and_untracked_orders(
         .unwrap();
 
     for _ in 0..2 {
-        let reports = client
-            .generate_order_status_reports(&command)
+        let reports = generate_test_order_reports(&client, &command, worker)
             .await
             .unwrap();
         assert_eq!(reports.len(), 3);
@@ -9576,7 +9875,10 @@ async fn test_open_only_bsp_discovery_recovers_tracked_and_untracked_orders(
 #[case::instrument(true)]
 #[case::reconcile_market(false)]
 #[tokio::test]
-async fn test_open_only_bsp_discovery_preserves_scope(#[case] instrument_scoped: bool) {
+async fn test_open_only_bsp_discovery_preserves_scope(
+    #[values(false, true)] worker: bool,
+    #[case] instrument_scoped: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
 
@@ -9620,8 +9922,7 @@ async fn test_open_only_bsp_discovery_preserves_scope(#[case] instrument_scoped:
         .instrument_id(instrument_scoped.then(|| InstrumentId::from("1.179082386-235.BETFAIR")))
         .build()
         .unwrap();
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), if instrument_scoped { 1 } else { 2 });
@@ -9687,7 +9988,9 @@ async fn test_open_only_bsp_discovery_preserves_scope(#[case] instrument_scoped:
 
 #[rstest]
 #[tokio::test]
-async fn test_open_only_bsp_discovery_excluded_instrument_preserves_pending_replace() {
+async fn test_open_only_bsp_discovery_excluded_instrument_preserves_pending_replace(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
 
@@ -9747,8 +10050,7 @@ async fn test_open_only_bsp_discovery_excluded_instrument_preserves_pending_repl
         .unwrap();
 
     for _ in 0..2 {
-        let reports = client
-            .generate_order_status_reports(&command)
+        let reports = generate_test_order_reports(&client, &command, worker)
             .await
             .unwrap();
         assert!(reports.is_empty());
@@ -9767,13 +10069,11 @@ async fn test_open_only_bsp_discovery_excluded_instrument_preserves_pending_repl
     }
 
     command.instrument_id = Some(InstrumentId::from(instrument_id));
-    let resolving = client
-        .generate_order_status_reports(&command)
+    let resolving = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     let events = drain_events(&mut rx, Duration::from_millis(100)).await;
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     assert_eq!(resolving.len(), 1);
@@ -9852,6 +10152,7 @@ async fn test_open_only_bsp_discovery_excluded_instrument_preserves_pending_repl
 #[case::unrelated_history(30_000)]
 #[tokio::test]
 async fn test_open_only_bsp_discovery_paginates_without_unrelated_history(
+    #[values(false, true)] worker: bool,
     #[case] history_count: usize,
 ) {
     let (addr, state) = start_mock_http().await;
@@ -9898,8 +10199,7 @@ async fn test_open_only_bsp_discovery_paginates_without_unrelated_history(
         .open_only(true)
         .build()
         .unwrap();
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 1002);
@@ -9990,6 +10290,7 @@ async fn test_open_only_bsp_discovery_paginates_without_unrelated_history(
 #[case::catalogue_limit(METHOD_LIST_MARKET_CATALOGUE, true)]
 #[tokio::test]
 async fn test_open_only_bsp_discovery_failure_preserves_pending_replace(
+    #[values(false, true)] worker: bool,
     #[case] method: &str,
     #[case] saturated: bool,
 ) {
@@ -10048,8 +10349,7 @@ async fn test_open_only_bsp_discovery_failure_preserves_pending_replace(
         .open_only(true)
         .build()
         .unwrap();
-    let error = client
-        .generate_order_status_reports(&command)
+    let error = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap_err();
 
@@ -10078,13 +10378,11 @@ async fn test_open_only_bsp_discovery_failure_preserves_pending_replace(
     assert_eq!(failed_requests[0].1["orderProjection"], "EXECUTABLE");
     state.betting_overrides.lock().remove(method);
     state.betting_error_overrides.lock().remove(method);
-    let resolving = client
-        .generate_order_status_reports(&command)
+    let resolving = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     let events = drain_events(&mut rx, Duration::from_millis(100)).await;
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     assert_eq!(resolving.len(), 1);
@@ -10152,7 +10450,10 @@ async fn test_open_only_bsp_discovery_failure_preserves_pending_replace(
 #[case::events(METHOD_LIST_EVENTS)]
 #[case::catalogue(METHOD_LIST_MARKET_CATALOGUE)]
 #[tokio::test]
-async fn test_open_only_bsp_discovery_recovers_from_no_session(#[case] method: &str) {
+async fn test_open_only_bsp_discovery_recovers_from_no_session(
+    #[values(false, true)] worker: bool,
+    #[case] method: &str,
+) {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
@@ -10181,8 +10482,7 @@ async fn test_open_only_bsp_discovery_recovers_from_no_session(#[case] method: &
         .open_only(true)
         .build()
         .unwrap();
-    let reports = client
-        .generate_order_status_reports(&command)
+    let reports = generate_test_order_reports(&client, &command, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 1);

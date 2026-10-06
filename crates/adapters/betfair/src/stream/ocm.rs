@@ -18,6 +18,7 @@
 use std::collections::VecDeque;
 
 use ahash::{AHashMap, AHashSet};
+use nautilus_core::UUID4;
 use nautilus_model::{
     identifiers::{ClientOrderId, StrategyId, VenueOrderId},
     types::Quantity,
@@ -34,6 +35,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub(crate) struct PendingReplaceState {
+    id: UUID4,
     pub(crate) total_quantity: Option<Quantity>,
     awaiting_reconciliation: bool,
 }
@@ -435,6 +437,7 @@ impl OcmState {
         self.pending_replace_state.insert(
             key,
             PendingReplaceState {
+                id: UUID4::new(),
                 total_quantity,
                 awaiting_reconciliation: false,
             },
@@ -461,6 +464,16 @@ impl OcmState {
         self.pending_replace_state
             .get(&(*client_order_id, old_bet_id.to_string()))
             .is_some_and(|pending| pending.awaiting_reconciliation)
+    }
+
+    pub(crate) fn pending_replace_reconciliation_ids(
+        &self,
+    ) -> AHashMap<(ClientOrderId, BetId), UUID4> {
+        self.pending_replace_state
+            .iter()
+            .filter(|(_, pending)| pending.awaiting_reconciliation)
+            .map(|(key, pending)| (key.clone(), pending.id))
+            .collect()
     }
 
     pub(crate) fn take_pending_replace(

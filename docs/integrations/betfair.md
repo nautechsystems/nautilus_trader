@@ -286,6 +286,15 @@ venue-side positions to check against.
 | Fill reports          | ✓         | Matched sizes and prices from `listCurrentOrders`. |
 | Cleared order history | -         | The adapter does not request settlement history.   |
 
+`LiveNode` fetches bulk order and fill reports over HTTP on workers, then resolves identities and
+incremental fills against current OCM state on its main thread before reconciliation. Startup and
+post-reconnect mass status bypass these hooks.
+
+- Single-order reports return unsupported errors and cannot confirm the absence of cached open orders
+  missing from bulk checks. Missing-order resolution is deferred; OCM updates and mass status remain
+  available. `QueryOrder` still supports inflight checks.
+- Position reports return unsupported errors. [Disable position checks](#position-management).
+
 ## Execution control flow
 
 Startup:
