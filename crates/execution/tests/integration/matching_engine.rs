@@ -5888,6 +5888,77 @@ fn test_trailing_stop_activation_does_not_rewrite_order_events(
 }
 
 #[rstest]
+fn test_basis_point_trailing_stop_fills_at_trigger_on_bar_through_it(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let instrument = crypto_perpetual_with_price_precision(instrument_eth_usdt, 2, "0.25");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine =
+        get_order_matching_engine(instrument.clone(), None, Some(cache.clone()), None, None);
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument.id(),
+        Price::from("1500.00"),
+        Price::from("1500.25"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    ));
+    let mut order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .trigger_type(TriggerType::Default)
+        .trailing_offset(dec!(33))
+        .trailing_offset_type(TrailingOffsetType::BasisPoints)
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+
+    // A 33 bps trail from the 1500.00 bid is 1495.05, between two 0.25 increments
+    let trailed_trigger = cache
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .trigger_price();
+
+    engine.process_bar(&Bar::new(
+        BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+        Price::from("1500.00"),
+        Price::from("1500.00"),
+        Price::from("1490.00"),
+        Price::from("1491.00"),
+        Quantity::from("4.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    ));
+
+    let fill_prices: Vec<Price> = get_order_event_handler_messages(&order_event_handler)
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.last_px),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(trailed_trigger, Some(Price::from("1495.00")));
+    assert_eq!(fill_prices, vec![Price::from("1495.00")]);
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Filled
+    );
+}
+
+#[rstest]
 fn test_trailing_stop_limit_with_price_does_not_fill_before_trigger(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
@@ -6013,7 +6084,7 @@ fn test_ouo_partial_fill_resizes_sibling_with_off_tick_trailing_trigger(
     engine.process_order(&mut take_profit, account_id);
     engine.process_order(&mut stop_loss, account_id);
 
-    // A 7 bps trail from the 1500.25 bid lands off the 0.25 increment
+    // A 7 bps trail from the 1500.25 bid is about 1499.20, which rounds to 1499.25
     let trailed_trigger = cache.borrow().order(&stop_loss_id).unwrap().trigger_price();
 
     // A bid at the take-profit price fills 0.4 of it, which resizes the stop loss
@@ -6025,7 +6096,7 @@ fn test_ouo_partial_fill_resizes_sibling_with_off_tick_trailing_trigger(
         .iter()
         .filter(|event| event.event_type() == OrderEventType::ModifyRejected)
         .count();
-    assert_eq!(trailed_trigger, Some(Price::from("1499.20")));
+    assert_eq!(trailed_trigger, Some(Price::from("1499.25")));
     assert_eq!(modify_rejections, 0);
     assert_eq!(
         cache.borrow().order(&take_profit_id).unwrap().filled_qty(),
@@ -6034,6 +6105,98 @@ fn test_ouo_partial_fill_resizes_sibling_with_off_tick_trailing_trigger(
     assert_eq!(
         cache.borrow().order(&stop_loss_id).unwrap().quantity(),
         Quantity::from("0.600")
+    );
+}
+
+#[rstest]
+fn test_ouo_partial_fill_resizes_restored_sibling_with_off_increment_trigger(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    engine_config: OrderMatchingEngineConfig,
+) {
+    let instrument = crypto_perpetual_with_price_precision(instrument_eth_usdt, 2, "0.25");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = get_order_matching_engine_l2(
+        instrument.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        Some(engine_config),
+    );
+
+    let add_level = |side: OrderSide, price: &str, size: &str, order_id: u64| {
+        OrderBookDeltaTestBuilder::new(instrument.id())
+            .book_action(BookAction::Add)
+            .book_order(BookOrder::new(
+                side,
+                Price::from(price),
+                Quantity::from(size),
+                order_id,
+            ))
+            .build()
+    };
+
+    engine
+        .process_order_book_delta(&add_level(OrderSide::Buy, "1500.25", "10.000", 1))
+        .unwrap();
+    engine
+        .process_order_book_delta(&add_level(OrderSide::Sell, "1700.00", "10.000", 2))
+        .unwrap();
+    let take_profit_id = ClientOrderId::from("O-TP");
+    let stop_loss_id = ClientOrderId::from("O-SL");
+    let mut take_profit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(take_profit_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1600.00"))
+        .quantity(Quantity::from("1.000"))
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![stop_loss_id])
+        .submit(true)
+        .build();
+
+    let mut stop_loss = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument.id())
+        .client_order_id(stop_loss_id)
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("1499.20"))
+        .quantity(Quantity::from("1.000"))
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![take_profit_id])
+        .submit(true)
+        .build();
+
+    // Both were accepted before a restart, the stop loss with a trigger off the 0.25 increment
+    for (order, venue_order_id) in [(&mut take_profit, "V-TP"), (&mut stop_loss, "V-SL")] {
+        let accepted =
+            TestOrderEventStubs::accepted(order, account_id, VenueOrderId::from(venue_order_id));
+        order.apply(accepted).unwrap();
+        cache_order(&cache, order);
+        engine.restore_open_order(order, account_id);
+    }
+
+    // A bid at the take-profit price fills 0.4 of it, which resizes the stop loss
+    engine
+        .process_order_book_delta(&add_level(OrderSide::Buy, "1600.00", "0.400", 3))
+        .unwrap();
+
+    let modify_rejections = get_order_event_handler_messages(&order_event_handler)
+        .iter()
+        .filter(|event| event.event_type() == OrderEventType::ModifyRejected)
+        .count();
+    assert_eq!(modify_rejections, 0);
+    assert_eq!(
+        cache.borrow().order(&take_profit_id).unwrap().filled_qty(),
+        Quantity::from("0.400")
+    );
+    assert_eq!(
+        cache.borrow().order(&stop_loss_id).unwrap().quantity(),
+        Quantity::from("0.600")
+    );
+    assert_eq!(
+        cache.borrow().order(&stop_loss_id).unwrap().trigger_price(),
+        Some(Price::from("1499.20"))
     );
 }
 
