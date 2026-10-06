@@ -924,7 +924,13 @@ impl Portfolio {
         track_missing_prices: bool,
     ) -> Option<PortfolioSnapshot> {
         let account_id = &account_id;
-        let account = self.cache.borrow().account_owned(account_id)?;
+        // The snapshot reads only current balances and margins, so skip copying the account
+        // event history, which grows with every account state
+        let account = self
+            .cache
+            .borrow()
+            .account_ref(account_id)
+            .map(|account| account.clone_without_events())?;
 
         let balances: Vec<AccountBalance> = account.balances().into_values().collect();
         let margins: Vec<MarginBalance> = match &account {
