@@ -53,7 +53,7 @@ use nautilus_model::{
         stubs::{
             audusd_sim, betting, binary_option, btcusd_bybit, commodity_gold,
             crypto_futures_spread_btc_deribit, crypto_option_btc_deribit, currency_pair_btcusdt,
-            default_fx_ccy, equity_aapl, ethusd_bybit, futures_spread_es,
+            default_fx_ccy, equity_aapl, ethusd_bybit, futures_contract_es, futures_spread_es,
         },
     },
     orders::{Order, OrderAny, OrderTestBuilder},
@@ -10875,6 +10875,12 @@ fn set_quote(
 #[rstest]
 #[case::futures_spread_negative(InstrumentAny::FuturesSpread(futures_spread_es()), -5.0, -4.9, 5.0)]
 #[case::futures_spread_zero(InstrumentAny::FuturesSpread(futures_spread_es()), 0.0, 0.1, 10.0)]
+#[case::futures_negative(
+    InstrumentAny::FuturesContract(futures_contract_es(None, None)),
+    -5.0,
+    -4.9,
+    5.0
+)]
 #[case::spot_commodity_negative(InstrumentAny::Commodity(commodity_gold()), -5.0, -4.9, 5.0)]
 fn test_unrealized_pnl_values_negative_price_instrument_at_non_positive_quote(
     mut portfolio: Portfolio,

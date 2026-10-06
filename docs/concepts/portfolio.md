@@ -121,8 +121,7 @@ or native cost currency.
 | `snapshots(account_id)`                        | Recorded account snapshots in emission order.          |
 | `missing_price_instruments(venue, account_id)` | Instruments currently flagged as unpriceable.          |
 
-Longs contribute positive notional, shorts contribute negative notional. Flat
-positions are skipped.
+Longs contribute their notional and shorts its negation. Flat positions are skipped.
 
 An account-scoped `equity()` query returns `{}` for an unknown account. For a known account, it
 raises `RuntimeError` if exact snapshot valuation fails instead of presenting the failure as empty
@@ -158,7 +157,7 @@ Valuation asks `Cache` for a price in this order, stopping at the first match:
 Set `use_mark_prices=false` to skip the mark tier and begin with the side-appropriate quote.
 
 A price at or below zero counts as a current price only for instruments that allow negative prices
-(option, futures spread and option spread instruments, and spot commodities), except inverse
+(futures, option, futures spread and option spread instruments, and spot commodities), except inverse
 instruments whose notional divides by price because they are not premium based. A quote side at or
 below zero also needs a non-zero size, since an empty side can arrive as a zero price with zero
 size. Otherwise the Portfolio skips the price and moves to the next source.

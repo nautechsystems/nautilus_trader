@@ -41,6 +41,7 @@ currency futures.
 
 - `FuturesContract` has instrument class `Future`.
 - It is never inverse. Cost, settlement, and quote currency use `currency`.
+- Prices can be zero or negative.
 - It trades in whole contracts with size precision `0` and size increment `1`.
 - Use `CryptoFuture` for dated crypto futures where the underlying and settlement
   currencies can differ.

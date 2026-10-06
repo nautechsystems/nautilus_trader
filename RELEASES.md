@@ -4,11 +4,16 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added negative price support for futures, except inverse futures (#5190), thanks @DeLuke84
+
 ### Breaking Changes
 
 ### Security
 
 ### Fixes
+
+- Fixed `RiskEngine` notional limits for negative prices
+- Fixed maker/taker commission sign at negative prices
 
 ### Internal Improvements
 

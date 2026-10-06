@@ -42,6 +42,7 @@ Examples include dated BTC or ETH futures on crypto derivatives venues.
 ## Behavior
 
 - `CryptoFuture` has asset class `Cryptocurrency` and instrument class `Future`.
+- Prices can be zero or negative, except for inverse futures.
 - Use `CryptoPerpetual` for crypto derivatives with no expiration.
 
 The currency set determines the settlement style:

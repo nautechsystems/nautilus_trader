@@ -3056,15 +3056,12 @@ impl Portfolio {
                 return None;
             }
         };
-        // A price at or below zero is valid where the instrument allows it and its notional does
-        // not divide by price
+
+        // A price at or below zero is valid where the instrument allows it
         let allows_non_positive = || {
-            cache.instrument(instrument_id).is_some_and(|instrument| {
-                instrument.allows_negative_price()
-                    && !instrument
-                        .instrument_class()
-                        .divides_notional_by_price(instrument.is_inverse())
-            })
+            cache
+                .instrument(instrument_id)
+                .is_some_and(Instrument::allows_negative_price)
         };
         let is_valid = |price: &Price| price.as_decimal() > Decimal::ZERO || allows_non_positive();
         let mark_price = if self.config.use_mark_prices {

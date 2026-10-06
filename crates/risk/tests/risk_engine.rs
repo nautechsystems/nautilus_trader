@@ -84,8 +84,9 @@ use nautilus_model::{
         InstrumentAny, OptionSpread, PerpetualContract,
         stubs::{
             audusd_sim, betting, binary_option, btcusd_bybit, commodity_gold,
-            crypto_perpetual_ethusdt, currency_pair_btcusdt, default_fx_ccy, equity_aapl,
-            ethbtc_quanto, futures_spread_es, gbpusd_sim, option_spread, perpetual_contract_eurusd,
+            crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt, default_fx_ccy,
+            equity_aapl, ethbtc_quanto, futures_contract_es, futures_spread_es, gbpusd_sim,
+            option_spread, perpetual_contract_eurusd,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -439,6 +440,11 @@ fn instrument_audusd(audusd_sim: CurrencyPair) -> InstrumentAny {
 #[fixture]
 fn instrument_futures_spread(futures_spread_es: FuturesSpread) -> InstrumentAny {
     InstrumentAny::FuturesSpread(futures_spread_es)
+}
+
+#[fixture]
+fn instrument_futures() -> InstrumentAny {
+    InstrumentAny::FuturesContract(futures_contract_es(None, None))
 }
 
 #[fixture]
@@ -1923,6 +1929,207 @@ fn test_submit_order_when_negative_price_for_option_spread_then_allows(
     assert_eq!(
         saved_execute_messages.first().unwrap().instrument_id(),
         instrument_option_spread.id()
+    );
+}
+
+#[rstest]
+fn test_submit_order_when_negative_trigger_price_for_futures_then_allows(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_futures: InstrumentAny,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_futures.clone())
+        .unwrap();
+
+    cash_account_state_million_usd.account_id =
+        AccountId::from(format!("{}-001", instrument_futures.id().venue).as_str());
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+
+    // Negative trigger prices are valid for futures (e.g. back-adjusted series)
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_futures.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::new(-40.00, 2))
+        .quantity(Quantity::from("1"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_futures.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_execute_messages =
+        get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(saved_execute_messages.len(), 1);
+    assert_eq!(
+        saved_execute_messages.first().unwrap().instrument_id(),
+        instrument_futures.id()
+    );
+}
+
+#[rstest]
+fn test_submit_order_when_negative_price_for_inverse_crypto_future_then_denies(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    mut crypto_future_btcusdt: CryptoFuture,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    mut cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    crypto_future_btcusdt.is_inverse = true;
+    let instrument = InstrumentAny::CryptoFuture(crypto_future_btcusdt);
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+
+    cash_account_state_million_usd.account_id =
+        AccountId::from(format!("{}-001", instrument.id().venue).as_str());
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::new(-40.00, 2))
+        .quantity(Quantity::from("1"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_process_messages =
+        get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(saved_process_messages.len(), 1);
+
+    assert_eq!(
+        saved_process_messages.first().unwrap().event_type(),
+        OrderEventType::Denied
+    );
+    assert_eq!(
+        saved_process_messages.first().unwrap().message().unwrap(),
+        Ustr::from("PRICE_NOT_POSITIVE: field=PRICE, price=-40.00")
+    );
+}
+
+#[rstest]
+fn test_submit_order_when_negative_price_over_max_notional_then_denies(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_futures: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    mut cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    simple_cache
+        .add_instrument(instrument_futures.clone())
+        .unwrap();
+
+    cash_account_state_million_usd.account_id =
+        AccountId::from(format!("{}-001", instrument_futures.id().venue).as_str());
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    risk_engine.set_max_notional_per_order(instrument_futures.id(), Decimal::from(1_000));
+
+    // Notional is 100 * -40.00 = -4000.00 USD, whose magnitude exceeds the 1000 USD limit
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_futures.id())
+        .side(OrderSide::Buy)
+        .price(Price::new(-40.00, 2))
+        .quantity(Quantity::from("100"))
+        .build();
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_futures.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None, // params
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None, // correlation_id
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let saved_process_messages =
+        get_process_order_event_handler_messages(&process_order_event_handler);
+    assert_eq!(saved_process_messages.len(), 1);
+
+    assert_eq!(
+        saved_process_messages.first().unwrap().event_type(),
+        OrderEventType::Denied
+    );
+    assert_eq!(
+        saved_process_messages.first().unwrap().message().unwrap(),
+        Ustr::from("NOTIONAL_EXCEEDS_MAX_PER_ORDER: max=1000.00 USD, notional=4000.00 USD")
     );
 }
 

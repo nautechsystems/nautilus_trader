@@ -433,7 +433,7 @@ mod tests {
     }
 
     /// A spread carrying non-zero margin rates, so the assertions below cannot pass on a
-    /// zero requirement. `FuturesSpread` is one of the three classes permitting a negative
+    /// zero requirement. `FuturesSpread` is one of the classes permitting a negative
     /// price (see `InstrumentClass::allows_negative_price`).
     fn negative_price_spread() -> FuturesSpread {
         FuturesSpread::builder()

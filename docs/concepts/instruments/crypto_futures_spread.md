@@ -47,7 +47,7 @@ Examples include listed crypto futures calendar spreads.
 - The venue publishes the spread as a single tradable instrument.
 - The strategy can be linear, inverse, or quanto, depending on the currency set.
 - Spread prices can be zero or negative, and the `RiskEngine` accepts non-positive prices
-  for this instrument class.
+  for this instrument class, except for inverse spreads.
 - Store venue-specific leg details in `info` when the adapter provides them.
 
 ## Example

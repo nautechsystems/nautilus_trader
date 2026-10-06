@@ -803,11 +803,15 @@ impl InstrumentClass {
     }
 
     /// Returns whether this instrument class allows negative prices.
+    ///
+    /// Futures allow negative prices, which occur as real settlement prices (e.g. WTI crude
+    /// oil in April 2020) and in back-adjusted continuous price series. Inverse instruments
+    /// whose notional divides by price still require a positive price.
     #[must_use]
     pub const fn allows_negative_price(&self) -> bool {
         matches!(
             self,
-            Self::Option | Self::FuturesSpread | Self::OptionSpread
+            Self::Future | Self::Option | Self::FuturesSpread | Self::OptionSpread
         )
     }
 
@@ -2448,12 +2452,12 @@ mod tests {
     }
 
     #[rstest]
+    #[case(InstrumentClass::Future, true)]
     #[case(InstrumentClass::Option, true)]
     #[case(InstrumentClass::FuturesSpread, true)]
     #[case(InstrumentClass::OptionSpread, true)]
     #[case(InstrumentClass::Spot, false)]
     #[case(InstrumentClass::Swap, false)]
-    #[case(InstrumentClass::Future, false)]
     #[case(InstrumentClass::Forward, false)]
     #[case(InstrumentClass::Cfd, false)]
     #[case(InstrumentClass::Bond, false)]
