@@ -1349,7 +1349,9 @@ impl KrakenSpotWebSocketClient {
     /// Resubscribes the `book` channel for `instrument_id` after a checksum mismatch.
     ///
     /// The logical subscription is kept throughout, so the reconnect path still replays it, and
-    /// each step re-checks that the user has not unsubscribed meanwhile.
+    /// each step re-checks that the user has not unsubscribed meanwhile. `generation` is the
+    /// subscription the mismatch belonged to; a recovery queued for a subscription the user has
+    /// since replaced leaves the replacement alone, whatever its depth.
     ///
     /// # Errors
     ///
@@ -1358,14 +1360,23 @@ impl KrakenSpotWebSocketClient {
         &self,
         instrument_id: InstrumentId,
         depth: Option<u32>,
+        generation: Option<u64>,
     ) -> Result<(), KrakenWsError> {
         let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
         let depth = depth.unwrap_or(10);
         let channel_str = KrakenWsChannel::Book.as_ref();
         let key = format!("{channel_str}:{symbol}");
+        let is_live = || {
+            self.subscriptions_contains(&key)
+                && self
+                    .l2_depths
+                    .subscription(symbol.as_str())
+                    .map(|s| s.generation)
+                    == generation
+        };
 
-        if !self.subscriptions_contains(&key) {
-            log::debug!("Skipping L2 resync: subscription cancelled, symbol={symbol}");
+        if !is_live() {
+            log::debug!("Skipping L2 resync: subscription cancelled or replaced, symbol={symbol}");
             return Ok(());
         }
 
@@ -1386,8 +1397,10 @@ impl KrakenSpotWebSocketClient {
         };
         self.send_command(&unsub).await?;
 
-        if !self.subscriptions_contains(&key) {
-            log::debug!("Skipping L2 resync resubscribe: cancelled before send, symbol={symbol}");
+        if !is_live() {
+            log::debug!(
+                "Skipping L2 resync resubscribe: cancelled or replaced before send, symbol={symbol}"
+            );
             return Ok(());
         }
 
@@ -1408,12 +1421,11 @@ impl KrakenSpotWebSocketClient {
         };
         let payload = self.send_command(&sub).await?;
 
-        if self.subscriptions_contains(&key) {
+        if is_live() {
             self.subscription_payloads
                 .write()
                 .await
                 .insert(key, payload);
-            self.l2_depths.insert(symbol.as_str(), depth);
         }
 
         Ok(())
@@ -2234,6 +2246,58 @@ mod tests {
         client.subscriptions.confirm_subscribe(key);
 
         assert!(client.subscriptions_contains(key));
+    }
+
+    /// A recovery queued for a subscription the user has since replaced leaves the replacement
+    /// alone: it sends nothing and the recorded depth is the replacement's.
+    #[rstest]
+    #[tokio::test]
+    async fn test_resync_book_leaves_a_replacement_subscription_alone() {
+        let client = test_client_without_credentials();
+        let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+
+        client
+            .subscribe_book(instrument_id, Some(10))
+            .await
+            .unwrap();
+        let retired = client.l2_depths.subscription("BTC/USD").unwrap().generation;
+        client.unsubscribe_book(instrument_id).await.unwrap();
+        client
+            .subscribe_book(instrument_id, Some(100))
+            .await
+            .unwrap();
+
+        while cmd_rx.try_recv().is_ok() {}
+
+        client
+            .resync_book(instrument_id, Some(10), Some(retired))
+            .await
+            .unwrap();
+
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "a retired subscription's recovery must send nothing"
+        );
+        assert_eq!(client.l2_depths.get("BTC/USD"), Some(100));
+
+        // Control: the live subscription's own recovery resubscribes at its depth.
+        let live = client.l2_depths.subscription("BTC/USD").unwrap().generation;
+        client
+            .resync_book(instrument_id, Some(100), Some(live))
+            .await
+            .unwrap();
+
+        let SpotHandlerCommand::Unsubscribe { .. } = cmd_rx.try_recv().expect("unsubscribe") else {
+            panic!("expected an unsubscribe command");
+        };
+        let SpotHandlerCommand::Subscribe { payload } = cmd_rx.try_recv().expect("subscribe")
+        else {
+            panic!("expected a subscribe command");
+        };
+        assert_book_subscribe_payload(payload.expose_secret(), "BTC/USD", 100);
+        assert_eq!(client.l2_depths.get("BTC/USD"), Some(100));
     }
 
     fn assert_book_subscribe_payload(payload: &str, symbol: &str, depth: u32) {

@@ -549,6 +549,7 @@ impl KrakenSpotDataClient {
                                                 &client,
                                                 request.instrument_id,
                                                 request.depth,
+                                                request.generation,
                                             )
                                             .await;
                                         },
@@ -649,16 +650,20 @@ impl KrakenSpotDataClient {
                         continue;
                     };
                     let sequence = context.book_sequence.load(Ordering::Relaxed);
-                    let depth = context.l2_depths.get(book.symbol.as_str());
+                    let subscription = context.l2_depths.subscription(book.symbol.as_str());
                     match l2_books.process_book(
                         book,
                         instrument,
                         sequence,
                         is_snapshot,
-                        depth,
+                        subscription.map(|s| s.depth),
                         ts_init,
                     ) {
-                        Ok(outcome) => {
+                        Ok(mut outcome) => {
+                            if let Some(request) = &mut outcome.resync {
+                                request.generation = subscription.map(|s| s.generation);
+                            }
+
                             if let Some((deltas, next_sequence)) = outcome.deltas {
                                 context
                                     .book_sequence

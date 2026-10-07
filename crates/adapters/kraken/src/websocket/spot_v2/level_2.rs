@@ -15,7 +15,10 @@
 
 //! Runtime state for Kraken Spot L2 book handling.
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{AtomicMap, UnixNanos};
@@ -34,26 +37,44 @@ use super::{
 };
 use crate::common::consts::KRAKEN_PAIR_DECIMALS_KEY;
 
+/// One logical `book` subscription: its depth and a generation that changes with every
+/// resubscription, so a recovery queued for a retired subscription can tell it is retired.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct L2Subscription {
+    pub(crate) depth: u32,
+    pub(crate) generation: u64,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct L2Depths {
-    depths: Arc<AtomicMap<String, u32>>,
+    depths: Arc<AtomicMap<String, L2Subscription>>,
+    next_generation: Arc<AtomicU64>,
 }
 
 impl Default for L2Depths {
     fn default() -> Self {
         Self {
             depths: Arc::new(AtomicMap::new()),
+            next_generation: Arc::new(AtomicU64::new(1)),
         }
     }
 }
 
 impl L2Depths {
     pub(crate) fn get(&self, symbol: &str) -> Option<u32> {
+        self.subscription(symbol).map(|s| s.depth)
+    }
+
+    pub(crate) fn subscription(&self, symbol: &str) -> Option<L2Subscription> {
         self.depths.load().get(symbol).copied()
     }
 
-    pub(crate) fn insert(&self, symbol: &str, depth: u32) {
-        self.depths.insert(symbol.to_string(), depth);
+    /// Records a new subscription at `depth` and returns its generation.
+    pub(crate) fn insert(&self, symbol: &str, depth: u32) -> u64 {
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+        self.depths
+            .insert(symbol.to_string(), L2Subscription { depth, generation });
+        generation
     }
 
     pub(crate) fn remove(&self, symbol: &str) {
@@ -68,10 +89,14 @@ impl L2Depths {
 }
 
 /// A resubscription the data client issues after a checksum mismatch.
+///
+/// `generation` names the subscription the mismatch belonged to; the data client fills it in
+/// from [`L2Depths`], and the recovery leaves a replacement subscription alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct L2ResyncRequest {
     pub(crate) instrument_id: InstrumentId,
     pub(crate) depth: Option<u32>,
+    pub(crate) generation: Option<u64>,
 }
 
 /// What processing one `book` message produced.
@@ -226,6 +251,7 @@ impl L2BookState {
                     resync: Some(L2ResyncRequest {
                         instrument_id,
                         depth,
+                        generation: None,
                     }),
                 });
             }
@@ -470,6 +496,7 @@ mod tests {
             Some(L2ResyncRequest {
                 instrument_id: instrument.id(),
                 depth: Some(25),
+                generation: None,
             })
         );
         let (deltas, next_sequence) = outcome.deltas.expect("a clear is emitted");

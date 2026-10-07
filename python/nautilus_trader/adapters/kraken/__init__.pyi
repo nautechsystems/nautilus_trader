@@ -57,13 +57,13 @@ class KrakenDataClientConfig:
         ws_private_url: str | None = None,
         ws_l3_url: str | None = None,
         validate_l3_checksum: bool | None = None,
-        validate_l2_checksum: bool | None = None,
         proxy_url: str | None = None,
         timeout_secs: int | None = None,
         heartbeat_interval_secs: int | None = None,
         ws_idle_timeout_ms: int | None = None,
         max_requests_per_second: int | None = None,
         transport_backend: network.TransportBackend | None = None,
+        validate_l2_checksum: bool | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
