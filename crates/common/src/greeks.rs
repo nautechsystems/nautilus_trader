@@ -401,6 +401,19 @@ impl GreeksCalculator {
             );
         }
 
+        let has_shocks = spot_shock != 0.0 || vol_shock != 0.0 || time_to_expiry_shock != 0.0;
+
+        // Unshocked cached greeks don't use the underlying, so skip resolving it
+        if use_cached_greeks
+            && !has_shocks
+            && let Some(mut cached_greeks) = self.cache.borrow().greeks(&instrument_id)
+        {
+            if let Some(pos) = position {
+                cached_greeks.pnl = cached_greeks.price - pos.avg_px_open;
+            }
+            return Ok(cached_greeks);
+        }
+
         let underlying_instrument_id =
             self.resolve_underlying_instrument_id(&instrument, instrument_id)?;
         let mut greeks_data = self.calculate_option_greeks(
@@ -422,7 +435,7 @@ impl GreeksCalculator {
             vol_beta_weights,
         )?;
 
-        if spot_shock != 0.0 || vol_shock != 0.0 || time_to_expiry_shock != 0.0 {
+        if has_shocks {
             greeks_data = self.apply_option_greeks_shocks(
                 &greeks_data,
                 underlying_instrument_id,
@@ -1880,6 +1893,56 @@ mod tests {
             error.to_string(),
             "Ambiguous underlying for option AAPL250417C00150000.OPRA: AAPL.ARCX, AAPL.XNAS"
         );
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_reads_cached_greeks_when_underlying_is_ambiguous() {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let position = position_from_fill(
+            &InstrumentAny::OptionContract(option.clone()),
+            "P-GREEKS-1",
+            "O-GREEKS-1",
+            "T-GREEKS-1",
+            OrderSide::Buy,
+            1,
+            "9.00",
+        );
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS", "AAPL.ARCX"]);
+        let mut cached_greeks = GreeksData::from_delta(option_id, 0.5, 100.0, UnixNanos::default());
+        cached_greeks.price = 10.5;
+        calculator
+            .cache
+            .borrow_mut()
+            .add_greeks(cached_greeks.clone())
+            .unwrap();
+
+        let greeks = calculator
+            .instrument_greeks(
+                option_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(true),
+                None,
+                None,
+                None,
+                None,
+                Some(position),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(greeks.instrument_id, option_id);
+        assert_eq!(greeks.greeks, cached_greeks.greeks);
+        assert_eq!(greeks.pnl, 1.5);
     }
 
     #[rstest]
