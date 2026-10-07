@@ -24,7 +24,10 @@ pub mod types;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::enums::{BarAggregation, OrderSide};
+use nautilus_model::{
+    data::ensure_rust_extractor_registered,
+    enums::{BarAggregation, OrderSide},
+};
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
@@ -36,6 +39,7 @@ use crate::{
         symbol::BybitSymbol,
     },
     config::{BybitDataClientConfig, BybitExecutionClientConfig},
+    data_types::{BybitLiquidation, register_bybit_custom_data},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
 
@@ -194,6 +198,7 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::types::BybitMarginStatusResult>()?;
     m.add_class::<params::BybitTickersParams>()?;
     m.add_class::<params::BybitNativeTpSlParams>()?;
+    m.add_class::<BybitLiquidation>()?;
     m.add_class::<BybitDataClientConfig>()?;
     m.add_class::<BybitDataClientFactory>()?;
     m.add_class::<BybitExecutionClientConfig>()?;
@@ -238,6 +243,9 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             "Failed to register Bybit exec config extractor: {e}"
         )));
     }
+
+    register_bybit_custom_data();
+    let _result = ensure_rust_extractor_registered::<BybitLiquidation>();
 
     Ok(())
 }

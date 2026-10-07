@@ -528,6 +528,9 @@ impl BybitWsFeedHandler {
                         BybitWsFrame::Trade(msg) => {
                             return Some(BybitWsMessage::Trade(msg));
                         }
+                        BybitWsFrame::Liquidation(msg) => {
+                            return Some(BybitWsMessage::Liquidation(msg));
+                        }
                         BybitWsFrame::Kline(msg) => {
                             return Some(BybitWsMessage::Kline(msg));
                         }

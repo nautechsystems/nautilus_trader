@@ -26,6 +26,8 @@ on the use case.
   client factory.
 - `BybitHttpClient`: Low-level HTTP API connectivity.
 - `BybitWebSocketClient`: Low-level WebSocket API connectivity for Rust callers.
+- `BybitLiquidation`: Custom data for public liquidations on linear and inverse contracts, see
+  [Liquidations](#liquidations).
 - `BYBIT`, `BYBIT_CLIENT_ID`, `BYBIT_VENUE`: Public identifiers.
 - `BybitEnvironment`, `BybitProductType`, `BybitMarginMode`, `BybitPositionIdx`,
   `BybitPositionMode`: Public enums used by the configurations and order params.
@@ -777,6 +779,71 @@ ticker updates (which may omit the field) still carry the correct interval.
 For historical funding rate requests, the adapter computes the interval from consecutive
 funding timestamps. The oldest record in a response has no earlier timestamp to pair with,
 so its interval is unset.
+
+## Bybit specific data
+
+### Liquidations
+
+The adapter emits `BybitLiquidation` custom data from Bybit's public
+[all liquidation](https://bybit-exchange.github.io/docs/v5/websocket/public/all-liquidation)
+WebSocket stream (`allLiquidation.{symbol}`). Bybit publishes this stream for linear and inverse
+contracts only, so the adapter rejects Spot and Option subscriptions. Bybit pushes updates every
+500 ms, and one update can carry several liquidations; the adapter emits one `BybitLiquidation` for
+each of them.
+
+| Field              | Type           | Description                                                       |
+| ------------------ | -------------- | ----------------------------------------------------------------- |
+| `instrument_id`    | `InstrumentId` | Instrument of the liquidated position.                            |
+| `position_side`    | `PositionSide` | Side of the liquidated position, `LONG` for Bybit `Buy`.          |
+| `bankruptcy_price` | `Price`        | Bankruptcy price of the liquidated position.                      |
+| `quantity`         | `Quantity`     | Executed liquidation size.                                        |
+| `ts_event`         | `int`          | UNIX timestamp in nanoseconds when Bybit updated the liquidation. |
+| `ts_init`          | `int`          | UNIX timestamp in nanoseconds when the object was built.          |
+
+`position_side` is the side of the position that was liquidated, not the side of the liquidation
+order: Bybit reports `Buy` when a long position is liquidated and `Sell` when a short position is
+liquidated. `bankruptcy_price` is the price at which the position's margin is exhausted, not the
+price at which the liquidation executed.
+
+Subscribe from an actor or strategy with `DataType(BybitLiquidation.__name__)`. The
+`instrument_id` metadata key is required:
+
+```python
+from nautilus_trader.adapters.bybit import BybitLiquidation
+from nautilus_trader.model import ClientId
+from nautilus_trader.model import CustomData
+from nautilus_trader.model import DataType
+
+self.subscribe_data(
+    data_type=DataType(
+        BybitLiquidation.__name__,
+        metadata={"instrument_id": "BTCUSDT-LINEAR.BYBIT"},
+    ),
+    client_id=ClientId("BYBIT"),
+)
+
+
+def on_data(self, data: CustomData) -> None:
+    liquidation = data.data
+    if isinstance(liquidation, BybitLiquidation):
+        self.log.info(
+            f"{liquidation.instrument_id} {liquidation.position_side} liquidated: "
+            f"{liquidation.quantity} @ {liquidation.bankruptcy_price}",
+        )
+```
+
+Each emitted `CustomData` carries the `DataType` the subscription used, so events reach the
+subscribing actor's `on_data`. The adapter holds one data type per instrument and rejects a
+subscription to the same instrument with a different data type until the first is unsubscribed.
+
+`BybitLiquidation` supports Arrow/Parquet catalog persistence under
+`data/custom/BybitLiquidation/{identifier}`. Rust builds need the `nautilus-bybit` `arrow` feature
+flag for this persistence.
+
+:::warning
+The feed contains the liquidation events Bybit publishes. Treat it as a venue-reported signal, not
+as independently audited, exchange-wide ground truth of every liquidation.
+:::
 
 ## Rate limiting
 

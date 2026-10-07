@@ -1196,6 +1196,36 @@ impl BybitWebSocketClient {
         self.unsubscribe(vec![topic]).await
     }
 
+    /// Subscribes to public liquidation updates for a specific instrument.
+    ///
+    /// Bybit publishes this stream for linear and inverse contracts only.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/all-liquidation>
+    pub async fn subscribe_liquidations(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+        let topic = format!(
+            "{}.{raw_symbol}",
+            BybitWsPublicChannel::AllLiquidation.as_ref()
+        );
+        self.subscribe(vec![topic]).await
+    }
+
+    /// Unsubscribes from public liquidation updates for a specific instrument.
+    pub async fn unsubscribe_liquidations(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+        let topic = format!(
+            "{}.{raw_symbol}",
+            BybitWsPublicChannel::AllLiquidation.as_ref()
+        );
+        self.unsubscribe(vec![topic]).await
+    }
+
     /// Subscribes to ticker updates for a specific instrument.
     ///
     /// # Errors
