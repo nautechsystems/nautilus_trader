@@ -659,6 +659,10 @@ impl SimulatedExchange {
     ///
     /// Returns whether the adjustment was applied successfully.
     pub fn adjust_account(&mut self, adjustment: Money) -> bool {
+        self.adjust_account_balance(adjustment, false)
+    }
+
+    fn adjust_account_balance(&self, adjustment: Money, lock_margins: bool) -> bool {
         if self.frozen_account {
             // Nothing to adjust
             return true;
@@ -668,7 +672,7 @@ impl SimulatedExchange {
             log::debug!("Adjusting account for venue {}", exec_client.venue());
         }
 
-        match self.try_adjust_account(adjustment) {
+        match self.try_adjust_account_balance(adjustment, lock_margins) {
             Ok(()) => true,
             Err(e) => {
                 log::error!("{e}");
@@ -684,6 +688,16 @@ impl SimulatedExchange {
     /// Returns an error if the account or currency balance is unavailable, the
     /// resulting balance exceeds [`Money`] bounds, or account state generation fails.
     pub fn try_adjust_account(&mut self, adjustment: Money) -> Result<(), AccountAdjustmentError> {
+        self.try_adjust_account_balance(adjustment, false)
+    }
+
+    // With `lock_margins`, a margin account that calculates its own state locks its margins the
+    // way `MarginAccount::recalculate_balance` does, capped at the new total.
+    fn try_adjust_account_balance(
+        &self,
+        adjustment: Money,
+        lock_margins: bool,
+    ) -> Result<(), AccountAdjustmentError> {
         if self.frozen_account {
             // Nothing to adjust
             return Ok(());
@@ -699,22 +713,39 @@ impl SimulatedExchange {
                         let Some(total) = current_balance.total.checked_add(adjustment) else {
                             return Err(AccountAdjustmentError::TotalOverflow(adjustment.currency));
                         };
-                        let Some(free) = current_balance.free.checked_add(adjustment) else {
-                            return Err(AccountAdjustmentError::FreeBalanceOverflow(
-                                adjustment.currency,
-                            ));
-                        };
-                        current_balance.total = total;
-                        current_balance.free = free;
 
+                        match &*account {
+                            AccountAny::Margin(margin_account)
+                                if lock_margins && margin_account.calculate_account_state =>
+                            {
+                                current_balance = margin_account.balance_locking_margins(total);
+                            }
+                            _ => {
+                                let Some(free) = current_balance.free.checked_add(adjustment)
+                                else {
+                                    return Err(AccountAdjustmentError::FreeBalanceOverflow(
+                                        adjustment.currency,
+                                    ));
+                                };
+                                current_balance.total = total;
+                                current_balance.free = free;
+                            }
+                        }
+
+                        // Carry account-wide margins too, applying the state replaces both sets
                         let margins = match &*account {
-                            AccountAny::Margin(margin_account) => margin_account.margins.clone(),
-                            _ => IndexMap::new(),
+                            AccountAny::Margin(margin_account) => margin_account
+                                .margins
+                                .values()
+                                .chain(margin_account.account_margins.values())
+                                .copied()
+                                .collect(),
+                            _ => Vec::new(),
                         };
 
                         Some((
                             vec![current_balance],
-                            margins.values().copied().collect(),
+                            margins,
                             self.clock.borrow().timestamp_ns(),
                         ))
                     } else {
@@ -1520,7 +1551,7 @@ impl SimulatedExchange {
         }
 
         for adjustment in &account_adjustments {
-            if !self.adjust_account(*adjustment) {
+            if !self.adjust_account_balance(*adjustment, true) {
                 let mut cache = self.cache.borrow_mut();
                 for (original, _, _) in adjusted_positions.iter().rev() {
                     if let Err(e) = cache.update_position(original) {

@@ -37,7 +37,8 @@ use nautilus_common::{
     },
     component::Component,
     enums::ComponentState,
-    msgbus, nautilus_actor,
+    msgbus::{self, TypedHandler},
+    nautilus_actor,
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
@@ -63,7 +64,7 @@ use nautilus_model::{
         OrderStatus, PositionAdjustmentType, PriceType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    events::{OrderEventAny, OrderFilled},
+    events::{AccountState, OrderEventAny, OrderFilled},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
         StrategyId, Symbol, TradeId, Venue,
@@ -1946,6 +1947,12 @@ fn test_funding_settlement_generates_one_account_state(crypto_perpetual_ethusdt:
         quote(instrument_id, "1000.00", "1001.00", 5_000_000_000),
     ];
     engine.add_data(data, None, true, true).unwrap();
+    let published = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let published = Rc::clone(&published);
+        move |state: &AccountState| published.borrow_mut().push(state.clone())
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, None);
     engine.run(None, None, None, false).unwrap();
 
     let cache = engine.kernel().cache.borrow();
@@ -1987,6 +1994,15 @@ fn test_funding_settlement_generates_one_account_state(crypto_perpetual_ethusdt:
     };
     assert_eq!(balance.total, Money::from("999998.5996 USDT"));
     assert_eq!(state.margins, prior_state.margins);
+
+    // Account state subscribers see the settlement's state once
+    let published_ids: Vec<_> = published
+        .borrow()
+        .iter()
+        .filter(|published| published.ts_event == settlement_ns)
+        .map(|published| published.event_id)
+        .collect();
+    assert_eq!(published_ids, vec![state.event_id]);
 }
 
 #[rstest]

@@ -1981,14 +1981,14 @@ fn test_margin_fill_endpoint_then_position_publishes_account_state_once(
 }
 
 #[rstest]
-#[case::pnl_only(None, 0)]
-#[case::quantity_change(Some(dec!(-1)), 1)]
+#[case::pnl_only(None, false)]
+#[case::quantity_change(Some(dec!(-1)), true)]
 fn test_margin_position_adjusted_recomputes_account_only_for_quantity_change(
     mut simple_cache: Cache,
     clock: VirtualClock,
     instrument_audusd: InstrumentAny,
     #[case] quantity_change: Option<Decimal>,
-    #[case] expected_publishes: usize,
+    #[case] expect_recompute: bool,
 ) {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
@@ -2048,9 +2048,129 @@ fn test_margin_position_adjusted_recomputes_account_only_for_quantity_change(
         UnixNanos::from(1),
         UnixNanos::from(1),
     );
+    let events_before = portfolio
+        .cache()
+        .borrow()
+        .account(&account_id)
+        .unwrap()
+        .event_count();
     portfolio.update_position(&PositionEvent::PositionAdjusted(adjustment));
 
-    assert_eq!(captured.borrow().len(), expected_publishes);
+    // Either way one state is published; only a quantity change recomputes a new one
+    let cache = portfolio.cache().borrow();
+    let account = cache.account(&account_id).unwrap();
+    let captured = captured.borrow();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].event_id, account.last_event().unwrap().event_id);
+    assert_eq!(
+        account.event_count(),
+        events_before + usize::from(expect_recompute)
+    );
+}
+
+#[rstest]
+#[case::margin(AccountType::Margin)]
+#[case::cash(AccountType::Cash)]
+fn test_pnl_only_adjustments_publish_each_account_state_once(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+    instrument_audusd: InstrumentAny,
+    #[case] account_type: AccountType,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let account_id = AccountId::new("SIM-001");
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    let account_state = match account_type {
+        AccountType::Margin => get_margin_account(Some(account_id.as_str())),
+        _ => get_cash_account(Some(account_id.as_str())),
+    };
+    portfolio.update_account(&account_state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    // Two hedged positions, as a funding settlement adjusts each open position
+    let positions: Vec<Position> = ["P-1", "P-2"]
+        .into_iter()
+        .map(|position_id| {
+            let fill = make_fill_for_account(
+                &instrument_audusd,
+                account_id,
+                OrderSide::Buy,
+                Quantity::from("100"),
+                Price::from("1.00000"),
+                PositionId::new(position_id),
+            );
+            Position::new(&instrument_audusd, fill)
+        })
+        .collect();
+
+    for position in &positions {
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_position(position, OmsType::Hedging)
+            .unwrap();
+    }
+
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = Rc::clone(&captured);
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
+    let mut funding_state = account_state.clone();
+    funding_state.event_id = UUID4::new();
+    funding_state.ts_event = UnixNanos::from(1);
+    funding_state.ts_init = UnixNanos::from(1);
+    portfolio.update_account(&funding_state);
+
+    let adjust_all = |portfolio: &mut Portfolio| {
+        for position in &positions {
+            let adjustment = PositionAdjusted::new(
+                position.trader_id,
+                position.strategy_id,
+                position.instrument_id,
+                position.id,
+                account_id,
+                PositionAdjustmentType::Funding,
+                None,
+                Some(Money::from("-1 USD")),
+                None,
+                UUID4::new(),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            );
+            portfolio.update_position(&PositionEvent::PositionAdjusted(adjustment));
+        }
+    };
+    adjust_all(&mut portfolio);
+
+    let published: Vec<_> = captured
+        .borrow()
+        .iter()
+        .map(|state| state.event_id)
+        .collect();
+    assert_eq!(published, vec![funding_state.event_id]);
+
+    // Adjustments without a new account state publish nothing
+    adjust_all(&mut portfolio);
+
+    assert_eq!(captured.borrow().len(), 1);
 }
 
 #[rstest]

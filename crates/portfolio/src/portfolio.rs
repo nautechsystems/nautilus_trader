@@ -80,6 +80,7 @@ struct PortfolioState {
     stale_xrates: AHashSet<(Venue, Currency, Currency)>,
     initialized: bool,
     last_account_state_log_ts: AHashMap<AccountId, UnixNanos>,
+    last_published_account_states: AHashMap<AccountId, UUID4>,
     min_account_state_logging_interval_ns: DurationNanos,
     venues_missing_price: AHashMap<Venue, AHashMap<Option<AccountId>, AHashSet<InstrumentId>>>,
     account_open_positions: AHashMap<AccountId, usize>,
@@ -141,6 +142,7 @@ impl PortfolioState {
             stale_xrates: AHashSet::new(),
             initialized: false,
             last_account_state_log_ts: AHashMap::new(),
+            last_published_account_states: AHashMap::new(),
             min_account_state_logging_interval_ns,
             venues_missing_price: AHashMap::new(),
             account_open_positions: AHashMap::new(),
@@ -172,6 +174,7 @@ impl PortfolioState {
         self.stale_prices.clear();
         self.stale_xrates.clear();
         self.last_account_state_log_ts.clear();
+        self.last_published_account_states.clear();
         self.venues_missing_price.clear();
         self.account_open_positions.clear();
         self.equity_curve_accounts.clear();
@@ -3767,10 +3770,7 @@ fn update_order(
 
     if let Some(account_state) = account_state {
         if publish_account_state {
-            msgbus::publish_account_state(
-                format!("events.account.{updated_account_id}").into(),
-                &account_state,
-            );
+            record_and_publish_account_state(inner, &account_state);
         }
     } else {
         log::debug!("Added pending calculation for {}", instrument.id());
@@ -3832,10 +3832,7 @@ fn on_order_event(
         .and_then(|account| account.last_event());
 
     if let Some(account_state) = account_state {
-        msgbus::publish_account_state(
-            format!("events.account.{account_id}").into(),
-            &account_state,
-        );
+        record_and_publish_account_state(inner, &account_state);
     }
 }
 
@@ -3917,21 +3914,21 @@ fn update_position(
     }
 
     // A PnL-only adjustment such as a funding payment leaves margins unchanged, and the balance
-    // change already produced its own account state. Recomputing a margin account would add a
-    // copy of that state under a new event id, and other accounts would republish their last
-    // state, so skip the account update
-    if let PositionEvent::PositionAdjusted(adjustment) = event
-        && adjustment.quantity_change.is_none()
-    {
-        return;
-    }
+    // change arrives as its own account state, so this publishes that state once instead of
+    // recomputing a copy of it under a new event id.
+    let pnl_only = matches!(
+        event,
+        PositionEvent::PositionAdjusted(adjustment) if adjustment.quantity_change.is_none()
+    );
 
     // Peek under a borrow: the account event log grows per fill, so a clone here was O(n)
     let peek = {
         let cache_ref = cache.borrow();
         match cache_ref.account(&account_id) {
             Some(account) => match &*account {
-                AccountAny::Margin(margin_account) if margin_account.calculate_account_state => {
+                AccountAny::Margin(margin_account)
+                    if margin_account.calculate_account_state && !pnl_only =>
+                {
                     AccountPeek::MarginRecompute
                 }
                 account => AccountPeek::LastEvent(Box::new(account.last_event())),
@@ -3954,11 +3951,30 @@ fn update_position(
     };
 
     if let Some(account_state) = account_state_to_publish {
-        msgbus::publish_account_state(
-            format!("events.account.{account_id}").into(),
-            &account_state,
-        );
+        // A settlement adjusts every open position, so later adjustments find the state published
+        let already_published = pnl_only
+            && inner
+                .borrow()
+                .last_published_account_states
+                .get(&account_id)
+                .is_some_and(|event_id| *event_id == account_state.event_id);
+
+        if !already_published {
+            record_and_publish_account_state(inner, &account_state);
+        }
     }
+}
+
+fn record_and_publish_account_state(
+    inner: &Rc<RefCell<PortfolioState>>,
+    account_state: &AccountState,
+) {
+    let account_id = account_state.account_id;
+    inner
+        .borrow_mut()
+        .last_published_account_states
+        .insert(account_id, account_state.event_id);
+    msgbus::publish_account_state(format!("events.account.{account_id}").into(), account_state);
 }
 
 /// Recalculates the margin account for `instrument_id` from the currently open positions.
