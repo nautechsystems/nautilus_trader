@@ -25,7 +25,8 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
@@ -34,8 +35,8 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, FundingRateUpdate, TradeTick},
     enums::{
-        AccountType, BookType, CurrencyType, MarketStatusAction, OrderSide, OrderType, TimeInForce,
-        TriggerType,
+        AccountType, BookType, CurrencyType, MarketStatusAction, OrderSide, OrderStatus, OrderType,
+        TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -797,7 +798,7 @@ impl KrakenFuturesRawHttpClient {
         let response: FuturesOrderHistoryResponse = self
             .send_get_with_query(endpoint, url, &query_string)
             .await?;
-        Ok(response.into())
+        response.into_order_events()
     }
 
     /// Requests the status of specific orders (requires authentication).
@@ -1294,6 +1295,19 @@ impl KrakenFuturesHttpClient {
             .values()
             .find(|inst| inst.raw_symbol().as_str() == raw_symbol)
             .cloned()
+    }
+
+    /// Resolves the contract a history row names, which the venue may spell in another case than
+    /// the listing (the documented example is `pi_xbtusd`), so the exact spelling is tried first
+    /// and a case-insensitive match second.
+    fn get_instrument_by_history_tradeable(&self, tradeable: &str) -> Option<InstrumentAny> {
+        self.get_instrument_by_raw_symbol(tradeable).or_else(|| {
+            self.instruments_cache
+                .load()
+                .values()
+                .find(|inst| inst.raw_symbol().as_str().eq_ignore_ascii_case(tradeable))
+                .cloned()
+        })
     }
 
     fn generate_ts_init(&self) -> UnixNanos {
@@ -1828,12 +1842,28 @@ impl KrakenFuturesHttpClient {
                 .await
                 .map_err(|e| anyhow::anyhow!("get_order_events failed: {e}"))?;
 
+            // The history lists every lifecycle event, so an order appears once per event. Each
+            // report reconciles against the same cached state, so the read hands back one report
+            // per order: the open-order snapshot when the venue still lists it, else the latest
+            // history state.
+            let open_order_ids: AHashSet<VenueOrderId> =
+                all_reports.iter().map(|r| r.venue_order_id).collect();
+            let mut latest: IndexMap<VenueOrderId, OrderStatusReport> = IndexMap::new();
+
+            if response.skipped_rows > 0 {
+                log::warn!(
+                    "Order history page had {} row(s) the adapter could not represent; marking the set incomplete",
+                    response.skipped_rows
+                );
+                complete = false;
+            }
+
             for event_wrapper in response.order_events {
                 let event = &event_wrapper.order;
 
                 // Resolve the row and compare instrument ids, so a scoped read cannot match on a
                 // spelling and cannot fall through to every instrument when the id is not held.
-                let resolved = self.get_instrument_by_raw_symbol(&event.symbol);
+                let resolved = self.get_instrument_by_history_tradeable(&event.symbol);
                 if let Some(ref target_id) = instrument_id
                     && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
                 {
@@ -1848,7 +1878,18 @@ impl KrakenFuturesHttpClient {
                         account_id,
                         ts_init,
                     ) {
-                        Ok(report) => all_reports.push(report),
+                        Ok(report) => {
+                            if open_order_ids.contains(&report.venue_order_id) {
+                                continue;
+                            }
+
+                            match latest.get(&report.venue_order_id) {
+                                Some(existing) if !supersedes(&report, existing) => {}
+                                _ => {
+                                    latest.insert(report.venue_order_id, report);
+                                }
+                            }
+                        }
                         Err(e) => {
                             let order_id = &event.order_id;
                             log::warn!("Failed to parse futures order event {order_id}: {e}");
@@ -1863,6 +1904,8 @@ impl KrakenFuturesHttpClient {
                     complete = false;
                 }
             }
+
+            all_reports.extend(latest.into_values());
         }
 
         Ok((all_reports, complete))
@@ -3169,6 +3212,34 @@ fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut AmountsB
         let code = normalize_asset_key(currency_code.as_str());
 
         accumulate_balance(balances, &code, amount, Decimal::ZERO);
+    }
+}
+
+/// Whether `candidate` describes a later state of the same order than `existing`.
+///
+/// The later `ts_last` wins. The venue stamps events at millisecond precision, so an order placed
+/// and executed within one millisecond ties; the terminal state then wins, and the larger filled
+/// quantity after that, so arrival order never decides.
+fn supersedes(candidate: &OrderStatusReport, existing: &OrderStatusReport) -> bool {
+    if candidate.ts_last != existing.ts_last {
+        return candidate.ts_last > existing.ts_last;
+    }
+
+    let terminal = |report: &OrderStatusReport| {
+        matches!(
+            report.order_status,
+            OrderStatus::Filled
+                | OrderStatus::Canceled
+                | OrderStatus::Expired
+                | OrderStatus::Rejected
+                | OrderStatus::Voided
+        )
+    };
+
+    match (terminal(candidate), terminal(existing)) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => candidate.filled_qty > existing.filled_qty,
     }
 }
 

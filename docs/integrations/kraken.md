@@ -697,7 +697,14 @@ every holding it covers and an absent report is genuine evidence of flat.
 - Open orders: Fetches all currently active futures orders.
 - Historical orders: Fetches closed and filled orders when `open_only=False`.
 - Order events: Full order lifecycle history via `/api/history/v3/orders`
-  endpoint.
+  endpoint. The history lists every lifecycle event, so the read hands back one report per
+  order: the open-order snapshot when the venue still lists the order, else its latest history
+  state. The contract name is resolved as the venue spells it, exactly first and then
+  case-insensitively. The history carries no trigger price, so a stop order is reported as the
+  limit or market order it executes as once triggered, and venue-initiated orders (liquidation,
+  assignment, unwind, block, RFQ, hedge) are reported as market orders. An event without order
+  state, such as `OrderNotFound` or a kind the adapter does not know, is skipped with a warning;
+  a venue error reported with a success status fails the read.
 
 **Fill reports:**
 

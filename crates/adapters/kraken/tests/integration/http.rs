@@ -2509,7 +2509,7 @@ async fn test_futures_raw_get_order_events() {
     assert_eq!(first_event.quantity, dec!(5000));
 
     let third_event = &response.order_events[2].order;
-    assert_eq!(third_event.symbol, "PI_XBTUSD");
+    assert_eq!(third_event.symbol, "pi_xbtusd");
     assert_eq!(third_event.filled, dec!(0));
     assert!(third_event.reduce_only);
 }

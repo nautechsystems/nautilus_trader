@@ -147,6 +147,8 @@ struct TestServerState {
     futures_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/derivatives/api/v3/openpositions` returns this JSON.
     futures_open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/api/history/v3/orders` returns this JSON; otherwise an empty page.
+    futures_order_history_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/0/private/OpenPositions` returns this JSON.
     spot_open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/0/private/TradesHistory` returns this JSON once, then empty pages.
@@ -190,6 +192,7 @@ impl Default for TestServerState {
             fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             futures_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
             futures_open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
+            futures_order_history_json: Arc::new(tokio::sync::Mutex::new(None)),
             ws_message_tx,
         }
     }
@@ -324,7 +327,14 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     .unwrap_or_else(|| r#"{"result":"success","fills":[]}"#.to_string()),
             )
         }
-        "/api/history/v3/orders" => json_response(r#"{"elements":[]}"#.to_string()),
+        "/api/history/v3/orders" => {
+            let response = state.futures_order_history_json.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| r#"{"elements":[]}"#.to_string()),
+            )
+        }
         "/derivatives/api/v3/sendorder" => {
             state.submit_request_count.fetch_add(1, Ordering::Relaxed);
             match state.command_responses.lock().await.submit {
@@ -1462,6 +1472,168 @@ async fn test_futures_position_read_fails_on_an_unparsable_position() {
             .to_string()
             .contains("OpenPositions: failed to parse futures position PI_XBTUSD"),
         "unexpected error: {error}"
+    );
+}
+
+/// One order history element in the documented shape, with `lastUpdateTimestamp` at `ts_ms`.
+fn futures_history_element(
+    kind: &str,
+    uid: &str,
+    order_uid: &str,
+    tradeable: &str,
+    quantity: &str,
+    filled: &str,
+    ts_ms: i64,
+) -> String {
+    let order = format!(
+        r#"{{"uid":"{order_uid}","accountUid":"acc","tradeable":"{tradeable}","direction":"Buy","quantity":"{quantity}","filled":"{filled}","timestamp":1680876930250,"limitPrice":"27500.5","orderType":"Limit","clientId":"","reduceOnly":false,"lastUpdateTimestamp":{ts_ms}}}"#
+    );
+    let payload = match kind {
+        "OrderUpdated" => format!(r#"{{"newOrder":{order}}}"#),
+        _ => format!(r#"{{"order":{order}}}"#),
+    };
+    format!(r#"{{"uid":"{uid}","timestamp":{ts_ms},"event":{{"{kind}":{payload}}}}}"#)
+}
+
+fn futures_order_history_json(elements: &[String]) -> String {
+    format!(
+        r#"{{"accountUid":"acc","len":{},"elements":[{}],"serverTime":"2023-04-07T16:30:45.678Z"}}"#,
+        elements.len(),
+        elements.join(",")
+    )
+}
+
+fn history_orders_cmd() -> GenerateOrderStatusReports {
+    GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false, // open_only=false, so the history read runs alongside the open-order read
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+}
+
+/// A history row names the contract as the venue spells it, which can differ in case from the
+/// listing, so the row resolves to the listed instrument either way.
+#[rstest]
+#[case::mixed_case_listing("PF_AAPLxUSD", "PF_AAPLxUSD.KRAKEN")]
+#[case::lowercase_row("pi_xbtusd", "PI_XBTUSD.KRAKEN")]
+#[tokio::test]
+async fn test_futures_order_status_reports_resolve_the_history_tradeable(
+    #[case] tradeable: &str,
+    #[case] expected: &str,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await =
+        Some(futures_order_history_json(&[futures_history_element(
+            "OrderPlaced",
+            "e1",
+            "H-CASE-1",
+            tradeable,
+            "2",
+            "2",
+            1680877245500,
+        )]));
+
+    let reports = client
+        .generate_order_status_reports(&history_orders_cmd())
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1, "the row must resolve: {reports:?}");
+    assert_eq!(reports[0].instrument_id, InstrumentId::from(expected));
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("H-CASE-1"));
+}
+
+/// The history lists every lifecycle event of an order, and each report reconciles against the
+/// same cached state, so the read hands back one report per order: the latest state.
+#[rstest]
+#[tokio::test]
+async fn test_futures_order_status_reports_fold_history_events_per_order() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element(
+            "OrderPlaced",
+            "e1",
+            "H-FOLD-1",
+            "PI_XBTUSD",
+            "2",
+            "0",
+            1680877245500,
+        ),
+        futures_history_element(
+            "OrderUpdated",
+            "e2",
+            "H-FOLD-1",
+            "PI_XBTUSD",
+            "2",
+            "2",
+            1680877245600,
+        ),
+        futures_history_element(
+            "OrderUpdated",
+            "e3",
+            "H-FOLD-1",
+            "PI_XBTUSD",
+            "3",
+            "2",
+            1680877245700,
+        ),
+    ]));
+
+    let reports = client
+        .generate_order_status_reports(&history_orders_cmd())
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1, "one report per order: {reports:?}");
+    let report = &reports[0];
+    assert_eq!(report.venue_order_id, VenueOrderId::from("H-FOLD-1"));
+    assert_eq!(report.quantity, Quantity::from("3"));
+    assert_eq!(report.filled_qty, Quantity::from("2"));
+    assert_eq!(report.ts_last, UnixNanos::from(1_680_877_245_700_000_000));
+}
+
+/// An order the venue still lists as open is reported from that snapshot alone; its history
+/// rows describe earlier states and must not reach reconciliation beside it.
+#[rstest]
+#[tokio::test]
+async fn test_futures_order_status_reports_keep_the_open_snapshot_over_history() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_open_orders_json("V-OPEN-1", "PI_XBTUSD"));
+    *state.futures_order_history_json.lock().await =
+        Some(futures_order_history_json(&[futures_history_element(
+            "OrderPlaced",
+            "e1",
+            "V-OPEN-1",
+            "PI_XBTUSD",
+            "1000",
+            "500",
+            1680877245500,
+        )]));
+
+    let reports = client
+        .generate_order_status_reports(&history_orders_cmd())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        reports.len(),
+        1,
+        "one report for the open order: {reports:?}"
+    );
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("V-OPEN-1"));
+    assert_eq!(
+        reports[0].filled_qty,
+        Quantity::from("0"),
+        "the open snapshot is the current evidence"
     );
 }
 

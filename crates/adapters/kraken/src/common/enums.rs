@@ -430,7 +430,7 @@ pub enum KrakenFuturesOrderType {
 pub enum KrakenFuturesOrderEventType {
     /// Order was placed.
     Place,
-    /// Legacy history endpoint fill event.
+    /// Fill event, which the order history does not produce.
     Fill,
     /// Send-order execution event.
     Execution,
@@ -856,9 +856,9 @@ impl From<KrakenFuturesHistoryOrderType> for KrakenFuturesOrderType {
     fn from(value: KrakenFuturesHistoryOrderType) -> Self {
         match value {
             KrakenFuturesHistoryOrderType::Limit => Self::Limit,
-            KrakenFuturesHistoryOrderType::Ioc | KrakenFuturesHistoryOrderType::FillOrKill => {
-                Self::Ioc
-            }
+            KrakenFuturesHistoryOrderType::Ioc
+            | KrakenFuturesHistoryOrderType::FillOrKill
+            | KrakenFuturesHistoryOrderType::HedgeImmediateOrCancel => Self::Ioc,
             KrakenFuturesHistoryOrderType::Post => Self::Post,
             KrakenFuturesHistoryOrderType::Stop => Self::Stop,
             KrakenFuturesHistoryOrderType::Market
@@ -867,7 +867,6 @@ impl From<KrakenFuturesHistoryOrderType> for KrakenFuturesOrderType {
             | KrakenFuturesHistoryOrderType::CoveredLiquidation
             | KrakenFuturesHistoryOrderType::Assignment
             | KrakenFuturesHistoryOrderType::HedgeAssignment
-            | KrakenFuturesHistoryOrderType::HedgeImmediateOrCancel
             | KrakenFuturesHistoryOrderType::Unwind
             | KrakenFuturesHistoryOrderType::Block
             | KrakenFuturesHistoryOrderType::Rfq => Self::Market,
