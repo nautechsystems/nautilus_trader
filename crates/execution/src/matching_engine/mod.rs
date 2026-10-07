@@ -6573,7 +6573,7 @@ impl OrderMatchingEngine {
         }
 
         // Validate only the prices this update changes: internal quantity syncs pass back current
-        // prices, which a trailing calculation may have left off the price increment.
+        // prices, which a restored order may hold off the price increment.
         let price_rejection = price
             .filter(|px| Some(*px) != order.price())
             .and_then(|px| self.update_price_rejection("price", px))

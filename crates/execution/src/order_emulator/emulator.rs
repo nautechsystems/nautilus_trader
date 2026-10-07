@@ -3860,6 +3860,81 @@ mod tests {
     }
 
     #[rstest]
+    fn test_basis_point_trailing_stop_limit_releases_on_price_increment(
+        mut instrument: CryptoPerpetual,
+    ) {
+        instrument.price_increment = Price::from("0.25");
+        let (_clock, cache, emulator) = create_emulator();
+        let (handler, exec_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            handler,
+        );
+        add_instrument_to_cache(&cache, &instrument);
+
+        let mut core = OrderMatchingCore::new(instrument.id(), instrument.price_increment());
+        core.set_bid_raw(Price::from("1500.00"));
+        core.set_ask_raw(Price::from("1500.25"));
+        emulator
+            .borrow_mut()
+            .matching_cores
+            .insert(instrument.id(), core);
+
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-TRAILING-LIMIT-BPS"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .trigger_type(TriggerType::BidAsk)
+            .trailing_offset(dec!(33))
+            .limit_offset(dec!(37))
+            .trailing_offset_type(TrailingOffsetType::BasisPoints)
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator
+            .borrow_mut()
+            .cache_submit_order_command(command.clone());
+        emulator.borrow_mut().handle_submit_order(&command);
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "1500.00", "1500.25"));
+
+        // From the 1500.00 bid, 33 bps is 1495.05 and 37 bps is 1494.45, both between increments
+        let trailed_trigger = cache
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .trigger_price();
+        let trailed_price = cache.borrow().order(&client_order_id).unwrap().price();
+
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "1494.00", "1494.25"));
+
+        assert_eq!(trailed_trigger, Some(Price::from("1495.00")));
+        assert_eq!(trailed_price, Some(Price::from("1494.50")));
+        let commands = exec_commands.get_messages();
+
+        let [TradingCommand::SubmitOrder(released)] = commands.as_slice() else {
+            panic!("expected one released SubmitOrder, was {commands:?}");
+        };
+
+        assert_eq!(released.client_order_id, client_order_id);
+        let cache = cache.borrow();
+        let released_order = cache.order(&client_order_id).unwrap();
+        assert_eq!(released_order.order_type(), OrderType::Limit);
+        assert_eq!(released_order.price(), Some(Price::from("1494.50")));
+    }
+
+    #[rstest]
     fn test_trailing_stop_limit_without_limit_price_triggered_after_submit(
         instrument: CryptoPerpetual,
     ) {
