@@ -1397,7 +1397,7 @@ async fn test_futures_query_order_is_scoped_to_its_instrument() {
 
     let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Report(_))).await;
     let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
-        panic!("expected an order status report, got {event:?}");
+        panic!("expected an order status report, received {event:?}");
     };
     assert_eq!(report.venue_order_id, VenueOrderId::from("V-HELD"));
 }
