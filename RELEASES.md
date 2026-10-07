@@ -2,6 +2,9 @@
 
 Released on TBD (UTC).
 
+> [!NOTE]
+> This release removes support for Python 3.12 and supports Python 3.13 and 3.14 (#4676).
+
 ### Enhancements
 
 - Added negative price support for futures, except inverse futures (#5190), thanks @DeLuke84

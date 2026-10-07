@@ -881,24 +881,25 @@ detached v1 worktree without changing the current branch:
 
 ```bash
 COMPARE_ROOT=$(mktemp -d /tmp/nautilus-backtest-compare.XXXXXX)
+COMPARE_PYTHON=$(uv python find 3.13)
 git worktree add --detach "$COMPARE_ROOT/v1" v1.231.0
 
-uv venv --python /usr/bin/python3.12 "$COMPARE_ROOT/env-v1"
+uv venv --python "$COMPARE_PYTHON" "$COMPARE_ROOT/env-v1"
 (
     cd "$COMPARE_ROOT/v1"
-    uvx --from uv==0.11.33 uv build --wheel --python /usr/bin/python3.12 \
+    uvx --from uv==0.11.33 uv build --wheel --python "$COMPARE_PYTHON" \
         --out-dir "$COMPARE_ROOT/wheels-v1"
 )
 V1_WHEEL=$(find "$COMPARE_ROOT/wheels-v1" -type f -name 'nautilus_trader-*.whl')
 UV_LINK_MODE=copy uv pip install --no-cache \
     --python "$COMPARE_ROOT/env-v1/bin/python" "$V1_WHEEL"
 
-uv venv --python /usr/bin/python3.12 "$COMPARE_ROOT/env-v2"
+uv venv --python "$COMPARE_PYTHON" "$COMPARE_ROOT/env-v2"
 uv pip install --python "$COMPARE_ROOT/env-v2/bin/python" maturin==1.14.1 patchelf
 (
     cd python
     CARGO_BUILD_JOBS=16 "$COMPARE_ROOT/env-v2/bin/maturin" build --release \
-        --out "$COMPARE_ROOT/wheels-v2"
+        --interpreter "$COMPARE_ROOT/env-v2/bin/python" --out "$COMPARE_ROOT/wheels-v2"
 )
 V2_WHEEL=$(find "$COMPARE_ROOT/wheels-v2" -type f -name 'nautilus_trader-*.whl')
 UV_LINK_MODE=copy uv pip install --no-cache \
@@ -906,7 +907,7 @@ UV_LINK_MODE=copy uv pip install --no-cache \
 
 V1_COMMIT=$(git -C "$COMPARE_ROOT/v1" rev-parse HEAD)
 V2_COMMIT=$(git rev-parse HEAD)
-python3.12 scripts/benchmark-backtest-versions.py compare \
+"$COMPARE_PYTHON" scripts/benchmark-backtest-versions.py compare \
     --v1-python "$COMPARE_ROOT/env-v1/bin/python" \
     --v1-artifact "$V1_WHEEL" \
     --v1-source "$COMPARE_ROOT/v1" \

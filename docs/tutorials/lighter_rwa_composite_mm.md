@@ -73,7 +73,7 @@ inside the same event-driven runtime.
 - A Rust toolchain (MSRV 1.99.0 or newer).
 - A Cargo project with the Nautilus, Lighter, and Databento crates as
   dependencies (see [Project setup](#project-setup)).
-- Python 3.12+ to regenerate the rendered panels.
+- Python 3.13+ to regenerate the rendered panels.
 - A Databento API key with live access to Databento US Equities Mini
   (`EQUS.MINI`), the default dataset for the bundled `NVDA.EQUS` route. Higher
   tiers such as `EQUS.PLUS` need a separate Databento license; select one with

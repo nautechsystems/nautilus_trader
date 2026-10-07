@@ -76,7 +76,7 @@ for AX EURUSD-PERP backtests.
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - [NautilusTrader installed](../getting_started/installation.md) with the
   [`visualization` extra](../getting_started/installation.md#extras), which
   provides pandas.

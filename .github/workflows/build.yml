@@ -294,7 +294,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
@@ -377,6 +376,9 @@ jobs:
 
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Remove obsolete Python 3.12 build cache
+        run: rm -rf /home/runner/.cache/cargo-target/py3.12
 
       - name: Common setup
         uses: $/.github/actions/common-setup
@@ -595,7 +597,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     runs-on: depot-ubuntu-22.04-arm-8
@@ -667,7 +668,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     runs-on: macos-latest
@@ -737,7 +737,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     runs-on: depot-windows-2022-8

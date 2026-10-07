@@ -473,7 +473,7 @@ repos:
     rev: v3.21.2
     hooks:
       - id: pyupgrade
-        args: ["--py312-plus"]
+        args: ["--py313-plus"]
 
   - repo: https://github.com/asottile/add-trailing-comma
     rev: v4.0.0

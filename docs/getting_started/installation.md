@@ -1,6 +1,6 @@
 # Installation
 
-NautilusTrader is officially supported for Python 3.12-3.14 on the following 64-bit platforms:
+NautilusTrader is officially supported for Python 3.13-3.14 on the following 64-bit platforms:
 
 | Operating System | Supported Versions | CPU Architecture |
 | ---------------- | ------------------ | ---------------- |
@@ -71,7 +71,7 @@ Run this command outside a NautilusTrader source checkout. The repository's
 filter out newly published wheels. Inside a source checkout, use
 [Build Python from source](#8-build-python-from-source) instead.
 
-Current wheels target Python 3.12-3.14. Build from source when you need local Rust changes,
+Current wheels target Python 3.13-3.14. Build from source when you need local Rust changes,
 a debug build, or a platform wheel that is not available.
 
 ### Stable 1.x wheels
@@ -393,7 +393,7 @@ development, which hides recently published wheels. Run install commands from an
 
 ### Wheel not found for your platform
 
-Check your Python version is 3.12-3.14 and your platform is listed at the top of this page. On
+Check your Python version is 3.13-3.14 and your platform is listed at the top of this page. On
 Linux, `ldd --version` must report glibc 2.35 or newer. Otherwise
 [build from source](#from-source).
 
