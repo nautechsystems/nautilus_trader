@@ -104,12 +104,12 @@ use crate::{
             SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
-            HyperliquidInstrumentDef, create_instrument_from_def, filter_recent_public_trades,
-            instruments_from_defs_owned, parse_fill_report, parse_order_status_report_from_basic,
-            parse_outcome_instruments, parse_perp_instruments_with_settlement,
-            parse_position_status_report, parse_recent_public_trade, parse_spot_instruments,
-            parse_spot_position_status_report, parse_unlisted_outcome_instrument,
-            resolve_perp_settlement_currency,
+            DEFAULT_OUTCOME_QUOTE_CURRENCY, HyperliquidInstrumentDef, create_instrument_from_def,
+            filter_recent_public_trades, get_outcome_currency, instruments_from_defs_owned,
+            parse_fill_report, parse_order_status_report_from_basic, parse_outcome_instruments,
+            parse_perp_instruments_with_settlement, parse_position_status_report,
+            parse_recent_public_trade, parse_spot_instruments, parse_spot_position_status_report,
+            parse_unlisted_outcome_instrument, resolve_perp_settlement_currency,
         },
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
@@ -1481,8 +1481,8 @@ impl HyperliquidHttpClient {
             }
         }
 
-        // Settled HIP-4 outcomes drop out of `outcomeMeta`, but their coin
-        // encoding fixes every instrument field a report needs
+        // Settled HIP-4 outcomes drop out of `outcomeMeta`, so uncached
+        // instruments default to USDC because the encoding lacks a quote token.
         if let Ok(asset_id) = parse_outcome_symbol(coin)
             && let Ok(def) = parse_unlisted_outcome_instrument(asset_id)
             && let Some(instrument) = create_instrument_from_def(&def, self.clock.get_time_ns())
@@ -1852,6 +1852,25 @@ impl HyperliquidHttpClient {
     /// Gets outcome metadata for internal use.
     pub(crate) async fn get_outcome_meta(&self) -> Result<OutcomeMeta> {
         self.inner.get_outcome_meta().await
+    }
+
+    pub(crate) fn outcome_quote_currency(
+        &self,
+        instrument_id: InstrumentId,
+        outcome_index: u32,
+        meta: &OutcomeMeta,
+    ) -> Currency {
+        if let Some(instrument) = self.instruments.load().get(&instrument_id.symbol.inner()) {
+            return instrument.quote_currency();
+        }
+
+        let code = meta
+            .outcomes
+            .iter()
+            .find(|market| market.outcome == outcome_index)
+            .and_then(|market| market.quote_token.as_deref())
+            .unwrap_or(DEFAULT_OUTCOME_QUOTE_CURRENCY);
+        get_outcome_currency(code)
     }
 
     /// Get L2 order book for a coin.
@@ -2258,7 +2277,7 @@ impl HyperliquidHttpClient {
     /// Split an HIP-4 outcome's quote tokens into matched Yes and No side tokens.
     ///
     /// Submits a `userOutcome` exchange action with the `splitOutcome` operation:
-    /// debits `amount` quote tokens (USDH) and credits `amount` Yes plus `amount`
+    /// debits `amount` quote tokens and credits `amount` Yes plus `amount`
     /// No side tokens for the given `outcome` index. Ordinary directional
     /// buys and sells on outcome instruments go through the standard order path
     /// without calling this; the action is for dual-side market making and
@@ -4282,6 +4301,7 @@ mod tests {
             "outcomes": [
                 {
                     "outcome": 123,
+                    "quoteToken": "USDC",
                     "name": "Recurring",
                     "description": "class:priceBinary|underlying:HYPE|expiry:20260310-1100|targetPrice:34.5|period:3m",
                     "sideSpecs": [
@@ -4459,6 +4479,7 @@ mod tests {
         assert_eq!(request_body, json!({"type": "outcomeMeta"}));
         assert_eq!(meta.outcomes.len(), 1);
         assert_eq!(meta.outcomes[0].outcome, 123);
+        assert_eq!(meta.outcomes[0].quote_token.as_deref(), Some("USDC"));
         assert_eq!(meta.outcomes[0].name, "Recurring");
         assert_eq!(meta.outcomes[0].side_specs.len(), 2);
         assert_eq!(meta.outcomes[0].side_specs[0].name, "Yes");
@@ -4661,14 +4682,18 @@ mod tests {
         let with_type = client
             .get_or_create_instrument(&Ustr::from(coin), Some(HyperliquidProductType::Outcome));
         assert!(with_type.is_some());
-        assert_eq!(with_type.unwrap().id(), instrument_id);
+        let with_type = with_type.unwrap();
+        assert_eq!(with_type.id(), instrument_id);
+        assert_eq!(with_type.quote_currency(), usdh);
 
         let no_type = client.get_or_create_instrument(&Ustr::from(coin), None);
         assert!(
             no_type.is_some(),
             "Outcome coin must resolve through the no-product fallback",
         );
-        assert_eq!(no_type.unwrap().id(), instrument_id);
+        let no_type = no_type.unwrap();
+        assert_eq!(no_type.id(), instrument_id);
+        assert_eq!(no_type.quote_currency(), usdh);
 
         let missing = client.get_or_create_instrument(&Ustr::from("#9999"), None);
         assert!(missing.is_none());
@@ -4705,6 +4730,8 @@ mod tests {
         assert_eq!(instrument.raw_symbol(), Symbol::new(raw_symbol));
         assert_eq!(instrument.price_precision(), 4);
         assert_eq!(instrument.size_precision(), 2);
+        assert_eq!(instrument.quote_currency(), Currency::USDC());
+        assert_eq!(instrument.settlement_currency(), Currency::USDC());
         assert_eq!(client.get_asset_index(symbol), Some(asset_index));
     }
 

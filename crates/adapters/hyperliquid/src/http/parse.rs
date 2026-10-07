@@ -351,6 +351,8 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
 pub const OUTCOME_PRICE_DECIMALS: u32 = 4;
 pub const OUTCOME_SIZE_DECIMALS: u32 = 2;
 
+pub(crate) const DEFAULT_OUTCOME_QUOTE_CURRENCY: &str = "USDC";
+
 /// Parse outcome instrument definitions from Hyperliquid `outcomeMeta` response.
 ///
 /// Each [`OutcomeMarket`] yields two definitions, one per side (`0` and `1`),
@@ -366,6 +368,8 @@ pub const OUTCOME_SIZE_DECIMALS: u32 = 2;
 ///
 /// `side_name` is taken from the venue's `sideSpecs` entry when present,
 /// otherwise it falls back to the canonical HIP-4 labels (`"Yes"` / `"No"`).
+/// Quote and settlement currency use `quoteToken`, falling back to USDC
+/// when the field is absent.
 pub fn parse_outcome_instruments(
     meta: &OutcomeMeta,
 ) -> Result<Vec<HyperliquidInstrumentDef>, String> {
@@ -392,6 +396,7 @@ pub(crate) fn parse_unlisted_outcome_instrument(
         outcome,
         name: String::new(),
         description: String::new(),
+        quote_token: None,
         side_specs: Vec::new(),
     };
 
@@ -457,7 +462,11 @@ fn build_outcome_def(
         symbol: Ustr::from(symbol.as_str()),
         raw_symbol: Ustr::from(coin.as_str()),
         base: Ustr::from(token.as_str()),
-        quote: "USDH".into(),
+        quote: market
+            .quote_token
+            .as_deref()
+            .unwrap_or(DEFAULT_OUTCOME_QUOTE_CURRENCY)
+            .into(),
         settlement: None,
         market_type: HyperliquidMarketType::Outcome,
         asset_index: asset_id.to_raw(),
@@ -708,12 +717,9 @@ pub fn get_currency(code: &str) -> Currency {
     })
 }
 
-/// Returns the HIP-4 outcome settlement currency, registering it on first call.
+/// Returns USDH, registering it at 8-decimal precision on first call.
 ///
-/// Outcome markets settle in USDH (token index 360 on the `USDH/USDC` spot pair
-/// `@230`), not USDC. The registration is explicit so the precision is
-/// deterministic rather than dependent on whichever caller first triggers
-/// `get_currency`'s auto-register path.
+/// Used when venue metadata selects USDH as the settlement currency.
 pub fn get_usdh_currency() -> Currency {
     Currency::try_from_str("USDH").unwrap_or_else(|| {
         let currency = Currency::new("USDH", 8, 0, "Hyperliquid USD", CurrencyType::Crypto);
@@ -726,7 +732,7 @@ pub fn get_usdh_currency() -> Currency {
 
 /// Resolves the commission currency for a fill given the venue's `feeToken` field.
 ///
-/// HIP-4 outcome fills echo the side token (e.g. `+50`) as `feeToken` even when
+/// HIP-4 outcome fills can echo the side token (e.g. `+50`) as `feeToken` when
 /// the fee is zero. The side token is not a Nautilus currency and emitting it as
 /// the commission currency would leak into `OrderFilled` events and persistence;
 /// for outcome side tokens the instrument's quote currency is always used, even
@@ -882,7 +888,7 @@ pub fn create_instrument_from_def(
         }
         HyperliquidMarketType::Outcome => {
             let outcome = def.outcome.as_ref()?;
-            let currency = get_usdh_currency();
+            let currency = get_outcome_currency(&def.quote);
 
             Some(InstrumentAny::BinaryOption(
                 BinaryOption::builder()
@@ -910,6 +916,14 @@ pub fn create_instrument_from_def(
 
 fn min_order_notional(currency: Currency) -> Option<Money> {
     Money::from_decimal(HYPERLIQUID_MIN_ORDER_NOTIONAL, currency).ok()
+}
+
+pub(crate) fn get_outcome_currency(code: &str) -> Currency {
+    if code == "USDH" {
+        get_usdh_currency()
+    } else {
+        get_currency(code)
+    }
 }
 
 /// Convert a collection of Hyperliquid instrument definitions into Nautilus instruments,
@@ -1546,6 +1560,7 @@ mod tests {
                 outcome: 2,
                 name: "Recurring BTC".to_string(),
                 description: "Daily settlement".to_string(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![
                     OutcomeSideSpec {
                         name: "Yes".to_string(),
@@ -2038,12 +2053,45 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_outcome_quote_tokens_from_metadata() {
+        let meta: OutcomeMeta = load_test_data("http_outcome_meta.json");
+        assert_eq!(meta.outcomes[0].quote_token.as_deref(), Some("USDC"));
+        assert_eq!(meta.outcomes[1].quote_token.as_deref(), Some("USDH"));
+        assert_eq!(meta.outcomes[2].quote_token, None);
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        assert_eq!(defs.len(), 6);
+
+        for (index, currency) in [Currency::USDC(), get_usdh_currency(), Currency::USDC()]
+            .into_iter()
+            .enumerate()
+        {
+            for side in 0..=1 {
+                let def = &defs[2 * index + side];
+                let instrument = create_instrument_from_def(def, UnixNanos::default()).unwrap();
+                assert_eq!(def.quote, currency.code);
+                assert_eq!(instrument.quote_currency(), currency);
+                assert_eq!(instrument.settlement_currency(), currency);
+                assert_eq!(
+                    instrument.id().symbol.as_str(),
+                    format!(
+                        "{}-{}-OUTCOME",
+                        index + 1,
+                        if side == 0 { "YES" } else { "NO" }
+                    )
+                );
+            }
+        }
+    }
+
+    #[rstest]
     fn test_parse_outcome_instruments_emits_both_sides() {
         let meta = OutcomeMeta {
             outcomes: vec![OutcomeMarket {
                 outcome: 1,
                 name: "BTC daily".to_string(),
                 description: "BTC settles above strike at 06:00 UTC".to_string(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![
                     OutcomeSideSpec {
                         name: "Yes".to_string(),
@@ -2068,7 +2116,7 @@ mod tests {
         assert_eq!(yes.size_decimals, OUTCOME_SIZE_DECIMALS);
         assert_eq!(yes.tick_size, dec!(0.0001));
         assert_eq!(yes.lot_size, dec!(0.01));
-        assert_eq!(yes.quote, "USDH");
+        assert_eq!(yes.quote, "USDC");
         assert!(yes.active);
 
         let yes_meta = yes.outcome.as_ref().unwrap();
@@ -2097,6 +2145,7 @@ mod tests {
                 outcome: 5,
                 name: "Recurring".to_string(),
                 description: String::new(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![],
             }],
             questions: vec![],
@@ -2135,6 +2184,7 @@ mod tests {
                 outcome: 20,
                 name: "Recurring".to_string(),
                 description: "class:priceBinary|underlying:BTC|expiry:20260511-0600".to_string(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![],
             }],
             questions: vec![],
@@ -2149,7 +2199,10 @@ mod tests {
         assert_eq!(def.symbol, symbol);
         assert_eq!(def.raw_symbol, raw_symbol);
         assert_eq!(def.base, base);
-        assert_eq!(def.quote, "USDH");
+        assert_eq!(def.quote, "USDC");
+        let instrument = create_instrument_from_def(&def, UnixNanos::default()).unwrap();
+        assert_eq!(instrument.quote_currency(), Currency::USDC());
+        assert_eq!(instrument.settlement_currency(), Currency::USDC());
         assert_eq!(def.market_type, HyperliquidMarketType::Outcome);
         assert_eq!(def.asset_index, asset_index);
         assert_eq!(def.price_decimals, OUTCOME_PRICE_DECIMALS);
@@ -2200,6 +2253,7 @@ mod tests {
                 outcome: 2,
                 name: "Recurring BTC".to_string(),
                 description: "Daily settlement".to_string(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![
                     OutcomeSideSpec {
                         name: "Yes".to_string(),
@@ -2220,7 +2274,7 @@ mod tests {
                 assert_eq!(bo.id.symbol.as_str(), "2-YES-OUTCOME");
                 assert_eq!(bo.raw_symbol.as_str(), "#20");
                 assert_eq!(bo.asset_class, AssetClass::Alternative);
-                assert_eq!(bo.currency.code, "USDH");
+                assert_eq!(bo.currency.code, "USDC");
                 assert_eq!(bo.price_precision, OUTCOME_PRICE_DECIMALS as u8);
                 assert_eq!(bo.size_precision, OUTCOME_SIZE_DECIMALS as u8);
                 assert_eq!(bo.outcome.unwrap(), "Yes");
@@ -2247,6 +2301,7 @@ mod tests {
                 description:
                     "class:priceBinary|underlying:BTC|expiry:20260508-0600|targetPrice:81041|period:1d"
                         .to_string(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![
                     OutcomeSideSpec {
                         name: "Yes".to_string(),
@@ -2284,12 +2339,14 @@ mod tests {
                     outcome: 6,
                     name: "Recurring Fallback".to_string(),
                     description: "other".to_string(),
+                    quote_token: Some("USDC".to_string()),
                     side_specs: vec![],
                 },
                 OutcomeMarket {
                     outcome: 7,
                     name: "Recurring Named Outcome".to_string(),
                     description: "index:0".to_string(),
+                    quote_token: Some("USDC".to_string()),
                     side_specs: vec![],
                 },
             ],
@@ -2342,12 +2399,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_fill_report_outcome_round_trip() {
+    #[case::usdc_side_token("USDC", "+420", Decimal::ZERO)]
+    #[case::usdh_side_token("USDH", "+420", Decimal::ZERO)]
+    #[case::usdc_fee("USDC", "USDC", dec!(0.0345))]
+    fn test_parse_fill_report_outcome_round_trip(
+        #[case] quote_token: &str,
+        #[case] fee_token: &str,
+        #[case] fee: Decimal,
+    ) {
         let meta = OutcomeMeta {
             outcomes: vec![OutcomeMarket {
                 outcome: 42,
                 name: "BTC daily".to_string(),
                 description: "BTC settles above strike at 06:00 UTC".to_string(),
+                quote_token: Some(quote_token.to_string()),
                 side_specs: vec![
                     OutcomeSideSpec {
                         name: "Yes".to_string(),
@@ -2376,9 +2441,9 @@ mod tests {
             hash: "0xfeed".to_string(),
             oid: 99_001,
             crossed: true,
-            fee: dec!(0.0),
+            fee,
             tid: 77_001,
-            fee_token: Ustr::from("+420"),
+            fee_token: Ustr::from(fee_token),
             builder_fee: Some(dec!(0.0001)),
             cloid: None,
         };
@@ -2387,10 +2452,12 @@ mod tests {
         let report = parse_fill_report(&fill, &yes, account_id, UnixNanos::default()).unwrap();
 
         // Zero-fee outcome fills resolve commission to the instrument's quote
-        // currency (USDH) rather than the side token, so downstream OrderFilled
+        // currency rather than the side token, so downstream OrderFilled
         // events and persistence carry a registered currency.
-        assert_eq!(report.commission.currency.code, "USDH");
-        assert!(report.commission.as_decimal().is_zero());
+        assert_eq!(
+            report.commission,
+            Money::from_decimal(fee, yes.quote_currency()).unwrap()
+        );
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.last_qty.as_decimal(), dec!(1000));
@@ -2424,6 +2491,7 @@ mod tests {
                 outcome: 88,
                 name: "Edge".to_string(),
                 description: String::new(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![],
             }],
             questions: vec![],
@@ -2438,7 +2506,7 @@ mod tests {
 
         let currency = resolve_fee_currency("+880", Decimal::ZERO, &yes)
             .expect("zero-fee outcome side token must resolve to quote currency");
-        assert_eq!(currency.code, "USDH");
+        assert_eq!(currency.code, "USDC");
 
         let err = resolve_fee_currency("+880", dec!(0.01), &yes).unwrap_err();
         let err_msg = err.to_string();
@@ -2468,6 +2536,7 @@ mod tests {
                 outcome: 77,
                 name: "Edge".to_string(),
                 description: String::new(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![],
             }],
             questions: vec![],
@@ -2480,7 +2549,7 @@ mod tests {
         // return the instrument's quote currency on a zero-fee fill.
         let currency = resolve_fee_currency("+UNREGISTERED-TOKEN", Decimal::ZERO, &no)
             .expect("zero-fee fallback should succeed");
-        assert_eq!(currency.code, "USDH");
+        assert_eq!(currency.code, "USDC");
 
         let err = resolve_fee_currency("+UNREGISTERED-TOKEN", dec!(0.01), &no).unwrap_err();
         assert!(err.to_string().contains("non-zero fee"));
@@ -2513,6 +2582,7 @@ mod tests {
                 description:
                     "class:priceBinary|underlying:BTC|expiry:20260508-0600|targetPrice:81041|period:1d"
                         .to_string(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![
                     OutcomeSideSpec {
                         name: "Yes".to_string(),
@@ -2541,12 +2611,14 @@ mod tests {
                     outcome: 6,
                     name: "Recurring Fallback".to_string(),
                     description: "other".to_string(),
+                    quote_token: Some("USDC".to_string()),
                     side_specs: vec![],
                 },
                 OutcomeMarket {
                     outcome: 7,
                     name: "Recurring Named Outcome".to_string(),
                     description: "index:0".to_string(),
+                    quote_token: Some("USDC".to_string()),
                     side_specs: vec![],
                 },
             ],

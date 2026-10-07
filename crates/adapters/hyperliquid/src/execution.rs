@@ -686,7 +686,15 @@ impl HyperliquidExecutionClient {
                 let ts = clock.get_time_ns();
                 let fills = {
                     let mut guard = tracker.lock();
-                    build_settlement_fills(&settlements, &spot_state, &mut guard, account_id, ts)
+                    build_settlement_fills(
+                        &settlements,
+                        &spot_state,
+                        &meta,
+                        &http_client,
+                        &mut guard,
+                        account_id,
+                        ts,
+                    )
                 };
 
                 for fill in fills {

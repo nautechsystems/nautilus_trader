@@ -307,8 +307,9 @@ The outcome universe cycles. Each settlement removes the resolved outcome
 from `outcomeMeta`, and the venue's next listing advances the index.
 Reconciliation still resolves fills and historical orders on a settled
 outcome: the adapter derives the side token's instrument from its
-`#{encoding}` coin, without the market name, description, or expiry that
-`outcomeMeta` carries. Inspect the live universe with:
+`#{encoding}` coin, without the market name, description, expiry, or quote token that
+`outcomeMeta` carries. See [Settlement currency](#settlement-currency) for the currency fallback.
+Inspect the live universe with:
 
 ```bash
 curl -s -X POST https://api.hyperliquid.xyz/info \
@@ -526,21 +527,24 @@ Values are kept as strings to preserve wire fidelity; numeric identifiers
 
 ### Settlement currency
 
-The adapter denominates every outcome instrument in USDH (token index 360, traded on the
-`USDH/USDC` spot pair `@230`). USDH is registered at 8-decimal precision on first outcome
-instrument creation, so `BinaryOption.currency`, `quote_currency`, and the commission currency
-on zero-fee outcome fills all resolve to USDH. The registration is explicit so the precision is
-deterministic rather than dependent on whichever code path first triggers currency auto-registration.
+The adapter uses each outcome's `outcomeMeta` `quoteToken` for `BinaryOption.currency`,
+`quote_currency`, and settlement currency. Zero-fee fills that report a side token as `feeToken`
+use the instrument's quote currency for commission. When metadata selects USDH, the adapter
+registers it explicitly at 8-decimal precision so currency auto-registration does not determine
+its precision.
+
+When `quoteToken` is missing, the adapter defaults to USDC. Settled outcomes that disappear from
+`outcomeMeta` retain their currency while the instrument remains in the adapter's in-memory cache.
+After a restart, the adapter uses USDC unless the instrument is supplied to that cache again.
+USDC is an adapter compatibility default: mainnet and testnet outcomes observed in October 2026
+quote in USDC. The outcome asset encoding does not identify its quote token, so the adapter
+cannot recover a different historical currency without a cached instrument.
+
+Reconstructed instruments also enter the cache with USDC and retain that currency until a
+supplied instrument replaces them, even if later metadata specifies another quote token.
 
 USDH spot balances merge with the perp clearinghouse view, so `AccountState`
 carries USDH alongside USDC and any other non-zero spot holdings.
-
-:::warning
-Hyperliquid reports the quote token per outcome in the `outcomeMeta` `quoteToken` field, and
-mainnet outcomes currently quote in USDC rather than USDH. The adapter does not yet read that
-field, so outcome instruments loaded from mainnet carry a USDH quote currency that does not match
-the venue. Treat HIP-4 support as testnet-ready until the per-outcome quote token is honored.
-:::
 
 ### Trading flow
 
@@ -566,10 +570,10 @@ from nautilus_trader.adapters.hyperliquid import HyperliquidHttpClient
 
 client = HyperliquidHttpClient.from_env(HyperliquidEnvironment.MAINNET)
 
-# Mint matched Yes + No side tokens from USDH (e.g. dual-side market making)
+# Mint matched Yes + No side tokens from the outcome's quote token
 await client.submit_split_outcome(50, Decimal("1.0"))
 
-# Burn a matched Yes + No pair back to USDH (amount=None merges the max)
+# Burn a matched Yes + No pair back to quote tokens (amount=None merges the max)
 await client.submit_merge_outcome(50, None)
 
 # Multi-outcome priceBucket operations
@@ -605,18 +609,35 @@ so that `order_qty * limit_price >= 10`.
 
 At expiry the venue closes held side-token balances and emits a `Settlement`
 fill per side. The adapter consumes these through the standard user-fills
-stream (HTTP poll and WebSocket); no synthetic dispatch runs.
+stream (HTTP poll and WebSocket), preserving the venue-reported commission.
 
 Each settlement fill:
 
-- `order_side = SELL`, zero commission.
+- `order_side = SELL`.
 - Price `1` quote token for the winning side, `0` for the loser.
 - Surfaces as a `FillReport`.
-- Also emits `OrderFilled` when WebSocket dispatch links the position to a
+- Venue fills also emit `OrderFilled` when WebSocket dispatch links the position to a
   tracked order.
 
-Covers standalone `priceBinary` outcomes and multi-outcome `priceBucket`
+Venue `Settlement` fills cover standalone `priceBinary` outcomes and multi-outcome `priceBucket`
 questions uniformly.
+
+The Rust-only `outcome_settlement_poll_secs` option enables synthetic settlement polling for
+multi-outcome questions. It is disabled by default.
+
+:::warning
+
+Keep synthetic polling disabled and consume venue settlement fills. The inference assumes that a non-empty
+`settledNamedOutcomes` list identifies winning outcomes within `namedOutcomes` and that all other
+named outcomes and the fallback have lost. Testnet metadata observed in October 2026 instead
+lists removed outcomes in `settledNamedOutcomes` while other named outcomes remain listed.
+Under that shape, polling can emit closing fills for positions in markets that are still trading.
+
+:::
+
+Synthetic fills carry zero commission in the cached instrument's quote currency, or the metadata
+quote token when no cached instrument exists, with USDC as the fallback. They have no
+`client_order_id` and are dispatched as `FillReport`s.
 
 ### Position reconciliation
 

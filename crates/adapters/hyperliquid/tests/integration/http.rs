@@ -43,7 +43,6 @@ use nautilus_hyperliquid::{
             Cloid, HyperliquidExchangeResponse, HyperliquidFills, HyperliquidL2Book, OutcomeMeta,
             PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
         },
-        parse::get_usdh_currency,
         query::{InfoRequest, InfoRequestParams},
     },
 };
@@ -194,6 +193,7 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             "outcomes": [
                 {
                     "outcome": 123,
+                    "quoteToken": "USDC",
                     "name": "Recurring",
                     "description": "class:priceBinary|underlying:HYPE|expiry:20260310-1100|targetPrice:34.5|period:3m",
                     "sideSpecs": [
@@ -474,6 +474,7 @@ async fn test_outcome_meta_returns_outcome_metadata() {
 
     assert_eq!(meta.outcomes.len(), 1);
     assert_eq!(meta.outcomes[0].outcome, 123);
+    assert_eq!(meta.outcomes[0].quote_token.as_deref(), Some("USDC"));
     assert_eq!(meta.outcomes[0].side_specs[0].name, "Yes");
 
     let request_body = state.last_request_body.lock().await.clone().unwrap();
@@ -2826,7 +2827,7 @@ async fn test_request_fill_reports_resolves_settled_outcome_absent_from_outcome_
         .await
         .expect("settled outcome fills must stay resolvable after a reload");
 
-    let usdh_zero = Money::zero(get_usdh_currency());
+    let usdc_zero = Money::zero(Currency::USDC());
 
     let summary = |reports: &[FillReport]| {
         reports
@@ -2851,7 +2852,7 @@ async fn test_request_fill_reports_resolves_settled_outcome_absent_from_outcome_
             OrderSide::Buy,
             Price::from("0.6200"),
             Quantity::from("15.00"),
-            usdh_zero,
+            usdc_zero,
         ),
         (
             InstrumentId::from("20-NO-OUTCOME.HYPERLIQUID"),
@@ -2859,7 +2860,7 @@ async fn test_request_fill_reports_resolves_settled_outcome_absent_from_outcome_
             OrderSide::Sell,
             Price::from("0.3700"),
             Quantity::from("8.00"),
-            usdh_zero,
+            usdc_zero,
         ),
     ];
     assert_eq!(summary(&reports), expected);

@@ -307,6 +307,9 @@ pub struct OutcomeMarket {
     pub name: String,
     /// Venue-provided market description.
     pub description: String,
+    /// Quote and settlement token code when supplied by the venue.
+    #[serde(default)]
+    pub quote_token: Option<String>,
     /// Side specifications for the binary outcome.
     #[serde(default)]
     pub side_specs: Vec<OutcomeSideSpec>,
