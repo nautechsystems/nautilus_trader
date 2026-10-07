@@ -202,8 +202,9 @@ unknown to the platform and were registered as 8-decimal crypto; `EUR` and `USD`
 with 2 decimals, and `JPY` with none. That affects the instrument quote currency, REST fill
 commissions and the PnL derived from them. Account balances keep their 8-decimal precision, because
 the balance parsers construct their own currency from the code rather than resolving a registered
-one. The single exception runs the other way: the futures flex `portfolioValue` entry was built on
-the 2-decimal `USD` and now shares the 8-decimal balance currency, which widens it without loss.
+one. Two exceptions run the other way: the futures flex `portfolioValue` entry and the account-wide
+USD margin entries were built on the 2-decimal `USD` and now share the 8-decimal balance currency,
+which widens them without loss.
 :::
 
 ### Spot markets
