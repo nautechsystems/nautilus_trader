@@ -60,11 +60,13 @@ pub struct CompositeMarketMakerConfig {
     /// Signal skew gain in price units per unit of normalized signal residual.
     /// Both sides shift up by `factor * residual` where
     /// `residual = (signal_mid - baseline) / baseline`.
+    /// A nonzero factor requires a valid signal quote and baseline before quoting.
     #[builder(default = 0.0)]
     pub signal_skew_factor: f64,
     /// Optional baseline price for the signal residual. When `None`, the first
-    /// observed signal mid is captured as the baseline. When `Some(_)`, the
-    /// configured value is used so backtests are deterministic.
+    /// valid signal mid is captured as the baseline. When `Some(_)`, the
+    /// configured value is used so backtests are deterministic. With signal skew
+    /// enabled, quoting requires a finite, positive baseline and a finite residual.
     pub signal_baseline: Option<f64>,
     /// Hard cap on net exposure (long or short).
     pub max_position: Quantity,

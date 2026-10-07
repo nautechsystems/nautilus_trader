@@ -17,8 +17,11 @@
 Run a Lighter NVDA RWA composite market maker with the built-in CompositeMarketMaker strategy: Databento ``NVDA.EQUS`` quotes drive the signal and ``NVDA-PERP.LIGHTER`` is the quoted target. This is the Python counterpart of the Rust tutorial binary ``examples/tutorials/src/bin/lighter_nvda_composite_mm.rs``.
 
 WARNING: Running this script connects to the configured Lighter environment and
-places REAL post-only orders immediately. With the default testnet environment no
-real funds are at risk; with `LighterEnvironment.MAINNET` the orders use real funds.
+places REAL post-only orders after a valid Databento signal quote arrives. With the
+default testnet environment no real funds are at risk; with `LighterEnvironment.MAINNET`
+the orders use real funds.
+On stop, it cancels its target orders and submits reduce-only market orders to
+close its target positions.
 Run only against an account you intend to test. The strategy is a demonstration and
 is not intended for production trading.
 
@@ -46,6 +49,7 @@ from nautilus_trader.adapters.lighter import LighterEnvironment
 from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
 from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
 from nautilus_trader.common import Environment
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import InstrumentId
@@ -87,6 +91,12 @@ def main() -> None:
 
     node = (
         LiveNode.builder("LIGHTER-NVDA-COMPOSITE-MM-001", TRADER_ID, Environment.LIVE)
+        .with_exec_engine_config(
+            LiveExecutionEngineConfig(
+                reconciliation_lookback_mins=60,
+                reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
+            ),
+        )
         .with_reconciliation(reconciliation=True)
         .with_delay_post_stop_secs(5)
         .add_data_client(
