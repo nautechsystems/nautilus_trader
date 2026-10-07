@@ -44,14 +44,14 @@ use axum::{
 use futures_util::StreamExt;
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, ModifyOrder, QueryAccount,
-            QueryOrder, SubmitOrder, SubmitOrderList,
+            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
         system::SocketState,
     },
@@ -69,7 +69,10 @@ use nautilus_hyperliquid::{
     execution::HyperliquidExecutionClient,
     http::models::Cloid,
 };
-use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_live::{
+    ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    execution::context::OrderContext,
+};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::QuoteTick,
@@ -86,7 +89,7 @@ use nautilus_model::{
     },
     instruments::{CryptoPerpetual, InstrumentAny},
     orders::{LimitOrder, MarketOrder, Order, OrderAny, OrderList, StopMarketOrder},
-    reports::OrderStatusReport,
+    reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::{
@@ -155,6 +158,9 @@ struct TestServerState {
     /// observe the response.
     pause_next_exchange: Arc<std::sync::atomic::AtomicBool>,
     pause_release: Arc<tokio::sync::Notify>,
+    pause_next_info: Arc<std::sync::atomic::AtomicBool>,
+    info_started: Arc<tokio::sync::Notify>,
+    info_release: Arc<tokio::sync::Notify>,
     /// Acknowledges WebSocket subscribe requests while set (the default), as the venue does.
     ack_subscriptions: Arc<std::sync::atomic::AtomicBool>,
     /// Message sent once after the next `userEvents` subscription acknowledgement, standing in
@@ -193,6 +199,9 @@ impl Default for TestServerState {
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             pause_next_exchange: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pause_release: Arc::new(tokio::sync::Notify::new()),
+            pause_next_info: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            info_started: Arc::new(tokio::sync::Notify::new()),
+            info_release: Arc::new(tokio::sync::Notify::new()),
             ack_subscriptions: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             frame_after_user_events_ack: Arc::new(tokio::sync::Mutex::new(None)),
         }
@@ -333,6 +342,10 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         .and_then(|t| t.as_str())
         .unwrap_or("");
     state.info_requests.lock().await.push(request_body.clone());
+    if state.pause_next_info.swap(false, Ordering::AcqRel) {
+        state.info_started.notify_one();
+        state.info_release.notified().await;
+    }
 
     let rejected_dex = request_body.get("dex").and_then(Value::as_str);
     let reject_named_dex = if let Some(dex) = rejected_dex {
@@ -4917,6 +4930,54 @@ async fn test_modify_order_post_error_preserves_pending_modify() {
     client.disconnect().await.unwrap();
 }
 
+async fn run_report_task<T>(task: ExecutionReportTask<T>) -> anyhow::Result<T> {
+    let core_thread = std::thread::current().id();
+    tokio::spawn(async move {
+        assert_ne!(std::thread::current().id(), core_thread);
+        task.collection.await;
+    })
+    .await
+    .unwrap();
+
+    task.result.await
+}
+
+async fn generate_order_report(
+    client: &HyperliquidExecutionClient,
+    cmd: &GenerateOrderStatusReport,
+    worker: bool,
+) -> anyhow::Result<Option<OrderStatusReport>> {
+    if worker {
+        run_report_task(client.generate_order_status_report_task(cmd).unwrap()).await
+    } else {
+        client.generate_order_status_report(cmd).await
+    }
+}
+
+async fn generate_order_reports(
+    client: &HyperliquidExecutionClient,
+    cmd: &GenerateOrderStatusReports,
+    worker: bool,
+) -> anyhow::Result<Vec<OrderStatusReport>> {
+    if worker {
+        run_report_task(client.generate_order_status_reports_task(cmd).unwrap()).await
+    } else {
+        client.generate_order_status_reports(cmd).await
+    }
+}
+
+async fn generate_fills(
+    client: &HyperliquidExecutionClient,
+    cmd: GenerateFillReports,
+    worker: bool,
+) -> anyhow::Result<Vec<FillReport>> {
+    if worker {
+        run_report_task(client.generate_fill_reports_task(&cmd).unwrap()).await
+    } else {
+        client.generate_fill_reports(cmd).await
+    }
+}
+
 fn make_status_report_cmd(
     client_order_id: Option<ClientOrderId>,
     venue_order_id: Option<VenueOrderId>,
@@ -4935,7 +4996,9 @@ fn make_status_report_cmd(
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_requires_identifier() {
+async fn test_generate_order_status_report_requires_identifier(
+    #[values(false, true)] worker: bool,
+) {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (mut client, _rx, cache) = create_test_execution_client(addr);
@@ -4943,7 +5006,7 @@ async fn test_generate_order_status_report_requires_identifier() {
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(None, None);
-    let report = client.generate_order_status_report(&cmd).await.unwrap();
+    let report = generate_order_report(&client, &cmd, worker).await.unwrap();
     assert!(report.is_none());
 
     client.disconnect().await.unwrap();
@@ -4951,7 +5014,9 @@ async fn test_generate_order_status_report_requires_identifier() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_returns_open_order_by_cloid() {
+async fn test_generate_order_status_report_returns_open_order_by_cloid(
+    #[values(false, true)] worker: bool,
+) {
     let coid = ClientOrderId::new("O-20240101-000001");
     let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
 
@@ -4973,8 +5038,7 @@ async fn test_generate_order_status_report_returns_open_order_by_cloid() {
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("111111")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("cloid-open lookup should resolve the live order");
@@ -4987,7 +5051,9 @@ async fn test_generate_order_status_report_returns_open_order_by_cloid() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_terminal_oid_fallback_returns_report() {
+async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
+    #[values(false, true)] worker: bool,
+) {
     // Live order no longer in frontendOpenOrders (cloid-open miss), oid fallback
     // finds the terminal record. The returned report carries the API-reported
     // cloid (as hex) on `client_order_id`; downstream Python resolver remaps
@@ -5021,8 +5087,7 @@ async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("222222")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("terminal oid match should be returned");
@@ -5039,8 +5104,56 @@ async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
 }
 
 #[rstest]
+#[case::cloid_miss(false)]
+#[case::cloid_error(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_order_status_report_uses_cached_oid(
+    #[case] cloid_error: bool,
+    #[values(false, true)] worker: bool,
+) {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await =
+        Some(json!({"status": "order", "order": historical_order("BTC", 101)}));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let order = open_limit_order_in_cache(&cache, "O-REPORT-CACHED", "101");
+
+    if cloid_error {
+        let mut row = frontend_order("NOCOIN", 202);
+        row["cloid"] = json!(Cloid::from_client_order_id(order.client_order_id()).to_hex());
+        *state.frontend_open_orders_response.lock().await = Some(json!([row]));
+    }
+
+    state.info_requests.lock().await.clear();
+    let cmd = make_status_report_cmd(Some(order.client_order_id()), None);
+    let report = generate_order_report(&client, &cmd, worker)
+        .await
+        .unwrap()
+        .unwrap();
+    let requests = state.info_requests.lock().await;
+    let oid_queries: Vec<_> = requests
+        .iter()
+        .filter(|request| request["type"] == "orderStatus")
+        .map(|request| request["oid"].clone())
+        .collect();
+    assert_eq!(oid_queries, vec![json!(101)]);
+    assert_eq!(report.venue_order_id, VenueOrderId::from("101"));
+    assert_eq!(report.client_order_id, Some(order.client_order_id()));
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.quantity, Quantity::from("0.1"));
+    assert_eq!(report.filled_qty, Quantity::from("0.1"));
+    drop(requests);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_terminal_mismatched_cloid_still_returned() {
+async fn test_generate_order_status_report_terminal_mismatched_cloid_still_returned(
+    #[values(false, true)] worker: bool,
+) {
     // A cloid mismatch no longer short-circuits the order-status request. The downstream
     // Python resolver uses venue_order_id to rebind the report to the
     // correct logical client_order_id, so the HTTP client forwards the API
@@ -5075,8 +5188,7 @@ async fn test_generate_order_status_report_terminal_mismatched_cloid_still_retur
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("333333")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("order-status lookup must forward valid oid matches regardless of cloid");
@@ -5088,7 +5200,9 @@ async fn test_generate_order_status_report_terminal_mismatched_cloid_still_retur
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid() {
+async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid(
+    #[values(false, true)] worker: bool,
+) {
     // Orders placed without a cloid (or external/synthetic orders the engine
     // reconciled from the venue) have no cloid on the API response. The
     // order-status lookup must still surface the oid match so downstream reconciliation
@@ -5120,8 +5234,7 @@ async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid() {
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("444444")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("oid match with no cloid on response should still resolve");
@@ -5132,7 +5245,9 @@ async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_oid_only_returns_terminal() {
+async fn test_generate_order_status_report_oid_only_returns_terminal(
+    #[values(false, true)] worker: bool,
+) {
     // When only venue_order_id is supplied, the order-status lookup must still surface a
     // terminal report (no cloid validation applies without a coid to check).
     let state = TestServerState::default();
@@ -5160,8 +5275,7 @@ async fn test_generate_order_status_report_oid_only_returns_terminal() {
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(None, Some(VenueOrderId::from("555555")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("terminal report without cloid guard should be returned");
@@ -5172,11 +5286,10 @@ async fn test_generate_order_status_report_oid_only_returns_terminal() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modify() {
-    // Same stale-cancel suppression as the query path, through the single-report
-    // reconcile entry point: a Canceled for the old leg while a modify is in
-    // flight must be dropped (return None) so reconciliation leaves the order
-    // alive for the replacement.
+async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modify(
+    #[values(false, true)] worker: bool,
+) {
+    // Stale evidence must defer resolution, since Ok(None) proves absence to reconciliation.
     let old_voi = VenueOrderId::from("770001");
 
     let state = TestServerState::default();
@@ -5238,10 +5351,12 @@ async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modi
     .await;
 
     let cmd = make_status_report_cmd(Some(coid), Some(old_voi));
-    let report = client.generate_order_status_report(&cmd).await.unwrap();
-    assert!(
-        report.is_none(),
-        "stale old-leg Canceled must be suppressed during an in-flight modify, was {report:?}",
+    let error = generate_order_report(&client, &cmd, worker)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!("order status report for superseded leg on {coid}"),
     );
 
     client.disconnect().await.unwrap();
@@ -5249,7 +5364,9 @@ async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modi
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_forwards_old_leg_fill_during_modify() {
+async fn test_generate_order_status_report_forwards_old_leg_fill_during_modify(
+    #[values(false, true)] worker: bool,
+) {
     // The suppression must stay narrow: a Filled on the old leg during a modify
     // is still returned so reconciliation can recover a dropped fill.
     let old_voi = VenueOrderId::from("770002");
@@ -5313,8 +5430,7 @@ async fn test_generate_order_status_report_forwards_old_leg_fill_during_modify()
     .await;
 
     let cmd = make_status_report_cmd(Some(coid), Some(old_voi));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("a fill on the old leg during a modify must be forwarded");
@@ -9056,7 +9172,9 @@ async fn test_query_account_perp_endpoint_failure_emits_no_state() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_reports_retains_open_reports_outside_time_range() {
+async fn test_generate_order_status_reports_retains_open_reports_outside_time_range(
+    #[values(false, true)] worker: bool,
+) {
     // Mock a frontendOpenOrders payload with three orders so time bounds can prove that every
     // non-closed report remains authoritative regardless of its last update.
     let state = TestServerState::default();
@@ -9090,8 +9208,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
         None,
         None,
     );
-    let reports = client
-        .generate_order_status_reports(&cmd_all)
+    let reports = generate_order_reports(&client, &cmd_all, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 3);
@@ -9108,8 +9225,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
         None,
         None,
     );
-    let reports = client
-        .generate_order_status_reports(&cmd_start)
+    let reports = generate_order_reports(&client, &cmd_start, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 3);
@@ -9126,8 +9242,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
         None,
         None,
     );
-    let reports = client
-        .generate_order_status_reports(&cmd_end)
+    let reports = generate_order_reports(&client, &cmd_end, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 3);
@@ -9143,8 +9258,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
         None,
         None,
     );
-    let reports = client
-        .generate_order_status_reports(&cmd_both)
+    let reports = generate_order_reports(&client, &cmd_both, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 3);
@@ -9165,7 +9279,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_fill_reports_filters_time_range() {
+async fn test_generate_fill_reports_filters_time_range(#[values(false, true)] worker: bool) {
     let state = TestServerState::default();
     *state.user_fills_response.lock().await = Some(json!([
         {
@@ -9209,7 +9323,7 @@ async fn test_generate_fill_reports_filters_time_range() {
         None,
         None,
     );
-    let reports = client.generate_fill_reports(cmd_none).await.unwrap();
+    let reports = generate_fills(&client, cmd_none, worker).await.unwrap();
     assert_eq!(reports.len(), 3, "no filter must return every fill");
 
     let cmd_start = GenerateFillReports::new(
@@ -9222,7 +9336,7 @@ async fn test_generate_fill_reports_filters_time_range() {
         None,
         None,
     );
-    let reports = client.generate_fill_reports(cmd_start).await.unwrap();
+    let reports = generate_fills(&client, cmd_start, worker).await.unwrap();
     assert_eq!(reports.len(), 2);
 
     let cmd_end = GenerateFillReports::new(
@@ -9235,7 +9349,7 @@ async fn test_generate_fill_reports_filters_time_range() {
         None,
         None,
     );
-    let reports = client.generate_fill_reports(cmd_end).await.unwrap();
+    let reports = generate_fills(&client, cmd_end, worker).await.unwrap();
     assert_eq!(reports.len(), 2);
 
     let cmd_both = GenerateFillReports::new(
@@ -9248,7 +9362,7 @@ async fn test_generate_fill_reports_filters_time_range() {
         None,
         None,
     );
-    let reports = client.generate_fill_reports(cmd_both).await.unwrap();
+    let reports = generate_fills(&client, cmd_both, worker).await.unwrap();
     assert_eq!(reports.len(), 1);
 
     client.disconnect().await.unwrap();
@@ -10096,7 +10210,9 @@ async fn test_generate_mass_status_marks_unusable_spot_balance_incomplete() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_fails_closed_when_cloid_row_unusable() {
+async fn test_generate_order_status_report_fails_closed_when_cloid_row_unusable(
+    #[values(false, true)] worker: bool,
+) {
     // The cloid probe matches a venue row whose instrument cannot be resolved;
     // with no venue_order_id or cached oid to fall back on, the lookup must
     // fail closed rather than convert the failure into "not found"
@@ -10120,8 +10236,7 @@ async fn test_generate_order_status_report_fails_closed_when_cloid_row_unusable(
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), None);
-    let err = client
-        .generate_order_status_report(&cmd)
+    let err = generate_order_report(&client, &cmd, worker)
         .await
         .expect_err("a matched but unusable venue row must fail closed");
 
@@ -10661,6 +10776,7 @@ async fn user_fills_reads(state: &TestServerState) -> usize {
 async fn capped_stop_single_report(
     status_row: Value,
     fills: SingleOrderFills,
+    worker: bool,
 ) -> (OrderStatusReport, usize) {
     let state = TestServerState::default();
     *state.frontend_open_orders_response.lock().await = Some(json!([]));
@@ -10678,8 +10794,7 @@ async fn capped_stop_single_report(
     }
 
     let cmd = make_status_report_cmd(None, Some(VenueOrderId::from("200004")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("terminal stop report");
@@ -10693,74 +10808,27 @@ async fn capped_stop_single_report(
 // `filled` past its fills is clamped to them when the fill history is complete, and every other
 // outcome keeps the venue quantity. Only a reduce-only `Filled` report requests fills
 #[rstest]
-#[case::complete_fills(
-    true,
-    "filled",
-    "0.0",
-    SingleOrderFills::Complete,
-    "0.0015",
-    "0.0015",
-    1
-)]
-#[case::fills_at_venue_cap(
-    true,
-    "filled",
-    "0.0",
-    SingleOrderFills::AtVenueCap,
-    "0.002",
-    "0.002",
-    1
-)]
-#[case::incomplete_fills(
-    true,
-    "filled",
-    "0.0",
-    SingleOrderFills::Incomplete,
-    "0.002",
-    "0.002",
-    1
-)]
-#[case::fills_request_fails(
-    true,
-    "filled",
-    "0.0",
-    SingleOrderFills::RequestFails,
-    "0.002",
-    "0.002",
-    1
-)]
-#[case::no_fills(true, "filled", "0.0", SingleOrderFills::Empty, "0.002", "0.002", 1)]
-#[case::not_reduce_only(
-    false,
-    "filled",
-    "0.0",
-    SingleOrderFills::Complete,
-    "0.002",
-    "0.002",
-    0
-)]
-#[case::canceled(
-    true,
-    "canceled",
-    "0.0005",
-    SingleOrderFills::Complete,
-    "0.002",
-    "0.0015",
-    0
-)]
+#[case::complete_fills(true, "filled", "0.0", SingleOrderFills::Complete, ("0.0015", "0.0015"), 1)]
+#[case::fills_at_venue_cap(true, "filled", "0.0", SingleOrderFills::AtVenueCap, ("0.002", "0.002"), 1)]
+#[case::incomplete_fills(true, "filled", "0.0", SingleOrderFills::Incomplete, ("0.002", "0.002"), 1)]
+#[case::fills_request_fails(true, "filled", "0.0", SingleOrderFills::RequestFails, ("0.002", "0.002"), 1)]
+#[case::no_fills(true, "filled", "0.0", SingleOrderFills::Empty, ("0.002", "0.002"), 1)]
+#[case::not_reduce_only(false, "filled", "0.0", SingleOrderFills::Complete, ("0.002", "0.002"), 0)]
+#[case::canceled(true, "canceled", "0.0005", SingleOrderFills::Complete, ("0.002", "0.0015"), 0)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_generate_order_status_report_clamps_reduce_only_fill_to_fills(
     #[case] reduce_only: bool,
     #[case] status: &str,
     #[case] remaining: &str,
     #[case] fills: SingleOrderFills,
-    #[case] expected_qty: &str,
-    #[case] expected_filled: &str,
+    #[case] expected_quantities: (&str, &str),
     #[case] expected_fills_reads: usize,
+    #[values(false, true)] worker: bool,
 ) {
+    let (expected_qty, expected_filled) = expected_quantities;
     let status_row = capped_stop_history(status, remaining, reduce_only)[0].clone();
 
-    let (report, fills_reads) = capped_stop_single_report(status_row, fills).await;
+    let (report, fills_reads) = capped_stop_single_report(status_row, fills, worker).await;
 
     assert_eq!(report.reduce_only, reduce_only);
     assert_eq!(report.quantity, Quantity::from(expected_qty));
@@ -10803,5 +10871,607 @@ async fn test_query_order_clamps_reduce_only_fill_to_fills() {
     assert_eq!(reports[0].quantity, Quantity::from("0.0015"));
     assert_eq!(reports[0].filled_qty, Quantity::from("0.0015"));
 
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[expect(
+    clippy::await_holding_refcell_ref,
+    reason = "worker report tasks must finish without accessing the borrowed live cache"
+)]
+async fn test_report_tasks_match_inline_fields() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([
+        frontend_order("BTC", 101),
+        frontend_order("ETH", 102),
+    ]));
+    *state.user_fills_response.lock().await =
+        Some(json!([user_fill("BTC", 101), user_fill("ETH", 102),]));
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("BTC"));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let instrument = Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT));
+
+    let orders = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        instrument,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let fills = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument,
+        None,
+        Some(UnixNanos::from(1_700_000_000_000_000_000u64)),
+        Some(UnixNanos::from(1_700_000_000_000_000_000u64)),
+        None,
+        None,
+    );
+
+    let positions = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument,
+        None,
+        None,
+        None,
+        None,
+    );
+    let single = make_status_report_cmd(None, Some(VenueOrderId::from("101")));
+    let inline_single = client
+        .generate_order_status_report(&single)
+        .await
+        .unwrap()
+        .unwrap();
+    let inline_orders = client.generate_order_status_reports(&orders).await.unwrap();
+    let inline_fills = client.generate_fill_reports(fills.clone()).await.unwrap();
+    let inline_positions = client
+        .generate_position_status_reports(&positions)
+        .await
+        .unwrap();
+
+    let single_task = client.generate_order_status_report_task(&single).unwrap();
+    let orders_task = client.generate_order_status_reports_task(&orders).unwrap();
+    let fills_task = client.generate_fill_reports_task(&fills).unwrap();
+    let positions_task = client
+        .generate_position_status_reports_task(&positions)
+        .unwrap();
+    let cache_borrow = cache.borrow_mut();
+    let worker_single = run_report_task(single_task).await.unwrap().unwrap();
+    let worker_orders = run_report_task(orders_task).await.unwrap();
+    let worker_fills = run_report_task(fills_task).await.unwrap();
+    let worker_positions = run_report_task(positions_task).await.unwrap();
+    drop(cache_borrow);
+
+    assert_eq!(inline_orders.len(), 1);
+    assert_eq!(inline_fills.len(), 1);
+    assert_eq!(inline_positions.len(), 1);
+    assert_report_fields(&inline_single, &worker_single, false);
+    assert_report_fields(&inline_orders[0], &worker_orders[0], false);
+    assert_report_fields(&inline_fills[0], &worker_fills[0], false);
+    assert_report_fields(&inline_positions[0], &worker_positions[0], true);
+    client.disconnect().await.unwrap();
+}
+
+fn assert_report_fields<T: serde::Serialize>(inline: &T, worker: &T, position: bool) {
+    let mut inline = serde_json::to_value(inline).unwrap();
+    let mut worker = serde_json::to_value(worker).unwrap();
+    assert_ne!(inline["report_id"], worker["report_id"]);
+    assert_ne!(worker["ts_init"], json!(0));
+
+    if position {
+        assert_eq!(inline["ts_last"], inline["ts_init"]);
+        assert_eq!(worker["ts_last"], worker["ts_init"]);
+        inline.as_object_mut().unwrap().remove("ts_last");
+        worker.as_object_mut().unwrap().remove("ts_last");
+    }
+
+    for value in [&mut inline, &mut worker] {
+        value.as_object_mut().unwrap().remove("report_id");
+        value.as_object_mut().unwrap().remove("ts_init");
+    }
+
+    assert_eq!(worker, inline);
+}
+
+#[rstest]
+#[case::pending("pending", true)]
+#[case::promoted("promoted", false)]
+#[case::released("released", false)]
+#[case::late_fill("fill", false)]
+#[case::newer_cancel("newer", false)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_order_report_task_finishes_with_current_modify_state(
+    #[case] transition: &str,
+    #[case] suppressed: bool,
+) {
+    let state = TestServerState::default();
+
+    let status = if transition == "fill" {
+        "filled"
+    } else {
+        "canceled"
+    };
+
+    let report_oid = if transition == "newer" { 102 } else { 101 };
+    let mut row = historical_order("BTC", report_oid);
+    row["status"] = json!(status);
+
+    if transition == "newer" || transition == "promoted" {
+        row["order"]["sz"] = json!("0.04");
+    }
+
+    *state.order_status_response.lock().await = Some(json!({"status": "order", "order": row}));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let coid = ClientOrderId::from("O-REPORT-CURRENT");
+    let old_oid = VenueOrderId::from("101");
+    let dispatch = client.ws_dispatch_state();
+    dispatch.record_venue_order_id(coid, old_oid);
+    let report_oid = VenueOrderId::from(report_oid.to_string());
+    let command = make_status_report_cmd(Some(coid), Some(report_oid));
+    let task = client.generate_order_status_report_task(&command).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+
+    dispatch.mark_pending_modify(coid, old_oid, Quantity::from("0.2"));
+
+    if transition != "pending" && transition != "newer" {
+        dispatch.clear_pending_modify(&coid);
+    }
+
+    if transition == "promoted" || transition == "fill" {
+        dispatch.record_venue_order_id(coid, VenueOrderId::from("102"));
+    }
+
+    let result = task.result.await;
+
+    if suppressed {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("order status report for superseded leg on {coid}"),
+        );
+    } else {
+        let report = result.unwrap().unwrap();
+        assert_eq!(report.venue_order_id, report_oid);
+        assert_eq!(report.quantity, Quantity::from("0.1"));
+        assert_eq!(
+            report.filled_qty,
+            Quantity::from(if transition == "newer" || transition == "promoted" {
+                "0.06"
+            } else {
+                "0.1"
+            }),
+        );
+        assert_eq!(
+            report.order_status,
+            if transition == "fill" {
+                OrderStatus::Filled
+            } else {
+                OrderStatus::Canceled
+            }
+        );
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::cloid_promotion(false, true)]
+#[case::cloid_superseded(true, true)]
+#[case::oid_active(false, false)]
+#[case::oid_superseded(true, false)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_order_report_task_finishes_accepted_with_current_binding(
+    #[case] superseded: bool,
+    #[case] cloid_lookup: bool,
+) {
+    let state = TestServerState::default();
+    let order = make_limit_order("O-REPORT-PROMOTE");
+    let coid = order.client_order_id();
+    let mut row = frontend_order("BTC", 102);
+
+    if cloid_lookup {
+        row["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
+    }
+
+    *state.frontend_open_orders_response.lock().await = Some(json!([row]));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let dispatch = client.ws_dispatch_state();
+    dispatch.register_context(OrderContext::from(&order));
+    dispatch.record_venue_order_id(coid, VenueOrderId::from("101"));
+    let cmd = make_status_report_cmd(
+        Some(coid),
+        (!cloid_lookup).then(|| VenueOrderId::from("102")),
+    );
+    let task = client.generate_order_status_report_task(&cmd).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+    assert!(rx.try_recv().is_err());
+    let current_oid = VenueOrderId::from(if superseded { "103" } else { "101" });
+    dispatch.record_venue_order_id(coid, current_oid);
+    dispatch.mark_pending_modify(coid, current_oid, Quantity::from("0.2"));
+    let result = task.result.await;
+
+    if superseded {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("order status report for superseded leg on {coid}"),
+        );
+    } else {
+        assert_eq!(
+            result.unwrap().unwrap().venue_order_id,
+            VenueOrderId::from("102")
+        );
+    }
+
+    assert_eq!(
+        dispatch.cached_venue_order_id(&coid),
+        Some(if cloid_lookup && !superseded {
+            VenueOrderId::from("102")
+        } else {
+            current_oid
+        })
+    );
+    assert_eq!(
+        dispatch.has_pending_modify(&coid),
+        superseded || !cloid_lookup
+    );
+
+    if superseded || !cloid_lookup {
+        assert!(rx.try_recv().is_err());
+    } else {
+        let event = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::Updated(event)) = event else {
+            panic!("expected replacement update");
+        };
+
+        assert_eq!(event.venue_order_id, Some(VenueOrderId::from("102")));
+        assert_eq!(event.quantity, Quantity::from("0.2"));
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_order_report_task_defers_cached_older_triggered_leg() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    let mut row = historical_order("BTC", 101);
+    row["status"] = json!("triggered");
+    *state.order_status_response.lock().await = Some(json!({"status": "order", "order": row}));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let order = open_limit_order_in_cache(&cache, "O-REPORT-CACHED-TRIGGERED", "101");
+    let coid = order.client_order_id();
+    let dispatch = client.ws_dispatch_state();
+    dispatch.record_venue_order_id(coid, VenueOrderId::from("101"));
+    let cmd = make_status_report_cmd(Some(coid), None);
+    let task = client.generate_order_status_report_task(&cmd).unwrap();
+    state.pause_next_info.store(true, Ordering::Release);
+
+    let worker = tokio::spawn(task.collection);
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    let newer_oid = VenueOrderId::from("102");
+    cache
+        .borrow_mut()
+        .add_venue_order_id(&coid, &newer_oid, true)
+        .unwrap();
+    dispatch.record_venue_order_id(coid, newer_oid);
+    state.info_release.notify_one();
+    worker.await.unwrap();
+    let result = task.result.await;
+    let requests = state.info_requests.lock().await;
+    let oid_queries: Vec<_> = requests
+        .iter()
+        .filter(|request| request["type"] == "orderStatus")
+        .map(|request| request["oid"].clone())
+        .collect();
+    assert_eq!(oid_queries, vec![json!(101)]);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        format!("order status report for superseded leg on {coid}"),
+    );
+    assert_eq!(dispatch.cached_venue_order_id(&coid), Some(newer_oid));
+    assert!(rx.try_recv().is_err());
+    drop(requests);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_observes_instrument_update_during_collection() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([frontend_order("BTC", 101)]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let cmd = make_status_report_cmd(None, Some(VenueOrderId::from("101")));
+    let task = client.generate_order_status_report_task(&cmd).unwrap();
+    state.pause_next_info.store(true, Ordering::Release);
+
+    let worker = tokio::spawn(task.collection);
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    add_test_perp_instrument_to_cache(&cache);
+    let instrument = cache
+        .borrow()
+        .instrument(&InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT))
+        .unwrap()
+        .clone();
+    client.on_instrument(instrument);
+    state.info_release.notify_one();
+    worker.await.unwrap();
+    let report = task.result.await.unwrap().unwrap();
+    assert_eq!(report.quantity.precision, 5);
+    assert_eq!(report.price.unwrap().precision, 2);
+    assert_eq!(report.venue_order_id, VenueOrderId::from("101"));
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::mainnet(HyperliquidEnvironment::Mainnet)]
+#[case::testnet(HyperliquidEnvironment::Testnet)]
+#[ignore = "requires explicit live validation approval and Hyperliquid credentials"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_live_execution_report_tasks(#[case] environment: HyperliquidEnvironment) {
+    let http = HyperliquidHttpClient::from_env(environment).unwrap();
+    let instrument_client = http.clone();
+    let instruments = tokio::spawn(async move { instrument_client.request_instruments().await })
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!instruments.is_empty());
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_from_config(HyperliquidExecutionClientConfig {
+            environment,
+            ..HyperliquidExecutionClientConfig::default()
+        });
+
+    for instrument in instruments {
+        client.on_instrument(instrument);
+    }
+
+    let instrument = Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT));
+
+    let orders = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        instrument,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let fills = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let positions = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument,
+        None,
+        None,
+        None,
+        None,
+    );
+    let order_reports =
+        run_report_task(client.generate_order_status_reports_task(&orders).unwrap())
+            .await
+            .unwrap();
+    let fill_reports = run_report_task(client.generate_fill_reports_task(&fills).unwrap())
+        .await
+        .unwrap();
+    let position_reports = run_report_task(
+        client
+            .generate_position_status_reports_task(&positions)
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let oid = order_reports
+        .first()
+        .map(|report| report.venue_order_id)
+        .or_else(|| fill_reports.first().map(|report| report.venue_order_id));
+
+    let oid = if let Some(oid) = oid {
+        oid
+    } else {
+        let user = http.get_account_address().unwrap();
+        let history = http.info_historical_orders(&user).await.unwrap();
+        history.first().map_or(VenueOrderId::from("0"), |entry| {
+            VenueOrderId::from(entry.order.oid.to_string())
+        })
+    };
+
+    let single = make_status_report_cmd(None, Some(oid));
+    let report = run_report_task(client.generate_order_status_report_task(&single).unwrap())
+        .await
+        .unwrap();
+
+    if let Some(report) = report {
+        assert_eq!(report.venue_order_id, oid);
+    }
+
+    assert!(
+        order_reports
+            .iter()
+            .all(|report| report.account_id == client.account_id())
+    );
+    assert!(
+        fill_reports
+            .iter()
+            .all(|report| report.account_id == client.account_id())
+    );
+    assert!(
+        position_reports
+            .iter()
+            .all(|report| report.account_id == client.account_id())
+    );
+    println!("{environment:?}: all four execution report task paths complete on workers");
+}
+
+#[rstest]
+#[case::orders("orders", "failed to generate order status reports")]
+#[case::fills("fills", "failed to generate fill reports")]
+#[case::positions("positions", "failed to generate position status reports")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_tasks_preserve_collection_errors(#[case] kind: &str, #[case] context: &str) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    *state.frontend_open_orders_response.lock().await =
+        Some(json!([frontend_order("UNKNOWN", 101)]));
+    *state.user_fills_response.lock().await = Some(json!([user_fill("UNKNOWN", 101)]));
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("UNKNOWN"));
+
+    let (inline, worker) = match kind {
+        "orders" => {
+            let cmd = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                true,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            (
+                client
+                    .generate_order_status_reports(&cmd)
+                    .await
+                    .unwrap_err(),
+                run_report_task(client.generate_order_status_reports_task(&cmd).unwrap())
+                    .await
+                    .unwrap_err(),
+            )
+        }
+        "fills" => {
+            let cmd = GenerateFillReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            (
+                client.generate_fill_reports(cmd.clone()).await.unwrap_err(),
+                run_report_task(client.generate_fill_reports_task(&cmd).unwrap())
+                    .await
+                    .unwrap_err(),
+            )
+        }
+        "positions" => {
+            let cmd = GeneratePositionStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            (
+                client
+                    .generate_position_status_reports(&cmd)
+                    .await
+                    .unwrap_err(),
+                run_report_task(client.generate_position_status_reports_task(&cmd).unwrap())
+                    .await
+                    .unwrap_err(),
+            )
+        }
+        _ => unreachable!(),
+    };
+
+    assert_eq!(inline.to_string(), context);
+    assert_eq!(format!("{worker:#}"), format!("{inline:#}"));
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_canceled_report_task_never_promotes_replacement() {
+    let state = TestServerState::default();
+    let order = make_limit_order("O-REPORT-CANCELED");
+    let coid = order.client_order_id();
+    let mut row = frontend_order("BTC", 102);
+    row["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
+    *state.frontend_open_orders_response.lock().await = Some(json!([row]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let dispatch = client.ws_dispatch_state();
+    dispatch.register_context(OrderContext::from(&order));
+    dispatch.record_venue_order_id(coid, VenueOrderId::from("101"));
+    dispatch.mark_pending_modify(coid, VenueOrderId::from("101"), Quantity::from("0.2"));
+    let cmd = make_status_report_cmd(Some(coid), None);
+    let task = client.generate_order_status_report_task(&cmd).unwrap();
+    state.pause_next_info.store(true, Ordering::Release);
+
+    let worker = tokio::spawn(task.collection);
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    worker.abort();
+    assert!(worker.await.unwrap_err().is_cancelled());
+    assert_eq!(
+        task.result.await.unwrap_err().to_string(),
+        "report collection stopped without a result"
+    );
+    assert_eq!(
+        dispatch.cached_venue_order_id(&coid),
+        Some(VenueOrderId::from("101"))
+    );
+    assert!(dispatch.has_pending_modify(&coid));
+    assert!(rx.try_recv().is_err());
+    state.info_release.notify_one();
     client.disconnect().await.unwrap();
 }

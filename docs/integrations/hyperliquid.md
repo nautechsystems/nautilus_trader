@@ -1272,14 +1272,23 @@ for a leg older than the bound one, such as a replay after a reconnect, never mo
 back.
 
 The same chain guards the inflight query and single-order reconcile paths. While a modify is in
-flight, `query_order` and `generate_order_status_report` drop a `Canceled` for the superseded leg,
-so an out-of-band status probe that resolves the old `oid` before the replacement appears cannot
-terminate the live order. A non-cancel status for the old leg (such as a late `Filled`) is still
-forwarded so reconciliation can recover it.
+flight, `query_order` drops a `Canceled` for the superseded leg. `generate_order_status_report`
+returns an error for that report so reconciliation defers resolution rather than treating it as
+proof of absence. A modify whose venue outcome is unknown keeps its intent, so the old-leg cancel
+stays deferred until that intent clears. These cancel guards prevent a status probe for the old
+leg from terminating the live order.
+
+`generate_order_status_report` also defers `Accepted` and `Triggered` reports whenever their `oid`
+is older than the bound one, including when no modify is pending. These checks keep single-order
+reconciliation from applying an older leg's state or promoting the binding back to that leg.
+After promotion, `Canceled` reports for historical legs reach shared reconciliation, which
+suppresses the old cancellation while recovering missing fills. Late `Filled` reports also remain
+available for recovery.
 
 #### Dropped replacement acceptance
 
-These paths also promote the replacement. Hyperliquid lists the replacement under the same `cloid`
+The inflight query and single-order reconcile paths also promote the replacement. Hyperliquid
+lists the replacement under the same `cloid`
 with a new `oid` in `frontendOpenOrders`, so when the replacement `ACCEPTED(new_oid)` was dropped
 on the WebSocket and no fill has arrived, the query resolves it by `cloid` and promotes it to
 `OrderUpdated` directly (rebinding the `cloid` to `new_oid` and advancing the modify chain).

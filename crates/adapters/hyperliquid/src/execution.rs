@@ -25,7 +25,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     cache::fifo::FifoCache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -584,6 +584,26 @@ impl HyperliquidExecutionClient {
                 );
             }
         }
+    }
+
+    fn report_client(&self) -> anyhow::Result<HyperliquidReportClient> {
+        Ok(HyperliquidReportClient {
+            http_client: self.http_client.clone(),
+            account_address: self.get_account_address()?,
+        })
+    }
+
+    fn cached_report_oid(&self, cmd: &GenerateOrderStatusReport) -> Option<u64> {
+        if cmd.venue_order_id.is_some() {
+            return None;
+        }
+
+        cmd.client_order_id.and_then(|client_order_id| {
+            self.core
+                .cache()
+                .venue_order_id(&client_order_id)
+                .and_then(|value| value.as_str().parse().ok())
+        })
     }
 
     fn get_account_address(&self) -> anyhow::Result<String> {
@@ -2004,182 +2024,111 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
+    fn generate_order_status_report_task(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+        let client = self.report_client();
+        let cached_oid = self.cached_report_oid(cmd);
+        let command = cmd.clone();
+        let dispatch_state = self.ws_dispatch_state.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        let client_order_id = cmd.client_order_id;
+        Some(ExecutionReportTask::new(
+            async move {
+                client?
+                    .collect_order_status_report(&command, cached_oid)
+                    .await
+            },
+            move |report| {
+                finish_order_status_report(
+                    report,
+                    client_order_id,
+                    &dispatch_state,
+                    &emitter,
+                    clock.get_time_ns(),
+                )
+            },
+        ))
+    }
+
+    fn generate_order_status_reports_task(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
+        let client = self.report_client();
+        let command = cmd.clone();
+        Some(ExecutionReportTask::new(
+            async move { client?.collect_order_status_reports(&command).await },
+            Ok,
+        ))
+    }
+
+    fn generate_fill_reports_task(
+        &self,
+        cmd: &GenerateFillReports,
+    ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
+        let client = self.report_client();
+        let command = cmd.clone();
+        Some(ExecutionReportTask::new(
+            async move { client?.collect_fill_reports(command).await },
+            Ok,
+        ))
+    }
+
+    fn generate_position_status_reports_task(
+        &self,
+        cmd: &GeneratePositionStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<PositionStatusReport>>> {
+        let client = self.report_client();
+        let command = cmd.clone();
+        Some(ExecutionReportTask::new(
+            async move { client?.collect_position_status_reports(&command).await },
+            Ok,
+        ))
+    }
+
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let account_address = self.get_account_address()?;
-
-        if cmd.venue_order_id.is_none() && cmd.client_order_id.is_none() {
-            log::warn!(
-                "Cannot generate order status report without venue_order_id or client_order_id"
-            );
-            return Ok(None);
-        }
-
-        // Search open orders by cloid first when supplied. Hyperliquid modify
-        // produces a new venue oid while preserving cloid, so a cached oid can
-        // point at the canceled leg rather than the live replacement.
-        let mut cloid_lookup_error = None;
-
-        if let Some(client_order_id) = &cmd.client_order_id {
-            match self
-                .http_client
-                .request_order_status_report_by_client_order_id(&account_address, client_order_id)
-                .await
-            {
-                Ok(Some(report)) => {
-                    promote_replacement_from_query(
-                        &report,
-                        &self.ws_dispatch_state,
-                        &self.emitter,
-                        self.clock.get_time_ns(),
-                    );
-                    log::debug!("Generated order status report for {client_order_id}");
-                    return Ok(Some(report));
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    log::warn!(
-                        "Failed to generate order status report for {client_order_id}: {e}; \
-                         falling back to oid lookup"
-                    );
-                    cloid_lookup_error = Some(anyhow::anyhow!(e));
-                }
-            }
-        }
-
-        let oid = match &cmd.venue_order_id {
-            Some(venue_order_id) => venue_order_id
-                .as_str()
-                .parse::<u64>()
-                .context("failed to parse venue_order_id as oid")?,
-            None => match &cmd.client_order_id {
-                Some(client_order_id) => {
-                    let cached_oid: Option<u64> = self
-                        .core
-                        .cache()
-                        .venue_order_id(client_order_id)
-                        .and_then(|v| v.as_str().parse::<u64>().ok());
-
-                    match cached_oid {
-                        Some(oid) => oid,
-                        None => {
-                            // A failed cloid probe is not a "not found": with no
-                            // oid fallback available the lookup must fail closed.
-                            if let Some(e) = cloid_lookup_error {
-                                return Err(e.context(
-                                    "cloid lookup failed and no venue_order_id fallback available",
-                                ));
-                            }
-
-                            log::debug!("No order status report found for {client_order_id}");
-                            return Ok(None);
-                        }
-                    }
-                }
-                None => unreachable!("cmd must carry at least one identifier"),
-            },
-        };
-
-        let mut report = self
-            .http_client
-            .request_order_status_report(&account_address, oid)
-            .await
-            .context("failed to generate order status report")?;
-
-        if let Some(report) = &report
-            && let Some(client_order_id) = &cmd.client_order_id
-            && is_inflight_modify_old_leg_cancel(&self.ws_dispatch_state, client_order_id, report)
-        {
-            log::debug!(
-                "Suppressing stale old-leg Canceled for {client_order_id}: modify in flight"
-            );
-            return Ok(None);
-        }
-
-        if let Some(report) = &mut report
-            && let Some(client_order_id) = cmd.client_order_id
-        {
-            attach_known_client_order_id(report, client_order_id);
-        }
-
-        if let Some(report) = &mut report {
-            clamp_reduce_only_report_to_fills(&self.http_client, &account_address, report).await;
-        }
-
-        if report.is_some() {
-            log::debug!("Generated order status report for oid {oid}");
-        } else {
-            log::debug!("No order status report found for oid {oid}");
-        }
-        Ok(report)
+        let report = self
+            .report_client()?
+            .collect_order_status_report(cmd, self.cached_report_oid(cmd))
+            .await?;
+        finish_order_status_report(
+            report,
+            cmd.client_order_id,
+            &self.ws_dispatch_state,
+            &self.emitter,
+            self.clock.get_time_ns(),
+        )
     }
 
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let account_address = self.get_account_address()?;
-
-        let mut reports = self
-            .http_client
-            .request_order_status_reports(&account_address, cmd.instrument_id)
+        self.report_client()?
+            .collect_order_status_reports(cmd)
             .await
-            .context("failed to generate order status reports")?;
-
-        retain_order_status_reports(&mut reports, cmd);
-
-        log::debug!("Generated {} order status reports", reports.len());
-        Ok(reports)
     }
 
     async fn generate_fill_reports(
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let account_address = self.get_account_address()?;
-
-        let reports = self
-            .http_client
-            .request_fill_reports(&account_address, cmd.instrument_id)
-            .await
-            .context("failed to generate fill reports")?;
-
-        let reports = if let (Some(start), Some(end)) = (cmd.start, cmd.end) {
-            reports
-                .into_iter()
-                .filter(|r| r.ts_event >= start && r.ts_event <= end)
-                .collect()
-        } else if let Some(start) = cmd.start {
-            reports
-                .into_iter()
-                .filter(|r| r.ts_event >= start)
-                .collect()
-        } else if let Some(end) = cmd.end {
-            reports.into_iter().filter(|r| r.ts_event <= end).collect()
-        } else {
-            reports
-        };
-
-        log::debug!("Generated {} fill reports", reports.len());
-        Ok(reports)
+        self.report_client()?.collect_fill_reports(cmd).await
     }
 
     async fn generate_position_status_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        let account_address = self.get_account_address()?;
-
-        let reports = self
-            .http_client
-            .request_position_status_reports(&account_address, cmd.instrument_id)
+        self.report_client()?
+            .collect_position_status_reports(cmd)
             .await
-            .context("failed to generate position status reports")?;
-
-        log::debug!("Generated {} position status reports", reports.len());
-        Ok(reports)
     }
 
     async fn generate_mass_status(
@@ -2305,6 +2254,213 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         Ok(Some(mass_status))
     }
+}
+
+struct HyperliquidReportClient {
+    http_client: HyperliquidHttpClient,
+    account_address: String,
+}
+
+impl HyperliquidReportClient {
+    async fn collect_order_status_report(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+        cached_oid: Option<u64>,
+    ) -> anyhow::Result<CollectedOrderReport> {
+        let account_address = &self.account_address;
+
+        if cmd.venue_order_id.is_none() && cmd.client_order_id.is_none() {
+            log::warn!(
+                "Cannot generate order status report without venue_order_id or client_order_id"
+            );
+            return Ok(CollectedOrderReport::NotFound);
+        }
+
+        // Search open orders by cloid first when supplied. Hyperliquid modify
+        // produces a new venue oid while preserving cloid, so a cached oid can
+        // point at the canceled leg rather than the live replacement.
+        let mut cloid_lookup_error = None;
+
+        if let Some(client_order_id) = &cmd.client_order_id {
+            match self
+                .http_client
+                .request_order_status_report_by_client_order_id(account_address, client_order_id)
+                .await
+            {
+                Ok(Some(report)) => {
+                    log::debug!("Generated order status report for {client_order_id}");
+                    return Ok(CollectedOrderReport::Cloid(report));
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log::warn!(
+                        "Failed to generate order status report for {client_order_id}: {e}; \
+                         falling back to oid lookup"
+                    );
+                    cloid_lookup_error = Some(anyhow::anyhow!(e));
+                }
+            }
+        }
+
+        let oid = if let Some(venue_order_id) = cmd.venue_order_id {
+            venue_order_id
+                .as_str()
+                .parse::<u64>()
+                .context("failed to parse venue_order_id as oid")?
+        } else if let Some(oid) = cached_oid {
+            oid
+        } else {
+            if let Some(e) = cloid_lookup_error {
+                return Err(
+                    e.context("cloid lookup failed and no venue_order_id fallback available")
+                );
+            }
+
+            log::debug!("No order status report found for {:?}", cmd.client_order_id);
+            return Ok(CollectedOrderReport::NotFound);
+        };
+
+        let mut report = self
+            .http_client
+            .request_order_status_report(account_address, oid)
+            .await
+            .context("failed to generate order status report")?;
+
+        if let Some(report) = &mut report
+            && let Some(client_order_id) = cmd.client_order_id
+        {
+            attach_known_client_order_id(report, client_order_id);
+        }
+
+        if let Some(report) = &mut report {
+            clamp_reduce_only_report_to_fills(&self.http_client, account_address, report).await;
+        }
+
+        if report.is_some() {
+            log::debug!("Generated order status report for oid {oid}");
+        } else {
+            log::debug!("No order status report found for oid {oid}");
+        }
+
+        Ok(report.map_or(CollectedOrderReport::NotFound, CollectedOrderReport::Oid))
+    }
+
+    async fn collect_order_status_reports(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let account_address = &self.account_address;
+
+        let mut reports = self
+            .http_client
+            .request_order_status_reports(account_address, cmd.instrument_id)
+            .await
+            .context("failed to generate order status reports")?;
+
+        retain_order_status_reports(&mut reports, cmd);
+
+        log::debug!("Generated {} order status reports", reports.len());
+        Ok(reports)
+    }
+
+    async fn collect_fill_reports(
+        &self,
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        let account_address = &self.account_address;
+
+        let reports = self
+            .http_client
+            .request_fill_reports(account_address, cmd.instrument_id)
+            .await
+            .context("failed to generate fill reports")?;
+
+        let reports = if let (Some(start), Some(end)) = (cmd.start, cmd.end) {
+            reports
+                .into_iter()
+                .filter(|r| r.ts_event >= start && r.ts_event <= end)
+                .collect()
+        } else if let Some(start) = cmd.start {
+            reports
+                .into_iter()
+                .filter(|r| r.ts_event >= start)
+                .collect()
+        } else if let Some(end) = cmd.end {
+            reports.into_iter().filter(|r| r.ts_event <= end).collect()
+        } else {
+            reports
+        };
+
+        log::debug!("Generated {} fill reports", reports.len());
+        Ok(reports)
+    }
+
+    async fn collect_position_status_reports(
+        &self,
+        cmd: &GeneratePositionStatusReports,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let account_address = &self.account_address;
+
+        let reports = self
+            .http_client
+            .request_position_status_reports(account_address, cmd.instrument_id)
+            .await
+            .context("failed to generate position status reports")?;
+
+        log::debug!("Generated {} position status reports", reports.len());
+        Ok(reports)
+    }
+}
+
+enum CollectedOrderReport {
+    Cloid(OrderStatusReport),
+    Oid(OrderStatusReport),
+    NotFound,
+}
+
+fn finish_order_status_report(
+    collected: CollectedOrderReport,
+    client_order_id: Option<ClientOrderId>,
+    dispatch_state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<OrderStatusReport>> {
+    let report = match &collected {
+        CollectedOrderReport::Cloid(report) | CollectedOrderReport::Oid(report) => report,
+        CollectedOrderReport::NotFound => return Ok(None),
+    };
+
+    if let Some(client_order_id) = client_order_id.or(report.client_order_id) {
+        let current_oid = dispatch_state.cached_venue_order_id(&client_order_id);
+        let older_leg = current_oid
+            .is_some_and(|current_oid| venue_oid(report.venue_order_id) < venue_oid(current_oid));
+
+        let superseded = match report.order_status {
+            // Promoted legs still carry fill evidence; reconciliation suppresses their cancellation.
+            OrderStatus::Canceled => {
+                is_inflight_modify_old_leg_cancel(dispatch_state, &client_order_id, report)
+            }
+            OrderStatus::Accepted | OrderStatus::Triggered => older_leg,
+            _ => false,
+        };
+
+        if superseded {
+            log::debug!(
+                "Suppressing {} for superseded leg on {client_order_id}",
+                report.order_status
+            );
+            anyhow::bail!("order status report for superseded leg on {client_order_id}");
+        }
+    }
+
+    Ok(match collected {
+        CollectedOrderReport::Cloid(report) => {
+            promote_replacement_from_query(&report, dispatch_state, emitter, ts_init);
+            Some(report)
+        }
+        CollectedOrderReport::Oid(report) => Some(report),
+        CollectedOrderReport::NotFound => None,
+    })
 }
 
 // Mass status clamps a reduce-only `Filled` report to its fills from its own fill sweep. The
