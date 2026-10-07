@@ -335,6 +335,7 @@ pub trait Order: 'static + Send {
     fn tags(&self) -> Option<&[Ustr]>;
     fn filled_qty(&self) -> Quantity;
     fn voided_qty(&self) -> Quantity;
+    fn non_reopened_voided_qty(&self) -> Quantity;
     fn leaves_qty(&self) -> Quantity;
     fn overfill_qty(&self) -> Quantity;
 
@@ -739,6 +740,10 @@ pub struct OrderCore {
     pub filled_qty: Quantity,
     #[serde(default)]
     pub voided_qty: Quantity,
+    /// Cumulative quantity voided by non-reopened `OrderFillVoided` corrections, already excluded
+    /// from both `filled_qty` and `leaves_qty`. Kept current by `recompute_fill_state`.
+    #[serde(default)]
+    pub non_reopened_voided_qty: Quantity,
     pub leaves_qty: Quantity,
     pub overfill_qty: Quantity,
     pub avg_px: Option<Decimal>,
@@ -790,6 +795,7 @@ impl OrderCore {
             tags: init.tags,
             filled_qty: Quantity::zero(init.quantity.precision),
             voided_qty: Quantity::zero(init.quantity.precision),
+            non_reopened_voided_qty: Quantity::zero(init.quantity.precision),
             leaves_qty: init.quantity,
             overfill_qty: Quantity::zero(init.quantity.precision),
             avg_px: None,
@@ -1264,6 +1270,7 @@ impl OrderCore {
 
         self.filled_qty = filled;
         self.voided_qty = voided;
+        self.non_reopened_voided_qty = non_reopened_voided;
         self.overfill_qty = self.filled_qty.saturating_sub(self.quantity);
         self.avg_px = totals.average();
         self.fill_totals = Some(totals);
@@ -1299,6 +1306,23 @@ impl OrderCore {
         }
 
         self.is_quote_quantity = event.is_quote_quantity;
+    }
+
+    /// Applies a new order quantity from an `OrderUpdated` event, keeping `leaves_qty` net of any
+    /// non-reopened voided quantity so it does not become working again (see
+    /// `docs/concepts/events/order_fill_voided.md`).
+    pub(crate) fn apply_updated_quantity(&mut self, new_quantity: Quantity) {
+        self.quantity = new_quantity;
+        let unfilled_qty = self.quantity.saturating_sub(self.filled_qty);
+        let voided_qty = self.non_reopened_voided_qty;
+
+        // A terminal update sets the quantity to the filled quantity, so a non-reopened void
+        // exceeds what is unfilled without anything being wrong
+        self.leaves_qty = if voided_qty > unfilled_qty {
+            Quantity::zero(unfilled_qty.precision.max(voided_qty.precision))
+        } else {
+            unfilled_qty - voided_qty
+        };
     }
 
     fn filled(&mut self, event: &OrderFilled, source_status: OrderStatus) {
@@ -2572,6 +2596,387 @@ mod tests {
         assert_eq!(order.voided_qty(), Quantity::from(40_000));
         assert_eq!(order.leaves_qty(), Quantity::from(0));
         assert!(order.is_closed());
+    }
+
+    #[rstest]
+    fn test_order_updated_after_non_reopened_fill_void_keeps_void_out_of_leaves(
+        #[values(
+            OrderType::Market,
+            OrderType::Limit,
+            OrderType::LimitIfTouched,
+            OrderType::MarketIfTouched,
+            OrderType::MarketToLimit,
+            OrderType::StopLimit,
+            OrderType::StopMarket,
+            OrderType::TrailingStopLimit,
+            OrderType::TrailingStopMarket
+        )]
+        order_type: OrderType,
+        #[values(8, 10, 12)] updated_qty: u64,
+    ) {
+        let venue_order_id = VenueOrderId::from("V-VOID-UPDATE");
+        let account_id = AccountId::from("SIM-VOID-UPDATE");
+        let mut order = OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("ETHUSDT-LINEAR.BYBIT"))
+            .client_order_id(ClientOrderId::from("O-VOID-UPDATE"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(10))
+            .price(Price::from("100.00"))
+            .trigger_price(Price::from("100.00"))
+            .trigger_type(TriggerType::LastPrice)
+            .limit_offset(dec!(1))
+            .trailing_offset(dec!(1))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+        let fill = |trade_id: &str, last_qty: u64| {
+            OrderFilledSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .venue_order_id(venue_order_id)
+                .account_id(account_id)
+                .trade_id(TradeId::from(trade_id))
+                .order_side(order.order_side())
+                .order_type(order.order_type())
+                .last_qty(Quantity::from(last_qty))
+                .last_px(Price::from("100.00"))
+                .build()
+        };
+        // The one non-reopened voided unit stays out of working leaves
+        let expected_leaves = updated_qty - 4;
+        let first_fill = fill("T-VOID-UPDATE-1", 4);
+        let remainder_fill = fill("T-VOID-UPDATE-2", expected_leaves);
+        order
+            .apply(OrderEventAny::Filled(first_fill.clone()))
+            .unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(OrderFillVoided {
+                is_reopened: false,
+                ..matching_fill_void(&first_fill, Quantity::from(1), None)
+            }))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(3));
+        assert_eq!(order.leaves_qty(), Quantity::from(6));
+
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .quantity(Quantity::from(updated_qty))
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.leaves_qty(), Quantity::from(expected_leaves));
+
+        order.apply(OrderEventAny::Filled(remainder_fill)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Voided);
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert!(order.is_closed());
+    }
+
+    /// Builds an accepted Limit order (qty 10) with a `T-VOID-UPDATE-1` fill of 4, for reuse
+    /// across the `OrderUpdated`-after-fill-void boundary tests below.
+    fn accepted_order_with_first_fill() -> (OrderAny, VenueOrderId, AccountId, OrderFilled) {
+        let venue_order_id = VenueOrderId::from("V-VOID-UPDATE");
+        let account_id = AccountId::from("SIM-VOID-UPDATE");
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("ETHUSDT-LINEAR.BYBIT"))
+            .client_order_id(ClientOrderId::from("O-VOID-UPDATE"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(10))
+            .price(Price::from("100.00"))
+            .build();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+        let first_fill = OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .trade_id(TradeId::from("T-VOID-UPDATE-1"))
+            .order_side(order.order_side())
+            .order_type(order.order_type())
+            .last_qty(Quantity::from(4))
+            .last_px(Price::from("100.00"))
+            .build();
+        order
+            .apply(OrderEventAny::Filled(first_fill.clone()))
+            .unwrap();
+        (order, venue_order_id, account_id, first_fill)
+    }
+
+    #[rstest]
+    fn test_order_updated_after_reopened_fill_void_keeps_void_in_leaves() {
+        let (mut order, venue_order_id, account_id, first_fill) = accepted_order_with_first_fill();
+
+        order
+            .apply(OrderEventAny::FillVoided(OrderFillVoided {
+                is_reopened: true,
+                ..matching_fill_void(&first_fill, Quantity::from(1), None)
+            }))
+            .unwrap();
+        assert_eq!(order.filled_qty(), Quantity::from(3));
+        assert_eq!(order.non_reopened_voided_qty(), Quantity::from(0));
+        // A reopened void puts its quantity back into leaves rather than excluding it
+        assert_eq!(order.leaves_qty(), Quantity::from(7));
+
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .quantity(Quantity::from(12))
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.non_reopened_voided_qty(), Quantity::from(0));
+        assert_eq!(order.leaves_qty(), Quantity::from(9));
+    }
+
+    #[rstest]
+    fn test_order_updated_uses_latest_superseding_correction() {
+        let (mut order, venue_order_id, account_id, first_fill) = accepted_order_with_first_fill();
+
+        order
+            .apply(OrderEventAny::FillVoided(OrderFillVoided {
+                is_reopened: false,
+                ..matching_fill_void(&first_fill, Quantity::from(1), None)
+            }))
+            .unwrap();
+        assert_eq!(order.non_reopened_voided_qty(), Quantity::from(1));
+
+        // A second, larger correction for the same trade supersedes the first rather than
+        // stacking with it.
+        order
+            .apply(OrderEventAny::FillVoided(OrderFillVoided {
+                is_reopened: false,
+                ..matching_fill_void(&first_fill, Quantity::from(3), None)
+            }))
+            .unwrap();
+        assert_eq!(order.filled_qty(), Quantity::from(1));
+        assert_eq!(order.non_reopened_voided_qty(), Quantity::from(3));
+
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .quantity(Quantity::from(12))
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+
+        // 12 - filled(1) - superseding correction(3), not 12 - 1 - (1 + 3)
+        assert_eq!(order.leaves_qty(), Quantity::from(8));
+    }
+
+    #[rstest]
+    fn test_order_updated_to_zero_leaves_sets_no_new_terminal_transition() {
+        let (mut order, venue_order_id, account_id, first_fill) = accepted_order_with_first_fill();
+
+        order
+            .apply(OrderEventAny::FillVoided(OrderFillVoided {
+                is_reopened: false,
+                ..matching_fill_void(&first_fill, Quantity::from(1), None)
+            }))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(3));
+        assert_eq!(order.non_reopened_voided_qty(), Quantity::from(1));
+
+        // 4 - filled(3) - non-reopened voided(1) = 0 leaves, with reconciliation left false so
+        // the exception below does not apply and no new terminal transition should occur.
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .quantity(Quantity::from(4))
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .reconciliation(false)
+                    .build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert!(order.ts_closed().is_none());
+        assert!(!order.is_closed());
+
+        // The venue's own cancellation still applies normally afterward
+        order
+            .apply(OrderEventAny::Canceled(
+                OrderCanceledSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::Canceled);
+    }
+
+    #[rstest]
+    fn test_reconciliation_to_filled_exception_fires_with_non_reopened_void_present() {
+        let (mut order, venue_order_id, account_id, first_fill) = accepted_order_with_first_fill();
+
+        order
+            .apply(OrderEventAny::FillVoided(OrderFillVoided {
+                is_reopened: false,
+                ..matching_fill_void(&first_fill, Quantity::from(1), None)
+            }))
+            .unwrap();
+        assert_eq!(order.filled_qty(), Quantity::from(3));
+
+        // event.quantity == filled_qty with reconciliation=true fires the exception even though
+        // a non-reopened void is present on the order.
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .quantity(Quantity::from(3))
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .reconciliation(true)
+                    .build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert!(order.ts_closed().is_some());
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+    }
+
+    #[rstest]
+    fn test_order_updated_restores_pending_status_with_non_reopened_void_present() {
+        let (mut order, venue_order_id, account_id, first_fill) = accepted_order_with_first_fill();
+
+        order
+            .apply(OrderEventAny::FillVoided(OrderFillVoided {
+                is_reopened: false,
+                ..matching_fill_void(&first_fill, Quantity::from(1), None)
+            }))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+
+        order
+            .apply(OrderEventAny::PendingUpdate(
+                OrderPendingUpdateSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::PendingUpdate);
+
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .quantity(Quantity::from(12))
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+
+        // Restored to the pre-PendingUpdate status, with leaves still excluding the void
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.leaves_qty(), Quantity::from(8));
+    }
+
+    #[rstest]
+    fn test_order_updated_after_fill_void_replays_to_same_state() {
+        let (mut order, venue_order_id, account_id, first_fill) = accepted_order_with_first_fill();
+
+        order
+            .apply(OrderEventAny::FillVoided(OrderFillVoided {
+                is_reopened: false,
+                ..matching_fill_void(&first_fill, Quantity::from(1), None)
+            }))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .quantity(Quantity::from(12))
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+        assert_eq!(replayed.status(), order.status());
+        assert_eq!(replayed.filled_qty(), order.filled_qty());
+        assert_eq!(
+            replayed.non_reopened_voided_qty(),
+            order.non_reopened_voided_qty()
+        );
+        assert_eq!(replayed.leaves_qty(), order.leaves_qty());
+        assert_eq!(replayed.leaves_qty(), Quantity::from(8));
     }
 
     #[rstest]

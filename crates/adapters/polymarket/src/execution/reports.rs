@@ -364,7 +364,7 @@ impl PolymarketExecutionClient {
         );
         report.price = cached_price;
         report.avg_px = avg_px;
-        normalize_terminal_order_report_quantity(&mut report);
+        normalize_terminal_order_report_quantity(&mut report, Quantity::zero(size_prec));
 
         Ok(Some(report))
     }
@@ -574,7 +574,13 @@ impl PolymarketExecutionClient {
             };
 
             settlement.ensure_order_resolved(&venue_order_id, "QueryOrder")?;
-            cap_order_report_filled_qty(&mut report, cached_filled, confirmed_filled);
+            cap_order_report_filled_qty(
+                &mut report,
+                cached_filled,
+                confirmed_filled,
+                cached_order.non_reopened_voided_qty(),
+            );
+
             if report.order_status == OrderStatus::Canceled
                 && ws_dispatch_state
                     .lock()
@@ -681,7 +687,14 @@ impl PolymarketExecutionClient {
                 None
             };
 
-            cap_order_report_filled_qty(&mut report, cached_filled, confirmed_filled);
+            cap_order_report_filled_qty(
+                &mut report,
+                cached_filled,
+                confirmed_filled,
+                cached_authority
+                    .as_ref()
+                    .map_or_else(|| Quantity::zero(size_prec), Order::non_reopened_voided_qty),
+            );
             report
         } else {
             let Some(report) = self
@@ -878,10 +891,7 @@ impl PolymarketExecutionClient {
                 continue;
             }
 
-            let filled_before_leg = promotion
-                .quantity
-                .checked_sub(promotion.leg_quantity)
-                .context("replacement venue-leg quantity exceeds logical quantity")?;
+            let filled_before_leg = promotion.prior_filled;
             report.client_order_id = Some(promotion.client_order_id);
             report.quantity = promotion.quantity;
             report.filled_qty = filled_before_leg
@@ -986,6 +996,11 @@ impl PolymarketExecutionClient {
                 Order::filled_qty,
             );
 
+            let non_reopened_voided = cached_order.as_ref().map_or_else(
+                || Quantity::zero(report.quantity.precision),
+                Order::non_reopened_voided_qty,
+            );
+
             cap_order_report_filled_qty(
                 report,
                 cached_filled,
@@ -993,6 +1008,7 @@ impl PolymarketExecutionClient {
                     .get(&report.venue_order_id)
                     .copied()
                     .map(|filled| filled_before_leg.as_decimal() + filled),
+                non_reopened_voided,
             );
         }
 

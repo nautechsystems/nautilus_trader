@@ -3435,6 +3435,111 @@ async fn test_open_only_repeated_replacements_bound_history(
     server.await.unwrap();
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_reports_fold_replaced_leg_voided_quantity(
+    #[values("order_status_reports", "mass_status", "query_order")] entry_point: &str,
+) {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.179082386-235.BETFAIR";
+    let client_order_id = "O-VOIDED-REPLACED-LEG";
+    let bet_ids = ["voided-0", "voided-1"];
+    add_order_to_cache(
+        &cache,
+        make_accepted_test_order(instrument_id, client_order_id, bet_ids[0], "2.50", "10"),
+    );
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    replace_order_for_reports(
+        &client,
+        &mut rx,
+        &state,
+        make_price_modify_order_cmd(instrument_id, client_order_id, bet_ids[0], "3.00"),
+        bet_ids[1],
+        false,
+    )
+    .await;
+
+    // The replaced bet matched 4 and had 2 voided, so its successor was placed for 4
+    let mut replaced = current_order_leg(bet_ids[0], client_order_id, 10.0, 4.0, 0.0, 2.5);
+    replaced["sizeVoided"] = Value::from(2.0);
+    replaced["sizeCancelled"] = Value::from(4.0);
+    let successor = current_order_leg(bet_ids[1], client_order_id, 4.0, 1.0, 3.0, 3.0);
+    *state.betting_current_orders.lock() = Some(vec![replaced, successor.clone()]);
+    let successor_id = VenueOrderId::from(bet_ids[1]);
+
+    let report = match entry_point {
+        "order_status_reports" => {
+            let command = GenerateOrderStatusReportsBuilder::default()
+                .ts_init(UnixNanos::default())
+                .open_only(false)
+                .build()
+                .unwrap();
+            let reports = client
+                .generate_order_status_reports(&command)
+                .await
+                .unwrap();
+            reports
+                .into_iter()
+                .find(|report| report.venue_order_id == successor_id)
+                .unwrap()
+        }
+        "mass_status" => {
+            let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+            mass_status.order_reports()[&successor_id].clone()
+        }
+        _ => {
+            let command = QueryOrder::new(
+                TraderId::from("TESTER-001"),
+                Some(*BETFAIR_CLIENT_ID),
+                StrategyId::from("S-001"),
+                InstrumentId::from(instrument_id),
+                ClientOrderId::from(client_order_id),
+                Some(successor_id),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            );
+            client.query_order(command).unwrap();
+            let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+
+            let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+                panic!("expected an order status report, was {event:?}");
+            };
+
+            *report
+        }
+    };
+
+    assert_replacement_report(
+        &report,
+        successor,
+        client_order_id,
+        "5",
+        Decimal::new(26, 1),
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
 fn current_order_leg(
     bet_id: &str,
     client_order_id: &str,

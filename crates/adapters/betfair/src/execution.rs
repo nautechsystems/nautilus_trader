@@ -1030,7 +1030,8 @@ impl BetfairExecutionClient {
         let (client_order_id, strategy_id) = tracked?;
         let active_quantity = parse_betfair_quantity(
             stream_active_quantity(order)?.as_decimal()
-                + state.replaced_matched_quantity(&client_order_id),
+                + state.replaced_matched_quantity(&client_order_id)
+                + state.replaced_voided_quantity(&client_order_id),
         )
         .ok()?;
 
@@ -2042,6 +2043,7 @@ impl ExecutionClient for BetfairExecutionClient {
             ts_init: ts_now,
             order_reports: fetched.reports,
             active_quantities: fetched.active_quantities,
+            voided_quantities: fetched.voided_quantities,
             fill_orders: fetched.orders,
             account_state: None,
         };
@@ -3875,6 +3877,7 @@ struct FetchedOrderStatusReports {
     orders: Vec<CurrentOrderSummary>,
     reports: Vec<OrderStatusReport>,
     active_quantities: AHashMap<String, Quantity>,
+    voided_quantities: AHashMap<String, Quantity>,
     ambiguous_replaces: AHashMap<(ClientOrderId, String), UUID4>,
 }
 
@@ -3980,6 +3983,7 @@ fn finish_order_status_reports(
         let updates = resolve_pending_modifies_in_state(
             &mut fetched.reports,
             &fetched.active_quantities,
+            &fetched.voided_quantities,
             &mut state,
             emitter,
             guard_pending_replaces.then_some(&fetched.ambiguous_replaces),
@@ -4158,6 +4162,7 @@ async fn fetch_order_status_reports_snapshot_http(
 
     let mut reports = Vec::with_capacity(orders.len());
     let mut active_quantities = AHashMap::new();
+    let mut voided_quantities = AHashMap::new();
 
     for order in &orders {
         let report = parse_current_order_report(order, account_id, ts_init).map_err(|e| {
@@ -4167,8 +4172,13 @@ async fn fetch_order_status_reports_snapshot_http(
         let active_quantity = current_order_active_quantity(order).map_err(|e| {
             anyhow::anyhow!("Failed to parse active quantity for {}: {e}", order.bet_id)
         })?;
+        let voided_quantity = parse_betfair_quantity(order.size_voided.unwrap_or(Decimal::ZERO))
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to parse voided quantity for {}: {e}", order.bet_id)
+            })?;
 
         active_quantities.insert(order.bet_id.clone(), active_quantity);
+        voided_quantities.insert(order.bet_id.clone(), voided_quantity);
         reports.push(report);
     }
 
@@ -4180,6 +4190,7 @@ async fn fetch_order_status_reports_snapshot_http(
         orders,
         reports,
         active_quantities,
+        voided_quantities,
         ambiguous_replaces,
     })
 }
@@ -4360,12 +4371,13 @@ async fn fetch_order_status_pages_http(
 fn resolve_pending_modifies_in_state(
     reports: &mut Vec<OrderStatusReport>,
     active_quantities: &AHashMap<String, Quantity>,
+    voided_quantities: &AHashMap<String, Quantity>,
     state: &mut OcmState,
     emitter: &ExecutionEventEmitter,
     eligible_replaces: Option<&AHashMap<(ClientOrderId, String), UUID4>>,
 ) -> Vec<OrderEventAny> {
     let mut updates = Vec::new();
-    let replaced_fills = replaced_leg_fills_from_reports(reports, state);
+    let replaced_fills = replaced_leg_fills_from_reports(reports, voided_quantities, state);
 
     let mut resolved_bet_ids = AHashSet::new();
 
@@ -4401,6 +4413,9 @@ fn resolve_pending_modifies_in_state(
             replaced_fills
                 .get(&client_order_id)
                 .map_or(Quantity::default(), |fills| fills.matched),
+            replaced_fills
+                .get(&client_order_id)
+                .map_or(Quantity::default(), |fills| fills.voided),
         ) {
             report.quantity = quantity;
             if report.order_status.is_closed() {
@@ -4431,7 +4446,7 @@ fn resolve_pending_modifies_in_state(
         eligible_replaces,
     ));
 
-    accumulate_replaced_leg_fills(reports, state);
+    accumulate_replaced_leg_fills(reports, voided_quantities, state);
 
     reports.retain(|report| {
         let bet_id = report.venue_order_id.as_str();
@@ -4518,6 +4533,7 @@ fn report_correlation(
 #[derive(Default)]
 struct ReplacedLegFills {
     matched: Quantity,
+    voided: Quantity,
     notional: Option<Decimal>,
 }
 
@@ -4539,15 +4555,19 @@ impl ReplacedLegFills {
         self.notional = notional;
     }
 
+    fn accumulate_voided(&mut self, voided: Quantity) {
+        self.voided = self.voided + voided;
+    }
+
     fn fold(self, report: &mut OrderStatusReport, quantity_already_logical: bool) {
-        if self.matched.is_zero() {
+        if self.matched.is_zero() && self.voided.is_zero() {
             return;
         }
 
         // A confirmed reduction on the successor already stores the logical
-        // quantity, which includes every replaced leg's matched size.
+        // quantity, which includes every replaced leg's matched and voided size.
         if !quantity_already_logical {
-            report.quantity = report.quantity + self.matched;
+            report.quantity = report.quantity + self.matched + self.voided;
         }
 
         let mut totals = self;
@@ -4558,18 +4578,22 @@ impl ReplacedLegFills {
             .map(|notional| notional / totals.matched.as_decimal());
         // An executable bet with cumulative matched quantity is partially
         // filled; the engine's Accepted branch applies no fills.
-        if report.order_status == OrderStatus::Accepted {
+        if report.order_status == OrderStatus::Accepted && !report.filled_qty.is_zero() {
             report.order_status = OrderStatus::PartiallyFilled;
         }
     }
 }
 
-/// Accumulates matched quantity from replaced Bet legs into their successor's report.
+/// Accumulates matched and voided quantity from replaced Bet legs into their successor's report.
 ///
 /// A price replacement reports each leg's matched quantity separately, so the
 /// successor's per-bet totals would read as a fill decrease at the engine. Folding
 /// the replaced legs into the current Bet's report reconciles the full history.
-fn accumulate_replaced_leg_fills(reports: &mut [OrderStatusReport], state: &OcmState) {
+fn accumulate_replaced_leg_fills(
+    reports: &mut [OrderStatusReport],
+    voided_quantities: &AHashMap<String, Quantity>,
+    state: &OcmState,
+) {
     let mut successor_indexes: AHashMap<ClientOrderId, usize> = AHashMap::new();
 
     for (index, report) in reports.iter().enumerate() {
@@ -4582,7 +4606,7 @@ fn accumulate_replaced_leg_fills(reports: &mut [OrderStatusReport], state: &OcmS
         }
     }
 
-    let replaced_fills = replaced_leg_fills_from_reports(reports, state);
+    let replaced_fills = replaced_leg_fills_from_reports(reports, voided_quantities, state);
 
     for (client_order_id, fills) in replaced_fills {
         let Some(&index) = successor_indexes.get(&client_order_id) else {
@@ -4597,23 +4621,23 @@ fn accumulate_replaced_leg_fills(reports: &mut [OrderStatusReport], state: &OcmS
 
 fn replaced_leg_fills_from_reports(
     reports: &[OrderStatusReport],
+    voided_quantities: &AHashMap<String, Quantity>,
     state: &OcmState,
 ) -> AHashMap<ClientOrderId, ReplacedLegFills> {
     let mut fills: AHashMap<ClientOrderId, ReplacedLegFills> = AHashMap::new();
 
     for report in reports {
-        if !state
-            .replaced_venue_order_ids
-            .contains(report.venue_order_id.as_str())
-        {
+        let bet_id = report.venue_order_id.as_str();
+        if !state.replaced_venue_order_ids.contains(bet_id) {
             continue;
         }
 
         if let Some((client_order_id, _)) = report_correlation(state, report) {
-            fills
-                .entry(client_order_id)
-                .or_default()
-                .accumulate(report.filled_qty, report.avg_px);
+            let entry = fills.entry(client_order_id).or_default();
+            entry.accumulate(report.filled_qty, report.avg_px);
+            if let Some(leg_voided) = voided_quantities.get(bet_id).copied() {
+                entry.accumulate_voided(leg_voided);
+            }
         }
     }
 
@@ -4656,6 +4680,17 @@ fn replaced_leg_fills_from_candidates(
             Err(e) => {
                 log::warn!(
                     "Skipping replaced leg {} with unparsable matched quantity {matched}: {e}",
+                    candidate.bet_id,
+                );
+            }
+        }
+
+        let voided = candidate.size_voided.unwrap_or(Decimal::ZERO);
+        match parse_betfair_quantity(voided) {
+            Ok(voided) => fills.accumulate_voided(voided),
+            Err(e) => {
+                log::warn!(
+                    "Skipping replaced leg {} with unparsable voided quantity {voided}: {e}",
                     candidate.bet_id,
                 );
             }
@@ -4726,8 +4761,10 @@ fn resolve_pending_reduction_from_reconciliation(
     client_order_id: &ClientOrderId,
     bet_id: &str,
     replaced_matched: Quantity,
+    replaced_voided: Quantity,
 ) -> Option<Quantity> {
-    let active_quantity = active_quantities.get(bet_id).copied()? + replaced_matched;
+    let active_quantity =
+        active_quantities.get(bet_id).copied()? + replaced_matched + replaced_voided;
     state.confirm_pending_reduction(client_order_id, bet_id, active_quantity)
 }
 
@@ -4760,8 +4797,9 @@ fn make_reconciled_update(
 }
 
 fn current_order_active_quantity(order: &CurrentOrderSummary) -> anyhow::Result<Quantity> {
-    let active =
-        order.size_matched.unwrap_or(Decimal::ZERO) + order.size_remaining.unwrap_or(Decimal::ZERO);
+    let active = order.size_matched.unwrap_or(Decimal::ZERO)
+        + order.size_remaining.unwrap_or(Decimal::ZERO)
+        + order.size_voided.unwrap_or(Decimal::ZERO);
     parse_betfair_quantity(active)
 }
 
@@ -5024,6 +5062,7 @@ struct MassStatusSnapshot {
     ts_init: UnixNanos,
     order_reports: Vec<OrderStatusReport>,
     active_quantities: AHashMap<String, Quantity>,
+    voided_quantities: AHashMap<String, Quantity>,
     fill_orders: Vec<CurrentOrderSummary>,
     account_state: Option<AccountState>,
 }
@@ -5039,6 +5078,7 @@ impl MassStatusSnapshot {
         let updates = resolve_pending_modifies_in_state(
             &mut order_reports,
             &self.active_quantities,
+            &self.voided_quantities,
             state,
             emitter,
             None,
@@ -5236,6 +5276,7 @@ async fn fetch_post_reconnect_mass_status(
         ts_init: ts_now,
         order_reports: fetched_orders.reports,
         active_quantities: fetched_orders.active_quantities,
+        voided_quantities: fetched_orders.voided_quantities,
         fill_orders: fetched_orders.orders,
         account_state: None,
     })
@@ -5563,7 +5604,9 @@ fn single_instruction_report<T>(reports: Option<&[T]>) -> Option<&T> {
 }
 
 fn stream_active_quantity(uo: &UnmatchedOrder) -> Option<Quantity> {
-    let active = uo.sm.unwrap_or(Decimal::ZERO) + uo.sr.unwrap_or(Decimal::ZERO);
+    let active = uo.sm.unwrap_or(Decimal::ZERO)
+        + uo.sr.unwrap_or(Decimal::ZERO)
+        + uo.sv.unwrap_or(Decimal::ZERO);
     parse_betfair_quantity(active).ok()
 }
 
@@ -6399,6 +6442,156 @@ mod tests {
         }
     }
 
+    #[rstest]
+    fn test_stream_active_quantity_includes_voided() {
+        let order = crate::stream::messages::UnmatchedOrder {
+            sm: Some(Decimal::from(3)),
+            sr: Some(Decimal::from(4)),
+            sv: Some(Decimal::from(2)),
+            ..resting_sp_unmatched_order("bet-1", None)
+        };
+
+        assert_eq!(
+            stream_active_quantity(&order),
+            Some(Quantity::from(9)),
+            "sm(3) + sr(4) + sv(2) must all contribute to the gross active quantity"
+        );
+    }
+
+    #[rstest]
+    fn test_current_order_active_quantity_includes_voided() {
+        let mut order = make_summary(
+            "bet-1",
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::Executable,
+            "2026-08-25T00:00:00Z",
+        );
+        order.size_matched = Some(Decimal::from(3));
+        order.size_remaining = Some(Decimal::from(4));
+        order.size_voided = Some(Decimal::from(2));
+
+        assert_eq!(
+            current_order_active_quantity(&order).unwrap(),
+            Quantity::from(9),
+            "size_matched(3) + size_remaining(4) + size_voided(2) must all contribute, matching \
+             the HTTP status-report path's gross lifecycle quantity"
+        );
+    }
+
+    #[rstest]
+    fn test_http_stream_and_reconciliation_agree_on_gross_active_quantity() {
+        let matched = Decimal::from(3);
+        let remaining = Decimal::from(4);
+        let voided = Decimal::from(2);
+        let expected = Quantity::from(9);
+
+        let stream_order = crate::stream::messages::UnmatchedOrder {
+            sm: Some(matched),
+            sr: Some(remaining),
+            sv: Some(voided),
+            ..resting_sp_unmatched_order("bet-1", None)
+        };
+        assert_eq!(stream_active_quantity(&stream_order), Some(expected));
+
+        let mut reconciliation_order = make_summary(
+            "bet-1",
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::Executable,
+            "2026-08-25T00:00:00Z",
+        );
+        reconciliation_order.size_matched = Some(matched);
+        reconciliation_order.size_remaining = Some(remaining);
+        reconciliation_order.size_voided = Some(voided);
+        assert_eq!(
+            current_order_active_quantity(&reconciliation_order).unwrap(),
+            expected
+        );
+
+        let mut http_order = reconciliation_order;
+        http_order.price_size.size = Decimal::ZERO;
+        http_order.size_cancelled = Some(Decimal::ZERO);
+        http_order.size_lapsed = Some(Decimal::ZERO);
+        let report = parse_current_order_report(
+            &http_order,
+            AccountId::from("BETFAIR-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        assert_eq!(report.quantity, expected);
+    }
+
+    #[rstest]
+    #[case::reduction_confirms_then_void_arrives(false)]
+    #[case::void_present_before_reduction_confirms(true)]
+    fn test_same_bet_reduction_and_void_ordering_agree(#[case] void_first: bool) {
+        let client_order_id = ClientOrderId::from("O-1");
+        let strategy_id = StrategyId::from("S-001");
+        let bet_id = "bet-1";
+        let mut state = OcmState::default();
+        state.restore_order(client_order_id, strategy_id, VenueOrderId::from(bet_id));
+        state.register_pending_reduction(
+            client_order_id,
+            bet_id.to_string(),
+            Quantity::from(10),
+            Quantity::from(6),
+        );
+
+        let update = |sm: i64, sr: i64, sv: i64| crate::stream::messages::UnmatchedOrder {
+            sm: Some(Decimal::from(sm)),
+            sr: Some(Decimal::from(sr)),
+            sv: Some(Decimal::from(sv)),
+            ..resting_sp_unmatched_order(bet_id, None)
+        };
+
+        if void_first {
+            // The void lands before the reduction takes visible effect on the wire: gross
+            // still equals the original size, so nothing confirms yet.
+            let result = BetfairExecutionClient::resolve_pending_reduction_from_stream(
+                &mut state,
+                Some((client_order_id, strategy_id)),
+                &update(2, 7, 1),
+            );
+            assert_eq!(result, None);
+
+            // The reduction now takes effect, with the earlier void still present
+            let result = BetfairExecutionClient::resolve_pending_reduction_from_stream(
+                &mut state,
+                Some((client_order_id, strategy_id)),
+                &update(2, 3, 1),
+            );
+            assert_eq!(
+                result,
+                Some((client_order_id, strategy_id, Quantity::from(6)))
+            );
+        } else {
+            // The reduction confirms first, with no void yet
+            let result = BetfairExecutionClient::resolve_pending_reduction_from_stream(
+                &mut state,
+                Some((client_order_id, strategy_id)),
+                &update(2, 4, 0),
+            );
+            assert_eq!(
+                result,
+                Some((client_order_id, strategy_id, Quantity::from(6)))
+            );
+
+            // A later void on the same, already-confirmed bet reshuffles sr -> sv without
+            // changing the gross total; it must not re-trigger or corrupt the confirmation.
+            let result = BetfairExecutionClient::resolve_pending_reduction_from_stream(
+                &mut state,
+                Some((client_order_id, strategy_id)),
+                &update(2, 3, 1),
+            );
+            assert_eq!(result, None);
+        }
+
+        assert_eq!(state.reduced_quantity(bet_id), Some(Quantity::from(6)));
+    }
+
     fn emitter_with_receiver(
         account_id: AccountId,
     ) -> (
@@ -6864,6 +7057,7 @@ mod tests {
         let mut reports = vec![report];
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
+            &AHashMap::new(),
             &AHashMap::new(),
             &mut state,
             &emitter,
@@ -8223,6 +8417,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             order_reports: reports,
             active_quantities: AHashMap::new(),
+            voided_quantities: AHashMap::new(),
             fill_orders: eligible,
             account_state: None,
         }
@@ -8283,6 +8478,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             order_reports: vec![report],
             active_quantities: AHashMap::new(),
+            voided_quantities: AHashMap::new(),
             fill_orders: orders,
             account_state: None,
         }
@@ -8320,6 +8516,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             order_reports: Vec::new(),
             active_quantities: AHashMap::new(),
+            voided_quantities: AHashMap::new(),
             fill_orders: vec![fill_order.clone()],
             account_state: None,
         };
@@ -8385,6 +8582,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             order_reports: Vec::new(),
             active_quantities: AHashMap::new(),
+            voided_quantities: AHashMap::new(),
             fill_orders: vec![fill_order],
             account_state: None,
         };
@@ -8428,6 +8626,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             order_reports: Vec::new(),
             active_quantities: AHashMap::new(),
+            voided_quantities: AHashMap::new(),
             fill_orders: vec![fill_order.clone()],
             account_state: None,
         };
@@ -8496,6 +8695,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             order_reports: vec![report],
             active_quantities: AHashMap::from([(bet_id.clone(), Quantity::from(4))]),
+            voided_quantities: AHashMap::new(),
             fill_orders: Vec::new(),
             account_state: None,
         };
@@ -8588,6 +8788,7 @@ mod tests {
                 ts_init: UnixNanos::default(),
                 order_reports: vec![old_report.clone(), new_report.clone()],
                 active_quantities: AHashMap::new(),
+                voided_quantities: AHashMap::new(),
                 fill_orders: Vec::new(),
                 account_state: None,
             },
@@ -8617,6 +8818,7 @@ mod tests {
                 ts_init: UnixNanos::default(),
                 order_reports: vec![old_report, new_report],
                 active_quantities: AHashMap::new(),
+                voided_quantities: AHashMap::new(),
                 fill_orders: Vec::new(),
                 account_state: None,
             },
@@ -8911,6 +9113,7 @@ mod tests {
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
             &AHashMap::new(),
+            &AHashMap::new(),
             &mut state,
             &emitter,
             None,
@@ -8972,6 +9175,7 @@ mod tests {
 
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
+            &AHashMap::new(),
             &AHashMap::new(),
             &mut state,
             &emitter,
@@ -9061,6 +9265,7 @@ mod tests {
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
             &AHashMap::new(),
+            &AHashMap::new(),
             &mut state,
             &emitter,
             None,
@@ -9126,6 +9331,7 @@ mod tests {
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
             &AHashMap::new(),
+            &AHashMap::new(),
             &mut state,
             &emitter,
             None,
@@ -9146,6 +9352,394 @@ mod tests {
             successor.avg_px,
             Some(Decimal::from(42) / Decimal::from(10))
         );
+    }
+
+    #[rstest]
+    fn test_replace_fold_includes_replaced_leg_voided_quantity() {
+        let account_id = AccountId::from("BETFAIR-001");
+        let client_order_id = ClientOrderId::from("O-REPLACE-VOIDED-LEG");
+        let strategy_id = StrategyId::from("S-001");
+        let old_bet_id = "old-bet";
+        let new_bet_id = "new-bet";
+        // Original size 10: 4 matched, 2 non-reopened voided, 4 still cancelled/unfilled
+        let mut old_order = make_summary(
+            old_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2026-08-25T00:00:00Z",
+        );
+        old_order.size_matched = Some(Decimal::from(4));
+        old_order.size_voided = Some(Decimal::from(2));
+        old_order.size_remaining = Some(Decimal::ZERO);
+        old_order.size_cancelled = Some(Decimal::from(4));
+        // Betfair re-places the replacement bet for exactly the pre-replace remaining size
+        // (10 - 4 matched - 2 voided = 4), not the original total.
+        let mut new_order = make_summary(
+            new_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::Executable,
+            "2026-08-25T00:01:00Z",
+        );
+        new_order.price_size.size = Decimal::from(4);
+        new_order.size_matched = Some(Decimal::ZERO);
+        new_order.size_remaining = Some(Decimal::from(4));
+        let mut reports = Vec::new();
+
+        for order in [&old_order, &new_order] {
+            let mut report =
+                parse_current_order_report(order, account_id, UnixNanos::default()).unwrap();
+            report.client_order_id = Some(client_order_id);
+            reports.push(report);
+        }
+
+        let mut state = OcmState::default();
+        state.restore_order(client_order_id, strategy_id, VenueOrderId::from(new_bet_id));
+        state
+            .replaced_venue_order_ids
+            .insert(old_bet_id.to_string());
+        let (emitter, _receiver) = emitter_with_receiver(account_id);
+
+        resolve_pending_modifies_in_state(
+            &mut reports,
+            &AHashMap::new(),
+            &AHashMap::from([(old_bet_id.to_string(), Quantity::from(2))]),
+            &mut state,
+            &emitter,
+            None,
+        );
+
+        let successor = reports
+            .iter()
+            .find(|report| report.venue_order_id == VenueOrderId::from(new_bet_id))
+            .unwrap();
+        // 4 (new leg's own placed size) + 4 (old leg matched) + 2 (old leg voided)
+        assert_eq!(successor.quantity, Quantity::from("10"));
+        assert_eq!(successor.filled_qty, Quantity::from("4"));
+    }
+
+    #[rstest]
+    fn test_replace_fold_of_voided_only_leg_keeps_successor_accepted() {
+        let account_id = AccountId::from("BETFAIR-001");
+        let client_order_id = ClientOrderId::from("O-REPLACE-VOIDED-ONLY-LEG");
+        let strategy_id = StrategyId::from("S-001");
+        let old_bet_id = "old-bet";
+        let new_bet_id = "new-bet";
+        let mut old_order = make_summary(
+            old_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2026-08-25T00:00:00Z",
+        );
+        old_order.size_matched = Some(Decimal::ZERO);
+        old_order.size_voided = Some(Decimal::from(2));
+        old_order.size_remaining = Some(Decimal::ZERO);
+        old_order.size_cancelled = Some(Decimal::from(8));
+        let mut new_order = make_summary(
+            new_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::Executable,
+            "2026-08-25T00:01:00Z",
+        );
+        new_order.price_size.size = Decimal::from(8);
+        new_order.size_matched = Some(Decimal::ZERO);
+        new_order.size_remaining = Some(Decimal::from(8));
+        let mut reports = Vec::new();
+
+        for order in [&old_order, &new_order] {
+            let mut report =
+                parse_current_order_report(order, account_id, UnixNanos::default()).unwrap();
+            report.client_order_id = Some(client_order_id);
+            reports.push(report);
+        }
+
+        let mut state = OcmState::default();
+        state.restore_order(client_order_id, strategy_id, VenueOrderId::from(new_bet_id));
+        state
+            .replaced_venue_order_ids
+            .insert(old_bet_id.to_string());
+        let (emitter, _receiver) = emitter_with_receiver(account_id);
+
+        resolve_pending_modifies_in_state(
+            &mut reports,
+            &AHashMap::new(),
+            &AHashMap::from([(old_bet_id.to_string(), Quantity::from(2))]),
+            &mut state,
+            &emitter,
+            None,
+        );
+
+        let successor = reports
+            .iter()
+            .find(|report| report.venue_order_id == VenueOrderId::from(new_bet_id))
+            .unwrap();
+        assert_eq!(successor.order_status, OrderStatus::Accepted);
+        assert_eq!(successor.quantity, Quantity::from("10"));
+        assert_eq!(successor.filled_qty, Quantity::from("0"));
+        assert_eq!(successor.avg_px, None);
+    }
+
+    #[rstest]
+    fn test_reconciliation_promotion_folds_replaced_leg_voided_quantity() {
+        let account_id = AccountId::from("BETFAIR-001");
+        let client_order_id = ClientOrderId::from("O-PROMOTED-VOIDED-LEG");
+        let strategy_id = StrategyId::from("S-001");
+        let old_bet_id = "old-bet";
+        let new_bet_id = "new-bet";
+        // Original size 10: the old bet matched 4 and had 2 voided before the replace
+        let mut old_order = make_summary(
+            old_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2026-08-25T00:00:00Z",
+        );
+        old_order.size_matched = Some(Decimal::from(4));
+        old_order.size_voided = Some(Decimal::from(2));
+        old_order.size_remaining = Some(Decimal::ZERO);
+        old_order.size_cancelled = Some(Decimal::from(4));
+        let mut new_order = make_summary(
+            new_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2026-08-25T00:01:00Z",
+        );
+        new_order.price_size.size = Decimal::from(4);
+        new_order.size_matched = Some(Decimal::ZERO);
+        new_order.size_remaining = Some(Decimal::ZERO);
+        new_order.size_cancelled = Some(Decimal::from(4));
+        let mut reports = Vec::new();
+
+        for order in [&old_order, &new_order] {
+            let mut report =
+                parse_current_order_report(order, account_id, UnixNanos::default()).unwrap();
+            report.client_order_id = Some(client_order_id);
+            reports.push(report);
+        }
+
+        // The replace is still pending, so this pass is what marks the old bet replaced
+        let mut state = OcmState::default();
+        state.restore_order(client_order_id, strategy_id, VenueOrderId::from(old_bet_id));
+        state.register_pending_replace(
+            client_order_id,
+            old_bet_id.to_string(),
+            Some(Quantity::from(10)),
+        );
+        let (emitter, _receiver) = emitter_with_receiver(account_id);
+
+        let updates = resolve_pending_modifies_in_state(
+            &mut reports,
+            &AHashMap::new(),
+            &AHashMap::from([(old_bet_id.to_string(), Quantity::from(2))]),
+            &mut state,
+            &emitter,
+            None,
+        );
+
+        let [OrderEventAny::Updated(updated)] = updates.as_slice() else {
+            panic!("expected one OrderUpdated, was {updates:?}");
+        };
+
+        assert_eq!(updated.venue_order_id, Some(VenueOrderId::from(new_bet_id)));
+        assert_eq!(updated.quantity, Quantity::from("10"));
+        assert!(state.replaced_venue_order_ids.contains(old_bet_id));
+        let [successor] = reports.as_slice() else {
+            panic!("expected the successor's report only, was {reports:?}");
+        };
+
+        // 4 (successor's own size) + 4 (old bet matched) + 2 (old bet voided)
+        assert_eq!(successor.venue_order_id, VenueOrderId::from(new_bet_id));
+        assert_eq!(successor.quantity, Quantity::from("10"));
+        assert_eq!(successor.filled_qty, Quantity::from("4"));
+        assert_eq!(successor.order_status, OrderStatus::Canceled);
+    }
+
+    #[rstest]
+    #[case::executable_successor(
+        BetfairOrderStatus::Executable,
+        1,
+        1,
+        OrderStatus::PartiallyFilled
+    )]
+    #[case::closed_successor(BetfairOrderStatus::ExecutionComplete, 0, 2, OrderStatus::Canceled)]
+    fn test_ambiguous_replace_resolution_keeps_replaced_leg_voided_fold(
+        #[case] successor_status: BetfairOrderStatus,
+        #[case] expected_rejections: usize,
+        #[case] expected_reports: usize,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let account_id = AccountId::from("BETFAIR-001");
+        let client_order_id = ClientOrderId::from("O-AMBIGUOUS-AFTER-VOIDED-LEG");
+        let strategy_id = StrategyId::from("S-001");
+        let old_bet_id = "old-bet";
+        let new_bet_id = "new-bet";
+        // Original size 10: the replaced leg matched 4 and had 2 voided
+        let mut old_order = make_summary(
+            old_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2026-08-25T00:00:00Z",
+        );
+        old_order.size_matched = Some(Decimal::from(4));
+        old_order.size_voided = Some(Decimal::from(2));
+        old_order.size_remaining = Some(Decimal::ZERO);
+        old_order.size_cancelled = Some(Decimal::from(4));
+        let mut new_order = make_summary(
+            new_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            successor_status,
+            "2026-08-25T00:01:00Z",
+        );
+        new_order.price_size.size = Decimal::from(4);
+        new_order.size_matched = Some(Decimal::ZERO);
+
+        if successor_status == BetfairOrderStatus::Executable {
+            new_order.size_remaining = Some(Decimal::from(4));
+        } else {
+            new_order.size_remaining = Some(Decimal::ZERO);
+            new_order.size_cancelled = Some(Decimal::from(4));
+        }
+
+        let mut reports = Vec::new();
+
+        for order in [&old_order, &new_order] {
+            let mut report =
+                parse_current_order_report(order, account_id, UnixNanos::default()).unwrap();
+            report.client_order_id = Some(client_order_id);
+            reports.push(report);
+        }
+
+        // A second replace of the successor went ambiguous, and no further bet is listed
+        let mut state = OcmState::default();
+        state.restore_order(client_order_id, strategy_id, VenueOrderId::from(new_bet_id));
+        state
+            .replaced_venue_order_ids
+            .insert(old_bet_id.to_string());
+        state.register_pending_replace(
+            client_order_id,
+            new_bet_id.to_string(),
+            Some(Quantity::from(10)),
+        );
+        state.mark_pending_replace_ambiguous(client_order_id, new_bet_id);
+        let (emitter, _receiver) = emitter_with_receiver(account_id);
+
+        let updates = resolve_pending_modifies_in_state(
+            &mut reports,
+            &AHashMap::new(),
+            &AHashMap::from([(old_bet_id.to_string(), Quantity::from(2))]),
+            &mut state,
+            &emitter,
+            None,
+        );
+
+        let rejections = updates
+            .iter()
+            .filter(|update| matches!(update, OrderEventAny::ModifyRejected(_)))
+            .count();
+        assert_eq!(updates.len(), expected_rejections);
+        assert_eq!(rejections, expected_rejections);
+        assert!(!state.pending_replace_awaits_reconciliation(&client_order_id, new_bet_id));
+        assert_eq!(reports.len(), expected_reports);
+        let successor = reports
+            .iter()
+            .find(|report| report.venue_order_id == VenueOrderId::from(new_bet_id))
+            .unwrap();
+        // 4 (successor's own size) + 4 (replaced leg matched) + 2 (replaced leg voided)
+        assert_eq!(successor.quantity, Quantity::from("10"));
+        assert_eq!(successor.filled_qty, Quantity::from("4"));
+        assert_eq!(successor.order_status, expected_status);
+    }
+
+    #[rstest]
+    fn test_reconciliation_reduction_includes_replaced_leg_voided_quantity() {
+        let account_id = AccountId::from("BETFAIR-001");
+        let client_order_id = ClientOrderId::from("O-REDUCED-VOIDED-REPLACEMENT");
+        let strategy_id = StrategyId::from("S-001");
+        let old_bet_id = "old-bet";
+        let new_bet_id = "new-bet";
+        let mut old_order = make_summary(
+            old_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2026-08-25T00:00:00Z",
+        );
+        old_order.size_matched = Some(Decimal::from(4));
+        old_order.size_remaining = Some(Decimal::ZERO);
+        old_order.size_voided = Some(Decimal::from(2));
+        old_order.size_cancelled = Some(Decimal::from(4));
+        let mut new_order = make_summary(
+            new_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::Executable,
+            "2026-08-25T00:01:00Z",
+        );
+        new_order.price_size.size = Decimal::from(4);
+        new_order.size_matched = Some(Decimal::ZERO);
+        new_order.size_remaining = Some(Decimal::from(4));
+        let mut reports = Vec::new();
+
+        for order in [&old_order, &new_order] {
+            let mut report =
+                parse_current_order_report(order, account_id, UnixNanos::default()).unwrap();
+            report.client_order_id = Some(client_order_id);
+            reports.push(report);
+        }
+
+        let mut state = OcmState::default();
+        state.restore_order(client_order_id, strategy_id, VenueOrderId::from(new_bet_id));
+        state
+            .replaced_venue_order_ids
+            .insert(old_bet_id.to_string());
+        // original(11) sits just above the computed active quantity (10 = 4 new-leg active + 4
+        // old-leg matched + 2 old-leg voided), clearing the `< original` confirmation boundary
+        // without the wide, order-data-disconnected margin a much larger original would give.
+        state.register_pending_reduction(
+            client_order_id,
+            new_bet_id.to_string(),
+            Quantity::from(11),
+            Quantity::from(8),
+        );
+
+        let (emitter, _receiver) = emitter_with_receiver(account_id);
+
+        let updates = resolve_pending_modifies_in_state(
+            &mut reports,
+            &AHashMap::from([(new_bet_id.to_string(), Quantity::from(4))]),
+            &AHashMap::from([(old_bet_id.to_string(), Quantity::from(2))]),
+            &mut state,
+            &emitter,
+            None,
+        );
+
+        // 4 (new leg's own active) + 4 (old leg's matched) + 2 (old leg's voided) = 10, not the
+        // 8 it would be without the replaced-leg voided quantity.
+        assert_eq!(state.reduced_quantity(new_bet_id), Some(Quantity::from(10)));
+        assert_eq!(updates.len(), 1);
+
+        let OrderEventAny::Updated(updated) = &updates[0] else {
+            panic!("expected reduction update");
+        };
+        assert_eq!(updated.quantity, Quantity::from(10));
+        assert_eq!(updated.client_order_id, client_order_id);
+        assert_eq!(updated.venue_order_id, Some(VenueOrderId::from(new_bet_id)));
     }
 
     #[rstest]
@@ -9216,6 +9810,7 @@ mod tests {
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
             &AHashMap::from([(new_bet_id.to_string(), Quantity::from(4))]),
+            &AHashMap::new(),
             &mut state,
             &emitter,
             None,
@@ -9247,9 +9842,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case::confirmed(4, Some(8))]
-    #[case::racing_fill(5, Some(9))]
-    #[case::unchanged(6, None)]
+    #[case::confirmed(3, Some(8))]
+    #[case::racing_fill(4, Some(9))]
+    #[case::unchanged(5, None)]
     fn test_stream_reduction_after_replacement(#[case] active: i64, #[case] expected: Option<i64>) {
         let client_order_id = ClientOrderId::from("O-1");
         let strategy_id = StrategyId::from("S-001");
@@ -9441,6 +10036,59 @@ mod tests {
     }
 
     #[rstest]
+    fn test_query_replaced_leg_folds_include_voided_quantity() {
+        let account_id = AccountId::from("BETFAIR-001");
+        let client_order_id = ClientOrderId::from("O-QUERY-VOIDED-REPLACEMENT");
+        let strategy_id = StrategyId::from("S-001");
+        let old_bet_id = "old-bet";
+        let new_bet_id = "new-bet";
+        let mut state = OcmState::default();
+        state.restore_order(client_order_id, strategy_id, VenueOrderId::from(new_bet_id));
+        state
+            .replaced_venue_order_ids
+            .insert(old_bet_id.to_string());
+
+        // Original size 10: the replaced leg matched 4 and had 2 voided
+        let mut old_order = make_summary(
+            old_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2026-08-25T00:00:00Z",
+        );
+        old_order.size_matched = Some(Decimal::from(4));
+        old_order.size_voided = Some(Decimal::from(2));
+        old_order.size_remaining = Some(Decimal::ZERO);
+        old_order.size_cancelled = Some(Decimal::from(4));
+        old_order.customer_order_ref = Some(make_customer_order_ref(client_order_id.as_str()));
+        let mut new_order = make_summary(
+            new_bet_id,
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::Executable,
+            "2026-08-25T00:01:00Z",
+        );
+        new_order.price_size.size = Decimal::from(4);
+        new_order.size_remaining = Some(Decimal::from(4));
+        new_order.customer_order_ref = Some(make_customer_order_ref(client_order_id.as_str()));
+        let candidates = vec![old_order, new_order.clone()];
+        let mut report =
+            parse_current_order_report(&new_order, account_id, UnixNanos::default()).unwrap();
+
+        let fills = replaced_leg_fills_from_candidates(&candidates, &candidates[1], &state);
+        assert_eq!(fills.matched, Quantity::from("4"));
+        assert_eq!(fills.voided, Quantity::from("2"));
+
+        fills.fold(&mut report, false);
+
+        assert_eq!(report.quantity, Quantity::from("10"));
+        assert_eq!(report.filled_qty, Quantity::from("4"));
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+    }
+
+    #[rstest]
     fn test_replaced_leg_fills_promote_accepted_to_partially_filled() {
         let account_id = AccountId::from("BETFAIR-001");
         let client_order_id = ClientOrderId::from("O-RECOVERY-PRIOR-FILLS");
@@ -9488,6 +10136,7 @@ mod tests {
 
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
+            &AHashMap::new(),
             &AHashMap::new(),
             &mut state,
             &emitter,
@@ -9557,6 +10206,7 @@ mod tests {
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
             &AHashMap::new(),
+            &AHashMap::new(),
             &mut state,
             &emitter,
             None,
@@ -9622,6 +10272,7 @@ mod tests {
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
             &active_quantities,
+            &AHashMap::new(),
             &mut state,
             &emitter,
             None,
@@ -9673,6 +10324,7 @@ mod tests {
         let updates = resolve_pending_modifies_in_state(
             &mut reports,
             &active_quantities,
+            &AHashMap::new(),
             &mut state,
             &emitter,
             None,

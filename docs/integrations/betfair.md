@@ -509,12 +509,13 @@ prove that the original order remained unchanged or closed without a replacement
   replace. Both active and closed listings emit `OrderUpdated` carrying the new Bet ID, its price,
   and the original size. An active listing is then withheld from the resolving report set, while a
   closed listing follows the update through its terminal order status report.
-- A bet whose active size (matched plus remaining) has fallen to at least the requested size but
-  below the original confirms the reduction. An active listing emits `OrderUpdated` carrying the
-  reduced size, while a closed listing carries the confirmed size in its terminal report without an
-  `OrderUpdated`. A smaller active size is a lapse or void rather than the requested reduction, and
-  an unchanged one means Betfair has not applied the reduction yet, so both leave the command in
-  flight.
+- A bet whose active size has fallen to at least the requested size but below the original
+  confirms the reduction. The active size is matched plus remaining plus voided (`sizeVoided`,
+  or `sv` on the stream), and includes the matched and voided size of any replaced bets, so a
+  void does not lower it. An active listing emits `OrderUpdated` carrying the reduced size, while
+  a closed listing carries the confirmed size in its terminal report without an `OrderUpdated`. A
+  smaller active size is a lapse rather than the requested reduction, and an unchanged one means
+  Betfair has not applied the reduction yet, so both leave the command in flight.
 
 Whichever channel resolves the modification first wins, and the others become no-ops, so a size
 reduction confirmed by the stream is not repeated when its REST response finally returns.
