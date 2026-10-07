@@ -30,6 +30,7 @@ use nautilus_model::{
     position::Position,
     types::Price,
 };
+use ustr::Ustr;
 
 use crate::{
     actor::DataActorNative,
@@ -316,6 +317,7 @@ pub struct GreeksCalculator {
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
     cached_futures_spreads: RefCell<AHashMap<InstrumentId, (InstrumentId, Price)>>,
+    cross_venue_underlyings: RefCell<AHashMap<Ustr, InstrumentId>>,
 }
 
 impl GreeksCalculator {
@@ -325,6 +327,7 @@ impl GreeksCalculator {
             cache,
             clock,
             cached_futures_spreads: RefCell::new(AHashMap::new()),
+            cross_venue_underlyings: RefCell::new(AHashMap::new()),
         }
     }
 
@@ -470,13 +473,25 @@ impl GreeksCalculator {
         let same_venue_id = InstrumentId::from(format!("{underlying}.{}", instrument_id.venue));
         let cache = self.cache.borrow();
 
-        if cache.instrument(&same_venue_id).is_some() {
+        // A futures spread cached for the option's venue stands in for an uncached underlying
+        if cache.instrument(&same_venue_id).is_some()
+            || self
+                .cached_futures_spreads
+                .borrow()
+                .contains_key(&same_venue_id)
+        {
             return Ok(same_venue_id);
         }
 
+        if let Some(&underlying_id) = self.cross_venue_underlyings.borrow().get(&underlying)
+            && cache.instrument(&underlying_id).is_some()
+        {
+            return Ok(underlying_id);
+        }
+
         // An option can list on a different venue than its underlying, so accept a unique
-        // exact-symbol match. Without one, keep the option's venue so the cached futures
-        // spread fallback still applies.
+        // exact-symbol match and remember it, which saves scanning the cache on later calls.
+        // Without one, keep the option's venue.
         let mut matches: Vec<InstrumentId> = cache
             .instrument_ids(None)
             .into_iter()
@@ -486,7 +501,12 @@ impl GreeksCalculator {
 
         match matches.len() {
             0 => Ok(same_venue_id),
-            1 => Ok(matches[0]),
+            1 => {
+                self.cross_venue_underlyings
+                    .borrow_mut()
+                    .insert(underlying, matches[0]);
+                Ok(matches[0])
+            }
             _ => {
                 matches.sort();
                 let names = matches
@@ -1340,6 +1360,10 @@ mod tests {
             debug_str.contains("cached_futures_spreads: RefCell { value: {} }"),
             "{debug_str}"
         );
+        assert!(
+            debug_str.contains("cross_venue_underlyings: RefCell { value: {} }"),
+            "{debug_str}"
+        );
     }
 
     #[rstest]
@@ -1893,6 +1917,53 @@ mod tests {
             error.to_string(),
             "Ambiguous underlying for option AAPL250417C00150000.OPRA: AAPL.ARCX, AAPL.XNAS"
         );
+    }
+
+    #[rstest]
+    fn test_resolve_underlying_instrument_id_reuses_cross_venue_match() {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS"]);
+        let first = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        calculator
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity_with_id("AAPL.ARCX")))
+            .unwrap();
+        let second = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        assert_eq!(first, InstrumentId::from("AAPL.XNAS"));
+        assert_eq!(second, InstrumentId::from("AAPL.XNAS"));
+    }
+
+    #[rstest]
+    fn test_resolve_underlying_instrument_id_rescans_after_match_is_purged() {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS"]);
+        calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        {
+            let mut cache = calculator.cache.borrow_mut();
+            cache
+                .add_instrument(InstrumentAny::Equity(equity_with_id("AAPL.ARCX")))
+                .unwrap();
+            cache.purge_instrument(InstrumentId::from("AAPL.XNAS"));
+        }
+        let underlying_id = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        assert_eq!(underlying_id, InstrumentId::from("AAPL.ARCX"));
     }
 
     #[rstest]
@@ -4154,6 +4225,34 @@ mod tests {
             calculator.get_cached_futures_spread_price(InstrumentId::from(SPREAD_UNDERLYING_ID)),
             None
         );
+    }
+
+    #[rstest]
+    fn test_resolve_underlying_instrument_id_prefers_cached_futures_spread_over_cross_venue_match()
+    {
+        let mut instruments = spread_instruments();
+        instruments.push(InstrumentAny::FuturesContract(future_with_expiration(
+            "ESH4.XCME",
+            "ESH4",
+            spread_expiry_ns(),
+        )));
+        let calculator = spread_calculator(instruments, spread_quotes());
+        calculator
+            .cache_futures_spread(
+                InstrumentId::from(SPREAD_CALL_ID),
+                InstrumentId::from(SPREAD_PUT_ID),
+                InstrumentId::from(SPREAD_REFERENCE_ID),
+            )
+            .unwrap();
+
+        let underlying_id = calculator
+            .resolve_underlying_instrument_id(
+                &InstrumentAny::OptionContract(spread_call()),
+                InstrumentId::from(SPREAD_CALL_ID),
+            )
+            .unwrap();
+
+        assert_eq!(underlying_id, InstrumentId::from(SPREAD_UNDERLYING_ID));
     }
 
     #[rstest]
