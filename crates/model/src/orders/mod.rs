@@ -1313,10 +1313,16 @@ impl OrderCore {
     /// `docs/concepts/events/order_fill_voided.md`).
     pub(crate) fn apply_updated_quantity(&mut self, new_quantity: Quantity) {
         self.quantity = new_quantity;
-        self.leaves_qty = self
-            .quantity
-            .saturating_sub(self.filled_qty)
-            .saturating_sub(self.non_reopened_voided_qty);
+        let unfilled_qty = self.quantity.saturating_sub(self.filled_qty);
+        let voided_qty = self.non_reopened_voided_qty;
+
+        // A terminal update sets the quantity to the filled quantity, so a non-reopened void
+        // exceeds what is unfilled without anything being wrong
+        self.leaves_qty = if voided_qty > unfilled_qty {
+            Quantity::zero(unfilled_qty.precision.max(voided_qty.precision))
+        } else {
+            unfilled_qty - voided_qty
+        };
     }
 
     fn filled(&mut self, event: &OrderFilled, source_status: OrderStatus) {
@@ -2842,7 +2848,7 @@ mod tests {
         assert!(order.ts_closed().is_none());
         assert!(!order.is_closed());
 
-        // The venue's own cancellation still applies normally afterward.
+        // The venue's own cancellation still applies normally afterward
         order
             .apply(OrderEventAny::Canceled(
                 OrderCanceledSpec::builder()
@@ -2931,7 +2937,7 @@ mod tests {
             ))
             .unwrap();
 
-        // Restored to the pre-PendingUpdate status, with leaves still excluding the void.
+        // Restored to the pre-PendingUpdate status, with leaves still excluding the void
         assert_eq!(order.status(), OrderStatus::PartiallyFilled);
         assert_eq!(order.leaves_qty(), Quantity::from(8));
     }

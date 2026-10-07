@@ -63,8 +63,8 @@ The corrected quantity does not become executable by default:
 - A partially filled order preserves the remainder that was already working. Its status derives
   from the surviving effective fills and its leaves exclude the non-reopened void quantity. This
   exclusion is preserved across subsequent [`OrderUpdated`](order_updated.md) events: Nautilus
-  always derives leaves as `quantity - filled_qty - non_reopened_voided_qty`, so a later quantity
-  change does not put the voided portion back into leaves.
+  always derives leaves as `max(quantity - filled_qty - non_reopened_voided_qty, 0)`, so a later
+  quantity change does not put the voided portion back into leaves.
 - A canceled or expired order keeps its terminal status.
 - A correction with `is_reopened=true` also returns the corrected quantity to working leaves. The
   order derives `ACCEPTED` when no effective fill remains or `PARTIALLY_FILLED` when some quantity
