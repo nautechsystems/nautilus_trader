@@ -48,8 +48,8 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEmulated,
-        OrderEventAny, OrderFilled, OrderPendingCancel, OrderRejected, OrderReleased,
-        OrderSnapshot, OrderSubmitted, OrderUpdated,
+        OrderEventAny, OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderUpdated,
         order::spec::{
             OrderCanceledSpec, OrderEmulatedSpec, OrderFilledSpec, OrderReleasedSpec,
             OrderUpdatedSpec,
@@ -3021,6 +3021,73 @@ fn test_order_cancel_rejected_clears_pending_cancel_local(
 
     assert!(order.is_open());
     assert!(!cache.is_order_pending_cancel_local(&order.client_order_id()));
+}
+
+#[rstest]
+#[case::cancel(
+    OrderEventAny::PendingCancel(OrderPendingCancel::default()),
+    OrderEventAny::CancelRejected(OrderCancelRejected::default())
+)]
+#[case::modify(
+    OrderEventAny::PendingUpdate(OrderPendingUpdate::default()),
+    OrderEventAny::ModifyRejected(OrderModifyRejected::default())
+)]
+fn test_order_rejected_request_restores_submitted_indexes(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] pending: OrderEventAny,
+    #[case] rejected: OrderEventAny,
+) {
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+
+    let submitted = OrderEventAny::Submitted(OrderSubmitted::default());
+    update_order_with_event(&mut cache, &mut order, submitted);
+
+    let is_cancel = matches!(pending, OrderEventAny::PendingCancel(_));
+    update_order_with_event(&mut cache, &mut order, pending);
+
+    if is_cancel {
+        cache.update_order_pending_cancel_local(&order);
+        assert!(cache.is_order_pending_cancel_local(&client_order_id));
+    }
+
+    assert!(cache.is_order_open(&client_order_id));
+    assert_orders_eq(&cache.orders_open(None, None, None, None, None), &[&order]);
+    assert!(cache.is_order_inflight(&client_order_id));
+
+    update_order_with_event(&mut cache, &mut order, rejected);
+
+    assert_eq!(order.status(), OrderStatus::Submitted);
+    assert!(!order.is_open());
+    assert!(!cache.is_order_open(&client_order_id));
+    assert!(cache.orders_open(None, None, None, None, None).is_empty());
+    assert!(!cache.is_order_closed(&client_order_id));
+    assert!(cache.is_order_inflight(&client_order_id));
+    assert_orders_eq(
+        &cache.orders_inflight(None, None, None, None, None),
+        &[&order],
+    );
+    assert!(!cache.is_order_pending_cancel_local(&client_order_id));
+
+    let accepted = OrderEventAny::Accepted(OrderAccepted::default());
+    update_order_with_event(&mut cache, &mut order, accepted);
+
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert!(cache.is_order_open(&client_order_id));
+    assert_orders_eq(&cache.orders_open(None, None, None, None, None), &[&order]);
+    assert!(!cache.is_order_inflight(&client_order_id));
+    assert!(
+        cache
+            .orders_inflight(None, None, None, None, None)
+            .is_empty()
+    );
 }
 
 #[rstest]

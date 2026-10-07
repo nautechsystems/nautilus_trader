@@ -15,6 +15,7 @@ Released on TBD (UTC).
 
 - Fixed `RiskEngine` notional limits for negative prices
 - Fixed maker/taker commission sign at negative prices
+- Fixed cache open-order queries retaining submitted orders after cancel or modify rejections
 - Fixed simulated OTO releases reviving children canceled earlier in the same callback
 - Fixed simulated reduce-only quote-quantity stops converting their resized quantity again
 - Fixed simulated released bracket exits canceled with partially filled entries (#5159), thanks @abhijeetvichare76

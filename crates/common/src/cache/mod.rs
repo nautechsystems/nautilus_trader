@@ -3444,8 +3444,11 @@ impl Cache {
         if order.is_open() {
             self.index.orders_closed.remove(&client_order_id);
             self.index.orders_open.insert(client_order_id);
-        } else if order.is_closed() {
+        } else {
             self.index.orders_open.remove(&client_order_id);
+        }
+
+        if order.is_closed() {
             self.index.orders_pending_cancel.remove(&client_order_id);
             self.index.orders_closed.insert(client_order_id);
         }
