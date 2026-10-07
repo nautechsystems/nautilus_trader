@@ -159,10 +159,64 @@ fn bench_exact_decimal(c: &mut Criterion) {
     group.finish();
 }
 
+#[derive(Deserialize)]
+struct Tick {
+    #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal_token_borrowed")]
+    p: Decimal,
+    #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal_token_borrowed")]
+    q: Decimal,
+}
+
+fn bench_decimal_tokens(c: &mut Criterion) {
+    let mut group = c.benchmark_group("core_decimal_tokens");
+    let cases = [
+        ("quoted", r#"{"p":"50000.12340000","q":"0.00001000"}"#),
+        ("unquoted", r#"{"p":50000.12340000,"q":0.00001000}"#),
+        ("escaped", r#"{"p":"50000.\u00312340000","q":"0.00001000"}"#),
+    ];
+
+    for (name, json) in cases {
+        let tick: Tick = serde_json::from_str(json).unwrap();
+        assert_eq!(tick.p, dec!(50000.1234));
+        assert_eq!(tick.q, dec!(0.00001));
+        group.bench_with_input(BenchmarkId::from_parameter(name), json, |b, json| {
+            b.iter(|| {
+                let tick: Tick = serde_json::from_str(black_box(json)).unwrap();
+                black_box((tick.p, tick.q))
+            });
+        });
+    }
+
+    let json = format!("[{}]", [cases[0].1; 100].join(","));
+    let ticks: Vec<Tick> = serde_json::from_str(&json).unwrap();
+    assert_eq!(ticks.len(), 100);
+    assert!(
+        ticks
+            .iter()
+            .all(|tick| tick.p == dec!(50000.1234) && tick.q == dec!(0.00001))
+    );
+    group.throughput(Throughput::Elements(100));
+    group.bench_function("batch_100", |b| {
+        b.iter(|| black_box(serde_json::from_str::<Vec<Tick>>(black_box(&json)).unwrap()));
+    });
+    group.finish();
+}
+
+// Control: the Decimal parser is unchanged by the raw JSON token optimization.
+fn bench_decimal_parse_control(c: &mut Criterion) {
+    let input = "1234567890123456789.12";
+    assert_eq!(decimal::parse(input).unwrap(), dec!(1234567890123456789.12));
+    c.bench_function("decimal_parse_control/long_fraction", |b| {
+        b.iter(|| black_box(decimal::parse(black_box(input)).unwrap()));
+    });
+}
+
 criterion_group!(
     benches,
     bench_decimal_types,
     bench_realistic_batch,
-    bench_exact_decimal
+    bench_exact_decimal,
+    bench_decimal_tokens,
+    bench_decimal_parse_control
 );
 criterion_main!(benches);
