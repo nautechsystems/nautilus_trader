@@ -2907,8 +2907,20 @@ fn parse_account_entries(
                 parse_multi_collateral_margins(account, &mut margins);
             }
             KrakenFuturesAccountType::MarginAccount => {
-                parse_margin_account_balances(account, &mut balances);
-                parse_margin_account_margins(account, &mut margins);
+                let currency = margin_account_currency(account);
+
+                if currency.is_none() {
+                    // Labeling the requirement, or attributing the available funds, with a
+                    // guessed currency would misstate them.
+                    log::warn!(
+                        "Single-collateral wallet currency unresolved (currency {:?}): its margin requirement is skipped and none of its assets is reported as locked; balances {:?}",
+                        account.currency,
+                        account.balances.keys().collect::<Vec<_>>()
+                    );
+                }
+
+                parse_margin_account_balances(account, currency.as_deref(), &mut balances);
+                parse_margin_account_margins(account, currency.as_deref(), &mut margins);
             }
             KrakenFuturesAccountType::CashAccount => {
                 parse_cash_account_balances(account, &mut balances);
@@ -3033,25 +3045,28 @@ fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Amou
 }
 
 fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut AmountsByCode) {
+    // The flex wallet reports its requirement in USD in `initialMargin` and `maintenanceMargin`;
+    // its schema carries no `marginRequirements`.
     let initial_margin = account.initial_margin.unwrap_or(Decimal::ZERO);
-    let maintenance = account
-        .margin_requirements
-        .as_ref()
-        .and_then(|mr| mr.mm)
-        .unwrap_or(Decimal::ZERO);
+    let maintenance = account.maintenance_margin.unwrap_or(Decimal::ZERO);
 
     // The same gate as the single-collateral wallet: a requirement counts when either figure is
-    // positive. The flex wallet reports its requirement in USD.
+    // positive.
     if initial_margin > Decimal::ZERO || maintenance > Decimal::ZERO {
         accumulate_margin(margins, "USD", initial_margin, maintenance);
     }
 }
 
-fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut AmountsByCode) {
+/// `wallet_currency` is the wallet's resolved `currency`, or `None` when it cannot be resolved.
+fn parse_margin_account_balances(
+    account: &FuturesAccount,
+    wallet_currency: Option<&str>,
+    balances: &mut AmountsByCode,
+) {
     // `auxiliary.af` is the wallet's available funds in its `currency`, so it bounds that asset
-    // alone; another asset the wallet holds has nothing reserved against it. Without a resolved
-    // currency the figure cannot be attributed, and no asset is reported as locked.
-    let wallet_currency = margin_account_currency(account);
+    // alone; another asset the wallet holds has nothing reserved against it. Locked is derived so
+    // that free equals the venue's available funds, which already net unrealized PnL. Without a
+    // resolved currency the figure cannot be attributed, and no asset is reported as locked.
     let available = account.auxiliary.as_ref().and_then(|aux| aux.af);
 
     for (currency_code, &amount) in &account.balances {
@@ -3066,7 +3081,7 @@ fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut Amount
         let code = normalize_asset_key(currency_code.as_str());
 
         let locked = match available {
-            Some(af) if wallet_currency.as_deref() == Some(code.as_str()) => amount - af,
+            Some(af) if wallet_currency == Some(code.as_str()) => amount - af,
             _ => Decimal::ZERO,
         };
 
@@ -3088,21 +3103,19 @@ fn margin_account_currency(account: &FuturesAccount) -> Option<String> {
         .map(normalize_asset_key)
 }
 
-fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut AmountsByCode) {
-    if let Some(ref mr) = account.margin_requirements {
+/// `wallet_currency` is the wallet's resolved `currency`; a wallet without one contributes no
+/// margin entry, since labeling the requirement with a guess would misstate it.
+fn parse_margin_account_margins(
+    account: &FuturesAccount,
+    wallet_currency: Option<&str>,
+    margins: &mut AmountsByCode,
+) {
+    if let (Some(mr), Some(code)) = (account.margin_requirements.as_ref(), wallet_currency) {
         let im = mr.im.unwrap_or(Decimal::ZERO);
         let mm = mr.mm.unwrap_or(Decimal::ZERO);
 
         if im > Decimal::ZERO || mm > Decimal::ZERO {
-            // Labeling the requirement with a guessed currency would misstate it, so a wallet
-            // whose currency cannot be resolved contributes no margin entry.
-            match margin_account_currency(account) {
-                Some(code) => accumulate_margin(margins, &code, im, mm),
-                None => log::warn!(
-                    "Skipping margin requirement for a single-collateral wallet without a currency field: balances {:?}",
-                    account.balances.keys().collect::<Vec<_>>()
-                ),
-            }
+            accumulate_margin(margins, code, im, mm);
         }
     }
 }
@@ -3309,6 +3322,7 @@ mod tests {
             portfolio_value,
             available_margin: portfolio_value,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         }
     }
@@ -3327,6 +3341,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         }
     }
@@ -3402,6 +3417,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3454,6 +3470,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3498,6 +3515,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3528,12 +3546,7 @@ mod tests {
     fn test_parse_account_entries_keeps_margins_per_currency() {
         let mut flex = flex_wallet(&[], Some(dec!(10000)));
         flex.initial_margin = Some(dec!(500));
-        flex.margin_requirements = Some(FuturesMarginRequirements {
-            im: Some(dec!(500)),
-            mm: Some(dec!(250)),
-            lt: None,
-            tt: None,
-        });
+        flex.maintenance_margin = Some(dec!(250));
 
         let single = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
@@ -3550,6 +3563,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3575,9 +3589,6 @@ mod tests {
         );
     }
 
-    /// A single-collateral wallet's requirement is denominated in the wallet's `currency`.
-    ///
-    /// Kraken's documented `fi_xbtusd` wallet: `currency: xbt`, a funded `xbt` key, an `xrp: 0` key
     /// The wallet's available funds bound its own currency alone; another asset it holds has
     /// nothing reserved against it.
     #[rstest]
@@ -3600,6 +3611,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3635,6 +3647,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3642,6 +3655,42 @@ mod tests {
 
         assert_eq!(balances.len(), 1, "{balances:?}");
         assert_eq!(balances[0].currency.code.as_str(), "BTC");
+    }
+
+    /// A flex wallet reports its requirement in USD in the top-level `initialMargin` and
+    /// `maintenanceMargin` fields, and both figures reach the account-wide entry.
+    ///
+    /// Kraken's documented `flex` wallet shape, with the two requirement figures set.
+    #[rstest]
+    fn test_parse_multi_collateral_margins_read_the_documented_fields() {
+        let json = r#"{
+            "type": "multiCollateralMarginAccount",
+            "currencies": {
+                "XBT": {"quantity": 0.1185308247, "value": 4998.721054420551, "collateral": 4886.49976674881, "available": 0.1185308247},
+                "USD": {"quantity": 5000, "value": 5000, "collateral": 5000, "available": 5000}
+            },
+            "balanceValue": 9998.72,
+            "portfolioValue": 9998.72,
+            "collateralValue": 9886.5,
+            "initialMargin": 500,
+            "initialMarginWithOrders": 500,
+            "maintenanceMargin": 250,
+            "pnl": 0,
+            "unrealizedFunding": 0,
+            "totalUnrealized": 0,
+            "totalUnrealizedAsMargin": 0,
+            "marginEquity": 9886.5,
+            "availableMargin": 9386.5
+        }"#;
+        let account: FuturesAccount = serde_json::from_str(json).unwrap();
+
+        let (_, margins) = entries_for(&[("flex", account)]);
+
+        assert_eq!(margins.len(), 1, "{margins:?}");
+        assert_eq!(margins[0].currency.code.as_str(), "USD");
+        assert_eq!(margins[0].initial.as_decimal(), dec!(500));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(250));
+        assert_eq!(margins[0].instrument_id, None);
     }
 
     /// A flex wallet with no requirement contributes no entry; one with a requirement contributes
@@ -3658,12 +3707,7 @@ mod tests {
     ) {
         let mut flex = flex_wallet(&[("USD", dec!(1000))], Some(dec!(1000)));
         flex.initial_margin = initial_margin;
-        flex.margin_requirements = maintenance.map(|mm| FuturesMarginRequirements {
-            im: None,
-            lt: None,
-            mm: Some(mm),
-            tt: None,
-        });
+        flex.maintenance_margin = maintenance;
 
         let (_, margins) = entries_for(&[("flex", flex)]);
 
@@ -3677,6 +3721,9 @@ mod tests {
         }
     }
 
+    /// A single-collateral wallet's requirement is denominated in the wallet's `currency`.
+    ///
+    /// Kraken's documented `fi_xbtusd` wallet: `currency: xbt`, a funded `xbt` key, an `xrp: 0` key
     /// and two contract-symbol keys. The requirement is reported in BTC at eight decimals.
     #[rstest]
     fn test_parse_margin_account_margins_use_the_wallet_currency() {
@@ -3789,6 +3836,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3813,6 +3861,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3844,6 +3893,7 @@ mod tests {
             portfolio_value: Some(dec!(50000)),
             available_margin: Some(dec!(45000)),
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3874,6 +3924,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3903,6 +3954,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 

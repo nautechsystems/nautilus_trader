@@ -787,6 +787,9 @@ pub struct FuturesAccount {
     /// Initial margin (for flex accounts).
     #[serde(default, with = "optional_decimal")]
     pub initial_margin: Option<Decimal>,
+    /// Total maintenance margin held for open positions (for flex accounts, in USD).
+    #[serde(default, with = "optional_decimal")]
+    pub maintenance_margin: Option<Decimal>,
     /// PnL (for flex accounts).
     #[serde(default, with = "optional_decimal")]
     pub pnl: Option<Decimal>,
