@@ -1,0 +1,2 @@
+# Follow `# shellcheck source=` directives when the sourced file is not a hook input
+external-sources=true
