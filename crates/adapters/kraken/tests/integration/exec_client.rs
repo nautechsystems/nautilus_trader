@@ -46,9 +46,9 @@ use nautilus_common::{
     messages::{
         ExecutionEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, SubmitOrder, SubmitOrderList,
+            ModifyOrder, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -1340,6 +1340,133 @@ async fn test_futures_scoped_open_order_read_skips_an_unresolved_row_of_another_
 
     assert_eq!(reports.len(), 1, "{reports:?}");
     assert_eq!(reports[0].venue_order_id, VenueOrderId::from("V-HELD"));
+}
+
+const FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED: &str = r#"{"result":"success","openOrders":[{"order_id":"V-HELD","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"},{"order_id":"V-UNRESOLVED","symbol":"PF_UNKNOWNUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}]}"#;
+
+/// The single-order lookup is scoped to the command's instrument, so an unresolvable open order on
+/// another contract is out of scope for it rather than failing it.
+#[rstest]
+#[tokio::test]
+async fn test_futures_order_status_report_lookup_is_scoped_to_its_instrument() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED.to_string());
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        None,
+        Some(VenueOrderId::from("V-HELD")),
+        None,
+        None,
+    );
+
+    let report = client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect("an unresolvable order on another contract is out of scope")
+        .expect("the held order is reported");
+
+    assert_eq!(report.venue_order_id, VenueOrderId::from("V-HELD"));
+}
+
+/// The same scope for `query_order`, which reads the queried instrument's open orders.
+#[rstest]
+#[tokio::test]
+async fn test_futures_query_order_is_scoped_to_its_instrument() {
+    let (client, mut rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED.to_string());
+
+    client
+        .query_order(QueryOrder::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("PI_XBTUSD.KRAKEN"),
+            ClientOrderId::new("O-QUERY-1"),
+            Some(VenueOrderId::from("V-HELD")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Report(_))).await;
+    let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+        panic!("expected an order status report, got {event:?}");
+    };
+    assert_eq!(report.venue_order_id, VenueOrderId::from("V-HELD"));
+}
+
+/// Out of scope, an unresolvable position is skipped: a scoped read only reports its own
+/// instrument.
+#[rstest]
+#[tokio::test]
+async fn test_futures_scoped_position_read_skips_an_unresolved_row_of_another_symbol() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_positions_json.lock().await = Some(
+        r#"{"result":"success","openPositions":[{"side":"long","symbol":"PI_XBTUSD","price":27500.5,"fillTime":"2023-04-07T15:45:10.739Z","size":1000,"unrealizedFunding":0.0},{"side":"long","symbol":"PF_UNKNOWNUSD","price":1.5,"fillTime":"2023-04-07T15:45:10.739Z","size":10,"unrealizedFunding":0.0}]}"#
+            .to_string(),
+    );
+
+    let reports = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("a scoped read ignores rows of other symbols, resolvable or not");
+
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("PI_XBTUSD.KRAKEN")
+    );
+}
+
+/// An in-scope position that cannot be parsed fails the read, as on the spot client; dropped, it
+/// would read to reconciliation as a position the venue does not hold.
+#[rstest]
+#[tokio::test]
+async fn test_futures_position_read_fails_on_an_unparsable_position() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_positions_json.lock().await = Some(
+        r#"{"result":"success","openPositions":[{"side":"long","symbol":"PI_XBTUSD","price":27500.5,"fillTime":"2023-04-07T15:45:10.739Z","size":-1000,"unrealizedFunding":0.0}]}"#
+            .to_string(),
+    );
+
+    let error = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect_err("an in-scope position that cannot be parsed must fail the read");
+
+    assert!(
+        error
+            .to_string()
+            .contains("OpenPositions: failed to parse futures position PI_XBTUSD"),
+        "unexpected error: {error}"
+    );
 }
 
 /// A scoped futures position read must match the resolved instrument.

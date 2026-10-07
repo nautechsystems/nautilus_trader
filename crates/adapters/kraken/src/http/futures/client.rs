@@ -2063,14 +2063,18 @@ impl KrakenFuturesHttpClient {
                 );
             };
 
-            match parse_futures_position_status_report(&position, &instrument, account_id, ts_init)
-            {
-                Ok(report) => all_reports.push(report),
-                Err(e) => {
-                    let symbol = &position.symbol;
-                    log::warn!("Failed to parse futures position {symbol}: {e}");
-                }
-            }
+            // An in-scope position that cannot be parsed fails the read as well, as the spot
+            // client's does; dropped, it too reads to reconciliation as a position the venue does
+            // not hold.
+            let report =
+                parse_futures_position_status_report(&position, &instrument, account_id, ts_init)
+                    .map_err(|e| {
+                    anyhow::anyhow!(
+                        "OpenPositions: failed to parse futures position {}: {e}",
+                        position.symbol
+                    )
+                })?;
+            all_reports.push(report);
         }
 
         Ok(all_reports)

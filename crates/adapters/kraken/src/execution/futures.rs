@@ -763,9 +763,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         );
 
         let account_id = self.core.account_id;
+        // Scoped to the command's instrument, so an unresolvable open order on another contract
+        // is out of scope for this lookup rather than failing it.
         let reports = self
             .http
-            .request_order_status_reports(account_id, None, None, None, false)
+            .request_order_status_reports(account_id, cmd.instrument_id, None, None, false)
             .await?;
 
         // Match by venue_order_id or client_order_id (comparing truncated form
@@ -1026,12 +1028,15 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .venue_order_id
             .context("venue_order_id required for query_order")?;
         let account_id = self.core.account_id;
+        let instrument_id = cmd.instrument_id;
         let http = self.http.clone();
         let emitter = self.emitter.clone();
 
         self.spawn_task("query_order", async move {
+            // Scoped to the queried instrument, so an unresolvable open order on another contract
+            // is out of scope for this lookup rather than failing it.
             let reports = http
-                .request_order_status_reports(account_id, None, None, None, true)
+                .request_order_status_reports(account_id, Some(instrument_id), None, None, true)
                 .await
                 .context("Failed to query order")?;
 
