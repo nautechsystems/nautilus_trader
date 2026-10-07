@@ -25,6 +25,8 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Improved Lighter report generation with HTTP collection on runtime workers (#5216)
+- Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Optimized core string formatting, precision parsing, and API key masking allocations (#5225), thanks @sunlei
 - Optimized core UTC timestamp formatting (#5226), thanks @sunlei
 - Optimized hexadecimal encoding and decoding (#5227), thanks @sunlei
@@ -32,7 +34,6 @@ Released on TBD (UTC).
 - Optimized JSON decimal deserialization to avoid temporary string allocations (#5229), thanks @sunlei
 - Optimized `UUID4` byte conversion (#5230), thanks @sunlei
 - Optimized portfolio snapshots to skip copying account event history (#5237), thanks @XBeg9
-- Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Upgraded Rust (MSRV) to 1.99.0
 - Upgraded `cargo-hawk` tool to v0.1.15
 - Upgraded `prek` tool to v0.5.4
