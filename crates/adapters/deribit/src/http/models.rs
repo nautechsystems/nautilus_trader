@@ -1076,9 +1076,13 @@ pub struct DeribitPosition {
         deserialize_with = "deserialize_decimal_token_or_zero_borrowed"
     )]
     pub initial_margin: Decimal,
-    /// Leverage used for the position
-    #[serde(default)]
-    pub leverage: Option<i64>,
+    /// Current available leverage for a future position (can be fractional)
+    #[serde(
+        default,
+        serialize_with = "decimal::serialize_optional",
+        deserialize_with = "deserialize_optional_decimal_token_borrowed"
+    )]
+    pub leverage: Option<Decimal>,
     /// Current unrealized profit/loss
     #[serde(
         serialize_with = "decimal::serialize",
@@ -1208,6 +1212,35 @@ mod tests {
             error.to_string(),
             r#"invalid type: string "-1", expected raw value"#
         );
+    }
+
+    #[rstest]
+    #[case::integer(r#""leverage": 50,"#, Some(dec!(50)))]
+    #[case::whole_float(r#""leverage": 50.0,"#, Some(dec!(50)))]
+    #[case::fractional(r#""leverage": 35.639422,"#, Some(dec!(35.639422)))]
+    #[case::null(r#""leverage": null,"#, None)]
+    #[case::missing("", None)]
+    fn test_deserialize_position_leverage(#[case] field: &str, #[case] expected: Option<Decimal>) {
+        let json = format!(
+            r#"{{
+                "average_price": 7440.18,
+                "direction": "buy",
+                "floating_profit_loss": 0,
+                "initial_margin": 0.000197283,
+                "instrument_name": "BTC-PERPETUAL",
+                "kind": "future",
+                {field}
+                "maintenance_margin": 0.000143783,
+                "mark_price": 7476.65,
+                "realized_profit_loss": -9e-9,
+                "size": 50,
+                "total_profit_loss": 0.000032781
+            }}"#
+        );
+
+        let position: DeribitPosition = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(position.leverage, expected);
     }
 
     #[rstest]
