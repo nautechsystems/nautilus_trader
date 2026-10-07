@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added negative price support for futures, except inverse futures (#5190), thanks @DeLuke84
+- Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 
 ### Breaking Changes
 
@@ -16,14 +17,34 @@ Released on TBD (UTC).
 - Fixed maker/taker commission sign at negative prices
 - Fixed simulated OTO releases reviving children canceled earlier in the same callback
 - Fixed simulated reduce-only quote-quantity stops converting their resized quantity again
+- Fixed simulated released bracket exits canceled with partially filled entries (#5159), thanks @abhijeetvichare76
+- Fixed Hyperliquid account updates retaining balances reported at zero (#5210), thanks @XBeg9
+- Fixed Hyperliquid reduce-only filled order lookups overstating fill quantity (#5222), thanks @XBeg9
+- Fixed Kraken spot and futures wallets retaining balances reported at zero (#5186), thanks @zhaow-de
 
 ### Internal Improvements
 
+- Optimized core string formatting, precision parsing, and API key masking allocations (#5225), thanks @sunlei
+- Optimized core UTC timestamp formatting (#5226), thanks @sunlei
+- Optimized hexadecimal encoding and decoding (#5227), thanks @sunlei
+- Optimized integer `UnixNanos` parsing (#5228), thanks @sunlei
+- Optimized JSON decimal deserialization to avoid temporary string allocations (#5229), thanks @sunlei
+- Optimized `UUID4` byte conversion (#5230), thanks @sunlei
+- Optimized portfolio snapshots to skip copying account event history (#5237), thanks @XBeg9
+- Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Upgraded Rust (MSRV) to 1.99.0
+- Upgraded `cargo-hawk` tool to v0.1.15
 - Upgraded `prek` tool to v0.5.4
+- Upgraded Socket CLI tool to v1.4.1
 - Upgraded `uv` tool and pre-commit hook to v0.12.22
+- Upgraded `databento` crate to v0.63.0
 - Upgraded `hyper-util` crate to v0.1.21
+- Upgraded `implied-vol` crate to v2.1.0
+- Upgraded `libc` crate to v0.2.190
+- Upgraded `pyo3` crates to v0.29.3
+- Upgraded `tokio` crate to v1.53.2
 - Upgraded `tokio-rustls` crate to v0.26.6
+- Upgraded `uuid` crate to v1.27.0
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.16.10
 - Upgraded `ty` package (dev) to v0.0.84
 - Upgraded `uvicorn` package (test) to v0.54.0
