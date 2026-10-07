@@ -69,12 +69,11 @@ impl L2Depths {
         self.depths.load().get(symbol).copied()
     }
 
-    /// Records a new subscription at `depth` and returns its generation.
-    pub(crate) fn insert(&self, symbol: &str, depth: u32) -> u64 {
+    /// Records a new subscription at `depth` under a fresh generation.
+    pub(crate) fn insert(&self, symbol: &str, depth: u32) {
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         self.depths
             .insert(symbol.to_string(), L2Subscription { depth, generation });
-        generation
     }
 
     pub(crate) fn remove(&self, symbol: &str) {
@@ -127,12 +126,8 @@ pub(crate) struct L2BookState {
     mismatches: AHashMap<InstrumentId, u32>,
     /// Instruments whose validation is off after too many consecutive mismatches.
     validation_disabled: AHashSet<InstrumentId>,
-}
-
-impl Default for L2BookState {
-    fn default() -> Self {
-        Self::new(false)
-    }
+    /// The subscription generation last seen per instrument; a new one re-enables validation.
+    last_generation: AHashMap<InstrumentId, u64>,
 }
 
 impl L2BookState {
@@ -143,7 +138,18 @@ impl L2BookState {
             awaiting_snapshot: AHashSet::new(),
             mismatches: AHashMap::new(),
             validation_disabled: AHashSet::new(),
+            last_generation: AHashMap::new(),
         }
+    }
+
+    /// Drops the shadow books and the mismatch counts after a reconnect.
+    ///
+    /// The replayed subscriptions deliver fresh snapshots, so the replacement stream gets the
+    /// full allowance of mismatches; an instrument whose validation is off stays off.
+    pub(crate) fn reset_after_reconnect(&mut self) {
+        self.books.clear();
+        self.awaiting_snapshot.clear();
+        self.mismatches.clear();
     }
 
     pub(crate) fn process_book(
@@ -157,6 +163,15 @@ impl L2BookState {
     ) -> anyhow::Result<L2BookOutcome> {
         let instrument_id = instrument.id();
         let depth = subscription.map(|s| s.depth);
+
+        // A new subscription is a new stream: its validation starts afresh, so an instrument the
+        // cap switched off is validated again once the user resubscribes.
+        if let Some(generation) = subscription.map(|s| s.generation)
+            && self.last_generation.insert(instrument_id, generation) != Some(generation)
+        {
+            self.validation_disabled.remove(&instrument_id);
+            self.mismatches.remove(&instrument_id);
+        }
 
         if is_snapshot {
             self.awaiting_snapshot.remove(&instrument_id);
@@ -583,6 +598,68 @@ mod tests {
             again.resync.is_none(),
             "validation stays off for this instrument"
         );
+    }
+
+    /// A new subscription re-enables validation for an instrument the cap switched off.
+    #[rstest]
+    fn test_a_new_subscription_re_enables_validation() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let mut bad = book_data(GUIDE_SNAPSHOT);
+        bad.checksum = Some(1);
+
+        for _ in 0..MAX_CONSECUTIVE_CHECKSUM_MISMATCHES {
+            state
+                .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
+                .unwrap();
+        }
+        assert!(
+            state
+                .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
+                .unwrap()
+                .resync
+                .is_none(),
+            "validation is off for the subscription that struck out"
+        );
+
+        let resubscribed = Some(L2Subscription {
+            depth: 10,
+            generation: 8,
+        });
+        let outcome = state
+            .process_book(&bad, &instrument, 0, true, resubscribed, TS)
+            .unwrap();
+
+        assert!(
+            outcome.resync.is_some(),
+            "the new subscription is validated again"
+        );
+    }
+
+    /// A reconnect restarts the mismatch count: the replayed stream gets the full allowance.
+    #[rstest]
+    fn test_a_reconnect_restarts_the_mismatch_count() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let mut bad = book_data(GUIDE_SNAPSHOT);
+        bad.checksum = Some(1);
+
+        for _ in 0..(MAX_CONSECUTIVE_CHECKSUM_MISMATCHES - 1) {
+            state
+                .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
+                .unwrap();
+        }
+
+        state.reset_after_reconnect();
+
+        let outcome = state
+            .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
+            .unwrap();
+        assert!(
+            outcome.resync.is_some(),
+            "the first mismatch after a reconnect resubscribes rather than striking out"
+        );
+        assert!(state.books.is_empty() || !state.validation_disabled.contains(&instrument.id()));
     }
 
     /// A valid update resets the mismatch count, so sporadic mismatches never add up.

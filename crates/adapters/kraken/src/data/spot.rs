@@ -728,6 +728,7 @@ impl KrakenSpotDataClient {
             KrakenSpotWsMessage::L3Snapshot(_) => {}
             KrakenSpotWsMessage::L3Update(_) => {}
             KrakenSpotWsMessage::Reconnected => {
+                l2_books.reset_after_reconnect();
                 log::info!("Spot WebSocket reconnected");
             }
         }
@@ -1518,7 +1519,7 @@ mod tests {
         let book_sequence = Arc::new(AtomicU64::new(0));
         let l2_depths = L2Depths::default();
         l2_depths.insert("BTC/USD", 10);
-        let mut l2_books = L2BookState::default();
+        let mut l2_books = L2BookState::new(false);
         let ohlc_buffer = Arc::new(Mutex::new(AHashMap::new()));
         let context = SpotMessageContext {
             sender: &sender.into(),

@@ -1409,7 +1409,8 @@ impl KrakenSpotWebSocketClient {
             params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
                 channel: KrakenWsChannel::Book,
                 symbol: Some(vec![symbol]),
-                snapshot: None,
+                // Asked for explicitly: the recovery depends on this snapshot to end the wait.
+                snapshot: Some(true),
                 depth: Some(depth),
                 interval: None,
                 event_trigger: None,
