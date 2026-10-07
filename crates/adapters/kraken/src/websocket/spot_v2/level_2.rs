@@ -90,8 +90,8 @@ impl L2Depths {
 
 /// A resubscription the data client issues after a checksum mismatch.
 ///
-/// `generation` names the subscription the mismatch belonged to; the data client fills it in
-/// from [`L2Depths`], and the recovery leaves a replacement subscription alone.
+/// `generation` names the subscription the mismatch belonged to, so the recovery leaves a
+/// replacement subscription alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct L2ResyncRequest {
     pub(crate) instrument_id: InstrumentId,
@@ -106,10 +106,11 @@ pub(crate) struct L2BookOutcome {
     pub(crate) resync: Option<L2ResyncRequest>,
 }
 
-/// Consecutive checksum mismatches after which an instrument's validation is switched off.
+/// Checksum mismatches after which an instrument's validation is switched off.
 ///
-/// A book the venue hashes differently from the shadow book would otherwise resubscribe on every
-/// snapshot, forever. Three in a row with no valid message between them is not a transient gap.
+/// A book the venue hashes differently from the shadow book would otherwise resubscribe forever.
+/// Three with no valid update between them is not a transient gap; a snapshot that validates says
+/// nothing about the update path, so it does not reset the count.
 pub(crate) const MAX_CONSECUTIVE_CHECKSUM_MISMATCHES: u32 = 3;
 
 /// Shadow books for the Spot `book` channel, one per instrument.
@@ -119,9 +120,6 @@ pub(crate) const MAX_CONSECUTIVE_CHECKSUM_MISMATCHES: u32 = 3;
 pub(crate) struct L2BookState {
     pub(crate) books: AHashMap<InstrumentId, OrderBook>,
     validate_checksum: bool,
-    /// Wire scales per instrument, resolved once: price from `pair_decimals`, quantity from
-    /// `lot_decimals`.
-    scales: AHashMap<InstrumentId, (u8, u8)>,
     /// Instruments with a cleared book after a mismatch. Their updates are dropped until the
     /// snapshot the resubscription produces, since they describe a stream the venue has ended.
     awaiting_snapshot: AHashSet<InstrumentId>,
@@ -142,7 +140,6 @@ impl L2BookState {
         Self {
             books: AHashMap::new(),
             validate_checksum,
-            scales: AHashMap::new(),
             awaiting_snapshot: AHashSet::new(),
             mismatches: AHashMap::new(),
             validation_disabled: AHashSet::new(),
@@ -155,10 +152,11 @@ impl L2BookState {
         instrument: &InstrumentAny,
         sequence: u64,
         is_snapshot: bool,
-        depth: Option<u32>,
+        subscription: Option<L2Subscription>,
         ts_init: UnixNanos,
     ) -> anyhow::Result<L2BookOutcome> {
         let instrument_id = instrument.id();
+        let depth = subscription.map(|s| s.depth);
 
         if is_snapshot {
             self.awaiting_snapshot.remove(&instrument_id);
@@ -201,11 +199,13 @@ impl L2BookState {
         let validate = self.validate_checksum && !self.validation_disabled.contains(&instrument_id);
         let mismatch = match (validate, book.checksum) {
             (true, Some(remote)) => {
-                let (price_scale, qty_scale) = *self
-                    .scales
-                    .entry(instrument_id)
-                    .or_insert_with(|| (price_wire_scale(instrument), instrument.size_precision()));
-                let local = compute_checksum(book_state, price_scale, qty_scale);
+                // Scales come from the instrument on every message, so a refreshed definition
+                // takes effect at once.
+                let local = compute_checksum(
+                    book_state,
+                    price_wire_scale(instrument),
+                    instrument.size_precision(),
+                );
                 (local != remote).then_some((local, remote))
             }
             _ => None,
@@ -251,11 +251,11 @@ impl L2BookState {
                     resync: Some(L2ResyncRequest {
                         instrument_id,
                         depth,
-                        generation: None,
+                        generation: subscription.map(|s| s.generation),
                     }),
                 });
             }
-        } else if validate && book.checksum.is_some() {
+        } else if validate && book.checksum.is_some() && !is_snapshot {
             self.mismatches.remove(&instrument_id);
         }
 
@@ -420,6 +420,13 @@ mod tests {
         )
     }
 
+    fn sub(depth: u32) -> L2Subscription {
+        L2Subscription {
+            depth,
+            generation: 7,
+        }
+    }
+
     fn book_data(json: &str) -> KrakenWsBookData {
         let message: KrakenWsRawMessage = serde_json::from_str(json).unwrap();
         serde_json::from_str(message.data[0].get()).unwrap()
@@ -437,7 +444,7 @@ mod tests {
         assert_eq!(snapshot.checksum, Some(3_310_070_434));
 
         let outcome = state
-            .process_book(&snapshot, &instrument, 0, true, Some(10), TS)
+            .process_book(&snapshot, &instrument, 0, true, Some(sub(10)), TS)
             .unwrap();
 
         assert!(
@@ -460,7 +467,7 @@ mod tests {
                 &instrument,
                 0,
                 true,
-                Some(10),
+                Some(sub(10)),
                 TS,
             )
             .unwrap();
@@ -468,7 +475,7 @@ mod tests {
         let update = book_data(GUIDE_UPDATE);
         assert_eq!(update.checksum, Some(38_355_977));
         let outcome = state
-            .process_book(&update, &instrument, 21, false, Some(10), TS)
+            .process_book(&update, &instrument, 21, false, Some(sub(10)), TS)
             .unwrap();
 
         assert!(
@@ -488,7 +495,7 @@ mod tests {
         snapshot.checksum = Some(1);
 
         let outcome = state
-            .process_book(&snapshot, &instrument, 0, true, Some(25), TS)
+            .process_book(&snapshot, &instrument, 0, true, Some(sub(25)), TS)
             .unwrap();
 
         assert_eq!(
@@ -496,7 +503,7 @@ mod tests {
             Some(L2ResyncRequest {
                 instrument_id: instrument.id(),
                 depth: Some(25),
-                generation: None,
+                generation: Some(7),
             })
         );
         let (deltas, next_sequence) = outcome.deltas.expect("a clear is emitted");
@@ -511,7 +518,7 @@ mod tests {
 
         let update = book_data(GUIDE_UPDATE);
         let dropped = state
-            .process_book(&update, &instrument, 22, false, Some(25), TS)
+            .process_book(&update, &instrument, 22, false, Some(sub(25)), TS)
             .unwrap();
         assert!(dropped.deltas.is_none() && dropped.resync.is_none());
 
@@ -521,7 +528,7 @@ mod tests {
                 &instrument,
                 22,
                 true,
-                Some(25),
+                Some(sub(25)),
                 TS,
             )
             .unwrap();
@@ -532,7 +539,8 @@ mod tests {
         );
     }
 
-    /// Three consecutive mismatches switch validation off for that instrument alone.
+    /// Three mismatches with no valid update between them switch validation off for that
+    /// instrument alone.
     ///
     /// A book the venue hashes differently would otherwise resubscribe on every snapshot; after the
     /// third, the message is applied and kept and no resync is requested.
@@ -545,13 +553,13 @@ mod tests {
 
         for strike in 1..MAX_CONSECUTIVE_CHECKSUM_MISMATCHES {
             let outcome = state
-                .process_book(&bad, &instrument, 0, true, Some(10), TS)
+                .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
                 .unwrap();
             assert!(outcome.resync.is_some(), "strike {strike} resubscribes");
         }
 
         let final_strike = state
-            .process_book(&bad, &instrument, 0, true, Some(10), TS)
+            .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
             .unwrap();
         assert!(
             final_strike.resync.is_none(),
@@ -569,7 +577,7 @@ mod tests {
         assert!(state.books.contains_key(&instrument.id()));
 
         let again = state
-            .process_book(&bad, &instrument, 21, true, Some(10), TS)
+            .process_book(&bad, &instrument, 21, true, Some(sub(10)), TS)
             .unwrap();
         assert!(
             again.resync.is_none(),
@@ -577,32 +585,82 @@ mod tests {
         );
     }
 
-    /// A valid message resets the mismatch count, so sporadic mismatches never add up.
+    /// A valid update resets the mismatch count, so sporadic mismatches never add up.
     #[rstest]
-    fn test_a_valid_message_resets_the_mismatch_count() {
+    fn test_a_valid_update_resets_the_mismatch_count() {
         let mut state = L2BookState::new(true);
         let instrument = instrument(1, None);
         let good = book_data(GUIDE_SNAPSHOT);
+        let update = book_data(GUIDE_UPDATE);
         let mut bad = good.clone();
         bad.checksum = Some(1);
 
         for _ in 0..(MAX_CONSECUTIVE_CHECKSUM_MISMATCHES * 2) {
             assert!(
                 state
-                    .process_book(&bad, &instrument, 0, true, Some(10), TS)
+                    .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
                     .unwrap()
                     .resync
                     .is_some(),
-                "each mismatch after a valid message resubscribes"
+                "each mismatch after a valid update resubscribes"
             );
             assert!(
                 state
-                    .process_book(&good, &instrument, 0, true, Some(10), TS)
+                    .process_book(&good, &instrument, 0, true, Some(sub(10)), TS)
+                    .unwrap()
+                    .resync
+                    .is_none()
+            );
+            assert!(
+                state
+                    .process_book(&update, &instrument, 21, false, Some(sub(10)), TS)
                     .unwrap()
                     .resync
                     .is_none()
             );
         }
+    }
+
+    /// A snapshot that validates does not reset the count: a shadow book that diverges only on
+    /// updates would otherwise resubscribe on every update, forever.
+    #[rstest]
+    fn test_a_valid_snapshot_does_not_reset_the_mismatch_count() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let good = book_data(GUIDE_SNAPSHOT);
+        let mut bad_update = book_data(GUIDE_UPDATE);
+        bad_update.checksum = Some(1);
+
+        for strike in 1..MAX_CONSECUTIVE_CHECKSUM_MISMATCHES {
+            assert!(
+                state
+                    .process_book(&good, &instrument, 0, true, Some(sub(10)), TS)
+                    .unwrap()
+                    .resync
+                    .is_none()
+            );
+            assert!(
+                state
+                    .process_book(&bad_update, &instrument, 21, false, Some(sub(10)), TS)
+                    .unwrap()
+                    .resync
+                    .is_some(),
+                "strike {strike} resubscribes"
+            );
+        }
+
+        state
+            .process_book(&good, &instrument, 0, true, Some(sub(10)), TS)
+            .unwrap();
+        let final_strike = state
+            .process_book(&bad_update, &instrument, 21, false, Some(sub(10)), TS)
+            .unwrap();
+
+        assert!(
+            final_strike.resync.is_none(),
+            "the third mismatch stops resubscribing although each snapshot validated"
+        );
+        assert!(final_strike.deltas.is_some(), "the update is kept");
     }
 
     #[rstest]
@@ -613,15 +671,15 @@ mod tests {
         snapshot.checksum = Some(1);
 
         let outcome = state
-            .process_book(&snapshot, &instrument, 0, true, Some(10), TS)
+            .process_book(&snapshot, &instrument, 0, true, Some(sub(10)), TS)
             .unwrap();
 
         assert!(outcome.resync.is_none());
         assert_eq!(outcome.deltas.expect("deltas").0.deltas.len(), 21);
     }
 
-    /// Prices are hashed at the wire scale, which `pair_decimals` gives when the tick size is a
-    /// digit coarser; hashing at the instrument's precision would mismatch on every message.
+    /// Prices are hashed at the wire scale, which `pair_decimals` gives when it differs from the
+    /// tick precision; hashing at the instrument's precision would mismatch on every message.
     #[rstest]
     fn test_price_scale_comes_from_pair_decimals() {
         let message = KrakenWsBookData {
@@ -638,7 +696,14 @@ mod tests {
 
         let mut with_scale = L2BookState::new(true);
         let outcome = with_scale
-            .process_book(&message, &instrument(6, Some(7)), 0, true, Some(10), TS)
+            .process_book(
+                &message,
+                &instrument(6, Some(7)),
+                0,
+                true,
+                Some(sub(10)),
+                TS,
+            )
             .unwrap();
         assert!(
             outcome.resync.is_none(),
@@ -647,7 +712,7 @@ mod tests {
 
         let mut without_scale = L2BookState::new(true);
         let outcome = without_scale
-            .process_book(&message, &instrument(6, None), 0, true, Some(10), TS)
+            .process_book(&message, &instrument(6, None), 0, true, Some(sub(10)), TS)
             .unwrap();
         assert!(
             outcome.resync.is_some(),

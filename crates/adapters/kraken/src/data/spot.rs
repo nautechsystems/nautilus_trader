@@ -656,14 +656,10 @@ impl KrakenSpotDataClient {
                         instrument,
                         sequence,
                         is_snapshot,
-                        subscription.map(|s| s.depth),
+                        subscription,
                         ts_init,
                     ) {
-                        Ok(mut outcome) => {
-                            if let Some(request) = &mut outcome.resync {
-                                request.generation = subscription.map(|s| s.generation);
-                            }
-
+                        Ok(outcome) => {
                             if let Some((deltas, next_sequence)) = outcome.deltas {
                                 context
                                     .book_sequence
@@ -677,7 +673,16 @@ impl KrakenSpotDataClient {
                                 }
                             }
 
-                            resyncs.extend(outcome.resync);
+                            // One recovery per instrument per message; a second request for the
+                            // same subscription would interleave its unsubscribe and subscribe
+                            // with the first.
+                            if let Some(request) = outcome.resync
+                                && !resyncs.iter().any(|r: &L2ResyncRequest| {
+                                    r.instrument_id == request.instrument_id
+                                })
+                            {
+                                resyncs.push(request);
+                            }
                         }
                         Err(e) => log::error!("Failed to parse book deltas: {e}"),
                     }
@@ -1456,7 +1461,7 @@ mod tests {
 
     /// Every book in a message that mismatches gets its own resync request.
     #[rstest]
-    fn test_l2_handler_returns_a_resync_request_per_mismatching_book() {
+    fn test_l2_handler_returns_one_resync_request_per_mismatching_instrument() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let instruments = Arc::new(AtomicMap::new());
         let instrument = make_instrument();
@@ -1496,8 +1501,8 @@ mod tests {
 
         assert_eq!(
             resyncs.len(),
-            2,
-            "one request per mismatching book: {resyncs:?}"
+            1,
+            "one request per mismatching instrument: {resyncs:?}"
         );
         assert!(resyncs.iter().all(|r| r.instrument_id == instrument_id));
     }

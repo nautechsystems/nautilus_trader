@@ -273,9 +273,9 @@ shadow book, rendering prices at `pair_decimals` and quantities at `lot_decimals
 `AssetPairs`; for a handful of pairs the price scale is one digit finer than the tick size, so the
 instrument carries it when the two differ. On mismatch the adapter emits a `Clear` delta, drops the
 shadow book, resubscribes the symbol, and ignores further updates until the fresh snapshot arrives.
-Three consecutive mismatches on one instrument switch validation off for that instrument with an
-error log and keep its book as received, so a book the venue hashes differently cannot loop on
-resubscription. Kraken Futures `book` messages carry no checksum. To disable validation:
+Three mismatches on one instrument with no valid update between them switch validation off for
+that instrument with an error log and keep its book as received, so a book the venue hashes
+differently cannot loop on resubscription; a snapshot that validates does not reset the count. Kraken Futures `book` messages carry no checksum. To disable validation:
 
 ```python
 config = KrakenDataClientConfig(

@@ -65,8 +65,8 @@ impl KrakenDataClientConfig {
         ws_idle_timeout_ms: Option<u64>,
         max_requests_per_second: Option<u32>,
         transport_backend: Option<TransportBackend>,
-        // Added after every argument that existed before it, so a positional call that reached
-        // `proxy_url` or later keeps binding the same way.
+        // Stays the last positional parameter: Python callers bind `proxy_url` and the arguments
+        // after it by position.
         validate_l2_checksum: Option<bool>,
     ) -> Self {
         let defaults = Self::default();
@@ -233,8 +233,8 @@ mod tests {
 
     use super::*;
 
-    /// The checksum option sits after every argument that existed before it, so a positional
-    /// call still binds the proxy URL to `proxy_url`.
+    /// The checksum option is the last positional parameter, so a positional call binds the proxy
+    /// URL to `proxy_url`.
     #[rstest]
     fn data_config_keeps_the_proxy_url_position() {
         Python::initialize();

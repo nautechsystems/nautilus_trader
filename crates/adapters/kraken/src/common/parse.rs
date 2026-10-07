@@ -2396,9 +2396,9 @@ mod tests {
         assert!(result.starts_with('O'));
     }
 
-    /// The wire price scale is recorded only when `pair_decimals` is finer than the tick size.
+    /// The wire price scale is recorded only when `pair_decimals` differs from the tick precision.
     #[rstest]
-    fn test_pair_info_records_pair_decimals_only_when_finer_than_tick_size() {
+    fn test_pair_info_records_pair_decimals_only_when_they_differ() {
         let json = load_test_json("http_asset_pairs_tokenized.json");
         let response: KrakenResponse<AssetPairsResponse> = serde_json::from_str(&json).unwrap();
         let pairs = response.result.unwrap();
