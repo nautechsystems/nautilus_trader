@@ -193,9 +193,10 @@ spot markets, and HIP-4 binary outcome markets.
 All four product types load automatically at connect; no per-product opt-in is required.
 
 :::note
-Standard Hyperliquid perpetuals are settled in USDC. HIP-3 dexes may settle in
-their own collateral token, such as USDH, USDE, or USDT0, while keeping Nautilus
-symbols quoted as `USD`. Spot markets are standard currency pairs. See
+Standard Hyperliquid perpetuals are quoted and settled in USDC. HIP-3 dexes may
+use their own collateral token, such as USDH, USDE, or USDT0, as the quote and
+settlement currency. Symbols keep the `USD` leg in both cases. Spot markets are
+standard currency pairs. See
 [HIP-3 builder-deployed perpetuals](#hip-3-builder-deployed-perpetuals) and
 [HIP-4 outcome markets](#hip-4-outcome-markets) for the details of each.
 :::
@@ -255,21 +256,28 @@ InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
 InstrumentId.from_str("ETH-USD-PERP.HYPERLIQUID")
 ```
 
+The `USD` leg is part of the symbol only. The instrument's quote and settlement currency is USDC,
+so notional values, margin, PnL, and the minimum order notional are in USDC.
+
 Perpetual instruments, including HIP-3 markets, preserve venue asset metadata in
 `CryptoPerpetual.info`:
 
-| Field                                                    | Value                                                |
-| -------------------------------------------------------- | ---------------------------------------------------- |
-| `name`                                                   | Raw venue asset name                                 |
-| `szDecimals`                                             | Size decimals                                        |
-| `maxLeverage`                                            | Maximum leverage at the base margin tier             |
-| `marginTableId`                                          | Margin table in the `meta` response's `marginTables` |
-| `onlyIsolated`, `isDelisted`, `growthMode`, `marginMode` | Present when the venue sets them                     |
+| Field                                                    | Value                                                     |
+| -------------------------------------------------------- | --------------------------------------------------------- |
+| `name`                                                   | Raw venue asset name                                      |
+| `szDecimals`                                             | Size decimals                                             |
+| `maxLeverage`                                            | Maximum leverage at the base margin tier                  |
+| `marginTableId`                                          | Margin table ID; tiered tables are in the `meta` response |
+| `onlyIsolated`, `isDelisted`, `growthMode`, `marginMode` | Present when the venue sets them                          |
+| `asset_index`                                            | Venue asset index used to sign orders                     |
 
-`margin_init` is `1 / maxLeverage` and `margin_maint` is half of `margin_init`, following
-Hyperliquid's [margining rules](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/margining)
-at the base margin tier. Higher tiers from `marginTables` are not applied. An asset without
-`maxLeverage` keeps zero margin rates.
+`margin_init` is `1 / maxLeverage`, the initial margin at maximum leverage, and `margin_maint` is
+half of it, following Hyperliquid's
+[margining rules](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/margining) at the base
+margin tier. The venue margins a position at its selected leverage, so this is the minimum it
+requires. Higher tiers from `marginTables` are not applied. An asset without `maxLeverage` keeps
+zero margin rates. HIP-3 perpetuals also keep zero margin rates: account state covers the default
+dex only, so collateral held in a builder dex would not count toward their margin.
 
 ### HIP-3 perpetuals
 
@@ -431,7 +439,8 @@ The key differences are:
 - **Isolated margin**: HIP-3 markets default to isolated-only margin.
 - **Per-dex collateral**: Each HIP-3 dex declares its settlement token through
   its `collateralToken` entry in `allPerpMetas`. Nautilus resolves that token
-  through `spotMeta` and keeps the symbol's quote leg as `USD`. If a non-USDC
+  through `spotMeta` and uses it as the instrument's quote and settlement
+  currency, while the symbol keeps its `USD` leg. If a non-USDC
   collateral token cannot resolve from `spotMeta`, instrument loading returns
   an error rather than falling back to USDC.
 - **Deployer-managed oracles**: The deployer operates the oracle feed, not validators.

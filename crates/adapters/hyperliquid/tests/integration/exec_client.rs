@@ -67,14 +67,17 @@ use nautilus_hyperliquid::{
     },
     config::HyperliquidExecutionClientConfig,
     execution::HyperliquidExecutionClient,
-    http::models::Cloid,
+    http::{
+        models::{Cloid, PerpMeta},
+        parse::{create_instrument_from_def, parse_perp_instruments},
+    },
 };
 use nautilus_live::{
     ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
-    execution::context::OrderContext,
+    execution::context::OrderContext, testing::ExecutionHarness,
 };
 use nautilus_model::{
-    accounts::{AccountAny, MarginAccount},
+    accounts::{Account, AccountAny, MarginAccount},
     data::QuoteTick,
     enums::{
         AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
@@ -2370,6 +2373,112 @@ async fn test_exec_client_connect_disconnect() {
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
     assert!(registry.handle(*HYPERLIQUID_CLIENT_ID, endpoint).is_none());
+}
+
+#[rstest]
+#[case::within_free_balance("0.1", OrderStatus::Submitted, None)]
+#[case::beyond_free_balance(
+    "10",
+    OrderStatus::Denied,
+    Some(
+        "INITIAL_MARGIN_EXCEEDS_FREE_BALANCE: free=10000.00000000 USDC, margin=12500.00000000 USDC"
+    )
+)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_risk_engine_checks_perp_margin_against_usdc_balance(
+    #[case] quantity: &str,
+    #[case] expected: OrderStatus,
+    #[case] denied_reason: Option<&str>,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    let meta: PerpMeta = serde_json::from_value(load_json("http_meta_perp_sample.json")).unwrap();
+    let defs = parse_perp_instruments(&meta, 0).unwrap();
+    let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+    let mut harness =
+        ExecutionHarness::new(trader_id, *HYPERLIQUID_CLIENT_ID, account_id, instrument);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        *HYPERLIQUID_CLIENT_ID,
+        *HYPERLIQUID_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        harness.cache().clone(),
+    );
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry
+        .scope(|| HyperliquidExecutionClient::new(core, create_test_exec_config(addr)))
+        .unwrap();
+    client.start().unwrap();
+
+    // Connecting waits for the account the portfolio registers from the client's account state
+    let (connected, registered) = tokio::join!(
+        client.connect(),
+        harness.pump_until(Duration::from_secs(5), |cache| cache
+            .account(&account_id)
+            .is_some()),
+    );
+    connected.unwrap();
+    assert!(registered);
+    harness.register_client(Box::new(client)).unwrap();
+
+    let order = OrderAny::Limit(LimitOrder::new(
+        trader_id,
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        ClientOrderId::from("O-MARGIN"),
+        OrderSide::Buy,
+        Quantity::from(quantity),
+        Price::from("50000.0"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+    harness.submit_via_risk(&order);
+    let client_order_id = order.client_order_id();
+    harness
+        .pump_until(Duration::from_secs(5), |cache| {
+            cache
+                .order(&client_order_id)
+                .is_some_and(|order| order.status() == expected)
+        })
+        .await;
+
+    let cache = harness.cache().borrow();
+    let account = cache.account(&account_id).unwrap();
+    assert_eq!(
+        account.balance_free(Some(Currency::USDC())),
+        Some(Money::from("10000 USDC"))
+    );
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.status(), expected);
+
+    let reason = match order.last_event() {
+        OrderEventAny::Denied(denied) => Some(denied.reason.as_str()),
+        _ => None,
+    };
+
+    assert_eq!(reason, denied_reason);
 }
 
 #[rstest]
