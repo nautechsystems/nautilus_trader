@@ -42,9 +42,9 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
-        GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide, MarketStatusAction,
-        OmsType, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, PriceType,
-        TimeInForce, TriggerType,
+        CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide,
+        MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
+        PriceType, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEmulated,
@@ -72,7 +72,7 @@ use nautilus_model::{
     position::{Position, PositionReplayEvent},
     stubs::TestDefault,
     types::{
-        AccountBalance, Currency, Money, Price, Quantity,
+        AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION},
         price::PriceRaw,
     },
@@ -4344,6 +4344,83 @@ fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
 
 // -- DATA ------------------------------------------------------------------------------------
 
+/// A stored record never displaces a registered definition, and the cache takes the registry's.
+///
+/// `Money` decoded from a payload resolves through the registry, so a cache map holding a different
+/// definition for the same code would disagree with every decoded amount.
+#[rstest]
+fn test_register_loaded_currencies_keeps_the_registered_definition() {
+    let stale = Currency::new("USD", 8, 0, "Stale USD", CurrencyType::Crypto);
+    let mut loaded: AHashMap<Ustr, Currency> = [(Ustr::from("USD"), stale)].into_iter().collect();
+
+    crate::cache::database::register_loaded_currencies(&mut loaded).unwrap();
+
+    assert_eq!(Currency::try_from_str("USD").unwrap().precision, 2);
+    let kept = loaded[&Ustr::from("USD")];
+    assert_eq!(kept.precision, 2, "the map takes the registered definition");
+    assert_eq!(kept.currency_type, Currency::USD().currency_type);
+}
+
+/// The cached map holds the registered definition after a full load, whatever the adapter did.
+#[rstest]
+fn test_cache_all_keeps_the_registered_definition() {
+    let code = "ZZQ10";
+    let registered = Currency::new(code, 6, 0, code, CurrencyType::Crypto);
+    Currency::register(registered, false).unwrap();
+    let stored = Currency::new(code, 4, 0, code, CurrencyType::Crypto);
+    let database = SnapshotBlobTestDatabase {
+        currencies: [(Ustr::from(code), stored)].into_iter().collect(),
+        ..Default::default()
+    };
+    let mut cache = Cache::default();
+    cache.set_database(Box::new(database));
+
+    futures::executor::block_on(cache.cache_all()).unwrap();
+
+    let cached = cache.currency(&Ustr::from(code)).expect("cached");
+    assert_eq!(
+        cached.precision, 6,
+        "the registry's definition wins over the stored one"
+    );
+}
+
+/// A loaded currency reaches the global registry, so a payload denominated in it decodes.
+///
+/// The code is unregistered when loading begins; a built-in could not prove the order.
+#[rstest]
+fn test_cache_currencies_registers_an_unregistered_currency() {
+    let code = "ZZQ9";
+    assert!(
+        Currency::try_from_str(code).is_none(),
+        "the code must start unregistered"
+    );
+    let currency = Currency::new(code, 6, 0, code, CurrencyType::Crypto);
+    let database = SnapshotBlobTestDatabase {
+        currencies: [(Ustr::from(code), currency)].into_iter().collect(),
+        ..Default::default()
+    };
+    let mut cache = Cache::default();
+    cache.set_database(Box::new(database));
+
+    futures::executor::block_on(cache.cache_currencies()).unwrap();
+
+    let cached = cache.currency(&Ustr::from(code)).expect("cached");
+    let registered = Currency::try_from_str(code).expect("registered");
+    for restored in [cached, &registered] {
+        assert_eq!(
+            restored.precision, 6,
+            "equality is by code; the fields must round-trip"
+        );
+        assert_eq!(restored.name.as_str(), code);
+        assert_eq!(restored.currency_type, CurrencyType::Crypto);
+    }
+    assert_eq!(
+        Money::from("1.5 ZZQ9"),
+        Money::new(1.5, currency),
+        "a dependent payload resolves the code through the registry"
+    );
+}
+
 #[rstest]
 fn test_cache_currencies_when_no_database(mut cache: Cache) {
     assert!(futures::executor::block_on(cache.cache_currencies()).is_ok());
@@ -5756,6 +5833,232 @@ fn test_try_new_returns_invalid_capacity(
 #[rstest]
 fn test_cache_accounts_when_no_database(mut cache: Cache) {
     assert!(futures::executor::block_on(cache.cache_accounts()).is_ok());
+}
+
+/// An account's currencies must be persisted, or a restart cannot decode the account.
+///
+/// A `Currency` persists as its bare code, and an account can hold collateral in a currency no
+/// instrument carries, so the currency record is the only way back.
+#[rstest]
+fn test_add_account_persists_account_currencies() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    // A code the process has never registered, distinct per test: `CURRENCY_MAP` is global.
+    let collateral = Currency::new("ZZACCT1", 4, 0, "Account Fixture One", CurrencyType::Crypto);
+    let account = cash_account_with_balance(collateral);
+
+    cache.add_account(account).unwrap();
+
+    let persisted = calls.lock().currencies.clone();
+    let found = persisted
+        .iter()
+        .find(|c| c.code.as_str() == "ZZACCT1")
+        .expect("the account's balance currency must be persisted");
+    assert_eq!(found.precision, 4);
+    assert_eq!(found.name.as_str(), "Account Fixture One");
+    assert_eq!(found.currency_type, CurrencyType::Crypto);
+}
+
+/// A margin requirement's currency is persisted too, since a `MarginBalance` holds `Money`.
+#[rstest]
+fn test_add_account_persists_margin_currencies() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    let settlement = Currency::new(
+        "ZZACCT4",
+        4,
+        0,
+        "Account Fixture Four",
+        CurrencyType::Crypto,
+    );
+    let balance = AccountBalance::new(
+        Money::new(1_000.0, Currency::USD()),
+        Money::new(0.0, Currency::USD()),
+        Money::new(1_000.0, Currency::USD()),
+    );
+    let margin = MarginBalance::new(
+        Money::new(10.0, settlement),
+        Money::new(5.0, settlement),
+        None,
+    );
+    let event = AccountState::new(
+        AccountId::from("SIM-004"),
+        AccountType::Margin,
+        vec![balance],
+        vec![margin],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    cache
+        .add_account(AccountAny::from_events(std::slice::from_ref(&event)).unwrap())
+        .unwrap();
+
+    assert!(
+        calls
+            .lock()
+            .currencies
+            .iter()
+            .any(|c| c.code.as_str() == "ZZACCT4"),
+        "a margin's currency must be persisted"
+    );
+}
+
+/// A database failure while saving currencies must not lose the in-memory update.
+///
+/// The event is applied before the currencies are persisted, as `update_account` orders it.
+#[rstest]
+fn test_update_account_state_applies_the_event_before_persisting_currencies() {
+    let mut cache = Cache::default();
+    let account = cash_account_with_balance(Currency::USD());
+    let account_id = account.id();
+    cache.add_account(account).unwrap();
+    cache.set_database(Box::new(SnapshotBlobTestDatabase {
+        fail_add_currency: true,
+        ..Default::default()
+    }));
+
+    let arrived = Currency::new(
+        "ZZACCT5",
+        4,
+        0,
+        "Account Fixture Five",
+        CurrencyType::Crypto,
+    );
+    let event = account_state_with_balances(account_id, &[Currency::USD(), arrived]);
+
+    let result = cache.update_account_state(&event);
+
+    assert!(result.is_err(), "the database failure is reported");
+    let account = cache
+        .account_owned(&account_id)
+        .expect("the account stays cached");
+    assert!(
+        account.balances().contains_key(&arrived),
+        "the event is applied in memory before the currencies are persisted"
+    );
+}
+
+/// The owned path keeps an account the caller took out, even when saving currencies fails.
+#[rstest]
+fn test_update_account_owned_keeps_the_account_when_persisting_currencies_fails() {
+    let mut cache = Cache::default();
+    let account = cash_account_with_balance(Currency::USD());
+    let account_id = account.id();
+    cache.add_account(account).unwrap();
+    cache.set_database(Box::new(SnapshotBlobTestDatabase {
+        fail_add_currency: true,
+        ..Default::default()
+    }));
+
+    let arrived = Currency::new("ZZACCT6", 4, 0, "Account Fixture Six", CurrencyType::Crypto);
+    let mut taken = cache
+        .take_account(&account_id)
+        .expect("the fill path takes the account");
+    taken
+        .apply(account_state_with_balances(
+            account_id,
+            &[Currency::USD(), arrived],
+        ))
+        .unwrap();
+
+    let result = cache.update_account_owned(taken);
+
+    assert!(result.is_err(), "the database failure is reported");
+    let account = cache
+        .account_owned(&account_id)
+        .expect("the account is back in the cache despite the failure");
+    assert!(account.balances().contains_key(&arrived));
+}
+
+/// The same holds when an account is replaced rather than added.
+#[rstest]
+fn test_update_account_persists_account_currencies() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    let collateral = Currency::new("ZZACCT2", 4, 0, "Account Fixture Two", CurrencyType::Crypto);
+    let account = cash_account_with_balance(collateral);
+
+    cache.update_account(&account).unwrap();
+
+    assert!(
+        calls
+            .lock()
+            .currencies
+            .iter()
+            .any(|c| c.code.as_str() == "ZZACCT2"),
+        "updating an account must persist its balance currencies"
+    );
+}
+
+/// And when a later state event introduces a currency the account did not hold before.
+///
+/// This is the load-bearing case: collateral can arrive after the account exists, so persisting
+/// only on `add_account` would miss it.
+#[rstest]
+fn test_update_account_state_persists_a_new_balance_currency() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    let initial = Currency::USD();
+    let account = cash_account_with_balance(initial);
+    let account_id = account.id();
+    cache.add_account(account).unwrap();
+
+    let arrived = Currency::new(
+        "ZZACCT3",
+        4,
+        0,
+        "Account Fixture Three",
+        CurrencyType::Crypto,
+    );
+    let event = account_state_with_balances(account_id, &[initial, arrived]);
+    cache.update_account_state(&event).unwrap();
+
+    assert!(
+        calls
+            .lock()
+            .currencies
+            .iter()
+            .any(|c| c.code.as_str() == "ZZACCT3"),
+        "a currency introduced by an account state event must be persisted"
+    );
+}
+
+fn account_state_with_balances(account_id: AccountId, currencies: &[Currency]) -> AccountState {
+    let balances = currencies
+        .iter()
+        .map(|currency| {
+            AccountBalance::new(
+                Money::new(1_000.0, *currency),
+                Money::new(0.0, *currency),
+                Money::new(1_000.0, *currency),
+            )
+        })
+        .collect();
+
+    AccountState::new(
+        account_id,
+        AccountType::Cash,
+        balances,
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn cash_account_with_balance(currency: Currency) -> AccountAny {
+    let event = account_state_with_balances(AccountId::from("SIM-001"), &[currency]);
+    AccountAny::from_events(std::slice::from_ref(&event)).unwrap()
 }
 
 #[rstest]
@@ -9573,11 +9876,13 @@ struct CacheDatabaseCallLog {
     strategy_updates: Vec<(StrategyId, AHashMap<String, Bytes>)>,
     order_snapshots: Vec<OrderAny>,
     position_snapshots: Vec<(Position, UnixNanos, Option<Money>)>,
+    currencies: Vec<Currency>,
 }
 
 #[derive(Default)]
 struct SnapshotBlobTestDatabase {
     general: AHashMap<String, Bytes>,
+    currencies: AHashMap<Ustr, Currency>,
     instrument_closes: Arc<Mutex<AHashMap<InstrumentId, InstrumentClose>>>,
     orders: AHashMap<ClientOrderId, OrderAny>,
     positions: AHashMap<PositionId, Position>,
@@ -9587,6 +9892,7 @@ struct SnapshotBlobTestDatabase {
     strategy_state: AHashMap<String, Bytes>,
     database_calls: CacheDatabaseCalls,
     fail_add: bool,
+    fail_add_currency: bool,
     fail_flush: bool,
     fail_add_instrument_close: bool,
     fail_add_order: bool,
@@ -9726,6 +10032,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
         Ok(CacheMap {
+            currencies: self.currencies.clone(),
             instrument_closes: self.instrument_closes.lock().clone(),
             orders: self.orders.clone(),
             positions: self.positions.clone(),
@@ -9738,7 +10045,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
-        Ok(AHashMap::new())
+        Ok(self.currencies.clone())
     }
 
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
@@ -9874,7 +10181,11 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(())
     }
 
-    fn add_currency(&self, _currency: &Currency) -> anyhow::Result<()> {
+    fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
+        if self.fail_add_currency {
+            anyhow::bail!("add_currency failed");
+        }
+        self.database_calls.lock().currencies.push(*currency);
         Ok(())
     }
 
