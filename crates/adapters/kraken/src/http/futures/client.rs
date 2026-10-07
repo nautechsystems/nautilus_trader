@@ -2055,15 +2055,15 @@ impl KrakenFuturesHttpClient {
                 continue;
             }
 
+            // An in-scope position the client cannot resolve or parse fails the read: dropped,
+            // it reads to reconciliation as flat.
             let Some(instrument) = resolved else {
-                // In scope and unresolvable fails the read, as for an open order above.
                 anyhow::bail!(
                     "OpenPositions: instrument not in cache for futures symbol {}",
                     position.symbol
                 );
             };
 
-            // In scope and unparsable fails the read too, as the spot client's does.
             let report =
                 parse_futures_position_status_report(&position, &instrument, account_id, ts_init)
                     .map_err(|e| {

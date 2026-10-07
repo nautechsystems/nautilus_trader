@@ -573,8 +573,8 @@ clients for the same reason. The completeness flag covers the other gaps: any or
 or fill record that cannot be parsed, open or historical, marks the set incomplete on both clients,
 and so does a historical order or fill record whose instrument could not be resolved. Position
 records do not contribute to the flag. The futures single-order status lookup and `query_order`
-read only the queried instrument's open orders, so an unresolvable order on another contract is
-out of scope for them rather than failing them.
+read only the queried instrument's orders, so an unresolvable order on another contract is out of
+scope for them rather than failing them.
 
 Spot closed-order and fill reads page through an offset until the venue returns an empty page, and
 stop after 500 pages. A read cut short by that cap logs a warning, and how it surfaces depends on
