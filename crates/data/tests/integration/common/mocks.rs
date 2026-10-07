@@ -55,6 +55,8 @@ use nautilus_model::identifiers::{ClientId, Venue};
 pub(crate) struct MockDataClient {
     pub client_id: ClientId,
     pub venue: Option<Venue>,
+    pub repairs: Option<Rc<RefCell<Vec<SubscribeBars>>>>,
+    pub repair_fails: bool,
     pub recorder: Option<Rc<RefCell<Vec<DataCommand>>>>,
     fail_next_custom_subscribe: bool,
     fail_next_custom_unsubscribe: bool,
@@ -90,6 +92,8 @@ impl MockDataClient {
             client_id,
             venue,
             recorder: None,
+            repairs: None,
+            repair_fails: false,
             fail_next_custom_subscribe: false,
             fail_next_custom_unsubscribe: false,
             fail_next_subscribe: None,
@@ -113,6 +117,8 @@ impl MockDataClient {
             client_id,
             venue,
             recorder,
+            repairs: None,
+            repair_fails: false,
             fail_next_custom_subscribe: false,
             fail_next_custom_unsubscribe: false,
             fail_next_subscribe: None,
@@ -286,6 +292,17 @@ impl DataClient for MockDataClient {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::Bars(cmd)));
+        }
+        Ok(())
+    }
+
+    fn resubscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        if let Some(repairs) = &self.repairs {
+            repairs.borrow_mut().push(cmd.clone());
+        }
+
+        if self.repair_fails {
+            anyhow::bail!("test bar repair failure");
         }
         Ok(())
     }

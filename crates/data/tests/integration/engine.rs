@@ -26690,3 +26690,288 @@ fn test_unmanaged_depth_rejects_conflicting_feed_configuration(
         .unwrap();
     assert!(engine.subscribed_book_depth().is_empty());
 }
+
+#[rstest]
+fn test_force_bar_resubscribe_internal_exclusion(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let trade_topic = switchboard::get_trades_topic(bar_type.instrument_id());
+    let subscribe_command_id = UUID4::new();
+
+    let params = params_from_json(json!({"force_resubscribe": true, "other": 42}));
+
+    let sub = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        subscribe_command_id,
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));
+    data_engine.execute(sub_cmd);
+
+    assert_eq!(msgbus::exact_subscriber_count_trades(trade_topic), 1);
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 1);
+
+        match &recorded[0] {
+            DataCommand::Subscribe(SubscribeCommand::Trades(cmd)) => {
+                assert!(
+                    !cmd.params
+                        .as_ref()
+                        .unwrap()
+                        .contains_key("force_resubscribe")
+                );
+                assert_eq!(cmd.params.as_ref().unwrap().get_u64("other"), Some(42));
+                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(cmd.correlation_id, Some(subscribe_command_id));
+            }
+            other => panic!("expected source trade subscription, was {other:?}"),
+        }
+    }
+
+    let unsubscribe_command_id = UUID4::new();
+    let unsub = UnsubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        unsubscribe_command_id,
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub));
+    data_engine.execute(unsub_cmd);
+
+    assert_eq!(audusd_sim.id(), bar_type.instrument_id());
+    assert_eq!(msgbus::exact_subscriber_count_trades(trade_topic), 0);
+    {
+        let recorded = recorder.borrow();
+        assert_eq!(recorded.len(), 2);
+
+        match &recorded[1] {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(cmd)) => {
+                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(cmd.correlation_id, Some(unsubscribe_command_id));
+            }
+            other => panic!("expected source trade unsubscription, was {other:?}"),
+        }
+    }
+}
+
+#[rstest]
+fn test_force_bar_resubscribe_continuous_future_exclusion(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+
+    let (data_engine, test_clock, recorder) =
+        register_continuous_future_subscription_engine(cache.clone(), 0);
+
+    let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let parent_id = UUID4::new();
+    let mut params = continuous_future_transitions_params(10, pre_id, post_id);
+    params.insert("force_resubscribe".to_string(), json!(true));
+
+    let sub = SubscribeBars::new(
+        target_bar_type,
+        Some(client_id),
+        Some(Venue::from("XNAS")),
+        parent_id,
+        UnixNanos::default(),
+        None,
+        Some(params),
+    );
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+
+    assert_eq!(recorder.borrow().len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::Trades(child)) = recorder.borrow()[0].clone()
+    else {
+        panic!(
+            "expected child SubscribeTrades, was {:?}",
+            recorder.borrow()[0]
+        );
+    };
+    assert_eq!(child.instrument_id, pre_id);
+    assert_eq!(child.venue, Some(Venue::from("GLBX")));
+    assert_eq!(child.correlation_id, Some(parent_id));
+    let child_params = child.params.as_ref().unwrap();
+    assert!(!child_params.contains_key("force_resubscribe"));
+    assert!(!child_params.contains_key("continuous_future_transitions"));
+    assert!(!child_params.contains_key("continuous_future_adjustment_mode"));
+    assert!(!child_params.contains_key("bar_types"));
+
+    // Continuous instrument was synthesized into the cache
+    assert!(
+        cache
+            .borrow()
+            .instrument(&target_bar_type.instrument_id())
+            .is_some()
+    );
+
+    // Timer scheduled for the upcoming transition
+    let timer_names: Vec<String> = test_clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    assert!(
+        timer_names
+            .iter()
+            .any(|name| name.starts_with("continuous-future-roll:")),
+        "expected continuous-future-roll timer, found {timer_names:?}"
+    );
+}
+
+#[rstest]
+fn test_force_bar_resubscribe_external_client_exclusion(
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id]),
+        ..Default::default()
+    };
+    let mut engine = DataEngine::new(clock, cache, Some(config));
+    let topic = Ustr::from(&format!("commands.data.{client_id}"));
+    let (handler, saver) = get_any_saving_handler::<SubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler.clone(), None);
+    let subscribe = SubscribeCommand::Bars(SubscribeBars::new(
+        "AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL".into(),
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        Some(params_from_json(
+            json!({"force_resubscribe": true, "other": 42}),
+        )),
+    ));
+    engine.execute(DataCommand::Subscribe(subscribe.clone()));
+    msgbus::unsubscribe_any(topic.as_str().into(), &handler);
+    let commands = saver.get_messages();
+    let [SubscribeCommand::Bars(bars)] = commands.as_slice() else {
+        panic!("expected one external bar subscription");
+    };
+    assert!(
+        !bars
+            .params
+            .as_ref()
+            .unwrap()
+            .contains_key("force_resubscribe")
+    );
+    assert_eq!(bars.params.as_ref().unwrap().get_u64("other"), Some(42));
+    let (handler, saver) = get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler.clone(), None);
+    engine.execute(DataCommand::Unsubscribe(subscribe.into_unsubscribe(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )));
+    msgbus::unsubscribe_any(topic.as_str().into(), &handler);
+    let commands = saver.get_messages();
+    let [UnsubscribeCommand::Bars(bars)] = commands.as_slice() else {
+        panic!("expected one external bar unsubscribe");
+    };
+    assert!(
+        !bars
+            .params
+            .as_ref()
+            .unwrap()
+            .contains_key("force_resubscribe")
+    );
+}
+
+#[rstest]
+fn test_force_bar_resubscribe_keeps_sibling_handler(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let repairs = Rc::new(RefCell::new(Vec::new()));
+    let mut client = MockDataClient::new(clock, cache, client_id, Some(venue));
+    client.repairs = Some(repairs.clone());
+    let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, Box::new(client));
+    data_engine.borrow_mut().register_client(adapter, None);
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let (handler, saver) = get_typed_message_saving_handler::<Bar>(Some(Ustr::from("sibling")));
+    let topic = switchboard::get_bars_topic(bar_type);
+    msgbus::subscribe_bars(topic.into(), handler.clone(), None);
+    let first = SubscribeCommand::Bars(SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    let mut sibling = first.clone();
+
+    if let SubscribeCommand::Bars(bars) = &mut sibling {
+        bars.command_id = UUID4::new();
+    }
+    let release = first
+        .clone()
+        .into_unsubscribe(UUID4::new(), UnixNanos::default(), None);
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(first.clone()));
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(sibling));
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Unsubscribe(release));
+    let mut repair = first;
+
+    if let SubscribeCommand::Bars(bars) = &mut repair {
+        bars.command_id = UUID4::new();
+        bars.params = Some(params_from_json(json!({"force_resubscribe": true})));
+    }
+    data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(repair));
+    assert_eq!(repairs.borrow().len(), 1);
+    assert_eq!(msgbus::exact_subscriber_count_bars(topic), 1);
+    let bar = make_bar(bar_type, "1.0", "1.0", "1.0", "1.0", 1, 1);
+    data_engine.borrow_mut().process_data(Data::Bar(bar));
+    assert_eq!(saver.get_messages(), vec![bar]);
+    msgbus::unsubscribe_bars(topic.into(), &handler);
+}

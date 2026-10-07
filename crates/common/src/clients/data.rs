@@ -221,6 +221,23 @@ pub trait DataClient {
         Ok(())
     }
 
+    /// Physically re-establishes a venue bar subscription the client already holds.
+    ///
+    /// Subscription ownership, reference counts, and reconnect replay state remain
+    /// unchanged. Success means the request was admitted, not acknowledged by the venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client does not support bar re-subscription.
+    /// - The repair request cannot be admitted.
+    fn resubscribe_bars(&mut self, _cmd: &SubscribeBars) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Bar re-subscription is unsupported for client {}",
+            self.client_id()
+        );
+    }
+
     /// Subscribes to status updates for the specified instrument.
     ///
     /// # Errors

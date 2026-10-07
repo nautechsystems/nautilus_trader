@@ -912,6 +912,20 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
 
+    fn resubscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let bar_type = cmd.bar_type;
+        let ws = self.ws.clone();
+        self.spawn_ws(
+            async move {
+                ws.resubscribe_bars(bar_type)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))
+            },
+            "re-subscribe bars",
+        );
+        Ok(())
+    }
+
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
