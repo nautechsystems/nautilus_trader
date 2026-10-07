@@ -365,7 +365,7 @@ Custom data also participates in NautilusTrader runtime routing.
 
 Relevant integrations include:
 
-- `crates/data/src/engine/mod.rs` publishes `CustomData` through the message
+- `crates/data/src/engine/dispatch.rs` publishes `CustomData` through the message
   bus.
 - `crates/common/src/msgbus/switchboard.rs` derives custom topics from
   `DataType`.
