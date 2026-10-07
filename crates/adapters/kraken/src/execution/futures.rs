@@ -1040,11 +1040,14 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 .await
                 .context("Failed to query order")?;
 
-            if let Some(report) = reports
+            match reports
                 .into_iter()
                 .find(|r| r.venue_order_id == venue_order_id)
             {
-                emitter.send_order_status_report(report);
+                Some(report) => emitter.send_order_status_report(report),
+                None => log::debug!(
+                    "Order {venue_order_id} not among the open orders of {instrument_id}; no report emitted"
+                ),
             }
             Ok(())
         });

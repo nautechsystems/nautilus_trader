@@ -2349,17 +2349,8 @@ async fn test_futures_domain_request_order_status_reports_uses_position_size_for
 #[rstest]
 #[tokio::test]
 async fn test_futures_raw_order_status_reports_fail_on_an_unresolved_open_order() {
-    let state = Arc::new(TestServerState::default());
-    let app = create_router(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+    let (addr, _state) = start_test_server().await;
     let base_url = format!("http://{addr}");
-
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-
-    wait_for_server(addr, "/0/public/Time").await;
 
     let client = KrakenFuturesHttpClient::with_credentials(
         "test".to_string(),
@@ -2390,6 +2381,7 @@ async fn test_futures_raw_order_status_reports_fail_on_an_unresolved_open_order(
         "unexpected error: {error}"
     );
 }
+
 #[rstest]
 #[tokio::test]
 async fn test_futures_domain_submit_order_uses_submitted_size_for_attached_trigger() {

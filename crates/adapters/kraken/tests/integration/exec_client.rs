@@ -1313,16 +1313,16 @@ async fn test_futures_position_reports_error_on_unresolved_symbol() {
     );
 }
 
+const FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED: &str = r#"{"result":"success","openOrders":[{"order_id":"V-HELD","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"},{"order_id":"V-UNRESOLVED","symbol":"PF_UNKNOWNUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}]}"#;
+
 /// Out of scope, an unresolvable row is skipped: a scoped read only reports its own instrument.
 #[rstest]
 #[tokio::test]
 async fn test_futures_scoped_open_order_read_skips_an_unresolved_row_of_another_symbol() {
     let (client, _rx, _cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
-    *state.futures_open_orders_json.lock().await = Some(
-        r#"{"result":"success","openOrders":[{"order_id":"V-HELD","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"},{"order_id":"V-UNRESOLVED","symbol":"PF_UNKNOWNUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}]}"#
-            .to_string(),
-    );
+    *state.futures_open_orders_json.lock().await =
+        Some(FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED.to_string());
 
     let reports = client
         .generate_order_status_reports(&GenerateOrderStatusReports::new(
@@ -1341,8 +1341,6 @@ async fn test_futures_scoped_open_order_read_skips_an_unresolved_row_of_another_
     assert_eq!(reports.len(), 1, "{reports:?}");
     assert_eq!(reports[0].venue_order_id, VenueOrderId::from("V-HELD"));
 }
-
-const FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED: &str = r#"{"result":"success","openOrders":[{"order_id":"V-HELD","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"},{"order_id":"V-UNRESOLVED","symbol":"PF_UNKNOWNUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}]}"#;
 
 /// The single-order lookup is scoped to the command's instrument, so an unresolvable open order on
 /// another contract is out of scope for it rather than failing it.

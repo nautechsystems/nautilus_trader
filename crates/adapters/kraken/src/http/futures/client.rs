@@ -1699,8 +1699,9 @@ impl KrakenFuturesHttpClient {
 
     /// Requests order status reports, also reporting whether the set is complete.
     ///
-    /// The flag is `false` when a record was skipped because its instrument could not be resolved,
-    /// which `ExecutionMassStatus::set_report_window` records for bounded history.
+    /// An in-scope open order whose instrument cannot be resolved fails the read. The flag is
+    /// `false` when a record cannot be parsed, or a historical record's instrument cannot be
+    /// resolved, which `ExecutionMassStatus::set_report_window` records for bounded history.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -2055,17 +2056,14 @@ impl KrakenFuturesHttpClient {
             }
 
             let Some(instrument) = resolved else {
-                // An in-scope position the client cannot resolve fails the read; dropped, it reads
-                // to reconciliation as a position the venue does not hold.
+                // In scope and unresolvable fails the read, as for an open order above.
                 anyhow::bail!(
                     "OpenPositions: instrument not in cache for futures symbol {}",
                     position.symbol
                 );
             };
 
-            // An in-scope position that cannot be parsed fails the read as well, as the spot
-            // client's does; dropped, it too reads to reconciliation as a position the venue does
-            // not hold.
+            // In scope and unparsable fails the read too, as the spot client's does.
             let report =
                 parse_futures_position_status_report(&position, &instrument, account_id, ts_init)
                     .map_err(|e| {
