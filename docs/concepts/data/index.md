@@ -48,7 +48,9 @@ to signal event boundaries to the `DataEngine`:
 - `F_LAST`: Marks the final delta in a logical event group. When `buffer_deltas`
   is enabled, the `DataEngine` accumulates deltas and only publishes to
   subscribers when it encounters `F_LAST`. Every event group **must** end with
-  a delta that has `F_LAST` set.
+  a delta that has `F_LAST` set. `BacktestNode` also closes each replayed
+  `OrderBookDeltas` batch at this flag; see
+  [order book delta replay](../backtesting/apis-and-runs.md#order-book-delta-replay).
 - `F_SNAPSHOT`: Marks deltas that belong to a snapshot (as opposed to an
   incremental update). Snapshot sequences begin with a `Clear` action followed
   by `Add` deltas reconstructing the full book state. The last delta in a

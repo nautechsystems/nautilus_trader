@@ -15,13 +15,13 @@
 
 //! Provides a [`BacktestNode`] that orchestrates catalog-driven backtests.
 
-use std::iter::Peekable;
+use std::{iter::Peekable, mem};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
-    data::{Data, HasTsInit, NautilusDataType},
-    enums::{BookType, OtoTriggerMode},
+    data::{Data, HasTsInit, NautilusDataType, OrderBookDelta, OrderBookDeltas},
+    enums::{BookType, OtoTriggerMode, RecordFlag},
     identifiers::{InstrumentId, Venue},
     types::Money,
 };
@@ -629,26 +629,30 @@ fn dispatch_query(
     query.params = Some(params);
     let mut session = catalog.query_batch_session(&query, None)?;
     let mut failed = false;
-    Ok(Box::new(
-        std::iter::from_fn(move || {
-            if failed {
-                return None;
-            }
+    let rows = std::iter::from_fn(move || {
+        if failed {
+            return None;
+        }
 
-            match session.next_batch() {
-                Ok(Some(batch)) => Some(Ok(batch.to_data_vec_for_compat())),
-                Ok(None) => None,
-                Err(e) => {
-                    failed = true;
-                    Some(Err(e))
-                }
+        match session.next_batch() {
+            Ok(Some(batch)) => Some(Ok(batch.to_data_vec_for_compat())),
+            Ok(None) => None,
+            Err(e) => {
+                failed = true;
+                Some(Err(e))
             }
-        })
-        .flat_map(|batch| match batch {
-            Ok(rows) => rows.into_iter().map(Ok).collect::<Vec<_>>(),
-            Err(e) => vec![Err(e)],
-        }),
-    ))
+        }
+    })
+    .flat_map(|batch| match batch {
+        Ok(rows) => rows.into_iter().map(Ok).collect::<Vec<_>>(),
+        Err(e) => vec![Err(e)],
+    });
+
+    if config.batch_deltas() && *config.data_type() == NautilusDataType::OrderBookDelta {
+        return Ok(Box::new(BookDeltasBatcher::new(rows)));
+    }
+
+    Ok(Box::new(rows))
 }
 
 fn max_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
@@ -669,13 +673,99 @@ fn min_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
     }
 }
 
+// Regroups flat catalog deltas into `OrderBookDeltas` closed by `F_LAST`, so the engine applies
+// each book event at once. Each instrument keeps its own pending group because a multi-instrument
+// query interleaves rows by `ts_init`; a group replays at its closing delta, preserving that order.
+struct BookDeltasBatcher<I> {
+    rows: I,
+    pending: AHashMap<InstrumentId, Vec<OrderBookDelta>>,
+    finished: bool,
+}
+
+impl<I> BookDeltasBatcher<I> {
+    fn new(rows: I) -> Self {
+        Self {
+            rows,
+            pending: AHashMap::new(),
+            finished: false,
+        }
+    }
+}
+
+impl<I: Iterator<Item = anyhow::Result<Data>>> Iterator for BookDeltasBatcher<I> {
+    type Item = anyhow::Result<Data>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+
+        loop {
+            match self.rows.next() {
+                Some(Ok(Data::BookDelta(delta))) => {
+                    let group = self.pending.entry(delta.instrument_id).or_default();
+                    group.push(delta);
+
+                    if RecordFlag::F_LAST.matches(delta.flags) {
+                        let deltas = mem::replace(group, Vec::with_capacity(group.len()));
+                        let deltas = OrderBookDeltas::new_checked(delta.instrument_id, deltas);
+                        return Some(deltas.map(|deltas| Data::BookDeltas(Box::new(deltas))));
+                    }
+                }
+                Some(item) => {
+                    // A failed query must not flush its pending groups as complete events
+                    if item.is_err() {
+                        self.finished = true;
+                    }
+                    return Some(item);
+                }
+                None => {
+                    self.finished = true;
+                    return unterminated_deltas_error(&self.pending).map(Err);
+                }
+            }
+        }
+    }
+}
+
+fn unterminated_deltas_error(
+    pending: &AHashMap<InstrumentId, Vec<OrderBookDelta>>,
+) -> Option<anyhow::Error> {
+    let mut groups: Vec<_> = pending
+        .iter()
+        .filter_map(|(instrument_id, group)| {
+            let first = group.first()?.ts_init;
+            let last = group.last()?.ts_init;
+            Some((*instrument_id, group.len(), first, last))
+        })
+        .collect();
+
+    if groups.is_empty() {
+        return None;
+    }
+
+    groups.sort_unstable_by_key(|(instrument_id, ..)| *instrument_id);
+    let details = groups
+        .iter()
+        .map(|(instrument_id, count, first, last)| {
+            format!("{instrument_id} ({count} pending, ts_init {first} to {last})")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    Some(anyhow::anyhow!(
+        "Order book deltas end without an `F_LAST` delta for {details}; \
+         set `batch_deltas` to false to replay individual deltas"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "python")]
     use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
     use nautilus_model::{
-        data::{QuoteTick, TradeTick},
-        enums::{AccountType, AggressorSide, OmsType},
+        data::{BookOrder, QuoteTick, TradeTick},
+        enums::{AccountType, AggressorSide, BookAction, OmsType, OrderSide},
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
     };
@@ -717,6 +807,53 @@ mod tests {
 
     fn stream_failure() -> anyhow::Error {
         anyhow::anyhow!("injected stream failure")
+    }
+
+    fn book_delta(instrument_id: &str, flags: u8, sequence: u64, ts_init: u64) -> OrderBookDelta {
+        OrderBookDelta::new(
+            InstrumentId::from(instrument_id),
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1.0000"),
+                Quantity::from("100"),
+                sequence,
+            ),
+            flags,
+            sequence,
+            UnixNanos::from(ts_init - 1),
+            UnixNanos::from(ts_init),
+        )
+    }
+
+    fn batch_book_deltas(deltas: &[OrderBookDelta]) -> Vec<Data> {
+        BookDeltasBatcher::new(deltas.iter().map(|delta| Ok(Data::BookDelta(*delta))))
+            .collect::<anyhow::Result<_>>()
+            .expect("the batcher must not fail")
+    }
+
+    type BookDeltasFields = (
+        InstrumentId,
+        Vec<OrderBookDelta>,
+        u8,
+        u64,
+        UnixNanos,
+        UnixNanos,
+    );
+
+    // Lists every field because `OrderBookDeltas` equality compares only instrument and sequence
+    fn book_deltas_fields(data: &Data) -> BookDeltasFields {
+        let Data::BookDeltas(deltas) = data else {
+            panic!("expected `OrderBookDeltas`, was {data:?}");
+        };
+        (
+            deltas.instrument_id,
+            deltas.deltas.clone(),
+            deltas.flags,
+            deltas.sequence,
+            deltas.ts_event,
+            deltas.ts_init,
+        )
     }
 
     #[rstest]
@@ -838,6 +975,174 @@ mod tests {
         assert_eq!(chunk.len(), 1);
         assert!(chunk.capacity() >= MAX_BACKTEST_CHUNK_SIZE);
         assert_eq!(chunk[0].ts_init(), UnixNanos::from(1));
+    }
+
+    #[rstest]
+    fn book_deltas_batcher_closes_groups_only_on_f_last() {
+        let last = RecordFlag::F_LAST as u8;
+        let d1 = book_delta("EUR/USD.SIM", 0, 1, 10);
+        let d2 = book_delta("EUR/USD.SIM", last, 2, 10);
+        let d3 = book_delta("EUR/USD.SIM", last, 3, 10);
+        let d4 = book_delta("EUR/USD.SIM", 0, 4, 20);
+        let d5 = book_delta("EUR/USD.SIM", last, 5, 30);
+
+        let batches = batch_book_deltas(&[d1, d2, d3, d4, d5]);
+
+        // Same-timestamp events stay apart, and an event spanning timestamps replays at its close
+        let instrument_id = InstrumentId::from("EUR/USD.SIM");
+        assert_eq!(
+            batches.iter().map(book_deltas_fields).collect::<Vec<_>>(),
+            vec![
+                (
+                    instrument_id,
+                    vec![d1, d2],
+                    last,
+                    2,
+                    UnixNanos::from(9),
+                    UnixNanos::from(10),
+                ),
+                (
+                    instrument_id,
+                    vec![d3],
+                    last,
+                    3,
+                    UnixNanos::from(9),
+                    UnixNanos::from(10),
+                ),
+                (
+                    instrument_id,
+                    vec![d4, d5],
+                    last,
+                    5,
+                    UnixNanos::from(29),
+                    UnixNanos::from(30),
+                ),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn book_deltas_batcher_keeps_interleaved_instruments_apart() {
+        let last = RecordFlag::F_LAST as u8;
+        let aud1 = book_delta("AUD/USD.SIM", 0, 1, 10);
+        let eur1 = book_delta("EUR/USD.SIM", 0, 2, 10);
+        let eur2 = book_delta("EUR/USD.SIM", last, 3, 10);
+        let aud2 = book_delta("AUD/USD.SIM", last, 4, 20);
+
+        let batches = batch_book_deltas(&[aud1, eur1, eur2, aud2]);
+
+        // The completed EUR/USD event is not held behind the pending AUD/USD event
+        assert_eq!(
+            batches.iter().map(book_deltas_fields).collect::<Vec<_>>(),
+            vec![
+                (
+                    InstrumentId::from("EUR/USD.SIM"),
+                    vec![eur1, eur2],
+                    last,
+                    3,
+                    UnixNanos::from(9),
+                    UnixNanos::from(10),
+                ),
+                (
+                    InstrumentId::from("AUD/USD.SIM"),
+                    vec![aud1, aud2],
+                    last,
+                    4,
+                    UnixNanos::from(19),
+                    UnixNanos::from(20),
+                ),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn book_deltas_batcher_takes_flags_from_closing_delta() {
+        let instrument_id = InstrumentId::from("EUR/USD.SIM");
+        let clear =
+            OrderBookDelta::clear(instrument_id, 1, UnixNanos::from(9), UnixNanos::from(10));
+        let add = book_delta("EUR/USD.SIM", RecordFlag::F_MBP as u8, 2, 10);
+        let close = book_delta("EUR/USD.SIM", RecordFlag::F_LAST as u8, 3, 10);
+
+        let batches = batch_book_deltas(&[clear, add, close]);
+
+        // A snapshot clear does not close the event, and earlier flags are not merged in
+        assert_eq!(
+            batches.iter().map(book_deltas_fields).collect::<Vec<_>>(),
+            vec![(
+                instrument_id,
+                vec![clear, add, close],
+                RecordFlag::F_LAST as u8,
+                3,
+                UnixNanos::from(9),
+                UnixNanos::from(10),
+            )]
+        );
+    }
+
+    #[rstest]
+    fn book_deltas_batcher_yields_nothing_for_empty_input() {
+        let batches = batch_book_deltas(&[]);
+
+        assert!(batches.is_empty());
+    }
+
+    #[rstest]
+    fn book_deltas_batcher_rejects_deltas_left_without_f_last() {
+        let last = RecordFlag::F_LAST as u8;
+        let d1 = book_delta("EUR/USD.SIM", last, 1, 10);
+        let d2 = book_delta("EUR/USD.SIM", 0, 2, 20);
+        let d3 = book_delta("EUR/USD.SIM", 0, 3, 30);
+        let d4 = book_delta("AUD/USD.SIM", 0, 4, 40);
+        let rows = [d1, d2, d3, d4].map(|delta| Ok(Data::BookDelta(delta)));
+        let mut batcher = BookDeltasBatcher::new(rows.into_iter());
+
+        let first = batcher.next().expect("the complete event must be yielded");
+        let second = batcher.next().expect("the pending deltas must be reported");
+        let third = batcher.next();
+
+        assert_eq!(
+            book_deltas_fields(&first.expect("the complete event must not fail")),
+            (
+                InstrumentId::from("EUR/USD.SIM"),
+                vec![d1],
+                last,
+                1,
+                UnixNanos::from(9),
+                UnixNanos::from(10),
+            )
+        );
+        assert_eq!(
+            second
+                .expect_err("pending deltas must not replay as an event")
+                .to_string(),
+            "Order book deltas end without an `F_LAST` delta for \
+             AUD/USD.SIM (1 pending, ts_init 40 to 40), \
+             EUR/USD.SIM (2 pending, ts_init 20 to 30); \
+             set `batch_deltas` to false to replay individual deltas"
+        );
+        assert!(third.is_none());
+    }
+
+    #[rstest]
+    fn book_deltas_batcher_reports_a_query_failure_without_flushing() {
+        let pending = book_delta("EUR/USD.SIM", 0, 1, 10);
+        let after_failure = book_delta("EUR/USD.SIM", RecordFlag::F_LAST as u8, 2, 20);
+        let rows = vec![
+            Ok(Data::BookDelta(pending)),
+            Err(stream_failure()),
+            Ok(Data::BookDelta(after_failure)),
+        ];
+
+        let items: Vec<anyhow::Result<Data>> = BookDeltasBatcher::new(rows.into_iter()).collect();
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(
+            items[0]
+                .as_ref()
+                .expect_err("the query failure must be yielded")
+                .to_string(),
+            "injected stream failure"
+        );
     }
 
     #[cfg(feature = "python")]

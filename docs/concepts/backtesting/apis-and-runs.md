@@ -151,6 +151,40 @@ data at once.
 
 `BacktestNode` also provides methods for adding actors and built-in strategies to a built run.
 
+### Order book delta replay
+
+`BacktestNode` replays `OrderBookDelta` catalog data as `OrderBookDeltas` batches by default, in
+both one-shot and streaming runs. It groups each instrument's deltas in catalog order and closes a
+batch at the delta that carries the `F_LAST` flag, so each batch holds one complete book event. A
+batch takes its flags, sequence, and timestamps from its closing delta and replays at that delta's
+`ts_init`.
+
+Batching changes how the backtest processes book events:
+
+- The matching engine applies a whole event before it matches orders, so an order cannot fill
+  against a book state that exists only partway through an event. Fills can differ from individual
+  delta replay.
+- Strategies receive each event in one `on_book_deltas` callback, even when the data engine's
+  `buffer_deltas` is disabled.
+- In streaming runs, `chunk_size` counts each batch as one replay item, so a chunk can hold more
+  rows than `chunk_size`.
+
+Every event must end with a delta that has `F_LAST` set. If a query ends while an instrument still
+has deltas without a closing `F_LAST` delta, the run fails with an error that names the instrument.
+Time bounds and `filter_expr` select individual rows, so choose them to keep events complete: a
+bound that cuts off the start of an event goes undetected.
+
+Set `batch_deltas=False` to replay each delta individually:
+
+```python
+data = BacktestDataConfig(
+    data_type=NautilusDataType.OrderBookDelta,
+    catalog_path="/data/catalog",
+    instrument_id=instrument_id,
+    batch_deltas=False,
+)
+```
+
 ## Shutdown on error
 
 Set `BacktestEngineConfig.shutdown_on_error=True` to request a normal shutdown when the Rust logger

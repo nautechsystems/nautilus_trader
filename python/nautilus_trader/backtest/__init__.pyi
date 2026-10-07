@@ -75,6 +75,8 @@ class BacktestDataConfig:
     def bar_types(self) -> list[str] | None: ...
     @property
     def optimize_file_loading(self) -> bool: ...
+    @property
+    def batch_deltas(self) -> bool: ...
     def __new__(
         cls,
         data_type: model.NautilusDataType,
@@ -93,6 +95,7 @@ class BacktestDataConfig:
         bar_types: typing.Sequence[str] | None = None,
         optimize_file_loading: bool | None = None,
         catalog_backend: persistence.CatalogBackend | None = None,
+        batch_deltas: bool | None = None,
     ) -> BacktestDataConfig: ...
 
 @typing.final

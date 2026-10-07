@@ -5,9 +5,13 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added negative price support for futures, except inverse futures (#5190), thanks @DeLuke84
+- Added `BacktestDataConfig.batch_deltas` for batched book delta replay (#5215), thanks for reporting @nicezic
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 
 ### Breaking Changes
+
+- Changed `BacktestNode` to batch book deltas by default, so fills can differ; set `batch_deltas=False` to opt out
+- Changed batched `BacktestNode` replay to reject deltas without a closing `F_LAST`; `batch_deltas=False` opts out
 
 ### Security
 

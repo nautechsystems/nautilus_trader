@@ -216,6 +216,8 @@ trades = catalog.query_trade_ticks(
 - For bars, `bar_spec` combines with the instrument ID to select an `EXTERNAL` bar type. Explicit
   `bar_types` can select internal, external, or composite bars.
 - `optimize_file_loading` registers whole directories when possible.
+- `batch_deltas` (default `True`) replays `OrderBookDelta` data as `OrderBookDeltas` batches closed
+  by `F_LAST`. See [order book delta replay](../backtesting/apis-and-runs.md#order-book-delta-replay).
 
 ### Basic usage examples
 
