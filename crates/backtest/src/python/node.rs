@@ -88,7 +88,8 @@ impl BacktestNode {
     /// Supports both oneshot (`chunk_size = None`) and streaming modes.
     /// Configs without a built engine are skipped. If a run fails with
     /// `BacktestRunConfig.raise_exception` disabled, logs the error, clears its loaded data,
-    /// leaves the engine undisposed, and omits its result.
+    /// leaves the engine undisposed, and omits its result. A streaming run that fails to load
+    /// data after replaying earlier chunks ends its engine first, stopping the trader and engines.
     /// A node disposed by a completed run or by `dispose()`
     /// cannot run again; create a new node instead.
     ///

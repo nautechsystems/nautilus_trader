@@ -115,6 +115,13 @@ name = "engine"
 path = "benches/engine.rs"
 harness = false
 
+# Run with `cargo bench -p nautilus-backtest --features streaming --bench node`
+[[bench]]
+name = "node"
+path = "benches/node.rs"
+harness = false
+required-features = ["streaming"]
+
 # Run with `cargo run -p nautilus-backtest --features examples --example engine-ema-cross`
 [[example]]
 name = "engine-ema-cross"

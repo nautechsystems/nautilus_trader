@@ -147,7 +147,8 @@ impl BacktestNode {
     /// Supports both oneshot (`chunk_size = None`) and streaming modes.
     /// Configs without a built engine are skipped. If a run fails with
     /// [`BacktestRunConfig::raise_exception`] disabled, logs the error, clears its loaded data,
-    /// leaves the engine undisposed, and omits its result.
+    /// leaves the engine undisposed, and omits its result. A streaming run that fails to load
+    /// data after replaying earlier chunks ends its engine first, stopping the trader and engines.
     /// A node disposed by a completed run or by [`dispose()`](Self::dispose)
     /// cannot run again; create a new node instead.
     ///
@@ -518,9 +519,11 @@ fn stream_chunks<I: Iterator<Item = anyhow::Result<Data>>>(
     }
 
     let mut next_start = config.start();
+    let mut started = false;
 
     loop {
-        let chunk = take_aligned_chunk(&mut iter, chunk_size)?;
+        let chunk = take_aligned_chunk(&mut iter, chunk_size)
+            .map_err(|e| end_after_load_failure(engine, started, e))?;
         if chunk.is_empty() {
             break;
         }
@@ -532,9 +535,12 @@ fn stream_chunks<I: Iterator<Item = anyhow::Result<Data>>>(
             chunk.last().map(HasTsInit::ts_init)
         };
 
-        engine.add_data(chunk, None, false, true)?;
+        engine
+            .add_data(chunk, None, false, true)
+            .map_err(|e| end_after_load_failure(engine, started, e))?;
         engine.run(next_start, end, Some(config.id().to_string()), true)?;
         engine.clear_data();
+        started = true;
 
         // A shutdown request during the chunk already triggered end() inside
         // engine.run(); stop loading further chunks so later data is not processed
@@ -548,6 +554,19 @@ fn stream_chunks<I: Iterator<Item = anyhow::Result<Data>>>(
     }
 
     engine.end()
+}
+
+// Ends an engine that earlier chunks started, so a failure to load later data still stops the
+// trader and engines; the load failure stays the reported error
+fn end_after_load_failure(
+    engine: &mut BacktestEngine,
+    started: bool,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    if started && let Err(e) = engine.end() {
+        log::error!("Failed to end backtest after a data load failure: {e:#}");
+    }
+    error
 }
 
 // Takes up to `chunk_size` items, then extends to include all remaining
@@ -761,7 +780,7 @@ fn unterminated_deltas_error(
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "python")]
+    use nautilus_common::component::Component;
     use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
     use nautilus_model::{
         data::{BookOrder, QuoteTick, TradeTick},
@@ -774,7 +793,16 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::config::{BacktestVenueConfig, MAX_BACKTEST_CHUNK_SIZE};
+    use crate::{
+        config::{
+            BacktestEngineConfig, BacktestVenueConfig, MAX_BACKTEST_CHUNK_SIZE,
+            SimulatedVenueConfig,
+        },
+        modules::{
+            AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
+            SimulationModuleResult,
+        },
+    };
     #[cfg(feature = "python")]
     use crate::{
         modules::SimulationModuleAny,
@@ -807,6 +835,35 @@ mod tests {
 
     fn stream_failure() -> anyhow::Error {
         anyhow::anyhow!("injected stream failure")
+    }
+
+    #[derive(Debug)]
+    struct FailingDiagnosticsModule;
+
+    impl SimulationModule for FailingDiagnosticsModule {
+        fn pre_process(&self, _data: &Data) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn process(
+            &self,
+            _ts_now: UnixNanos,
+            _ctx: &ExchangeContext,
+        ) -> anyhow::Result<SimulationModuleResult> {
+            Ok(SimulationModuleResult::NotReady)
+        }
+
+        fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn log_diagnostics(&self) -> anyhow::Result<()> {
+            anyhow::bail!("diagnostics failure")
+        }
+
+        fn reset(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
     }
 
     fn book_delta(instrument_id: &str, flags: u8, sequence: u64, ts_init: u64) -> OrderBookDelta {
@@ -1143,6 +1200,30 @@ mod tests {
                 .to_string(),
             "injected stream failure"
         );
+    }
+
+    #[rstest]
+    fn end_after_load_failure_reports_the_load_failure_when_ending_fails() {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let venue = SimulatedVenueConfig::builder()
+            .venue(Venue::from("SIM"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USD")])
+            .modules(vec![SimulationModuleHandle::new(FailingDiagnosticsModule)])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+            .build()
+            .unwrap();
+        engine.add_venue(venue).unwrap();
+        engine.run(None, None, None, true).unwrap();
+
+        let error = end_after_load_failure(&mut engine, true, stream_failure());
+
+        // Ending fails on the module diagnostics after the trader stops
+        assert_eq!(error.to_string(), "injected stream failure");
+        assert!(engine.kernel().trader.borrow().is_stopped());
+        assert!(engine.get_result().run_finished.is_some());
     }
 
     #[cfg(feature = "python")]

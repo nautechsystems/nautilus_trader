@@ -27,7 +27,7 @@ use nautilus_backtest::{
     node::BacktestNode,
     result::BacktestResult,
 };
-use nautilus_common::actor::DataActor;
+use nautilus_common::{actor::DataActor, component::Component};
 use nautilus_core::UnixNanos;
 use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
@@ -1837,6 +1837,47 @@ fn expected_book_deltas_callbacks(groups: &[Vec<OrderBookDelta>]) -> Vec<BookDel
         .collect()
 }
 
+// Writes a complete event at 1s followed by a delta at 2s that no `F_LAST` delta closes
+fn unterminated_book_data(instrument: &InstrumentAny) -> (TempDir, BacktestDataConfig) {
+    let instrument_id = instrument.id();
+    let deltas = [
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "1000.00",
+            RecordFlag::F_LAST as u8,
+            1,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "1000.10",
+            0,
+            2,
+            2_000_000_000,
+        ),
+    ];
+    let (temp_dir, catalog_path) = create_catalog_with_deltas(instrument, &[&deltas]);
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::OrderBookDelta)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .build()
+        .unwrap();
+    (temp_dir, data)
+}
+
+fn unterminated_book_data_error(instrument_id: InstrumentId) -> String {
+    format!(
+        "Order book deltas end without an `F_LAST` delta for {instrument_id} \
+         (1 pending, ts_init 2000000000 to 2000000000); \
+         set `batch_deltas` to false to replay individual deltas"
+    )
+}
+
 #[rstest]
 #[case::batched_oneshot(true, None)]
 #[case::batched_streaming_single(true, Some(1))]
@@ -1986,45 +2027,86 @@ fn test_run_rejects_book_deltas_left_without_f_last(
 ) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();
-    let deltas = [
-        book_delta(
-            instrument_id,
-            BookAction::Add,
-            OrderSide::Buy,
-            "1000.00",
-            RecordFlag::F_LAST as u8,
-            1,
-            1_000_000_000,
-        ),
-        book_delta(
-            instrument_id,
-            BookAction::Add,
-            OrderSide::Sell,
-            "1000.10",
-            0,
-            2,
-            2_000_000_000,
-        ),
-    ];
-    let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
-    let data = BacktestDataConfig::builder()
-        .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path)
-        .instrument_id(instrument_id)
-        .build()
-        .unwrap();
+    let (_temp_dir, data) = unterminated_book_data(&instrument);
 
     let (results, _received) =
         run_with_book_deltas_recorder(deltas_run_config(data, chunk_size), instrument_id, None);
 
     assert_eq!(
         results.unwrap_err().to_string(),
-        format!(
-            "Order book deltas end without an `F_LAST` delta for {instrument_id} \
-             (1 pending, ts_init 2000000000 to 2000000000); \
-             set `batch_deltas` to false to replay individual deltas"
-        )
+        unterminated_book_data_error(instrument_id)
     );
+}
+
+#[rstest]
+#[case::raised(true)]
+#[case::suppressed(false)]
+fn test_run_streaming_ends_engine_when_a_later_chunk_fails_to_load(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] raise_exception: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+
+    // The first event replays in its own chunk before the unterminated tail fails the query
+    let (_temp_dir, data) = unterminated_book_data(&instrument);
+    let config = BacktestRunConfig::builder()
+        .venues(vec![l2_venue_config()])
+        .data(vec![data])
+        .chunk_size(1)
+        .raise_exception(raise_exception)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+
+    let outcome = node
+        .run()
+        .map(|results| results.len())
+        .map_err(|e| e.to_string());
+
+    // A suppressed failure omits the result, and a raised one surfaces the load error
+    let engine = node.get_engine(&config_id).unwrap();
+    let expected_outcome = if raise_exception {
+        Err(unterminated_book_data_error(instrument_id))
+    } else {
+        Ok(0)
+    };
+    assert_eq!(outcome, expected_outcome);
+    assert_eq!(engine.iteration(), 1);
+    assert!(engine.kernel().trader.borrow().is_stopped());
+    assert!(engine.get_result().run_finished.is_some());
+}
+
+#[rstest]
+fn test_run_streaming_leaves_engine_unstarted_when_the_first_chunk_fails_to_load(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+
+    // The unterminated tail fails the query while the first chunk is still filling
+    let (_temp_dir, data) = unterminated_book_data(&instrument);
+    let config = BacktestRunConfig::builder()
+        .venues(vec![l2_venue_config()])
+        .data(vec![data])
+        .chunk_size(10)
+        .raise_exception(true)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+
+    let result = node.run();
+
+    let engine = node.get_engine(&config_id).unwrap();
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        unterminated_book_data_error(instrument_id)
+    );
+    assert_eq!(engine.iteration(), 0);
+    assert!(engine.get_result().run_started.is_none());
+    assert!(engine.get_result().run_finished.is_none());
 }
 
 #[rstest]
