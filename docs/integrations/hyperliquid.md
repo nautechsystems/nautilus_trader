@@ -925,19 +925,22 @@ self.subscribe_data(
 Venue snapshot batches set `is_snapshot=True` on every row/fill from that
 batch so consumers can clear and rebuild local TWAP state.
 
-In a Python strategy running inside a `LiveNode`, the payload is delivered
-to `on_data` as the concrete custom data type itself:
+In a Python strategy running inside a `LiveNode`, `on_data` receives the
+payload wrapped in `CustomData`. Read it from `CustomData.data` and check its
+type with `isinstance`:
 
 ```python
 from decimal import Decimal
 
 from nautilus_trader.adapters.hyperliquid import HyperliquidOpenInterest
+from nautilus_trader.model import CustomData
 
 
-def on_data(self, data) -> None:
-    if isinstance(data, HyperliquidOpenInterest):
-        if data.open_interest > Decimal("1000"):
-            self.log.info(f"OI {data.instrument_id} -> {data.open_interest}")
+def on_data(self, data: CustomData) -> None:
+    payload = data.data
+    if isinstance(payload, HyperliquidOpenInterest):
+        if payload.open_interest > Decimal("1000"):
+            self.log.info(f"OI {payload.instrument_id} -> {payload.open_interest}")
 ```
 
 `HyperliquidAllDexsAssetCtxs` exposes a whole-feed aggregate rather than one
