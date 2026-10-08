@@ -217,8 +217,11 @@ impl DataBackendSession {
             return Ok(());
         }
 
+        // Catalog files are written in ascending ts_init order, declaring it lets files without
+        // sorting metadata skip a sort that can reorder rows with equal ts_init.
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
+            file_sort_order: vec![vec![col("ts_init").sort(true, false)]],
             ..Default::default()
         };
 
@@ -544,18 +547,27 @@ pub(crate) fn filter_record_batch_by_identifier(
 #[cfg(test)]
 mod tests {
     use std::{
+        fs::File,
+        ops::Range,
+        path::Path,
         sync::{Arc, mpsc},
         time::Duration,
     };
 
     use datafusion::{
         arrow::{
-            array::{Decimal128Array, FixedSizeBinaryArray, UInt32Array},
+            array::{AsArray, BooleanArray, Decimal128Array, FixedSizeBinaryArray, UInt32Array},
             buffer::NullBuffer,
-            datatypes::Field,
+            compute::{concat_batches, filter_record_batch},
+            datatypes::{Field, TimestampNanosecondType},
         },
         datasource::MemTable,
         execution::object_store::ObjectStoreUrl,
+    };
+    use nautilus_testkit::common::get_test_data_file_path;
+    use parquet::{
+        arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
+        file::{metadata::SortingColumn, properties::WriterProperties},
     };
     use rstest::rstest;
     use tempfile::TempDir;
@@ -885,5 +897,166 @@ mod tests {
 
             assert_eq!(stream.next(), Some(42));
         });
+    }
+
+    // Rows sharing a ts_init sit on both sides of the second row group boundary in this file
+    const FILTER_QUERY_FIXTURE: &str = "nautilus/arrow/quotes-3-groups-filter-query.parquet";
+    const FILTER_QUERY_START: i64 = 1_701_388_832_486_000_000;
+
+    #[derive(Clone, Copy, Debug)]
+    enum Registration {
+        File,
+        Directory,
+        DisjointFiles,
+    }
+
+    #[rstest]
+    fn query_preserves_equal_timestamp_order(
+        #[values(
+            Registration::File,
+            Registration::Directory,
+            Registration::DisjointFiles
+        )]
+        registration: Registration,
+        #[values(false, true)] sorting_metadata: bool,
+        #[values(false, true)] filtered: bool,
+        #[values(1, 2, 4, 8)] partitions: usize,
+    ) {
+        let (fixture, row_groups) = read_filter_query_fixture();
+        let temp_dir = TempDir::new().unwrap();
+        let file_count = match registration {
+            Registration::File | Registration::Directory => 1,
+            Registration::DisjointFiles => 3,
+        };
+
+        for (index, rows) in disjoint_file_ranges(&fixture, file_count)
+            .into_iter()
+            .enumerate()
+        {
+            let path = temp_dir.path().join(format!("part-{index}.parquet"));
+            write_quotes(&path, &fixture, rows, &row_groups, sorting_metadata);
+        }
+
+        // Directory tables register with a trailing separator, like catalog directory tables
+        let path = match registration {
+            Registration::File => temp_dir.path().join("part-0.parquet"),
+            Registration::Directory | Registration::DisjointFiles => temp_dir.path().join(""),
+        };
+        let path = path.to_str().unwrap().to_string();
+
+        let start = filtered.then(|| UnixNanos::from(FILTER_QUERY_START as u64));
+        let expected = if filtered {
+            let ts_init = fixture
+                .column_by_name("ts_init")
+                .unwrap()
+                .as_primitive::<TimestampNanosecondType>();
+            let mask = ts_init
+                .values()
+                .iter()
+                .map(|value| Some(*value >= FILTER_QUERY_START))
+                .collect::<BooleanArray>();
+            filter_record_batch(&fixture, &mask).unwrap()
+        } else {
+            fixture
+        };
+
+        let mut session = DataBackendSession::new(10);
+        session.session_ctx =
+            SessionContext::new_with_config(session_config().with_target_partitions(partitions));
+        let query = build_query("quotes", start, None, None);
+        let batches = session
+            .collect_parquet_files_batches("quotes", vec![path], Some(&query))
+            .unwrap();
+        let actual = concat_batches(&batches[0].schema(), &batches).unwrap();
+        let actual = cast_record_batch_to_schema(&actual, &expected.schema()).unwrap();
+        let first_mismatch = (0..expected.num_rows().min(actual.num_rows()))
+            .find(|&row| actual.slice(row, 1) != expected.slice(row, 1));
+
+        assert_eq!(expected.num_rows(), if filtered { 10_001 } else { 15_000 });
+        assert_eq!(actual.num_rows(), expected.num_rows());
+        assert_eq!(first_mismatch, None);
+    }
+
+    fn read_filter_query_fixture() -> (RecordBatch, Vec<usize>) {
+        let path = get_test_data_file_path(FILTER_QUERY_FIXTURE);
+        let builder = ParquetRecordBatchReaderBuilder::try_new(File::open(path).unwrap()).unwrap();
+        let row_groups = builder
+            .metadata()
+            .row_groups()
+            .iter()
+            .map(|row_group| usize::try_from(row_group.num_rows()).unwrap())
+            .collect();
+        let schema = builder.schema().clone();
+        let batches = builder
+            .build()
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap();
+
+        (concat_batches(&schema, &batches).unwrap(), row_groups)
+    }
+
+    // Splits rows into contiguous ranges that never divide rows sharing a ts_init
+    fn disjoint_file_ranges(batch: &RecordBatch, count: usize) -> Vec<Range<usize>> {
+        let ts_init = batch
+            .column_by_name("ts_init")
+            .unwrap()
+            .as_primitive::<TimestampNanosecondType>()
+            .values();
+        let mut ranges = Vec::with_capacity(count);
+        let mut start = 0;
+
+        for index in 1..count {
+            let mut end = (batch.num_rows() * index / count).max(start + 1);
+            while end < batch.num_rows() && ts_init[end] == ts_init[end - 1] {
+                end += 1;
+            }
+            ranges.push(start..end);
+            start = end;
+        }
+
+        ranges.push(start..batch.num_rows());
+        ranges
+    }
+
+    // Writes the rows keeping the fixture's row group boundaries, with or without the
+    // ts_init sorting metadata the catalog writer stores.
+    fn write_quotes(
+        path: &Path,
+        batch: &RecordBatch,
+        rows: Range<usize>,
+        row_groups: &[usize],
+        sorting_metadata: bool,
+    ) {
+        let sorting_columns = sorting_metadata.then(|| {
+            vec![SortingColumn {
+                column_idx: i32::try_from(batch.schema().index_of("ts_init").unwrap()).unwrap(),
+                descending: false,
+                nulls_first: false,
+            }]
+        });
+        let properties = WriterProperties::builder()
+            .set_sorting_columns(sorting_columns)
+            .build();
+        let mut writer = ArrowWriter::try_new(
+            File::create(path).unwrap(),
+            batch.schema(),
+            Some(properties),
+        )
+        .unwrap();
+        let mut boundary = 0;
+
+        for row_group in row_groups {
+            let group = boundary..boundary + row_group;
+            boundary = group.end;
+            let start = group.start.max(rows.start);
+            let end = group.end.min(rows.end);
+            if start < end {
+                writer.write(&batch.slice(start, end - start)).unwrap();
+                writer.flush().unwrap();
+            }
+        }
+
+        writer.close().unwrap();
     }
 }
