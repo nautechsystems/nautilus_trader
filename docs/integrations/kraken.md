@@ -281,14 +281,16 @@ arrive before its snapshot are dropped. If the snapshot does not arrive within 1
 client requests it again, doubling the wait each time up to five requests, then logs an error and
 leaves the book cleared until the next subscription change or reconnect; this watchdog is the only
 retry for a `book` recovery, and a replacement subscription starts its own wait rather than
-inheriting its predecessor's. A `book` subscribe the venue rejects drops the book with an error log
-naming the venue's reason and when the next request is due: the watchdog asks again after the two
-longest waits only (80 and 160 seconds), so a pair the venue will not serve is given up after two
-more rejections while a transient rejection recovers. A reconnect replays each `book` subscribe
-under its original request id, so a replay the venue rejects is not matched to a request and is
-noticed by the watchdog within its base wait of 10 seconds. A shadow book dropped off the frame
-path, by a rejection or by the watchdog retiring a replaced subscription's book, is cleared
-downstream with a `Clear` delta.
+inheriting its predecessor's. The watchdog runs whether or not checksum validation is enabled,
+since it recovers a stream whose snapshot never arrived rather than a checksum mismatch. A `book`
+subscribe the venue rejects drops the book with an error log naming the venue's reason and when the
+next request is due: the rejection counts as one failed request, so the watchdog asks again after
+20 seconds and keeps doubling, and a pair the venue will not serve is given up after four more
+rejections, about five minutes, while a transient rejection recovers within 20 seconds. A reconnect
+retires the subscribes on record and replays each `book` subscribe under its original request id,
+so a replay's answer is matched to no request; a replay the venue rejects is noticed by the watchdog
+within its base wait of 10 seconds. A shadow book dropped off the frame path, by a rejection or by
+the watchdog retiring a replaced subscription's book, is cleared downstream with a `Clear` delta.
 Three mismatches on one instrument with no valid update between them switch validation off for
 that instrument with an error log and keep its book as received, so a book the venue hashes
 differently cannot loop on resubscription; a snapshot that validates does not reset the count.

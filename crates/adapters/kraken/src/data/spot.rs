@@ -54,8 +54,8 @@ use nautilus_live::{
     task::{TaskGroup, TaskRef, TaskSpawner},
 };
 use nautilus_model::{
-    data::{Bar, Data, OrderBookDelta, OrderBookDeltas},
-    enums::{AggregationSource, BookType, RecordFlag},
+    data::{Bar, Data, OrderBookDeltas},
+    enums::{AggregationSource, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -71,14 +71,15 @@ use crate::{
         client::KrakenSpotWebSocketClient,
         level_2::{
             L2BookRequest, L2BookRequests, L2BookState, L2Depths, L2ResyncRequest, L2Subscription,
+            clear_deltas,
         },
         level_3::{
             BookOrderIdHasher, KrakenL3WsMessage,
+            resync::retry_l3_resync,
             runtime::{L3Sink, L3State, process_l3_message},
         },
         messages::KrakenSpotWsMessage,
         parse::{parse_quote_tick, parse_trade_tick, parse_ws_bar},
-        resync::retry_l3_resync,
     },
 };
 
@@ -636,15 +637,14 @@ impl KrakenSpotDataClient {
     /// frame path, under the shared book sequence like the deltas the `book` arm sends.
     fn emit_book_clear(context: &SpotMessageContext, instrument_id: InstrumentId, now: UnixNanos) {
         let sequence = context.book_sequence.load(Ordering::Relaxed);
-        let mut clear = OrderBookDelta::clear(instrument_id, sequence, now, now);
-        clear.flags |= RecordFlag::F_LAST as u8;
-        context.book_sequence.store(sequence + 1, Ordering::Relaxed);
+        let (deltas, next_sequence) = clear_deltas(instrument_id, sequence, now, now);
+        context
+            .book_sequence
+            .store(next_sequence, Ordering::Relaxed);
 
         if let Err(e) = context
             .sender
-            .send(DataEvent::Data(Data::BookDeltas(Box::new(
-                OrderBookDeltas::new(instrument_id, vec![clear]),
-            ))))
+            .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
         {
             log::error!("Failed to send deltas: {e}");
         }
@@ -833,8 +833,8 @@ impl KrakenSpotDataClient {
         resyncs
     }
 
-    /// Advances the wait for a `book` subscribe the venue rejected and clears the consumer's book
-    /// when the rejection drops a shadow book.
+    /// Counts a `book` subscribe the venue rejected against its wait and clears the consumer's
+    /// book when the rejection drops a shadow book.
     ///
     /// The rejection acts only on the subscription behind the request: one whose subscription the
     /// user has since cancelled or replaced is ignored, since the replacement's own answer
@@ -875,7 +875,7 @@ impl KrakenSpotDataClient {
         match rejection.next_request_due {
             Some(due) => log::error!(
                 "Kraken rejected the L2 book subscribe for {symbol}: {reason}; the book stays \
-                 cleared until the snapshot is requested again in {} s",
+                 cleared, asking again in {} s",
                 due.saturating_duration_since(now).as_u64() / 1_000_000_000
             ),
             None => log::error!(
@@ -1718,11 +1718,11 @@ mod tests {
         );
     }
 
-    /// A rejected `book` subscribe advances the wait for the subscription behind it: no request
-    /// before the long wait, one at it, the cap after the next, while a new generation is waited
-    /// for and requested as usual.
+    /// A rejected `book` subscribe counts as one failed request for the subscription behind it:
+    /// no request before the doubled base wait, one at it, while a new generation is waited for
+    /// and requested as usual.
     #[rstest]
-    fn test_a_rejected_book_subscribe_is_requested_again_after_the_long_wait() {
+    fn test_a_rejected_book_subscribe_is_requested_again_after_the_doubled_wait() {
         let start = UnixNanos::new(1_700_000_000_000_000_000);
         let clock: &'static AtomicTime = Box::leak(Box::new(AtomicTime::new(false, start)));
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -1771,32 +1771,20 @@ mod tests {
             "the answered request is retired"
         );
 
-        clock.set_time(UnixNanos::new(start.as_u64() + 10_000_000_000));
+        clock.set_time(UnixNanos::new(start.as_u64() + 19_000_000_000));
         assert!(
             KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books).is_empty(),
-            "no request before the long wait"
+            "no request before the doubled base wait"
         );
 
-        clock.set_time(UnixNanos::new(start.as_u64() + 80_000_000_000));
+        clock.set_time(UnixNanos::new(start.as_u64() + 20_000_000_000));
         assert_eq!(
             KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books),
             vec![L2ResyncRequest {
                 instrument_id: btc.id(),
                 generation: rejected_generation,
             }],
-            "the rejected subscribe is asked again at the long wait"
-        );
-
-        clock.set_time(UnixNanos::new(start.as_u64() + 240_000_000_000));
-        assert_eq!(
-            KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books).len(),
-            1,
-            "the next request reaches the cap"
-        );
-        clock.set_time(UnixNanos::new(start.as_u64() + 100_000_000_000_000));
-        assert!(
-            KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books).is_empty(),
-            "no request beyond the cap"
+            "the rejected subscribe is asked again after 20 s"
         );
 
         let new_generation = l2_depths.insert("BTC/USD", 10);
@@ -1804,7 +1792,7 @@ mod tests {
             KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books).is_empty(),
             "the new generation's wait starts at this tick"
         );
-        clock.set_time(UnixNanos::new(start.as_u64() + 100_010_000_000_000));
+        clock.set_time(UnixNanos::new(start.as_u64() + 30_000_000_000));
         assert_eq!(
             KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books),
             vec![L2ResyncRequest {

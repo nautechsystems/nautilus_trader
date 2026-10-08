@@ -374,6 +374,7 @@ impl KrakenSpotWebSocketClient {
         let auth_token_for_reconnect = self.auth_token.clone();
         let auth_tracker_for_reconnect = self.auth_tracker.clone();
         let cmd_tx_for_reconnect = cmd_tx.clone();
+        let book_requests_for_reconnect = Arc::clone(&self.book_requests);
 
         let handler_task = async move {
             let mut handler =
@@ -387,7 +388,7 @@ impl KrakenSpotWebSocketClient {
                         }
                         log::info!("WebSocket reconnected, resubscribing");
 
-                        subscriptions.reset_after_reconnect();
+                        begin_resubscribe(&subscriptions, &book_requests_for_reconnect);
 
                         let payloads = subscription_payloads.read().await;
                         if payloads.is_empty() {
@@ -1703,6 +1704,18 @@ impl KrakenSpotWebSocketClient {
 }
 
 /// Refreshes the authentication token via the HTTP API.
+/// Opens a reconnect replay: the subscription state forgets its confirmations and the `book`
+/// subscribes on record are retired.
+///
+/// The replay re-sends each stored payload under its original request id, so an answer to a replay
+/// must not be read as the answer to the request that first sent it, and a request the dropped
+/// socket never answered must not stay on record for the connection's lifetime. A replay the venue
+/// rejects is left to the data client's snapshot watchdog.
+fn begin_resubscribe(subscriptions: &SubscriptionState, book_requests: &L2BookRequests) {
+    subscriptions.reset_after_reconnect();
+    book_requests.lock().clear();
+}
+
 async fn refresh_auth_token(
     config: &KrakenDataClientConfig,
 ) -> Result<SecretString, KrakenWsError> {
@@ -1865,6 +1878,20 @@ mod tests {
         }
 
         fn flush(&self) {}
+    }
+
+    /// A reconnect replay reuses the original request ids, so a `book` subscribe left unanswered
+    /// when the socket dropped is retired as the replay opens: a replay's answer matches no
+    /// request.
+    #[rstest]
+    fn test_a_reconnect_replay_retires_the_unanswered_book_requests() {
+        let client = test_client_without_credentials();
+        client.record_book_request(7, Ustr::from("BTC/USD"), 1);
+        assert_eq!(client.book_requests.lock().len(), 1);
+
+        begin_resubscribe(&client.subscriptions, &client.book_requests);
+
+        assert!(client.book_requests.lock().is_empty());
     }
 
     #[rstest]

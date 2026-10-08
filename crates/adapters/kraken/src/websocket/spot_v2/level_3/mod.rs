@@ -19,6 +19,7 @@ pub(crate) mod book_id;
 pub(crate) mod checksum;
 pub(crate) mod messages;
 pub(crate) mod parse;
+pub(crate) mod resync;
 pub(crate) mod runtime;
 
 pub(crate) use book_id::BookOrderIdHasher;
