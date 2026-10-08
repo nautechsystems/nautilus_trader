@@ -174,7 +174,6 @@ async fn wait_for_server(addr: SocketAddr, path: &str) {
     .await;
 }
 
-#[allow(dead_code)]
 /// An inverse contract for the `PI_ETHUSD` rows the futures fixtures carry, which the
 /// instruments fixture does not list.
 fn create_test_inverse_futures_instrument() -> InstrumentAny {
@@ -197,6 +196,7 @@ fn create_test_inverse_futures_instrument() -> InstrumentAny {
     )
 }
 
+#[allow(dead_code)]
 fn create_test_futures_instrument() -> InstrumentAny {
     let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
     let raw_symbol = Symbol::new("PF_XBTUSD");
