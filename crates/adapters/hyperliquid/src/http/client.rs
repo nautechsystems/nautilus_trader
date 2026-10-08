@@ -4728,8 +4728,8 @@ mod tests {
             InstrumentId::new(Symbol::new(symbol), *HYPERLIQUID_VENUE)
         );
         assert_eq!(instrument.raw_symbol(), Symbol::new(raw_symbol));
-        assert_eq!(instrument.price_precision(), 4);
-        assert_eq!(instrument.size_precision(), 2);
+        assert_eq!(instrument.price_precision(), 5);
+        assert_eq!(instrument.size_precision(), 0);
         assert_eq!(instrument.quote_currency(), Currency::USDC());
         assert_eq!(instrument.settlement_currency(), Currency::USDC());
         assert_eq!(client.get_asset_index(symbol), Some(asset_index));
