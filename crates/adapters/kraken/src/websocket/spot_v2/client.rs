@@ -1355,12 +1355,12 @@ impl KrakenSpotWebSocketClient {
     /// Resubscribes the `book` channel for `instrument_id` to recover its stream.
     ///
     /// The logical subscription is kept throughout, so the reconnect path still replays it.
-    /// `generation` names the subscription the request belongs to and `depth` the depth of that
-    /// request. The check that this subscription is still the live one and the two commands form
-    /// one step under the book command lock, which `subscribe_book` and `unsubscribe_book` also
-    /// take, so a replacement or a cancel cannot land between them: a recovery for a replaced or
-    /// cancelled subscription sends nothing, and one that is admitted resubscribes at the live
-    /// depth with an explicit snapshot, which the recovery depends on to end the wait.
+    /// `generation` names the subscription the request belongs to. The check that this
+    /// subscription is still the live one and the two commands form one step under the book
+    /// command lock, which `subscribe_book` and `unsubscribe_book` also take, so a replacement or
+    /// a cancel cannot land between them: a recovery for a replaced or cancelled subscription
+    /// sends nothing, and one that is admitted resubscribes at the live depth with an explicit
+    /// snapshot, which the recovery depends on to end the wait.
     ///
     /// # Errors
     ///
@@ -1368,8 +1368,7 @@ impl KrakenSpotWebSocketClient {
     pub async fn resync_book(
         &self,
         instrument_id: InstrumentId,
-        depth: Option<u32>,
-        generation: Option<u64>,
+        generation: u64,
     ) -> Result<(), KrakenWsError> {
         let _book_commands = self.l2_book_commands.lock().await;
         let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
@@ -1379,12 +1378,12 @@ impl KrakenSpotWebSocketClient {
             .subscriptions_contains(&key)
             .then(|| self.l2_depths.subscription(symbol.as_str()))
             .flatten()
-            .filter(|live| Some(live.generation) == generation);
+            .filter(|live| live.generation == generation);
 
         let Some(live) = live else {
             log::debug!(
                 "Skipping L2 resync: subscription cancelled or replaced, symbol={symbol}, \
-                 requested depth={depth:?}, generation={generation:?}"
+                 generation={generation}"
             );
             return Ok(());
         };
@@ -2273,10 +2272,7 @@ mod tests {
 
         while cmd_rx.try_recv().is_ok() {}
 
-        client
-            .resync_book(instrument_id, Some(10), Some(retired))
-            .await
-            .unwrap();
+        client.resync_book(instrument_id, retired).await.unwrap();
 
         assert!(
             cmd_rx.try_recv().is_err(),
@@ -2286,10 +2282,7 @@ mod tests {
 
         // Control: the live subscription's own recovery resubscribes at its depth.
         let live = client.l2_depths.subscription("BTC/USD").unwrap().generation;
-        client
-            .resync_book(instrument_id, Some(100), Some(live))
-            .await
-            .unwrap();
+        client.resync_book(instrument_id, live).await.unwrap();
 
         let SpotHandlerCommand::Unsubscribe { .. } = cmd_rx.try_recv().expect("unsubscribe") else {
             panic!("expected an unsubscribe command");
@@ -2352,12 +2345,8 @@ mod tests {
 
         let guard = client.l2_book_commands.lock().await;
         let task_client = client.clone();
-        let recovery = spawn_parked(async move {
-            task_client
-                .resync_book(instrument_id, Some(25), Some(live))
-                .await
-        })
-        .await;
+        let recovery =
+            spawn_parked(async move { task_client.resync_book(instrument_id, live).await }).await;
         assert!(
             cmd_rx.try_recv().is_err(),
             "no command while a subscription change holds the lock"
@@ -2434,12 +2423,8 @@ mod tests {
         // Parks `send_command` at admission: the recovery has passed its check and holds the lock.
         let admission = client.cmd_tx.write().await;
         let task_client = client.clone();
-        let recovery = spawn_parked(async move {
-            task_client
-                .resync_book(instrument_id, Some(10), Some(live))
-                .await
-        })
-        .await;
+        let recovery =
+            spawn_parked(async move { task_client.resync_book(instrument_id, live).await }).await;
         assert!(cmd_rx.try_recv().is_err());
 
         // Models a depth change observed after the check and before the commands go out.

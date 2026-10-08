@@ -96,15 +96,14 @@ impl L2Depths {
     }
 }
 
-/// A resubscription the data client issues after a checksum mismatch.
+/// A resubscription the data client issues after a checksum mismatch or an overdue snapshot.
 ///
-/// `generation` names the subscription the mismatch belonged to, so the recovery leaves a
-/// replacement subscription alone.
+/// `generation` names the subscription the request belongs to, so the recovery leaves a
+/// replacement subscription alone; the depth resubscribed is the live subscription's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct L2ResyncRequest {
     pub(crate) instrument_id: InstrumentId,
-    pub(crate) depth: Option<u32>,
-    pub(crate) generation: Option<u64>,
+    pub(crate) generation: u64,
 }
 
 /// What processing one `book` message produced.
@@ -145,11 +144,14 @@ pub(crate) struct SnapshotWait {
 
 /// Shadow books for the Spot `book` channel, one per instrument.
 ///
-/// `Default` leaves checksum validation off; the data client enables it from its configuration.
+/// Checksum validation is fixed at construction from the client configuration.
 #[derive(Debug)]
 pub(crate) struct L2BookState {
     pub(crate) books: AHashMap<InstrumentId, OrderBook>,
     validate_checksum: bool,
+    /// Instruments already warned about frames that arrive with no recorded subscription, so a
+    /// stream in that state logs once rather than per frame.
+    unsubscribed_warned: AHashSet<InstrumentId>,
     /// Instruments with a cleared book. Their updates are dropped until the snapshot their
     /// subscription owes, since they describe a stream the venue has ended.
     awaiting_snapshot: AHashMap<InstrumentId, SnapshotWait>,
@@ -166,6 +168,7 @@ impl L2BookState {
         Self {
             books: AHashMap::new(),
             validate_checksum,
+            unsubscribed_warned: AHashSet::new(),
             awaiting_snapshot: AHashMap::new(),
             mismatches: AHashMap::new(),
             validation_disabled: AHashSet::new(),
@@ -210,8 +213,8 @@ impl L2BookState {
     ///   or a reconnect replay whose snapshot the venue dropped, with at most one tick of slack;
     /// - held without a book, fewer than `MAX_SNAPSHOT_REQUESTS` made: once
     ///   `SNAPSHOT_TIMEOUT_NS << attempts` has passed since `since`, a request carrying the held
-    ///   generation and depth is returned and the wait restarts at `now` with one more attempt; the
-    ///   request that reaches the cap is still made and logs the error;
+    ///   generation is returned and the wait restarts at `now` with one more attempt; the request
+    ///   that reaches the cap is still made and logs the error;
     /// - at the cap: no further request, and updates keep being dropped until a snapshot arrives.
     pub(crate) fn overdue_snapshots(
         &mut self,
@@ -266,8 +269,7 @@ impl L2BookState {
 
             requests.push(L2ResyncRequest {
                 instrument_id: *instrument_id,
-                depth: Some(subscription.depth),
-                generation: Some(subscription.generation),
+                generation: subscription.generation,
             });
         }
 
@@ -283,16 +285,34 @@ impl L2BookState {
         subscription: Option<L2Subscription>,
         ts_init: UnixNanos,
     ) -> anyhow::Result<L2BookOutcome> {
-        let Some(subscription) = subscription else {
-            // A frame consumed after the user unsubscribed belongs to a stream that is ending.
-            log::debug!(
-                "Dropping L2 {} for {}: no subscription holds it",
-                if is_snapshot { "snapshot" } else { "update" },
-                book.symbol
-            );
-            return Ok(L2BookOutcome::default());
-        };
         let instrument_id = instrument.id();
+
+        let Some(subscription) = subscription else {
+            // No subscription holds the stream, so there is no depth to prune to, no generation
+            // to track and nothing to resubscribe: the frame is emitted as received. Dropping it
+            // would turn a symbol the client records differently from the venue into a silent
+            // outage.
+            if self.unsubscribed_warned.insert(instrument_id) {
+                log::warn!(
+                    "L2 {} for {} arrived with no recorded subscription; emitting it unvalidated",
+                    if is_snapshot { "snapshot" } else { "update" },
+                    book.symbol
+                );
+            }
+
+            let mut deltas = parse_book_deltas(book, instrument, sequence, is_snapshot, ts_init)?;
+            if deltas.is_empty() {
+                return Ok(L2BookOutcome::default());
+            }
+
+            let next_sequence = sequence + deltas.len() as u64;
+            set_last_delta_flag(&mut deltas);
+
+            return Ok(L2BookOutcome {
+                deltas: Some((OrderBookDeltas::new(instrument_id, deltas), next_sequence)),
+                resync: None,
+            });
+        };
         let depth = subscription.depth;
 
         // A new subscription is a new stream: its validation starts afresh, so an instrument the
@@ -439,8 +459,7 @@ impl L2BookState {
                     )),
                     resync: Some(L2ResyncRequest {
                         instrument_id,
-                        depth: Some(depth),
-                        generation: Some(subscription.generation),
+                        generation: subscription.generation,
                     }),
                 });
             }
@@ -691,8 +710,7 @@ mod tests {
             outcome.resync,
             Some(L2ResyncRequest {
                 instrument_id: instrument.id(),
-                depth: Some(25),
-                generation: Some(7),
+                generation: 7,
             })
         );
         let (deltas, next_sequence) = outcome.deltas.expect("a clear is emitted");
@@ -974,8 +992,7 @@ mod tests {
             requests,
             vec![L2ResyncRequest {
                 instrument_id,
-                depth: Some(10),
-                generation: Some(7),
+                generation: 7,
             }]
         );
         assert_eq!(
@@ -1069,8 +1086,7 @@ mod tests {
             requests,
             vec![L2ResyncRequest {
                 instrument_id,
-                depth: Some(100),
-                generation: Some(8),
+                generation: 8,
             }]
         );
     }
@@ -1143,8 +1159,7 @@ mod tests {
             requests,
             vec![L2ResyncRequest {
                 instrument_id,
-                depth: Some(10),
-                generation: Some(7),
+                generation: 7,
             }]
         );
     }
@@ -1371,30 +1386,46 @@ mod tests {
         );
     }
 
-    /// A frame with no subscription behind it belongs to a stream that is ending: it produces
-    /// neither deltas nor a recovery and leaves no state.
+    /// A frame with no subscription behind it is emitted as received: no checksum validation, no
+    /// pruning, no recovery and no wait, since there is no subscription to recover, and the
+    /// instrument is warned about once.
     #[rstest]
-    fn test_a_frame_without_a_subscription_is_dropped() {
+    fn test_a_frame_without_a_subscription_is_emitted_unvalidated() {
         let mut state = L2BookState::new(true);
         let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
         let mut bad = book_data(GUIDE_SNAPSHOT);
         bad.checksum = Some(1);
 
         let snapshot = state
             .process_book(&bad, &instrument, 0, true, None, TS)
             .unwrap();
-        assert!(snapshot.deltas.is_none());
         assert!(snapshot.resync.is_none());
+        let (deltas, next_sequence) = snapshot.deltas.expect("the snapshot is emitted");
+        assert_eq!(deltas.deltas.len(), 21);
+        assert!(RecordFlag::F_LAST.matches(deltas.deltas.last().unwrap().flags));
+        assert_eq!(next_sequence, 21);
+        assert_eq!(state.unsubscribed_warned.len(), 1);
+        assert!(state.unsubscribed_warned.contains(&instrument_id));
 
         let update = state
-            .process_book(&book_data(GUIDE_UPDATE), &instrument, 0, false, None, TS)
+            .process_book(&book_data(GUIDE_UPDATE), &instrument, 21, false, None, TS)
             .unwrap();
-        assert!(update.deltas.is_none());
         assert!(update.resync.is_none());
+        let (deltas, next_sequence) = update.deltas.expect("the update is emitted");
+        assert_eq!(deltas.deltas.len(), 1);
+        assert!(RecordFlag::F_LAST.matches(deltas.deltas[0].flags));
+        assert_eq!(next_sequence, 22);
+        assert_eq!(
+            state.unsubscribed_warned.len(),
+            1,
+            "the second frame does not warn again"
+        );
 
         assert!(state.books.is_empty());
         assert!(state.awaiting_snapshot.is_empty());
         assert!(state.last_generation.is_empty());
+        assert!(state.mismatches.is_empty());
     }
 
     #[rstest]

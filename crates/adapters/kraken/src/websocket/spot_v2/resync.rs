@@ -37,11 +37,10 @@ pub(crate) async fn retry_l3_resync(client: &KrakenSpotWebSocketClient, symbol: 
 pub(crate) async fn retry_l2_resync(
     client: &KrakenSpotWebSocketClient,
     instrument_id: InstrumentId,
-    depth: Option<u32>,
-    generation: Option<u64>,
+    generation: u64,
 ) {
     retry_resync("L2", instrument_id.symbol.inner(), || {
-        client.resync_book(instrument_id, depth, generation)
+        client.resync_book(instrument_id, generation)
     })
     .await;
 }

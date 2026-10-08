@@ -326,7 +326,7 @@ pub fn parse_tokenized_instrument(
         .price_precision(price_increment.precision)
         .size_precision(size_increment.precision)
         .price_increment(price_increment)
-        .maybe_info(pair_info(pair_name, definition, price_increment.precision))
+        .maybe_info(price_scale_info(definition, price_increment.precision))
         .size_increment(size_increment)
         .maybe_min_quantity(min_quantity)
         .ts_event(ts_event)
@@ -679,13 +679,12 @@ pub fn parse_millis_timestamp(value: f64, field: &str) -> anyhow::Result<UnixNan
     Ok(UnixNanos::from(nanos))
 }
 
-/// Carries Kraken's `altname` on the instrument when it differs from the `AssetPairs` key.
+/// Builds the `info` of a Spot currency pair: Kraken's `altname` when it differs from the
+/// `AssetPairs` key, and the wire price scale when it differs from the tick-size precision.
 ///
 /// The key is the instrument `raw_symbol`, while `OpenOrders`, `ClosedOrders` and `TradesHistory`
 /// spell the pair with the altname. A client whose instruments arrive through the cache APIs never
 /// sees the `AssetPairs` response, so the alias has to travel with the instrument.
-/// Builds the instrument `info` for a Spot pair: the altname when it differs from the pair name, and
-/// the wire price scale when it differs from the tick-size precision.
 fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -> Option<Params> {
     let mut map = IndexMap::new();
 
@@ -696,18 +695,34 @@ fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -
         );
     }
 
+    insert_price_scale(&mut map, definition, price_precision);
+    (!map.is_empty()).then(|| Params::from_index_map(map))
+}
+
+/// Builds the `info` of a tokenized pair: the wire price scale alone, when it differs from the
+/// tick-size precision.
+///
+/// The altname is left out, so the alias index built from cached instruments covers currency pairs
+/// only.
+fn price_scale_info(definition: &AssetPairInfo, price_precision: u8) -> Option<Params> {
+    let mut map = IndexMap::new();
+    insert_price_scale(&mut map, definition, price_precision);
+    (!map.is_empty()).then(|| Params::from_index_map(map))
+}
+
+/// Records `pair_decimals` under [`KRAKEN_PAIR_DECIMALS_KEY`] when it differs from
+/// `price_precision`; the checksum falls back to the tick-size precision when the key is absent.
+fn insert_price_scale(
+    map: &mut IndexMap<String, serde_json::Value>,
+    definition: &AssetPairInfo,
+    price_precision: u8,
+) {
     if definition.pair_decimals != price_precision {
         map.insert(
             KRAKEN_PAIR_DECIMALS_KEY.to_string(),
             serde_json::Value::from(u64::from(definition.pair_decimals)),
         );
     }
-
-    if map.is_empty() {
-        return None;
-    }
-
-    Some(Params::from_index_map(map))
 }
 
 /// Parses a Kraken spot order into a Nautilus OrderStatusReport.
@@ -2450,6 +2465,22 @@ mod tests {
             }
             _ => panic!("Expected TokenizedAsset, received {instrument:?}"),
         }
+
+        // A key spelled differently from the altname, at a wire scale finer than the tick: the
+        // info carries the scale and nothing else.
+        let mut finer = definition.clone();
+        finer.pair_decimals = 3;
+        let instrument = parse_tokenized_instrument("XAAPLxZUSD", &finer, TS, TS).unwrap();
+        let info = instrument.info().expect("the wire scale is recorded");
+        assert_eq!(
+            info.get(KRAKEN_PAIR_DECIMALS_KEY)
+                .and_then(serde_json::Value::as_u64),
+            Some(3)
+        );
+        assert!(
+            !info.contains_key(KRAKEN_ALTNAME_KEY),
+            "a tokenized pair carries no altname alias"
+        );
     }
 
     #[rstest]

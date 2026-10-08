@@ -579,13 +579,7 @@ impl KrakenSpotDataClient {
             let client = client.clone();
 
             if let Err(e) = spawner.spawn_named("kraken-spot-l2-resync", async move {
-                retry_l2_resync(
-                    &client,
-                    request.instrument_id,
-                    request.depth,
-                    request.generation,
-                )
-                .await;
+                retry_l2_resync(&client, request.instrument_id, request.generation).await;
             }) {
                 log::warn!("Skipping Kraken L2 resync after shutdown began: {e}");
             }
@@ -712,9 +706,9 @@ impl KrakenSpotDataClient {
                                 }
                             }
 
-                            // One recovery per instrument per message; a second request for the
-                            // same subscription would interleave its unsubscribe and subscribe
-                            // with the first.
+                            // One recovery per instrument per message: a second request for the
+                            // same subscription would cost a second unsubscribe and subscribe
+                            // cycle and a second snapshot for one message.
                             if let Some(request) = outcome.resync
                                 && !resyncs.iter().any(|r: &L2ResyncRequest| {
                                     r.instrument_id == request.instrument_id
@@ -1593,8 +1587,7 @@ mod tests {
             requests,
             vec![L2ResyncRequest {
                 instrument_id: btc.id(),
-                depth: Some(10),
-                generation: Some(btc_generation),
+                generation: btc_generation,
             }]
         );
     }
