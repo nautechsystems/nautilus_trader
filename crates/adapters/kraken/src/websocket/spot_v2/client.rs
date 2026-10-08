@@ -96,6 +96,9 @@ pub struct KrakenSpotWebSocketClient {
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     l2_depths: L2Depths,
+    /// Serializes `subscribe_book`, `unsubscribe_book` and `resync_book`, so a recovery's check
+    /// of the live subscription and its two commands cannot interleave with a replacement.
+    l2_book_commands: Arc<tokio::sync::Mutex<()>>,
     l3_depths: Arc<parking_lot::Mutex<ahash::AHashMap<String, u32>>>,
     transport_backend: TransportBackend,
     proxy_url: Option<SecretString>,
@@ -123,6 +126,7 @@ impl Clone for KrakenSpotWebSocketClient {
             truncated_id_map: Arc::clone(&self.truncated_id_map),
             instruments: Arc::clone(&self.instruments),
             l2_depths: self.l2_depths.clone(),
+            l2_book_commands: Arc::clone(&self.l2_book_commands),
             l3_depths: Arc::clone(&self.l3_depths),
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -191,6 +195,7 @@ impl KrakenSpotWebSocketClient {
             truncated_id_map: Arc::new(AtomicMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             l2_depths: L2Depths::default(),
+            l2_book_commands: Arc::new(tokio::sync::Mutex::new(())),
             l3_depths: Arc::new(parking_lot::Mutex::new(ahash::AHashMap::new())),
             transport_backend,
             proxy_url: proxy_url.map(SecretString::from),
@@ -1044,6 +1049,7 @@ impl KrakenSpotWebSocketClient {
         instrument_id: InstrumentId,
         depth: Option<u32>,
     ) -> Result<(), KrakenWsError> {
+        let _book_commands = self.l2_book_commands.lock().await;
         let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
         let depth = depth.unwrap_or(10);
 
@@ -1346,12 +1352,15 @@ impl KrakenSpotWebSocketClient {
         self.config.validate_l2_checksum
     }
 
-    /// Resubscribes the `book` channel for `instrument_id` after a checksum mismatch.
+    /// Resubscribes the `book` channel for `instrument_id` to recover its stream.
     ///
-    /// The logical subscription is kept throughout, so the reconnect path still replays it, and
-    /// each step re-checks that the user has not unsubscribed meanwhile. `generation` is the
-    /// subscription the mismatch belonged to; a recovery queued for a subscription the user has
-    /// since replaced leaves the replacement alone, whatever its depth.
+    /// The logical subscription is kept throughout, so the reconnect path still replays it.
+    /// `generation` names the subscription the request belongs to and `depth` the depth of that
+    /// request. The check that this subscription is still the live one and the two commands form
+    /// one step under the book command lock, which `subscribe_book` and `unsubscribe_book` also
+    /// take, so a replacement or a cancel cannot land between them: a recovery for a replaced or
+    /// cancelled subscription sends nothing, and one that is admitted resubscribes at the live
+    /// depth with an explicit snapshot, which the recovery depends on to end the wait.
     ///
     /// # Errors
     ///
@@ -1362,23 +1371,24 @@ impl KrakenSpotWebSocketClient {
         depth: Option<u32>,
         generation: Option<u64>,
     ) -> Result<(), KrakenWsError> {
+        let _book_commands = self.l2_book_commands.lock().await;
         let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
-        let depth = depth.unwrap_or(10);
         let channel_str = KrakenWsChannel::Book.as_ref();
         let key = format!("{channel_str}:{symbol}");
-        let is_live = || {
-            self.subscriptions_contains(&key)
-                && self
-                    .l2_depths
-                    .subscription(symbol.as_str())
-                    .map(|s| s.generation)
-                    == generation
-        };
+        let live = self
+            .subscriptions_contains(&key)
+            .then(|| self.l2_depths.subscription(symbol.as_str()))
+            .flatten()
+            .filter(|live| Some(live.generation) == generation);
 
-        if !is_live() {
-            log::debug!("Skipping L2 resync: subscription cancelled or replaced, symbol={symbol}");
+        let Some(live) = live else {
+            log::debug!(
+                "Skipping L2 resync: subscription cancelled or replaced, symbol={symbol}, \
+                 requested depth={depth:?}, generation={generation:?}"
+            );
             return Ok(());
-        }
+        };
+        let depth = live.depth;
 
         let unsub = KrakenWsRequest {
             method: KrakenWsMethod::Unsubscribe,
@@ -1397,13 +1407,6 @@ impl KrakenSpotWebSocketClient {
         };
         self.send_command(&unsub).await?;
 
-        if !is_live() {
-            log::debug!(
-                "Skipping L2 resync resubscribe: cancelled or replaced before send, symbol={symbol}"
-            );
-            return Ok(());
-        }
-
         let sub = KrakenWsRequest {
             method: KrakenWsMethod::Subscribe,
             params: Some(KrakenWsParams::Channel(KrakenWsChannelParams {
@@ -1421,13 +1424,10 @@ impl KrakenSpotWebSocketClient {
             req_id: Some(self.get_next_req_id()),
         };
         let payload = self.send_command(&sub).await?;
-
-        if is_live() {
-            self.subscription_payloads
-                .write()
-                .await
-                .insert(key, payload);
-        }
+        self.subscription_payloads
+            .write()
+            .await
+            .insert(key, payload);
 
         Ok(())
     }
@@ -1574,6 +1574,7 @@ impl KrakenSpotWebSocketClient {
 
     /// Unsubscribes from order book updates for the given instrument.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> Result<(), KrakenWsError> {
+        let _book_commands = self.l2_book_commands.lock().await;
         let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
         let channel_str = KrakenWsChannel::Book.as_ref();
         let key = format!("{channel_str}:{symbol}");
@@ -2299,6 +2300,154 @@ mod tests {
         };
         assert_book_subscribe_payload(payload.expose_secret(), "BTC/USD", 100);
         assert_eq!(client.l2_depths.get("BTC/USD"), Some(100));
+    }
+
+    /// Spawns `command` and yields until it has finished or parked on a lock, so any command it
+    /// could send without waiting is already in the queue.
+    async fn spawn_parked<F>(command: F) -> tokio::task::JoinHandle<Result<(), KrakenWsError>>
+    where
+        F: Future<Output = Result<(), KrakenWsError>> + Send + 'static,
+    {
+        let handle = tokio::spawn(command);
+
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+
+        handle
+    }
+
+    fn assert_book_recovery_commands(
+        cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
+        depth: u32,
+    ) {
+        let SpotHandlerCommand::Unsubscribe { .. } = cmd_rx.try_recv().expect("unsubscribe") else {
+            panic!("expected an unsubscribe command");
+        };
+        let SpotHandlerCommand::Subscribe { payload } = cmd_rx.try_recv().expect("subscribe")
+        else {
+            panic!("expected a subscribe command");
+        };
+        assert_book_subscribe_payload(payload.expose_secret(), "BTC/USD", depth);
+        let value: serde_json::Value = serde_json::from_str(payload.expose_secret()).unwrap();
+        assert_eq!(value["params"]["snapshot"], serde_json::json!(true));
+        assert!(cmd_rx.try_recv().is_err(), "nothing else is sent");
+    }
+
+    /// A recovery waits for the book command lock, so its check of the live subscription and its
+    /// two commands cannot interleave with a subscription change holding the lock.
+    #[rstest]
+    #[tokio::test]
+    async fn test_resync_book_waits_for_the_book_command_lock() {
+        let client = test_client_without_credentials();
+        let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+        client
+            .subscribe_book(instrument_id, Some(25))
+            .await
+            .unwrap();
+        while cmd_rx.try_recv().is_ok() {}
+        let live = client.l2_depths.subscription("BTC/USD").unwrap().generation;
+
+        let guard = client.l2_book_commands.lock().await;
+        let task_client = client.clone();
+        let recovery = spawn_parked(async move {
+            task_client
+                .resync_book(instrument_id, Some(25), Some(live))
+                .await
+        })
+        .await;
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no command while a subscription change holds the lock"
+        );
+
+        drop(guard);
+        recovery.await.unwrap().unwrap();
+        assert_book_recovery_commands(&mut cmd_rx, 25);
+    }
+
+    /// A subscription change waits for the book command lock, so it cannot land between a
+    /// recovery's check and its commands.
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscribe_and_unsubscribe_book_wait_for_the_book_command_lock() {
+        let client = test_client_without_credentials();
+        let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+
+        let guard = client.l2_book_commands.lock().await;
+        let task_client = client.clone();
+        let subscribe =
+            spawn_parked(async move { task_client.subscribe_book(instrument_id, Some(10)).await })
+                .await;
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no subscribe while the lock is held"
+        );
+
+        drop(guard);
+        subscribe.await.unwrap().unwrap();
+        let SpotHandlerCommand::Subscribe { payload } = cmd_rx.try_recv().expect("subscribe")
+        else {
+            panic!("expected a subscribe command");
+        };
+        assert_book_subscribe_payload(payload.expose_secret(), "BTC/USD", 10);
+        assert!(cmd_rx.try_recv().is_err());
+
+        let guard = client.l2_book_commands.lock().await;
+        let task_client = client.clone();
+        let unsubscribe =
+            spawn_parked(async move { task_client.unsubscribe_book(instrument_id).await }).await;
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no unsubscribe while the lock is held"
+        );
+
+        drop(guard);
+        unsubscribe.await.unwrap().unwrap();
+        let SpotHandlerCommand::Unsubscribe { .. } = cmd_rx.try_recv().expect("unsubscribe") else {
+            panic!("expected an unsubscribe command");
+        };
+        assert!(cmd_rx.try_recv().is_err());
+        assert_eq!(client.l2_depths.get("BTC/USD"), None);
+    }
+
+    /// Once admitted, a recovery sends both commands: a stale unsubscribe with no subscribe behind
+    /// it would leave the stream dead, so the depth seen at admission is the one resubscribed.
+    #[rstest]
+    #[tokio::test]
+    async fn test_resync_book_sends_both_commands_once_admitted() {
+        let client = test_client_without_credentials();
+        let instrument_id = InstrumentId::from("BTC/USD.KRAKEN");
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+        client
+            .subscribe_book(instrument_id, Some(10))
+            .await
+            .unwrap();
+        while cmd_rx.try_recv().is_ok() {}
+        let live = client.l2_depths.subscription("BTC/USD").unwrap().generation;
+
+        // Parks `send_command` at admission: the recovery has passed its check and holds the lock.
+        let admission = client.cmd_tx.write().await;
+        let task_client = client.clone();
+        let recovery = spawn_parked(async move {
+            task_client
+                .resync_book(instrument_id, Some(10), Some(live))
+                .await
+        })
+        .await;
+        assert!(cmd_rx.try_recv().is_err());
+
+        // Models a depth change observed after the check and before the commands go out.
+        client.l2_depths.insert("BTC/USD", 25);
+        drop(admission);
+        recovery.await.unwrap().unwrap();
+
+        assert_book_recovery_commands(&mut cmd_rx, 10);
     }
 
     fn assert_book_subscribe_payload(payload: &str, symbol: &str, depth: u32) {

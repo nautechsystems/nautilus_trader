@@ -272,10 +272,16 @@ levels of each side at the venue's wire scales. By default the adapter validates
 shadow book, rendering prices at `pair_decimals` and quantities at `lot_decimals` from
 `AssetPairs`; for a handful of pairs the price scale is one digit finer than the tick size, so the
 instrument carries it when the two differ. On mismatch the adapter emits a `Clear` delta, drops the
-shadow book, resubscribes the symbol, and ignores further updates until the fresh snapshot arrives.
+shadow book, unsubscribes and resubscribes the symbol with a snapshot, and ignores further updates
+until that snapshot arrives. The recovery is serialized with the user's own subscription changes,
+so a replacement subscription is never cancelled by a stale recovery, and frames of a replaced
+subscription that arrive before its snapshot are dropped. If the snapshot does not arrive within
+10 seconds the data client requests it again, doubling the wait each time up to five requests,
+then logs an error and leaves the book cleared until the next subscription change or reconnect.
 Three mismatches on one instrument with no valid update between them switch validation off for
 that instrument with an error log and keep its book as received, so a book the venue hashes
-differently cannot loop on resubscription; a snapshot that validates does not reset the count. Kraken Futures `book` messages carry no checksum. To disable validation:
+differently cannot loop on resubscription; a snapshot that validates does not reset the count.
+Kraken Futures `book` messages carry no checksum. To disable validation:
 
 ```python
 config = KrakenDataClientConfig(

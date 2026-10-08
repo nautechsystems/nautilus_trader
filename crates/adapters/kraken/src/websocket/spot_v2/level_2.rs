@@ -33,7 +33,7 @@ use nautilus_model::{
 use super::{
     checksum::{crc32_ieee, push_scaled},
     messages::KrakenWsBookData,
-    parse::parse_book_deltas,
+    parse::{datetime_to_nanos, parse_book_deltas},
 };
 use crate::common::consts::KRAKEN_PAIR_DECIMALS_KEY;
 
@@ -76,6 +76,15 @@ impl L2Depths {
             .insert(symbol.to_string(), L2Subscription { depth, generation });
     }
 
+    /// Every subscription currently held, by venue symbol.
+    pub(crate) fn held(&self) -> Vec<(String, L2Subscription)> {
+        self.depths
+            .load()
+            .iter()
+            .map(|(symbol, subscription)| (symbol.clone(), *subscription))
+            .collect()
+    }
+
     pub(crate) fn remove(&self, symbol: &str) {
         self.depths.rcu(|depths| {
             depths.remove(symbol);
@@ -112,6 +121,28 @@ pub(crate) struct L2BookOutcome {
 /// nothing about the update path, so it does not reset the count.
 pub(crate) const MAX_CONSECUTIVE_CHECKSUM_MISMATCHES: u32 = 3;
 
+/// Base wait for the snapshot a subscription owes; it doubles with every request made for it.
+pub(crate) const SNAPSHOT_TIMEOUT_NS: u64 = 10_000_000_000;
+
+/// Snapshot requests per cleared book before the data client stops asking.
+///
+/// With the doubling wait the requests go out 10, 20, 40, 80 and 160 seconds after the one
+/// before; a venue that has not answered in that time is not going to.
+pub(crate) const MAX_SNAPSHOT_REQUESTS: u32 = 5;
+
+/// A cleared book waiting for the snapshot its subscription owes.
+///
+/// `since` is when the latest request for the snapshot went out and `attempts` how many the
+/// watchdog has made, so the next one is due `SNAPSHOT_TIMEOUT_NS << attempts` after `since`.
+/// A snapshot or a cancelled subscription removes the entry; at `MAX_SNAPSHOT_REQUESTS` it stays
+/// without further requests and the book stays cleared until the next subscription change or
+/// reconnect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SnapshotWait {
+    pub(crate) since: UnixNanos,
+    pub(crate) attempts: u32,
+}
+
 /// Shadow books for the Spot `book` channel, one per instrument.
 ///
 /// `Default` leaves checksum validation off; the data client enables it from its configuration.
@@ -119,9 +150,9 @@ pub(crate) const MAX_CONSECUTIVE_CHECKSUM_MISMATCHES: u32 = 3;
 pub(crate) struct L2BookState {
     pub(crate) books: AHashMap<InstrumentId, OrderBook>,
     validate_checksum: bool,
-    /// Instruments with a cleared book after a mismatch. Their updates are dropped until the
-    /// snapshot the resubscription produces, since they describe a stream the venue has ended.
-    awaiting_snapshot: AHashSet<InstrumentId>,
+    /// Instruments with a cleared book. Their updates are dropped until the snapshot their
+    /// subscription owes, since they describe a stream the venue has ended.
+    awaiting_snapshot: AHashMap<InstrumentId, SnapshotWait>,
     /// Consecutive mismatches per instrument; a valid message resets the count.
     mismatches: AHashMap<InstrumentId, u32>,
     /// Instruments whose validation is off after too many consecutive mismatches.
@@ -135,7 +166,7 @@ impl L2BookState {
         Self {
             books: AHashMap::new(),
             validate_checksum,
-            awaiting_snapshot: AHashSet::new(),
+            awaiting_snapshot: AHashMap::new(),
             mismatches: AHashMap::new(),
             validation_disabled: AHashSet::new(),
             last_generation: AHashMap::new(),
@@ -144,12 +175,103 @@ impl L2BookState {
 
     /// Drops the shadow books and the mismatch counts after a reconnect.
     ///
-    /// The replayed subscriptions deliver fresh snapshots, so the replacement stream gets the
-    /// full allowance of mismatches; an instrument whose validation is off stays off.
-    pub(crate) fn reset_after_reconnect(&mut self) {
+    /// The replayed subscriptions deliver fresh snapshots and the wait for each of them starts at
+    /// `now`, so a replay the venue drops is noticed by [`Self::overdue_snapshots`]. The
+    /// replacement stream gets the full allowance of mismatches; an instrument whose validation
+    /// is off stays off.
+    pub(crate) fn reset_after_reconnect(&mut self, now: UnixNanos) {
+        for instrument_id in self.books.keys() {
+            self.awaiting_snapshot
+                .entry(*instrument_id)
+                .or_insert(SnapshotWait {
+                    since: now,
+                    attempts: 0,
+                });
+        }
+
+        for wait in self.awaiting_snapshot.values_mut() {
+            *wait = SnapshotWait {
+                since: now,
+                attempts: 0,
+            };
+        }
+
         self.books.clear();
-        self.awaiting_snapshot.clear();
         self.mismatches.clear();
+    }
+
+    /// Requests the snapshot again for every held subscription whose book is overdue.
+    ///
+    /// `held` is every `book` subscription the client holds. Per instrument:
+    /// - not held: the wait is dropped, since a cancelled subscription delivers nothing;
+    /// - held with a shadow book: the snapshot has arrived, nothing is owed (an instrument whose
+    ///   validation is off keeps its book, so it is never overdue);
+    /// - held without a book and without a wait: a wait starts at `now`, which covers a subscribe
+    ///   or a reconnect replay whose snapshot the venue dropped, with at most one tick of slack;
+    /// - held without a book, fewer than `MAX_SNAPSHOT_REQUESTS` made: once
+    ///   `SNAPSHOT_TIMEOUT_NS << attempts` has passed since `since`, a request carrying the held
+    ///   generation and depth is returned and the wait restarts at `now` with one more attempt; the
+    ///   request that reaches the cap is still made and logs the error;
+    /// - at the cap: no further request, and updates keep being dropped until a snapshot arrives.
+    pub(crate) fn overdue_snapshots(
+        &mut self,
+        now: UnixNanos,
+        held: &[(InstrumentId, L2Subscription)],
+    ) -> Vec<L2ResyncRequest> {
+        self.awaiting_snapshot
+            .retain(|instrument_id, _| held.iter().any(|(held_id, _)| held_id == instrument_id));
+
+        let mut requests = Vec::new();
+
+        for (instrument_id, subscription) in held {
+            if self.books.contains_key(instrument_id) {
+                continue;
+            }
+
+            let wait = self
+                .awaiting_snapshot
+                .entry(*instrument_id)
+                .or_insert(SnapshotWait {
+                    since: now,
+                    attempts: 0,
+                });
+
+            if wait.attempts >= MAX_SNAPSHOT_REQUESTS {
+                continue;
+            }
+
+            let timeout_ns = SNAPSHOT_TIMEOUT_NS << wait.attempts;
+            let waited_ns = now.saturating_duration_since(wait.since).as_u64();
+
+            if waited_ns < timeout_ns {
+                continue;
+            }
+
+            wait.attempts += 1;
+            wait.since = now;
+            log::warn!(
+                "Requesting the L2 snapshot for {instrument_id} again: none arrived within {} s \
+                 of the resubscription (request {}/{MAX_SNAPSHOT_REQUESTS})",
+                timeout_ns / 1_000_000_000,
+                wait.attempts,
+            );
+
+            if wait.attempts == MAX_SNAPSHOT_REQUESTS {
+                log::error!(
+                    "L2 snapshot for {instrument_id} requested {MAX_SNAPSHOT_REQUESTS} times \
+                     without an answer; the book stays cleared and its updates are dropped until \
+                     the next subscription change or reconnect"
+                );
+            }
+
+            requests.push(L2ResyncRequest {
+                instrument_id: *instrument_id,
+                depth: Some(subscription.depth),
+                generation: Some(subscription.generation),
+            });
+        }
+
+        requests
     }
 
     pub(crate) fn process_book(
@@ -161,23 +283,69 @@ impl L2BookState {
         subscription: Option<L2Subscription>,
         ts_init: UnixNanos,
     ) -> anyhow::Result<L2BookOutcome> {
+        let Some(subscription) = subscription else {
+            // A frame consumed after the user unsubscribed belongs to a stream that is ending.
+            log::debug!(
+                "Dropping L2 {} for {}: no subscription holds it",
+                if is_snapshot { "snapshot" } else { "update" },
+                book.symbol
+            );
+            return Ok(L2BookOutcome::default());
+        };
         let instrument_id = instrument.id();
-        let depth = subscription.map(|s| s.depth);
+        let depth = subscription.depth;
 
         // A new subscription is a new stream: its validation starts afresh, so an instrument the
         // cap switched off is validated again once the user resubscribes.
-        if let Some(generation) = subscription.map(|s| s.generation)
-            && self.last_generation.insert(instrument_id, generation) != Some(generation)
+        if self
+            .last_generation
+            .insert(instrument_id, subscription.generation)
+            != Some(subscription.generation)
         {
             self.validation_disabled.remove(&instrument_id);
             self.mismatches.remove(&instrument_id);
+
+            if !is_snapshot {
+                // A new stream opens with its snapshot. An update seen first is one queued under
+                // the retired subscription and consumed under this one; applying it would put the
+                // retired stream's levels into the replacement's book, so the book is cleared
+                // and the stream waits for the snapshot.
+                log::debug!(
+                    "Dropping L2 update for {} from a retired subscription: awaiting the \
+                     replacement's snapshot",
+                    book.symbol
+                );
+                self.awaiting_snapshot
+                    .entry(instrument_id)
+                    .or_insert(SnapshotWait {
+                        since: ts_init,
+                        attempts: 0,
+                    });
+
+                if self.books.remove(&instrument_id).is_some() {
+                    let ts_event = datetime_to_nanos(book.timestamp, "book.timestamp")?;
+                    let mut clear =
+                        OrderBookDelta::clear(instrument_id, sequence, ts_event, ts_init);
+                    clear.flags |= RecordFlag::F_LAST as u8;
+
+                    return Ok(L2BookOutcome {
+                        deltas: Some((
+                            OrderBookDeltas::new(instrument_id, vec![clear]),
+                            sequence + 1,
+                        )),
+                        resync: None,
+                    });
+                }
+
+                return Ok(L2BookOutcome::default());
+            }
         }
 
         if is_snapshot {
             self.awaiting_snapshot.remove(&instrument_id);
-        } else if self.awaiting_snapshot.contains(&instrument_id) {
+        } else if self.awaiting_snapshot.contains_key(&instrument_id) {
             log::debug!(
-                "Dropping L2 update for {} while awaiting the snapshot after a checksum mismatch",
+                "Dropping L2 update for {} while awaiting the snapshot",
                 book.symbol
             );
             return Ok(L2BookOutcome::default());
@@ -198,7 +366,7 @@ impl L2BookState {
             book_state.apply_deltas(&OrderBookDeltas::new(instrument_id, deltas.clone()))
         {
             log::error!("Failed to apply Kraken L2 deltas to shadow book: {e}");
-        } else if let Some(depth) = depth {
+        } else {
             prune_deltas_to_depth(
                 book_state,
                 depth,
@@ -250,7 +418,13 @@ impl L2BookState {
                     book.symbol,
                 );
                 self.books.remove(&instrument_id);
-                self.awaiting_snapshot.insert(instrument_id);
+                self.awaiting_snapshot.insert(
+                    instrument_id,
+                    SnapshotWait {
+                        since: ts_init,
+                        attempts: 0,
+                    },
+                );
 
                 let ts_event = deltas.last().map_or(ts_init, |delta| delta.ts_event);
                 let mut clear =
@@ -265,8 +439,8 @@ impl L2BookState {
                     )),
                     resync: Some(L2ResyncRequest {
                         instrument_id,
-                        depth,
-                        generation: subscription.map(|s| s.generation),
+                        depth: Some(depth),
+                        generation: Some(subscription.generation),
                     }),
                 });
             }
@@ -650,7 +824,7 @@ mod tests {
                 .unwrap();
         }
 
-        state.reset_after_reconnect();
+        state.reset_after_reconnect(TS);
 
         let outcome = state
             .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
@@ -738,6 +912,489 @@ mod tests {
             "the third mismatch stops resubscribing although each snapshot validated"
         );
         assert!(final_strike.deltas.is_some(), "the update is kept");
+    }
+
+    /// `secs` seconds after `TS`.
+    fn at(secs: u64) -> UnixNanos {
+        UnixNanos::new(TS.as_u64() + secs * 1_000_000_000)
+    }
+
+    /// Clears the book with a mismatching snapshot at `TS`, so the wait for the snapshot starts.
+    fn mismatch_at_ts(state: &mut L2BookState, instrument: &InstrumentAny) {
+        let mut bad = book_data(GUIDE_SNAPSHOT);
+        bad.checksum = Some(1);
+        let outcome = state
+            .process_book(&bad, instrument, 0, true, Some(sub(10)), TS)
+            .unwrap();
+        assert!(outcome.resync.is_some(), "the mismatch requests a resync");
+        assert!(!state.books.contains_key(&instrument.id()));
+    }
+
+    /// A book whose snapshot arrives inside the wait is never requested again, before or after
+    /// the snapshot.
+    #[rstest]
+    fn test_a_snapshot_within_the_wait_is_not_requested_again() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let held = [(instrument.id(), sub(10))];
+        mismatch_at_ts(&mut state, &instrument);
+
+        assert!(state.overdue_snapshots(at(5), &held).is_empty());
+
+        let fresh = state
+            .process_book(
+                &book_data(GUIDE_SNAPSHOT),
+                &instrument,
+                22,
+                true,
+                Some(sub(10)),
+                at(6),
+            )
+            .unwrap();
+        assert!(fresh.deltas.is_some() && fresh.resync.is_none());
+
+        assert!(state.overdue_snapshots(at(60), &held).is_empty());
+        assert!(!state.awaiting_snapshot.contains_key(&instrument.id()));
+    }
+
+    /// A cleared book whose snapshot is late is requested again under the held generation and
+    /// depth, and not again before the doubled wait has passed.
+    #[rstest]
+    fn test_an_overdue_snapshot_is_requested_again_once_per_doubled_wait() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        let held = [(instrument_id, sub(10))];
+        mismatch_at_ts(&mut state, &instrument);
+
+        assert!(state.overdue_snapshots(at(9), &held).is_empty());
+
+        let requests = state.overdue_snapshots(at(10), &held);
+        assert_eq!(
+            requests,
+            vec![L2ResyncRequest {
+                instrument_id,
+                depth: Some(10),
+                generation: Some(7),
+            }]
+        );
+        assert_eq!(
+            state.awaiting_snapshot[&instrument_id],
+            SnapshotWait {
+                since: at(10),
+                attempts: 1,
+            }
+        );
+
+        assert!(
+            state.overdue_snapshots(at(29), &held).is_empty(),
+            "the second wait is twice the first"
+        );
+        assert_eq!(state.overdue_snapshots(at(30), &held).len(), 1);
+        assert_eq!(state.awaiting_snapshot[&instrument_id].attempts, 2);
+    }
+
+    /// At the cap no further request goes out; updates are still dropped and a later snapshot
+    /// resumes processing.
+    #[rstest]
+    fn test_the_request_cap_leaves_the_book_cleared_until_a_snapshot() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        let held = [(instrument_id, sub(10))];
+        mismatch_at_ts(&mut state, &instrument);
+
+        let mut now = TS;
+        for attempt in 0..MAX_SNAPSHOT_REQUESTS {
+            now = UnixNanos::new(now.as_u64() + (SNAPSHOT_TIMEOUT_NS << attempt));
+            assert_eq!(
+                state.overdue_snapshots(now, &held).len(),
+                1,
+                "request {} is made",
+                attempt + 1
+            );
+        }
+        assert_eq!(
+            state.awaiting_snapshot[&instrument_id].attempts,
+            MAX_SNAPSHOT_REQUESTS
+        );
+
+        assert!(
+            state.overdue_snapshots(at(100_000), &held).is_empty(),
+            "no request beyond the cap"
+        );
+
+        let dropped = state
+            .process_book(
+                &book_data(GUIDE_UPDATE),
+                &instrument,
+                22,
+                false,
+                Some(sub(10)),
+                at(100_000),
+            )
+            .unwrap();
+        assert!(dropped.deltas.is_none() && dropped.resync.is_none());
+
+        let fresh = state
+            .process_book(
+                &book_data(GUIDE_SNAPSHOT),
+                &instrument,
+                22,
+                true,
+                Some(sub(10)),
+                at(100_001),
+            )
+            .unwrap();
+        assert!(fresh.deltas.is_some() && fresh.resync.is_none());
+        assert!(!state.awaiting_snapshot.contains_key(&instrument_id));
+    }
+
+    /// A late snapshot for a subscription the user replaced is requested under the replacement's
+    /// generation and depth, so the recovery acts on the live subscription.
+    #[rstest]
+    fn test_an_overdue_snapshot_is_requested_for_the_replacement() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        mismatch_at_ts(&mut state, &instrument);
+
+        let replacement = L2Subscription {
+            depth: 100,
+            generation: 8,
+        };
+        let requests = state.overdue_snapshots(at(10), &[(instrument_id, replacement)]);
+
+        assert_eq!(
+            requests,
+            vec![L2ResyncRequest {
+                instrument_id,
+                depth: Some(100),
+                generation: Some(8),
+            }]
+        );
+    }
+
+    /// A cancelled subscription owes no snapshot: its wait is dropped and nothing is requested.
+    #[rstest]
+    fn test_a_cancelled_subscription_drops_its_wait() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        mismatch_at_ts(&mut state, &instrument);
+
+        assert!(state.overdue_snapshots(at(10), &[]).is_empty());
+        assert!(!state.awaiting_snapshot.contains_key(&instrument.id()));
+    }
+
+    /// An instrument whose validation is off keeps its book, whether the cap switched it off or the
+    /// configuration did, so it is never overdue.
+    #[rstest]
+    fn test_a_validation_disabled_instrument_is_never_overdue() {
+        let instrument = instrument(1, None);
+        let held = [(instrument.id(), sub(10))];
+        let mut bad = book_data(GUIDE_SNAPSHOT);
+        bad.checksum = Some(1);
+
+        let mut struck_out = L2BookState::new(true);
+        for _ in 0..MAX_CONSECUTIVE_CHECKSUM_MISMATCHES {
+            struck_out
+                .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
+                .unwrap();
+        }
+        assert!(struck_out.validation_disabled.contains(&instrument.id()));
+        assert!(struck_out.books.contains_key(&instrument.id()));
+        assert!(struck_out.overdue_snapshots(at(100_000), &held).is_empty());
+        assert!(struck_out.awaiting_snapshot.is_empty());
+
+        let mut configured_off = L2BookState::new(false);
+        configured_off
+            .process_book(&bad, &instrument, 0, true, Some(sub(10)), TS)
+            .unwrap();
+        assert!(configured_off.books.contains_key(&instrument.id()));
+        assert!(
+            configured_off
+                .overdue_snapshots(at(100_000), &held)
+                .is_empty()
+        );
+        assert!(configured_off.awaiting_snapshot.is_empty());
+    }
+
+    /// A held subscription that never produced a book owes a snapshot: the wait starts at the
+    /// first check and the request goes out once the timeout has passed.
+    #[rstest]
+    fn test_a_lost_initial_snapshot_becomes_overdue() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        let held = [(instrument_id, sub(10))];
+
+        assert!(state.overdue_snapshots(TS, &held).is_empty());
+        assert_eq!(
+            state.awaiting_snapshot[&instrument_id],
+            SnapshotWait {
+                since: TS,
+                attempts: 0,
+            }
+        );
+        assert!(state.overdue_snapshots(at(9), &held).is_empty());
+
+        let requests = state.overdue_snapshots(at(10), &held);
+        assert_eq!(
+            requests,
+            vec![L2ResyncRequest {
+                instrument_id,
+                depth: Some(10),
+                generation: Some(7),
+            }]
+        );
+    }
+
+    /// A reconnect arms the wait for every instrument that had a book, so a replay whose snapshot
+    /// the venue drops is requested after the timeout.
+    #[rstest]
+    fn test_a_reconnect_arms_the_wait_for_every_book() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        let held = [(instrument_id, sub(10))];
+        state
+            .process_book(
+                &book_data(GUIDE_SNAPSHOT),
+                &instrument,
+                0,
+                true,
+                Some(sub(10)),
+                TS,
+            )
+            .unwrap();
+        assert!(state.books.contains_key(&instrument_id));
+
+        state.reset_after_reconnect(at(1));
+
+        assert!(state.books.is_empty());
+        assert_eq!(
+            state.awaiting_snapshot[&instrument_id],
+            SnapshotWait {
+                since: at(1),
+                attempts: 0,
+            }
+        );
+        assert!(state.overdue_snapshots(at(10), &held).is_empty());
+        assert_eq!(state.overdue_snapshots(at(11), &held).len(), 1);
+    }
+
+    /// A reconnect restarts a wait already under way: the replayed subscription gets the full
+    /// allowance of requests, counted from the reconnect.
+    #[rstest]
+    fn test_a_reconnect_restarts_a_wait_under_way() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        let held = [(instrument_id, sub(10))];
+        mismatch_at_ts(&mut state, &instrument);
+        assert_eq!(state.overdue_snapshots(at(10), &held).len(), 1);
+        assert_eq!(state.awaiting_snapshot[&instrument_id].attempts, 1);
+
+        state.reset_after_reconnect(at(15));
+
+        assert_eq!(
+            state.awaiting_snapshot[&instrument_id],
+            SnapshotWait {
+                since: at(15),
+                attempts: 0,
+            }
+        );
+        assert!(state.overdue_snapshots(at(24), &held).is_empty());
+        assert_eq!(state.overdue_snapshots(at(25), &held).len(), 1);
+        assert_eq!(state.awaiting_snapshot[&instrument_id].attempts, 1);
+    }
+
+    /// Snapshots that arrive after the watchdog asked again are processed as usual: both the late
+    /// one and the requested one apply, request nothing and leave no wait behind.
+    #[rstest]
+    fn test_snapshots_after_a_watchdog_request_are_processed() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        let held = [(instrument_id, sub(10))];
+        mismatch_at_ts(&mut state, &instrument);
+        assert_eq!(state.overdue_snapshots(at(10), &held).len(), 1);
+
+        for ts in [at(11), at(12)] {
+            let outcome = state
+                .process_book(
+                    &book_data(GUIDE_SNAPSHOT),
+                    &instrument,
+                    22,
+                    true,
+                    Some(sub(10)),
+                    ts,
+                )
+                .unwrap();
+            assert!(outcome.resync.is_none());
+            assert_eq!(
+                outcome.deltas.expect("the snapshot applies").0.deltas.len(),
+                21
+            );
+        }
+
+        assert!(state.books.contains_key(&instrument_id));
+        assert!(!state.awaiting_snapshot.contains_key(&instrument_id));
+        assert!(state.overdue_snapshots(at(100), &held).is_empty());
+    }
+
+    /// An update consumed under a generation whose snapshot has not been seen belongs to the
+    /// retired stream: it is dropped without validation, the book is cleared downstream, the
+    /// instrument waits for the snapshot, and the snapshot opens the stream with validation on.
+    #[rstest]
+    fn test_an_update_under_a_new_generation_is_dropped_until_its_snapshot() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        let retired = L2Subscription {
+            depth: 10,
+            generation: 1,
+        };
+        let replacement = L2Subscription {
+            depth: 10,
+            generation: 2,
+        };
+        state
+            .process_book(
+                &book_data(GUIDE_SNAPSHOT),
+                &instrument,
+                0,
+                true,
+                Some(retired),
+                TS,
+            )
+            .unwrap();
+
+        let mut bad_update = book_data(GUIDE_UPDATE);
+        bad_update.checksum = Some(1);
+        let outcome = state
+            .process_book(
+                &bad_update,
+                &instrument,
+                21,
+                false,
+                Some(replacement),
+                at(1),
+            )
+            .unwrap();
+
+        assert!(
+            outcome.resync.is_none(),
+            "a retired frame must not trigger a recovery against the replacement"
+        );
+        let (deltas, next_sequence) = outcome.deltas.expect("the downstream book is cleared");
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(deltas.deltas[0].sequence, 21);
+        assert!(RecordFlag::F_LAST.matches(deltas.deltas[0].flags));
+        assert_eq!(next_sequence, 22);
+        assert!(!state.books.contains_key(&instrument_id));
+        assert_eq!(
+            state.awaiting_snapshot[&instrument_id],
+            SnapshotWait {
+                since: at(1),
+                attempts: 0,
+            }
+        );
+
+        let snapshot = state
+            .process_book(
+                &book_data(GUIDE_SNAPSHOT),
+                &instrument,
+                22,
+                true,
+                Some(replacement),
+                at(2),
+            )
+            .unwrap();
+        assert!(snapshot.resync.is_none());
+        assert_eq!(
+            snapshot
+                .deltas
+                .expect("the snapshot applies")
+                .0
+                .deltas
+                .len(),
+            21
+        );
+        assert!(!state.awaiting_snapshot.contains_key(&instrument_id));
+        assert!(!state.mismatches.contains_key(&instrument_id));
+
+        let validated = state
+            .process_book(
+                &bad_update,
+                &instrument,
+                43,
+                false,
+                Some(replacement),
+                at(3),
+            )
+            .unwrap();
+        assert!(
+            validated.resync.is_some(),
+            "validation is on for the replacement's stream"
+        );
+    }
+
+    /// The first frame of a subscription must be its snapshot: an update seen first is dropped and
+    /// the instrument waits for the snapshot.
+    #[rstest]
+    fn test_an_update_as_the_first_frame_is_dropped_and_awaited() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+
+        let outcome = state
+            .process_book(
+                &book_data(GUIDE_UPDATE),
+                &instrument,
+                0,
+                false,
+                Some(sub(10)),
+                TS,
+            )
+            .unwrap();
+
+        assert!(outcome.deltas.is_none() && outcome.resync.is_none());
+        assert!(!state.books.contains_key(&instrument_id));
+        assert_eq!(
+            state.awaiting_snapshot[&instrument_id],
+            SnapshotWait {
+                since: TS,
+                attempts: 0,
+            }
+        );
+    }
+
+    /// A frame with no subscription behind it belongs to a stream that is ending: it produces
+    /// neither deltas nor a recovery and leaves no state.
+    #[rstest]
+    fn test_a_frame_without_a_subscription_is_dropped() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let mut bad = book_data(GUIDE_SNAPSHOT);
+        bad.checksum = Some(1);
+
+        let snapshot = state
+            .process_book(&bad, &instrument, 0, true, None, TS)
+            .unwrap();
+        assert!(snapshot.deltas.is_none());
+        assert!(snapshot.resync.is_none());
+
+        let update = state
+            .process_book(&book_data(GUIDE_UPDATE), &instrument, 0, false, None, TS)
+            .unwrap();
+        assert!(update.deltas.is_none());
+        assert!(update.resync.is_none());
+
+        assert!(state.books.is_empty());
+        assert!(state.awaiting_snapshot.is_empty());
+        assert!(state.last_generation.is_empty());
     }
 
     #[rstest]

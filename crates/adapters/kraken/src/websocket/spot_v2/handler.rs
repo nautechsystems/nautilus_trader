@@ -282,9 +282,10 @@ impl SpotFeedHandler {
                         }
                     } else {
                         log::warn!(
-                            "Subscription failed: error={:?}, req_id={:?}",
+                            "Subscription failed: error={:?}, req_id={:?}, symbol={:?}",
                             sub.error,
-                            sub.req_id
+                            sub.req_id,
+                            sub.symbol
                         );
                     }
                 }
@@ -293,9 +294,10 @@ impl SpotFeedHandler {
                         log::debug!("Unsubscription confirmed: req_id={:?}", unsub.req_id);
                     } else {
                         log::warn!(
-                            "Unsubscription failed: error={:?}, req_id={:?}",
+                            "Unsubscription failed: error={:?}, req_id={:?}, symbol={:?}",
                             unsub.error,
-                            unsub.req_id
+                            unsub.req_id,
+                            unsub.symbol
                         );
                     }
                 }
