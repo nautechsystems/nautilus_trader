@@ -39,6 +39,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid account updates retaining balances reported at zero (#5210), thanks @XBeg9
 - Fixed Hyperliquid reduce-only filled order lookups overstating fill quantity (#5222), thanks @XBeg9
 - Fixed Kraken spot and futures wallets retaining balances reported at zero (#5186), thanks @zhaow-de
+- Fixed Polymarket bounded restarts omitting confirmed partial fills from resting orders
 
 ### Internal Improvements
 

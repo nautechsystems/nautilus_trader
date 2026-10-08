@@ -1500,6 +1500,51 @@ Mass status caps REST matched quantity using fills already applied in core and a
 pending settlement from creating an inferred fill, with or without a lookback window. Applied fills
 outside the lookback window still contribute to the cap.
 
+For a bounded lookback, the adapter also recovers unapplied trades referenced by each in-scope open order's
+`associate_trades`. It reuses trades returned within the window and fetches missing references by
+trade ID without a time filter. Recovery validates the trade ID, order leg, ownership, instrument,
+and side before admitting a confirmed fill. Duplicate references and overlapping history produce
+one fill per order leg and trade ID. Missing uncached references require serial requests; many older
+references can exceed the node's `timeout_reconciliation` budget (30 seconds by default) and fail
+startup. Increase that timeout when restoring such orders. References already applied to the cached venue
+order require no lookup: their quantities, trade IDs, and commissions remain in its history, and recovery
+does not append them again. Applied fills returned within the window still pass through position reconciliation.
+Missing unapplied references, contradictory evidence, and request failures fail mass status rather than
+publish incomplete recovery. References require validation regardless of the matched
+counter. Before capping a bounded open-order report, the adapter rejects a matched quantity below its
+combined confirmed and cached fill evidence, counting each fill once.
+
+This restores a resting BUY or SELL order's older partial fill with the same [trade ID as live
+fills](#trade-id-derivation), execution price, and reconstructed commission before later completion
+adds the remaining quantity. Wallet holdings do not establish which order filled. If the venue omits
+trade references, matched quantity remains capped to confirmed evidence and fills already applied in
+core. Session mode uses the same trade recovery but omits wallet-wide positions; on an empty cache,
+startup restores historical order fills without opening a session position. Taker commission
+reconstruction uses the loaded instrument fee schedule; it does not establish that the schedule is
+unchanged since an older execution. Maker commission remains zero.
+
+Position alignment first uses the combined window and recovered fills. If those fills do not align
+with a wallet position, the adapter tries the original window fills for that position. This preserves
+closed order reports, real trade IDs, and commissions supported by the bounded window. If incomplete
+position history requires a synthetic opening fill, realized PnL for reconstructed closed lifecycles
+is an estimate.
+
+For instruments without a retained open position, bounded mass status checks that default position
+reconciliation preserves every unapplied open-order fill, including fills within the window. It fails
+if that adjustment discards unapplied history, for example when other orders closed the position and opened
+another one. Restore a consistent cache containing the real order fills and their position history
+before retrying such a restart; clearing the cache alone does not resolve discarded history.
+This check assumes default position reconciliation even if the node filters position
+reports or excludes that instrument from position reconciliation.
+
+:::warning
+This recovery does not migrate cached inferred fills into venue fills. Before reusing orders and
+positions containing such fills, start with a clean cache or migrate them with a custom script that
+preserves their history. The cache's in-session purge methods skip open orders and positions.
+[Cache database configuration](../concepts/cache.md#database-configuration) describes restart settings:
+`CacheConfig.flush_on_start = true` clears all of the trader's cached state, including data for other adapters.
+:::
+
 Runtime order checks fetch confirmed trade history when the venue's matched quantity exceeds the
 local order's applied fill quantity. Unpaired fill reports retain the normal fill-only path.
 
