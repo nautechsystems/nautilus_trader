@@ -271,17 +271,24 @@ Kraken sends a CRC32 checksum with each Spot `book` snapshot and update, compute
 levels of each side at the venue's wire scales. By default the adapter validates it against its
 shadow book, rendering prices at `pair_decimals` and quantities at `lot_decimals` from
 `AssetPairs`; for a handful of pairs the price scale is one digit finer than the tick size, so the
-instrument carries it when the two differ. On mismatch the adapter emits a `Clear` delta, drops the
-shadow book, unsubscribes and resubscribes the symbol with a snapshot, and ignores further updates
-until that snapshot arrives. The recovery is serialized with the user's own subscription changes,
-so a replacement subscription is never cancelled by a stale recovery, and frames of a replaced
-subscription that arrive before its snapshot are dropped. If the snapshot does not arrive within
-10 seconds the data client requests it again, doubling the wait each time up to five requests,
-then logs an error and leaves the book cleared until the next subscription change or reconnect;
-this watchdog is the only retry for a `book` recovery, and a replacement subscription starts its
-own wait rather than inheriting its predecessor's. A `book` subscribe the venue rejects ends the
-wait at once with an error log naming the venue's reason, and the book stays cleared until the
-next subscription change or reconnect.
+instrument carries it when it is finer (a coarser scale would truncate the price digits). On
+mismatch the adapter emits a `Clear` delta, drops the shadow book, unsubscribes and resubscribes
+the symbol at its depth with a snapshot, and ignores further updates until that snapshot arrives;
+every `book` unsubscribe names the depth, since the venue keys the subscription by symbol and
+depth. The recovery is serialized with the user's own subscription changes, so a replacement
+subscription is never cancelled by a stale recovery, and frames of a replaced subscription that
+arrive before its snapshot are dropped. If the snapshot does not arrive within 10 seconds the data
+client requests it again, doubling the wait each time up to five requests, then logs an error and
+leaves the book cleared until the next subscription change or reconnect; this watchdog is the only
+retry for a `book` recovery, and a replacement subscription starts its own wait rather than
+inheriting its predecessor's. A `book` subscribe the venue rejects drops the book with an error log
+naming the venue's reason and when the next request is due: the watchdog asks again after the two
+longest waits only (80 and 160 seconds), so a pair the venue will not serve is given up after two
+more rejections while a transient rejection recovers. A reconnect replays each `book` subscribe
+under its original request id, so a replay the venue rejects is not matched to a request and is
+noticed by the watchdog within its base wait of 10 seconds. A shadow book dropped off the frame
+path, by a rejection or by the watchdog retiring a replaced subscription's book, is cleared
+downstream with a `Clear` delta.
 Three mismatches on one instrument with no valid update between them switch validation off for
 that instrument with an error log and keep its book as received, so a book the venue hashes
 differently cannot loop on resubscription; a snapshot that validates does not reset the count.

@@ -710,14 +710,18 @@ fn price_scale_info(definition: &AssetPairInfo, price_precision: u8) -> Option<P
     (!map.is_empty()).then(|| Params::from_index_map(map))
 }
 
-/// Records `pair_decimals` under [`KRAKEN_PAIR_DECIMALS_KEY`] when it differs from
+/// Records `pair_decimals` under [`KRAKEN_PAIR_DECIMALS_KEY`] when it is finer than
 /// `price_precision`; the checksum falls back to the tick-size precision when the key is absent.
+///
+/// A coarser `pair_decimals` is not recorded: rendering a price at fewer decimals than its
+/// precision truncates rather than rounds, so hashing at that scale would mismatch every message,
+/// while the tick-size precision reproduces the venue's digits.
 fn insert_price_scale(
     map: &mut IndexMap<String, serde_json::Value>,
     definition: &AssetPairInfo,
     price_precision: u8,
 ) {
-    if definition.pair_decimals != price_precision {
+    if definition.pair_decimals > price_precision {
         map.insert(
             KRAKEN_PAIR_DECIMALS_KEY.to_string(),
             serde_json::Value::from(u64::from(definition.pair_decimals)),
@@ -2411,9 +2415,10 @@ mod tests {
         assert!(result.starts_with('O'));
     }
 
-    /// The wire price scale is recorded only when `pair_decimals` differs from the tick precision.
+    /// The wire price scale is recorded only when `pair_decimals` is finer than the tick
+    /// precision: an equal or coarser scale leaves the key absent.
     #[rstest]
-    fn test_pair_info_records_pair_decimals_only_when_they_differ() {
+    fn test_pair_info_records_pair_decimals_only_when_finer_than_the_tick() {
         let json = load_test_json("http_asset_pairs_tokenized.json");
         let response: KrakenResponse<AssetPairsResponse> = serde_json::from_str(&json).unwrap();
         let pairs = response.result.unwrap();
@@ -2425,6 +2430,19 @@ mod tests {
                 .is_none_or(|info| !info.contains_key(KRAKEN_PAIR_DECIMALS_KEY)),
             "a scale equal to the tick precision is not recorded"
         );
+
+        let mut coarser = definition.clone();
+        coarser.pair_decimals = same.price_precision() - 1;
+        let tokenized = parse_tokenized_instrument(pair_name, &coarser, TS, TS).unwrap();
+        let spot = parse_spot_instrument(pair_name, &coarser, TS, TS).unwrap();
+        for instrument in [tokenized, spot] {
+            assert!(
+                instrument
+                    .info()
+                    .is_none_or(|info| !info.contains_key(KRAKEN_PAIR_DECIMALS_KEY)),
+                "a scale coarser than the tick precision is not recorded"
+            );
+        }
 
         let mut finer = definition.clone();
         finer.pair_decimals = same.price_precision() + 1;

@@ -33,7 +33,7 @@ use parking_lot::Mutex;
 use ustr::Ustr;
 
 use super::{
-    checksum::{crc32_ieee, push_scaled},
+    checksum::push_scaled,
     messages::KrakenWsBookData,
     parse::{datetime_to_nanos, parse_book_deltas},
 };
@@ -130,6 +130,25 @@ pub(crate) struct L2BookOutcome {
     pub(crate) resync: Option<L2ResyncRequest>,
 }
 
+/// What one check of the held subscriptions' snapshots produced.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct L2SnapshotCheck {
+    /// The snapshots to request again.
+    pub(crate) requests: Vec<L2ResyncRequest>,
+    /// Held instruments whose shadow book the check dropped, so the consumer's book is to be
+    /// cleared; a book dropped with its cancelled subscription has no consumer and is left out.
+    pub(crate) cleared: Vec<InstrumentId>,
+}
+
+/// What rejecting a `book` subscribe did to the instrument's state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct L2Rejection {
+    /// The rejection dropped a shadow book, so the consumer's book is to be cleared.
+    pub(crate) cleared: bool,
+    /// When the snapshot is requested again, or `None` at the request cap.
+    pub(crate) next_request_due: Option<UnixNanos>,
+}
+
 /// Checksum mismatches after which an instrument's validation is switched off.
 ///
 /// A book the venue hashes differently from the shadow book would otherwise resubscribe forever.
@@ -146,15 +165,25 @@ pub(crate) const SNAPSHOT_TIMEOUT_NS: u64 = 10_000_000_000;
 /// before; a venue that has not answered in that time is not going to.
 pub(crate) const MAX_SNAPSHOT_REQUESTS: u32 = 5;
 
+/// The attempts a wait is advanced to when the venue rejects the subscribe, so the snapshot is
+/// asked for again after the two longest waits only (80 and 160 seconds) and then stops at the
+/// cap.
+///
+/// A pair the venue will not serve costs two more rejections; a rejection the venue takes back,
+/// such as a rate limit while a reconnect fans out many recoveries, recovers. Ending the wait
+/// outright would leave a transiently rejected pair cleared until the next subscription change or
+/// reconnect.
+pub(crate) const REJECTED_SUBSCRIBE_ATTEMPTS: u32 = MAX_SNAPSHOT_REQUESTS - 2;
+
 /// A cleared book waiting for the snapshot its subscription owes.
 ///
 /// `since` is when the latest request for the snapshot went out and `attempts` how many the
 /// watchdog has made, so the next one is due `SNAPSHOT_TIMEOUT_NS << attempts` after `since`.
 /// `generation` is the subscription the wait belongs to: a replacement subscription gets a fresh
-/// wait rather than inheriting one capped or advanced under its predecessor. A snapshot, a
-/// cancelled subscription or a subscribe the venue rejects removes the entry; at
-/// `MAX_SNAPSHOT_REQUESTS` it stays without further requests and the book stays cleared until the
-/// next subscription change or reconnect.
+/// wait rather than inheriting one capped or advanced under its predecessor. A snapshot or a
+/// cancelled subscription removes the entry; a subscribe the venue rejects advances it to
+/// `REJECTED_SUBSCRIBE_ATTEMPTS`; at `MAX_SNAPSHOT_REQUESTS` it stays without further requests
+/// and the book stays cleared until the next subscription change or reconnect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SnapshotWait {
     pub(crate) since: UnixNanos,
@@ -169,6 +198,17 @@ impl SnapshotWait {
             attempts: 0,
             generation,
         }
+    }
+
+    /// How long after `since` the next request is due.
+    const fn timeout_ns(&self) -> u64 {
+        SNAPSHOT_TIMEOUT_NS << self.attempts
+    }
+
+    /// When the next request is due, or `None` at the request cap.
+    fn next_request_due(&self) -> Option<UnixNanos> {
+        (self.attempts < MAX_SNAPSHOT_REQUESTS)
+            .then(|| UnixNanos::new(self.since.as_u64() + self.timeout_ns()))
     }
 }
 
@@ -191,10 +231,6 @@ pub(crate) struct L2BookState {
     validation_disabled: AHashSet<InstrumentId>,
     /// The subscription generation last seen per instrument; a new one re-enables validation.
     last_generation: AHashMap<InstrumentId, u64>,
-    /// Instruments whose `book` subscribe the venue rejected, by the generation it rejected. The
-    /// watchdog asks nothing for them: a pair the venue will not serve answers no request. A new
-    /// generation or a reconnect clears the entry, since each sends a subscribe of its own.
-    rejected: AHashMap<InstrumentId, u64>,
 }
 
 impl L2BookState {
@@ -207,7 +243,6 @@ impl L2BookState {
             mismatches: AHashMap::new(),
             validation_disabled: AHashSet::new(),
             last_generation: AHashMap::new(),
-            rejected: AHashMap::new(),
         }
     }
 
@@ -216,10 +251,10 @@ impl L2BookState {
     /// The replayed subscriptions deliver fresh snapshots, so every instrument that had a book or
     /// a wait gets a wait starting at `now` under its last seen generation: an
     /// existing wait is restarted, not preserved, since the replay is a new subscribe with the
-    /// full allowance of requests. A replay the venue drops is then noticed by
-    /// [`Self::overdue_snapshots`]. The replacement stream gets the full allowance of mismatches;
-    /// an instrument whose validation is off stays off. Rejections and the unsubscribed-frame
-    /// warnings are cleared, since the replay sends every subscribe again.
+    /// full allowance of requests, which also covers a wait a rejected subscribe advanced. A replay
+    /// the venue drops is then noticed by [`Self::overdue_snapshots`]. The replacement stream gets
+    /// the full allowance of mismatches; an instrument whose validation is off stays off. The
+    /// unsubscribed-frame warnings are cleared, since the replay sends every subscribe again.
     pub(crate) fn reset_after_reconnect(&mut self, now: UnixNanos) {
         let mut restarted: Vec<(InstrumentId, u64)> = self
             .awaiting_snapshot
@@ -239,32 +274,64 @@ impl L2BookState {
 
         self.books.clear();
         self.mismatches.clear();
-        self.rejected.clear();
         self.unsubscribed_warned.clear();
     }
 
     /// Records that the venue rejected the `book` subscribe sent for `generation`.
     ///
-    /// The wait ends and the book is dropped: no snapshot is coming, and asking again for a pair
-    /// the venue will not serve would only repeat the rejection. The watchdog leaves the
-    /// instrument alone until a new generation or a reconnect sends a subscribe of its own.
-    pub(crate) fn reject_subscription(&mut self, instrument_id: InstrumentId, generation: u64) {
-        self.awaiting_snapshot.remove(&instrument_id);
-        self.books.remove(&instrument_id);
-        self.rejected.insert(instrument_id, generation);
+    /// The book is dropped, since no snapshot is coming, and the wait restarts at `now` with at
+    /// least `REJECTED_SUBSCRIBE_ATTEMPTS` made, keeping a higher count: the watchdog asks again
+    /// after the long waits only, so a pair the venue will not serve is given up after two more
+    /// rejections while a rejection the venue takes back recovers.
+    pub(crate) fn reject_subscription(
+        &mut self,
+        instrument_id: InstrumentId,
+        generation: u64,
+        now: UnixNanos,
+    ) -> L2Rejection {
+        let cleared = self.books.remove(&instrument_id).is_some();
+        let wait = self.arm_snapshot_wait(instrument_id, generation, now);
+        wait.since = now;
+        wait.attempts = wait.attempts.max(REJECTED_SUBSCRIBE_ATTEMPTS);
+
+        L2Rejection {
+            cleared,
+            next_request_due: wait.next_request_due(),
+        }
+    }
+
+    /// The wait for `generation`'s snapshot: armed at `now` unless one for that generation is
+    /// under way, which keeps its attempts. A wait left by another generation is replaced, since
+    /// the replacement is a new subscribe with the full allowance of requests.
+    fn arm_snapshot_wait(
+        &mut self,
+        instrument_id: InstrumentId,
+        generation: u64,
+        now: UnixNanos,
+    ) -> &mut SnapshotWait {
+        let wait = self
+            .awaiting_snapshot
+            .entry(instrument_id)
+            .or_insert(SnapshotWait::fresh(now, generation));
+
+        if wait.generation != generation {
+            *wait = SnapshotWait::fresh(now, generation);
+        }
+
+        wait
     }
 
     /// Requests the snapshot again for every held subscription whose book is overdue.
     ///
     /// `held` is every `book` subscription the client holds. Per instrument:
-    /// - not held: its book, wait, generation, rejection and warning are dropped, since a
-    ///   cancelled subscription delivers nothing and a later one is a new stream;
-    /// - held under the generation the venue rejected: nothing is asked, the book stays cleared;
-    ///   a different held generation clears the rejection and is treated as below;
+    /// - not held: its book, wait, generation and warning are dropped, since a cancelled
+    ///   subscription delivers nothing and a later one is a new stream; the book is not reported
+    ///   as cleared, since no consumer holds it;
     /// - held with a shadow book fed under the held generation: the snapshot has arrived, nothing
     ///   is owed (an instrument whose validation is off keeps its book, so it is never overdue);
     /// - held with a shadow book fed under an earlier generation: the book is the retired
-    ///   stream's and is dropped, and the replacement is treated as having no book;
+    ///   stream's and is dropped and reported as cleared, and the replacement is treated as having
+    ///   no book;
     /// - held without a book and without a wait under the held generation: a wait starts at
     ///   `now`, replacing one left by an earlier generation, which covers a subscribe or a
     ///   reconnect replay whose snapshot the venue dropped, with at most one tick of slack;
@@ -277,30 +344,21 @@ impl L2BookState {
         &mut self,
         now: UnixNanos,
         held: &[(InstrumentId, L2Subscription)],
-    ) -> Vec<L2ResyncRequest> {
-        let is_held =
-            |instrument_id: &InstrumentId| held.iter().any(|(held_id, _)| held_id == instrument_id);
+    ) -> L2SnapshotCheck {
+        let held_ids: AHashSet<InstrumentId> = held.iter().map(|(held_id, _)| *held_id).collect();
         self.awaiting_snapshot
-            .retain(|instrument_id, _| is_held(instrument_id));
-        self.books.retain(|instrument_id, _| is_held(instrument_id));
+            .retain(|instrument_id, _| held_ids.contains(instrument_id));
+        self.books
+            .retain(|instrument_id, _| held_ids.contains(instrument_id));
         self.last_generation
-            .retain(|instrument_id, _| is_held(instrument_id));
-        self.rejected
-            .retain(|instrument_id, _| is_held(instrument_id));
-        self.unsubscribed_warned.retain(is_held);
+            .retain(|instrument_id, _| held_ids.contains(instrument_id));
+        self.unsubscribed_warned
+            .retain(|instrument_id| held_ids.contains(instrument_id));
 
-        let mut requests = Vec::new();
+        let mut check = L2SnapshotCheck::default();
 
         for (instrument_id, subscription) in held {
             let generation = subscription.generation;
-
-            if let Some(rejected) = self.rejected.get(instrument_id) {
-                if *rejected == generation {
-                    continue;
-                }
-
-                self.rejected.remove(instrument_id);
-            }
 
             if self.books.contains_key(instrument_id) {
                 if self.last_generation.get(instrument_id) == Some(&generation) {
@@ -308,22 +366,16 @@ impl L2BookState {
                 }
 
                 self.books.remove(instrument_id);
+                check.cleared.push(*instrument_id);
             }
 
-            let wait = self
-                .awaiting_snapshot
-                .entry(*instrument_id)
-                .or_insert(SnapshotWait::fresh(now, generation));
-
-            if wait.generation != generation {
-                *wait = SnapshotWait::fresh(now, generation);
-            }
+            let wait = self.arm_snapshot_wait(*instrument_id, generation, now);
 
             if wait.attempts >= MAX_SNAPSHOT_REQUESTS {
                 continue;
             }
 
-            let timeout_ns = SNAPSHOT_TIMEOUT_NS << wait.attempts;
+            let timeout_ns = wait.timeout_ns();
             let waited_ns = now.saturating_duration_since(wait.since).as_u64();
 
             if waited_ns < timeout_ns {
@@ -347,13 +399,13 @@ impl L2BookState {
                 );
             }
 
-            requests.push(L2ResyncRequest {
+            check.requests.push(L2ResyncRequest {
                 instrument_id: *instrument_id,
                 generation,
             });
         }
 
-        requests
+        check
     }
 
     pub(crate) fn process_book(
@@ -396,9 +448,8 @@ impl L2BookState {
         let depth = subscription.depth;
 
         // A new subscription is a new stream: its validation starts afresh, so an instrument the
-        // cap switched off is validated again once the user resubscribes, a rejection recorded
-        // for an earlier subscribe is void, and a recurrence of frames with no subscription
-        // warns again.
+        // cap switched off is validated again once the user resubscribes, and a recurrence of
+        // frames with no subscription warns again.
         if self
             .last_generation
             .insert(instrument_id, subscription.generation)
@@ -406,7 +457,6 @@ impl L2BookState {
         {
             self.validation_disabled.remove(&instrument_id);
             self.mismatches.remove(&instrument_id);
-            self.rejected.remove(&instrument_id);
             self.unsubscribed_warned.remove(&instrument_id);
 
             if !is_snapshot {
@@ -420,14 +470,7 @@ impl L2BookState {
                      replacement's snapshot",
                     book.symbol
                 );
-                let wait = self
-                    .awaiting_snapshot
-                    .entry(instrument_id)
-                    .or_insert(SnapshotWait::fresh(ts_init, subscription.generation));
-
-                if wait.generation != subscription.generation {
-                    *wait = SnapshotWait::fresh(ts_init, subscription.generation);
-                }
+                self.arm_snapshot_wait(instrument_id, subscription.generation, ts_init);
 
                 if self.books.remove(&instrument_id).is_some() {
                     let ts_event = datetime_to_nanos(book.timestamp, "book.timestamp")?;
@@ -561,8 +604,8 @@ impl L2BookState {
 
 /// The scale the venue sends prices at.
 ///
-/// `AssetPairs` declares it as `pair_decimals`, carried on the instrument only when it differs from
-/// the tick-size precision the instrument's prices use.
+/// `AssetPairs` declares it as `pair_decimals`, carried on the instrument only when it is finer
+/// than the tick-size precision the instrument's prices use.
 fn price_wire_scale(instrument: &InstrumentAny) -> u8 {
     instrument
         .info()
@@ -590,7 +633,7 @@ pub(crate) fn compute_checksum(book: &OrderBook, price_scale: u8, qty_scale: u8)
         push_scaled(&mut s, &mut scratch, level.size_decimal(), qty_scale);
     }
 
-    crc32_ieee(s.as_bytes())
+    crc32fast::hash(s.as_bytes())
 }
 
 fn prune_deltas_to_depth(
@@ -1041,7 +1084,7 @@ mod tests {
         let held = [(instrument.id(), sub(10))];
         mismatch_at_ts(&mut state, &instrument);
 
-        assert!(state.overdue_snapshots(at(5), &held).is_empty());
+        assert!(state.overdue_snapshots(at(5), &held).requests.is_empty());
 
         let fresh = state
             .process_book(
@@ -1055,7 +1098,7 @@ mod tests {
             .unwrap();
         assert!(fresh.deltas.is_some() && fresh.resync.is_none());
 
-        assert!(state.overdue_snapshots(at(60), &held).is_empty());
+        assert!(state.overdue_snapshots(at(60), &held).requests.is_empty());
         assert!(!state.awaiting_snapshot.contains_key(&instrument.id()));
     }
 
@@ -1069,9 +1112,9 @@ mod tests {
         let held = [(instrument_id, sub(10))];
         mismatch_at_ts(&mut state, &instrument);
 
-        assert!(state.overdue_snapshots(at(9), &held).is_empty());
+        assert!(state.overdue_snapshots(at(9), &held).requests.is_empty());
 
-        let requests = state.overdue_snapshots(at(10), &held);
+        let requests = state.overdue_snapshots(at(10), &held).requests;
         assert_eq!(
             requests,
             vec![L2ResyncRequest {
@@ -1089,10 +1132,10 @@ mod tests {
         );
 
         assert!(
-            state.overdue_snapshots(at(29), &held).is_empty(),
+            state.overdue_snapshots(at(29), &held).requests.is_empty(),
             "the second wait is twice the first"
         );
-        assert_eq!(state.overdue_snapshots(at(30), &held).len(), 1);
+        assert_eq!(state.overdue_snapshots(at(30), &held).requests.len(), 1);
         assert_eq!(state.awaiting_snapshot[&instrument_id].attempts, 2);
     }
 
@@ -1110,7 +1153,7 @@ mod tests {
         for attempt in 0..MAX_SNAPSHOT_REQUESTS {
             now = UnixNanos::new(now.as_u64() + (SNAPSHOT_TIMEOUT_NS << attempt));
             assert_eq!(
-                state.overdue_snapshots(now, &held).len(),
+                state.overdue_snapshots(now, &held).requests.len(),
                 1,
                 "request {} is made",
                 attempt + 1
@@ -1122,7 +1165,10 @@ mod tests {
         );
 
         assert!(
-            state.overdue_snapshots(at(100_000), &held).is_empty(),
+            state
+                .overdue_snapshots(at(100_000), &held)
+                .requests
+                .is_empty(),
             "no request beyond the cap"
         );
 
@@ -1169,16 +1215,16 @@ mod tests {
         let held = [(instrument_id, replacement)];
 
         assert!(
-            state.overdue_snapshots(at(10), &held).is_empty(),
+            state.overdue_snapshots(at(10), &held).requests.is_empty(),
             "the predecessor's wait is not inherited"
         );
         assert_eq!(
             state.awaiting_snapshot[&instrument_id],
             SnapshotWait::fresh(at(10), 8)
         );
-        assert!(state.overdue_snapshots(at(19), &held).is_empty());
+        assert!(state.overdue_snapshots(at(19), &held).requests.is_empty());
 
-        let requests = state.overdue_snapshots(at(20), &held);
+        let requests = state.overdue_snapshots(at(20), &held).requests;
         assert_eq!(
             requests,
             vec![L2ResyncRequest {
@@ -1201,21 +1247,26 @@ mod tests {
         let mut now = TS;
         for attempt in 0..MAX_SNAPSHOT_REQUESTS {
             now = UnixNanos::new(now.as_u64() + (SNAPSHOT_TIMEOUT_NS << attempt));
-            assert_eq!(state.overdue_snapshots(now, &struck_out).len(), 1);
+            assert_eq!(state.overdue_snapshots(now, &struck_out).requests.len(), 1);
         }
         assert_eq!(
             state.awaiting_snapshot[&instrument_id].attempts,
             MAX_SNAPSHOT_REQUESTS
         );
         let later = UnixNanos::new(now.as_u64() + 1_000_000_000);
-        assert!(state.overdue_snapshots(later, &struck_out).is_empty());
+        assert!(
+            state
+                .overdue_snapshots(later, &struck_out)
+                .requests
+                .is_empty()
+        );
 
         let replacement = L2Subscription {
             depth: 10,
             generation: 8,
         };
         let held = [(instrument_id, replacement)];
-        assert!(state.overdue_snapshots(later, &held).is_empty());
+        assert!(state.overdue_snapshots(later, &held).requests.is_empty());
         assert_eq!(
             state.awaiting_snapshot[&instrument_id],
             SnapshotWait::fresh(later, 8)
@@ -1225,11 +1276,12 @@ mod tests {
         assert!(
             state
                 .overdue_snapshots(UnixNanos::new(due.as_u64() - 1), &held)
+                .requests
                 .is_empty(),
             "the replacement waits the base timeout"
         );
         assert_eq!(
-            state.overdue_snapshots(due, &held),
+            state.overdue_snapshots(due, &held).requests,
             vec![L2ResyncRequest {
                 instrument_id,
                 generation: 8,
@@ -1259,7 +1311,11 @@ mod tests {
             .unwrap();
         assert!(state.books.contains_key(&instrument_id));
 
-        assert!(state.overdue_snapshots(at(1), &[]).is_empty());
+        assert_eq!(
+            state.overdue_snapshots(at(1), &[]),
+            L2SnapshotCheck::default(),
+            "no consumer holds the unsubscribed book, so no clear is reported"
+        );
         assert!(
             !state.books.contains_key(&instrument_id),
             "the unsubscribed book is dropped"
@@ -1272,14 +1328,14 @@ mod tests {
             generation: 8,
         };
         let held = [(instrument_id, resubscribed)];
-        assert!(state.overdue_snapshots(at(2), &held).is_empty());
+        assert!(state.overdue_snapshots(at(2), &held).requests.is_empty());
         assert_eq!(
             state.awaiting_snapshot[&instrument_id],
             SnapshotWait::fresh(at(2), 8)
         );
-        assert!(state.overdue_snapshots(at(11), &held).is_empty());
+        assert!(state.overdue_snapshots(at(11), &held).requests.is_empty());
         assert_eq!(
-            state.overdue_snapshots(at(12), &held),
+            state.overdue_snapshots(at(12), &held).requests,
             vec![L2ResyncRequest {
                 instrument_id,
                 generation: 8,
@@ -1310,18 +1366,22 @@ mod tests {
             generation: 8,
         };
         let held = [(instrument_id, replacement)];
-        assert!(state.overdue_snapshots(at(1), &held).is_empty());
-        assert!(
-            !state.books.contains_key(&instrument_id),
-            "the retired book is dropped"
+        assert_eq!(
+            state.overdue_snapshots(at(1), &held),
+            L2SnapshotCheck {
+                requests: vec![],
+                cleared: vec![instrument_id],
+            },
+            "the retired book is dropped and the consumer told"
         );
+        assert!(!state.books.contains_key(&instrument_id));
         assert_eq!(
             state.awaiting_snapshot[&instrument_id],
             SnapshotWait::fresh(at(1), 8)
         );
 
         assert_eq!(
-            state.overdue_snapshots(at(11), &held),
+            state.overdue_snapshots(at(11), &held).requests,
             vec![L2ResyncRequest {
                 instrument_id,
                 generation: 8,
@@ -1329,70 +1389,121 @@ mod tests {
         );
     }
 
-    /// A subscribe the venue rejects ends the wait and drops the book, and the watchdog asks
-    /// nothing for that generation; a new generation is tried again, as is a reconnect's replay.
+    /// A subscribe the venue rejects drops the book and advances the wait: no request goes out
+    /// before the long wait, one at it, the cap is reached after the next, and each rejection keeps
+    /// the attempts already made.
     #[rstest]
-    fn test_a_rejected_subscription_is_left_alone_until_a_new_generation() {
+    fn test_a_rejected_subscription_is_asked_again_after_the_long_waits_then_capped() {
         let mut state = L2BookState::new(true);
         let instrument = instrument(1, None);
         let instrument_id = instrument.id();
         let held = [(instrument_id, sub(10))];
-        mismatch_at_ts(&mut state, &instrument);
-        assert!(state.awaiting_snapshot.contains_key(&instrument_id));
+        state
+            .process_book(
+                &book_data(GUIDE_SNAPSHOT),
+                &instrument,
+                0,
+                true,
+                Some(sub(10)),
+                TS,
+            )
+            .unwrap();
 
-        state.reject_subscription(instrument_id, 7);
+        let rejection = state.reject_subscription(instrument_id, 7, at(1));
 
-        assert!(!state.awaiting_snapshot.contains_key(&instrument_id));
+        assert!(rejection.cleared, "the book is dropped");
+        assert_eq!(rejection.next_request_due, Some(at(81)));
         assert!(!state.books.contains_key(&instrument_id));
-        assert_eq!(state.rejected.get(&instrument_id), Some(&7));
-        assert!(state.overdue_snapshots(at(10), &held).is_empty());
-        assert!(
-            state.overdue_snapshots(at(100_000), &held).is_empty(),
-            "nothing is asked for the rejected generation"
+        assert_eq!(
+            state.awaiting_snapshot[&instrument_id],
+            SnapshotWait {
+                since: at(1),
+                attempts: REJECTED_SUBSCRIBE_ATTEMPTS,
+                generation: 7,
+            }
         );
-        assert!(!state.awaiting_snapshot.contains_key(&instrument_id));
+        assert!(
+            state.overdue_snapshots(at(80), &held).requests.is_empty(),
+            "no request before the long wait"
+        );
+        assert_eq!(
+            state.overdue_snapshots(at(81), &held).requests,
+            vec![L2ResyncRequest {
+                instrument_id,
+                generation: 7,
+            }]
+        );
+
+        let second = state.reject_subscription(instrument_id, 7, at(82));
+        assert!(!second.cleared, "no book to drop");
+        assert_eq!(
+            second.next_request_due,
+            Some(at(242)),
+            "the attempts made are kept"
+        );
+        assert!(state.overdue_snapshots(at(241), &held).requests.is_empty());
+        assert_eq!(state.overdue_snapshots(at(242), &held).requests.len(), 1);
+
+        let third = state.reject_subscription(instrument_id, 7, at(243));
+        assert_eq!(third.next_request_due, None, "the cap is reached");
+        assert!(
+            state
+                .overdue_snapshots(at(100_000), &held)
+                .requests
+                .is_empty(),
+            "no request beyond the cap"
+        );
+        assert_eq!(
+            state.awaiting_snapshot[&instrument_id].attempts,
+            MAX_SNAPSHOT_REQUESTS
+        );
+    }
+
+    /// A rejection burdens only the generation it answers: a replacement subscription gets a fresh
+    /// wait, and a snapshot of the replacement ends it.
+    #[rstest]
+    fn test_a_rejected_subscription_leaves_the_replacement_a_fresh_wait() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        mismatch_at_ts(&mut state, &instrument);
+        state.reject_subscription(instrument_id, 7, at(1));
 
         let replacement = L2Subscription {
             depth: 10,
             generation: 8,
         };
         let replaced = [(instrument_id, replacement)];
-        assert!(state.overdue_snapshots(at(100_000), &replaced).is_empty());
-        assert!(!state.rejected.contains_key(&instrument_id));
+        assert!(
+            state
+                .overdue_snapshots(at(2), &replaced)
+                .requests
+                .is_empty()
+        );
         assert_eq!(
-            state.overdue_snapshots(at(100_010), &replaced),
+            state.awaiting_snapshot[&instrument_id],
+            SnapshotWait::fresh(at(2), 8)
+        );
+        assert_eq!(
+            state.overdue_snapshots(at(12), &replaced).requests,
             vec![L2ResyncRequest {
                 instrument_id,
                 generation: 8,
             }]
         );
 
-        state.reject_subscription(instrument_id, 8);
         let snapshot = state
             .process_book(
                 &book_data(GUIDE_SNAPSHOT),
                 &instrument,
-                0,
+                22,
                 true,
-                Some(L2Subscription {
-                    depth: 10,
-                    generation: 9,
-                }),
-                at(100_020),
+                Some(replacement),
+                at(13),
             )
             .unwrap();
-        assert!(snapshot.deltas.is_some());
-        assert!(
-            !state.rejected.contains_key(&instrument_id),
-            "a frame of a new generation clears the rejection"
-        );
-
-        state.reject_subscription(instrument_id, 9);
-        state.reset_after_reconnect(at(100_030));
-        assert!(
-            state.rejected.is_empty(),
-            "the replay sends every subscribe again"
-        );
+        assert!(snapshot.deltas.is_some() && snapshot.resync.is_none());
+        assert!(!state.awaiting_snapshot.contains_key(&instrument_id));
     }
 
     /// The warning about frames with no subscription is armed again once a subscription for the
@@ -1433,7 +1544,7 @@ mod tests {
         let instrument = instrument(1, None);
         mismatch_at_ts(&mut state, &instrument);
 
-        assert!(state.overdue_snapshots(at(10), &[]).is_empty());
+        assert!(state.overdue_snapshots(at(10), &[]).requests.is_empty());
         assert!(!state.awaiting_snapshot.contains_key(&instrument.id()));
     }
 
@@ -1454,7 +1565,12 @@ mod tests {
         }
         assert!(struck_out.validation_disabled.contains(&instrument.id()));
         assert!(struck_out.books.contains_key(&instrument.id()));
-        assert!(struck_out.overdue_snapshots(at(100_000), &held).is_empty());
+        assert!(
+            struck_out
+                .overdue_snapshots(at(100_000), &held)
+                .requests
+                .is_empty()
+        );
         assert!(struck_out.awaiting_snapshot.is_empty());
 
         let mut configured_off = L2BookState::new(false);
@@ -1465,6 +1581,7 @@ mod tests {
         assert!(
             configured_off
                 .overdue_snapshots(at(100_000), &held)
+                .requests
                 .is_empty()
         );
         assert!(configured_off.awaiting_snapshot.is_empty());
@@ -1479,14 +1596,14 @@ mod tests {
         let instrument_id = instrument.id();
         let held = [(instrument_id, sub(10))];
 
-        assert!(state.overdue_snapshots(TS, &held).is_empty());
+        assert!(state.overdue_snapshots(TS, &held).requests.is_empty());
         assert_eq!(
             state.awaiting_snapshot[&instrument_id],
             SnapshotWait::fresh(TS, 7)
         );
-        assert!(state.overdue_snapshots(at(9), &held).is_empty());
+        assert!(state.overdue_snapshots(at(9), &held).requests.is_empty());
 
-        let requests = state.overdue_snapshots(at(10), &held);
+        let requests = state.overdue_snapshots(at(10), &held).requests;
         assert_eq!(
             requests,
             vec![L2ResyncRequest {
@@ -1523,8 +1640,8 @@ mod tests {
             state.awaiting_snapshot[&instrument_id],
             SnapshotWait::fresh(at(1), 7)
         );
-        assert!(state.overdue_snapshots(at(10), &held).is_empty());
-        assert_eq!(state.overdue_snapshots(at(11), &held).len(), 1);
+        assert!(state.overdue_snapshots(at(10), &held).requests.is_empty());
+        assert_eq!(state.overdue_snapshots(at(11), &held).requests.len(), 1);
     }
 
     /// A reconnect restarts a wait already under way: the replayed subscription gets the full
@@ -1536,7 +1653,7 @@ mod tests {
         let instrument_id = instrument.id();
         let held = [(instrument_id, sub(10))];
         mismatch_at_ts(&mut state, &instrument);
-        assert_eq!(state.overdue_snapshots(at(10), &held).len(), 1);
+        assert_eq!(state.overdue_snapshots(at(10), &held).requests.len(), 1);
         assert_eq!(state.awaiting_snapshot[&instrument_id].attempts, 1);
 
         state.reset_after_reconnect(at(15));
@@ -1545,8 +1662,8 @@ mod tests {
             state.awaiting_snapshot[&instrument_id],
             SnapshotWait::fresh(at(15), 7)
         );
-        assert!(state.overdue_snapshots(at(24), &held).is_empty());
-        assert_eq!(state.overdue_snapshots(at(25), &held).len(), 1);
+        assert!(state.overdue_snapshots(at(24), &held).requests.is_empty());
+        assert_eq!(state.overdue_snapshots(at(25), &held).requests.len(), 1);
         assert_eq!(state.awaiting_snapshot[&instrument_id].attempts, 1);
     }
 
@@ -1559,7 +1676,7 @@ mod tests {
         let instrument_id = instrument.id();
         let held = [(instrument_id, sub(10))];
         mismatch_at_ts(&mut state, &instrument);
-        assert_eq!(state.overdue_snapshots(at(10), &held).len(), 1);
+        assert_eq!(state.overdue_snapshots(at(10), &held).requests.len(), 1);
 
         for ts in [at(11), at(12)] {
             let outcome = state
@@ -1581,7 +1698,7 @@ mod tests {
 
         assert!(state.books.contains_key(&instrument_id));
         assert!(!state.awaiting_snapshot.contains_key(&instrument_id));
-        assert!(state.overdue_snapshots(at(100), &held).is_empty());
+        assert!(state.overdue_snapshots(at(100), &held).requests.is_empty());
     }
 
     /// An update consumed under a generation whose snapshot has not been seen belongs to the
@@ -1688,7 +1805,7 @@ mod tests {
         let instrument_id = instrument.id();
         let held = [(instrument_id, sub(10))];
         mismatch_at_ts(&mut state, &instrument);
-        assert_eq!(state.overdue_snapshots(at(10), &held).len(), 1);
+        assert_eq!(state.overdue_snapshots(at(10), &held).requests.len(), 1);
         assert_eq!(state.awaiting_snapshot[&instrument_id].attempts, 1);
 
         let replacement = L2Subscription {

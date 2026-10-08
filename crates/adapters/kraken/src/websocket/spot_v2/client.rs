@@ -1405,7 +1405,9 @@ impl KrakenSpotWebSocketClient {
                 channel: KrakenWsChannel::Book,
                 symbol: Some(vec![symbol]),
                 snapshot: None,
-                depth: None,
+                // The venue keys a `book` subscription by symbol and depth, and its unsubscribe
+                // has no default depth.
+                depth: Some(depth),
                 interval: None,
                 event_trigger: None,
                 token: None,
@@ -1602,6 +1604,9 @@ impl KrakenSpotWebSocketClient {
     }
 
     /// Unsubscribes from order book updates for the given instrument.
+    ///
+    /// The unsubscribe carries the recorded depth: the venue keys a `book` subscription by symbol
+    /// and depth, and its unsubscribe has no default depth.
     pub async fn unsubscribe_book(&self, instrument_id: InstrumentId) -> Result<(), KrakenWsError> {
         let _book_commands = self.l2_book_commands.lock().await;
         let symbol = to_ws_v2_symbol(instrument_id.symbol.inner());
@@ -1621,7 +1626,7 @@ impl KrakenSpotWebSocketClient {
                 channel: KrakenWsChannel::Book,
                 symbol: Some(vec![symbol]),
                 snapshot: None,
-                depth: None,
+                depth: self.l2_depths.get(symbol.as_str()),
                 interval: None,
                 event_trigger: None,
                 token: None,
@@ -2204,13 +2209,7 @@ mod tests {
         let SpotHandlerCommand::Unsubscribe { payload } = cmd else {
             panic!("expected unsubscribe command");
         };
-        assert!(
-            payload
-                .expose_secret()
-                .contains(r#""method":"unsubscribe""#),
-        );
-        assert!(payload.expose_secret().contains(r#""channel":"book""#));
-        assert!(payload.expose_secret().contains(r#""BTC/USD""#));
+        assert_book_unsubscribe_payload(payload.expose_secret(), "BTC/USD", 10);
     }
 
     #[rstest]
@@ -2300,6 +2299,7 @@ mod tests {
         else {
             panic!("expected an unsubscribe command");
         };
+        assert_book_unsubscribe_payload(payload.expose_secret(), "BTC/USD", 10);
         let unsubscribe_req_id = payload_req_id(payload.expose_secret());
         let SpotHandlerCommand::Subscribe { payload } = cmd_rx.try_recv().expect("subscribe")
         else {
@@ -2395,9 +2395,11 @@ mod tests {
         let live = client.l2_depths.subscription("BTC/USD").unwrap().generation;
         client.resync_book(instrument_id, live).await.unwrap();
 
-        let SpotHandlerCommand::Unsubscribe { .. } = cmd_rx.try_recv().expect("unsubscribe") else {
+        let SpotHandlerCommand::Unsubscribe { payload } = cmd_rx.try_recv().expect("unsubscribe")
+        else {
             panic!("expected an unsubscribe command");
         };
+        assert_book_unsubscribe_payload(payload.expose_secret(), "BTC/USD", 100);
         let SpotHandlerCommand::Subscribe { payload } = cmd_rx.try_recv().expect("subscribe")
         else {
             panic!("expected a subscribe command");
@@ -2425,9 +2427,11 @@ mod tests {
         cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
         depth: u32,
     ) {
-        let SpotHandlerCommand::Unsubscribe { .. } = cmd_rx.try_recv().expect("unsubscribe") else {
+        let SpotHandlerCommand::Unsubscribe { payload } = cmd_rx.try_recv().expect("unsubscribe")
+        else {
             panic!("expected an unsubscribe command");
         };
+        assert_book_unsubscribe_payload(payload.expose_secret(), "BTC/USD", depth);
         let SpotHandlerCommand::Subscribe { payload } = cmd_rx.try_recv().expect("subscribe")
         else {
             panic!("expected a subscribe command");
@@ -2508,9 +2512,11 @@ mod tests {
 
         drop(guard);
         unsubscribe.await.unwrap().unwrap();
-        let SpotHandlerCommand::Unsubscribe { .. } = cmd_rx.try_recv().expect("unsubscribe") else {
+        let SpotHandlerCommand::Unsubscribe { payload } = cmd_rx.try_recv().expect("unsubscribe")
+        else {
             panic!("expected an unsubscribe command");
         };
+        assert_book_unsubscribe_payload(payload.expose_secret(), "BTC/USD", 10);
         assert!(cmd_rx.try_recv().is_err());
         assert_eq!(client.l2_depths.get("BTC/USD"), None);
     }
@@ -2551,6 +2557,17 @@ mod tests {
             serde_json::from_str(payload).expect("payload should parse as JSON");
 
         assert_eq!(value["method"], serde_json::json!("subscribe"));
+        assert_eq!(value["params"]["channel"], serde_json::json!("book"));
+        assert_eq!(value["params"]["symbol"], serde_json::json!([symbol]));
+        assert_eq!(value["params"]["depth"], serde_json::json!(depth));
+    }
+
+    /// The unsubscribe names the depth: the venue keys a `book` subscription by symbol and depth.
+    fn assert_book_unsubscribe_payload(payload: &str, symbol: &str, depth: u32) {
+        let value: serde_json::Value =
+            serde_json::from_str(payload).expect("payload should parse as JSON");
+
+        assert_eq!(value["method"], serde_json::json!("unsubscribe"));
         assert_eq!(value["params"]["channel"], serde_json::json!("book"));
         assert_eq!(value["params"]["symbol"], serde_json::json!([symbol]));
         assert_eq!(value["params"]["depth"], serde_json::json!(depth));

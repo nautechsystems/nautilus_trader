@@ -20,7 +20,7 @@ use nautilus_model::enums::OrderSide;
 use rust_decimal::Decimal;
 
 use super::parse::CachedL3Order;
-use crate::websocket::spot_v2::checksum::{crc32_ieee, format_raw};
+use crate::websocket::spot_v2::checksum::format_raw;
 
 /// Builds the checksum input string from the open-order cache.
 ///
@@ -54,7 +54,7 @@ pub(crate) fn build_checksum_string(open_orders: &AHashMap<u64, CachedL3Order>) 
 /// Computes the Kraken `level3` CRC32 checksum from the open-order cache.
 pub(crate) fn compute_checksum(open_orders: &AHashMap<u64, CachedL3Order>) -> u32 {
     let s = build_checksum_string(open_orders);
-    crc32_ieee(s.as_bytes())
+    crc32fast::hash(s.as_bytes())
 }
 
 /// Appends the top-10 price levels (all orders per level, FIFO) to `s`.
@@ -86,7 +86,7 @@ mod tests {
     #[rstest]
     fn test_crc32_ieee_known_value() {
         // CRC32 of b"123456789" == 0xCBF43926 (standard check value)
-        assert_eq!(crc32_ieee(b"123456789"), 0xCBF4_3926);
+        assert_eq!(crc32fast::hash(b"123456789"), 0xCBF4_3926);
     }
 
     #[rstest]
@@ -451,6 +451,6 @@ mod tests {
         );
         // full string: "42001050000000" + "41999030000000"
         let checksum = compute_checksum(&orders);
-        assert_eq!(checksum, crc32_ieee(b"4200105000000041999030000000"));
+        assert_eq!(checksum, crc32fast::hash(b"4200105000000041999030000000"));
     }
 }

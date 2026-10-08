@@ -63,22 +63,6 @@ pub(crate) fn push_scaled(out: &mut String, scratch: &mut String, value: Decimal
     }
 }
 
-/// IEEE CRC32 polynomial (reflected), inline to avoid adding a new dependency.
-pub(crate) fn crc32_ieee(data: &[u8]) -> u32 {
-    let mut crc: u32 = 0xFFFF_FFFF;
-    for &byte in data {
-        crc ^= u32::from(byte);
-        for _ in 0..8 {
-            if crc & 1 != 0 {
-                crc = (crc >> 1) ^ 0xEDB8_8320;
-            } else {
-                crc >>= 1;
-            }
-        }
-    }
-    !crc
-}
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -94,9 +78,10 @@ mod tests {
         out
     }
 
+    /// The venue's checksum is the IEEE CRC32, which `crc32fast::hash` computes.
     #[rstest]
     fn test_crc32_ieee_known_value() {
-        assert_eq!(crc32_ieee(b"123456789"), 0xCBF4_3926);
+        assert_eq!(crc32fast::hash(b"123456789"), 0xCBF4_3926);
     }
 
     #[rstest]
