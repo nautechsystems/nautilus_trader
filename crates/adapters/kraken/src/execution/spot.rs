@@ -819,7 +819,8 @@ impl KrakenSpotExecutionClient {
             | KrakenSpotWsMessage::Book { .. }
             | KrakenSpotWsMessage::Ohlc(_)
             | KrakenSpotWsMessage::L3Snapshot(_)
-            | KrakenSpotWsMessage::L3Update(_) => {}
+            | KrakenSpotWsMessage::L3Update(_)
+            | KrakenSpotWsMessage::SubscriptionAck { .. } => {}
         }
     }
 

@@ -277,7 +277,11 @@ until that snapshot arrives. The recovery is serialized with the user's own subs
 so a replacement subscription is never cancelled by a stale recovery, and frames of a replaced
 subscription that arrive before its snapshot are dropped. If the snapshot does not arrive within
 10 seconds the data client requests it again, doubling the wait each time up to five requests,
-then logs an error and leaves the book cleared until the next subscription change or reconnect.
+then logs an error and leaves the book cleared until the next subscription change or reconnect;
+this watchdog is the only retry for a `book` recovery, and a replacement subscription starts its
+own wait rather than inheriting its predecessor's. A `book` subscribe the venue rejects ends the
+wait at once with an error log naming the venue's reason, and the book stays cleared until the
+next subscription change or reconnect.
 Three mismatches on one instrument with no valid update between them switch validation off for
 that instrument with an error log and keep its book as received, so a book the venue hashes
 differently cannot loop on resubscription; a snapshot that validates does not reset the count.

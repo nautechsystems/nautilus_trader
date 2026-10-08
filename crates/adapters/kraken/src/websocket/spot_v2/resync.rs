@@ -13,9 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Retry policy for Kraken Spot checksum-driven book resyncs.
+//! Retry policy for the Kraken Spot `level3` checksum-driven book resync.
+//!
+//! The `book` channel's recovery has no retry here: `resync_book` fails only when the command
+//! channel is closed, which no retry can mend, and the data client's snapshot watchdog asks again
+//! for a snapshot that does not arrive.
 
-use nautilus_model::identifiers::InstrumentId;
 use ustr::Ustr;
 
 use crate::websocket::{error::KrakenWsError, spot_v2::client::KrakenSpotWebSocketClient};
@@ -31,18 +34,6 @@ pub(crate) const RESYNC_MAX_BACKOFF_MS: u64 = 8_000;
 /// not leave the local book stuck in `awaiting_snapshot`.
 pub(crate) async fn retry_l3_resync(client: &KrakenSpotWebSocketClient, symbol: Ustr, depth: u32) {
     retry_resync("L3", symbol, || client.resync_book_l3(symbol, depth)).await;
-}
-
-/// Retries `resync_book` with the same policy, for the Spot `book` channel.
-pub(crate) async fn retry_l2_resync(
-    client: &KrakenSpotWebSocketClient,
-    instrument_id: InstrumentId,
-    generation: u64,
-) {
-    retry_resync("L2", instrument_id.symbol.inner(), || {
-        client.resync_book(instrument_id, generation)
-    })
-    .await;
 }
 
 /// Runs `attempt` with exponential backoff until it succeeds or the attempts are exhausted.

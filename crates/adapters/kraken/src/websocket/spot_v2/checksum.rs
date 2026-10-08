@@ -35,23 +35,12 @@ pub(crate) fn format_raw(raw: &str) -> String {
     }
 }
 
-/// Renders `value` at exactly `scale` decimals, then formats it per [`format_raw`].
+/// Appends `value` at `scale` decimals to `out` per [`format_raw`], reusing `scratch`.
 ///
 /// The venue hashes its wire representation, so a value held at another precision is rendered at
 /// the wire scale first: a price held at six decimals on a pair quoted at seven gains its trailing
-/// zero here.
-#[cfg(test)]
-pub(crate) fn format_scaled(value: Decimal, scale: u8) -> String {
-    let mut out = String::new();
-    let mut scratch = String::new();
-    push_scaled(&mut out, &mut scratch, value, scale);
-    out
-}
-
-/// Appends `value` at `scale` decimals to `out` per [`format_raw`], reusing `scratch`.
-///
-/// The checksum string covers up to forty values per message, so the rendering goes through one
-/// reused buffer rather than a fresh allocation per value.
+/// zero here. The checksum string covers up to forty values per message, so the rendering goes
+/// through one reused buffer rather than a fresh allocation per value.
 pub(crate) fn push_scaled(out: &mut String, scratch: &mut String, value: Decimal, scale: u8) {
     use std::fmt::Write;
 
@@ -96,6 +85,14 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    /// Renders `value` at exactly `scale` decimals through [`push_scaled`] into a fresh string.
+    fn format_scaled(value: Decimal, scale: u8) -> String {
+        let mut out = String::new();
+        let mut scratch = String::new();
+        push_scaled(&mut out, &mut scratch, value, scale);
+        out
+    }
 
     #[rstest]
     fn test_crc32_ieee_known_value() {

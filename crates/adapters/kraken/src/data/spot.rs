@@ -69,14 +69,16 @@ use crate::{
     http::{KrakenSpotHttpClient, spot::client::KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND},
     websocket::spot_v2::{
         client::KrakenSpotWebSocketClient,
-        level_2::{L2BookState, L2Depths, L2ResyncRequest, L2Subscription},
+        level_2::{
+            L2BookRequest, L2BookRequests, L2BookState, L2Depths, L2ResyncRequest, L2Subscription,
+        },
         level_3::{
             BookOrderIdHasher, KrakenL3WsMessage,
             runtime::{L3Sink, L3State, process_l3_message},
         },
         messages::KrakenSpotWsMessage,
         parse::{parse_quote_tick, parse_trade_tick, parse_ws_bar},
-        resync::{retry_l2_resync, retry_l3_resync},
+        resync::retry_l3_resync,
     },
 };
 
@@ -501,6 +503,7 @@ impl KrakenSpotDataClient {
         let book_sequence = Arc::new(AtomicU64::new(0));
         let ohlc_buffer: OhlcBuffer = Arc::new(Mutex::new(AHashMap::new()));
         let l2_depths = self.ws.l2_depths_handle();
+        let book_requests = self.ws.book_requests_handle();
         let validate_l2_checksum = self.ws.validate_l2_checksum();
         let resync_client = self.ws.clone();
         let session_spawner = self
@@ -525,6 +528,7 @@ impl KrakenSpotDataClient {
                     instruments: &instruments,
                     book_sequence: &book_sequence,
                     l2_depths: &l2_depths,
+                    book_requests: &book_requests,
                     ohlc_buffer: &ohlc_buffer,
                     clock,
                 };
@@ -570,6 +574,9 @@ impl KrakenSpotDataClient {
             .context("failed to register Kraken Spot message handler")
     }
 
+    /// Sends each recovery once: `resync_book` fails only when the command channel is closed,
+    /// which no retry can mend, and the snapshot watchdog asks again for a snapshot that does not
+    /// arrive, so a retry chain here would only overlap its requests.
     fn spawn_l2_resyncs(
         spawner: &TaskSpawner,
         client: &KrakenSpotWebSocketClient,
@@ -579,7 +586,16 @@ impl KrakenSpotDataClient {
             let client = client.clone();
 
             if let Err(e) = spawner.spawn_named("kraken-spot-l2-resync", async move {
-                retry_l2_resync(&client, request.instrument_id, request.generation).await;
+                if let Err(e) = client
+                    .resync_book(request.instrument_id, request.generation)
+                    .await
+                {
+                    log::error!(
+                        "Failed to send the L2 resync for {}: {e}; the snapshot watchdog asks \
+                         again if the book stays cleared",
+                        request.instrument_id
+                    );
+                }
             }) {
                 log::warn!("Skipping Kraken L2 resync after shutdown began: {e}");
             }
@@ -760,6 +776,28 @@ impl KrakenSpotDataClient {
             KrakenSpotWsMessage::OrderResponse(_) => {}
             KrakenSpotWsMessage::L3Snapshot(_) => {}
             KrakenSpotWsMessage::L3Update(_) => {}
+            KrakenSpotWsMessage::SubscriptionAck {
+                req_id,
+                symbol,
+                success,
+                error,
+            } => {
+                // Only a `book` subscribe is on record; any other answer is left to its log line.
+                let request =
+                    req_id.and_then(|req_id| context.book_requests.lock().remove(&req_id));
+
+                if let Some(request) = request
+                    && !success
+                {
+                    Self::handle_book_rejection(
+                        context,
+                        l2_books,
+                        request,
+                        symbol,
+                        error.as_deref(),
+                    );
+                }
+            }
             KrakenSpotWsMessage::Reconnected => {
                 l2_books.reset_after_reconnect(ts_init);
                 log::info!("Spot WebSocket reconnected");
@@ -767,6 +805,48 @@ impl KrakenSpotDataClient {
         }
 
         resyncs
+    }
+
+    /// Ends the wait for a `book` subscribe the venue rejected.
+    ///
+    /// The rejection acts only on the subscription behind the request: one whose subscription the
+    /// user has since cancelled or replaced is ignored, since the replacement's own answer
+    /// decides for it and a cancelled subscription has nothing to clear.
+    fn handle_book_rejection(
+        context: &SpotMessageContext,
+        l2_books: &mut L2BookState,
+        request: L2BookRequest,
+        symbol: Option<Ustr>,
+        error: Option<&str>,
+    ) {
+        let symbol = symbol.unwrap_or(request.symbol);
+        let reason = error.unwrap_or("no reason given");
+        let held = context.l2_depths.subscription(request.symbol.as_str());
+
+        if held.map(|live| live.generation) != Some(request.generation) {
+            log::debug!(
+                "Ignoring a rejected L2 subscribe for a cancelled or replaced subscription: \
+                 symbol={symbol}, generation={}, error={reason}",
+                request.generation
+            );
+            return;
+        }
+
+        let instruments = context.instruments.load();
+        let Some(instrument) = lookup_instrument_in_snapshot(&instruments, request.symbol.as_str())
+        else {
+            log::error!(
+                "Kraken rejected the L2 book subscribe for {symbol}: {reason}; no instrument \
+                 for the symbol, so there is no book to clear"
+            );
+            return;
+        };
+
+        l2_books.reject_subscription(instrument.id(), request.generation);
+        log::error!(
+            "Kraken rejected the L2 book subscribe for {symbol}: {reason}; the book stays \
+             cleared until the next subscription change or reconnect"
+        );
     }
 }
 
@@ -1335,6 +1415,7 @@ struct SpotMessageContext<'a> {
     instruments: &'a Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     book_sequence: &'a Arc<AtomicU64>,
     l2_depths: &'a L2Depths,
+    book_requests: &'a L2BookRequests,
     ohlc_buffer: &'a OhlcBuffer,
     clock: &'static AtomicTime,
 }
@@ -1512,11 +1593,13 @@ mod tests {
         l2_depths.insert("BTC/USD", 10);
         let mut l2_books = L2BookState::new(true);
         let ohlc_buffer = Arc::new(Mutex::new(AHashMap::new()));
+        let book_requests: L2BookRequests = Arc::new(Mutex::new(AHashMap::new()));
         let context = SpotMessageContext {
             sender: &sender.into(),
             instruments: &instruments,
             book_sequence: &book_sequence,
             l2_depths: &l2_depths,
+            book_requests: &book_requests,
             ohlc_buffer: &ohlc_buffer,
             clock: get_atomic_clock_realtime(),
         };
@@ -1565,11 +1648,13 @@ mod tests {
         let btc_generation = l2_depths.subscription("BTC/USD").unwrap().generation;
         let mut l2_books = L2BookState::new(true);
         let ohlc_buffer = Arc::new(Mutex::new(AHashMap::new()));
+        let book_requests: L2BookRequests = Arc::new(Mutex::new(AHashMap::new()));
         let context = SpotMessageContext {
             sender: &sender.into(),
             instruments: &instruments,
             book_sequence: &book_sequence,
             l2_depths: &l2_depths,
+            book_requests: &book_requests,
             ohlc_buffer: &ohlc_buffer,
             clock,
         };
@@ -1592,6 +1677,165 @@ mod tests {
         );
     }
 
+    /// A rejected `book` subscribe ends the wait for the subscription behind it: no request
+    /// follows for that generation, while a new generation is waited for and requested as usual.
+    #[rstest]
+    fn test_a_rejected_book_subscribe_ends_the_wait_until_a_new_generation() {
+        let start = UnixNanos::new(1_700_000_000_000_000_000);
+        let clock: &'static AtomicTime = Box::leak(Box::new(AtomicTime::new(false, start)));
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let instruments = Arc::new(AtomicMap::new());
+        let btc = make_instrument();
+        instruments.insert(btc.id(), btc.clone());
+
+        let book_sequence = Arc::new(AtomicU64::new(0));
+        let l2_depths = L2Depths::default();
+        let rejected_generation = l2_depths.insert("BTC/USD", 10);
+        let mut l2_books = L2BookState::new(true);
+        let ohlc_buffer = Arc::new(Mutex::new(AHashMap::new()));
+        let book_requests: L2BookRequests = Arc::new(Mutex::new(AHashMap::new()));
+        book_requests.lock().insert(
+            7,
+            L2BookRequest {
+                symbol: Ustr::from("BTC/USD"),
+                generation: rejected_generation,
+            },
+        );
+        let context = SpotMessageContext {
+            sender: &sender.into(),
+            instruments: &instruments,
+            book_sequence: &book_sequence,
+            l2_depths: &l2_depths,
+            book_requests: &book_requests,
+            ohlc_buffer: &ohlc_buffer,
+            clock,
+        };
+
+        assert!(KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books).is_empty());
+
+        let resyncs = KrakenSpotDataClient::handle_ws_message(
+            KrakenSpotWsMessage::SubscriptionAck {
+                req_id: Some(7),
+                symbol: Some(Ustr::from("BTC/USD")),
+                success: false,
+                error: Some("Currency pair not supported BTC/USD".to_string()),
+            },
+            &context,
+            &mut l2_books,
+        );
+        assert!(resyncs.is_empty());
+        assert!(
+            book_requests.lock().is_empty(),
+            "the answered request is retired"
+        );
+
+        clock.set_time(UnixNanos::new(start.as_u64() + 10_000_000_000));
+        assert!(
+            KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books).is_empty(),
+            "no request for a subscribe the venue rejected"
+        );
+
+        let new_generation = l2_depths.insert("BTC/USD", 10);
+        assert!(
+            KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books).is_empty(),
+            "the new generation's wait starts at this tick"
+        );
+        clock.set_time(UnixNanos::new(start.as_u64() + 20_000_000_000));
+        assert_eq!(
+            KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books),
+            vec![L2ResyncRequest {
+                instrument_id: btc.id(),
+                generation: new_generation,
+            }]
+        );
+    }
+
+    /// A rejection for a subscription the user has since replaced leaves the replacement's wait
+    /// alone, and a confirmation only retires the request.
+    #[rstest]
+    fn test_a_stale_or_successful_book_ack_leaves_the_wait_alone() {
+        let start = UnixNanos::new(1_700_000_000_000_000_000);
+        let clock: &'static AtomicTime = Box::leak(Box::new(AtomicTime::new(false, start)));
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let instruments = Arc::new(AtomicMap::new());
+        let btc = make_instrument();
+        instruments.insert(btc.id(), btc.clone());
+
+        let book_sequence = Arc::new(AtomicU64::new(0));
+        let l2_depths = L2Depths::default();
+        let retired_generation = l2_depths.insert("BTC/USD", 10);
+        let live_generation = l2_depths.insert("BTC/USD", 10);
+        let mut l2_books = L2BookState::new(true);
+        let ohlc_buffer = Arc::new(Mutex::new(AHashMap::new()));
+        let book_requests: L2BookRequests = Arc::new(Mutex::new(AHashMap::new()));
+        book_requests.lock().insert(
+            7,
+            L2BookRequest {
+                symbol: Ustr::from("BTC/USD"),
+                generation: retired_generation,
+            },
+        );
+        book_requests.lock().insert(
+            8,
+            L2BookRequest {
+                symbol: Ustr::from("BTC/USD"),
+                generation: live_generation,
+            },
+        );
+        let context = SpotMessageContext {
+            sender: &sender.into(),
+            instruments: &instruments,
+            book_sequence: &book_sequence,
+            l2_depths: &l2_depths,
+            book_requests: &book_requests,
+            ohlc_buffer: &ohlc_buffer,
+            clock,
+        };
+        assert!(KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books).is_empty());
+
+        KrakenSpotDataClient::handle_ws_message(
+            KrakenSpotWsMessage::SubscriptionAck {
+                req_id: Some(7),
+                symbol: Some(Ustr::from("BTC/USD")),
+                success: false,
+                error: Some("Currency pair not supported BTC/USD".to_string()),
+            },
+            &context,
+            &mut l2_books,
+        );
+        KrakenSpotDataClient::handle_ws_message(
+            KrakenSpotWsMessage::SubscriptionAck {
+                req_id: Some(8),
+                symbol: None,
+                success: true,
+                error: None,
+            },
+            &context,
+            &mut l2_books,
+        );
+        KrakenSpotDataClient::handle_ws_message(
+            KrakenSpotWsMessage::SubscriptionAck {
+                req_id: Some(9),
+                symbol: None,
+                success: false,
+                error: Some("not a book request".to_string()),
+            },
+            &context,
+            &mut l2_books,
+        );
+        assert!(book_requests.lock().is_empty());
+
+        clock.set_time(UnixNanos::new(start.as_u64() + 10_000_000_000));
+        assert_eq!(
+            KrakenSpotDataClient::check_l2_snapshots(&context, &mut l2_books),
+            vec![L2ResyncRequest {
+                instrument_id: btc.id(),
+                generation: live_generation,
+            }],
+            "the live subscription's snapshot is still requested"
+        );
+    }
+
     #[rstest]
     fn test_l2_update_prunes_levels_beyond_subscribed_depth() {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -1605,11 +1849,13 @@ mod tests {
         l2_depths.insert("BTC/USD", 10);
         let mut l2_books = L2BookState::new(false);
         let ohlc_buffer = Arc::new(Mutex::new(AHashMap::new()));
+        let book_requests: L2BookRequests = Arc::new(Mutex::new(AHashMap::new()));
         let context = SpotMessageContext {
             sender: &sender.into(),
             instruments: &instruments,
             book_sequence: &book_sequence,
             l2_depths: &l2_depths,
+            book_requests: &book_requests,
             ohlc_buffer: &ohlc_buffer,
             clock: get_atomic_clock_realtime(),
         };

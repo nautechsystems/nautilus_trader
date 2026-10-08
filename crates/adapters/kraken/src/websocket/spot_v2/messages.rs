@@ -50,6 +50,16 @@ pub enum KrakenSpotWsMessage {
     OrderResponse(KrakenWsOrderResponse),
     L3Snapshot(KrakenL3Snapshot),
     L3Update(KrakenL3UpdateData),
+    /// The venue's answer to a `subscribe` request, confirmation or rejection.
+    ///
+    /// `req_id` matches the request the client sent; `symbol` is the pair a rejection names at
+    /// the top level and `error` the venue's reason.
+    SubscriptionAck {
+        req_id: Option<u64>,
+        symbol: Option<Ustr>,
+        success: bool,
+        error: Option<String>,
+    },
     Reconnected,
 }
 
