@@ -222,6 +222,7 @@ impl OrderStatus {
             (Self::Released, OrderEventAny::Updated(_)) => Self::Released, // In-place modification
             (Self::Submitted, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::Submitted, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
+            (Self::Submitted, OrderEventAny::CancelRejected(_)) => Self::Submitted,  // Cancel can fail before submission is acknowledged
             (Self::Submitted, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::Submitted, OrderEventAny::Canceled(_)) => Self::Canceled,  // FOK and IOC cases
             (Self::Submitted, OrderEventAny::Accepted(_)) => Self::Accepted,
@@ -4428,10 +4429,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case::submitted(false)]
-    #[case::accepted(true)]
-    fn test_cancel_rejected_after_acceptance_preserves_accepted_status(
+    #[case::submitted(false, false, false)]
+    #[case::accepted(false, true, false)]
+    #[case::pending_submitted(true, false, false)]
+    #[case::pending_accepted(true, true, false)]
+    #[case::acceptance_overtakes_submitted_cancel(true, false, true)]
+    #[case::acceptance_overtakes_accepted_cancel(true, true, true)]
+    fn test_cancel_rejected_preserves_order_state(
+        #[case] pending_cancel: bool,
         #[case] accepted_before_cancel: bool,
+        #[case] acceptance_overtakes_cancel: bool,
     ) {
         let init = OrderInitializedSpec::builder().build();
         let mut order: MarketOrder = init.try_into().unwrap();
@@ -4448,29 +4455,70 @@ mod tests {
                 ))
                 .unwrap();
         }
+
+        if pending_cancel {
+            order
+                .apply(OrderEventAny::PendingCancel(
+                    OrderPendingCancelSpec::builder().build(),
+                ))
+                .unwrap();
+        }
+
+        if acceptance_overtakes_cancel {
+            order
+                .apply(OrderEventAny::Accepted(
+                    OrderAcceptedSpec::builder().build(),
+                ))
+                .unwrap();
+        }
+
+        let expected_status = if accepted_before_cancel || acceptance_overtakes_cancel {
+            OrderStatus::Accepted
+        } else {
+            OrderStatus::Submitted
+        };
+
+        let previous_status = order.previous_status();
+        let quantity = order.quantity();
+        let filled_qty = order.filled_qty();
+        let leaves_qty = order.leaves_qty();
+        let venue_order_id = order.venue_order_id();
+        let event_count = order.events().len();
+        let cancel_rejected =
+            OrderEventAny::CancelRejected(OrderCancelRejectedSpec::builder().build());
+
+        order.apply(cancel_rejected.clone()).unwrap();
+
+        assert_eq!(order.status(), expected_status);
+        assert_eq!(order.previous_status(), previous_status);
+        assert_eq!(order.quantity(), quantity);
+        assert_eq!(order.filled_qty(), filled_qty);
+        assert_eq!(order.leaves_qty(), leaves_qty);
+        assert_eq!(order.venue_order_id(), venue_order_id);
+        assert_eq!(order.events().len(), event_count + 1);
+        assert_eq!(order.last_event(), &cancel_rejected);
+
+        if expected_status == OrderStatus::Submitted {
+            order
+                .apply(OrderEventAny::Accepted(
+                    OrderAcceptedSpec::builder().build(),
+                ))
+                .unwrap();
+        }
+
+        assert_eq!(order.status(), OrderStatus::Accepted);
         order
             .apply(OrderEventAny::PendingCancel(
                 OrderPendingCancelSpec::builder().build(),
             ))
             .unwrap();
         order
-            .apply(OrderEventAny::Accepted(
-                OrderAcceptedSpec::builder().build(),
+            .apply(OrderEventAny::Canceled(
+                OrderCanceledSpec::builder().build(),
             ))
             .unwrap();
-        let previous_status = if accepted_before_cancel {
-            OrderStatus::Accepted
-        } else {
-            OrderStatus::Submitted
-        };
-        let cancel_rejected =
-            OrderEventAny::CancelRejected(OrderCancelRejectedSpec::builder().build());
 
-        order.apply(cancel_rejected.clone()).unwrap();
-
-        assert_eq!(order.status(), OrderStatus::Accepted);
-        assert_eq!(order.previous_status(), Some(previous_status));
-        assert_eq!(order.last_event(), &cancel_rejected);
+        assert_eq!(order.status(), OrderStatus::Canceled);
     }
 
     #[rstest]

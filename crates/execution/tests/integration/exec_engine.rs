@@ -5686,8 +5686,17 @@ fn test_process_order_event_publishes_instrument_order_event_topic(
 }
 
 #[rstest]
-fn test_process_cancel_rejected_after_acceptance_publishes_event(
+#[case::submitted(false, false, false)]
+#[case::accepted(false, true, false)]
+#[case::pending_submitted(true, false, false)]
+#[case::pending_accepted(true, true, false)]
+#[case::acceptance_overtakes_submitted_cancel(true, false, true)]
+#[case::acceptance_overtakes_accepted_cancel(true, true, true)]
+fn test_process_cancel_rejected_publishes_event(
     mut execution_engine: ExecutionEngine,
+    #[case] pending_cancel: bool,
+    #[case] accepted_before_cancel: bool,
+    #[case] acceptance_overtakes_cancel: bool,
 ) {
     let account_id = AccountId::test_default();
     let venue_order_id = VenueOrderId::from("V-001");
@@ -5696,47 +5705,112 @@ fn test_process_cancel_rejected_after_acceptance_publishes_event(
         CashAccount::default().into(),
     );
     execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
-    execution_engine.process(&OrderEventAny::PendingCancel(build_order_pending_cancel(
-        order.trader_id(),
-        order.strategy_id(),
-        instrument.id(),
-        order.client_order_id(),
-        account_id,
-        None,
-    )));
-    execution_engine.process(&TestOrderEventStubs::accepted(
-        &order,
-        account_id,
-        venue_order_id,
-    ));
+
+    if accepted_before_cancel {
+        execution_engine.process(&TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            venue_order_id,
+        ));
+    }
+
+    if pending_cancel {
+        execution_engine.process(&OrderEventAny::PendingCancel(build_order_pending_cancel(
+            order.trader_id(),
+            order.strategy_id(),
+            instrument.id(),
+            order.client_order_id(),
+            account_id,
+            cached_order_or(&execution_engine, &order).venue_order_id(),
+        )));
+    }
+
+    if acceptance_overtakes_cancel {
+        execution_engine.process(&TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            venue_order_id,
+        ));
+    }
+
+    let expected_status = if accepted_before_cancel || acceptance_overtakes_cancel {
+        OrderStatus::Accepted
+    } else {
+        OrderStatus::Submitted
+    };
+
+    let before_rejection = cached_order_or(&execution_engine, &order);
 
     let order_topic = switchboard::get_event_order_topic(order.strategy_id());
     let cancel_topic = switchboard::get_order_cancel_rejected_topic(instrument.id());
-    let received = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
-    let handler = TypedHandler::from({
-        let received = received.clone();
-        move |event: &OrderEventAny| received.borrow_mut().push(event.clone())
+
+    let subscriptions = [order_topic, cancel_topic].map(|topic| {
+        let received = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+
+        let handler = TypedHandler::from({
+            let received = received.clone();
+            move |event: &OrderEventAny| received.borrow_mut().push(event.clone())
+        });
+
+        msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+        (topic, received, handler)
     });
-    msgbus::subscribe_order_events(order_topic.into(), handler.clone(), None);
-    msgbus::subscribe_order_events(cancel_topic.into(), handler.clone(), None);
+
     let event = OrderEventAny::CancelRejected(build_order_cancel_rejected(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
         order.client_order_id(),
         account_id,
-        Some(venue_order_id),
+        before_rejection.venue_order_id(),
     ));
 
     execution_engine.process(&event);
-    msgbus::unsubscribe_order_events(order_topic.into(), &handler);
-    msgbus::unsubscribe_order_events(cancel_topic.into(), &handler);
+
+    for (topic, received, handler) in subscriptions {
+        msgbus::unsubscribe_order_events(topic.into(), &handler);
+        assert_eq!(received.borrow().as_slice(), std::slice::from_ref(&event));
+    }
 
     let cached = cached_order_or(&execution_engine, &order);
-    assert_eq!(cached.status(), OrderStatus::Accepted);
-    assert_eq!(cached.venue_order_id(), Some(venue_order_id));
+    assert_eq!(cached.status(), expected_status);
+    assert_eq!(cached.previous_status(), before_rejection.previous_status());
+    assert_eq!(cached.quantity(), before_rejection.quantity());
+    assert_eq!(cached.filled_qty(), before_rejection.filled_qty());
+    assert_eq!(cached.leaves_qty(), before_rejection.leaves_qty());
+    assert_eq!(cached.venue_order_id(), before_rejection.venue_order_id());
+    assert_eq!(cached.events().len(), before_rejection.events().len() + 1);
     assert_eq!(cached.last_event(), &event);
-    assert_eq!(received.borrow().as_slice(), &[event.clone(), event]);
+
+    if expected_status == OrderStatus::Submitted {
+        execution_engine.process(&TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            venue_order_id,
+        ));
+    }
+
+    let accepted = cached_order_or(&execution_engine, &order);
+    assert_eq!(accepted.status(), OrderStatus::Accepted);
+    assert_eq!(accepted.venue_order_id(), Some(venue_order_id));
+    execution_engine.process(&OrderEventAny::PendingCancel(build_order_pending_cancel(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        account_id,
+        Some(venue_order_id),
+    )));
+    execution_engine.process(&TestOrderEventStubs::canceled(
+        &accepted,
+        account_id,
+        Some(venue_order_id),
+    ));
+
+    assert_eq!(
+        cached_order_or(&execution_engine, &order).status(),
+        OrderStatus::Canceled,
+    );
 }
 
 fn prepare_accepted_order(execution_engine: &mut ExecutionEngine) -> (InstrumentAny, OrderAny) {
