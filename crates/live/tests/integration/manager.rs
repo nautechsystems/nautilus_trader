@@ -22,15 +22,19 @@ use std::{
     cell::{Cell, RefCell},
     collections::HashSet,
     rc::Rc,
-    sync::Once,
+    sync::{Arc, Once},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
+use bytes::Bytes;
 use indexmap::IndexSet;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
-    cache::Cache,
+    cache::{
+        Cache,
+        database::{CacheDatabaseAdapter, CacheMap},
+    },
     clients::ExecutionClient,
     clock::{Clock, VirtualClock},
     live::dst,
@@ -43,13 +47,14 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MessagingSwitchboard,
+        self, MessagingSwitchboard, TypedHandler,
         stubs::{
             TypedMessageSavingHandler, get_any_saving_handler,
             get_typed_into_message_saving_handler, get_typed_message_saving_handler,
         },
         switchboard,
     },
+    signal::Signal,
 };
 use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
 use nautilus_execution::{
@@ -67,26 +72,32 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
+    data::{
+        Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
+        greeks::{GreeksData, YieldCurveData},
+    },
     enums::{
         AccountType, AvgPxReconciliation, ContingencyType, LiquiditySide, OmsType, OrderSide,
         OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
-        OrderEventAny, OrderFilled,
+        OrderEventAny, OrderFilled, OrderSnapshot, PositionEvent,
         account::state::AccountState,
         order::spec::{
             OrderAcceptedSpec, OrderCancelRejectedSpec, OrderModifyRejectedSpec,
             OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderUpdatedSpec,
         },
+        position::snapshot::PositionSnapshot,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
-        TradeId, TraderId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
+        StrategyId, TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
-        Instrument, InstrumentAny,
+        Instrument, InstrumentAny, SyntheticInstrument,
         stubs::{binary_option, btcusd_bybit, crypto_perpetual_ethusdt, currency_pair_btcusdt},
     },
+    orderbook::OrderBook,
     orders::{
         Order, OrderAny, OrderTestBuilder,
         stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
@@ -99,6 +110,7 @@ use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use ustr::Ustr;
 
 #[cfg(all(feature = "simulation", madsim))]
 async fn advance_clock(d: dst::time::Duration) {
@@ -124,8 +136,13 @@ impl TestContext {
     }
 
     fn with_config(config: ExecutionManagerConfig) -> Self {
+        Self::with_cache(Cache::default(), config)
+    }
+
+    /// Builds a context around a prepared cache, such as one restored through `cache_all`.
+    fn with_cache(cache: Cache, config: ExecutionManagerConfig) -> Self {
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
-        let cache = Rc::new(RefCell::new(Cache::default()));
+        let cache = Rc::new(RefCell::new(cache));
 
         // Add test account to cache (required for position creation in ExecutionEngine)
         let account_state = AccountState::new(
@@ -5044,6 +5061,889 @@ fn create_bounded_fill_lifecycle(
     );
 
     (order_report, fill_report)
+}
+
+#[derive(Debug, Default)]
+struct PersistedCacheState {
+    general: AHashMap<String, Bytes>,
+    orders: AHashMap<ClientOrderId, OrderAny>,
+    order_client: AHashMap<ClientOrderId, ClientId>,
+    positions: AHashMap<PositionId, Position>,
+    order_position: AHashMap<ClientOrderId, PositionId>,
+}
+
+/// Cache database adapter that keeps orders, positions, position OMS entries and the
+/// order-position index in shared memory so a fresh `Cache` restores them through `cache_all`.
+#[derive(Debug)]
+struct PersistingCacheDatabase {
+    state: Arc<Mutex<PersistedCacheState>>,
+}
+
+fn persisting_cache(state: &Arc<Mutex<PersistedCacheState>>) -> Cache {
+    Cache::new(
+        None,
+        Some(Box::new(PersistingCacheDatabase {
+            state: state.clone(),
+        })),
+    )
+}
+
+#[async_trait]
+impl CacheDatabaseAdapter for PersistingCacheDatabase {
+    fn close(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn flush(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn load_all(&self) -> anyhow::Result<CacheMap> {
+        let state = self.state.lock();
+        Ok(CacheMap {
+            orders: state.orders.clone(),
+            positions: state.positions.clone(),
+            ..Default::default()
+        })
+    }
+
+    fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
+        Ok(self.state.lock().general.clone())
+    }
+
+    async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_instrument_closes(
+        &self,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
+        Ok(self.state.lock().orders.clone())
+    }
+
+    async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
+        Ok(self.state.lock().positions.clone())
+    }
+
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
+        Ok(self.state.lock().order_position.clone())
+    }
+
+    fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
+        Ok(self.state.lock().order_client.clone())
+    }
+
+    async fn load_currency(&self, _code: &Ustr) -> anyhow::Result<Option<Currency>> {
+        Ok(None)
+    }
+
+    async fn load_instrument(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        Ok(None)
+    }
+
+    async fn load_synthetic(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        Ok(None)
+    }
+
+    async fn load_account(&self, _account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
+        Ok(None)
+    }
+
+    async fn load_order(
+        &self,
+        client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderAny>> {
+        Ok(self.state.lock().orders.get(client_order_id).cloned())
+    }
+
+    async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>> {
+        Ok(self.state.lock().positions.get(position_id).cloned())
+    }
+
+    fn load_actor(&self, _actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        Ok(AHashMap::new())
+    }
+
+    fn load_signals(&self, _name: &str) -> anyhow::Result<Vec<Signal>> {
+        Ok(Vec::new())
+    }
+
+    fn load_custom_data(&self, _data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
+        Ok(Vec::new())
+    }
+
+    fn load_order_snapshot(
+        &self,
+        _client_order_id: &ClientOrderId,
+    ) -> anyhow::Result<Option<OrderSnapshot>> {
+        Ok(None)
+    }
+
+    fn load_position_snapshot(
+        &self,
+        _position_id: &PositionId,
+    ) -> anyhow::Result<Option<PositionSnapshot>> {
+        Ok(None)
+    }
+
+    fn load_quotes(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+        Ok(Vec::new())
+    }
+
+    fn load_trades(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        Ok(Vec::new())
+    }
+
+    fn load_funding_rates(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        Ok(Vec::new())
+    }
+
+    fn load_bars(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        Ok(Vec::new())
+    }
+
+    fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
+        self.state.lock().general.insert(key, value);
+        Ok(())
+    }
+
+    fn add_currency(&self, _currency: &Currency) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_instrument(&self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_instrument_close(&self, _close: &InstrumentClose) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_synthetic(&self, _synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_account(&self, _account: &AccountAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
+        let mut state = self.state.lock();
+        state.orders.insert(order.client_order_id(), order.clone());
+
+        if let Some(client_id) = client_id {
+            state
+                .order_client
+                .insert(order.client_order_id(), client_id);
+        }
+
+        Ok(())
+    }
+
+    fn add_order_snapshot(&self, _snapshot: &OrderSnapshot) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_position(&self, position: &Position) -> anyhow::Result<()> {
+        self.state
+            .lock()
+            .positions
+            .insert(position.id, position.clone());
+        Ok(())
+    }
+
+    fn add_position_snapshot(&self, _snapshot: &PositionSnapshot) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_order_book(&self, _order_book: &OrderBook) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_signal(&self, _signal: &Signal) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_custom_data(&self, _data: &CustomData) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_quote(&self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_trade(&self, _trade: &TradeTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_funding_rate(&self, _funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_bar(&self, _bar: &Bar) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_greeks(&self, _greeks: &GreeksData) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_yield_curve(&self, _yield_curve: &YieldCurveData) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_actor(&self, _actor_id: &ActorId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_strategy(&self, _component_id: &StrategyId) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn delete_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
+        let mut state = self.state.lock();
+        state.orders.remove(client_order_id);
+        state.order_client.remove(client_order_id);
+        state.order_position.remove(client_order_id);
+        Ok(())
+    }
+
+    fn delete_position(&self, position_id: &PositionId) -> anyhow::Result<()> {
+        self.state.lock().positions.remove(position_id);
+        Ok(())
+    }
+
+    fn delete_account_event(&self, _account_id: &AccountId, _event_id: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn index_venue_order_id(
+        &self,
+        _client_order_id: ClientOrderId,
+        _venue_order_id: VenueOrderId,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn index_order_position(
+        &self,
+        client_order_id: ClientOrderId,
+        position_id: PositionId,
+    ) -> anyhow::Result<()> {
+        self.state
+            .lock()
+            .order_position
+            .insert(client_order_id, position_id);
+        Ok(())
+    }
+
+    fn update_actor(
+        &self,
+        _actor_id: &ActorId,
+        _actor_state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_strategy(
+        &self,
+        _strategy_id: &StrategyId,
+        _strategy_state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_account(&self, _account: &AccountAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()> {
+        let client_order_id = order_event.client_order_id();
+        let mut state = self.state.lock();
+        let order = state
+            .orders
+            .get_mut(&client_order_id)
+            .ok_or_else(|| anyhow::anyhow!("order {client_order_id} is not persisted"))?;
+        order.apply(order_event.clone())?;
+        Ok(())
+    }
+
+    fn update_position(&self, position: &Position) -> anyhow::Result<()> {
+        self.state
+            .lock()
+            .positions
+            .insert(position.id, position.clone());
+        Ok(())
+    }
+
+    fn snapshot_order_state(&self, _order: &OrderAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn snapshot_position_state(
+        &self,
+        _position: &Position,
+        _ts_snapshot: UnixNanos,
+        _unrealized_pnl: Option<Money>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+/// Restores a cache from the persisted state the way a node does on startup.
+async fn restore_persisted_cache(state: &Arc<Mutex<PersistedCacheState>>) -> Cache {
+    let mut cache = persisting_cache(state);
+    cache.cache_all().await.expect("persisted cache loads");
+    cache.build_index();
+    cache
+}
+
+const CLOSING_SCENARIO_OPENING_TS: u64 = 1_000_000_000_000;
+const CLOSING_SCENARIO_WINDOW_START: u64 = 2_000_000_000_000;
+const CLOSING_SCENARIO_ACCEPTED_TS: u64 = 2_000_000_500_000;
+const CLOSING_SCENARIO_FILL_TS_1: u64 = 2_000_001_000_000;
+const CLOSING_SCENARIO_FILL_TS_2: u64 = 2_000_002_000_000;
+
+fn closing_scenario_strategy_id() -> StrategyId {
+    StrategyId::from("STRATEGY-001")
+}
+
+fn closing_scenario_position_id() -> PositionId {
+    PositionId::new(format!(
+        "{}-{}",
+        test_instrument_id(),
+        closing_scenario_strategy_id()
+    ))
+}
+
+fn closing_scenario_venue_order_id() -> VenueOrderId {
+    VenueOrderId::from("V-CLOSE")
+}
+
+/// Registers Netting for the strategy and for EXTERNAL. Kraken spot, whose margin positions
+/// this scenario models, reports under a Netting OMS; the `TestContext` default of Hedging for
+/// EXTERNAL would key an unclaimed external fill as `P-*` instead of `{instrument}-EXTERNAL`.
+fn register_closing_scenario_oms(ctx: &TestContext) {
+    let mut engine = ctx.exec_engine.borrow_mut();
+    engine.register_oms_type(closing_scenario_strategy_id(), OmsType::Netting);
+    engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Netting);
+}
+
+/// Caches the filled opening order `O-OPEN` and the open LONG 1.000 @ 3000.00 it created,
+/// with the 0.60 USDT opening commission already recorded on the position.
+fn cache_closing_scenario_open_long(ctx: &TestContext, instrument: &InstrumentAny) {
+    let position_id = closing_scenario_position_id();
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(ClientOrderId::from("O-OPEN"))
+        .strategy_id(closing_scenario_strategy_id())
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3000.00"))
+        .build();
+    apply_submitted_and_accepted(&mut order, VenueOrderId::from("V-OPEN"));
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        instrument,
+        Some(TradeId::from("T-OPEN")),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("1.000")),
+        Some(LiquiditySide::Maker),
+        Some(Money::from("0.60 USDT")),
+        Some(UnixNanos::from(CLOSING_SCENARIO_OPENING_TS)),
+        Some(test_account_id()),
+    );
+    order.apply(filled.clone()).unwrap();
+    let position = Position::new(instrument, filled.into());
+    assert_eq!(position.realized_pnl, Some(Money::from("-0.60 USDT")));
+
+    let mut cache = ctx.cache.borrow_mut();
+    cache
+        .add_order(order, Some(position_id), Some(test_client_id()), false)
+        .unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
+}
+
+/// Caches the accepted closing order `O-CLOSE` (SELL 1.000 limit 3100.00, venue `V-CLOSE`).
+fn cache_closing_scenario_closing_order(ctx: &TestContext) -> ClientOrderId {
+    let client_order_id = ClientOrderId::from("O-CLOSE");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .strategy_id(closing_scenario_strategy_id())
+        .instrument_id(test_instrument_id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3100.00"))
+        .build();
+    apply_submitted_and_accepted(&mut order, closing_scenario_venue_order_id());
+    ctx.add_order(order);
+    client_order_id
+}
+
+fn closing_scenario_opening_order_report() -> OrderStatusReport {
+    let ts = UnixNanos::from(CLOSING_SCENARIO_OPENING_TS);
+    OrderStatusReport::new(
+        test_account_id(),
+        test_instrument_id(),
+        Some(ClientOrderId::from("O-OPEN")),
+        VenueOrderId::from("V-OPEN"),
+        OrderSide::Buy.into(),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        ts,
+        ts,
+        ts,
+        None,
+    )
+    .with_price(Price::from("3000.00"))
+    .with_avg_px(dec!(3000.00))
+}
+
+fn closing_scenario_opening_fill_report() -> FillReport {
+    let ts = UnixNanos::from(CLOSING_SCENARIO_OPENING_TS);
+    FillReport::new(
+        test_account_id(),
+        test_instrument_id(),
+        VenueOrderId::from("V-OPEN"),
+        TradeId::from("T-OPEN"),
+        OrderSide::Buy,
+        Quantity::from("1.000"),
+        Price::from("3000.00"),
+        Money::from("0.60 USDT"),
+        LiquiditySide::Maker,
+        Some(ClientOrderId::from("O-OPEN")),
+        None,
+        ts,
+        ts,
+        None,
+    )
+}
+
+fn closing_scenario_closing_order_report(
+    client_order_id: Option<ClientOrderId>,
+) -> OrderStatusReport {
+    OrderStatusReport::new(
+        test_account_id(),
+        test_instrument_id(),
+        client_order_id,
+        closing_scenario_venue_order_id(),
+        OrderSide::Sell.into(),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(CLOSING_SCENARIO_ACCEPTED_TS),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2),
+        None,
+    )
+    .with_price(Price::from("3100.00"))
+    .with_avg_px(dec!(3112.00))
+}
+
+/// Two closing fills: 0.400 @ 3100.00 fee 0.25 USDT and 0.600 @ 3120.00 fee 0.37 USDT.
+fn closing_scenario_closing_fill_reports(
+    client_order_id: Option<ClientOrderId>,
+) -> Vec<FillReport> {
+    [
+        (
+            "T-CLOSE-1",
+            "0.400",
+            "3100.00",
+            "0.25 USDT",
+            CLOSING_SCENARIO_FILL_TS_1,
+        ),
+        (
+            "T-CLOSE-2",
+            "0.600",
+            "3120.00",
+            "0.37 USDT",
+            CLOSING_SCENARIO_FILL_TS_2,
+        ),
+    ]
+    .into_iter()
+    .map(|(trade_id, quantity, price, commission, ts)| {
+        FillReport::new(
+            test_account_id(),
+            test_instrument_id(),
+            closing_scenario_venue_order_id(),
+            TradeId::from(trade_id),
+            OrderSide::Sell,
+            Quantity::from(quantity),
+            Price::from(price),
+            Money::from(commission),
+            LiquiditySide::Taker,
+            client_order_id,
+            None,
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+            None,
+        )
+    })
+    .collect()
+}
+
+/// Builds the venue data without any position report for the instrument. A bounded status
+/// declares a window that starts after the opening fill and carries only the closing order and
+/// fills; an unbounded status carries the opening order and fill as well.
+fn closing_scenario_mass_status(
+    bounded: bool,
+    closing_client_order_id: Option<ClientOrderId>,
+) -> ExecutionMassStatus {
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 1_000_000),
+        Some(UUID4::new()),
+    );
+    let mut order_reports = vec![closing_scenario_closing_order_report(
+        closing_client_order_id,
+    )];
+    let mut fill_reports = closing_scenario_closing_fill_reports(closing_client_order_id);
+
+    if bounded {
+        mass_status.set_report_window(Some(UnixNanos::from(CLOSING_SCENARIO_WINDOW_START)), true);
+    } else {
+        order_reports.insert(0, closing_scenario_opening_order_report());
+        fill_reports.insert(0, closing_scenario_opening_fill_report());
+    }
+
+    mass_status.add_order_reports(order_reports);
+    mass_status.add_fill_reports(fill_reports);
+    mass_status
+}
+
+fn capture_position_events() -> (Rc<RefCell<Vec<PositionEvent>>>, TypedHandler<PositionEvent>) {
+    let received = Rc::new(RefCell::new(Vec::<PositionEvent>::new()));
+    let handler = TypedHandler::from({
+        let received = received.clone();
+        move |event: &PositionEvent| received.borrow_mut().push(event.clone())
+    });
+    msgbus::subscribe_position_events("events.position.*".into(), handler.clone(), None);
+    (received, handler)
+}
+
+fn release_position_events(handler: &TypedHandler<PositionEvent>) {
+    msgbus::unsubscribe_position_events("events.position.*".into(), handler);
+}
+
+fn count_filled_events(events: &[OrderEventAny]) -> usize {
+    events
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+        .count()
+}
+
+/// Asserts that the closing order is FILLED with both trades and that the restored position
+/// is closed exactly once by them: realized PnL 110.78 USDT, commissions 1.22 USDT, three fill
+/// events, and no second position for the instrument.
+fn assert_closing_scenario_recorded_once(cache: &Cache, closing_order_id: ClientOrderId) {
+    let instrument_id = test_instrument_id();
+    let account_id = test_account_id();
+
+    let order = cache
+        .order(&closing_order_id)
+        .expect("closing order cached");
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert_eq!(
+        order.trade_ids().into_iter().copied().collect::<Vec<_>>(),
+        vec![TradeId::from("T-CLOSE-1"), TradeId::from("T-CLOSE-2")]
+    );
+    drop(order);
+
+    let position_ids = cache
+        .positions(None, Some(&instrument_id), None, Some(&account_id), None)
+        .iter()
+        .map(|position| position.id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        position_ids,
+        vec![closing_scenario_position_id()],
+        "a closing fill must not open an opposite position"
+    );
+    let position = cache
+        .position(&closing_scenario_position_id())
+        .expect("restored position cached");
+    assert!(
+        position.is_closed(),
+        "restored position must be closed by its closing fills, found side {:?} quantity {} realized_pnl {:?} trade_ids {:?}",
+        position.side,
+        position.quantity,
+        position.realized_pnl,
+        position.trade_ids,
+    );
+    assert_eq!(position.side, PositionSide::Flat);
+    assert_eq!(position.quantity, Quantity::from("0.000"));
+    assert_eq!(position.signed_decimal_qty(), dec!(0));
+    assert_eq!(position.realized_pnl, Some(Money::from("110.78 USDT")));
+    assert_eq!(position.commissions(), vec![Money::from("1.22 USDT")]);
+    assert_eq!(
+        position.trade_ids,
+        [
+            TradeId::from("T-OPEN"),
+            TradeId::from("T-CLOSE-1"),
+            TradeId::from("T-CLOSE-2"),
+        ]
+        .into_iter()
+        .collect::<AHashSet<_>>()
+    );
+    assert_eq!(position.events.len(), 3);
+    assert_eq!(position.closing_order_id, Some(closing_order_id));
+    assert_eq!(
+        position.ts_closed,
+        Some(UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2))
+    );
+    drop(position);
+
+    assert_eq!(
+        cache
+            .positions_open(None, Some(&instrument_id), None, Some(&account_id), None)
+            .len(),
+        0
+    );
+    assert_eq!(
+        cache
+            .positions_closed(None, Some(&instrument_id), None, Some(&account_id), None)
+            .len(),
+        1
+    );
+}
+
+/// Asserts the position event sequence of a first reconciliation that closes the restored
+/// position with two fills: one `PositionChanged` followed by one `PositionClosed`.
+fn assert_closing_scenario_position_events(events: &[PositionEvent]) {
+    assert_eq!(
+        events.len(),
+        2,
+        "expected PositionChanged then PositionClosed, found {events:?}"
+    );
+    assert!(matches!(events[0], PositionEvent::PositionChanged(_)));
+    assert!(matches!(events[1], PositionEvent::PositionClosed(_)));
+}
+
+/// A cached closing order whose fills arrive with no position report for the instrument closes
+/// the restored position with the fills' realized PnL and fees, whether or not the mass status
+/// declares a lookback window that excludes the opening fill.
+#[rstest]
+#[case::unbounded(false)]
+#[case::bounded(true)]
+fn test_cached_closing_order_fills_close_restored_position(#[case] bounded: bool) {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    ctx.add_instrument(instrument.clone());
+    register_closing_scenario_oms(&ctx);
+    cache_closing_scenario_open_long(&ctx, &instrument);
+    let closing_order_id = cache_closing_scenario_closing_order(&ctx);
+
+    let mass_status = closing_scenario_mass_status(bounded, Some(closing_order_id));
+    let (position_events, handler) = capture_position_events();
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    release_position_events(&handler);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert_eq!(count_filled_events(&result.events), 2);
+    assert_closing_scenario_recorded_once(&ctx.cache.borrow(), closing_order_id);
+    assert_closing_scenario_position_events(&position_events.borrow());
+}
+
+/// A closing order placed outside the node, whether claimed for the strategy or left to
+/// EXTERNAL, closes the restored position with its fills' realized PnL and fees instead of
+/// opening an opposite position, whether or not the mass status declares a lookback window.
+#[rstest]
+#[case::unclaimed_unbounded(false, false)]
+#[case::claimed_unbounded(true, false)]
+#[case::unclaimed_bounded(false, true)]
+#[case::claimed_bounded(true, true)]
+fn test_external_closing_order_fills_close_restored_position(
+    #[case] claimed: bool,
+    #[case] bounded: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    ctx.add_instrument(instrument.clone());
+    register_closing_scenario_oms(&ctx);
+    cache_closing_scenario_open_long(&ctx, &instrument);
+
+    if claimed {
+        ctx.manager
+            .claim_external_orders(instrument.id(), closing_scenario_strategy_id())
+            .unwrap();
+    }
+
+    let closing_order_id = ClientOrderId::from(closing_scenario_venue_order_id().as_str());
+    let mass_status = closing_scenario_mass_status(bounded, None);
+    let (position_events, handler) = capture_position_events();
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    release_position_events(&handler);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(result.external_orders.len(), 1);
+    assert_eq!(count_filled_events(&result.events), 2);
+    assert_closing_scenario_recorded_once(&ctx.cache.borrow(), closing_order_id);
+    assert_closing_scenario_position_events(&position_events.borrow());
+}
+
+/// After the reconciled state is persisted and restored into a fresh node, reconciling the
+/// same venue data again leaves the position closed and records the cached closing order's
+/// fills, fees and realized PnL exactly once.
+#[rstest]
+#[case::unbounded(false)]
+#[case::bounded(true)]
+#[tokio::test]
+async fn test_cached_closing_order_fills_recorded_once_across_restart(#[case] bounded: bool) {
+    let persisted = Arc::new(Mutex::new(PersistedCacheState::default()));
+    let instrument = test_instrument();
+    let closing_order_id = {
+        let mut ctx = TestContext::with_cache(
+            persisting_cache(&persisted),
+            ExecutionManagerConfig::default(),
+        );
+        ctx.add_instrument(instrument.clone());
+        register_closing_scenario_oms(&ctx);
+        cache_closing_scenario_open_long(&ctx, &instrument);
+        let closing_order_id = cache_closing_scenario_closing_order(&ctx);
+
+        let mass_status = closing_scenario_mass_status(bounded, Some(closing_order_id));
+        let result = ctx
+            .manager
+            .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+        assert_eq!(count_filled_events(&result.events), 2);
+        closing_order_id
+    };
+
+    let cache = restore_persisted_cache(&persisted).await;
+    let mut ctx = TestContext::with_cache(cache, ExecutionManagerConfig::default());
+    ctx.add_instrument(instrument);
+    register_closing_scenario_oms(&ctx);
+
+    let mass_status = closing_scenario_mass_status(bounded, Some(closing_order_id));
+    let (position_events, handler) = capture_position_events();
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    release_position_events(&handler);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert_eq!(count_filled_events(&result.events), 0);
+    assert!(
+        position_events.borrow().is_empty(),
+        "restart must not re-apply fills, found {:?}",
+        position_events.borrow()
+    );
+    assert_closing_scenario_recorded_once(&ctx.cache.borrow(), closing_order_id);
+}
+
+/// After the reconciled state is persisted and restored into a fresh node, reconciling the
+/// same venue data again leaves the position closed and records the external closing order's
+/// fills, fees and realized PnL exactly once.
+#[rstest]
+#[case::claimed_unbounded(true, false)]
+#[case::claimed_bounded(true, true)]
+#[case::unclaimed_bounded(false, true)]
+#[tokio::test]
+async fn test_external_closing_order_fills_recorded_once_across_restart(
+    #[case] claimed: bool,
+    #[case] bounded: bool,
+) {
+    let persisted = Arc::new(Mutex::new(PersistedCacheState::default()));
+    let instrument = test_instrument();
+    let closing_order_id = ClientOrderId::from(closing_scenario_venue_order_id().as_str());
+    {
+        let mut ctx = TestContext::with_cache(
+            persisting_cache(&persisted),
+            ExecutionManagerConfig::default(),
+        );
+        ctx.add_instrument(instrument.clone());
+        register_closing_scenario_oms(&ctx);
+        cache_closing_scenario_open_long(&ctx, &instrument);
+
+        if claimed {
+            ctx.manager
+                .claim_external_orders(instrument.id(), closing_scenario_strategy_id())
+                .unwrap();
+        }
+
+        let mass_status = closing_scenario_mass_status(bounded, None);
+        let result = ctx
+            .manager
+            .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+        assert_eq!(result.external_orders.len(), 1);
+        assert_eq!(count_filled_events(&result.events), 2);
+    }
+
+    let cache = restore_persisted_cache(&persisted).await;
+    let mut ctx = TestContext::with_cache(cache, ExecutionManagerConfig::default());
+    ctx.add_instrument(instrument.clone());
+    register_closing_scenario_oms(&ctx);
+
+    if claimed {
+        ctx.manager
+            .claim_external_orders(instrument.id(), closing_scenario_strategy_id())
+            .unwrap();
+    }
+
+    let mass_status = closing_scenario_mass_status(bounded, None);
+    let (position_events, handler) = capture_position_events();
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    release_position_events(&handler);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert_eq!(count_filled_events(&result.events), 0);
+    assert!(
+        position_events.borrow().is_empty(),
+        "restart must not re-apply fills, found {:?}",
+        position_events.borrow()
+    );
+    assert_closing_scenario_recorded_once(&ctx.cache.borrow(), closing_order_id);
 }
 
 #[tokio::test]
