@@ -1718,6 +1718,122 @@ fn test_adjust_account_overflow_emits_no_state() {
     assert_eq!(saving_handler.get_messages().len(), 1);
 }
 
+// The long position pays `rate` on 1000 USDT of notional, against 100 USDT of margins
+#[rstest]
+#[case::payment_below_margins("0.001", "100 USDT", "99 USDT")]
+#[case::receipt_back_to_margins("-0.001", "99 USDT", "100 USDT")]
+fn test_funding_settlement_caps_locked_margin_at_total(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] rate: &str,
+    #[case] total_before: &str,
+    #[case] total_after: &str,
+) {
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let total_before = Money::from(total_before);
+    let instrument_margin = MarginBalance::new(
+        Money::from("40 USDT"),
+        Money::from("20 USDT"),
+        Some(crypto_perpetual_ethusdt.id),
+    );
+    let account_margin = MarginBalance::new(Money::from("20 USDT"), Money::from("20 USDT"), None);
+    let margin_account = MarginAccount::new(
+        AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                total_before,
+                total_before,
+                Money::from("0 USDT"),
+            )],
+            vec![instrument_margin, account_margin],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ),
+        true,
+    );
+    let mut cache = Cache::default();
+    cache
+        .add_account(AccountAny::Margin(margin_account))
+        .unwrap();
+    cache.build_index();
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(crypto_perpetual_ethusdt.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-001")),
+        None,
+        Some(Price::from("1000.00")),
+        Some(Quantity::from("1.000")),
+        None,
+        Some(Money::from("0 USDT")),
+        Some(UnixNanos::from(1)),
+        Some(account_id),
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_mark_price(MarkPriceUpdate::new(
+            crypto_perpetual_ethusdt.id,
+            Price::from("1000.00"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(cache));
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
+    let exchange = build_exchange_with_options(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        false,
+        false,
+        cache,
+    );
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let settlement_ns = UnixNanos::from(3);
+    exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            crypto_perpetual_ethusdt.id,
+            Decimal::from_str(rate).unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
+
+    // Locked is the 100 USDT of margins capped at the total, as the margin recompute would set it
+    let total_after = Money::from(total_after);
+    let locked_after = total_after.min(Money::from("100 USDT"));
+    let account_states = account_saver.get_messages();
+    let [state] = account_states.as_slice() else {
+        panic!("expected one account state, was {}", account_states.len());
+    };
+    let [balance] = state.balances.as_slice() else {
+        panic!("expected one balance");
+    };
+    assert_eq!(balance.total, total_after);
+    assert_eq!(balance.locked, locked_after);
+    assert_eq!(balance.free, total_after - locked_after);
+    assert_eq!(state.margins, vec![instrument_margin, account_margin]);
+}
+
 #[rstest]
 fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let account_id = AccountId::from("BINANCE-001");
