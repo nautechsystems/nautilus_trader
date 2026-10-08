@@ -739,17 +739,22 @@ impl HyperliquidHttpClient {
 
     /// Request account state (balances and margins) for a user.
     ///
-    /// Fetches perp and spot clearinghouse state from Hyperliquid and merges them
-    /// into a single `AccountState`. USDC comes from the perp margin summary only
-    /// when that summary reflects non-zero collateral, margin used, or withdrawable
-    /// balance; if the summary is absent or zeroed, spot USDC is used instead. Non-USDC
-    /// tokens are always appended from the spot balances.
+    /// Fetches perp and spot clearinghouse state and the account abstraction mode from
+    /// Hyperliquid and merges them into a single `AccountState`. For unified and portfolio
+    /// margin accounts, balances come from the spot state alone and spot USDC `hold` is the
+    /// account-wide margin. Otherwise USDC comes from the perp margin summary only when that
+    /// summary reflects non-zero collateral, margin used, or withdrawable balance; if the
+    /// summary is absent or zeroed, spot USDC is used instead. Non-USDC tokens are always
+    /// appended from the spot balances. Spot tokens the venue lists at zero are reported at
+    /// zero, and USDC is reported at zero when there is no USDC balance, so a previous balance
+    /// is cleared. On accounts without spot collateral this needs a perp summary in the response.
     ///
     /// # Errors
     ///
-    /// Returns an error if `account_id` is not set, or if either the perp or
-    /// spot clearinghouse request fails. Spot failures are propagated so the
-    /// caller sees real API errors instead of a silently truncated snapshot.
+    /// Returns an error if `account_id` is not set, or if the perp clearinghouse, spot
+    /// clearinghouse, or user abstraction request fails. Spot and abstraction failures are
+    /// propagated so the caller sees real API errors instead of a silently truncated or
+    /// misread snapshot.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -875,7 +880,7 @@ impl HyperliquidHttpClient {
     /// Split an HIP-4 outcome's quote tokens into matched Yes and No side tokens.
     ///
     /// Submits a `userOutcome` exchange action with the `splitOutcome` operation:
-    /// debits `amount` quote tokens (USDH) and credits `amount` Yes plus `amount`
+    /// debits `amount` quote tokens and credits `amount` Yes plus `amount`
     /// No side tokens for the given `outcome` index. Ordinary directional
     /// buys and sells on outcome instruments go through the standard order path
     /// without calling this; the action is for dual-side market making and

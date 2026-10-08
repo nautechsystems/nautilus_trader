@@ -48,7 +48,7 @@ pub use api::CacheApi; // Re-export
 use bounded::BoundedVecDeque;
 use bytes::Bytes;
 pub use config::CacheConfig; // Re-export
-use database::{CacheDatabaseAdapter, CacheMap};
+use database::{CacheDatabaseAdapter, CacheMap, register_loaded_currencies};
 pub use error::{
     ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, CurrencyLookupError,
     INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND,
@@ -62,8 +62,7 @@ use indexmap::IndexMap;
 use nautilus_core::{
     DurationNanos, SharedCell, UnixNanos,
     correctness::{
-        check_key_not_in_map, check_predicate_false, check_slice_not_empty,
-        check_valid_string_ascii,
+        check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string_utf8,
     },
 };
 use nautilus_model::{
@@ -77,7 +76,7 @@ use nautilus_model::{
         AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
         PriceType,
     },
-    events::{AccountState, OrderEventAny, OrderFilled},
+    events::{AccountState, OrderEventAny, OrderFilled, PositionAdjusted},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
         PositionId, StrategyId, Venue, VenueOrderId,
@@ -473,11 +472,14 @@ impl Cache {
     ///
     /// Returns an error if loading cache data fails.
     pub async fn cache_all(&mut self) -> anyhow::Result<()> {
-        let cache_map = match &self.database {
+        let mut cache_map = match &self.database {
             Some(db) => db.load_all().await?,
             None => CacheMap::default(),
         };
 
+        // An adapter registers the loaded currencies before decoding their dependents; repeating
+        // it here keeps the cached map consistent with the registry whatever the adapter did.
+        register_loaded_currencies(&mut cache_map.currencies)?;
         self.currencies = cache_map.currencies;
         self.instruments = cache_map.instruments;
         self.instrument_closes = cache_map.instrument_closes;
@@ -520,7 +522,9 @@ impl Cache {
             None => AHashMap::new(),
         };
 
-        log::info!("Cached {} currencies from database", self.general.len());
+        register_loaded_currencies(&mut self.currencies)?;
+
+        log::info!("Cached {} currencies from database", self.currencies.len());
         Ok(())
     }
 
@@ -2117,7 +2121,8 @@ impl Cache {
     ///
     /// Returns an error if persisting the entry to the backing database fails.
     pub fn add(&mut self, key: &str, value: Bytes) -> anyhow::Result<()> {
-        check_valid_string_ascii(key, stringify!(key))?;
+        // Keys are opaque and may embed exchange symbols, which need not be ASCII
+        check_valid_string_utf8(key, stringify!(key))?;
         check_predicate_false(value.is_empty(), stringify!(value))?;
 
         log::debug!("Adding general {key}");
@@ -2603,13 +2608,42 @@ impl Cache {
         Ok(())
     }
 
+    /// The currencies an account state references: its balances, its margins and its base currency.
+    fn state_currencies(state: &AccountState) -> impl Iterator<Item = Currency> + '_ {
+        state
+            .balances
+            .iter()
+            .map(|balance| balance.currency)
+            .chain(state.margins.iter().map(|margin| margin.currency))
+            .chain(state.base_currency)
+    }
+
+    /// Persists the currencies an account references, so a restart can restore them.
+    ///
+    /// An account can hold collateral in a currency no instrument carries, and a `Currency`
+    /// persists as its bare code, so without this the account cannot be decoded in a process
+    /// where that code was never registered. Mirrors what [`Self::add_instrument`] does for an
+    /// instrument's base, quote and settlement currencies.
+    fn add_account_currencies(&mut self, account: &AccountAny) -> anyhow::Result<()> {
+        let Some(state) = account.last_event() else {
+            return Ok(());
+        };
+
+        for currency in Self::state_currencies(&state) {
+            self.add_currency(currency)?;
+        }
+        Ok(())
+    }
+
     /// Adds the `account` to the cache.
     ///
     /// # Errors
     ///
-    /// Returns an error if persisting the account to the backing database fails.
+    /// Returns an error if persisting the account or its currencies to the backing database fails.
     pub fn add_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         log::debug!("Adding `Account` {}", account.id());
+
+        self.add_account_currencies(&account)?;
 
         if let Some(database) = &mut self.database {
             database.add_account(&account)?;
@@ -3141,8 +3175,10 @@ impl Cache {
     ) -> anyhow::Result<()> {
         // Validate and serialize the OMS entry up front: both are construction failures, and
         // committing the position before they run would leave the cache mutated by one.
+        // The key embeds the position ID, which embeds the instrument ID and venue
+        // symbol, and exchange symbols may contain non-ASCII characters.
         let key = position_oms_key(position.id);
-        check_valid_string_ascii(&key, stringify!(key))?;
+        check_valid_string_utf8(&key, stringify!(key))?;
         let value = Bytes::from(serde_json::to_vec(&oms_type)?);
         check_predicate_false(value.is_empty(), stringify!(value))?;
 
@@ -3249,6 +3285,8 @@ impl Cache {
             }
         }
 
+        self.add_account_currencies(account)?;
+
         if let Some(database) = &mut self.database {
             database.update_account(account)?;
         }
@@ -3301,7 +3339,17 @@ impl Cache {
     /// Returns an error if updating the account in the database fails.
     pub fn update_account_owned(&mut self, account: AccountAny) -> anyhow::Result<()> {
         let account_id = account.id();
+        // The in-memory account is updated before anything can fail, so a database failure while
+        // saving its currencies never drops an account the caller has taken out of the cache.
+        let currencies: Vec<Currency> = account
+            .last_event()
+            .map(|state| Self::state_currencies(&state).collect())
+            .unwrap_or_default();
         self.cache_account_owned(account);
+
+        for currency in currencies {
+            self.add_currency(currency)?;
+        }
 
         if let Some(database) = &mut self.database {
             let Some(account_cell) = self.accounts.get(&account_id) else {
@@ -3326,7 +3374,19 @@ impl Cache {
             return self.add_account(AccountAny::from_events(std::slice::from_ref(event))?);
         };
 
+        // The event is applied before anything can fail, so a database failure while saving its
+        // currencies leaves the in-memory account current.
         cell.borrow_mut().apply(event.clone())?;
+
+        // The event carries every currency the account references after it, so the account
+        // itself is not cloned on this path.
+        for currency in Self::state_currencies(event) {
+            self.add_currency(currency)?;
+        }
+
+        let Some(cell) = self.accounts.get(&event.account_id) else {
+            anyhow::bail!("Account {} not found after apply", event.account_id);
+        };
 
         if let Some(database) = &mut self.database {
             database.update_account(&cell.borrow())?;
@@ -3442,8 +3502,11 @@ impl Cache {
         if order.is_open() {
             self.index.orders_closed.remove(&client_order_id);
             self.index.orders_open.insert(client_order_id);
-        } else if order.is_closed() {
+        } else {
             self.index.orders_open.remove(&client_order_id);
+        }
+
+        if order.is_closed() {
             self.index.orders_pending_cancel.remove(&client_order_id);
             self.index.orders_closed.insert(client_order_id);
         }
@@ -3555,6 +3618,60 @@ impl Cache {
         }
 
         Ok(position)
+    }
+
+    /// Updates a cached position by applying an adjustment in place.
+    ///
+    /// The canonical cached position retains its complete history. As with
+    /// [`Self::update_position_from_fill`], a failed database update leaves the adjustment
+    /// applied; callers that need to roll back use [`Self::revert_position_adjustment`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position is not already held in the cache, or if updating the
+    /// position in the database fails.
+    pub fn update_position_from_adjustment(
+        &mut self,
+        position_id: PositionId,
+        adjustment: PositionAdjusted,
+    ) -> anyhow::Result<()> {
+        let Some(position_cell) = self.positions.get(&position_id).cloned() else {
+            anyhow::bail!("Cannot update position {position_id}: not found in cache");
+        };
+
+        position_cell.borrow_mut().apply_adjustment(adjustment);
+        self.refresh_position_indexes(&position_cell.borrow());
+
+        if let Some(database) = &mut self.database {
+            database.update_position(&position_cell.borrow())?;
+        }
+
+        Ok(())
+    }
+
+    /// Reverts the last adjustment applied to a cached position in place.
+    ///
+    /// Restores the position state from `prior`, the snapshot taken before the adjustment was
+    /// applied, then refreshes the position indexes and persists the restored position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position is not held in the cache, if `prior` cannot revert its
+    /// last adjustment (see [`Position::revert_last_adjustment`]), or if updating the position in
+    /// the database fails.
+    pub fn revert_position_adjustment(&mut self, prior: &Position) -> anyhow::Result<()> {
+        let Some(position_cell) = self.positions.get(&prior.id).cloned() else {
+            anyhow::bail!("Cannot revert position {}: not found in cache", prior.id);
+        };
+
+        position_cell.borrow_mut().revert_last_adjustment(prior)?;
+        self.refresh_position_indexes(&position_cell.borrow());
+
+        if let Some(database) = &mut self.database {
+            database.update_position(&position_cell.borrow())?;
+        }
+
+        Ok(())
     }
 
     /// Updates a cached position by applying an authoritative instrument close in place.
@@ -5699,7 +5816,7 @@ impl Cache {
     ///
     /// Returns an error if the `key` is invalid.
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&Bytes>> {
-        check_valid_string_ascii(key, stringify!(key))?;
+        check_valid_string_utf8(key, stringify!(key))?;
 
         Ok(self.general.get(key))
     }

@@ -22,7 +22,7 @@ use std::{
 use nautilus_core::{
     UnixNanos,
     python::{
-        IntoPyObjectNautilusExt,
+        IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err,
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
@@ -91,13 +91,25 @@ impl QuoteTick {
         let ts_event: u64 = py_tuple.get_item(9)?.cast::<PyInt>()?.extract()?;
         let ts_init: u64 = py_tuple.get_item(10)?.cast::<PyInt>()?.extract()?;
 
-        self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
-        self.bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
-        self.ask_price = Price::from_raw(ask_price_raw, ask_price_prec);
-        self.bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec);
-        self.ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec);
-        self.ts_event = ts_event.into();
-        self.ts_init = ts_init.into();
+        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+        let bid_price = Price::from_raw_checked(bid_price_raw, bid_price_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let ask_price = Price::from_raw_checked(ask_price_raw, ask_price_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let bid_size = Quantity::from_raw_checked(bid_size_raw, bid_size_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let ask_size = Quantity::from_raw_checked(ask_size_raw, ask_size_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+
+        *self = Self {
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event: ts_event.into(),
+            ts_init: ts_init.into(),
+        };
 
         Ok(())
     }
@@ -248,12 +260,21 @@ impl QuoteTick {
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
+        let bid_price = Price::from_raw_checked(bid_price_raw, bid_price_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let ask_price = Price::from_raw_checked(ask_price_raw, ask_price_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let bid_size = Quantity::from_raw_checked(bid_size_raw, bid_size_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let ask_size = Quantity::from_raw_checked(ask_size_raw, ask_size_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+
         Self::new_checked(
             instrument_id,
-            Price::from_raw(bid_price_raw, bid_price_prec),
-            Price::from_raw(ask_price_raw, ask_price_prec),
-            Quantity::from_raw(bid_size_raw, bid_size_prec),
-            Quantity::from_raw(ask_size_raw, ask_size_prec),
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
             ts_event.into(),
             ts_init.into(),
         )
@@ -333,7 +354,7 @@ mod tests {
     use crate::{
         data::{QuoteTick, stubs::quote_ethusdt_binance},
         identifiers::InstrumentId,
-        types::{Price, Quantity},
+        types::{Price, Quantity, fixed::check_fixed_precision},
     };
 
     #[rstest]
@@ -370,6 +391,32 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_py_from_raw_rejects_invalid_precision(quote_ethusdt_binance: QuoteTick) {
+        let quote = quote_ethusdt_binance;
+        let expected = check_fixed_precision(u8::MAX).unwrap_err();
+
+        Python::initialize();
+        Python::attach(|_| {
+            let error = QuoteTick::py_from_raw(
+                quote.instrument_id,
+                quote.bid_price.raw,
+                quote.ask_price.raw,
+                quote.bid_price.precision,
+                quote.ask_price.precision,
+                quote.bid_size.raw,
+                quote.ask_size.raw,
+                u8::MAX,
+                quote.ask_size.precision,
+                quote.ts_event.as_u64(),
+                quote.ts_init.as_u64(),
+            )
+            .unwrap_err();
+
+            assert_eq!(error.to_string(), format!("ValueError: {expected}"));
+        });
     }
 
     #[rstest]

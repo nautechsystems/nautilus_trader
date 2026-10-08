@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::BTreeSet, fmt::Display, pin::Pin};
+use std::{collections::BTreeSet, fmt::Display, pin::Pin, sync::Arc};
 
 use alloy::primitives::{Address, U256};
 use anyhow::Context;
@@ -1306,7 +1306,7 @@ impl BlockchainCacheDatabase {
                 rows.into_iter()
                     .map(|token_row| {
                         Token::new(
-                            chain.clone(),
+                            Arc::clone(&chain),
                             token_row.address,
                             token_row.name,
                             token_row.symbol,
@@ -3263,10 +3263,13 @@ impl BlockchainCacheDatabase {
 
         // Transform rows to events
         let stream = query.map(move |row_result| match row_result {
-            Ok(row) => {
-                transform_row_to_dex_pool_data(&row, chain.clone(), dex.clone(), instrument_id)
-                    .map_err(|e| anyhow::anyhow!("Steam pool event transform error: {e}"))
-            }
+            Ok(row) => transform_row_to_dex_pool_data(
+                &row,
+                Arc::clone(&chain),
+                Arc::clone(&dex),
+                instrument_id,
+            )
+            .map_err(|e| anyhow::anyhow!("Steam pool event transform error: {e}")),
             Err(e) => Err(anyhow::anyhow!("Stream pool events database error: {e}")),
         });
 

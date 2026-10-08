@@ -28,13 +28,11 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
-#[cfg(test)]
-use rust_decimal_macros::dec;
 
 use super::{
     PolymarketExecutionClient,
     cancellations::execute_deferred_cancel,
-    order_builder::PolymarketOrderBuilder,
+    order_builder::{PolymarketOrderBuilder, signed_limit_order_quantity},
     parse::{
         InvalidMarketPriceError, compute_commission, instrument_fee_exponent, instrument_taker_fee,
     },
@@ -57,7 +55,7 @@ use super::{
     types::{BatchLimitOrderContext, LimitOrderSubmitRequest, classify_http_command_failure},
 };
 use crate::{
-    common::consts::BATCH_ORDER_LIMIT,
+    common::consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE},
     http::{
         error::{Error as HttpError, sanitize_error_text},
         query::GetTradesParams,
@@ -138,7 +136,7 @@ impl PolymarketExecutionClient {
 
             emitter.emit_order_submitted(&order);
 
-            let submission = match submitter.prepare_limit_order_submission(&request).await {
+            let submission = match submitter.prepare_limit_order_submission(&request) {
                 Ok(submission) => submission,
                 Err(e) => {
                     reject_submit_order(&order, &format!("{e}"), &emitter, clock, &pending_cancels);
@@ -422,7 +420,7 @@ impl PolymarketExecutionClient {
                             is_quote_qty,
                             side,
                             amount,
-                            unknown.expected_base_qty.unwrap_or_default(),
+                            unknown.expected_base_qty,
                             true,
                             size_precision,
                             &emitter,
@@ -430,9 +428,8 @@ impl PolymarketExecutionClient {
                         );
 
                         let fill_tracker_quantity = if is_quote_qty && side == OrderSide::Buy {
-                            unknown
-                                .expected_base_qty
-                                .and_then(|qty| Quantity::from_decimal_dp(qty, size_precision).ok())
+                            Quantity::from_decimal_dp(unknown.expected_base_qty, size_precision)
+                                .ok()
                         } else {
                             None
                         };
@@ -680,7 +677,7 @@ impl PolymarketExecutionClient {
 
             let requests: Vec<LimitOrderSubmitRequest> =
                 batch_orders.iter().map(|bo| bo.request.clone()).collect();
-            let prepare_results = submitter.prepare_limit_order_submissions(&requests).await;
+            let prepare_results = submitter.prepare_limit_order_submissions(&requests);
 
             let mut prepared_orders = Vec::with_capacity(batch_orders.len());
             let mut submissions = Vec::with_capacity(batch_orders.len());
@@ -926,11 +923,29 @@ impl PolymarketExecutionClient {
         }
 
         let target_total_qty = cmd.quantity.unwrap_or_else(|| order.quantity());
-        if target_total_qty <= order.filled_qty() {
-            reject(&format!(
-                "Modify quantity {target_total_qty} must be greater than filled quantity {}",
-                order.filled_qty()
-            ));
+        let filled_qty = order.filled_qty();
+        let non_reopened_voided_qty = order.non_reopened_voided_qty();
+        let replacement_qty = target_total_qty
+            .checked_sub(filled_qty)
+            .and_then(|qty| qty.checked_sub(non_reopened_voided_qty))
+            .filter(|qty| !qty.is_zero());
+
+        let Some(replacement_qty) = replacement_qty else {
+            let reason = if non_reopened_voided_qty.is_zero() {
+                format!(
+                    "Modify quantity {target_total_qty} must be greater than filled quantity {filled_qty}"
+                )
+            } else {
+                format!(
+                    "Modify quantity {target_total_qty} must be greater than filled quantity {filled_qty} plus non-reopened voided quantity {non_reopened_voided_qty}"
+                )
+            };
+            reject(&reason);
+            return;
+        };
+
+        if let Some(reason) = replacement_below_lot_size_reason(replacement_qty) {
+            reject(&reason);
             return;
         }
 
@@ -953,8 +968,7 @@ impl PolymarketExecutionClient {
             }
         };
 
-        let cached_venue_leg_filled = order
-            .filled_qty()
+        let cached_venue_leg_filled = filled_qty
             .checked_sub(prior_filled_qty)
             .expect("venue-leg quantity calculation validated cumulative fills");
 
@@ -981,6 +995,7 @@ impl PolymarketExecutionClient {
                 venue_order_id,
                 venue_leg_qty,
                 order.quantity().saturating_sub(venue_leg_qty),
+                prior_filled_qty,
                 cached_venue_leg_filled,
                 order.order_side(),
             );
@@ -1108,6 +1123,7 @@ impl PolymarketExecutionClient {
                 api_key: api_key.expose_secret(),
                 pusd: get_pusd_currency(),
                 clock,
+                settlement: settlement.clone(),
             };
             let mut status_retry_count = 0;
             let mut status_retry_delay_ms =
@@ -1290,6 +1306,7 @@ impl PolymarketExecutionClient {
                     venue_order_id,
                     venue_leg_qty,
                     order.quantity().saturating_sub(venue_leg_qty),
+                    prior_filled_qty,
                     confirmed_venue_leg_filled,
                     order.order_side(),
                 );
@@ -1321,10 +1338,13 @@ impl PolymarketExecutionClient {
                 return Ok(());
             }
 
-            let Some(replacement_qty) = target_total_qty.checked_sub(final_filled_qty) else {
+            let Some(replacement_qty) = target_total_qty
+                .checked_sub(final_filled_qty)
+                .and_then(|qty| qty.checked_sub(non_reopened_voided_qty))
+            else {
                 reject_modify(
                     &format!(
-                        "Modify quantity {target_total_qty} is not greater than final filled quantity {final_filled_qty}"
+                        "Modify quantity {target_total_qty} is not greater than final filled quantity {final_filled_qty} plus non-reopened voided quantity {non_reopened_voided_qty}"
                     ),
                     true,
                     final_filled_qty < order.quantity(),
@@ -1335,11 +1355,16 @@ impl PolymarketExecutionClient {
             if replacement_qty.is_zero() {
                 reject_modify(
                     &format!(
-                        "Modify quantity {target_total_qty} equals final filled quantity {final_filled_qty}"
+                        "Modify quantity {target_total_qty} equals final filled quantity {final_filled_qty} plus non-reopened voided quantity {non_reopened_voided_qty}"
                     ),
                     true,
                     final_filled_qty < order.quantity(),
                 );
+                return Ok(());
+            }
+
+            if let Some(reason) = replacement_below_lot_size_reason(replacement_qty) {
+                reject_modify(&reason, true, final_filled_qty < order.quantity());
                 return Ok(());
             }
 
@@ -1364,7 +1389,7 @@ impl PolymarketExecutionClient {
                 size_precision,
             };
 
-            let submission = match submitter.prepare_limit_order_submission(&request).await {
+            let submission = match submitter.prepare_limit_order_submission(&request) {
                 Ok(submission) => submission,
                 Err(e) => {
                     reject_modify(
@@ -1377,8 +1402,9 @@ impl PolymarketExecutionClient {
             };
 
             let expected_venue_order_id = submission.expected_venue_order_id;
-            let Some(logical_total_qty) =
-                final_filled_qty.checked_add(submission.expected_base_qty)
+            let Some(logical_total_qty) = final_filled_qty
+                .checked_add(non_reopened_voided_qty)
+                .and_then(|qty| qty.checked_add(submission.expected_base_qty))
             else {
                 reject_modify(
                     "Replacement logical quantity overflow",
@@ -1393,6 +1419,7 @@ impl PolymarketExecutionClient {
                 expected_venue_order_id,
                 logical_total_qty,
                 submission.expected_base_qty,
+                final_filled_qty,
                 price,
             ) {
                 reject_modify(
@@ -1491,6 +1518,18 @@ impl PolymarketExecutionClient {
     }
 }
 
+/// Returns the rejection reason for a replacement quantity below the lot size, which would sign
+/// for zero shares.
+fn replacement_below_lot_size_reason(replacement_qty: Quantity) -> Option<String> {
+    signed_limit_order_quantity(replacement_qty.as_decimal())
+        .is_zero()
+        .then(|| {
+            format!(
+                "Polymarket replacement amount {replacement_qty} shares truncates to zero at {LOT_SIZE_SCALE} decimal places"
+            )
+        })
+}
+
 #[expect(clippy::too_many_arguments)]
 fn reject_modify_and_finish(
     order: &OrderAny,
@@ -1500,7 +1539,7 @@ fn reject_modify_and_finish(
     close_canceled_order: bool,
     emitter: &nautilus_live::ExecutionEventEmitter,
     clock: &'static AtomicTime,
-    fill_tracker: &super::order_fill_tracker::OrderFillTrackerMap,
+    fill_tracker: &super::fill_tracker::OrderFillTrackerMap,
     ws_dispatch_state: &std::sync::Arc<
         parking_lot::Mutex<crate::websocket::dispatch::WsDispatchState>,
     >,
@@ -1573,7 +1612,7 @@ pub(super) fn calculate_commission(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::instruments::stubs::binary_option;
+    use nautilus_model::{instruments::stubs::binary_option, types::Currency};
     use rstest::rstest;
 
     use super::*;
@@ -1590,7 +1629,7 @@ mod tests {
         )
         .expect("a zero commission is representable");
 
-        assert_eq!(commission.as_decimal(), dec!(0));
+        assert_eq!(commission, Money::zero(Currency::USDC()));
     }
 
     #[rstest]
@@ -1605,6 +1644,36 @@ mod tests {
         )
         .expect("a zero commission is representable");
 
-        assert_eq!(commission.as_decimal(), dec!(0));
+        assert_eq!(commission, Money::zero(Currency::USDC()));
+    }
+
+    #[rstest]
+    #[case::taker_linear(LiquiditySide::Taker, "1", "1.4 pUSD")]
+    #[case::taker_quadratic(LiquiditySide::Taker, "2", "0.224 pUSD")]
+    #[case::maker_with_fee_schedule(LiquiditySide::Maker, "2", "0 pUSD")]
+    fn test_calculate_commission_uses_fee_schedule_and_quote_currency(
+        #[case] liquidity_side: LiquiditySide,
+        #[case] exponent: &str,
+        #[case] expected: &str,
+    ) {
+        let mut binary = binary_option();
+        binary.currency = Currency::pUSD();
+        let mut info = nautilus_core::Params::new();
+        info.insert(
+            "fee_schedule".into(),
+            serde_json::json!({"rate": "0.07", "exponent": exponent}),
+        );
+        binary.info = Some(info);
+        let instrument = InstrumentAny::BinaryOption(binary);
+
+        let commission = calculate_commission(
+            &instrument,
+            Quantity::from("125.000000"),
+            Price::from("0.2000"),
+            liquidity_side,
+        )
+        .unwrap();
+
+        assert_eq!(commission, Money::from(expected));
     }
 }

@@ -249,10 +249,8 @@ impl OwnedBytes {
     /// side sees its own copy linked against its own allocator.
     #[must_use]
     pub fn from_vec(v: Vec<u8>) -> Self {
-        let mut v = core::mem::ManuallyDrop::new(v);
-        let ptr = v.as_mut_ptr();
-        let len = v.len();
-        let cap = v.capacity();
+        let (ptr, len, cap) = v.into_raw_parts();
+
         Self {
             ptr,
             len,
@@ -302,7 +300,8 @@ pub unsafe extern "C" fn drop_owned_bytes(ptr: *mut u8, len: usize, cap: usize) 
     if ptr.is_null() {
         return;
     }
-    // SAFETY: pointer originates from `Vec::into_raw_parts`-style leak.
+
+    // SAFETY: pointer originates from `Vec::into_raw_parts` in `from_vec`.
     unsafe {
         let _ = Vec::from_raw_parts(ptr, len, cap);
     }
@@ -480,10 +479,8 @@ mod tests {
         }
 
         COUNTER.store(0, Ordering::SeqCst);
-        let mut v = core::mem::ManuallyDrop::new(vec![1u8, 2, 3, 4]);
-        let ptr = v.as_mut_ptr();
-        let len = v.len();
-        let cap = v.capacity();
+        let (ptr, len, cap) = vec![1u8, 2, 3, 4].into_raw_parts();
+
         let owned = OwnedBytes {
             ptr,
             len,
@@ -588,10 +585,7 @@ mod tests {
 
     #[rstest]
     fn drop_owned_bytes_frees_vec_leaked_with_from_vec_layout() {
-        let mut v = core::mem::ManuallyDrop::new(vec![1u8, 2, 3, 4, 5]);
-        let ptr = v.as_mut_ptr();
-        let len = v.len();
-        let cap = v.capacity();
+        let (ptr, len, cap) = vec![1u8, 2, 3, 4, 5].into_raw_parts();
         // SAFETY: pointer/len/cap originate from a `Vec<u8>` leaked above;
         // `drop_owned_bytes` reconstructs and drops it with the matching
         // layout.

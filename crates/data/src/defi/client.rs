@@ -28,6 +28,7 @@ use nautilus_common::{
         UnsubscribePoolSwaps,
     },
 };
+use nautilus_model::identifiers::InstrumentId;
 
 use crate::{
     client::DataClientAdapter,
@@ -133,6 +134,23 @@ impl DataClientAdapter {
         } else {
             self.subscriptions_active_defi.remove(&key);
         }
+    }
+
+    /// Returns whether any pool subscription shape for `instrument_id` still has an owner.
+    pub(crate) fn has_defi_pool_demand(&self, instrument_id: &InstrumentId) -> bool {
+        self.subscriptions_active_defi
+            .iter()
+            .any(|(key, subscription)| {
+                subscription.owners > 0
+                    && match key {
+                        DefiSubscriptionKey::Blocks(_) => false,
+                        DefiSubscriptionKey::Pool(id)
+                        | DefiSubscriptionKey::PoolSwaps(id)
+                        | DefiSubscriptionKey::PoolLiquidityUpdates(id)
+                        | DefiSubscriptionKey::PoolFeeCollects(id)
+                        | DefiSubscriptionKey::PoolFlashEvents(id) => id == instrument_id,
+                    }
+            })
     }
 
     /// Executes a DeFi data request command by dispatching to the appropriate handler.

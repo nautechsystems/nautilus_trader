@@ -17,6 +17,7 @@ Test bar behavior.
 """
 
 import pickle
+import re
 import sys
 from datetime import timedelta
 
@@ -978,3 +979,88 @@ def test_bar_pickle_composite_bar_type() -> None:
     assert restored == bar
     assert restored.bar_type.is_composite()
     assert str(restored.bar_type) == str(bar.bar_type)
+
+
+@pytest.mark.parametrize(
+    ("index", "value", "message"),
+    [
+        (2, 255, "`precision` exceeded maximum `WEI_PRECISION` (18), was 255"),
+        (
+            5,
+            170_141_183_460_460_000_000_000_000_001,
+            "raw value 170141183460460000000000000001 outside valid range "
+            "[-170141183460460000000000000000, 170141183460460000000000000000]",
+        ),
+        (
+            6,
+            340_282_366_920_930_000_000_000_000_001,
+            "raw value 340282366920930000000000000001 exceeds "
+            "QUANTITY_RAW_MAX=340282366920930000000000000000",
+        ),
+        (7, 19, "`precision` exceeded maximum `WEI_PRECISION` (18), was 19"),
+    ],
+)
+def test_bar_setstate_rejects_invalid_state_without_mutation(
+    audusd_1_min_bid: object,
+    index: int,
+    value: object,
+    message: str,
+) -> None:
+    """
+    Test bar setstate rejects invalid state without mutation.
+    """
+    bar = Bar(
+        bar_type=audusd_1_min_bid,
+        open=Price.from_str("1.00001"),
+        high=Price.from_str("1.00010"),
+        low=Price.from_str("1.00000"),
+        close=Price.from_str("1.00002"),
+        volume=Quantity.from_int(100_000),
+        ts_event=1,
+        ts_init=2,
+    )
+    other = Bar(
+        bar_type=BarType.from_str("USD/JPY.SIM-5-MINUTE-ASK-EXTERNAL"),
+        open=Price.from_str("150.001"),
+        high=Price.from_str("150.010"),
+        low=Price.from_str("150.000"),
+        close=Price.from_str("150.002"),
+        volume=Quantity.from_int(7),
+        ts_event=5,
+        ts_init=6,
+    )
+    original_state = bar.__getstate__()
+    state = list(other.__getstate__())
+    state[index] = value
+
+    with pytest.raises(ValueError, match=re.escape(message)) as exc_info:
+        bar.__setstate__(tuple(state))
+
+    assert str(exc_info.value) == message
+    assert bar.__getstate__() == original_state
+
+
+def test_bar_setstate_accepts_state_outside_ohlc_invariants(audusd_1_min_bid: object) -> None:
+    """
+    Test bar setstate accepts state outside OHLC invariants.
+    """
+    bar = Bar(
+        bar_type=audusd_1_min_bid,
+        open=Price.from_str("1.00001"),
+        high=Price.from_str("1.00010"),
+        low=Price.from_str("1.00000"),
+        close=Price.from_str("1.00002"),
+        volume=Quantity.from_int(100_000),
+        ts_event=1,
+        ts_init=2,
+    )
+    state = list(bar.__getstate__())
+    state[3], state[4] = state[4], state[3]
+
+    bar.__setstate__(tuple(state))
+    restored = pickle.loads(pickle.dumps(bar))
+
+    assert bar.__getstate__() == tuple(state)
+    assert restored.__getstate__() == tuple(state)
+    assert restored.high == Price.from_str("1.00000")
+    assert restored.low == Price.from_str("1.00010")

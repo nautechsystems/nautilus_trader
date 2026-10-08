@@ -22,6 +22,7 @@ use std::{
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
+use nautilus_core::correctness::{CorrectnessError, CorrectnessResult};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -133,23 +134,34 @@ impl BettingAccount {
     /// For `Sell` (back) the impact is the negative stake (quantity).
     /// For `Buy` (lay) the impact is the negative liability (quantity * (price - 1)).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the impact cannot be represented in the quote currency.
-    #[must_use]
+    /// Returns an error if the impact cannot be represented in the quote currency.
     pub fn balance_impact(
         &self,
         instrument: &InstrumentAny,
         quantity: Quantity,
         price: Price,
         order_side: OrderSide,
-    ) -> Money {
+    ) -> CorrectnessResult<Money> {
         let currency = instrument.quote_currency();
         let impact = match order_side {
             OrderSide::Sell => -quantity.as_decimal(),
-            OrderSide::Buy => -(quantity.as_decimal() * (price.as_decimal() - Decimal::ONE)),
+            OrderSide::Buy => {
+                let liability = quantity
+                    .as_decimal()
+                    .checked_mul(price.as_decimal() - Decimal::ONE)
+                    .ok_or_else(|| CorrectnessError::PredicateViolation {
+                        message: format!(
+                            "Betting liability for quantity {quantity} at price {price} exceeds `Decimal` range"
+                        ),
+                    })?;
+
+                -liability
+            }
         };
-        Money::from_decimal(impact, currency).expect("invalid betting balance impact")
+
+        Money::from_decimal(impact, currency)
     }
 
     /// Recalculates the account balance for the specified currency based on per-instrument locks.
@@ -313,6 +325,7 @@ mod tests {
     use indexmap::IndexMap;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use crate::{
         accounts::{Account, BettingAccount, stubs::*},
@@ -614,14 +627,60 @@ mod tests {
         #[case] quantity: &str,
         #[case] expected: &str,
     ) {
-        let impact = betting_account.balance_impact(
-            &betting.into_any(),
-            Quantity::from(quantity),
-            Price::from(price),
-            side,
-        );
+        let impact = betting_account
+            .balance_impact(
+                &betting.into_any(),
+                Quantity::from(quantity),
+                Price::from(price),
+                side,
+            )
+            .unwrap();
 
         assert_eq!(impact, Money::from(expected));
+    }
+
+    #[rstest]
+    fn test_balance_impact_rejects_unrepresentable_liability(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+    ) {
+        let currency = betting.quote_currency();
+        let expected = Money::from_decimal(dec!(-99_999_000_000_000), currency).unwrap_err();
+
+        let error = betting_account
+            .balance_impact(
+                &betting.into_any(),
+                Quantity::from("1000000000"),
+                Price::from("100000"),
+                OrderSide::Buy,
+            )
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), expected.to_string());
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(crate::types::price::PRICE_ERROR)]
+    #[case(crate::types::price::PRICE_UNDEF)]
+    fn test_balance_impact_rejects_liability_overflow(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+        #[case] raw: crate::types::price::PriceRaw,
+    ) {
+        let quantity = Quantity::from("10000000");
+        let price = Price::from_raw(raw, 0);
+
+        let error = betting_account
+            .balance_impact(&betting.into_any(), quantity, price, OrderSide::Buy)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Betting liability for quantity {quantity} at price {price} exceeds `Decimal` range"
+            )
+        );
     }
 
     #[rstest]

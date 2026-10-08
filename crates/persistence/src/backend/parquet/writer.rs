@@ -11,7 +11,6 @@
 
 use std::{
     fmt::Debug,
-    fs,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -28,10 +27,8 @@ use super::catalog::ParquetDataCatalog;
 use crate::{
     catalog::factory::CatalogConnectConfig,
     common::{
-        conversion::FeatherConversionSummary,
-        datafusion::identifiers_from_record_batches,
-        paths::{file_uri_to_native_path, normalize_path_to_uri},
-        storage::create_storage_backend_from_path,
+        conversion::FeatherConversionSummary, datafusion::identifiers_from_record_batches,
+        paths::create_local_directory, storage::create_storage_backend_from_path,
     },
     writer::{
         factory::{PARQUET_WRITER_FACTORY_NAME, WriterConnectConfig, WriterFactoryRegistry},
@@ -109,10 +106,7 @@ impl ParquetWriter {
 
         // A Parquet catalog opens only an existing local directory, so the writer creates the one
         // it promotes into, then opens it now rather than failing at the first promotion
-        let catalog_location = normalize_path_to_uri(&catalog.uri)?;
-        if catalog_location.starts_with("file://") {
-            fs::create_dir_all(file_uri_to_native_path(&catalog_location))?;
-        }
+        create_local_directory(&catalog.uri)?;
 
         let legacy_manifest_missing = Arc::new(AtomicBool::new(false));
 
@@ -120,6 +114,7 @@ impl ParquetWriter {
 
         let mut core = StagedFeatherWriter::new(
             storage.clone(),
+            &source,
             clock,
             config.rotation_config.clone(),
             None,
@@ -470,7 +465,7 @@ impl PromotionBackend for ParquetPromotionBackend {
         use_ts_event_for_ts_init: bool,
         record_promoted: bool,
     ) -> anyhow::Result<Option<FeatherConversionSummary>> {
-        let object_path = ObjectPath::from(file);
+        let object_path = ObjectPath::parse(file)?;
 
         let read = block_on_nautilus_with(|| {
             read_feather_record_batches_with_identity(
@@ -509,12 +504,9 @@ impl PromotionBackend for ParquetPromotionBackend {
     }
 
     fn delete_file(&mut self, source: &Self::Source, file: &str) -> anyhow::Result<()> {
+        let object_path = ObjectPath::parse(file)?;
         block_on_nautilus_with(|| async {
-            source
-                .storage
-                .object_store
-                .delete(&ObjectPath::from(file))
-                .await?;
+            source.storage.object_store.delete(&object_path).await?;
             Ok::<(), anyhow::Error>(())
         })
     }
@@ -573,7 +565,11 @@ fn feather_replay_identity(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicU64;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        sync::atomic::AtomicU64,
+    };
 
     use arrow::datatypes::SchemaRef;
     use nautilus_common::enums::Environment;
@@ -583,6 +579,7 @@ mod tests {
         identifiers::InstrumentId,
         types::{ERROR_PRICE, Price, Quantity},
     };
+    use object_store::memory::InMemory;
     use parquet::{
         basic::Compression,
         file::{
@@ -597,10 +594,13 @@ mod tests {
     use crate::{
         backend::parquet::io::read_parquet_from_object_store,
         catalog::traits::{CatalogQuery, CatalogReader},
-        common::storage::RUN_MANIFEST_FILENAME,
+        common::{paths::normalize_path_to_uri, storage::RUN_MANIFEST_FILENAME},
         config::{CatalogCompression, DataCatalogConfig},
         test_data::RustTestHashMapCustomData,
-        writer::feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
+        writer::{
+            feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
+            promotion::{list_session_feather_files, tests::assert_scheduled_count},
+        },
     };
 
     #[rstest]
@@ -701,6 +701,118 @@ mod tests {
     }
 
     #[rstest]
+    fn parquet_close_promotes_per_identifier_file_with_non_ascii_identifier(
+        #[values(false, true)] delete_source: bool,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-1");
+        let (quote, staged_file) = stage_per_identifier_quote(&staging);
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.delete_feather_after_promotion = delete_source;
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+
+        sink.close().unwrap();
+
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+
+        assert_eq!(rows.as_ref(), &[quote]);
+        assert_eq!(staged_file.exists(), !delete_source);
+    }
+
+    #[rstest]
+    fn parquet_manual_conversion_reads_per_identifier_file_with_non_ascii_identifier() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-1");
+        let (quote, _) = stage_per_identifier_quote(&staging);
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        catalog
+            .convert_stream_to_data(
+                "run-1",
+                &NautilusDataType::QuoteTick.into(),
+                Environment::Backtest,
+                None,
+                false,
+            )
+            .unwrap();
+
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+
+        assert_eq!(rows.as_ref(), &[quote]);
+    }
+
+    #[rstest]
+    fn parquet_promotion_writes_non_ascii_identifier_to_object_store() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-1");
+        let (quote, staged_file) = stage_per_identifier_quote(&staging);
+
+        let source = FeatherSessionSource::new(
+            create_storage_backend_from_path(directory.path().to_str().unwrap(), None).unwrap(),
+            Environment::Backtest,
+            "run-1",
+        );
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        catalog.base_path = "catalog".to_string();
+        catalog.original_uri = "s3://test-bucket/catalog".to_string();
+        catalog.object_store = Arc::new(InMemory::new());
+
+        let mut backend = ParquetPromotionBackend {
+            catalog,
+            legacy_manifest_missing: Arc::default(),
+        };
+
+        let files =
+            list_session_feather_files(&source.storage, Environment::Backtest, "run-1").unwrap();
+
+        for file in &files {
+            backend.convert_file(&source, file, false, true).unwrap();
+            backend.delete_file(&source, file).unwrap();
+        }
+
+        let DataBatch::Quote(rows) = backend
+            .catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(rows.as_ref(), &[quote]);
+        assert!(!staged_file.exists());
+    }
+
+    #[rstest]
     #[case("backtest")]
     #[case("sandbox")]
     #[case("live")]
@@ -747,6 +859,54 @@ mod tests {
         assert_eq!(manifest["kind"], environment);
         assert_eq!(manifest["status"], "promoted");
         assert!(!catalog_path.join(environment).exists());
+    }
+
+    #[rstest]
+    #[case::non_ascii("run-é")]
+    #[case::space("run 1")]
+    #[case::fragment("run#1")]
+    fn parquet_writer_rejects_run_id_that_paths_encode(#[case] run_id: &str) {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join(run_id);
+        let config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+
+        let error = parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+            .unwrap_err();
+
+        let staging_uri = normalize_path_to_uri(&staging.to_string_lossy()).unwrap();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Parquet writer URI '{staging_uri}' has a run ID that object-store paths \
+                 percent-encode; use a run ID without spaces, non-ASCII, or reserved characters",
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::windows_separators(r"file:///C:\catalog\backtest\run-1", "file:///C:/catalog")]
+    #[case::windows_trailing_separator(r"file:///C:\catalog\backtest\run-1\", "file:///C:/catalog")]
+    #[case::trailing_separator("file:///tmp/catalog/backtest/run-1/", "file:///tmp/catalog")]
+    #[case::parent_components(
+        "file:///tmp/unused/../catalog/backtest/run-1",
+        "file:///tmp/catalog"
+    )]
+    fn parquet_writer_session_accepts_separator_forms(#[case] uri: &str, #[case] root_uri: &str) {
+        let session = StagedFeatherWriter::<ParquetPromotionBackend>::required_session(
+            uri,
+            "Parquet writer URI",
+        )
+        .unwrap();
+
+        assert_eq!(
+            session,
+            PromotionSession {
+                root_uri: root_uri.to_string(),
+                environment: Environment::Backtest,
+                instance_id: "run-1".to_string(),
+            }
+        );
     }
 
     #[rstest]
@@ -1431,6 +1591,33 @@ mod tests {
         CatalogConnectConfig::new(directory.path().to_string_lossy(), None)
     }
 
+    // Earlier per-instrument writers staged files in identifier directories
+    fn stage_per_identifier_quote(staging: &Path) -> (QuoteTick, PathBuf) {
+        let mut quote = sample_quote();
+        quote.instrument_id = InstrumentId::from("CAFÉ.SIM");
+
+        let mut writer = FeatherWriter::new(
+            staging.to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+        writer.write(quote).unwrap();
+        writer.close().unwrap();
+
+        let identifier_directory = staging.join("quotes").join("CAFÉ.SIM");
+        let staged_file = identifier_directory.join("quotes_0.feather");
+        fs::create_dir(&identifier_directory).unwrap();
+        fs::rename(
+            staging.join("quotes").join("quotes_0.feather"),
+            &staged_file,
+        )
+        .unwrap();
+
+        (quote, staged_file)
+    }
+
     fn sample_quote() -> QuoteTick {
         QuoteTick::new(
             InstrumentId::from("AUD/USD.SIM"),
@@ -1441,6 +1628,223 @@ mod tests {
             UnixNanos::from(19),
             UnixNanos::from(23),
         )
+    }
+
+    #[rstest]
+    fn kept_promotions_release_scheduled_paths() {
+        let directory = TempDir::new().unwrap();
+        let config = WriterConnectConfig::new(
+            directory.path().join("live/run-bounded").to_string_lossy(),
+            Some(local_catalog(&directory)),
+        );
+        let mut writer = ParquetWriter::new(&config, WriterClock::Live).unwrap();
+
+        for timestamp in 1..=32 {
+            writer
+                .core
+                .write_data(Data::Quote(QuoteTick {
+                    ts_event: UnixNanos::from(timestamp),
+                    ts_init: UnixNanos::from(timestamp),
+                    ..sample_quote()
+                }))
+                .unwrap();
+            let work = writer.prepare_promotion().unwrap().unwrap();
+            assert_eq!(work.files().len(), 1);
+            writer.finalize(work.execute()).unwrap();
+            assert_scheduled_count(&writer.core.promotion_driver.schedule(), 0);
+            assert!(writer.prepare_promotion().unwrap().is_none());
+        }
+
+        assert_eq!(
+            list_session_feather_files(&writer.source.storage, Environment::Live, "run-bounded")
+                .unwrap()
+                .len(),
+            32
+        );
+    }
+
+    #[rstest]
+    #[case::timer_seal(RotationConfig::NoRotation, false, 1)]
+    #[case::close(RotationConfig::NoRotation, true, 1)]
+    #[case::rotation(RotationConfig::Size { max_size: 1 }, false, 2)]
+    fn sealed_paths_promote_once_and_do_not_resubmit_in_flight(
+        #[case] rotation: RotationConfig,
+        #[case] close: bool,
+        #[case] expected_files: usize,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let mut config = WriterConnectConfig::new(
+            directory.path().join("live/run-sealing").to_string_lossy(),
+            Some(local_catalog(&directory)),
+        );
+        config.rotation_config = rotation;
+        let mut writer = ParquetWriter::new(&config, WriterClock::Live).unwrap();
+        let first = sample_quote();
+        let second = QuoteTick {
+            ts_event: UnixNanos::from(29),
+            ts_init: UnixNanos::from(31),
+            ..first
+        };
+        writer.core.write_data(Data::Quote(first)).unwrap();
+        writer.core.write_data(Data::Quote(second)).unwrap();
+
+        if close {
+            writer.core.close().unwrap();
+        }
+
+        let work = writer.prepare_promotion().unwrap().unwrap();
+        let files = work.files().to_vec();
+        assert_eq!(files.len(), expected_files);
+        assert!(writer.prepare_promotion().unwrap().is_none());
+        assert_scheduled_count(&writer.core.promotion_driver.schedule(), expected_files);
+        let result = work.execute();
+        assert_scheduled_count(&writer.core.promotion_driver.schedule(), 0);
+        assert_eq!(result.committed_paths, files);
+        assert_eq!(writer.finalize(result).unwrap().len(), expected_files);
+        assert!(writer.prepare_promotion().unwrap().is_none());
+
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+        assert_eq!(rows.as_ref(), &[first, second]);
+    }
+
+    #[rstest]
+    #[case::space("my data")]
+    #[case::non_ascii("Données")]
+    #[case::fragment("data#1")]
+    #[case::literal_percent("data%20")]
+    fn writer_root_path_promotes_and_replays(
+        #[case] root_name: &str,
+        #[values(false, true)] file_uri: bool,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let root = directory.path().join(root_name);
+        let staging = root.join("live/run-root");
+        let staging_uri = if file_uri {
+            normalize_path_to_uri(&staging.to_string_lossy()).unwrap()
+        } else {
+            staging.to_string_lossy().into_owned()
+        };
+        let config = WriterConnectConfig::new(staging_uri, Some(local_catalog(&directory)));
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+        let quote = sample_quote();
+        let mut writer = ParquetWriter::new(&config, clock.clone()).unwrap();
+        writer.core.write_data(Data::Quote(quote)).unwrap();
+        let work = writer.prepare_promotion().unwrap().unwrap();
+        assert_eq!(work.files(), &["live/run-root/quotes/quotes_0.feather"]);
+        assert_eq!(writer.finalize(work.execute()).unwrap().len(), 1);
+        assert!(writer.prepare_promotion().unwrap().is_none());
+        drop(writer);
+
+        let mut restarted = ParquetWriter::new(&config, clock).unwrap();
+        let work = restarted.prepare_promotion().unwrap().unwrap();
+        assert_eq!(work.files(), &["live/run-root/quotes/quotes_0.feather"]);
+        assert!(restarted.finalize(work.execute()).unwrap().is_empty());
+        assert!(restarted.prepare_promotion().unwrap().is_none());
+
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+        assert_eq!(rows.as_ref(), &[quote]);
+    }
+
+    #[rstest]
+    fn parent_relative_writer_path_promotes_and_replays() {
+        let directory = TempDir::new_in(".").unwrap();
+        let current = std::env::current_dir().unwrap();
+        let staging = PathBuf::from("..")
+            .join(current.file_name().unwrap())
+            .join(directory.path().file_name().unwrap())
+            .join("live/run-relative");
+        let config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+        let quote = sample_quote();
+        let mut writer = ParquetWriter::new(&config, clock.clone()).unwrap();
+        writer.core.write_data(Data::Quote(quote)).unwrap();
+        let work = writer.prepare_promotion().unwrap().unwrap();
+        assert_eq!(work.files(), &["live/run-relative/quotes/quotes_0.feather"]);
+        assert_eq!(writer.finalize(work.execute()).unwrap().len(), 1);
+        assert!(writer.prepare_promotion().unwrap().is_none());
+        drop(writer);
+
+        let mut restarted = ParquetWriter::new(&config, clock).unwrap();
+        let work = restarted.prepare_promotion().unwrap().unwrap();
+        assert_eq!(work.files(), &["live/run-relative/quotes/quotes_0.feather"]);
+        assert!(restarted.finalize(work.execute()).unwrap().is_empty());
+        assert!(restarted.prepare_promotion().unwrap().is_none());
+
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+        assert_eq!(rows.as_ref(), &[quote]);
+    }
+
+    #[rstest]
+    #[case::sealed(false)]
+    #[case::partial(true)]
+    fn restart_discovers_crashed_files_and_deduplicates_kept_promotions(#[case] partial: bool) {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest/run-restart");
+        let quote = sample_quote();
+        let mut crashed = FeatherWriter::new(
+            staging.clone(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+        crashed.write(quote).unwrap();
+        crashed.close().unwrap();
+        let sealed = staging.join("quotes/quotes_0.feather");
+
+        if partial {
+            fs::rename(&sealed, sealed.with_extension(FEATHER_PARTIAL_EXTENSION)).unwrap();
+        }
+
+        drop(crashed);
+        let config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+        let mut writer = ParquetWriter::new(&config, clock.clone()).unwrap();
+        let work = writer.prepare_promotion().unwrap().unwrap();
+        assert_eq!(
+            work.files(),
+            &["backtest/run-restart/quotes/quotes_0.feather".to_string()]
+        );
+        assert_eq!(writer.finalize(work.execute()).unwrap().len(), 1);
+        assert!(writer.prepare_promotion().unwrap().is_none());
+        drop(writer);
+
+        let mut restarted = ParquetWriter::new(&config, clock).unwrap();
+        let work = restarted.prepare_promotion().unwrap().unwrap();
+        assert_eq!(work.files().len(), 1);
+        assert!(restarted.finalize(work.execute()).unwrap().is_empty());
+        assert!(restarted.prepare_promotion().unwrap().is_none());
+        assert_scheduled_count(&restarted.core.promotion_driver.schedule(), 0);
+        assert!(sealed.exists());
+
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let DataBatch::Quote(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
+            .unwrap()
+        else {
+            panic!("expected quotes")
+        };
+        assert_eq!(rows.as_ref(), &[quote]);
     }
 
     #[rstest]

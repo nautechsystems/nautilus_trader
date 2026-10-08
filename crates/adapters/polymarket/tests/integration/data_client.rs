@@ -308,13 +308,37 @@ fn create_test_data_client(
 
 #[rstest]
 #[tokio::test]
-async fn test_connect_emits_market_socket_state_change() {
+async fn test_connect_without_new_markets_does_not_open_market_socket() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_system_event_sender(system_tx);
     let registry = SocketReconnectRegistry::default();
     let (mut client, _data_rx) = registry.scope(|| create_test_data_client(addr));
+    let endpoint = ustr::Ustr::from("polymarket-market-streams");
+
+    client.connect().await.expect("connect data client");
+
+    let event = tokio::time::timeout(Duration::from_millis(300), system_rx.recv()).await;
+    assert!(
+        event.is_err(),
+        "idle connect must not open a market socket, was {event:?}"
+    );
+    assert!(registry.handle(*POLYMARKET_CLIENT_ID, endpoint).is_none());
+
+    client.disconnect().await.expect("disconnect data client");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_with_new_markets_emits_market_socket_state_change() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _data_rx) =
+        registry.scope(|| create_test_data_client_with_new_markets(addr, true));
 
     client.connect().await.expect("connect data client");
 
@@ -334,16 +358,6 @@ async fn test_connect_emits_market_socket_state_change() {
         handle.request_reconnect(),
         SocketReconnectRequestOutcome::Accepted
     );
-
-    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
-        .await
-        .expect("wait for socket state change")
-        .expect("system event channel closed");
-    let SystemEvent::SocketState(change) = event;
-    assert_eq!(change.client_id, *POLYMARKET_CLIENT_ID);
-    assert_eq!(change.venue, Some(*POLYMARKET_VENUE));
-    assert_eq!(change.endpoint, endpoint);
-    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.expect("disconnect data client");
     assert!(registry.handle(*POLYMARKET_CLIENT_ID, endpoint).is_none());

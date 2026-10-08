@@ -47,7 +47,7 @@ license-files = [{ path = "../LICENSE", hash = 0xbc960f5f }]
 name = "implied-vol"
 version = "*"
 expression = "MIT"
-license-files = [{ path = "LICENSE", hash = 0xb0803f0e }]
+license-files = [{ path = "LICENSE", hash = 0x526ab6d5 }]
 
 [licenses.private]
 ignore = true

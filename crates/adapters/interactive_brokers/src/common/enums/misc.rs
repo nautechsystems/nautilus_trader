@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Interactive Brokers account, condition, and routing enumerations.
+
 use std::fmt::Display;
 
 /// Interactive Brokers order origin values.
@@ -52,7 +54,10 @@ impl From<i32> for IbOrderOrigin {
         match value {
             0 => Self::Customer,
             1 => Self::Firm,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB order origin code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -110,7 +115,10 @@ impl From<i32> for IbShortSaleSlot {
             0 => Self::None,
             1 => Self::Broker,
             2 => Self::ThirdParty,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB short-sale slot code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -165,7 +173,10 @@ impl From<i32> for IbVolatilityType {
         match value {
             1 => Self::Daily,
             2 => Self::Annual,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB volatility type code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -220,7 +231,10 @@ impl From<i32> for IbReferencePriceType {
         match value {
             1 => Self::AverageOfNbbo,
             2 => Self::Nbbo,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB reference price type code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -278,7 +292,10 @@ impl From<i32> for IbAuctionStrategy {
             1 => Self::Match,
             2 => Self::Improvement,
             3 => Self::Transparent,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB auction strategy code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -286,13 +303,6 @@ impl From<i32> for IbAuctionStrategy {
 impl Display for IbAuctionStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_i32())
-    }
-}
-
-impl IbAuctionStrategy {
-    #[must_use]
-    pub fn ibapi_auction_strategy(self) -> ibapi::orders::AuctionStrategy {
-        ibapi::orders::AuctionStrategy::from(self.as_i32())
     }
 }
 
@@ -333,7 +343,10 @@ impl From<i32> for IbExerciseAction {
         match value {
             1 => Self::Exercise,
             2 => Self::Lapse,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB exercise action code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -391,7 +404,10 @@ impl From<i32> for IbArticleType {
         match value {
             0 => Self::Text,
             1 => Self::Binary,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB article type code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -449,7 +465,10 @@ impl From<i32> for IbAuctionType {
             1 => Self::Opening,
             2 => Self::Closing,
             4 => Self::Volatility,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB auction type code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }

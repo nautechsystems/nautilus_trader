@@ -23,7 +23,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl VolumeWeightedAveragePrice {
-    /// Creates a new `VolumeWeightedAveragePrice` instance.
+    /// Volume-weighted average price.
     #[new]
     #[must_use]
     pub const fn py_new() -> Self {
@@ -71,8 +71,10 @@ impl VolumeWeightedAveragePrice {
         self.reset();
     }
 
+    /// Adds a price and nonnegative volume to the current manually reset window.
+    /// Non-finite inputs and negative volume leave state unchanged.
     #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, value: f64, volume: f64, ts: f64) {
-        self.update_raw(value, volume, ts);
+    fn py_update_raw(&mut self, value: f64, volume: f64) {
+        self.update_raw(value, volume);
     }
 }

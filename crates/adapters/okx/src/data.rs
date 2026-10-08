@@ -4475,6 +4475,7 @@ mod tests {
             inst_family: Ustr::from(""),
             series_id: Some(Ustr::from("BTC-ABOVE-DAILY")),
             inst_category: Some(crate::common::enums::OKXInstrumentCategory::Crypto),
+            group_id: None,
             init_px_lmt_pct: String::new(),
             float_px_lmt_pct: String::new(),
             max_px_lmt_pct: String::new(),

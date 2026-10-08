@@ -1246,13 +1246,6 @@ impl WsDispatchState {
         self.active_markets.insert(market_index);
     }
 
-    /// Snapshot account-active markets for fan-out at reconciliation time.
-    pub(crate) fn active_markets_snapshot(&self) -> Vec<i64> {
-        let mut markets: Vec<i64> = self.active_markets.iter().map(|m| *m).collect();
-        markets.sort_unstable();
-        markets
-    }
-
     /// Hash a Nautilus [`ClientOrderId`] into a stable positive `i64` for use
     /// as the venue's `client_order_index`. The high bit is masked off so
     /// every derived value passes Lighter's `client_order_index >= 0` check.
@@ -1848,33 +1841,136 @@ pub(crate) async fn lookup_order_status_report(
     dispatch: &WsDispatchState,
     clock: &'static AtomicTime,
 ) -> anyhow::Result<Option<OrderStatusReport>> {
-    let instrument_id = instrument_id.ok_or_else(|| {
-        anyhow::anyhow!("Lighter order lookup requires an instrument_id (per-market REST query)")
-    })?;
-    let market_index = registry
-        .market_index(&instrument_id)
-        .ok_or_else(|| anyhow::anyhow!("no Lighter market_index for instrument {instrument_id}"))?;
+    let lookup = OrderReportLookup::new(
+        registry,
+        dispatch,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+    )?;
+    collect_order_status_report(
+        http_client,
+        registry,
+        credential,
+        account_id,
+        &lookup,
+        clock,
+    )
+    .await
+    .map(|report| report.map(|report| lookup.finish(dispatch, report)))
+}
 
-    // Try, in order: explicit voi, cached voi, derived client_order_index.
-    let target_venue_index: Option<i64> = venue_order_id
-        .and_then(|voi| voi.as_str().parse::<i64>().ok())
-        .or_else(|| {
-            client_order_id
-                .and_then(|cloid| dispatch.lookup_venue_order_id(cloid))
-                .and_then(|voi| voi.as_str().parse::<i64>().ok())
+pub(crate) struct OrderReportLookup {
+    instrument_id: InstrumentId,
+    target_venue_index: Option<i64>,
+    target_client_index: Option<i64>,
+    supplied_cloid: Option<ClientOrderId>,
+}
+
+impl OrderReportLookup {
+    pub(crate) fn new(
+        registry: &Arc<MarketRegistry>,
+        dispatch: &WsDispatchState,
+        instrument_id: Option<InstrumentId>,
+        client_order_id: Option<&ClientOrderId>,
+        venue_order_id: Option<&VenueOrderId>,
+    ) -> anyhow::Result<Self> {
+        let instrument_id = instrument_id.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Lighter order lookup requires an instrument_id (per-market REST query)"
+            )
+        })?;
+
+        let target_venue_index: Option<i64> = venue_order_id
+            .and_then(|voi| voi.as_str().parse::<i64>().ok())
+            .or_else(|| {
+                client_order_id
+                    .and_then(|cloid| dispatch.lookup_venue_order_id(cloid))
+                    .and_then(|voi| voi.as_str().parse::<i64>().ok())
+            });
+
+        let target_client_index: Option<i64> = client_order_id.map(|cloid| {
+            dispatch
+                .client_order_index(cloid)
+                .unwrap_or_else(|| dispatch.derive_client_order_index(cloid))
         });
-    let target_client_index: Option<i64> = client_order_id.map(|cloid| {
-        dispatch
-            .client_order_index(cloid)
-            .unwrap_or_else(|| dispatch.derive_client_order_index(cloid))
-    });
+
+        anyhow::ensure!(
+            registry.market_index(&instrument_id).is_some(),
+            "no Lighter market_index for instrument {instrument_id}"
+        );
+        Ok(Self {
+            instrument_id,
+            target_venue_index,
+            target_client_index,
+            supplied_cloid: client_order_id.copied(),
+        })
+    }
+
+    fn parse(
+        &self,
+        order: &LighterOrder,
+        registry: &Arc<MarketRegistry>,
+        account_id: AccountId,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<(OrderStatusReport, Option<ClientOrderId>)> {
+        let market_index = registry
+            .market_index(&self.instrument_id)
+            .unwrap_or(order.market_index);
+
+        let report =
+            parse_http_order_to_report(order, registry, account_id, ts_init).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "failed to parse matching Lighter order {} for market_index={market_index}",
+                    order.order_id
+                )
+            })?;
+
+        // A caller cloid identifies the order only when the raw client index matches
+        let supplied_cloid = self
+            .supplied_cloid
+            .filter(|_| self.target_client_index == Some(order.client_order_index));
+        Ok((report, supplied_cloid))
+    }
+
+    pub(crate) fn finish(
+        &self,
+        dispatch: &WsDispatchState,
+        (report, supplied): (OrderStatusReport, Option<ClientOrderId>),
+    ) -> OrderStatusReport {
+        let mut report = dispatch.translate_order_cloid(report);
+
+        if let Some(cloid) = supplied {
+            report = report.with_client_order_id(cloid);
+        }
+
+        dispatch.preserve_pending_order_status(report)
+    }
+}
+
+pub(crate) async fn collect_order_status_report(
+    http_client: &LighterHttpClient,
+    registry: &Arc<MarketRegistry>,
+    credential: &Credential,
+    account_id: AccountId,
+    lookup: &OrderReportLookup,
+    clock: &'static AtomicTime,
+) -> anyhow::Result<Option<(OrderStatusReport, Option<ClientOrderId>)>> {
+    let market_index = registry
+        .market_index(&lookup.instrument_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "no Lighter market_index for instrument {}",
+                lookup.instrument_id
+            )
+        })?;
 
     let matches_order = |o: &LighterOrder| {
         order_matches_lookup(
             o.order_index,
             o.client_order_index,
-            target_venue_index,
-            target_client_index,
+            lookup.target_venue_index,
+            lookup.target_client_index,
         )
     };
 
@@ -1891,54 +1987,23 @@ pub(crate) async fn lookup_order_status_report(
         .context("failed to fetch Lighter active orders")?;
 
     let ts_init = clock.get_time_ns();
-    let supplied_cloid = client_order_id.copied();
-
-    let finalize = |order: &LighterOrder| -> anyhow::Result<OrderStatusReport> {
-        let report =
-            parse_http_order_to_report(order, registry, account_id, ts_init).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "failed to parse matching Lighter order {} for market_index={market_index}",
-                    order.order_id,
-                )
-            })?;
-        let mut report = dispatch.translate_order_cloid(report);
-        // Substitute the caller-supplied cloid whenever it positively
-        // identifies this order: when the order's
-        // `client_order_index` equals the deterministic derivation from
-        // `supplied_cloid`. This covers two cases the cloid_map cannot
-        // serve after a fresh client instance:
-        //   1. The match came via `client_order_index`.
-        //   2. The match came via venue order id, but the caller also
-        //      supplied the matching cloid.
-        // Substituting on the derivation match (rather than which path
-        // matched first) avoids leaving the venue numeric cloid on the
-        // report whenever the supplied cloid is the right one.
-        if let Some(cloid) = supplied_cloid
-            && let Some(client_index) = target_client_index
-            && order.client_order_index == client_index
-            && report.client_order_id != Some(cloid)
-        {
-            report = report.with_client_order_id(cloid);
-        }
-        Ok(dispatch.preserve_pending_order_status(report))
-    };
 
     let mut active_matches = active.orders.iter().filter(|order| matches_order(order));
     let active_match = active_matches.next();
 
-    if target_venue_index.is_none() {
+    if lookup.target_venue_index.is_none() {
         anyhow::ensure!(
             active_matches.next().is_none(),
             "ambiguous Lighter active-order lookup for client_order_index {}",
-            target_client_index.unwrap_or_default(),
+            lookup.target_client_index.unwrap_or_default(),
         );
     }
 
     if let Some(order) = active_match {
-        return finalize(order).map(Some);
+        return lookup.parse(order, registry, account_id, ts_init).map(Some);
     }
 
-    if target_venue_index.is_none() {
+    if lookup.target_venue_index.is_none() {
         return Ok(None);
     }
 
@@ -1972,7 +2037,7 @@ pub(crate) async fn lookup_order_status_report(
 
         for order in &inactive.orders {
             if matches_order(order) {
-                return finalize(order).map(Some);
+                return lookup.parse(order, registry, account_id, ts_init).map(Some);
             }
         }
 

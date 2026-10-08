@@ -362,6 +362,16 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get the account abstraction mode for a user.
+    pub fn user_abstraction(user: &str) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::UserAbstraction,
+            params: InfoRequestParams::SpotClearinghouseState(SpotClearinghouseStateParams {
+                user: user.to_string(),
+            }),
+        }
+    }
+
     /// Creates a request to get user fee schedule and effective rates.
     pub fn user_fees(user: &str) -> Self {
         Self {
@@ -629,6 +639,16 @@ mod tests {
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains(r#""type":"spotClearinghouseState""#));
         assert!(json.contains(r#""user":"0xabc""#));
+    }
+
+    #[rstest]
+    fn test_info_request_user_abstraction() {
+        let req = InfoRequest::user_abstraction("0xabc");
+
+        assert_eq!(
+            serde_json::to_value(&req).unwrap(),
+            serde_json::json!({"type": "userAbstraction", "user": "0xabc"})
+        );
     }
 
     #[rstest]

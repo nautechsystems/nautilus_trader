@@ -17,10 +17,830 @@ use std::fmt::Debug;
 
 use nautilus_common::{
     messages::data::{SubscribeBars, SubscribeCommand},
-    msgbus::{MStr, Topic, TypedHandler},
+    msgbus::{self, MStr, Topic, TypedHandler},
 };
 use nautilus_core::UUID4;
 use nautilus_model::data::{Bar, BarType, QuoteTick, TradeTick};
+
+use super::{
+    AggregationSource, BAR_AGGREGATOR_PRIORITY, BarAggregation, BarAggregator, BarBarHandler,
+    BarQuoteHandler, BarTradeHandler, DataCommand, DataEngine, DataResponse, Instrument,
+    InstrumentAny, PriceType, Rc, RefCell, RenkoBarAggregator, RequestBarAggregation,
+    RequestCommand, SubscribeQuotes, SubscribeTrades, TickBarAggregator,
+    TickImbalanceBarAggregator, TickRunsBarAggregator, TimeBarAggregator, UnsubscribeBars,
+    UnsubscribeCommand, UnsubscribeQuotes, UnsubscribeTrades, ValueBarAggregator,
+    ValueImbalanceBarAggregator, ValueRunsBarAggregator, VolumeBarAggregator,
+    VolumeImbalanceBarAggregator, VolumeRunsBarAggregator, log_error_on_cache_insert,
+    process_engine_bar, request_bar_aggregation_from_params, request_params, switchboard,
+};
+
+impl DataEngine {
+    pub(super) fn prepare_request_bar_aggregators_from_state(
+        &mut self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) -> anyhow::Result<()> {
+        if !self.can_start_request_bar_aggregators(request_id, state) {
+            anyhow::bail!(
+                "Cannot request aggregated bars: one of the aggregators in `bar_types` is already running"
+            );
+        }
+
+        self.request_bar_aggregations
+            .insert(request_id, state.clone());
+
+        if let Err(e) = self.init_request_bar_aggregators(request_id, state) {
+            self.cleanup_request_bar_aggregators(&request_id);
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn prepare_request_bar_aggregators(
+        &mut self,
+        req: &RequestCommand,
+    ) -> anyhow::Result<()> {
+        let request_id = *req.request_id();
+
+        let Some(state) = request_bar_aggregation_from_params(request_params(req))? else {
+            return Ok(());
+        };
+
+        self.prepare_request_bar_aggregators_from_state(request_id, &state)
+    }
+
+    fn can_start_request_bar_aggregators(
+        &self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) -> bool {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+        state.bar_types.iter().all(|bar_type| {
+            let key = bar_aggregator_key(*bar_type, aggregator_request_id);
+            self.bar_aggregators
+                .get(&key)
+                .is_none_or(|aggregator| !aggregator.borrow().is_running())
+        })
+    }
+
+    fn init_request_bar_aggregators(
+        &mut self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) -> anyhow::Result<()> {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            self.create_bar_aggregator_for_key(
+                *bar_type,
+                aggregator_request_id,
+                state.skip_first_non_full_bar,
+            )?;
+            self.setup_bar_aggregator(*bar_type, true, aggregator_request_id)?;
+
+            let key = bar_aggregator_key(*bar_type, aggregator_request_id);
+            if let Some(aggregator) = self.bar_aggregators.get(&key) {
+                if state.disable_build_with_no_updates {
+                    aggregator.borrow_mut().set_build_with_no_updates(false);
+                }
+
+                aggregator.borrow_mut().set_is_running(true);
+            }
+        }
+
+        self.set_request_bar_aggregator_chain_handlers(request_id, state);
+
+        Ok(())
+    }
+
+    fn set_request_bar_aggregator_chain_handlers(
+        &self,
+        request_id: UUID4,
+        state: &RequestBarAggregation,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            let key = bar_aggregator_key(*bar_type, aggregator_request_id);
+
+            let Some(aggregator) = self.bar_aggregators.get(&key).cloned() else {
+                continue;
+            };
+
+            let downstream: Vec<_> = state
+                .bar_types
+                .iter()
+                .filter(|candidate| {
+                    candidate.is_composite()
+                        && candidate.composite().standard() == bar_type.standard()
+                })
+                .filter_map(|candidate| {
+                    let key = bar_aggregator_key(*candidate, aggregator_request_id);
+                    self.bar_aggregators.get(&key).cloned()
+                })
+                .collect();
+
+            let cache = self.cache.clone();
+
+            let handler: Box<dyn FnMut(Bar)> = Box::new(move |bar: Bar| {
+                // Request-generated bars are delivered only through the cache.
+                if let Err(e) = cache.as_ref().borrow_mut().add_bar_historical(bar) {
+                    log_error_on_cache_insert(&e);
+                }
+
+                for aggregator in &downstream {
+                    aggregator.borrow_mut().handle_bar(bar);
+                }
+            });
+
+            aggregator.borrow_mut().set_historical_mode(true, handler);
+        }
+    }
+
+    pub(super) fn cleanup_request_bar_aggregators(&mut self, request_id: &UUID4) -> bool {
+        let Some(state) = self.request_bar_aggregations.remove(request_id) else {
+            return false;
+        };
+
+        let aggregator_request_id = state.aggregator_request_id(*request_id);
+
+        for bar_type in state.bar_types {
+            let key = bar_aggregator_key(bar_type, aggregator_request_id);
+            let has_live_handlers =
+                state.update_subscriptions && self.bar_aggregator_handlers.contains_key(&key);
+
+            let keep_running = if has_live_handlers {
+                match self.setup_bar_aggregator(bar_type, false, aggregator_request_id) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        log::error!(
+                            "Error starting live request bar aggregator for {bar_type}: {e}"
+                        );
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+
+            if let Some(aggregator) = self.bar_aggregators.get(&key) {
+                aggregator.borrow_mut().set_is_running(keep_running);
+            }
+
+            if !state.update_subscriptions
+                && let Err(e) = self.stop_bar_aggregator(bar_type, aggregator_request_id)
+            {
+                log::error!("Error stopping request bar aggregator for {bar_type}: {e}");
+            }
+        }
+
+        true
+    }
+
+    pub(super) fn process_request_bar_aggregation_response(&mut self, resp: &DataResponse) {
+        let correlation_id = *resp.correlation_id();
+
+        let Some(state) = self.request_bar_aggregations.get(&correlation_id).cloned() else {
+            return;
+        };
+
+        match resp {
+            DataResponse::Quotes(r) => {
+                for quote in &r.data {
+                    self.update_request_bar_aggregators_from_quote(&state, correlation_id, *quote);
+                }
+            }
+            DataResponse::Trades(r) => {
+                for trade in &r.data {
+                    self.update_request_bar_aggregators_from_trade(&state, correlation_id, *trade);
+                }
+            }
+            DataResponse::Bars(r) => {
+                for bar in &r.data {
+                    self.update_request_bar_aggregators_from_bar(&state, correlation_id, *bar);
+                }
+            }
+            _ => {}
+        }
+
+        self.cleanup_request_bar_aggregators(&correlation_id);
+    }
+
+    pub(super) fn update_request_bar_aggregators_from_quote(
+        &self,
+        state: &RequestBarAggregation,
+        request_id: UUID4,
+        quote: QuoteTick,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            if bar_type.is_composite()
+                || bar_type.instrument_id() != quote.instrument_id
+                || bar_type.spec().price_type == PriceType::Last
+            {
+                continue;
+            }
+
+            self.update_request_bar_aggregator(*bar_type, aggregator_request_id, |aggregator| {
+                aggregator.handle_quote(quote);
+            });
+        }
+    }
+
+    pub(super) fn update_request_bar_aggregators_from_trade(
+        &self,
+        state: &RequestBarAggregation,
+        request_id: UUID4,
+        trade: TradeTick,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            if bar_type.is_composite()
+                || bar_type.instrument_id() != trade.instrument_id
+                || bar_type.spec().price_type != PriceType::Last
+            {
+                continue;
+            }
+
+            self.update_request_bar_aggregator(*bar_type, aggregator_request_id, |aggregator| {
+                aggregator.handle_trade(trade);
+            });
+        }
+    }
+
+    pub(super) fn update_request_bar_aggregators_from_bar(
+        &self,
+        state: &RequestBarAggregation,
+        request_id: UUID4,
+        bar: Bar,
+    ) {
+        let aggregator_request_id = state.aggregator_request_id(request_id);
+
+        for bar_type in &state.bar_types {
+            if !bar_type.is_composite()
+                || bar_type.composite().standard() != bar.bar_type.standard()
+            {
+                continue;
+            }
+
+            self.update_request_bar_aggregator(*bar_type, aggregator_request_id, |aggregator| {
+                aggregator.handle_bar(bar);
+            });
+        }
+    }
+
+    pub(super) fn update_request_bar_aggregator<F>(
+        &self,
+        bar_type: BarType,
+        request_id: Option<UUID4>,
+        update: F,
+    ) where
+        F: FnOnce(&mut dyn BarAggregator),
+    {
+        let key = bar_aggregator_key(bar_type, request_id);
+
+        let Some(aggregator) = self.bar_aggregators.get(&key) else {
+            log::error!("Cannot update request bar aggregator: no aggregator found for {bar_type}");
+            return;
+        };
+
+        update(aggregator.borrow_mut().as_mut());
+    }
+
+    pub(super) fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        match cmd.bar_type.aggregation_source() {
+            AggregationSource::Internal => self.start_bar_aggregation(cmd)?,
+            AggregationSource::External => {
+                if cmd.bar_type.instrument_id().is_synthetic() {
+                    anyhow::bail!(
+                        "Cannot subscribe for externally aggregated synthetic instrument bar data"
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) {
+        let bar_type = cmd.bar_type;
+
+        // Don't remove aggregator if other exact-topic subscribers still exist
+        let topic = switchboard::get_bars_topic(bar_type.standard());
+        if msgbus::exact_subscriber_count_bars(topic) > 0 {
+            return;
+        }
+
+        let retained = self
+            .subscriptions_bar_aggregation
+            .get(&bar_type.standard())
+            .map(|subscription| subscription.command.clone());
+
+        let command = retained.map_or_else(
+            || cmd.clone(),
+            |subscribe| {
+                UnsubscribeBars::new(
+                    subscribe.bar_type,
+                    subscribe.client_id,
+                    subscribe.venue,
+                    cmd.command_id,
+                    cmd.ts_init,
+                    Some(subscribe.command_id),
+                    subscribe.params,
+                )
+            },
+        );
+
+        if self
+            .bar_aggregators
+            .contains_key(&bar_aggregator_key(bar_type, None))
+        {
+            match self.stop_bar_aggregator(bar_type, None) {
+                Ok(()) => {
+                    self.subscriptions_bar_aggregation
+                        .remove(&bar_type.standard());
+                    self.unsubscribe_bar_aggregator(&command);
+                }
+                Err(e) => log::error!("Error stopping bar aggregator for {bar_type}: {e}"),
+            }
+        }
+
+        // After stopping a composite, release its source through `unsubscribe_bars`, which frees
+        // the client feed recorded in the source's retained command.
+        if command.bar_type.is_composite() {
+            let source_type = command.bar_type.composite();
+
+            if self
+                .bar_aggregators
+                .contains_key(&bar_aggregator_key(source_type, None))
+            {
+                self.unsubscribe_bars(&UnsubscribeBars::new(
+                    source_type,
+                    command.client_id,
+                    command.venue,
+                    UUID4::new(),
+                    command.ts_init,
+                    Some(command.command_id),
+                    command.params.clone(),
+                ));
+            }
+        }
+    }
+
+    fn create_bar_aggregator(
+        &self,
+        instrument: &InstrumentAny,
+        bar_type: BarType,
+        skip_first_non_full_bar: Option<bool>,
+    ) -> Box<dyn BarAggregator> {
+        let cache = self.cache.clone();
+        let validate_sequence = self.config.validate_data_sequence;
+
+        let handler = move |bar: Bar| {
+            process_engine_bar(&cache, validate_sequence, true, bar);
+        };
+
+        let clock = self.clock.clone();
+        let config = self.config.clone();
+
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+
+        if bar_type.spec().is_time_aggregated() {
+            let time_bars_origin_offset = config
+                .time_bars_origin_offset
+                .get(&bar_type.spec().aggregation)
+                .map(|duration| jiff::SignedDuration::try_from(*duration).unwrap_or_default());
+
+            Box::new(TimeBarAggregator::new(
+                bar_type,
+                price_precision,
+                size_precision,
+                clock,
+                handler,
+                config.time_bars_build_with_no_updates,
+                config.time_bars_timestamp_on_close,
+                config.time_bars_interval_type,
+                time_bars_origin_offset,
+                config.time_bars_build_delay,
+                skip_first_non_full_bar.unwrap_or(config.time_bars_skip_first_non_full_bar),
+            ))
+        } else {
+            match bar_type.spec().aggregation {
+                BarAggregation::Tick => Box::new(TickBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::TickImbalance => Box::new(TickImbalanceBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::TickRuns => Box::new(TickRunsBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::Volume => Box::new(VolumeBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::VolumeImbalance => Box::new(VolumeImbalanceBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::VolumeRuns => Box::new(VolumeRunsBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::Value => Box::new(ValueBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::ValueImbalance => Box::new(ValueImbalanceBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::ValueRuns => Box::new(ValueRunsBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                BarAggregation::Renko => Box::new(RenkoBarAggregator::new(
+                    bar_type,
+                    price_precision,
+                    size_precision,
+                    instrument.price_increment(),
+                    handler,
+                )) as Box<dyn BarAggregator>,
+                other => unreachable!(
+                    "Unsupported internal bar aggregation dispatch for {other:?}; update `create_bar_aggregator`"
+                ),
+            }
+        }
+    }
+
+    pub(super) fn create_bar_aggregator_for_key(
+        &mut self,
+        bar_type: BarType,
+        request_id: Option<UUID4>,
+        skip_first_non_full_bar: Option<bool>,
+    ) -> anyhow::Result<()> {
+        let key = bar_aggregator_key(bar_type, request_id);
+        if self.bar_aggregators.contains_key(&key) {
+            return Ok(());
+        }
+
+        let instrument = {
+            let cache = self.cache.borrow();
+            cache
+                .instrument(&bar_type.instrument_id())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Cannot start bar aggregation: no instrument found for {}",
+                        bar_type.instrument_id(),
+                    )
+                })?
+                .clone()
+        };
+
+        let aggregator = self.create_bar_aggregator(&instrument, bar_type, skip_first_non_full_bar);
+        debug_assert_eq!(
+            aggregator.bar_type(),
+            key.0,
+            "aggregator bar type must match its standardized key"
+        );
+        self.bar_aggregators
+            .insert(key, Rc::new(RefCell::new(aggregator)));
+
+        Ok(())
+    }
+
+    fn start_bar_aggregation(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let key = bar_aggregator_key(cmd.bar_type, None);
+
+        if self
+            .bar_aggregators
+            .get(&key)
+            .is_some_and(|aggregator| aggregator.borrow().is_running())
+            && self.bar_aggregator_handlers.contains_key(&key)
+        {
+            if let Some(source_command) = self
+                .subscriptions_bar_aggregation
+                .get(&cmd.bar_type.standard())
+                .and_then(|subscription| subscription.source.clone())
+            {
+                self.execute(DataCommand::Subscribe(source_command));
+            }
+
+            log::warn!(
+                "Aggregator for {} is currently in use, subscription can't be started",
+                cmd.bar_type,
+            );
+            return Ok(());
+        }
+
+        let skip_first_non_full_bar = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("skip_first_non_full_bar"));
+        self.start_bar_aggregator(cmd.bar_type, None, skip_first_non_full_bar)?;
+        let source = self.subscribe_bar_aggregator(cmd);
+        self.subscriptions_bar_aggregation.insert(
+            cmd.bar_type.standard(),
+            BarAggregationSubscription {
+                command: cmd.clone(),
+                source,
+            },
+        );
+
+        Ok(())
+    }
+
+    fn start_bar_aggregator(
+        &mut self,
+        bar_type: BarType,
+        request_id: Option<UUID4>,
+        skip_first_non_full_bar: Option<bool>,
+    ) -> anyhow::Result<()> {
+        let key = bar_aggregator_key(bar_type, request_id);
+        let bar_type_std = bar_type.standard();
+
+        self.create_bar_aggregator_for_key(bar_type, request_id, skip_first_non_full_bar)?;
+        let aggregator = self
+            .bar_aggregators
+            .get(&key)
+            .ok_or_else(|| anyhow::anyhow!("Cannot start bar aggregation for {bar_type}"))?
+            .clone();
+        let defer_subscription_activation = request_id.is_none()
+            && aggregator.borrow().is_running()
+            && !self.bar_aggregator_handlers.contains_key(&key);
+
+        if !self.bar_aggregator_handlers.contains_key(&key) {
+            // Subscribe to underlying data topics
+            let mut subscriptions = Vec::new();
+
+            if bar_type.is_composite() {
+                let topic = switchboard::get_bars_topic(bar_type.composite());
+                let handler = TypedHandler::new(BarBarHandler::new(&aggregator, bar_type_std));
+                msgbus::subscribe_bars(topic.into(), handler.clone(), None);
+                subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
+            } else if bar_type.spec().price_type == PriceType::Last {
+                let topic = switchboard::get_trades_topic(bar_type.instrument_id());
+                let handler = TypedHandler::new(BarTradeHandler::new(&aggregator, bar_type_std));
+                msgbus::subscribe_trades(
+                    topic.into(),
+                    handler.clone(),
+                    Some(BAR_AGGREGATOR_PRIORITY),
+                );
+                subscriptions.push(BarAggregatorSubscription::Trade { topic, handler });
+            } else {
+                // Warn if imbalance/runs aggregation is wired to quotes (needs aggressor_side from trades)
+                if matches!(
+                    bar_type.spec().aggregation,
+                    BarAggregation::TickImbalance
+                        | BarAggregation::VolumeImbalance
+                        | BarAggregation::ValueImbalance
+                        | BarAggregation::TickRuns
+                        | BarAggregation::VolumeRuns
+                        | BarAggregation::ValueRuns
+                ) {
+                    log::warn!(
+                        "Bar type {bar_type} uses imbalance/runs aggregation which requires trade \
+                         data with `aggressor_side`, but `price_type` is not LAST so it will receive \
+                         quote data: bars will not emit correctly",
+                    );
+                }
+
+                let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
+                let handler = TypedHandler::new(BarQuoteHandler::new(&aggregator, bar_type_std));
+                msgbus::subscribe_quotes(
+                    topic.into(),
+                    handler.clone(),
+                    Some(BAR_AGGREGATOR_PRIORITY),
+                );
+                subscriptions.push(BarAggregatorSubscription::Quote { topic, handler });
+            }
+
+            self.bar_aggregator_handlers.insert(key, subscriptions);
+        }
+
+        if defer_subscription_activation {
+            return Ok(());
+        }
+
+        self.setup_bar_aggregator(bar_type, false, request_id)?;
+
+        aggregator.borrow_mut().set_is_running(true);
+
+        Ok(())
+    }
+
+    fn subscribe_bar_aggregator(&mut self, cmd: &SubscribeBars) -> Option<SubscribeCommand> {
+        let subscribe = self.bar_aggregator_source_command(cmd)?;
+        self.execute(DataCommand::Subscribe(subscribe.clone()));
+        Some(subscribe)
+    }
+
+    fn bar_aggregator_source_command(&self, cmd: &SubscribeBars) -> Option<SubscribeCommand> {
+        let key = bar_aggregator_key(cmd.bar_type, None);
+        if !self.bar_aggregators.contains_key(&key) {
+            log::error!(
+                "Cannot subscribe bar aggregator: no aggregator found for {}",
+                cmd.bar_type,
+            );
+            return None;
+        }
+
+        if cmd.bar_type.is_composite() {
+            let composite_bar_type = cmd.bar_type.composite();
+            if composite_bar_type.is_externally_aggregated() {
+                let subscribe = SubscribeBars::new(
+                    composite_bar_type,
+                    cmd.client_id,
+                    cmd.venue,
+                    UUID4::new(),
+                    cmd.ts_init,
+                    Some(cmd.command_id),
+                    cmd.params.clone(),
+                );
+                return Some(SubscribeCommand::Bars(subscribe));
+            }
+        } else if cmd.bar_type.spec().price_type == PriceType::Last {
+            let subscribe = SubscribeTrades::new(
+                cmd.bar_type.instrument_id(),
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            return Some(SubscribeCommand::Trades(subscribe));
+        } else {
+            let subscribe = SubscribeQuotes::new(
+                cmd.bar_type.instrument_id(),
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            return Some(SubscribeCommand::Quotes(subscribe));
+        }
+
+        None
+    }
+
+    /// Sets up a bar aggregator.
+    ///
+    /// This method handles historical mode, message bus subscriptions, and time bar aggregator setup.
+    pub(super) fn setup_bar_aggregator(
+        &self,
+        bar_type: BarType,
+        historical: bool,
+        request_id: Option<UUID4>,
+    ) -> anyhow::Result<()> {
+        let key = bar_aggregator_key(bar_type, request_id);
+
+        let aggregator = self.bar_aggregators.get(&key).ok_or_else(|| {
+            anyhow::anyhow!("Cannot setup bar aggregator: no aggregator found for {bar_type}")
+        })?;
+
+        // Set historical mode and handler
+        let cache = self.cache.clone();
+        let validate_sequence = self.config.validate_data_sequence;
+        let publish = !historical;
+
+        let handler: Box<dyn FnMut(Bar)> = Box::new(move |bar: Bar| {
+            process_engine_bar(&cache, validate_sequence, publish, bar);
+        });
+
+        aggregator
+            .borrow_mut()
+            .set_historical_mode(historical, handler);
+
+        // For TimeBarAggregator, set clock and start timer
+        if bar_type.spec().is_time_aggregated() {
+            use nautilus_common::clock::VirtualClock;
+
+            if historical {
+                // Each aggregator gets its own independent clock
+                let test_clock = Rc::new(RefCell::new(VirtualClock::new()));
+                aggregator.borrow_mut().set_clock(test_clock);
+                // Set weak reference for historical mode (start_timer called later from preprocess_historical_events)
+                // Store weak reference so start_timer can use it when called later
+                let aggregator_weak = Rc::downgrade(aggregator);
+                aggregator.borrow_mut().set_aggregator_weak(aggregator_weak);
+            } else {
+                aggregator.borrow_mut().set_clock(self.clock.clone());
+                aggregator
+                    .borrow_mut()
+                    .start_timer(Some(aggregator.clone()));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn unsubscribe_bar_aggregator(&mut self, cmd: &UnsubscribeBars) {
+        if cmd.bar_type.is_composite() {
+            let composite_bar_type = cmd.bar_type.composite();
+            if composite_bar_type.is_externally_aggregated() {
+                let unsubscribe = UnsubscribeBars::new(
+                    composite_bar_type,
+                    cmd.client_id,
+                    cmd.venue,
+                    UUID4::new(),
+                    cmd.ts_init,
+                    Some(cmd.command_id),
+                    cmd.params.clone(),
+                );
+                self.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
+                    unsubscribe,
+                )));
+            }
+        } else if cmd.bar_type.spec().price_type == PriceType::Last {
+            let unsubscribe = UnsubscribeTrades::new(
+                cmd.bar_type.instrument_id(),
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            self.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Trades(
+                unsubscribe,
+            )));
+        } else {
+            let unsubscribe = UnsubscribeQuotes::new(
+                cmd.bar_type.instrument_id(),
+                cmd.client_id,
+                cmd.venue,
+                UUID4::new(),
+                cmd.ts_init,
+                Some(cmd.command_id),
+                cmd.params.clone(),
+            );
+            self.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
+                unsubscribe,
+            )));
+        }
+    }
+
+    pub(super) fn stop_bar_aggregator(
+        &mut self,
+        bar_type: BarType,
+        request_id: Option<UUID4>,
+    ) -> anyhow::Result<()> {
+        let key = bar_aggregator_key(bar_type, request_id);
+
+        let aggregator = self.bar_aggregators.shift_remove(&key).ok_or_else(|| {
+            anyhow::anyhow!("Cannot stop bar aggregator: no aggregator to stop for {bar_type}")
+        })?;
+
+        aggregator.borrow_mut().stop();
+
+        // Unsubscribe any registered message handlers
+        if let Some(subs) = self.bar_aggregator_handlers.remove(&key) {
+            for sub in subs {
+                match sub {
+                    BarAggregatorSubscription::Bar { topic, handler } => {
+                        msgbus::unsubscribe_bars(topic.into(), &handler);
+                    }
+                    BarAggregatorSubscription::Trade { topic, handler } => {
+                        msgbus::unsubscribe_trades(topic.into(), &handler);
+                    }
+                    BarAggregatorSubscription::Quote { topic, handler } => {
+                        msgbus::unsubscribe_quotes(topic.into(), &handler);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct BarAggregationSubscription {

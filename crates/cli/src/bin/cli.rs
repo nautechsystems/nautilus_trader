@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 #![warn(clippy::pedantic)]
+#![warn(clippy::clone_on_ref_ptr)]
 
 use std::process::ExitCode;
 

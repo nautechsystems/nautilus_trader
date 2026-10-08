@@ -15,6 +15,7 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
@@ -24,8 +25,10 @@ use crate::{
     average::MovingAverageType,
     indicator::{Indicator, MovingAverage},
     momentum::cmo::ChandeMomentumOscillator,
+    support::MAX_PERIOD,
 };
 
+/// Variable index dynamic average.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -38,6 +41,7 @@ use crate::{
 )]
 pub struct VariableIndexDynamicAverage {
     pub period: usize,
+    pub cmo_period: usize,
     pub alpha: f64,
     pub price_type: PriceType,
     pub value: f64,
@@ -103,25 +107,56 @@ impl VariableIndexDynamicAverage {
         price_type: Option<PriceType>,
         cmo_ma_type: Option<MovingAverageType>,
     ) -> Self {
-        assert!(
-            period > 0,
-            "VariableIndexDynamicAverage: period must be > 0 (received {period})"
-        );
+        Self::new_checked(period, period, price_type, cmo_ma_type).expect(FAILED)
+    }
 
-        Self {
+    /// Creates a new [`VariableIndexDynamicAverage`] with an independent CMO period.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either period is zero.
+    #[must_use]
+    pub fn new_with_cmo_period(
+        period: usize,
+        cmo_period: usize,
+        price_type: Option<PriceType>,
+        cmo_ma_type: Option<MovingAverageType>,
+    ) -> Self {
+        Self::new_checked(period, cmo_period, price_type, cmo_ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        cmo_period: usize,
+        price_type: Option<PriceType>,
+        cmo_ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        check_predicate_true(
+            cmo_period <= MAX_PERIOD,
+            &format!("cmo_period cannot exceed {MAX_PERIOD}"),
+        )?;
+
+        check_predicate_true(
+            period > 0,
+            &format!("VariableIndexDynamicAverage: period must be > 0 (received {period})"),
+        )?;
+        check_predicate_true(
+            cmo_period > 0,
+            &format!("VariableIndexDynamicAverage: cmo_period must be > 0 (received {cmo_period})"),
+        )?;
+
+        Ok(Self {
             period,
+            cmo_period,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
             count: 0,
             has_inputs: false,
             initialized: false,
             alpha: 2.0 / (period as f64 + 1.0),
-            cmo: ChandeMomentumOscillator::new(
-                period,
-                Some(cmo_ma_type.unwrap_or(MovingAverageType::Simple)),
-            ),
+            cmo: ChandeMomentumOscillator::new(cmo_period, cmo_ma_type),
             cmo_pct: 0.0,
-        }
+        })
     }
 }
 
@@ -135,15 +170,20 @@ impl MovingAverage for VariableIndexDynamicAverage {
     }
 
     fn update_raw(&mut self, price: f64) {
+        if !price.is_finite() {
+            return;
+        }
+
         self.cmo.update_raw(price);
         self.cmo_pct = (self.cmo.value / 100.0).abs();
 
         if self.initialized {
             self.value = (self.alpha * self.cmo_pct)
                 .mul_add(price, self.alpha.mul_add(-self.cmo_pct, 1.0) * self.value);
-        }
-
-        if !self.initialized && self.cmo.initialized {
+        } else if self.cmo.initialized {
+            // Seed from the first price at which the CMO is ready, so the output
+            // starts at the price level instead of climbing from zero.
+            self.value = price;
             self.initialized = true;
         }
         self.has_inputs = true;
@@ -157,9 +197,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        average::{
-            MovingAverageType, sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
-        },
+        average::{sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage},
         indicator::{Indicator, MovingAverage},
         stubs::*,
         testing::assert_approx_equal,
@@ -182,11 +220,11 @@ mod tests {
 
     #[rstest]
     fn test_initialized_with_required_input(mut indicator_vidya_10: VariableIndexDynamicAverage) {
-        for i in 1..10 {
-            indicator_vidya_10.update_raw(f64::from(i));
+        for value in 1..=10 {
+            indicator_vidya_10.update_raw(f64::from(value));
+            assert!(!indicator_vidya_10.initialized);
         }
-        assert!(!indicator_vidya_10.initialized);
-        indicator_vidya_10.update_raw(10.0);
+        indicator_vidya_10.update_raw(11.0);
         assert!(indicator_vidya_10.initialized);
     }
 
@@ -206,18 +244,15 @@ mod tests {
 
     #[rstest]
     fn test_value_with_ten_inputs(mut indicator_vidya_10: VariableIndexDynamicAverage) {
-        indicator_vidya_10.update_raw(1.00000);
-        indicator_vidya_10.update_raw(1.00010);
-        indicator_vidya_10.update_raw(1.00020);
-        indicator_vidya_10.update_raw(1.00030);
-        indicator_vidya_10.update_raw(1.00040);
-        indicator_vidya_10.update_raw(1.00050);
-        indicator_vidya_10.update_raw(1.00040);
-        indicator_vidya_10.update_raw(1.00030);
-        indicator_vidya_10.update_raw(1.00020);
-        indicator_vidya_10.update_raw(1.00010);
-        indicator_vidya_10.update_raw(1.00000);
-        assert_approx_equal(indicator_vidya_10.value, 0.0468134748639);
+        for value in [
+            1.00000, 1.00010, 1.00020, 1.00030, 1.00040, 1.00050, 1.00040, 1.00030, 1.00020,
+            1.00010,
+        ] {
+            indicator_vidya_10.update_raw(value);
+        }
+
+        assert_eq!(indicator_vidya_10.value, 0.0);
+        assert!(!indicator_vidya_10.initialized());
     }
 
     #[rstest]
@@ -269,7 +304,12 @@ mod tests {
                 if buf.len() > period {
                     buf.remove(0);
                 }
-                buf.iter().copied().sum::<f64>() / buf.len() as f64
+
+                if buf.len() == period {
+                    buf.iter().copied().sum::<f64>() / period as f64
+                } else {
+                    0.0
+                }
             })
             .collect()
     }
@@ -356,19 +396,35 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_defaults_to_simple_cmo_moving_average() {
-        let mut vidya = VariableIndexDynamicAverage::new(10, None, None);
-        let prices = [
-            100.0, 101.5, 100.75, 102.25, 103.0, 101.0, 100.5, 102.0, 104.5, 103.75, 105.0, 104.25,
-            106.5, 105.5, 107.0, 106.25, 108.0, 107.5, 109.25, 108.5,
-        ];
+    fn equivalent_cmo_period_constructors_match() {
+        let mut implicit = VariableIndexDynamicAverage::new(5, None, None);
+        let mut explicit = VariableIndexDynamicAverage::new_with_cmo_period(5, 5, None, None);
 
-        for price in prices {
-            vidya.update_raw(price);
+        for value in [1.0, 2.0, 1.0, 3.0, 2.0, 4.0, 3.0, 5.0] {
+            implicit.update_raw(value);
+            explicit.update_raw(value);
+            assert_eq!(implicit.value, explicit.value);
+            assert_eq!(implicit.cmo_pct, explicit.cmo_pct);
+            assert_eq!(implicit.count, explicit.count);
+            assert_eq!(implicit.initialized, explicit.initialized);
         }
+    }
 
-        assert_eq!(vidya.cmo.ma_type, MovingAverageType::Simple);
-        assert!(vidya.initialized());
-        assert_approx_equal(vidya.value, 53.9213044896);
+    #[rstest]
+    fn test_independent_cmo_period_matches_reference() {
+        // VIDYA(4) with CMO(2): alpha = 2/5, seeded at 11 once the CMO is ready.
+        // CMO(2) = 1/3, 1/3, 1/2 for the next three inputs.
+        let mut vidya = VariableIndexDynamicAverage::new_with_cmo_period(4, 2, None, None);
+        for value in [10.0, 12.0, 11.0] {
+            vidya.update_raw(value);
+        }
+        assert!(vidya.initialized);
+        assert_eq!(vidya.value, 11.0);
+
+        for value in [13.0, 12.0, 15.0] {
+            vidya.update_raw(value);
+        }
+        assert_approx_equal(vidya.value, 13603.0 / 1125.0);
+        assert_approx_equal(vidya.cmo_pct, 0.5);
     }
 }

@@ -2448,12 +2448,13 @@ impl AccountRisk<'_> {
             }
         }
 
+        // Limits apply to exposure, so a negative price must not reduce the notional
         let notional = match self.instrument.try_calculate_notional_value(
             effective_quantity,
             last_px,
             Some(true),
         ) {
-            Ok(notional) => notional,
+            Ok(notional) => notional.abs(),
             Err(e) => {
                 self.check.reject(
                     self.engine,

@@ -70,7 +70,7 @@ use nautilus_model::identifiers::{ClientId, TraderId};
 use nautilus_persistence::{
     backend::{default_catalog_factories, default_writer_factories},
     catalog::factory::create_catalog,
-    common::paths::environment_directory,
+    common::paths::{create_local_directory, environment_directory},
     config::{DataCatalogConfig, StreamingConfig},
     writer::{
         factory::{WriterConnectConfig, create_writer, replace_existing_writer_data},
@@ -223,6 +223,19 @@ impl NautilusKernel {
         connect.use_ts_event_for_ts_init = config.use_ts_event_for_ts_init;
 
         if config.replace_existing {
+            // Writer creation follows replacement, so open the catalog first to fail before the
+            // run directory is emptied.
+            if let Some(catalog) = &config.catalog
+                && let Some(catalog_connect) = &connect.catalog
+            {
+                create_local_directory(&catalog_connect.uri)?;
+                create_catalog(
+                    catalog.catalog_backend(),
+                    catalog_connect,
+                    &default_catalog_factories(),
+                )?;
+            }
+
             replace_existing_writer_data(&connect)?;
         }
 
@@ -1498,7 +1511,23 @@ mod streaming_tests {
     }
 
     #[rstest]
-    fn test_invalid_streaming_config_fails_before_replacing_files() {
+    #[case::promotion_without_catalog(
+        None,
+        "promotion_interval_ms requires catalog: promotion needs a catalog"
+    )]
+    #[case::catalog_param(
+        Some(serde_json::json!({"params": {"batch_size": 1024}})),
+        "Unknown Parquet catalog param 'batch_size': this catalog takes no params"
+    )]
+    #[case::zero_batch_size(
+        Some(serde_json::json!({"batch_size": 0})),
+        "invalid batch_size: must be a positive number of rows; omit the field for the \
+         backend default"
+    )]
+    fn test_invalid_streaming_config_fails_before_replacing_files(
+        #[case] catalog_fields: Option<serde_json::Value>,
+        #[case] expected: &str,
+    ) {
         let directory = tempdir().unwrap();
         let instance_id = UUID4::new();
         let run_directory = directory
@@ -1509,9 +1538,17 @@ mod streaming_tests {
         let existing = run_directory.join("existing.feather");
         std::fs::write(&existing, b"preserve").unwrap();
 
+        let catalog_path = directory.path().join("catalog");
+
+        // Deserialized like a config file, which skips `DataCatalogConfig::validate`
+        let catalog = catalog_fields.map(|mut fields| {
+            fields["path"] = serde_json::json!(catalog_path.to_string_lossy());
+            serde_json::from_value::<DataCatalogConfig>(fields).unwrap()
+        });
+
         let mut streaming = StreamingConfig::new(
             directory.path().to_string_lossy().into_owned(),
-            None,
+            catalog,
             1_000,
             true,
             RotationConfig::NoRotation,
@@ -1528,11 +1565,47 @@ mod streaming_tests {
         .err()
         .unwrap();
 
-        assert_eq!(
-            error.to_string(),
-            "promotion_interval_ms requires catalog: promotion needs a catalog"
-        );
+        assert_eq!(error.to_string(), expected);
         assert_eq!(std::fs::read(&existing).unwrap(), b"preserve");
+    }
+
+    #[rstest]
+    fn test_streaming_replace_existing_creates_missing_catalog_directory() {
+        let directory = tempdir().unwrap();
+        let instance_id = UUID4::new();
+        let run_directory = directory
+            .path()
+            .join("backtest")
+            .join(instance_id.to_string());
+        std::fs::create_dir_all(&run_directory).unwrap();
+        let existing = run_directory.join("existing.feather");
+        std::fs::write(&existing, b"replace").unwrap();
+        let catalog_path = directory.path().join("catalog");
+
+        let streaming = StreamingConfig::new(
+            directory.path().to_string_lossy().into_owned(),
+            Some(DataCatalogConfig::new(
+                catalog_path.to_string_lossy().into_owned(),
+                None,
+                None,
+            )),
+            1_000,
+            true,
+            RotationConfig::NoRotation,
+        );
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+
+        let (_, subscription) = NautilusKernel::setup_streaming_writer(
+            Environment::Backtest,
+            instance_id,
+            &streaming,
+            &clock,
+        )
+        .unwrap();
+        subscription.close().unwrap();
+
+        assert!(!existing.exists());
+        assert!(catalog_path.is_dir());
     }
 
     #[rstest]

@@ -129,6 +129,13 @@ set for recovery and venue edge cases. An order status describes local state, no
 produced it. See [Execution policies](../execution/policies.md) for command outcome classes,
 event provenance, delivery limits, and reconciliation policy.
 
+A fill can arrive after an order expires. The fill still updates the order and position. A partial
+fill leaves the order `EXPIRED`; a fill that completes its quantity changes it to `FILLED`.
+If a fill arrives after the most recent expiry and the order is still `EXPIRED` or `FILLED`, the
+next `OrderExpired` leaves its status and timestamps unchanged. The event remains in the order's
+history, and the execution engine publishes it to strategy handlers. Further expiry events are
+rejected until another fill arrives.
+
 ### Order status definitions
 
 | Status             | Description                                                                                    |

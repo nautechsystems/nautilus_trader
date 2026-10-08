@@ -430,6 +430,8 @@ impl BybitWebSocketClient {
 
     /// Establishes the WebSocket connection.
     ///
+    /// Clears subscription state from earlier sessions, so callers resubscribe after connecting.
+    ///
     /// # Errors
     ///
     /// Returns an error if the underlying WebSocket connection cannot be established,
@@ -519,11 +521,19 @@ impl BybitWebSocketClient {
         self.out_rx = Some(Arc::new(out_rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        *self.cmd_tx.write().await = cmd_tx.clone();
 
-        let cmd = HandlerCommand::SetClient(client);
+        // Queue the client first so no subscribe reaches the handler before it
+        cmd_tx
+            .send(HandlerCommand::SetClient(client))
+            .map_err(|e| BybitWsError::Send(e.to_string()))?;
 
-        self.send_cmd(cmd).await?;
+        {
+            // Commands sent before this swap went to a closed channel and close skips
+            // unsubscribes, so the new session starts from clean subscription state.
+            let _guard = self.subscription_guard.lock().await;
+            *self.cmd_tx.write().await = cmd_tx.clone();
+            self.subscriptions.clear();
+        }
 
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
@@ -1182,6 +1192,36 @@ impl BybitWebSocketClient {
         let topic = format!(
             "{}.{topic_symbol}",
             BybitWsPublicChannel::PublicTrade.as_ref()
+        );
+        self.unsubscribe(vec![topic]).await
+    }
+
+    /// Subscribes to public liquidation updates for a specific instrument.
+    ///
+    /// Bybit publishes this stream for linear and inverse contracts only.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/websocket/public/all-liquidation>
+    pub async fn subscribe_liquidations(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+        let topic = format!(
+            "{}.{raw_symbol}",
+            BybitWsPublicChannel::AllLiquidation.as_ref()
+        );
+        self.subscribe(vec![topic]).await
+    }
+
+    /// Unsubscribes from public liquidation updates for a specific instrument.
+    pub async fn unsubscribe_liquidations(&self, instrument_id: InstrumentId) -> BybitWsResult<()> {
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+        let topic = format!(
+            "{}.{raw_symbol}",
+            BybitWsPublicChannel::AllLiquidation.as_ref()
         );
         self.unsubscribe(vec![topic]).await
     }

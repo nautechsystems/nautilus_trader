@@ -142,7 +142,7 @@ def test_polymarket_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(kwargs, dict)
     assert kwargs["instrument_ids"] == [polymarket_data_tester.INSTRUMENT_ID]
     assert kwargs["subscribe_trades"] is True
-    assert 'event_slugs: Some(["fed-decision-in-september-762"])' in repr(data_client_config)
+    assert 'event_slugs: Some(["presidential-election-winner-2028"])' in repr(data_client_config)
     assert captured["run_called"] is True
 
 

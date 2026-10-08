@@ -1665,14 +1665,29 @@ shared trait.
 #### Gate retries by operation safety
 
 At each call site, bypass retry for an unsafe operation or pass a `should_retry` predicate that
-combines transient failure classification with operation safety. Reads and other idempotent
-operations may retry classified transient failures.
+combines transient failure classification with operation safety. A `POST` can be safe to retry and
+a `DELETE` can be unsafe. This implements the [safety test](../concepts/execution/policies.md#safety-test).
 
-Retry a state-changing operation only when repeating the same request cannot apply the command
-twice or cause another state change. The protocol may guarantee this through duplicate detection
-for a stable request identity or idempotent semantics for the same target. Otherwise, send the
-command once and resolve an unknown outcome through stream updates, queries, polling, or
-reconciliation.
+A repeat is safe only when it cannot apply a state change twice, cannot change an order the first
+attempt did not name, and cannot report an earlier success as a rejection:
+
+- A read or other idempotent operation may retry a classified transient failure. A read-only
+  `POST` may retry. A method allowlist, for example `GET` and `DELETE`, does not prove safety.
+- A session-token request may retry when a repeat only mints an additional short-lived token and
+  does not revoke an existing session or create a lasting credential.
+- Send submit, submit order list, modify, cancel, batch cancel, and cancel-all once unless
+  duplicate detection for a stable request identity, or idempotent semantics for the same target,
+  holds for the whole retry window.
+
+That window is not only the time the first order rests open:
+
+- It includes the time after the targeted order fills or cancels.
+- It runs until any venue deduplication clock expires. End the retry budget inside that clock.
+
+Betfair keeps a 45-second order retry budget inside a 60-second `customerRef` window.
+
+When that test does not hold, send the command once. Leave the unknown outcome for stream updates,
+queries, polling, or reconciliation. See [Preserve identity and ambiguity](#preserve-identity-and-ambiguity).
 
 #### Preserve identity and ambiguity
 
@@ -1727,7 +1742,10 @@ Focused tests distinguish:
 
 - Transient failures from permanent failures.
 - HTTP 429 responses with and without a venue backoff hint when the protocol exposes one.
-- An idempotent operation that retries and a state-changing operation that must not retry.
+- A read-only or idempotent operation that retries, including a non-`GET` request, and a submit,
+  modify, cancel, batch cancel, or cancel-all that is sent once. The mock server receives exactly
+  one request for those commands. A transient failure after possible transmission leaves the
+  outcome ambiguous and does not emit a rejection.
 - A final failure after a possibly transmitted earlier attempt, including a later venue rejection.
 - A duplicate-identity response for the same semantic command and a wire-identity collision with a
   different command.
@@ -1735,6 +1753,29 @@ Focused tests distinguish:
   fields when the protocol permits them.
 - Cancellation, per-attempt timeout, and every elapsed-budget termination path before and after
   possible transmission.
+
+#### Retry gate conformance
+
+This table covers HTTP retry gates only. It is not a complete census, and it does not assess
+WebSocket or gRPC retry. New adapters must follow the safety test. Do not copy an unsafe gate.
+
+Conforms means the adapter decides by operation, and sends an order command once unless repetition
+is safe. Over-restricts means order commands are sent once, but the gate is the HTTP method, so a
+safe `POST` is not retried. Unsafe means an order command, or another state change, can be applied
+twice.
+
+| Adapter      | Retry gate                                            | Order commands                                                                                                       | Status         | Notes                                                                                                                                 |
+| ------------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Architect AX | Method allowlist: `GET`, `HEAD`, and `OPTIONS`.       | Sent once.                                                                                                           | Over-restricts | `POST /authenticate` is not retried.                                                                                                  |
+| Binance      | Method allowlist: `GET`.                              | Sent once.                                                                                                           | Over-restricts |                                                                                                                                       |
+| Betfair      | An ambiguous order retry reuses `customerRef`.        | Retried inside a 45-second budget and a 60-second `customerRef` window.                                              | Conforms       |                                                                                                                                       |
+| Bybit        | Every method, when the error is retryable.            | Demo submit, submit order list, modify, cancel, and batch cancel retry. Cancel-all retries in every environment.     | Unsafe         |                                                                                                                                       |
+| Coinbase     | Method allowlist: `GET` and `DELETE`.                 | Sent once.                                                                                                           | Over-restricts | A read-only preview `POST` is not retried.                                                                                            |
+| Derive       | Reads retry. Writes are sent once.                    | Sent once.                                                                                                           | Conforms       | Place, cancel, and replace use `send_private_write`. Cancel-all and cancel-by-label use `send_private_once`.                          |
+| Hyperliquid  | `/info` retries. `/exchange` does not.                | Sent once.                                                                                                           | Conforms       |                                                                                                                                       |
+| Kraken spot  | `send_request` retries.                               | Single cancel retries. Submit and amend are sent once. Execution cancel-all selects explicit IDs and is sent once.   | Unsafe         | `CancelAll` and `EditOrder` retry, but the execution client does not call them. A non-auth HTTP 4xx is classified as a network error. |
+| Lighter      | Order and referral writes are sent once.              | Sent once.                                                                                                           | Conforms       |                                                                                                                                       |
+| OKX          | Submit paths are exempt. Other `POST` requests retry. | Regular submit, modify, and cancel use WebSocket. Algo cancel, spread cancel, and spread cancel-all retry over HTTP. | Unsafe         |                                                                                                                                       |
 
 ### Rate limiting
 

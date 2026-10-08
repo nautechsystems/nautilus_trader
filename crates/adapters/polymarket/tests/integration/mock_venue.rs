@@ -132,6 +132,8 @@ pub(super) struct TestServerState {
     pub(super) last_headers: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
     pub(super) last_path: Arc<tokio::sync::Mutex<String>>,
     pub(super) last_query: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+    pub(super) trade_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    pub(super) balance_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) version_response: Arc<tokio::sync::Mutex<Value>>,
     pub(super) version_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
@@ -190,6 +192,7 @@ pub(super) struct TestServerState {
     pub(super) single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) single_order_get_count: Arc<AtomicUsize>,
     pub(super) trades_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) trades_response_by_id: Arc<tokio::sync::Mutex<HashMap<String, (StatusCode, Value)>>>,
     pub(super) trades_filter_after: Arc<AtomicBool>,
     pub(super) positions_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) user_frames: tokio::sync::broadcast::Sender<String>,
@@ -206,6 +209,8 @@ impl Default for TestServerState {
             last_headers: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_path: Arc::new(tokio::sync::Mutex::new(String::new())),
             last_query: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            trade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            balance_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             gamma_response: Arc::new(tokio::sync::Mutex::new(None)),
             version_response: Arc::new(tokio::sync::Mutex::new(load_json(
                 "http_version_response.json",
@@ -267,6 +272,7 @@ impl Default for TestServerState {
             single_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             single_order_get_count: Arc::new(AtomicUsize::new(0)),
             trades_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            trades_response_by_id: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             trades_filter_after: Arc::new(AtomicBool::new(false)),
             positions_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             book_response: Arc::new(tokio::sync::Mutex::new(Some(json!({
@@ -385,9 +391,24 @@ async fn handle_get_trades(
     let after = query
         .get("after")
         .and_then(|value| value.parse::<u64>().ok());
+    state.trade_queries.lock().await.push(query.clone());
+    let trade_id = query.get("id").cloned();
     *state.last_query.lock().await = query;
+
+    if let Some(trade_id) = &trade_id
+        && let Some((status, body)) = state.trades_response_by_id.lock().await.get(trade_id)
+    {
+        return (*status, Json(body.clone())).into_response();
+    }
+
     if let Some(override_value) = state.trades_response_override.lock().await.as_ref() {
         let mut page = override_value.clone();
+
+        if let Some(trade_id) = trade_id
+            && let Some(rows) = page["data"].as_array_mut()
+        {
+            rows.retain(|row| row["id"].as_str() == Some(trade_id.as_str()));
+        }
 
         // The venue's `after` keeps only rows matched later than the given Unix second
         if state.trades_filter_after.load(Ordering::Acquire)
@@ -411,7 +432,9 @@ async fn handle_get_balance(
     State(state): State<TestServerState>,
     uri: Uri,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Response {
+    state.balance_queries.lock().await.push(query);
     *state.last_path.lock().await = uri.path().to_string();
     state
         .startup_request_paths

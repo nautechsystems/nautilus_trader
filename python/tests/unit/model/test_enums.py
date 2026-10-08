@@ -26,6 +26,7 @@ from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentClass
 from nautilus_trader.model import MarketStatus
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import OptionSideFilter
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderType
 from nautilus_trader.model import OtoTriggerMode
@@ -34,6 +35,28 @@ from nautilus_trader.model import PositionSide
 from nautilus_trader.model import TradingState
 from nautilus_trader.model import TrailingOffsetType
 from nautilus_trader.model import TriggerType
+
+
+@pytest.mark.parametrize(
+    ("token", "value"),
+    [("BOTH", 1), ("CALLS", 2), ("PUTS", 3), ("OTM", 4)],
+)
+def test_option_side_filter(token: str, value: int) -> None:
+    """
+    Expose exact side-filter names, values, and variants to Python.
+    """
+    selected = OptionSideFilter(token)
+
+    assert selected == OptionSideFilter.from_str(token)
+    assert selected.name == token
+    assert selected.value == value
+    assert str(selected) == token
+    assert list(OptionSideFilter.variants()) == [
+        OptionSideFilter.BOTH,
+        OptionSideFilter.CALLS,
+        OptionSideFilter.PUTS,
+        OptionSideFilter.OTM,
+    ]
 
 
 def test_model_enum_variants_are_iterable() -> None:

@@ -17,3 +17,6 @@ mod client;
 mod common;
 mod engine;
 mod subscription;
+
+#[cfg(feature = "defi")]
+mod defi;

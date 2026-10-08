@@ -28,70 +28,13 @@ use parking_lot::Mutex;
 use super::{PolymarketExecutionClient, pending::PendingCancelTracker};
 use crate::{
     common::enums::PolymarketSignerType,
-    execution::types::{CancelOutcome, classify_http_command_failure},
+    execution::{
+        context::OrderContextRegistry,
+        types::{CancelOutcome, classify_http_command_failure},
+    },
     http::{error::sanitize_error_text, query::CancelResponse},
     websocket::dispatch::WsDispatchState,
 };
-
-struct CancelCommandGuard {
-    state: Arc<Mutex<WsDispatchState>>,
-    client_order_ids: Vec<ClientOrderId>,
-    market: Option<InstrumentId>,
-}
-
-impl CancelCommandGuard {
-    fn orders(
-        state: Arc<Mutex<WsDispatchState>>,
-        orders: &[(ClientOrderId, InstrumentId)],
-    ) -> Option<Self> {
-        if !state.lock().begin_cancels(orders) {
-            return None;
-        }
-
-        Some(Self {
-            state,
-            client_order_ids: orders
-                .iter()
-                .map(|(client_order_id, _)| *client_order_id)
-                .collect(),
-            market: None,
-        })
-    }
-
-    fn available_orders(
-        state: Arc<Mutex<WsDispatchState>>,
-        orders: &[(ClientOrderId, InstrumentId)],
-    ) -> Option<Self> {
-        let client_order_ids = state.lock().begin_available_cancels(orders)?;
-        Some(Self {
-            state,
-            client_order_ids,
-            market: None,
-        })
-    }
-
-    fn market(state: Arc<Mutex<WsDispatchState>>, instrument_id: InstrumentId) -> Option<Self> {
-        if !state.lock().begin_market_cancel(instrument_id) {
-            return None;
-        }
-
-        Some(Self {
-            state,
-            client_order_ids: Vec::new(),
-            market: Some(instrument_id),
-        })
-    }
-}
-
-impl Drop for CancelCommandGuard {
-    fn drop(&mut self) {
-        let mut state = self.state.lock();
-        state.finish_cancels(&self.client_order_ids);
-        if let Some(instrument_id) = self.market {
-            state.finish_market_cancel(instrument_id);
-        }
-    }
-}
 
 impl PolymarketExecutionClient {
     pub(super) fn cancel_order_command(&self, cmd: &CancelOrder) {
@@ -232,6 +175,7 @@ impl PolymarketExecutionClient {
         let clock = self.clock;
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
+        let order_contexts = self.order_contexts.clone();
         let order_id_str = venue_order_id.to_string();
         let order_clone = order.unwrap();
 
@@ -245,6 +189,7 @@ impl PolymarketExecutionClient {
                         &order_id_str,
                         &order_clone,
                         venue_order_id,
+                        Some(&order_contexts),
                         &emitter,
                         clock,
                     );
@@ -355,6 +300,7 @@ impl PolymarketExecutionClient {
         let clock = self.clock;
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
+        let order_contexts = self.order_contexts.clone();
         let instrument_id = cmd.instrument_id;
 
         let spawned = self.spawn_task("cancel_all_orders", async move {
@@ -392,6 +338,7 @@ impl PolymarketExecutionClient {
                                 &venue_order_id_str,
                                 order,
                                 *venue_order_id,
+                                Some(&order_contexts),
                                 &emitter,
                                 clock,
                             );
@@ -481,6 +428,7 @@ impl PolymarketExecutionClient {
         let clock = self.clock;
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
+        let order_contexts = self.order_contexts.clone();
         let order_ids: Vec<String> = venue_to_order.iter().map(|(id, _)| id.clone()).collect();
 
         self.spawn_task("batch_cancel_orders", async move {
@@ -490,7 +438,15 @@ impl PolymarketExecutionClient {
                 Ok(response) => {
                     for (venue_id_str, order) in &venue_to_order {
                         let vid = VenueOrderId::from(venue_id_str.as_str());
-                        process_cancel_result(&response, venue_id_str, order, vid, &emitter, clock);
+                        process_cancel_result(
+                            &response,
+                            venue_id_str,
+                            order,
+                            vid,
+                            Some(&order_contexts),
+                            &emitter,
+                            clock,
+                        );
                     }
 
                     log::debug!("Batch canceled {} orders", response.canceled.len());
@@ -520,6 +476,67 @@ impl PolymarketExecutionClient {
                     .venue_order_id(&order.client_order_id())
                     .copied()
             })
+    }
+}
+
+struct CancelCommandGuard {
+    state: Arc<Mutex<WsDispatchState>>,
+    client_order_ids: Vec<ClientOrderId>,
+    market: Option<InstrumentId>,
+}
+
+impl CancelCommandGuard {
+    fn orders(
+        state: Arc<Mutex<WsDispatchState>>,
+        orders: &[(ClientOrderId, InstrumentId)],
+    ) -> Option<Self> {
+        if !state.lock().begin_cancels(orders) {
+            return None;
+        }
+
+        Some(Self {
+            state,
+            client_order_ids: orders
+                .iter()
+                .map(|(client_order_id, _)| *client_order_id)
+                .collect(),
+            market: None,
+        })
+    }
+
+    fn available_orders(
+        state: Arc<Mutex<WsDispatchState>>,
+        orders: &[(ClientOrderId, InstrumentId)],
+    ) -> Option<Self> {
+        let client_order_ids = state.lock().begin_available_cancels(orders)?;
+        Some(Self {
+            state,
+            client_order_ids,
+            market: None,
+        })
+    }
+
+    fn market(state: Arc<Mutex<WsDispatchState>>, instrument_id: InstrumentId) -> Option<Self> {
+        if !state.lock().begin_market_cancel(instrument_id) {
+            return None;
+        }
+
+        Some(Self {
+            state,
+            client_order_ids: Vec::new(),
+            market: Some(instrument_id),
+        })
+    }
+}
+
+impl Drop for CancelCommandGuard {
+    fn drop(&mut self) {
+        let mut state = self.state.lock();
+        state.finish_cancels(&self.client_order_ids);
+
+        if let Some(instrument_id) = self.market {
+            state.finish_market_cancel(instrument_id);
+        }
     }
 }
 
@@ -553,6 +570,7 @@ pub(super) fn process_cancel_result(
     venue_order_id_str: &str,
     order: &OrderAny,
     venue_order_id: VenueOrderId,
+    order_contexts: Option<&OrderContextRegistry>,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
 ) {
@@ -580,6 +598,11 @@ pub(super) fn process_cancel_result(
         .iter()
         .any(|order_id| order_id == venue_order_id_str)
     {
+        // Tracked orders close from the user stream. An external order may shut down first
+        if order_contexts.is_some_and(|contexts| contexts.get(&venue_order_id).is_none()) {
+            emitter.emit_order_canceled(order, Some(venue_order_id), clock.get_time_ns());
+        }
+
         return;
     }
 
@@ -606,6 +629,7 @@ pub(super) async fn execute_deferred_cancel(
                 order_id_str,
                 order,
                 venue_order_id,
+                None,
                 emitter,
                 clock,
             );
@@ -632,6 +656,16 @@ pub(super) async fn execute_deferred_cancel(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::messages::ExecutionEvent;
+    use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_live::execution::context::OrderContext;
+    use nautilus_model::{
+        enums::{AccountType, OrderSide, OrderType, TimeInForce},
+        events::OrderEventAny,
+        identifiers::{AccountId, TraderId},
+        orders::OrderTestBuilder,
+        types::{Currency, Price, Quantity},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -663,5 +697,99 @@ mod tests {
                 .lock()
                 .begin_modify(client_order_id, venue_order_id, instrument_id,)
         );
+    }
+
+    fn test_emitter() -> (
+        ExecutionEventEmitter,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) {
+        let mut emitter = ExecutionEventEmitter::new(
+            get_atomic_clock_realtime(),
+            TraderId::from("TESTER-001"),
+            AccountId::from("POLY-001"),
+            AccountType::Cash,
+            Some(Currency::pUSD()),
+        );
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        (emitter, receiver)
+    }
+
+    fn open_limit() -> (OrderAny, VenueOrderId) {
+        let venue_order_id = VenueOrderId::from("0xexternal");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("TEST.POLYMARKET"))
+            .client_order_id(ClientOrderId::from("O-EXTERNAL"))
+            .side(OrderSide::Buy)
+            .price(Price::from("0.50"))
+            .quantity(Quantity::from("5"))
+            .time_in_force(TimeInForce::Gtc)
+            .build();
+        (order, venue_order_id)
+    }
+
+    #[rstest]
+    #[case::untracked(false)]
+    #[case::tracked(true)]
+    fn test_http_cancel_emits_only_without_stream_context(#[case] tracked: bool) {
+        let (order, venue_order_id) = open_limit();
+        let registry = OrderContextRegistry::default();
+
+        if tracked {
+            registry.register_context(venue_order_id, OrderContext::from(&order));
+        }
+
+        let (emitter, mut receiver) = test_emitter();
+
+        let response = CancelResponse {
+            canceled: vec![venue_order_id.to_string()],
+            ..CancelResponse::default()
+        };
+
+        process_cancel_result(
+            &response,
+            venue_order_id.as_str(),
+            &order,
+            venue_order_id,
+            Some(&registry),
+            &emitter,
+            get_atomic_clock_realtime(),
+        );
+
+        let event = receiver.try_recv();
+
+        if tracked {
+            assert!(
+                event.is_err(),
+                "tracked cancel must wait for the user stream"
+            );
+        } else {
+            let ExecutionEvent::Order(event) = event.expect("untracked cancel emits") else {
+                panic!("expected an order event");
+            };
+
+            assert!(matches!(event, OrderEventAny::Canceled(_)));
+            assert_eq!(event.client_order_id(), order.client_order_id());
+        }
+
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_http_cancel_without_canceled_id_does_not_emit() {
+        let (order, venue_order_id) = open_limit();
+        let (emitter, mut receiver) = test_emitter();
+
+        process_cancel_result(
+            &CancelResponse::default(),
+            venue_order_id.as_str(),
+            &order,
+            venue_order_id,
+            Some(&OrderContextRegistry::default()),
+            &emitter,
+            get_atomic_clock_realtime(),
+        );
+
+        assert!(receiver.try_recv().is_err());
     }
 }

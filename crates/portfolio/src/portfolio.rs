@@ -55,6 +55,8 @@ use crate::{config::PortfolioConfig, manager::AccountsManager};
 // at per-minute cadence), long-lived live deployments should consume snapshots
 // via the message bus instead of relying on this buffer.
 const SNAPSHOT_BUFFER_CAP: usize = 1_000_000;
+const EQUITY_CURVE_TIMER_PREFIX: &str = "portfolio_equity_curve.";
+const SNAPSHOT_TIMER_PREFIX: &str = "portfolio_snapshot.";
 
 struct PortfolioState {
     accounts: AccountsManager,
@@ -78,6 +80,7 @@ struct PortfolioState {
     stale_xrates: AHashSet<(Venue, Currency, Currency)>,
     initialized: bool,
     last_account_state_log_ts: AHashMap<AccountId, UnixNanos>,
+    last_published_account_states: AHashMap<AccountId, UUID4>,
     min_account_state_logging_interval_ns: DurationNanos,
     venues_missing_price: AHashMap<Venue, AHashMap<Option<AccountId>, AHashSet<InstrumentId>>>,
     account_open_positions: AHashMap<AccountId, usize>,
@@ -139,6 +142,7 @@ impl PortfolioState {
             stale_xrates: AHashSet::new(),
             initialized: false,
             last_account_state_log_ts: AHashMap::new(),
+            last_published_account_states: AHashMap::new(),
             min_account_state_logging_interval_ns,
             venues_missing_price: AHashMap::new(),
             account_open_positions: AHashMap::new(),
@@ -170,6 +174,7 @@ impl PortfolioState {
         self.stale_prices.clear();
         self.stale_xrates.clear();
         self.last_account_state_log_ts.clear();
+        self.last_published_account_states.clear();
         self.venues_missing_price.clear();
         self.account_open_positions.clear();
         self.equity_curve_accounts.clear();
@@ -519,6 +524,10 @@ impl Portfolio {
         let (unrealized_pnls, unpriced) =
             self.unrealized_pnls_with_missing(*venue, account_id, target_currency)?;
 
+        if account_id.is_some() {
+            self.update_missing_price_state(*venue, account_id.copied(), &unpriced);
+        }
+
         if unpriced.is_empty() {
             Some(unrealized_pnls)
         } else {
@@ -565,10 +574,6 @@ impl Portfolio {
                 }
                 Err(UnrealizedPnlError::Invalid) => return None,
             }
-        }
-
-        if account_id.is_some() {
-            self.update_missing_price_state(venue, account_id.copied(), &unpriced);
         }
 
         Some((unrealized_pnls, unpriced))
@@ -908,9 +913,27 @@ impl Portfolio {
     /// touched (open or closed) so a multi-venue account where one venue is
     /// now flat still reports its accumulated realized PnL. Returns `None` if
     /// no account is registered.
+    ///
+    /// Unpriced open positions are also recorded in the missing-price tracker
+    /// under the account's scope (see [`Portfolio::missing_price_instruments`]).
     #[must_use]
     pub fn build_snapshot(&mut self, account_id: &AccountId) -> Option<PortfolioSnapshot> {
-        let account = self.cache.borrow().account_owned(account_id)?;
+        self.build_snapshot_inner(*account_id, true)
+    }
+
+    fn build_snapshot_inner(
+        &mut self,
+        account_id: AccountId,
+        track_missing_prices: bool,
+    ) -> Option<PortfolioSnapshot> {
+        let account_id = &account_id;
+        // The snapshot reads only current balances and margins, so skip copying the account
+        // event history, which grows with every account state
+        let account = self
+            .cache
+            .borrow()
+            .account_ref(account_id)
+            .map(|account| account.clone_without_events())?;
 
         let balances: Vec<AccountBalance> = account.balances().into_values().collect();
         let margins: Vec<MarginBalance> = match &account {
@@ -959,6 +982,10 @@ impl Portfolio {
         for venue in &open_venues {
             let (unrealized_pnls, venue_unpriced) =
                 self.unrealized_pnls_with_missing(*venue, Some(account_id), None)?;
+
+            if track_missing_prices {
+                self.update_missing_price_state(*venue, Some(*account_id), &venue_unpriced);
+            }
             snapshot_unpriced.extend(venue_unpriced);
 
             for money in unrealized_pnls.into_values() {
@@ -986,14 +1013,25 @@ impl Portfolio {
             }
             AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => {
                 for venue in &open_venues {
-                    for money in self
-                        .mark_values_with_mode(*venue, Some(account_id), MarkValueMode::Equity)
-                        .into_values()
-                    {
+                    let mut values: IndexMap<Currency, Decimal> = IndexMap::new();
+                    let mut venue_unpriced: AHashSet<InstrumentId> = AHashSet::new();
+                    // Returns true here: `open_venues` only holds venues with open positions
+                    self.accumulate_mark_values(
+                        *venue,
+                        Some(account_id),
+                        &mut values,
+                        &mut venue_unpriced,
+                        MarkValueMode::Equity,
+                    );
+
+                    if track_missing_prices {
+                        self.update_missing_price_state(*venue, Some(*account_id), &venue_unpriced);
+                    }
+
+                    for money in decimal_map_to_money(values).into_values() {
                         checked_add_money_map(&mut equity, money, "snapshot equity")?;
                     }
-                    snapshot_unpriced
-                        .extend(self.missing_price_instruments_for_account(*venue, *account_id));
+                    snapshot_unpriced.extend(venue_unpriced);
                 }
             }
         }
@@ -1182,20 +1220,6 @@ impl Portfolio {
         // tracking set is AHash-backed.
         ids.sort();
         ids
-    }
-
-    fn missing_price_instruments_for_account(
-        &self,
-        venue: Venue,
-        account_id: AccountId,
-    ) -> AHashSet<InstrumentId> {
-        self.inner
-            .borrow()
-            .venues_missing_price
-            .get(&venue)
-            .and_then(|observations| observations.get(&Some(account_id)))
-            .cloned()
-            .unwrap_or_default()
     }
 
     fn update_missing_price_state(
@@ -3041,15 +3065,12 @@ impl Portfolio {
                 return None;
             }
         };
-        // A price at or below zero is valid where the instrument allows it and its notional does
-        // not divide by price
+
+        // A price at or below zero is valid where the instrument allows it
         let allows_non_positive = || {
-            cache.instrument(instrument_id).is_some_and(|instrument| {
-                instrument.allows_negative_price()
-                    && !instrument
-                        .instrument_class()
-                        .divides_notional_by_price(instrument.is_inverse())
-            })
+            cache
+                .instrument(instrument_id)
+                .is_some_and(Instrument::allows_negative_price)
         };
         let is_valid = |price: &Price| price.as_decimal() > Decimal::ZERO || allows_non_positive();
         let mark_price = if self.config.use_mark_prices {
@@ -3749,10 +3770,7 @@ fn update_order(
 
     if let Some(account_state) = account_state {
         if publish_account_state {
-            msgbus::publish_account_state(
-                format!("events.account.{updated_account_id}").into(),
-                &account_state,
-            );
+            record_and_publish_account_state(inner, &account_state);
         }
     } else {
         log::debug!("Added pending calculation for {}", instrument.id());
@@ -3814,10 +3832,7 @@ fn on_order_event(
         .and_then(|account| account.last_event());
 
     if let Some(account_state) = account_state {
-        msgbus::publish_account_state(
-            format!("events.account.{account_id}").into(),
-            &account_state,
-        );
+        record_and_publish_account_state(inner, &account_state);
     }
 }
 
@@ -3898,12 +3913,22 @@ fn update_position(
             .insert(event.instrument_id());
     }
 
+    // A PnL-only adjustment such as a funding payment leaves margins unchanged, and the balance
+    // change arrives as its own account state, so this publishes that state once instead of
+    // recomputing a copy of it under a new event id.
+    let pnl_only = matches!(
+        event,
+        PositionEvent::PositionAdjusted(adjustment) if adjustment.quantity_change.is_none()
+    );
+
     // Peek under a borrow: the account event log grows per fill, so a clone here was O(n)
     let peek = {
         let cache_ref = cache.borrow();
         match cache_ref.account(&account_id) {
             Some(account) => match &*account {
-                AccountAny::Margin(margin_account) if margin_account.calculate_account_state => {
+                AccountAny::Margin(margin_account)
+                    if margin_account.calculate_account_state && !pnl_only =>
+                {
                     AccountPeek::MarginRecompute
                 }
                 account => AccountPeek::LastEvent(Box::new(account.last_event())),
@@ -3926,11 +3951,30 @@ fn update_position(
     };
 
     if let Some(account_state) = account_state_to_publish {
-        msgbus::publish_account_state(
-            format!("events.account.{account_id}").into(),
-            &account_state,
-        );
+        // A settlement adjusts every open position, so later adjustments find the state published
+        let already_published = pnl_only
+            && inner
+                .borrow()
+                .last_published_account_states
+                .get(&account_id)
+                .is_some_and(|event_id| *event_id == account_state.event_id);
+
+        if !already_published {
+            record_and_publish_account_state(inner, &account_state);
+        }
     }
+}
+
+fn record_and_publish_account_state(
+    inner: &Rc<RefCell<PortfolioState>>,
+    account_state: &AccountState,
+) {
+    let account_id = account_state.account_id;
+    inner
+        .borrow_mut()
+        .last_published_account_states
+        .insert(account_id, account_state.event_id);
+    msgbus::publish_account_state(format!("events.account.{account_id}").into(), account_state);
 }
 
 /// Recalculates the margin account for `instrument_id` from the currently open positions.
@@ -4142,7 +4186,7 @@ fn update_account(
 }
 
 fn equity_curve_timer_name(account_id: AccountId) -> String {
-    format!("portfolio_equity_curve.{account_id}")
+    format!("{EQUITY_CURVE_TIMER_PREFIX}{account_id}")
 }
 
 fn register_equity_curve_account(
@@ -4217,7 +4261,17 @@ fn arm_equity_curve_timer(
 }
 
 fn snapshot_timer_name(account_id: AccountId) -> String {
-    format!("portfolio_snapshot.{account_id}")
+    format!("{SNAPSHOT_TIMER_PREFIX}{account_id}")
+}
+
+/// Returns whether the timer name uses a portfolio snapshot namespace.
+///
+/// Backtests use this classification so snapshot-only timestamps do not release older
+/// latency-deferred commands.
+#[doc(hidden)]
+#[must_use]
+pub fn is_snapshot_timer(name: &str) -> bool {
+    name.starts_with(EQUITY_CURVE_TIMER_PREFIX) || name.starts_with(SNAPSHOT_TIMER_PREFIX)
 }
 
 fn update_snapshot_timer_state(
@@ -4322,7 +4376,9 @@ fn emit_snapshot(
         config,
     };
 
-    let mut snapshot = match portfolio.build_snapshot(&account_id) {
+    // Skip the missing-price tracker: no caller refreshes the account scope between
+    // scheduled samples. The snapshot still reports its unpriced instruments.
+    let mut snapshot = match portfolio.build_snapshot_inner(account_id, false) {
         Some(snapshot) => snapshot,
         None => return,
     };
@@ -4363,6 +4419,15 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::equity_curve(equity_curve_timer_name(AccountId::new("SIM-001")), true)]
+    #[case::snapshot(snapshot_timer_name(AccountId::new("SIM-001")), true)]
+    #[case::strategy("settlement".to_string(), false)]
+    #[case::similar_name("portfolio_snapshot_strategy".to_string(), false)]
+    fn test_is_snapshot_timer(#[case] name: String, #[case] expected: bool) {
+        assert_eq!(is_snapshot_timer(&name), expected);
+    }
 
     fn mk_snapshot(seq: u64) -> PortfolioSnapshot {
         PortfolioSnapshot::new(

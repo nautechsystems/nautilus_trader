@@ -286,6 +286,15 @@ venue-side positions to check against.
 | Fill reports          | ✓         | Matched sizes and prices from `listCurrentOrders`. |
 | Cleared order history | -         | The adapter does not request settlement history.   |
 
+`LiveNode` fetches bulk order and fill reports over HTTP on workers, then resolves identities and
+incremental fills against current OCM state on its main thread before reconciliation. Startup and
+post-reconnect mass status bypass these hooks.
+
+- Single-order reports return unsupported errors and cannot confirm the absence of cached open orders
+  missing from bulk checks. Missing-order resolution is deferred; OCM updates and mass status remain
+  available. `QueryOrder` still supports inflight checks.
+- Position reports return unsupported errors. [Disable position checks](#position-management).
+
 ## Execution control flow
 
 Startup:
@@ -412,6 +421,46 @@ Normal mass-status generation uses the caller's optional `lookback_mins` for its
 bound, with no upper bound. When no lookback is supplied, every order with a `matchedDate` is eligible.
 Normal generation commits deduplication only when the complete report is ready to return.
 
+## Open-only order discovery
+
+Open-only reconciliation discovers executable bets and all orders in BSP-enabled markets.
+
+### Replacement history
+
+The adapter queries known replacement Bet IDs for discovered orders and unresolved modifications.
+These extra lookups recover cumulative fills and confirmed quantities:
+
+- If required replacement or pending-modification Bet IDs remain missing after the extra queries,
+  the scan fails rather than treating their fills as zero.
+- A cached open order absent from venue discovery does not by itself cause this failure.
+
+### Market scope
+
+Discovery queries use the [configured reconciliation market scope](#execution-control-flow). A
+command for a specific instrument narrows discovery to that instrument's market and returns no
+reports when the market is outside the configured scope.
+
+Extra lookups by Bet ID and `customerOrderRef` are not market-filtered. They also query unresolved
+modifications for tracked orders outside the discovery scope. Those rows are excluded from reports,
+but missing required history still fails the scan.
+
+### Resting BSP bets
+
+To recover resting [BSP bets](#order-types), including bets the adapter does not track, the adapter
+also discovers BSP-enabled markets containing execution-complete account orders. It queries these
+markets with `listCurrentOrders` using `ALL` and reports resting BSP bets as `ACCEPTED`.
+
+BSP market discovery depends on the query scope:
+
+- **Account-wide:** `listEvents` finds events, then `listMarketCatalogue` queries each event with
+  `maxResults=1000`. If an event returns 1,000 markets, the scan fails rather than risking an
+  incomplete set of open orders.
+- **Market-scoped:** each catalog request contains at most 250 market IDs.
+
+Markets without BSP are not scanned for unrelated order history. Historical orders within discovered
+BSP-enabled markets, including ordinary limit bets, can still add required replacement history and
+increase scan work.
+
 ## Tick scheme and pricing
 
 Betfair uses a tiered tick scheme with varying increments across price ranges:
@@ -460,12 +509,13 @@ prove that the original order remained unchanged or closed without a replacement
   replace. Both active and closed listings emit `OrderUpdated` carrying the new Bet ID, its price,
   and the original size. An active listing is then withheld from the resolving report set, while a
   closed listing follows the update through its terminal order status report.
-- A bet whose active size (matched plus remaining) has fallen to at least the requested size but
-  below the original confirms the reduction. An active listing emits `OrderUpdated` carrying the
-  reduced size, while a closed listing carries the confirmed size in its terminal report without an
-  `OrderUpdated`. A smaller active size is a lapse or void rather than the requested reduction, and
-  an unchanged one means Betfair has not applied the reduction yet, so both leave the command in
-  flight.
+- A bet whose active size has fallen to at least the requested size but below the original
+  confirms the reduction. The active size is matched plus remaining plus voided (`sizeVoided`,
+  or `sv` on the stream), and includes the matched and voided size of any replaced bets, so a
+  void does not lower it. An active listing emits `OrderUpdated` carrying the reduced size, while
+  a closed listing carries the confirmed size in its terminal report without an `OrderUpdated`. A
+  smaller active size is a lapse rather than the requested reduction, and an unchanged one means
+  Betfair has not applied the reduction yet, so both leave the command in flight.
 
 Whichever channel resolves the modification first wins, and the others become no-ops, so a size
 reduction confirmed by the stream is not repeated when its REST response finally returns.

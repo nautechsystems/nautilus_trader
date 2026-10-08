@@ -1718,6 +1718,122 @@ fn test_adjust_account_overflow_emits_no_state() {
     assert_eq!(saving_handler.get_messages().len(), 1);
 }
 
+// The long position pays `rate` on 1000 USDT of notional, against 100 USDT of margins
+#[rstest]
+#[case::payment_below_margins("0.001", "100 USDT", "99 USDT")]
+#[case::receipt_back_to_margins("-0.001", "99 USDT", "100 USDT")]
+fn test_funding_settlement_caps_locked_margin_at_total(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] rate: &str,
+    #[case] total_before: &str,
+    #[case] total_after: &str,
+) {
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let total_before = Money::from(total_before);
+    let instrument_margin = MarginBalance::new(
+        Money::from("40 USDT"),
+        Money::from("20 USDT"),
+        Some(crypto_perpetual_ethusdt.id),
+    );
+    let account_margin = MarginBalance::new(Money::from("20 USDT"), Money::from("20 USDT"), None);
+    let margin_account = MarginAccount::new(
+        AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                total_before,
+                total_before,
+                Money::from("0 USDT"),
+            )],
+            vec![instrument_margin, account_margin],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ),
+        true,
+    );
+    let mut cache = Cache::default();
+    cache
+        .add_account(AccountAny::Margin(margin_account))
+        .unwrap();
+    cache.build_index();
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(crypto_perpetual_ethusdt.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-001")),
+        None,
+        Some(Price::from("1000.00")),
+        Some(Quantity::from("1.000")),
+        None,
+        Some(Money::from("0 USDT")),
+        Some(UnixNanos::from(1)),
+        Some(account_id),
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_mark_price(MarkPriceUpdate::new(
+            crypto_perpetual_ethusdt.id,
+            Price::from("1000.00"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(cache));
+    let (account_handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), account_handler);
+    let exchange = build_exchange_with_options(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        false,
+        false,
+        cache,
+    );
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let settlement_ns = UnixNanos::from(3);
+    exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            crypto_perpetual_ethusdt.id,
+            Decimal::from_str(rate).unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
+
+    // Locked is the 100 USDT of margins capped at the total, as the margin recompute would set it
+    let total_after = Money::from(total_after);
+    let locked_after = total_after.min(Money::from("100 USDT"));
+    let account_states = account_saver.get_messages();
+    let [state] = account_states.as_slice() else {
+        panic!("expected one account state, was {}", account_states.len());
+    };
+    let [balance] = state.balances.as_slice() else {
+        panic!("expected one balance");
+    };
+    assert_eq!(balance.total, total_after);
+    assert_eq!(balance.locked, locked_after);
+    assert_eq!(balance.free, total_after - locked_after);
+    assert_eq!(state.margins, vec![instrument_margin, account_margin]);
+}
+
 #[rstest]
 fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let account_id = AccountId::from("BINANCE-001");
@@ -1922,6 +2038,137 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
         .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
         .unwrap();
     assert_eq!(settlement_saver.get_messages().len(), 1);
+}
+
+// Two open long positions on the instrument, in the order the exchange settles them, with
+// the cache backed by a recording test database and a mark price to value them at
+fn setup_two_position_funding(
+    instrument: &CryptoPerpetual,
+) -> (Rc<RefCell<Cache>>, TestCacheDatabaseControl, Vec<Position>) {
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_any = InstrumentAny::CryptoPerpetual(instrument.clone());
+    let (database, database_control) = TestCacheDatabaseControl::create();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    pre_populate_margin_account_with_balance(&mut cache, "BINANCE-001", Money::from("1000 USDT"));
+    cache.add_instrument(instrument_any.clone()).unwrap();
+
+    for (index, position_id) in ["P-FUND-1", "P-FUND-2"].into_iter().enumerate() {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from(format!("O-FUND-{index}").as_str()))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument_any,
+            Some(TradeId::from(format!("T-FUND-{index}").as_str())),
+            Some(PositionId::from(position_id)),
+            Some(Price::from("1000.00")),
+            Some(Quantity::from("1.000")),
+            None,
+            Some(Money::from("0 USDT")),
+            Some(UnixNanos::from(1)),
+            Some(account_id),
+        );
+        let position = Position::new(&instrument_any, fill.into());
+        cache.add_position(&position, OmsType::Hedging).unwrap();
+    }
+    cache
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id,
+            Price::from("1000.00"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let positions: Vec<Position> = cache
+        .positions_open(
+            Some(&instrument.id.venue),
+            Some(&instrument.id),
+            None,
+            Some(&account_id),
+            None,
+        )
+        .into_iter()
+        .map(|position| position.clone_without_events())
+        .collect();
+    assert_eq!(positions.len(), 2);
+
+    (Rc::new(RefCell::new(cache)), database_control, positions)
+}
+
+fn settle_funding_once(cache: &Rc<RefCell<Cache>>, instrument: &CryptoPerpetual) {
+    let exchange = build_exchange_with_options(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        false,
+        false,
+        cache.clone(),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(instrument.clone()))
+        .unwrap();
+    let settlement_ns = UnixNanos::from(3);
+    exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            instrument.id,
+            Decimal::from_str("0.001").unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(instrument.id, settlement_ns)
+        .unwrap();
+}
+
+fn assert_position_restored(
+    cache: &Rc<RefCell<Cache>>,
+    database_control: &TestCacheDatabaseControl,
+    original: &Position,
+) {
+    let cached = cache.borrow().position_owned(&original.id).unwrap();
+    assert!(cached.adjustments.is_empty());
+    assert_eq!(cached.realized_pnl, original.realized_pnl);
+
+    // The database must not keep the adjusted state of a settlement that was rolled back
+    let persisted = database_control
+        .updated_positions()
+        .into_iter()
+        .rfind(|position| position.id == original.id)
+        .unwrap();
+    assert!(persisted.adjustments.is_empty());
+    assert_eq!(persisted.realized_pnl, original.realized_pnl);
+}
+
+#[rstest]
+fn test_process_funding_rate_restores_persisted_positions_when_later_update_fails(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let (cache, database_control, positions) =
+        setup_two_position_funding(&crypto_perpetual_ethusdt);
+    let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
+    msgbus::subscribe_any(
+        "events.funding_settlements.*".into(),
+        settlement_handler,
+        None,
+    );
+    database_control.set_fail_update_position_id(Some(positions[1].id));
+
+    settle_funding_once(&cache, &crypto_perpetual_ethusdt);
+
+    assert_position_restored(&cache, &database_control, &positions[0]);
+    let cached = cache.borrow().position_owned(&positions[1].id).unwrap();
+    assert!(cached.adjustments.is_empty());
+    assert_eq!(cached.realized_pnl, positions[1].realized_pnl);
+    assert!(settlement_saver.get_messages().is_empty());
 }
 
 #[rstest]

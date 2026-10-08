@@ -76,7 +76,7 @@ while IFS= read -r path; do
   fi
 
   case "$python_tag" in
-    cp312 | cp313 | cp314) ;;
+    cp313 | cp314) ;;
     *)
       echo "Error: Wheel ${filename} has unsupported Python tag ${python_tag}" >&2
       exit 1
@@ -109,7 +109,7 @@ while IFS= read -r path; do
 done < "$files"
 
 : > "$expected"
-for python_tag in cp312 cp313 cp314; do
+for python_tag in cp313 cp314; do
   {
     printf '%s\t%s\n' "$python_tag" "linux_x86_64"
     if [[ "$matrix" == "nightly" || "$matrix" == "stable" ]]; then

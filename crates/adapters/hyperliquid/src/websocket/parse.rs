@@ -728,6 +728,7 @@ mod tests {
                 tpsl: None,
                 trigger_activated: None,
                 trailing_stop: None,
+                order_type: None,
             },
             status: HyperliquidOrderStatusEnum::Open,
             status_timestamp: 1704470400000,
@@ -781,6 +782,7 @@ mod tests {
                 tpsl: None,
                 trigger_activated: None,
                 trailing_stop: None,
+                order_type: None,
             },
             status,
             status_timestamp: 1704470400000,
@@ -885,6 +887,7 @@ mod tests {
                 outcome: 99,
                 name: "BTC daily".to_string(),
                 description: String::new(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![],
             }],
             questions: vec![],
@@ -924,9 +927,9 @@ mod tests {
         .unwrap();
 
         // Zero-fee outcome fills fall back to the instrument's quote currency
-        // (USDH) instead of the unregistered side token, keeping downstream
+        // instead of the unregistered side token, keeping downstream
         // OrderFilled events and persistence on a registered currency.
-        assert_eq!(report.commission.currency.code, "USDH");
+        assert_eq!(report.commission.currency.code, "USDC");
         assert!(report.commission.as_decimal().is_zero());
         assert_eq!(report.order_side, OrderSide::Buy);
     }

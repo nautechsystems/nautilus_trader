@@ -561,14 +561,20 @@ impl PolymarketWebSocketClient {
             .map_err(|e| anyhow::anyhow!("Failed to send SubscribeMarket: {e}"))
     }
 
-    /// Remove asset IDs from the active subscription set.
+    /// Queues removal of the given market asset subscriptions.
     ///
-    /// The IDs are dropped from the reconnect set so they will not be
-    /// re-subscribed after a reconnect. No wire message is sent.
+    /// The handler removes the IDs from reconnect replay and attempts a wire unsubscribe
+    /// on the current connection. If that connection changes before the write, the
+    /// unsubscribe is dropped rather than sent on the replacement connection.
+    ///
+    /// Success means the command was queued, not acknowledged by the venue. The handler
+    /// logs wire-send failures rather than returning them to the caller.
     ///
     /// # Errors
     ///
-    /// Returns an error if called on a user-channel client (incompatible channel).
+    /// Returns an error if:
+    /// - Called on a user-channel client.
+    /// - The command cannot be queued.
     pub async fn unsubscribe_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
         if self.channel != WsChannel::Market {
             anyhow::bail!(

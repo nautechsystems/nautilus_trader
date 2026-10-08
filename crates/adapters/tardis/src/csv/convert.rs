@@ -70,13 +70,20 @@ pub struct TardisOptionsChainCSVConverterConfig {
 ///
 /// # Errors
 ///
-/// Returns an error if a CSV file cannot be read, a row cannot be parsed, a complete best
-/// bid/offer row contains invalid values, instrument derivation fails, or catalog writes fail.
+/// Returns an error if the catalog cannot be opened, a CSV file cannot be read, a row cannot be
+/// parsed, a complete best bid/offer row contains invalid values, instrument derivation fails, or
+/// catalog writes fail.
 pub fn convert_options_chain_csv(
     config: &TardisOptionsChainCSVConverterConfig,
 ) -> anyhow::Result<()> {
     let underlyings = normalize_underlying_filters(config.underlyings.clone());
-    let catalog = ParquetDataCatalog::new(&config.catalog_path, None, None, None, None);
+    let catalog = ParquetDataCatalog::from_uri(
+        &config.catalog_path.to_string_lossy(),
+        None,
+        None,
+        None,
+        None,
+    )?;
     let mut precision_by_instrument: AHashMap<InstrumentId, OptionsChainPrecision> =
         AHashMap::new();
     let mut instrument_states: AHashMap<InstrumentId, InstrumentBuildState> = AHashMap::new();
@@ -478,6 +485,28 @@ mod tests {
 
         assert!(config.extract_bbo_as_quotes);
         assert!(config.write_instruments);
+    }
+
+    #[rstest]
+    fn test_convert_options_chain_csv_returns_error_for_missing_catalog_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let catalog_path = temp_dir.path().join("missing");
+        let config = TardisOptionsChainCSVConverterConfig::builder()
+            .filepaths(vec![get_test_data_path("options_chain.csv")])
+            .catalog_path(catalog_path.clone())
+            .build();
+
+        let error = convert_options_chain_csv(&config).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "failed to open local storage directory '{}'; create it if it does not exist \
+                 and check access permissions",
+                catalog_path.display()
+            )
+        );
+        assert!(!catalog_path.exists());
     }
 
     #[rstest]

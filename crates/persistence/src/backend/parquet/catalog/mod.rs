@@ -69,7 +69,6 @@
 )]
 
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
     path::{Path, PathBuf},
@@ -79,10 +78,7 @@ use std::{
 use ahash::AHashMap;
 use arrow::record_batch::RecordBatch;
 use futures::StreamExt;
-use nautilus_core::{
-    Params, UnixNanos,
-    string::{conversions::to_snake_case, urlencoding},
-};
+use nautilus_core::{Params, UnixNanos, string::conversions::to_snake_case};
 use nautilus_model::{
     data::{
         Bar, CustomData, Data, DataBatch, FundingRateUpdate, HasTsInit, IndexPriceUpdate,
@@ -128,6 +124,7 @@ use crate::{
         custom::prepare_custom_data_batch,
         datafusion::{self as datafusion, DataBackendSession, build_query},
     },
+    config::validate_catalog_counts,
 };
 
 mod coverage;
@@ -346,6 +343,7 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - `batch_size` or `max_row_group_size` is zero.
     /// - The URI format is invalid or unsupported.
     /// - A storage option key is unknown for the URI scheme.
     /// - The object store cannot be created or accessed.
@@ -397,6 +395,8 @@ impl ParquetDataCatalog {
         compression: Option<parquet::basic::Compression>,
         max_row_group_size: Option<usize>,
     ) -> anyhow::Result<Self> {
+        validate_catalog_counts(batch_size, max_row_group_size)?;
+
         let batch_size = batch_size.unwrap_or(DEFAULT_DATA_BATCH_CHUNK_SIZE);
         let compression = compression.unwrap_or(parquet::basic::Compression::ZSTD(
             parquet::basic::ZstdLevel::default(),

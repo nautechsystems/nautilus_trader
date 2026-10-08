@@ -150,7 +150,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           enable-cache: false
@@ -173,11 +173,13 @@ jobs:
 
       - name: Set up Rust toolchain
         # https://github.com/actions-rust-lang/setup-rust-toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           toolchain: ${{ env.TOOLCHAIN }}
           cache: false
           override: true
+          rustflags: -D warnings
+          build-warnings: ""
 
       - name: Check jiff features
         run: make check-jiff-features
@@ -258,7 +260,7 @@ jobs:
 
       - name: Install lychee
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: lychee@${{ env.LYCHEE_VERSION }}
         env:
@@ -272,7 +274,7 @@ jobs:
 
       - name: Install cargo-machete
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
 
@@ -292,7 +294,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
@@ -375,6 +376,9 @@ jobs:
 
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Remove obsolete Python 3.12 build cache
+        run: rm -rf /home/runner/.cache/cargo-target/py3.12
 
       - name: Common setup
         uses: $/.github/actions/common-setup
@@ -593,7 +597,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     runs-on: depot-ubuntu-22.04-arm-8
@@ -665,7 +668,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     runs-on: macos-latest
@@ -735,7 +737,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     runs-on: depot-windows-2022-8
@@ -837,7 +838,7 @@ jobs:
         id: osv-scan
         continue-on-error: true
         # https://github.com/google/osv-scanner-action
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
             --config=osv-scanner.toml
@@ -956,7 +957,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           prune-cache: true
@@ -1135,7 +1136,7 @@ jobs:
 
       - name: Install cargo-hack
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: cargo-hack
 
@@ -1378,7 +1379,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           prune-cache: true
@@ -1444,7 +1445,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1600,7 +1601,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1694,7 +1695,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false

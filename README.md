@@ -16,10 +16,10 @@
 
 | Platform           | Rust   | Python    |
 | :----------------- | :----- | :-------- |
-| `Linux (x86_64)`   | 1.98.1 | 3.12-3.14 |
-| `Linux (ARM64)`    | 1.98.1 | 3.12-3.14 |
-| `macOS (ARM64)`    | 1.98.1 | 3.12-3.14 |
-| `Windows (x86_64)` | 1.98.1 | 3.12-3.14 |
+| `Linux (x86_64)`   | 1.99.0 | 3.13-3.14 |
+| `Linux (ARM64)`    | 1.99.0 | 3.13-3.14 |
+| `macOS (ARM64)`    | 1.99.0 | 3.13-3.14 |
+| `Windows (x86_64)` | 1.99.0 | 3.13-3.14 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -106,7 +106,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 
 | Name                                                       | ID                    | Type                    | Status                                               | Docs                                              |
 | :--------------------------------------------------------- | :-------------------- | :---------------------- | :--------------------------------------------------- | :------------------------------------------------ |
-| [AX Exchange](https://architect.exchange)                  | `AX`                  | Perpetuals Exchange     | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/architect_ax.md)        |
+| [AX Exchange](https://architect.exchange)                  | `AX`                  | Derivatives Exchange    | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/architect_ax.md)        |
 | [Betfair](https://betfair.com)                             | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/betfair.md)             |
 | [Binance](https://binance.com)                             | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/binance.md)             |
 | [Bybit](https://www.bybit.com)                             | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/bybit.md)               |

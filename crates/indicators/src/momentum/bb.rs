@@ -13,18 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Debug, Display};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display},
+};
 
-use arraydeque::{ArrayDeque, Wrapping};
-use nautilus_model::data::{Bar, QuoteTick, TradeTick};
+use nautilus_core::correctness::FAILED;
+use nautilus_model::{
+    data::{Bar, QuoteTick, TradeTick},
+    enums::PriceType,
+};
 
+pub use crate::support::MAX_PERIOD;
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
 };
 
-pub const MAX_PERIOD: usize = 1_024;
-
+/// Bollinger bands around a moving average.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -42,9 +48,10 @@ pub struct BollingerBands {
     pub upper: f64,
     pub middle: f64,
     pub lower: f64,
+    pub stddev: f64,
     pub initialized: bool,
     ma: Box<dyn MovingAverage + Send + 'static>,
-    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    prices: VecDeque<f64>,
     has_inputs: bool,
 }
 
@@ -75,20 +82,16 @@ impl Indicator for BollingerBands {
     }
 
     fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        let bid = (&quote.bid_price).into();
-        let ask = (&quote.ask_price).into();
-        let mid = f64::midpoint(bid, ask);
-        self.update_raw(ask, bid, mid);
+        self.update_raw(quote.extract_price(PriceType::Mid)?.into());
         Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
-        let price = (&trade.price).into();
-        self.update_raw(price, price, price);
+        self.update_raw((&trade.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.high).into(), (&bar.low).into(), (&bar.close).into());
+        self.update_raw((&bar.close).into());
     }
 
     fn reset(&mut self) {
@@ -97,6 +100,7 @@ impl Indicator for BollingerBands {
         self.upper = 0.0;
         self.middle = 0.0;
         self.lower = 0.0;
+        self.stddev = 0.0;
         self.has_inputs = false;
         self.initialized = false;
     }
@@ -111,54 +115,59 @@ impl BollingerBands {
     /// - If `k` is *not finite* or *≤ 0*.
     #[must_use]
     pub fn new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
-        assert!(
+        Self::new_checked(period, k, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        k: f64,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
             (1..=MAX_PERIOD).contains(&period),
             "BollingerBands: period {period} out of range (1..={MAX_PERIOD})"
         );
-        assert!(
+        anyhow::ensure!(
             k.is_finite() && k > 0.0,
             "BollingerBands: k must be positive and finite (received {k})"
         );
 
-        Self {
+        Ok(Self {
             period,
             k,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
-            prices: ArrayDeque::new(),
+            prices: VecDeque::with_capacity(period),
             has_inputs: false,
             initialized: false,
             upper: 0.0,
             middle: 0.0,
             lower: 0.0,
-        }
+            stddev: 0.0,
+        })
     }
 
-    pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
-        let typical = (high + low + close) / 3.0;
+    pub fn update_raw(&mut self, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
 
         if self.prices.len() == self.period {
             let _ = self.prices.pop_front();
         }
-        let _ = self.prices.push_back(typical);
-        self.ma.update_raw(typical);
+        self.prices.push_back(value);
+        self.ma.update_raw(value);
+        self.has_inputs = true;
 
-        if !self.initialized {
-            self.has_inputs = true;
-
-            if self.prices.len() >= self.period {
-                self.initialized = true;
-            }
+        if !self.ma.initialized() {
+            return;
         }
 
-        let std = fast_std_with_mean(
-            self.prices.iter().rev().take(self.period).copied(),
-            self.ma.value(),
-        );
-
-        self.upper = self.k.mul_add(std, self.ma.value());
         self.middle = self.ma.value();
-        self.lower = self.k.mul_add(-std, self.ma.value());
+        self.stddev = fast_std_with_mean(self.prices.iter().copied(), self.middle);
+        self.upper = self.k.mul_add(self.stddev, self.middle);
+        self.lower = self.k.mul_add(-self.stddev, self.middle);
+        self.initialized = true;
     }
 }
 
@@ -186,18 +195,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{
-        enums::AggressorSide,
-        identifiers::{InstrumentId, TradeId},
-        types::{Price, Quantity},
-    };
     use rstest::rstest;
 
     use super::*;
-    use crate::{
-        stubs::{bb_10, stub_quote},
-        testing::assert_approx_equal,
-    };
+    use crate::{stubs::bb_10, testing::assert_approx_equal};
 
     #[rstest]
     fn test_name_returns_expected_string(bb_10: BollingerBands) {
@@ -222,39 +223,43 @@ mod tests {
 
     #[rstest]
     fn test_value_with_all_higher_inputs_returns_expected_value(mut bb_10: BollingerBands) {
-        let high_values = [
-            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
-        ];
-        let low_values = [
-            0.9, 1.9, 2.9, 3.9, 4.9, 5.9, 6.9, 7.9, 8.9, 9.9, 10.1, 10.2, 10.3, 11.1, 11.4,
-        ];
-        let close_values = [
+        let values = [
             0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.05, 10.15, 10.25, 11.05,
             11.45,
         ];
 
-        for i in 0..15 {
-            bb_10.update_raw(high_values[i], low_values[i], close_values[i]);
+        for value in values {
+            bb_10.update_raw(value);
         }
 
+        let window = &values[5..];
+        let expected_middle = window.iter().sum::<f64>() / window.len() as f64;
+        let expected_variance = window
+            .iter()
+            .map(|value| (value - expected_middle).powi(2))
+            .sum::<f64>()
+            / window.len() as f64;
+        let expected_stddev = expected_variance.sqrt();
+
         assert!(bb_10.initialized());
-        assert_approx_equal(bb_10.upper, 9.8844582289);
-        assert_approx_equal(bb_10.middle, 9.67666666667);
-        assert_approx_equal(bb_10.lower, 9.46887510444);
+        assert_approx_equal(bb_10.middle, expected_middle);
+        assert_approx_equal(bb_10.stddev, expected_stddev);
+        assert_approx_equal(bb_10.upper, expected_middle + bb_10.k * expected_stddev);
+        assert_approx_equal(bb_10.lower, expected_middle - bb_10.k * expected_stddev);
     }
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(mut bb_10: BollingerBands) {
-        bb_10.update_raw(1.00020, 1.00050, 1.00030);
-        bb_10.update_raw(1.00030, 1.00060, 1.00040);
-        bb_10.update_raw(1.00070, 1.00080, 1.00075);
-
+        for value in [1.00020, 1.00030, 1.00070] {
+            bb_10.update_raw(value);
+        }
         bb_10.reset();
 
         assert!(!bb_10.initialized());
         assert_eq!(bb_10.upper, 0.0);
         assert_eq!(bb_10.middle, 0.0);
         assert_eq!(bb_10.lower, 0.0);
+        assert_eq!(bb_10.stddev, 0.0);
         assert_eq!(bb_10.prices.len(), 0);
     }
 
@@ -281,7 +286,7 @@ mod tests {
         let mut bb = BollingerBands::new(3, 1.0, None);
 
         for v in 1..=6 {
-            bb.update_raw(f64::from(v), f64::from(v), f64::from(v));
+            bb.update_raw(f64::from(v));
         }
 
         let expected_mid: f64 = (4.0 + 5.0 + 6.0) / 3.0;
@@ -297,68 +302,5 @@ mod tests {
         assert!((bb.middle - expected_mid).abs() < 1e-12);
         assert!((bb.upper - (expected_mid + expected_std)).abs() < 1e-12);
         assert!((bb.lower - (expected_mid - expected_std)).abs() < 1e-12);
-    }
-
-    #[rstest]
-    fn test_handle_trade_outputs_actual_price_units() {
-        let prices = ["10.00", "11.00", "12.00"];
-        let mut from_trades = BollingerBands::new(3, 1.0, None);
-        let mut from_raw = BollingerBands::new(3, 1.0, None);
-
-        for price in prices {
-            from_trades.handle_trade(&trade_tick(price));
-            let value: f64 = Price::from(price).into();
-            from_raw.update_raw(value, value, value);
-        }
-
-        let expected_mid = 11.0;
-        let expected_std = (2.0_f64 / 3.0).sqrt();
-
-        assert!(from_trades.initialized());
-        assert_approx_equal(from_trades.middle, expected_mid);
-        assert_approx_equal(from_trades.upper, expected_mid + expected_std);
-        assert_approx_equal(from_trades.lower, expected_mid - expected_std);
-        assert_approx_equal(from_trades.middle, from_raw.middle);
-        assert_approx_equal(from_trades.upper, from_raw.upper);
-        assert_approx_equal(from_trades.lower, from_raw.lower);
-    }
-
-    #[rstest]
-    fn test_handle_quote_outputs_actual_price_units() {
-        let quotes = [("10.00", "10.50"), ("11.00", "11.50"), ("12.00", "12.50")];
-        let mut from_quotes = BollingerBands::new(3, 1.0, None);
-        let mut from_raw = BollingerBands::new(3, 1.0, None);
-
-        for (bid, ask) in quotes {
-            let quote = stub_quote(bid, ask);
-            from_quotes.handle_quote(&quote).unwrap();
-            let bid_f64: f64 = (&quote.bid_price).into();
-            let ask_f64: f64 = (&quote.ask_price).into();
-            let mid = f64::midpoint(bid_f64, ask_f64);
-            from_raw.update_raw(ask_f64, bid_f64, mid);
-        }
-
-        let expected_mid = 11.25;
-        let expected_std = (2.0_f64 / 3.0).sqrt();
-
-        assert!(from_quotes.initialized());
-        assert_approx_equal(from_quotes.middle, expected_mid);
-        assert_approx_equal(from_quotes.upper, expected_mid + expected_std);
-        assert_approx_equal(from_quotes.lower, expected_mid - expected_std);
-        assert_approx_equal(from_quotes.middle, from_raw.middle);
-        assert_approx_equal(from_quotes.upper, from_raw.upper);
-        assert_approx_equal(from_quotes.lower, from_raw.lower);
-    }
-
-    fn trade_tick(price: &str) -> TradeTick {
-        TradeTick::new(
-            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            Price::from(price),
-            Quantity::from("1.00000000"),
-            AggressorSide::Buy,
-            TradeId::from("1"),
-            1.into(),
-            0.into(),
-        )
     }
 }

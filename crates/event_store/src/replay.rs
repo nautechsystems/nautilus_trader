@@ -2677,6 +2677,17 @@ mod tests {
             &[PAYLOAD_TYPE_INSTRUMENT_CLOSE],
         ),
         cache_mutation(
+            "update_position_from_adjustment",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_POSITION_ADJUSTED],
+        ),
+        cache_mutation(
+            // Rolls back an adjustment whose event was never published, so replay never applies it
+            "revert_position_adjustment",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "snapshot_position",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],

@@ -25,18 +25,19 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr};
 use nautilus_backtest::{
     config::{BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
+    result::BacktestResult,
 };
-use nautilus_common::actor::DataActor;
+use nautilus_common::{actor::DataActor, component::Component};
 use nautilus_core::UnixNanos;
 use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{
-        BarSpecification, BookOrder, FundingRateUpdate, NautilusDataType, OrderBookDelta,
-        QuoteTick, TradeTick,
+        BarSpecification, BookOrder, Data, FundingRateUpdate, NautilusDataType, OrderBookDelta,
+        OrderBookDeltas, QuoteTick, TradeTick,
     },
     enums::{
         AccountType, AggressorSide, BarAggregation, BookAction, BookType, OmsType, OrderSide,
-        PriceType,
+        PriceType, RecordFlag,
     },
     identifiers::{InstrumentId, StrategyId, TradeId},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
@@ -1537,7 +1538,7 @@ fn test_l2_streaming_accepts_quote_chunk_after_book_chunk(
             Quantity::from("1.000"),
             1,
         ),
-        0,
+        RecordFlag::F_LAST as u8,
         1,
         UnixNanos::from(1_000_000_000),
         UnixNanos::from(1_000_000_000),
@@ -1639,4 +1640,696 @@ fn test_streaming_same_timestamp_events(crypto_perpetual_ethusdt: CryptoPerpetua
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].iterations, 12);
+}
+
+struct BookDeltasRecorder {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    received: Rc<RefCell<Vec<OrderBookDeltas>>>,
+    bid_price: Option<Price>,
+}
+
+impl BookDeltasRecorder {
+    fn new(
+        instrument_id: InstrumentId,
+        received: Rc<RefCell<Vec<OrderBookDeltas>>>,
+        bid_price: Option<Price>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("BOOK-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            received,
+            bid_price,
+        }
+    }
+}
+
+nautilus_strategy!(BookDeltasRecorder);
+
+impl Debug for BookDeltasRecorder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BookDeltasRecorder)).finish()
+    }
+}
+
+impl DataActor for BookDeltasRecorder {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_book_deltas(
+            self.instrument_id,
+            BookType::L2_MBP,
+            None,
+            None,
+            false,
+            None,
+        );
+        Ok(())
+    }
+
+    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        self.received.borrow_mut().push(deltas.clone());
+
+        if let Some(price) = self.bid_price.take() {
+            let instrument_id = self.instrument_id;
+            let order = self.order().limit(
+                instrument_id,
+                OrderSide::Buy,
+                Quantity::from("1.000"),
+                price,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            self.submit_order(order, None, None, None)?;
+        }
+        Ok(())
+    }
+}
+
+fn book_delta(
+    instrument_id: InstrumentId,
+    action: BookAction,
+    side: OrderSide,
+    price: &str,
+    flags: u8,
+    sequence: u64,
+    ts_init: u64,
+) -> OrderBookDelta {
+    OrderBookDelta::new(
+        instrument_id,
+        action,
+        BookOrder::new(side, Price::from(price), Quantity::from("1.000"), sequence),
+        flags,
+        sequence,
+        UnixNanos::from(ts_init),
+        UnixNanos::from(ts_init),
+    )
+}
+
+// Writes each slice of deltas to its own catalog file
+fn create_catalog_with_deltas(
+    instrument: &InstrumentAny,
+    files: &[&[OrderBookDelta]],
+) -> (TempDir, String) {
+    let temp_dir = TempDir::new().unwrap();
+    let catalog_path = temp_dir.path().to_str().unwrap().to_string();
+    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+    catalog.write_instruments(vec![instrument.clone()]).unwrap();
+
+    for deltas in files {
+        catalog.write_to_parquet(deltas, None, None, None).unwrap();
+    }
+
+    (temp_dir, catalog_path)
+}
+
+fn l2_venue_config() -> BacktestVenueConfig {
+    BacktestVenueConfig::builder()
+        .name(Ustr::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L2_MBP)
+        .starting_balances(vec!["1_000_000 USDT".to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
+        .build()
+        .unwrap()
+}
+
+fn deltas_run_config(data: BacktestDataConfig, chunk_size: Option<usize>) -> BacktestRunConfig {
+    BacktestRunConfig::builder()
+        .venues(vec![l2_venue_config()])
+        .data(vec![data])
+        .maybe_chunk_size(chunk_size)
+        .raise_exception(true)
+        .build()
+        .unwrap()
+}
+
+fn run_with_book_deltas_recorder(
+    config: BacktestRunConfig,
+    instrument_id: InstrumentId,
+    bid_price: Option<Price>,
+) -> (anyhow::Result<Vec<BacktestResult>>, Vec<OrderBookDeltas>) {
+    let config_id = config.id().to_string();
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.build().unwrap();
+    node.get_engine_mut(&config_id)
+        .unwrap()
+        .add_strategy(BookDeltasRecorder::new(
+            instrument_id,
+            Rc::clone(&received),
+            bid_price,
+        ))
+        .unwrap();
+
+    let results = node.run();
+    let received = received.borrow().clone();
+    (results, received)
+}
+
+type BookDeltasCallback = (Vec<OrderBookDelta>, u8, u64, UnixNanos, UnixNanos);
+
+// Lists every field because `OrderBookDeltas` equality compares only instrument and sequence
+fn book_deltas_callbacks(received: &[OrderBookDeltas]) -> Vec<BookDeltasCallback> {
+    received
+        .iter()
+        .map(|deltas| {
+            (
+                deltas.deltas.clone(),
+                deltas.flags,
+                deltas.sequence,
+                deltas.ts_event,
+                deltas.ts_init,
+            )
+        })
+        .collect()
+}
+
+// Expects each group to carry the metadata of its closing delta
+fn expected_book_deltas_callbacks(groups: &[Vec<OrderBookDelta>]) -> Vec<BookDeltasCallback> {
+    groups
+        .iter()
+        .map(|group| {
+            let last = group.last().unwrap();
+            (
+                group.clone(),
+                last.flags,
+                last.sequence,
+                last.ts_event,
+                last.ts_init,
+            )
+        })
+        .collect()
+}
+
+// Writes a complete event at 1s followed by a delta at 2s that no `F_LAST` delta closes
+fn unterminated_book_data(instrument: &InstrumentAny) -> (TempDir, BacktestDataConfig) {
+    let instrument_id = instrument.id();
+    let deltas = [
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "1000.00",
+            RecordFlag::F_LAST as u8,
+            1,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "1000.10",
+            0,
+            2,
+            2_000_000_000,
+        ),
+    ];
+    let (temp_dir, catalog_path) = create_catalog_with_deltas(instrument, &[&deltas]);
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::OrderBookDelta)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .build()
+        .unwrap();
+    (temp_dir, data)
+}
+
+fn unterminated_book_data_error(instrument_id: InstrumentId) -> String {
+    format!(
+        "Order book deltas end without an `F_LAST` delta for {instrument_id} \
+         (1 pending, ts_init 2000000000 to 2000000000); \
+         set `batch_deltas` to false to replay individual deltas"
+    )
+}
+
+#[rstest]
+#[case::batched_oneshot(true, None)]
+#[case::batched_streaming_single(true, Some(1))]
+#[case::batched_streaming_pairs(true, Some(2))]
+#[case::individual_oneshot(false, None)]
+#[case::individual_streaming(false, Some(1))]
+fn test_run_replays_book_deltas_per_batching_setting(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] batch_deltas: bool,
+    #[case] chunk_size: Option<usize>,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let last = RecordFlag::F_LAST as u8;
+    let deltas = [
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "1000.00",
+            0,
+            1,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "1000.10",
+            last,
+            2,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Update,
+            OrderSide::Buy,
+            "1000.00",
+            0,
+            3,
+            2_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "999.90",
+            last,
+            4,
+            2_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "1000.20",
+            last,
+            5,
+            2_000_000_000,
+        ),
+    ];
+    let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::OrderBookDelta)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .batch_deltas(batch_deltas)
+        .build()
+        .unwrap();
+
+    let (results, received) =
+        run_with_book_deltas_recorder(deltas_run_config(data, chunk_size), instrument_id, None);
+
+    // The two events sharing a timestamp stay separate when batched
+    let groups: Vec<Vec<OrderBookDelta>> = if batch_deltas {
+        vec![
+            deltas[0..2].to_vec(),
+            deltas[2..4].to_vec(),
+            deltas[4..].to_vec(),
+        ]
+    } else {
+        deltas.iter().map(|delta| vec![*delta]).collect()
+    };
+    assert_eq!(results.unwrap()[0].iterations, groups.len());
+    assert_eq!(
+        book_deltas_callbacks(&received),
+        expected_book_deltas_callbacks(&groups)
+    );
+}
+
+#[rstest]
+#[case::file_tables_oneshot(false, None)]
+#[case::file_tables_streaming(false, Some(1))]
+#[case::directory_tables_oneshot(true, None)]
+#[case::directory_tables_streaming(true, Some(1))]
+fn test_run_batches_book_deltas_spanning_catalog_files(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] optimize_file_loading: bool,
+    #[case] chunk_size: Option<usize>,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let opening = book_delta(
+        instrument_id,
+        BookAction::Add,
+        OrderSide::Buy,
+        "1000.00",
+        0,
+        1,
+        1_000_000_000,
+    );
+    let closing = book_delta(
+        instrument_id,
+        BookAction::Add,
+        OrderSide::Sell,
+        "1000.10",
+        RecordFlag::F_LAST as u8,
+        2,
+        2_000_000_000,
+    );
+    let (_temp_dir, catalog_path) =
+        create_catalog_with_deltas(&instrument, &[&[opening], &[closing]]);
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::OrderBookDelta)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .optimize_file_loading(optimize_file_loading)
+        .build()
+        .unwrap();
+
+    let (results, received) =
+        run_with_book_deltas_recorder(deltas_run_config(data, chunk_size), instrument_id, None);
+
+    assert_eq!(results.unwrap()[0].iterations, 1);
+    assert_eq!(
+        book_deltas_callbacks(&received),
+        expected_book_deltas_callbacks(&[vec![opening, closing]])
+    );
+}
+
+#[rstest]
+#[case::oneshot(None)]
+#[case::streaming(Some(1))]
+fn test_run_rejects_book_deltas_left_without_f_last(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] chunk_size: Option<usize>,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let (_temp_dir, data) = unterminated_book_data(&instrument);
+
+    let (results, _received) =
+        run_with_book_deltas_recorder(deltas_run_config(data, chunk_size), instrument_id, None);
+
+    assert_eq!(
+        results.unwrap_err().to_string(),
+        unterminated_book_data_error(instrument_id)
+    );
+}
+
+#[rstest]
+#[case::raised(true)]
+#[case::suppressed(false)]
+fn test_run_streaming_ends_engine_when_a_later_chunk_fails_to_load(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] raise_exception: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+
+    // The first event replays in its own chunk before the unterminated tail fails the query
+    let (_temp_dir, data) = unterminated_book_data(&instrument);
+    let config = BacktestRunConfig::builder()
+        .venues(vec![l2_venue_config()])
+        .data(vec![data])
+        .chunk_size(1)
+        .raise_exception(raise_exception)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+
+    let outcome = node
+        .run()
+        .map(|results| results.len())
+        .map_err(|e| e.to_string());
+
+    // A suppressed failure omits the result, and a raised one surfaces the load error
+    let engine = node.get_engine(&config_id).unwrap();
+    let expected_outcome = if raise_exception {
+        Err(unterminated_book_data_error(instrument_id))
+    } else {
+        Ok(0)
+    };
+    assert_eq!(outcome, expected_outcome);
+    assert_eq!(engine.iteration(), 1);
+    assert!(engine.kernel().trader.borrow().is_stopped());
+    assert!(engine.get_result().run_finished.is_some());
+}
+
+#[rstest]
+fn test_run_streaming_leaves_engine_unstarted_when_the_first_chunk_fails_to_load(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+
+    // The unterminated tail fails the query while the first chunk is still filling
+    let (_temp_dir, data) = unterminated_book_data(&instrument);
+    let config = BacktestRunConfig::builder()
+        .venues(vec![l2_venue_config()])
+        .data(vec![data])
+        .chunk_size(10)
+        .raise_exception(true)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+
+    let result = node.run();
+
+    let engine = node.get_engine(&config_id).unwrap();
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        unterminated_book_data_error(instrument_id)
+    );
+    assert_eq!(engine.iteration(), 0);
+    assert!(engine.get_result().run_started.is_none());
+    assert!(engine.get_result().run_finished.is_none());
+}
+
+#[rstest]
+#[case::oneshot(None)]
+#[case::streaming(Some(1))]
+fn test_run_replays_deltas_without_f_last_when_unbatched(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] chunk_size: Option<usize>,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let deltas = [
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "1000.00",
+            0,
+            1,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "1000.10",
+            0,
+            2,
+            2_000_000_000,
+        ),
+    ];
+    let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::OrderBookDelta)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .batch_deltas(false)
+        .build()
+        .unwrap();
+
+    let (results, received) =
+        run_with_book_deltas_recorder(deltas_run_config(data, chunk_size), instrument_id, None);
+
+    assert_eq!(results.unwrap()[0].iterations, 2);
+    assert_eq!(
+        book_deltas_callbacks(&received),
+        expected_book_deltas_callbacks(&[vec![deltas[0]], vec![deltas[1]]])
+    );
+}
+
+#[rstest]
+#[case::batched(true, 0)]
+#[case::individual(false, 1)]
+fn test_run_batched_book_deltas_skip_intermediate_book_states(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] batch_deltas: bool,
+    #[case] expected_positions: usize,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let last = RecordFlag::F_LAST as u8;
+
+    // The second event briefly crosses the resting bid with an ask it removes in the same event
+    let deltas = [
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "999.90",
+            0,
+            1,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "1000.10",
+            last,
+            2,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "999.95",
+            0,
+            3,
+            2_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Delete,
+            OrderSide::Sell,
+            "999.95",
+            last,
+            4,
+            2_000_000_000,
+        ),
+    ];
+    let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::OrderBookDelta)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .batch_deltas(batch_deltas)
+        .build()
+        .unwrap();
+
+    let (results, _received) = run_with_book_deltas_recorder(
+        deltas_run_config(data, None),
+        instrument_id,
+        Some(Price::from("1000.00")),
+    );
+
+    let results = results.unwrap();
+    assert_eq!(results[0].total_orders, 1);
+    assert_eq!(results[0].total_positions, expected_positions);
+}
+
+#[rstest]
+fn test_load_data_config_batches_book_deltas(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let last = RecordFlag::F_LAST as u8;
+    let deltas = [
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "1000.00",
+            0,
+            1,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "1000.10",
+            last,
+            2,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "1000.20",
+            last,
+            3,
+            2_000_000_000,
+        ),
+    ];
+    let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
+    let config = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::OrderBookDelta)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .build()
+        .unwrap();
+
+    let data = BacktestNode::load_data_config(&config, None, None).unwrap();
+
+    let batches: Vec<OrderBookDeltas> = data
+        .into_iter()
+        .map(|item| match item {
+            Data::BookDeltas(deltas) => *deltas,
+            other => panic!("expected `OrderBookDeltas`, was {other:?}"),
+        })
+        .collect();
+    assert!(config.batch_deltas());
+    assert_eq!(
+        book_deltas_callbacks(&batches),
+        expected_book_deltas_callbacks(&[deltas[0..2].to_vec(), deltas[2..].to_vec()])
+    );
+}
+
+#[rstest]
+fn test_load_data_config_returns_individual_book_deltas_when_unbatched(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let last = RecordFlag::F_LAST as u8;
+    let deltas = [
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Buy,
+            "1000.00",
+            0,
+            1,
+            1_000_000_000,
+        ),
+        book_delta(
+            instrument_id,
+            BookAction::Add,
+            OrderSide::Sell,
+            "1000.10",
+            last,
+            2,
+            1_000_000_000,
+        ),
+    ];
+    let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
+    let config = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::OrderBookDelta)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument_id)
+        .batch_deltas(false)
+        .build()
+        .unwrap();
+
+    let data = BacktestNode::load_data_config(&config, None, None).unwrap();
+
+    let rows: Vec<OrderBookDelta> = data
+        .into_iter()
+        .map(|item| match item {
+            Data::BookDelta(delta) => delta,
+            other => panic!("expected `OrderBookDelta`, was {other:?}"),
+        })
+        .collect();
+    assert_eq!(rows, deltas.to_vec());
 }

@@ -173,8 +173,8 @@ impl BlockchainDataClientCore {
         data_tx: Option<EventSender<DataEvent>>,
         cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Self {
-        let chain = config.chain.clone();
-        let cache = BlockchainCache::new(chain.clone());
+        let chain = Arc::clone(&config.chain);
+        let cache = BlockchainCache::new(Arc::clone(&chain));
 
         // Log RPC endpoints being used
         log::debug!(
@@ -203,12 +203,12 @@ impl BlockchainDataClientCore {
         ));
         let multicall_calls_per_rpc_request = config.multicall_calls_per_rpc_request;
         let erc20_contract = Erc20Contract::new(
-            http_rpc_client.clone(),
+            Arc::clone(&http_rpc_client),
             config.pool_filters.remove_pools_with_empty_erc20fields,
         );
 
         let hypersync_client =
-            HyperSyncClient::new(chain.clone(), hypersync_tx, cancellation_token.clone());
+            HyperSyncClient::new(Arc::clone(&chain), hypersync_tx, cancellation_token.clone());
         Self {
             chain,
             config,
@@ -488,7 +488,7 @@ impl BlockchainDataClientCore {
     ) -> anyhow::Result<()> {
         const EVENT_BATCH_SIZE: usize = 20000;
 
-        let pool: SharedPool = self.get_pool(&pool_identifier)?.clone();
+        let pool: SharedPool = Arc::clone(self.get_pool(&pool_identifier)?);
         let pool_display = pool.to_full_spec_string();
         let from_block = from_block.unwrap_or(pool.creation_block);
         // Extract address for blockchain queries
@@ -757,7 +757,7 @@ impl BlockchainDataClientCore {
                 let parse_fn = dex_extended
                     .parse_flash_event_hypersync_fn
                     .context("missing flash event parser")?;
-                let flash_event = parse_fn(dex_extended.dex.clone(), &log)
+                let flash_event = parse_fn(Arc::clone(&dex_extended.dex), &log)
                     .context("failed to parse flash event")?;
                 let flash = self
                     .process_pool_flash_event(&flash_event, &pool)
@@ -1155,7 +1155,7 @@ impl BlockchainDataClientCore {
             .copied()
             .context("missing block timestamp for swap event")?;
         let mut swap = swap_event.to_pool_swap(
-            self.chain.clone(),
+            Arc::clone(&self.chain),
             pool.instrument_id,
             pool.pool_identifier,
             timestamp,
@@ -1191,8 +1191,8 @@ impl BlockchainDataClientCore {
             .context("missing block timestamp for mint event")?;
 
         let mut liquidity_update = mint_event.to_pool_liquidity_update(
-            self.chain.clone(),
-            dex_extended.dex.clone(),
+            Arc::clone(&self.chain),
+            Arc::clone(&dex_extended.dex),
             pool.instrument_id,
             timestamp,
         );
@@ -1223,8 +1223,8 @@ impl BlockchainDataClientCore {
             .context("missing block timestamp for burn event")?;
 
         let mut liquidity_update = burn_event.to_pool_liquidity_update(
-            self.chain.clone(),
-            dex_extended.dex.clone(),
+            Arc::clone(&self.chain),
+            Arc::clone(&dex_extended.dex),
             pool.instrument_id,
             pool.pool_identifier,
             timestamp,
@@ -1255,8 +1255,8 @@ impl BlockchainDataClientCore {
             .context("missing block timestamp for collect event")?;
 
         let mut fee_collect = collect_event.to_pool_fee_collect(
-            self.chain.clone(),
-            dex_extended.dex.clone(),
+            Arc::clone(&self.chain),
+            Arc::clone(&dex_extended.dex),
             pool.instrument_id,
             timestamp,
         );
@@ -1283,7 +1283,7 @@ impl BlockchainDataClientCore {
             .context("missing block timestamp for flash event")?;
 
         let mut flash =
-            flash_event.to_pool_flash(self.chain.clone(), pool.instrument_id, timestamp);
+            flash_event.to_pool_flash(Arc::clone(&self.chain), pool.instrument_id, timestamp);
         flash.block_hash = Some(self.observed_block_hash(flash_event.block_number, "flash")?);
 
         Ok(flash)
@@ -1306,7 +1306,7 @@ impl BlockchainDataClientCore {
             .context("missing block timestamp for SetFeeProtocol event")?;
 
         let mut update = fee_protocol_update_event.to_pool_fee_protocol_update(
-            self.chain.clone(),
+            Arc::clone(&self.chain),
             pool.instrument_id,
             timestamp,
         );
@@ -1334,7 +1334,7 @@ impl BlockchainDataClientCore {
             .context("missing block timestamp for CollectProtocol event")?;
 
         let mut collect = fee_protocol_collect_event.to_pool_fee_protocol_collect(
-            self.chain.clone(),
+            Arc::clone(&self.chain),
             pool.instrument_id,
             timestamp,
         );
@@ -1374,7 +1374,7 @@ impl BlockchainDataClientCore {
         let dex_extended = self.get_dex_extended(dex)?.clone();
 
         let mut service = PoolDiscoveryService::new(
-            self.chain.clone(),
+            Arc::clone(&self.chain),
             &mut self.cache,
             &self.tokens,
             &self.hypersync_client,
@@ -1431,7 +1431,7 @@ impl BlockchainDataClientCore {
         };
 
         log::debug!("Registering DEX {dex_id} on chain {}", self.chain.name);
-        self.cache.add_dex(dex_extended.dex.clone()).await?;
+        self.cache.add_dex(Arc::clone(&dex_extended.dex)).await?;
         self.subscription_manager.register_dex_for_subscriptions(
             dex_id,
             dex_extended.swap_created_event.as_ref(),
@@ -1541,8 +1541,8 @@ impl BlockchainDataClientCore {
         profiler.enable_reporting(from_block, total_blocks, BLOCKS_PROCESS_IN_SYNC_REPORT);
 
         let mut stream = self.cache.database.as_ref().unwrap().stream_pool_events(
-            pool.chain.clone(),
-            pool.dex.clone(),
+            Arc::clone(&pool.chain),
+            Arc::clone(&pool.dex),
             pool.instrument_id,
             pool.pool_identifier,
             from_position.clone(),
@@ -1583,7 +1583,7 @@ impl BlockchainDataClientCore {
         }
 
         self.construct_pool_profiler_from_hypersync_rpc(
-            PoolProfiler::new(pool.clone()),
+            PoolProfiler::new(Arc::clone(pool)),
             None,
             to_block,
         )
@@ -1625,7 +1625,7 @@ impl BlockchainDataClientCore {
         pool: &SharedPool,
         to_block: u64,
     ) -> anyhow::Result<(PoolProfiler, Option<BlockPosition>)> {
-        let mut profiler = PoolProfiler::new(pool.clone());
+        let mut profiler = PoolProfiler::new(Arc::clone(pool));
 
         let from_position = match self
             .cache
@@ -2331,8 +2331,8 @@ impl BlockchainDataClientCore {
             );
 
             let mut event_stream = database.stream_pool_events(
-                self.chain.clone(),
-                dex.clone(),
+                Arc::clone(&self.chain),
+                Arc::clone(dex),
                 pool.instrument_id,
                 pool.pool_identifier,
                 None,
@@ -2787,20 +2787,21 @@ mod tests {
                 .expect("Ethereum chain should exist")
                 .clone(),
         );
-        let dex = get_dex_extended(chain.name, &DexType::UniswapV3)
-            .expect("Ethereum UniswapV3 should be registered")
-            .dex
-            .clone();
+        let dex = Arc::clone(
+            &get_dex_extended(chain.name, &DexType::UniswapV3)
+                .expect("Ethereum UniswapV3 should be registered")
+                .dex,
+        );
         let pool_address = address!("4e68ccd3e89f51c3074ca5072bbac773960dfa36");
         let token0 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
             18,
         );
         let token1 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("dAC17F958D2ee523a2206206994597C13D831ec7"),
             "Tether USD".to_string(),
             "USDT".to_string(),

@@ -280,7 +280,7 @@ impl DataCatalogConfig {
     }
 }
 
-// The Parquet factory checks the counts too, since deserialized configs skip `validate`
+// `ParquetDataCatalog::from_uri` also checks the counts, since deserialized configs skip `validate`
 pub(crate) fn validate_catalog_counts(
     batch_size: Option<usize>,
     max_row_group_size: Option<usize>,

@@ -8,6 +8,7 @@ This directory contains API response samples and documented error messages for t
 
 - `http_meta_perp_sample.json` - Perpetuals market metadata (sample of 3 markets)
 - `http_meta_spot_sample.json` - Spot market metadata (sample of 3 markets)
+- `http_outcome_meta.json` - Constructed outcomes with USDC, USDH, and missing quote-token metadata
 - `http_l2_book_btc.json` - BTC order book snapshot (5 levels each side)
 - `http_l2_book_snapshot.json` - Existing order book test data
 

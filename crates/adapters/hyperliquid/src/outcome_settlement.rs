@@ -19,8 +19,8 @@
 //! [`crate::http::parse::derive_outcome_settlements`] to identify settled
 //! (outcome_index, outcome_side) pairs, then materializes position-closing
 //! [`FillReport`]s for any spot balance still holding a settled side token.
-//! Settlements settle in USDH at 0 (losing) or 1 (winning), so each closing
-//! fill carries a USDH commission of zero.
+//! Settlements close at 0 (losing) or 1 (winning), with zero commission in
+//! the outcome instrument's quote currency.
 //!
 //! State is tracked in [`OutcomeSettlementTracker`]; once a pair has been
 //! dispatched it is not re-emitted on subsequent polls.
@@ -38,10 +38,9 @@ use rust_decimal::Decimal;
 use crate::{
     common::{converters::outcome_asset_id_to_instrument_id, types::HyperliquidAssetId},
     http::{
-        models::SpotClearinghouseState,
-        parse::{
-            OUTCOME_PRICE_DECIMALS, OUTCOME_SIZE_DECIMALS, OutcomeSettlement, get_usdh_currency,
-        },
+        client::HyperliquidHttpClient,
+        models::{OutcomeMeta, SpotClearinghouseState},
+        parse::{OUTCOME_PRICE_DECIMALS, OUTCOME_SIZE_DECIMALS, OutcomeSettlement},
     },
 };
 
@@ -85,6 +84,8 @@ impl OutcomeSettlementTracker {
 /// settlement is matched to a non-zero spot balance keyed by the `+E` token
 /// name (Hyperliquid's spot-balance convention for outcome side tokens). Pairs
 /// already in `tracker` are skipped; pairs that emit a fill are recorded.
+/// Commission currency comes from the cached instrument, then `meta`, with
+/// USDC as the fallback when the quote token is unavailable.
 ///
 /// Returns the synthetic fills ready to be forwarded through the execution
 /// emitter. Returns an empty vector when no held outcome side token has
@@ -93,6 +94,8 @@ impl OutcomeSettlementTracker {
 pub fn build_settlement_fills(
     settlements: &[OutcomeSettlement],
     spot_state: &SpotClearinghouseState,
+    meta: &OutcomeMeta,
+    http_client: &HyperliquidHttpClient,
     tracker: &mut OutcomeSettlementTracker,
     account_id: AccountId,
     ts_init: UnixNanos,
@@ -101,7 +104,6 @@ pub fn build_settlement_fills(
         return Vec::new();
     }
 
-    let usdh = get_usdh_currency();
     let mut fills = Vec::new();
 
     for settlement in settlements {
@@ -140,7 +142,7 @@ pub fn build_settlement_fills(
             account_id,
             settlement,
             balance.total,
-            usdh,
+            http_client.outcome_quote_currency(instrument_id, settlement.outcome_index, meta),
             ts_init,
         ) {
             fills.push(fill);
@@ -196,13 +198,28 @@ fn build_close_fill(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::instruments::Instrument;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
-    use crate::http::models::SpotBalance;
+    use crate::{
+        common::enums::HyperliquidEnvironment,
+        http::{
+            models::SpotBalance,
+            parse::{create_instrument_from_def, get_usdh_currency, parse_outcome_instruments},
+        },
+    };
+
+    fn client() -> HyperliquidHttpClient {
+        HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap()
+    }
+
+    fn meta() -> OutcomeMeta {
+        serde_json::from_str(include_str!("../test_data/http_outcome_meta.json")).unwrap()
+    }
 
     fn account() -> AccountId {
         AccountId::new("HYPERLIQUID-001")
@@ -221,17 +238,215 @@ mod tests {
     }
 
     #[rstest]
+    #[case::usdc_winner(1, 0, 1, Currency::USDC())]
+    #[case::usdc_loser(1, 1, 0, Currency::USDC())]
+    #[case::usdh_winner(2, 1, 1, get_usdh_currency())]
+    #[case::usdh_loser(2, 0, 0, get_usdh_currency())]
+    #[case::missing_quote(3, 0, 1, Currency::USDC())]
+    #[case::unlisted(20, 1, 0, Currency::USDC())]
+    fn settlement_fill_uses_outcome_quote_currency(
+        #[case] outcome_index: u32,
+        #[case] outcome_side: u8,
+        #[case] final_value: u8,
+        #[case] currency: Currency,
+    ) {
+        let settlement = OutcomeSettlement {
+            outcome_index,
+            outcome_side,
+            final_value,
+        };
+
+        let encoding = HyperliquidAssetId::outcome(outcome_index, outcome_side)
+            .outcome_encoding()
+            .unwrap();
+        let state = spot_state_with(&format!("+{encoding}"), dec!(37.25));
+        let mut tracker = OutcomeSettlementTracker::new();
+        let fills = build_settlement_fills(
+            &[settlement],
+            &state,
+            &meta(),
+            &client(),
+            &mut tracker,
+            account(),
+            UnixNanos::new(123),
+        );
+
+        assert_eq!(fills.len(), 1);
+        let fill = &fills[0];
+        assert_eq!(
+            fill.instrument_id,
+            outcome_asset_id_to_instrument_id(HyperliquidAssetId::outcome(
+                outcome_index,
+                outcome_side
+            ))
+            .unwrap()
+        );
+        assert_eq!(fill.account_id, account());
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        assert_eq!(fill.last_qty, Quantity::from("37.25"));
+        assert_eq!(
+            fill.last_px,
+            Price::from_decimal_dp(Decimal::from(final_value), 4).unwrap()
+        );
+        assert_eq!(fill.commission, Money::zero(currency));
+        assert_eq!(fill.liquidity_side, LiquiditySide::NoLiquiditySide);
+        assert_eq!(fill.avg_px, None);
+        assert_eq!(fill.client_order_id, None);
+        assert_eq!(fill.venue_position_id, None);
+        assert_eq!(
+            fill.venue_order_id,
+            VenueOrderId::new(format!("HYPERLIQUID-SETTLE-{outcome_index}-{outcome_side}"))
+        );
+        assert_eq!(
+            fill.trade_id,
+            TradeId::new(format!(
+                "HYPERLIQUID-SETTLE-{outcome_index}-{outcome_side}-{final_value}"
+            ))
+        );
+        assert_eq!(fill.ts_event, UnixNanos::new(123));
+        assert_eq!(fill.ts_init, UnixNanos::new(123));
+        assert_eq!(tracker.len(), 1);
+    }
+
+    #[rstest]
+    fn settlement_fills_preserve_mixed_quote_currencies() {
+        let settlements = [
+            OutcomeSettlement {
+                outcome_index: 1,
+                outcome_side: 0,
+                final_value: 1,
+            },
+            OutcomeSettlement {
+                outcome_index: 2,
+                outcome_side: 0,
+                final_value: 0,
+            },
+        ];
+
+        let mut state = spot_state_with("+10", dec!(12.34));
+        state
+            .balances
+            .extend(spot_state_with("+20", dec!(56.78)).balances);
+        let mut tracker = OutcomeSettlementTracker::new();
+        let fills = build_settlement_fills(
+            &settlements,
+            &state,
+            &meta(),
+            &client(),
+            &mut tracker,
+            account(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(fills.len(), 2);
+        assert_eq!(
+            fills[0].instrument_id,
+            InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID")
+        );
+        assert_eq!(fills[0].last_qty, Quantity::from("12.34"));
+        assert_eq!(fills[0].last_px, Price::from("1.0000"));
+        assert_eq!(fills[0].commission, Money::zero(Currency::USDC()));
+        assert_eq!(
+            fills[1].instrument_id,
+            InstrumentId::from("2-YES-OUTCOME.HYPERLIQUID")
+        );
+        assert_eq!(fills[1].last_qty, Quantity::from("56.78"));
+        assert_eq!(fills[1].last_px, Price::from("0.0000"));
+        assert_eq!(fills[1].commission, Money::zero(get_usdh_currency()));
+        assert_eq!(tracker.len(), 2);
+    }
+
+    #[rstest]
+    fn settlement_fill_uses_replaced_cached_currency() {
+        let client = client();
+        let mut defs = parse_outcome_instruments(&meta()).unwrap();
+        let original = create_instrument_from_def(&defs[2], UnixNanos::default()).unwrap();
+        client.cache_instrument(&original);
+        defs[2].quote = "USDC".into();
+        let replacement = create_instrument_from_def(&defs[2], UnixNanos::default()).unwrap();
+        client.cache_instrument(&replacement);
+
+        let settlement = OutcomeSettlement {
+            outcome_index: 2,
+            outcome_side: 0,
+            final_value: 1,
+        };
+
+        let mut tracker = OutcomeSettlementTracker::new();
+        let fills = build_settlement_fills(
+            &[settlement],
+            &spot_state_with("+20", dec!(9.87)),
+            &meta(),
+            &client,
+            &mut tracker,
+            account(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].instrument_id, replacement.id());
+        assert_eq!(fills[0].commission, Money::zero(Currency::USDC()));
+    }
+
+    #[rstest]
+    #[case::missing_outcome(false)]
+    #[case::different_quote(true)]
+    fn settlement_fill_preserves_cached_currency(#[case] listed: bool) {
+        let client = client();
+        let original = meta();
+        let mut snapshot = meta();
+
+        if listed {
+            snapshot.outcomes[1].quote_token = Some("USDC".to_string());
+        } else {
+            snapshot.outcomes.clear();
+        }
+
+        let defs = parse_outcome_instruments(&original).unwrap();
+        let instrument = create_instrument_from_def(&defs[2], UnixNanos::default()).unwrap();
+        client.cache_instrument(&instrument);
+
+        let settlement = OutcomeSettlement {
+            outcome_index: 2,
+            outcome_side: 0,
+            final_value: 1,
+        };
+
+        let mut tracker = OutcomeSettlementTracker::new();
+        let fills = build_settlement_fills(
+            &[settlement],
+            &spot_state_with("+20", dec!(7.5)),
+            &snapshot,
+            &client,
+            &mut tracker,
+            account(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].instrument_id, instrument.id());
+        assert_eq!(fills[0].commission, Money::zero(get_usdh_currency()));
+    }
+
+    #[rstest]
     fn empty_settlements_emit_nothing() {
         let mut tracker = OutcomeSettlementTracker::new();
         let state = SpotClearinghouseState::default();
-        let fills =
-            build_settlement_fills(&[], &state, &mut tracker, account(), UnixNanos::default());
+        let fills = build_settlement_fills(
+            &[],
+            &state,
+            &meta(),
+            &client(),
+            &mut tracker,
+            account(),
+            UnixNanos::default(),
+        );
         assert!(fills.is_empty());
         assert!(tracker.is_empty());
     }
 
     #[rstest]
-    fn winning_side_emits_close_at_one_usdh() {
+    fn winning_side_emits_close_at_one_usdc() {
         let settlement = OutcomeSettlement {
             outcome_index: 1,
             outcome_side: 0,
@@ -243,6 +458,8 @@ mod tests {
         let fills = build_settlement_fills(
             &[settlement],
             &state,
+            &meta(),
+            &client(),
             &mut tracker,
             account(),
             UnixNanos::default(),
@@ -257,11 +474,11 @@ mod tests {
         assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty.as_decimal(), dec!(25));
         // Quantity must match the outcome instrument's size precision (2),
-        // not the USDH settlement currency precision (8)
+        // not the quote currency precision
         assert_eq!(fill.last_qty.precision, 2);
         assert_eq!(fill.last_px.as_decimal(), dec!(1));
         assert_eq!(fill.last_px.precision, 4);
-        assert_eq!(fill.commission.currency.code, "USDH");
+        assert_eq!(fill.commission, Money::zero(Currency::USDC()));
         assert!(fill.commission.as_decimal().is_zero());
         assert!(tracker.contains(1, 0));
     }
@@ -280,6 +497,8 @@ mod tests {
         let fills = build_settlement_fills(
             &[settlement],
             &state,
+            &meta(),
+            &client(),
             &mut tracker,
             account(),
             UnixNanos::default(),
@@ -291,7 +510,7 @@ mod tests {
     }
 
     #[rstest]
-    fn losing_side_emits_close_at_zero_usdh() {
+    fn losing_side_emits_close_at_zero_usdc() {
         let settlement = OutcomeSettlement {
             outcome_index: 1,
             outcome_side: 1,
@@ -303,6 +522,8 @@ mod tests {
         let fills = build_settlement_fills(
             &[settlement],
             &state,
+            &meta(),
+            &client(),
             &mut tracker,
             account(),
             UnixNanos::default(),
@@ -331,6 +552,8 @@ mod tests {
         let fills = build_settlement_fills(
             &[settlement],
             &state,
+            &meta(),
+            &client(),
             &mut tracker,
             account(),
             UnixNanos::default(),
@@ -354,6 +577,8 @@ mod tests {
         let fills = build_settlement_fills(
             &[settlement],
             &state,
+            &meta(),
+            &client(),
             &mut tracker,
             account(),
             UnixNanos::default(),
@@ -376,6 +601,8 @@ mod tests {
         let first = build_settlement_fills(
             &[settlement],
             &state,
+            &meta(),
+            &client(),
             &mut tracker,
             account(),
             UnixNanos::default(),
@@ -383,6 +610,8 @@ mod tests {
         let second = build_settlement_fills(
             &[settlement],
             &state,
+            &meta(),
+            &client(),
             &mut tracker,
             account(),
             UnixNanos::default(),
@@ -404,6 +633,8 @@ mod tests {
         let fills = build_settlement_fills(
             &[settlement],
             &state,
+            &meta(),
+            &client(),
             &mut tracker,
             account(),
             UnixNanos::default(),

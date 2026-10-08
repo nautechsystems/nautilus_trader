@@ -47,8 +47,12 @@ fn clamp_precision_with_log(len: usize, context: &str, input: &str) -> u8 {
 /// # Panics
 ///
 /// Panics when `strict` is true and the exponent is missing or non-numeric.
-fn precision_from_scientific(s: &str, trim_trailing_zeros: bool, strict: bool) -> Option<u8> {
-    let e_pos = s.find('e')?;
+fn precision_from_scientific(
+    s: &str,
+    e_pos: usize,
+    trim_trailing_zeros: bool,
+    strict: bool,
+) -> Option<u8> {
     let mantissa = &s[..e_pos];
     let exponent_str = &s[e_pos + 1..];
 
@@ -115,15 +119,15 @@ fn precision_from_scientific(s: &str, trim_trailing_zeros: bool, strict: bool) -
 /// exponents like "1e-abc").
 #[must_use]
 pub fn precision_from_str(s: &str) -> u8 {
-    let s = s.trim().to_ascii_lowercase();
+    let s = s.trim();
 
-    if s.contains('e') {
-        return precision_from_scientific(&s, false, true)
+    if let Some(e_pos) = s.find(['e', 'E']) {
+        return precision_from_scientific(s, e_pos, false, true)
             .expect("precision_from_scientific should return Some in strict mode");
     }
 
     if let Some((_, decimal_part)) = s.split_once('.') {
-        clamp_precision_with_log(decimal_part.len(), "Decimal", &s)
+        clamp_precision_with_log(decimal_part.len(), "Decimal", s)
     } else {
         0
     }
@@ -137,19 +141,18 @@ pub fn precision_from_str(s: &str) -> u8 {
 /// [`precision_from_str`].
 #[must_use]
 pub fn min_increment_precision_from_str(s: &str) -> u8 {
-    let s = s.trim().to_ascii_lowercase();
+    let s = s.trim();
 
-    if s.contains('e') {
-        return precision_from_scientific(&s, true, false).unwrap_or(0);
+    if let Some(e_pos) = s.find(['e', 'E']) {
+        return precision_from_scientific(s, e_pos, true, false).unwrap_or(0);
     }
 
     if let Some(dot_pos) = s.find('.') {
         let decimal_part = &s[dot_pos + 1..];
-        if decimal_part.chars().any(|c| c != '0') {
-            let trimmed_len = decimal_part.trim_end_matches('0').len();
-            return clamp_precision_with_log(trimmed_len, "Minimum increment", &s);
+        match decimal_part.as_bytes().iter().rposition(|&b| b != b'0') {
+            Some(index) => clamp_precision_with_log(index + 1, "Minimum increment", s),
+            None => clamp_precision_with_log(decimal_part.len(), "Decimal", s),
         }
-        clamp_precision_with_log(decimal_part.len(), "Decimal", &s)
     } else {
         0
     }
@@ -315,5 +318,47 @@ mod tests {
         // Empty exponent should return 0, not u8::MAX
         let result = min_increment_precision_from_str("1e-");
         assert_eq!(result, 0);
+    }
+
+    #[rstest]
+    #[case(
+        "1E-ABC",
+        "Invalid scientific notation exponent '-ABC': must be a valid number"
+    )]
+    #[case(
+        "1eE-2",
+        "Invalid scientific notation exponent 'E-2': must be a valid number"
+    )]
+    #[case("1E-", "Invalid scientific notation format: missing exponent value")]
+    fn test_scientific_precision_reports_original_exponent(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(min_increment_precision_from_str(input), 0);
+        let panic = std::panic::catch_unwind(|| precision_from_str(input)).unwrap_err();
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .unwrap();
+        assert_eq!(message, expected);
+    }
+
+    #[rstest]
+    #[case("1.\u{e9}00", 2)]
+    #[case("1.\u{660}00", 2)]
+    #[case("1.00\u{660}", 4)]
+    #[case("1.", 0)]
+    fn test_minimum_precision_preserves_utf8_byte_length(
+        #[case] input: &str,
+        #[case] expected: u8,
+    ) {
+        assert_eq!(min_increment_precision_from_str(input), expected);
+    }
+
+    #[rstest]
+    fn test_minimum_precision_clamps_all_zero_fraction() {
+        let input = format!("1.{}", "0".repeat(256));
+        assert_eq!(min_increment_precision_from_str(&input), u8::MAX);
     }
 }

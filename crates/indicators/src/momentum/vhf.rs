@@ -13,18 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{collections::VecDeque, fmt::Display};
 
-use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
-const MAX_PERIOD: usize = 1_024;
-
+/// Vertical horizontal filter.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -43,7 +43,7 @@ pub struct VerticalHorizontalFilter {
     ma: Box<dyn MovingAverage + Send + 'static>,
     has_inputs: bool,
     previous_close: f64,
-    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    prices: VecDeque<f64>,
 }
 
 impl Display for VerticalHorizontalFilter {
@@ -95,14 +95,21 @@ impl VerticalHorizontalFilter {
     /// - `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        assert!(
+        Self::new_checked(period, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
             period > 0 && period <= MAX_PERIOD,
             "VerticalHorizontalFilter: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
         );
 
         let ma_kind = ma_type.unwrap_or(MovingAverageType::Simple);
 
-        Self {
+        Ok(Self {
             period,
             ma_type: ma_kind,
             value: 0.0,
@@ -110,20 +117,29 @@ impl VerticalHorizontalFilter {
             ma: MovingAverageFactory::create(ma_kind, period),
             has_inputs: false,
             initialized: false,
-            prices: ArrayDeque::new(),
-        }
+            prices: VecDeque::with_capacity(period),
+        })
     }
 
     pub fn update_raw(&mut self, close: f64) {
+        if !close.is_finite() {
+            return;
+        }
+
         if !self.has_inputs {
+            // The first input only establishes the previous close; no price
+            // change exists yet, so nothing is fed to the movement average
+            self.has_inputs = true;
             self.previous_close = close;
+            self.prices.push_back(close);
+            return;
         }
 
         if self.prices.len() == self.period {
             let _ = self.prices.pop_front();
         }
 
-        let _ = self.prices.push_back(close);
+        self.prices.push_back(close);
 
         let max_price = self
             .prices
@@ -135,14 +151,14 @@ impl VerticalHorizontalFilter {
 
         self.ma.update_raw(f64::abs(close - self.previous_close));
 
-        if self.initialized {
-            let mean_change = self.ma.value();
-            // A flat window has neither range nor movement, so it reads as no trend
-            self.value = if mean_change == 0.0 {
-                0.0
+        if self.ma.initialized() {
+            // A flat window has zero summed movement; emit 0 by the standard
+            // convention instead of dividing to infinity/NaN
+            if self.ma.value() == 0.0 {
+                self.value = 0.0;
             } else {
-                f64::abs(max_price - min_price) / self.period as f64 / mean_change
-            };
+                self.value = f64::abs(max_price - min_price) / self.period as f64 / self.ma.value();
+            }
         }
 
         self.previous_close = close;
@@ -208,11 +224,13 @@ mod tests {
 
     #[rstest]
     fn test_initialized_with_required_input(mut vhf_10: VerticalHorizontalFilter) {
-        for i in 1..10 {
+        // The first input has no price change, so the movement average needs
+        // period + 1 = 11 inputs
+        for i in 1..=10 {
             vhf_10.update_raw(f64::from(i));
+            assert!(!vhf_10.initialized);
         }
-        assert!(!vhf_10.initialized);
-        vhf_10.update_raw(10.0);
+        vhf_10.update_raw(11.0);
         assert!(vhf_10.initialized);
     }
 

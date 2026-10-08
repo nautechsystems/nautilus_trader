@@ -102,6 +102,9 @@ The released type depends on the original emulated order type:
 | `TRAILING_STOP_MARKET`   | ✓           | `MARKET`      |
 | `TRAILING_STOP_LIMIT`    | ✓           | `LIMIT`       |
 
+A `MARKET` release keeps the original time in force, except that `GTD` becomes `GTC` because market
+orders do not support `GTD`.
+
 :::warning
 An emulated `TRAILING_STOP_LIMIT` submitted without a limit price gets one from the trailing
 calculation. If the order triggers before that calculation succeeds, the emulator logs a warning and

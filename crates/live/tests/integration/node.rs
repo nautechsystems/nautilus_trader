@@ -25,7 +25,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -34,7 +34,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig, registry::get_actor_unchecked},
     cache::CacheView,
-    clients::{DataClient, ExecutionClient},
+    clients::{DataClient, ExecutionClient, ExecutionReportTask},
     clock::Clock,
     component::Component,
     enums::Environment,
@@ -1078,6 +1078,14 @@ pub(crate) mod serial_tests {
 
     #[derive(Clone, Debug, Default)]
     struct BlockingReportClientState {
+        report_worker: Arc<AtomicBool>,
+        report_cpu_ns: Arc<AtomicU64>,
+        report_cpu_repeated: Arc<AtomicBool>,
+        report_cpu_active: Arc<AtomicBool>,
+        report_cpu_count: Arc<AtomicUsize>,
+        report_collections_active: Arc<AtomicUsize>,
+        report_collections_max: Arc<AtomicUsize>,
+        report_thread: Arc<Mutex<Option<std::thread::ThreadId>>>,
         query_order_received: Arc<AtomicBool>,
         query_order_ids: Arc<Mutex<Vec<ClientOrderId>>>,
         bulk_order_report_requested: Arc<AtomicBool>,
@@ -1405,42 +1413,23 @@ pub(crate) mod serial_tests {
             Ok(())
         }
 
+        fn generate_order_status_reports_task(
+            &self,
+            _cmd: &GenerateOrderStatusReports,
+        ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
+            self.state
+                .report_worker
+                .load(Ordering::Relaxed)
+                .then(|| self.order_report_task())
+        }
+
         async fn generate_order_status_reports(
             &self,
             _cmd: &GenerateOrderStatusReports,
         ) -> anyhow::Result<Vec<OrderStatusReport>> {
-            self.state
-                .bulk_order_report_requested
-                .store(true, Ordering::Relaxed);
-            let request_count = self
-                .state
-                .bulk_order_report_count
-                .fetch_add(1, Ordering::Relaxed)
-                + 1;
-
-            if self.block_every_second_order_report && request_count.is_multiple_of(2) {
-                return std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await;
-            }
-
-            if let Some(release) = &self.report_release
-                && (!self.report_release_once || request_count == 1)
-            {
-                release.notified().await;
-            }
-
-            if self.order_reports_complete {
-                self.state
-                    .report_response_returned
-                    .store(true, Ordering::Relaxed);
-                Ok(self.order_reports.clone())
-            } else if self.report_release.is_some() {
-                self.state
-                    .report_response_returned
-                    .store(true, Ordering::Relaxed);
-                Ok(Vec::new())
-            } else {
-                std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await
-            }
+            let task = self.order_report_task();
+            task.collection.await;
+            task.result.await
         }
 
         async fn generate_order_status_report(
@@ -1529,6 +1518,10 @@ pub(crate) mod serial_tests {
             }
 
             if self.position_reports_complete {
+                if self.state.report_cpu_ns.load(Ordering::Relaxed) != 0 {
+                    Self::run_report_cpu(&self.state, request_count);
+                }
+
                 self.state
                     .report_response_returned
                     .store(true, Ordering::Relaxed);
@@ -1541,6 +1534,96 @@ pub(crate) mod serial_tests {
             } else {
                 std::future::pending::<anyhow::Result<Vec<PositionStatusReport>>>().await
             }
+        }
+    }
+
+    impl BlockingReportExecutionClient {
+        fn order_report_task(&self) -> ExecutionReportTask<Vec<OrderStatusReport>> {
+            let state = self.state.clone();
+            let block_every_second_order_report = self.block_every_second_order_report;
+            let report_release = self.report_release.clone();
+            let report_release_once = self.report_release_once;
+            let order_reports_complete = self.order_reports_complete;
+            let order_reports = self.order_reports.clone();
+
+            ExecutionReportTask::new(
+                async move {
+                    let _collection_guard = ReportCollectionGuard::new(state.clone());
+                    state
+                        .bulk_order_report_requested
+                        .store(true, Ordering::Relaxed);
+                    let request_count = state
+                        .bulk_order_report_count
+                        .fetch_add(1, Ordering::Relaxed)
+                        + 1;
+
+                    if block_every_second_order_report && request_count.is_multiple_of(2) {
+                        return std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>()
+                            .await;
+                    }
+
+                    if let Some(release) = &report_release
+                        && (!report_release_once || request_count == 1)
+                    {
+                        release.notified().await;
+                    }
+
+                    *state.report_thread.lock() = Some(std::thread::current().id());
+                    Self::run_report_cpu(&state, request_count);
+
+                    if order_reports_complete {
+                        state
+                            .report_response_returned
+                            .store(true, Ordering::Relaxed);
+                        Ok(order_reports.clone())
+                    } else if report_release.is_some() {
+                        state
+                            .report_response_returned
+                            .store(true, Ordering::Relaxed);
+                        Ok(Vec::new())
+                    } else {
+                        std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await
+                    }
+                },
+                Ok,
+            )
+        }
+
+        fn run_report_cpu(state: &BlockingReportClientState, request_count: usize) {
+            if request_count == 1 || state.report_cpu_repeated.load(Ordering::Relaxed) {
+                let duration = Duration::from_nanos(state.report_cpu_ns.load(Ordering::Relaxed));
+                state.report_cpu_active.store(true, Ordering::Release);
+                state.report_cpu_count.fetch_add(1, Ordering::Relaxed);
+                let started = std::time::Instant::now();
+                while started.elapsed() < duration {
+                    std::hint::spin_loop();
+                }
+
+                state.report_cpu_active.store(false, Ordering::Release);
+            }
+        }
+    }
+
+    struct ReportCollectionGuard(BlockingReportClientState);
+
+    impl ReportCollectionGuard {
+        fn new(state: BlockingReportClientState) -> Self {
+            let active = state
+                .report_collections_active
+                .fetch_add(1, Ordering::Relaxed)
+                + 1;
+            state
+                .report_collections_max
+                .fetch_max(active, Ordering::Relaxed);
+            Self(state)
+        }
+    }
+
+    impl Drop for ReportCollectionGuard {
+        fn drop(&mut self) {
+            self.0
+                .report_collections_active
+                .fetch_sub(1, Ordering::Relaxed);
         }
     }
 
@@ -5491,6 +5574,277 @@ pub(crate) mod serial_tests {
         assert!(result.unwrap().is_ok());
         assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
         assert!(state.instrument_received.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[case::inline(false)]
+    #[case::worker(true)]
+    #[cfg(not(madsim))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_report_timeout_discards_late_cpu_result_and_retries(#[case] worker: bool) {
+        let state = BlockingReportClientState::default();
+        state.report_worker.store(worker, Ordering::Relaxed);
+        state.report_cpu_ns.store(150_000_000, Ordering::Relaxed);
+        let client_id = ClientId::from("BLOCKING-REPORT");
+        let client_order_id = ClientOrderId::from("O-WORKER-TIMEOUT");
+        let venue_order_id = VenueOrderId::from("V-WORKER-TIMEOUT");
+        let mut factory = BlockingReportExecutionClientFactory::configurable(
+            client_id,
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(vec![canceled_order_report(client_order_id, venue_order_id)]);
+        factory.block_every_second_order_report = true;
+        let mut config = reconciliation_node_config(1);
+        config.exec_engine.open_check_interval_secs = Some(0.5);
+        config.timeout_reconciliation = Duration::from_millis(25);
+        let mut node = reconciliation_node("WorkerReportTimeoutNode", config, factory);
+        add_accepted_test_order(&node, client_order_id, venue_order_id, client_id);
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let driver_state = state.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async { driver_state.bulk_order_report_count.load(Ordering::Relaxed) == 2 },
+                Duration::from_secs(2),
+            )
+            .await;
+            driver_handle.stop();
+        };
+
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(node.run(), driver)
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(state.bulk_order_report_count.load(Ordering::Relaxed), 2);
+        assert!(state.report_response_returned.load(Ordering::Relaxed));
+        assert_eq!(state.report_collections_max.load(Ordering::Relaxed), 1);
+        assert_eq!(state.report_collections_active.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Accepted
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[cfg(not(madsim))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_position_report_timeout_discards_late_cpu_result() {
+        let state = BlockingReportClientState::default();
+        state.report_cpu_ns.store(150_000_000, Ordering::Relaxed);
+        let client_id = ClientId::from("BLOCKING-REPORT");
+        let client_order_id = ClientOrderId::from("O-POSITION-TIMEOUT");
+        let venue_order_id = VenueOrderId::from("V-POSITION-TIMEOUT");
+        let release = Arc::new(tokio::sync::Notify::new());
+        let fill = reconciliation_fill_report(
+            client_order_id,
+            venue_order_id,
+            TradeId::from("T-POSITION-TIMEOUT"),
+            Price::from("100.0"),
+            Money::from("0.25 USDT"),
+            UnixNanos::from(1_000_000),
+        );
+        let mut factory = BlockingReportExecutionClientFactory::configurable(
+            client_id,
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_position_reports(vec![reconciliation_position_report(Quantity::from("1.0"))])
+        .with_fill_report_responses([vec![fill]], None)
+        .with_fill_reports_at_window_end();
+        factory.report_release = Some(release.clone());
+        let mut config = reconciliation_node_config(1);
+        config.exec_engine.open_check_interval_secs = None;
+        config.exec_engine.position_check_interval_secs = Some(0.5);
+        config.timeout_reconciliation = Duration::from_millis(25);
+        let mut node = reconciliation_node("PositionReportTimeoutNode", config, factory);
+        add_accepted_test_order(&node, client_order_id, venue_order_id, client_id);
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let driver_state = state.clone();
+        release.notify_one();
+
+        let driver = async move {
+            wait_until_async(
+                || async { driver_state.position_report_count.load(Ordering::Relaxed) == 2 },
+                Duration::from_secs(2),
+            )
+            .await;
+            driver_handle.stop();
+        };
+
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(node.run(), driver)
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(state.position_report_count.load(Ordering::Relaxed), 2);
+        assert_eq!(state.report_cpu_count.load(Ordering::Relaxed), 1);
+        assert!(state.report_response_returned.load(Ordering::Relaxed));
+        assert_eq!(state.fill_report_count.load(Ordering::Relaxed), 0);
+        let cache = node.kernel().cache();
+        let cache = cache.borrow();
+        assert_eq!(
+            cache.order(&client_order_id).unwrap().status(),
+            OrderStatus::Accepted
+        );
+        assert_eq!(cache.positions_open(None, None, None, None, None).len(), 0);
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[case::inline(false)]
+    #[case::worker(true)]
+    #[cfg(not(madsim))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_report_collection_reconciles_canceled_order_on_core(#[case] worker: bool) {
+        let state = BlockingReportClientState::default();
+        state.report_worker.store(worker, Ordering::Relaxed);
+        state.report_cpu_ns.store(25_000_000, Ordering::Relaxed);
+        let client_id = ClientId::from("BLOCKING-REPORT");
+        let client_order_id = ClientOrderId::from("O-COLLECTION-CANCELED");
+        let venue_order_id = VenueOrderId::from("V-COLLECTION-CANCELED");
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            client_id,
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(vec![canceled_order_report(client_order_id, venue_order_id)]);
+        let mut config = reconciliation_node_config(1);
+        config.exec_engine.open_check_interval_secs = Some(1.0);
+        let mut node = reconciliation_node("ReportCollectionCanceledNode", config, factory);
+        add_accepted_test_order(&node, client_order_id, venue_order_id, client_id);
+        let core_thread = std::thread::current().id();
+        let strategy_id = node
+            .kernel()
+            .cache()
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .strategy_id();
+        let event_topic = switchboard::get_event_order_topic(strategy_id);
+        let canceled_events = Rc::new(Cell::new(0));
+        let canceled_events_for_handler = Rc::clone(&canceled_events);
+
+        let event_handler = msgbus::TypedHandler::from(move |event: &OrderEventAny| {
+            if let OrderEventAny::Canceled(canceled) = event {
+                assert_eq!(std::thread::current().id(), core_thread);
+                assert_eq!(canceled.client_order_id, client_order_id);
+                assert_eq!(canceled.venue_order_id, Some(venue_order_id));
+                canceled_events_for_handler.set(canceled_events_for_handler.get() + 1);
+            }
+        });
+
+        msgbus::subscribe_order_events(event_topic.into(), event_handler.clone(), None);
+        let cache = node.kernel().cache();
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+
+        let driver = async move {
+            wait_until_async(
+                || async {
+                    cache.borrow().order(&client_order_id).unwrap().status()
+                        == OrderStatus::Canceled
+                },
+                Duration::from_secs(2),
+            )
+            .await;
+
+            driver_handle.stop();
+        };
+
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(node.run(), driver)
+        })
+        .await
+        .unwrap();
+
+        msgbus::unsubscribe_order_events(event_topic.into(), &event_handler);
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(canceled_events.get(), 1);
+        assert_eq!(state.bulk_order_report_count.load(Ordering::Relaxed), 1);
+        assert_eq!(state.report_cpu_count.load(Ordering::Relaxed), 1);
+        assert_eq!(state.report_collections_max.load(Ordering::Relaxed), 1);
+        assert_eq!(state.report_collections_active.load(Ordering::Relaxed), 0);
+        assert_eq!(state.report_thread.lock().unwrap() != core_thread, worker);
+        assert_eq!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Canceled
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[cfg(not(madsim))]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_worker_report_allows_instrument_update_and_drains_at_shutdown() {
+        let state = BlockingReportClientState::default();
+        state.report_worker.store(true, Ordering::Relaxed);
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        );
+        let mut config = reconciliation_node_config(1);
+        config.exec_engine.open_check_interval_secs = Some(0.1);
+        let mut node = reconciliation_node("WorkerReportInstrumentNode", config, factory);
+        let handle = node.handle();
+        let driver_handle = handle.clone();
+        let driver_state = state.clone();
+        let core_thread = std::thread::current().id();
+
+        let driver = async move {
+            wait_until_async(
+                || async {
+                    driver_state
+                        .bulk_order_report_requested
+                        .load(Ordering::Relaxed)
+                },
+                Duration::from_secs(1),
+            )
+            .await;
+
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            let topic = switchboard::get_instrument_topic(instrument.id());
+            msgbus::publish_instrument(topic, &instrument);
+            wait_until_async(
+                || async { driver_state.instrument_received.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            driver_handle.stop();
+        };
+
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(node.run(), driver)
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(state.bulk_order_report_count.load(Ordering::Relaxed), 1);
+        assert!(!state.report_response_returned.load(Ordering::Relaxed));
+        assert!(state.instrument_received.load(Ordering::Relaxed));
+        assert_ne!(state.report_thread.lock().unwrap(), core_thread);
         assert_eq!(handle.state(), NodeState::Stopped);
     }
 

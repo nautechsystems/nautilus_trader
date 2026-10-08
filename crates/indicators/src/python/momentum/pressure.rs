@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
@@ -27,13 +28,12 @@ impl Pressure {
     /// Creates a new `Pressure` instance.
     #[new]
     #[pyo3(signature = (period, ma_type=None, atr_floor=None))]
-    #[must_use]
     pub fn py_new(
         period: usize,
         ma_type: Option<MovingAverageType>,
         atr_floor: Option<f64>,
-    ) -> Self {
-        Self::new(period, ma_type, atr_floor)
+    ) -> PyResult<Self> {
+        Self::new_checked(period, ma_type, atr_floor).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

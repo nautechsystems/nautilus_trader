@@ -15,6 +15,8 @@
 
 //! Execution client trait definition.
 
+use std::{fmt::Debug, future::Future, pin::Pin};
+
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_core::{DurationNanos, Params, UnixNanos, time::get_atomic_clock_realtime};
@@ -42,6 +44,54 @@ use crate::messages::execution::{
 /// Default maximum absolute position difference tolerated during reconciliation.
 pub const DEFAULT_POSITION_RECONCILIATION_TOLERANCE: Decimal =
     Decimal::from_parts(1, 0, 0, false, 8);
+
+/// Owned report collection with a core-thread continuation.
+///
+/// Only `collection` runs on a worker. `result` receives the collected value and finishes it on
+/// the caller's thread, allowing cache-dependent decisions without moving a live client or cache.
+#[must_use]
+pub struct ExecutionReportTask<T> {
+    /// Worker-safe collection, including decoding and report construction.
+    pub collection: Pin<Box<dyn Future<Output = ()> + Send>>,
+    /// Core-thread receipt and finalization of the collection.
+    pub result: Pin<Box<dyn Future<Output = anyhow::Result<T>>>>,
+}
+
+impl<T> Debug for ExecutionReportTask<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct(stringify!(ExecutionReportTask))
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T: 'static> ExecutionReportTask<T> {
+    /// Creates an owned collection and its core-thread continuation.
+    ///
+    /// The collection must not access the live cache. Neither phase may apply execution events.
+    /// The continuation runs only after the worker terminates; canceled collections never run it.
+    pub fn new<C, F, M>(collection: F, finish: M) -> Self
+    where
+        C: Send + 'static,
+        F: Future<Output = anyhow::Result<C>> + Send + 'static,
+        M: FnOnce(C) -> anyhow::Result<T> + 'static,
+    {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+
+        Self {
+            collection: Box::pin(async move {
+                let _ = sender.send(collection.await);
+            }),
+            result: Box::pin(async move {
+                finish(
+                    receiver
+                        .await
+                        .context("report collection stopped without a result")??,
+                )
+            }),
+        }
+    }
+}
 
 /// Defines the interface for an execution client managing order operations.
 ///
@@ -269,6 +319,17 @@ pub trait ExecutionClient {
         Ok(())
     }
 
+    /// Prepares worker-safe single-order collection, or uses inline collection.
+    ///
+    /// Preparation and the task's continuation run on the core thread. Neither may retain a
+    /// borrowed client across an await. Return `None` when collection is not yet worker-safe.
+    fn generate_order_status_report_task(
+        &self,
+        _cmd: &GenerateOrderStatusReport,
+    ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+        None
+    }
+
     /// Generates a single order status report.
     ///
     /// # Errors
@@ -280,6 +341,14 @@ pub trait ExecutionClient {
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         log_not_implemented(cmd);
         Ok(None)
+    }
+
+    /// Prepares worker-safe bulk order collection, or uses inline collection.
+    fn generate_order_status_reports_task(
+        &self,
+        _cmd: &GenerateOrderStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
+        None
     }
 
     /// Generates multiple order status reports.
@@ -295,6 +364,14 @@ pub trait ExecutionClient {
         Ok(Vec::new())
     }
 
+    /// Prepares worker-safe fill collection, or uses inline collection.
+    fn generate_fill_reports_task(
+        &self,
+        _cmd: &GenerateFillReports,
+    ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
+        None
+    }
+
     /// Generates fill reports based on execution results.
     ///
     /// # Errors
@@ -306,6 +383,14 @@ pub trait ExecutionClient {
     ) -> anyhow::Result<Vec<FillReport>> {
         log_not_implemented(&cmd);
         Ok(Vec::new())
+    }
+
+    /// Prepares worker-safe position collection, or uses inline collection.
+    fn generate_position_status_reports_task(
+        &self,
+        _cmd: &GeneratePositionStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<PositionStatusReport>>> {
+        None
     }
 
     /// Generates position status reports.

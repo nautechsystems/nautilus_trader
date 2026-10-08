@@ -15,6 +15,8 @@
 
 //! File-level admin operations: existence checks, deletion, name resets, leaf-directory walk.
 
+use std::collections::BTreeMap;
+
 use ahash::AHashSet;
 use futures::StreamExt;
 use nautilus_core::UnixNanos;
@@ -24,7 +26,7 @@ use crate::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
         intervals::are_intervals_disjoint,
-        io::min_max_from_parquet_metadata_object_store,
+        io::{decode_object_store_segment, min_max_from_parquet_metadata_object_store},
         paths::{make_object_store_path, timestamps_to_filename},
     },
     catalog::types::{CatalogDataType, parquet_catalog_data_type_path_prefixes},
@@ -67,7 +69,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `path`: The file path to delete, relative to the catalog structure.
+    /// - `path`: The file path to delete, as an object-store listing returns it.
     ///
     /// # Returns
     ///
@@ -85,7 +87,7 @@ impl ParquetDataCatalog {
     ///
     /// This operation is irreversible. Ensure the file is no longer needed before deletion.
     pub(crate) fn delete_file(&self, path: &str) -> anyhow::Result<()> {
-        let object_path = self.to_object_path(path)?;
+        let object_path = self.to_object_path_parsed(path)?;
         self.execute_async(|| async {
             self.object_store
                 .delete(&object_path)
@@ -202,7 +204,9 @@ impl ParquetDataCatalog {
     ///
     /// This internal method scans all Parquet files in a directory, reads their metadata to
     /// determine the actual timestamp range of their content, and renames the files accordingly.
-    /// This ensures that filenames accurately reflect the data they contain.
+    /// This ensures that filenames accurately reflect the data they contain. The listing includes
+    /// subdirectories, so each file keeps its own directory and is validated against the files
+    /// that share it.
     ///
     /// # Parameters
     ///
@@ -225,7 +229,7 @@ impl ParquetDataCatalog {
     /// Returns an error if:
     /// - Directory listing fails.
     /// - Metadata reading fails for any file.
-    /// - The content intervals are not disjoint.
+    /// - The content intervals within a file's directory are not disjoint.
     /// - A new name matches the current name of another file.
     /// - File move operations fail.
     /// - Object store operations fail.
@@ -238,11 +242,11 @@ impl ParquetDataCatalog {
     ///   delete, so a failure can leave a file under both names.
     fn reset_file_names(&self, directory: &str) -> anyhow::Result<()> {
         let parquet_files = self.list_parquet_files(directory)?;
-        let mut intervals = Vec::with_capacity(parquet_files.len());
+        let mut intervals_by_directory = BTreeMap::<ObjectPath, Vec<(u64, u64)>>::new();
         let mut moves = Vec::with_capacity(parquet_files.len());
 
         for file in parquet_files {
-            let object_path = ObjectPath::from(file.as_str());
+            let object_path = self.to_object_path_parsed(&file)?;
 
             let (first_ts, last_ts) = self.execute_async(|| async {
                 min_max_from_parquet_metadata_object_store(
@@ -255,18 +259,23 @@ impl ParquetDataCatalog {
 
             let new_filename =
                 timestamps_to_filename(UnixNanos::from(first_ts), UnixNanos::from(last_ts));
-            let new_file_path = make_object_store_path(directory, [&new_filename]);
-            let new_object_path = ObjectPath::from(new_file_path);
+            let file_directory = object_path.parent().unwrap_or_default();
+            let new_object_path = file_directory.clone().join(new_filename.as_str());
 
-            intervals.push((first_ts, last_ts));
+            intervals_by_directory
+                .entry(file_directory)
+                .or_default()
+                .push((first_ts, last_ts));
             moves.push((object_path, new_object_path));
         }
 
-        anyhow::ensure!(
-            are_intervals_disjoint(&intervals),
-            "Cannot reset file names in directory '{directory}': content intervals are not \
-             disjoint: {intervals:?}",
-        );
+        for (file_directory, intervals) in &intervals_by_directory {
+            anyhow::ensure!(
+                are_intervals_disjoint(intervals),
+                "Cannot reset file names in directory '{file_directory}': content intervals are \
+                 not disjoint: {intervals:?}",
+            );
+        }
 
         // Moves overwrite, so a new name held by another file would replace that file
         let current_paths = moves
@@ -340,11 +349,16 @@ impl ParquetDataCatalog {
 
             while let Some(object) = stream.next().await {
                 let object = object?;
-                let path_str = object.location.to_string();
+                let parts = object.location.parts().collect::<Vec<_>>();
 
-                // Extract directory path
-                if let Some(parent) = std::path::Path::new(&path_str).parent() {
-                    directories.insert(parent.to_string_lossy().to_string());
+                // Decode to match `make_path` output, which callers encode again
+                if let Some((_, parent)) = parts.split_last() {
+                    let directory = parent
+                        .iter()
+                        .map(|part| decode_object_store_segment(part.as_ref()))
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    directories.insert(directory);
                 }
             }
 

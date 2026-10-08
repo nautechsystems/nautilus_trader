@@ -150,6 +150,63 @@ for control_flow in match for while loop spawn; do
   expect_failure "$control_flow_case" "Missing blank line above .${control_flow}."
 done
 
+for control_flow in if for; do
+  for continuation in first later absent; do
+    wrapped_case="$CASE_ROOT/wrapped-$control_flow-$continuation"
+    create_case "$wrapped_case"
+
+    case "$continuation" in
+      first)
+        first_body='        consume(expected);'
+        next_body='        work();'
+        ;;
+      later)
+        first_body='        work();'
+        next_body='        consume(expected);'
+        ;;
+      absent)
+        first_body='        work();'
+        next_body='        consume(unrelated);'
+        ;;
+    esac
+
+    case "$control_flow" in
+      if)
+        write_rs "$wrapped_case/crates/common/src/lib.rs" \
+          'fn check() {' \
+          '    let expected = prepare();' \
+          '    if current_start_date' \
+          '        .zip(current_end_date)' \
+          '        .is_some_and(|(start, end)| end <= start)' \
+          '    {' \
+          "$first_body" \
+          "$next_body" \
+          '    }' \
+          '}'
+        ;;
+      for)
+        write_rs "$wrapped_case/crates/common/src/lib.rs" \
+          'fn check() {' \
+          '    let expected = prepare();' \
+          '    for contract in contracts' \
+          '        .iter()' \
+          '        .filter(|contract| contract.security_type == SecurityType::Spread)' \
+          '    {' \
+          "$first_body" \
+          "$next_body" \
+          '    }' \
+          '}'
+        ;;
+    esac
+
+    if [ "$continuation" = first ]; then
+      expect_success "$wrapped_case"
+    else
+      expect_failure "$wrapped_case" "Missing blank line above .${control_flow}."
+    fi
+  done
+done
+
 valid_control_flow_case="$CASE_ROOT/allow-first-control-flow-statements"
 create_case "$valid_control_flow_case"
 write_rs "$valid_control_flow_case/crates/common/src/lib.rs" \

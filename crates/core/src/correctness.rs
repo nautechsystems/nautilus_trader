@@ -1025,6 +1025,7 @@ mod tests {
     #[case("a ")]
     #[case("abc")]
     #[case("ETHUSDT")]
+    #[case("\u{9f99}\u{867e}USDT-PERP")] // <-- non-ASCII exchange symbol
     fn test_check_valid_string_utf8_with_valid_values(#[case] s: &str) {
         assert!(check_valid_string_utf8(s, "value").is_ok());
     }

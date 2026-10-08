@@ -26,6 +26,7 @@ from nautilus_trader.execution import CappedOptionFeeModel
 from nautilus_trader.execution import CompetitionAwareFillModel
 from nautilus_trader.execution import DefaultFillModel
 from nautilus_trader.execution import FeeModel
+from nautilus_trader.execution import FillModel
 from nautilus_trader.execution import FixedFeeModel
 from nautilus_trader.execution import LimitOrderPartialFillModel
 from nautilus_trader.execution import MakerTakerFeeModel
@@ -181,6 +182,34 @@ def test_volume_sensitive_fill_model() -> None:
     model = VolumeSensitiveFillModel(prob_fill_on_limit=0.8, prob_slippage=0.1)
 
     assert model is not None
+
+
+def test_fill_model_subclass_with_init_args() -> None:
+    """
+    Test fill model subclass with init args.
+    """
+
+    class FixedFill(FillModel):
+        """
+        Collect fixed fill tests.
+        """
+
+        def __init__(self, fill_on_limit: bool) -> None:
+            """
+            Initialize the instance.
+            """
+            self.fill_on_limit = fill_on_limit
+
+        def is_limit_filled(self) -> bool:
+            """
+            Return the configured limit fill outcome.
+            """
+            return self.fill_on_limit
+
+    model = FixedFill(fill_on_limit=False)
+
+    assert model.fill_on_limit is False
+    assert model.is_limit_filled() is False
 
 
 def test_fixed_fee_model() -> None:

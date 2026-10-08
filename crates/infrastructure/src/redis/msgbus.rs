@@ -304,7 +304,7 @@ impl RedisMessageBusBacking {
         let (stream_rx, stream_handle) = if external_streams.is_empty() {
             (None, None)
         } else {
-            let stream_signal_clone = stream_signal.clone();
+            let stream_signal_clone = Arc::clone(&stream_signal);
             let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(100_000);
             (
                 Some(stream_rx),
@@ -326,7 +326,7 @@ impl RedisMessageBusBacking {
         // Create heartbeat task
         let heartbeat_signal = Arc::new(AtomicBool::new(false));
         let heartbeat_handle = if let Some(heartbeat_interval_secs) = heartbeat_interval_secs {
-            let signal = heartbeat_signal.clone();
+            let signal = Arc::clone(&heartbeat_signal);
             let pub_tx_clone = pub_tx.clone();
 
             Some(get_runtime().spawn(async move {
@@ -1429,7 +1429,7 @@ mod tests {
     #[tokio::test]
     async fn test_wait_for_retry_delay_returns_false_when_signaled() {
         let stream_signal = Arc::new(AtomicBool::new(true));
-        let signal = stream_signal.clone();
+        let signal = Arc::clone(&stream_signal);
         let fut = async move { wait_for_retry_delay(Duration::from_secs(30), &signal).await };
 
         let handle = tokio::spawn(fut);
@@ -1549,7 +1549,7 @@ mod serial_tests {
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         // Start the message streaming task
         let handle = tokio::spawn(async move {
@@ -1589,7 +1589,7 @@ mod serial_tests {
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         // Use a message ID in the future, as streaming begins
         // around the timestamp the task is spawned.
@@ -1641,7 +1641,7 @@ mod serial_tests {
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         // Use a message ID in the future, as streaming begins
         // around the timestamp the task is spawned.
@@ -1693,7 +1693,7 @@ mod serial_tests {
         let stream_key = format!("test:stream:no-backlog:{suffix}");
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         let _: () = con
             .xadd(
@@ -1748,7 +1748,7 @@ mod serial_tests {
         let stream_key = format!("test:stream:malformed:{suffix}");
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         let clock = get_atomic_clock_realtime();
         let base_id = clock.get_time_ms() + 1_000_000;
@@ -1834,7 +1834,7 @@ mod serial_tests {
             ..Default::default()
         };
         let stream_signal = Arc::new(AtomicBool::new(true));
-        let signal = stream_signal.clone();
+        let signal = Arc::clone(&stream_signal);
         let handle = tokio::spawn(async move { connect_stream_connection(&config, &signal).await });
 
         wait_until_async(|| async { handle.is_finished() }, Duration::from_secs(1)).await;
@@ -2145,7 +2145,7 @@ mod serial_tests {
         let stream_key2 = format!("test:stream:{suffix}:2");
         let external_streams = vec![stream_key1.clone(), stream_key2.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         let clock = get_atomic_clock_realtime();
         let base_id = clock.get_time_ms() + 1_000_000;
@@ -2213,7 +2213,7 @@ mod serial_tests {
             stream_key3.clone(),
         ];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         let clock = get_atomic_clock_realtime();
         let base_id = clock.get_time_ms() + 1_000_000;
@@ -2300,7 +2300,7 @@ mod serial_tests {
         let signal = Arc::new(AtomicBool::new(false));
 
         // Start the heartbeat task with a short interval
-        let handle = tokio::spawn(run_heartbeat(1, signal.clone(), tx));
+        let handle = tokio::spawn(run_heartbeat(1, Arc::clone(&signal), tx));
 
         let heartbeat = receive_unbounded_bus_message(&mut rx, Duration::from_secs(2)).await;
 

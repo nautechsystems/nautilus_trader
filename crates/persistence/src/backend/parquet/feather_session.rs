@@ -446,7 +446,7 @@ impl ParquetDataCatalog {
 
     /// Reads a feather file and returns all `RecordBatches`.
     fn read_feather_file(&self, file_path: &str) -> anyhow::Result<Vec<RecordBatch>> {
-        let path = ObjectPath::from(file_path);
+        let path = self.to_object_path_parsed(file_path)?;
 
         let batches = self.execute_async(|| async {
             read_feather_record_batches(self.object_store.clone(), &path).await

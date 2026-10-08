@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Interactive Brokers market data enumerations.
+
 use std::{fmt::Display, str::FromStr};
 
 /// Interactive Brokers historical tick request types.
@@ -286,16 +288,6 @@ impl Display for IbHistoricalWhatToShow {
 )]
 pub enum IbRealtimeBarSize {
     Sec5,
-}
-
-impl IbRealtimeBarSize {
-    /// Converts to the rust-ibapi realtime bar-size enum.
-    #[must_use]
-    pub const fn ibapi_bar_size(self) -> ibapi::market_data::realtime::BarSize {
-        match self {
-            Self::Sec5 => ibapi::market_data::realtime::BarSize::Sec5,
-        }
-    }
 }
 
 impl Display for IbRealtimeBarSize {

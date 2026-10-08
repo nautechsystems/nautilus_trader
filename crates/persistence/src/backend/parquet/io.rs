@@ -52,53 +52,6 @@ pub(crate) struct ObjectStoreLocation {
     pub original_uri: String,
 }
 
-/// Writes a `RecordBatch` to a Parquet file using object store, with optional compression.
-///
-/// # Errors
-///
-/// Returns an error if writing to Parquet fails or any I/O operation fails.
-pub async fn write_batch_to_parquet(
-    batch: RecordBatch,
-    path: &str,
-    storage_options: Option<AHashMap<String, String>>,
-    compression: Option<Compression>,
-    max_row_group_size: Option<usize>,
-) -> anyhow::Result<()> {
-    write_batches_to_parquet(
-        &[batch],
-        path,
-        storage_options,
-        compression,
-        max_row_group_size,
-    )
-    .await
-}
-
-/// Writes multiple `RecordBatch` items to a Parquet file using object store, with optional compression, row group sizing, and storage options.
-///
-/// # Errors
-///
-/// Returns an error if `batches` is empty, writing to Parquet fails, or any I/O operation fails.
-pub async fn write_batches_to_parquet(
-    batches: &[RecordBatch],
-    path: &str,
-    storage_options: Option<AHashMap<String, String>>,
-    compression: Option<Compression>,
-    max_row_group_size: Option<usize>,
-) -> anyhow::Result<()> {
-    let (object_store, base_path, _) = create_object_store_from_path(path, storage_options)?;
-
-    write_batches_to_object_store(
-        batches,
-        object_store,
-        &object_path_under_base(&base_path, path),
-        compression,
-        max_row_group_size,
-        None,
-    )
-    .await
-}
-
 /// Reads only the Arrow schema (including key/value metadata) of a Parquet object.
 ///
 /// Avoids decoding any record batches; use when only schema metadata is needed.
@@ -342,44 +295,6 @@ fn deduplicate_record_batches(batches: &[RecordBatch]) -> anyhow::Result<Vec<Rec
     Ok(result)
 }
 
-/// Combines multiple Parquet files using object store with storage options
-///
-/// # Errors
-///
-/// Returns an error if file reading or writing fails.
-pub async fn combine_parquet_files(
-    file_paths: Vec<&str>,
-    new_file_path: &str,
-    storage_options: Option<AHashMap<String, String>>,
-    compression: Option<Compression>,
-    max_row_group_size: Option<usize>,
-    deduplicate: Option<bool>,
-) -> anyhow::Result<()> {
-    if file_paths.len() <= 1 {
-        return Ok(());
-    }
-
-    // Create object store from the first file path (assuming all files are in the same store)
-    let (object_store, base_path, _) =
-        create_object_store_from_path(file_paths[0], storage_options)?;
-
-    // Convert string paths to ObjectPath
-    let object_paths: Vec<ObjectPath> = file_paths
-        .iter()
-        .map(|path| object_path_under_base(&base_path, path))
-        .collect();
-
-    combine_parquet_files_from_object_store(
-        object_store,
-        object_paths,
-        &object_path_under_base(&base_path, new_file_path),
-        compression,
-        max_row_group_size,
-        deduplicate,
-    )
-    .await
-}
-
 /// Combines multiple Parquet files from object store
 ///
 /// # Errors
@@ -603,22 +518,6 @@ fn field_metadata_keys(schema: &Schema) -> impl Iterator<Item = (String, String)
     })
 }
 
-/// Extracts the minimum and maximum i64 values for the specified `column_name` from a Parquet file's metadata using object store with storage options.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be read, metadata parsing fails, or the column is missing or has no statistics.
-pub async fn min_max_from_parquet_metadata(
-    file_path: &str,
-    storage_options: Option<AHashMap<String, String>>,
-    column_name: &str,
-) -> anyhow::Result<(u64, u64)> {
-    let (object_store, base_path, _) = create_object_store_from_path(file_path, storage_options)?;
-    let object_path = object_path_under_base(&base_path, file_path);
-
-    min_max_from_parquet_metadata_object_store(object_store, &object_path, column_name).await
-}
-
 /// Extracts the minimum and maximum i64 values for the specified `column_name` from a Parquet file's metadata in object store.
 ///
 /// # Errors
@@ -773,14 +672,6 @@ pub(crate) fn create_object_store_location_from_path(
     })
 }
 
-fn object_path_under_base(base_path: &str, path: &str) -> ObjectPath {
-    if base_path.is_empty() {
-        ObjectPath::from(path)
-    } else {
-        ObjectPath::from(format!("{base_path}/{path}"))
-    }
-}
-
 pub(crate) fn is_remote_uri_scheme(scheme: &str) -> bool {
     matches!(
         scheme,
@@ -808,7 +699,7 @@ pub(crate) fn remote_full_uri(uri: &str, object_path: &str) -> anyhow::Result<St
     }
 }
 
-/// Appends an encoded object-store path to the local storage URI.
+/// Appends an encoded object-store path to a local or remote storage URI.
 /// Preserve the encoded names used by the native object-store backend.
 pub(crate) fn append_path_to_file_uri(base_uri: &str, path: &str) -> String {
     if let Ok(mut url) = Url::parse(base_uri) {
@@ -1007,11 +898,25 @@ fn create_http_store(
     Ok((Arc::new(http_store), path, uri.to_string()))
 }
 
-/// Helper function to parse URL and extract path component.
+/// Parses a remote storage URI into its URL and object-store base path.
+///
+/// Catalog listings return keys under the encoded base path while lookups use the path as
+/// written, so a base path that URL parsing or object-store path encoding changes is rejected.
 #[cfg(feature = "cloud")]
 fn parse_url_and_path(uri: &str) -> anyhow::Result<(Url, String)> {
     let url = Url::parse(uri)?;
     let path = url.path().trim_start_matches('/').to_string();
+    let raw_path = uri
+        .split_once("://")
+        .and_then(|(_, rest)| rest.split_once('/'))
+        .map_or("", |(_, raw)| raw.trim_start_matches('/'));
+
+    anyhow::ensure!(
+        raw_path == path && ObjectPath::from(path.as_str()).as_ref() == path.trim_end_matches('/'),
+        "Storage URI '{uri}' has a base path that URL parsing or object-store path encoding \
+         changes; use a base path without spaces, non-ASCII, or reserved characters",
+    );
+
     Ok((url, path))
 }
 
@@ -1706,6 +1611,52 @@ mod tests {
             error,
             format!("Configuration key: '{key}' is not valid for store '{store}'.")
         );
+    }
+
+    #[rstest]
+    #[cfg(feature = "cloud")]
+    #[case::non_ascii("s3://test-bucket/préfix")]
+    #[case::space("s3://test-bucket/my prefix")]
+    #[case::tilde("s3://test-bucket/~prefix")]
+    #[case::fragment("s3://test-bucket/pre#fix")]
+    #[case::percent_encoded("s3://test-bucket/pr%C3%A9fix")]
+    #[case::empty_segment("s3://test-bucket/base//path")]
+    #[case::gcs("gs://test-bucket/préfix")]
+    #[case::azure("az://container/préfix")]
+    #[case::abfs("abfs://container@account.dfs.core.windows.net/préfix")]
+    #[case::http("https://example.com/préfix")]
+    fn test_create_object_store_rejects_base_path_that_paths_change(#[case] uri: &str) {
+        let error = create_object_store_from_path(uri, None)
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(
+            error,
+            format!(
+                "Storage URI '{uri}' has a base path that URL parsing or object-store path \
+                 encoding changes; use a base path without spaces, non-ASCII, or reserved \
+                 characters"
+            )
+        );
+    }
+
+    #[rstest]
+    #[cfg(feature = "cloud")]
+    #[case::bucket_root("s3://test-bucket", "")]
+    #[case::trailing_slash("s3://test-bucket/nautilus-data/", "nautilus-data/")]
+    #[case::unreserved(
+        "s3://test-bucket/team_a/v2.catalog/year=2026",
+        "team_a/v2.catalog/year=2026"
+    )]
+    fn test_create_object_store_accepts_ascii_base_path(
+        #[case] uri: &str,
+        #[case] expected_base_path: &str,
+    ) {
+        let (_, base_path, original_uri) = create_object_store_from_path(uri, None).unwrap();
+
+        assert_eq!(base_path, expected_base_path);
+        assert_eq!(original_uri, uri);
     }
 
     #[rstest]

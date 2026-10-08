@@ -840,6 +840,9 @@ pub struct BacktestDataConfig {
     /// If directory-based file registration should be used for more efficient loading.
     #[builder(default)]
     optimize_file_loading: bool,
+    /// If order book deltas should replay as `OrderBookDeltas` batches closed by the `F_LAST` flag.
+    #[builder(default = true)]
+    batch_deltas: bool,
 }
 
 impl<S: backtest_data_config_builder::IsComplete> BacktestDataConfigBuilder<S> {
@@ -996,6 +999,11 @@ impl BacktestDataConfig {
     #[must_use]
     pub fn optimize_file_loading(&self) -> bool {
         self.optimize_file_loading
+    }
+
+    #[must_use]
+    pub fn batch_deltas(&self) -> bool {
+        self.batch_deltas
     }
 
     /// Constructs identifier strings for catalog queries.

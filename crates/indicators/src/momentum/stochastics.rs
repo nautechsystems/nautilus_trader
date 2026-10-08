@@ -13,18 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Debug, Display};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display},
+};
 
-use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 use strum::{AsRefStr, Display as StrumDisplay, EnumIter, EnumString, FromRepr};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::{MAX_PERIOD, is_valid_hlc},
 };
 
-const MAX_PERIOD: usize = 1_024;
+// A flat window (HH == LL) emits this neutral value for both %K and %D
+const FLAT_WINDOW_VALUE: f64 = 50.0;
 
 /// Method for calculating %D in the Stochastics indicator.
 ///
@@ -60,7 +65,6 @@ const MAX_PERIOD: usize = 1_024;
         frozen,
         eq,
         eq_int,
-        hash,
         module = "nautilus_trader.indicators",
         from_py_object,
     )
@@ -72,13 +76,18 @@ const MAX_PERIOD: usize = 1_024;
 pub enum StochasticsDMethod {
     /// Ratio: Nautilus original method: `100 * SUM(close-LL) / SUM(HH-LL)` over `period_d`.
     /// This is range-weighted and has less lag than MA-based methods.
-    #[default]
     Ratio,
     /// MA method: `MA(slowed_k, period_d, ma_type)`.
     /// This produces values compatible with cTrader/MetaTrader/TradingView implementations.
+    #[default]
     MovingAverage,
 }
 
+/// Stochastic oscillator with smoothed K and D outputs.
+///
+/// Defaults to `slowing = 1`, `ma_type = Simple`, and `d_method = MovingAverage`,
+/// so D is a simple moving average of K. Select [`StochasticsDMethod::Ratio`]
+/// for the legacy Nautilus range-weighted D calculation.
 #[repr(C)]
 #[cfg_attr(
     feature = "python",
@@ -106,10 +115,10 @@ pub struct Stochastics {
     /// Whether the indicator has received sufficient inputs to produce valid values.
     pub initialized: bool,
     has_inputs: bool,
-    highs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    lows: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    c_sub_1: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    h_sub_l: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    highs: VecDeque<f64>,
+    lows: VecDeque<f64>,
+    c_sub_1: VecDeque<f64>,
+    h_sub_l: VecDeque<f64>,
     /// Moving average for %K slowing (None when slowing == 1).
     slowing_ma: Option<Box<dyn MovingAverage + Send + Sync>>,
     /// Moving average for %D when `d_method` == `MovingAverage`.
@@ -183,13 +192,19 @@ impl Indicator for Stochastics {
 }
 
 impl Stochastics {
+    pub(crate) const DEFAULT_SLOWING: usize = 1;
+    pub(crate) const DEFAULT_MA_TYPE: MovingAverageType = MovingAverageType::Simple;
+    pub(crate) const DEFAULT_D_METHOD: StochasticsDMethod = StochasticsDMethod::MovingAverage;
+
     /// Creates a new [`Stochastics`] instance with default parameters.
     ///
-    /// This is the backward-compatible constructor that produces identical output
-    /// to the original Nautilus implementation, setting the following to:
+    /// The defaults follow the standard fast-stochastic convention:
     /// - `slowing = 1` (no slowing applied to %K)
-    /// - `ma_type = Exponential` (unused when slowing = 1 or with Ratio method)
-    /// - `d_method = Ratio` (Nautilus native %D calculation)
+    /// - `ma_type = Simple` (%D smoothing type)
+    /// - `d_method = MovingAverage` (%D = SMA of %K)
+    ///
+    /// Use [`Stochastics::new_with_params`] with [`StochasticsDMethod::Ratio`]
+    /// for the legacy Nautilus range-weighted %D.
     ///
     /// # Panics
     ///
@@ -200,9 +215,9 @@ impl Stochastics {
         Self::new_with_params(
             period_k,
             period_d,
-            1,                              // slowing = 1 (no slowing)
-            MovingAverageType::Exponential, // ma_type (unused)
-            StochasticsDMethod::Ratio,      // d_method = Ratio
+            Self::DEFAULT_SLOWING,
+            Self::DEFAULT_MA_TYPE,
+            Self::DEFAULT_D_METHOD,
         )
     }
 
@@ -228,15 +243,25 @@ impl Stochastics {
         ma_type: MovingAverageType,
         d_method: StochasticsDMethod,
     ) -> Self {
-        assert!(
+        Self::new_checked(period_k, period_d, slowing, ma_type, d_method).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period_k: usize,
+        period_d: usize,
+        slowing: usize,
+        ma_type: MovingAverageType,
+        d_method: StochasticsDMethod,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
             period_k > 0 && period_k <= MAX_PERIOD,
             "Stochastics: period_k {period_k} exceeds bounds (1..={MAX_PERIOD})"
         );
-        assert!(
+        anyhow::ensure!(
             period_d > 0 && period_d <= MAX_PERIOD,
             "Stochastics: period_d {period_d} exceeds bounds (1..={MAX_PERIOD})"
         );
-        assert!(
+        anyhow::ensure!(
             slowing > 0 && slowing <= MAX_PERIOD,
             "Stochastics: slowing {slowing} exceeds bounds (1..={MAX_PERIOD})"
         );
@@ -256,7 +281,12 @@ impl Stochastics {
             StochasticsDMethod::Ratio => None,
         };
 
-        Self {
+        let ratio_capacity = if d_method == StochasticsDMethod::Ratio {
+            period_d
+        } else {
+            0
+        };
+        Ok(Self {
             period_k,
             period_d,
             slowing,
@@ -266,13 +296,13 @@ impl Stochastics {
             initialized: false,
             value_k: 0.0,
             value_d: 0.0,
-            highs: ArrayDeque::new(),
-            lows: ArrayDeque::new(),
-            h_sub_l: ArrayDeque::new(),
-            c_sub_1: ArrayDeque::new(),
+            highs: VecDeque::with_capacity(period_k),
+            lows: VecDeque::with_capacity(period_k),
+            h_sub_l: VecDeque::with_capacity(ratio_capacity),
+            c_sub_1: VecDeque::with_capacity(ratio_capacity),
             slowing_ma,
             d_ma,
-        }
+        })
     }
 
     /// Updates the indicator with raw price values.
@@ -283,6 +313,10 @@ impl Stochastics {
     /// - `low`: The low price for the period.
     /// - `close`: The close price for the period.
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
+        if !is_valid_hlc(high, low, close) {
+            return;
+        }
+
         if !self.has_inputs {
             self.has_inputs = true;
         }
@@ -292,20 +326,8 @@ impl Stochastics {
             self.highs.pop_front();
             self.lows.pop_front();
         }
-        let _ = self.highs.push_back(high);
-        let _ = self.lows.push_back(low);
-
-        // Check initialization for period_k (matches original behavior)
-        if !self.initialized
-            && self.highs.len() == self.period_k
-            && self.lows.len() == self.period_k
-        {
-            // Original behavior: set initialized when period_k is filled
-            // (for backward compat with d_method=Ratio, slowing=1)
-            if self.slowing_ma.is_none() && self.d_method == StochasticsDMethod::Ratio {
-                self.initialized = true;
-            }
-        }
+        self.highs.push_back(high);
+        self.lows.push_back(low);
 
         // Calculate highest high and lowest low over period_k
         let k_max_high = self.highs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -317,37 +339,43 @@ impl Stochastics {
                 self.c_sub_1.pop_front();
                 self.h_sub_l.pop_front();
             }
-            let _ = self.c_sub_1.push_back(close - k_min_low);
-            let _ = self.h_sub_l.push_back(k_max_high - k_min_low);
+            self.c_sub_1.push_back(close - k_min_low);
+            self.h_sub_l.push_back(k_max_high - k_min_low);
         }
 
-        // Handle division by zero (flat market)
         #[expect(clippy::float_cmp, reason = "guards divide-by-zero on flat market")]
-        if k_max_high == k_min_low {
-            return;
-        }
+        let raw_k = if k_max_high == k_min_low {
+            FLAT_WINDOW_VALUE
+        } else {
+            100.0 * ((close - k_min_low) / (k_max_high - k_min_low))
+        };
 
-        // Calculate raw %K
-        let raw_k = 100.0 * ((close - k_min_low) / (k_max_high - k_min_low));
+        let k_ready = self.highs.len() == self.period_k;
 
         // Apply slowing if configured (slowing > 1)
         let slowed_k = match &mut self.slowing_ma {
             Some(ma) => {
-                ma.update_raw(raw_k);
+                if k_ready {
+                    ma.update_raw(raw_k);
+                }
                 ma.value()
             }
-            None => raw_k, // No slowing when slowing == 1
+            None => {
+                if k_ready || self.d_method == StochasticsDMethod::Ratio {
+                    raw_k
+                } else {
+                    0.0
+                }
+            }
         };
-        self.value_k = slowed_k;
-
         // Calculate %D based on d_method
-        self.value_d = match self.d_method {
+        let value_d = match self.d_method {
             StochasticsDMethod::Ratio => {
                 // Nautilus original: 100 * SUM(close-LL) / SUM(HH-LL) over period_d
                 // Deques already updated above
                 let sum_h_sub_l: f64 = self.h_sub_l.iter().sum();
                 if sum_h_sub_l == 0.0 {
-                    0.0
+                    FLAT_WINDOW_VALUE
                 } else {
                     100.0 * (self.c_sub_1.iter().sum::<f64>() / sum_h_sub_l)
                 }
@@ -355,7 +383,13 @@ impl Stochastics {
             StochasticsDMethod::MovingAverage => {
                 // cTrader-like: MA(slowed_k, period_d, ma_type)
                 if let Some(ref mut ma) = self.d_ma {
-                    ma.update_raw(slowed_k);
+                    let slowing_ready = self
+                        .slowing_ma
+                        .as_ref()
+                        .is_none_or(|slowing_ma| slowing_ma.initialized());
+                    if k_ready && slowing_ready {
+                        ma.update_raw(slowed_k);
+                    }
                     ma.value()
                 } else {
                     50.0 // Fallback (shouldn't happen)
@@ -367,7 +401,7 @@ impl Stochastics {
         // For slowing > 1, we need additional warmup for the slowing MA
         // For d_method == MovingAverage, we need additional warmup for the %D MA
         if !self.initialized {
-            let base_ready = self.highs.len() == self.period_k;
+            let base_ready = k_ready;
             let slowing_ready = match &self.slowing_ma {
                 Some(ma) => ma.initialized(),
                 None => true,
@@ -383,6 +417,11 @@ impl Stochastics {
             if base_ready && slowing_ready && d_ready {
                 self.initialized = true;
             }
+        }
+
+        if self.initialized || self.d_method == StochasticsDMethod::Ratio {
+            self.value_k = slowed_k;
+            self.value_d = value_d;
         }
     }
 }
@@ -422,12 +461,12 @@ mod tests {
         stochastics_10.update_raw(1.0, 1.0, 1.0);
         stochastics_10.update_raw(2.0, 2.0, 2.0);
         stochastics_10.update_raw(3.0, 3.0, 3.0);
-        assert_eq!(stochastics_10.value_d, 100.0);
-        assert_eq!(stochastics_10.value_k, 100.0);
+        assert_eq!(stochastics_10.value_d, 0.0);
+        assert_eq!(stochastics_10.value_k, 0.0);
     }
 
     #[rstest]
-    fn test_value_with_ten_inputs(mut stochastics_10: Stochastics) {
+    fn test_value_with_full_chain(mut stochastics_10: Stochastics) {
         let high_values = [
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
         ];
@@ -442,6 +481,11 @@ mod tests {
             stochastics_10.update_raw(high_values[i], low_values[i], close_values[i]);
         }
 
+        for value in 16..=19 {
+            let value = f64::from(value);
+            stochastics_10.update_raw(value, value - 0.1, value);
+        }
+
         assert!(stochastics_10.initialized());
         assert_eq!(stochastics_10.value_d, 100.0);
         assert_eq!(stochastics_10.value_k, 100.0);
@@ -449,28 +493,38 @@ mod tests {
 
     #[rstest]
     fn test_initialized_with_required_input(mut stochastics_10: Stochastics) {
-        for i in 1..10 {
+        for i in 1..19 {
             stochastics_10.update_raw(f64::from(i), f64::from(i), f64::from(i));
+            assert!(!stochastics_10.initialized);
         }
-        assert!(!stochastics_10.initialized);
-        stochastics_10.update_raw(10.0, 12.0, 14.0);
+        stochastics_10.update_raw(19.0, 19.0, 19.0);
         assert!(stochastics_10.initialized);
     }
 
     #[rstest]
     fn test_handle_bar(mut stochastics_10: Stochastics, bar_ethusdt_binance_minute_bid: Bar) {
         stochastics_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_approx_equal(stochastics_10.value_d, 49.0909090909);
-        assert_approx_equal(stochastics_10.value_k, 49.0909090909);
+        assert_eq!(stochastics_10.value_d, 0.0);
+        assert_eq!(stochastics_10.value_k, 0.0);
         assert!(stochastics_10.has_inputs);
         assert!(!stochastics_10.initialized);
+        for _ in 1..10 {
+            stochastics_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+        }
+        assert_eq!(stochastics_10.value_k, 0.0);
+        assert_eq!(stochastics_10.value_d, 0.0);
+        assert!(!stochastics_10.initialized);
+        for _ in 0..9 {
+            stochastics_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+        }
+        assert_approx_equal(stochastics_10.value_d, 49.0909090909);
+        assert_approx_equal(stochastics_10.value_k, 49.0909090909);
+        assert!(stochastics_10.initialized);
     }
 
     #[rstest]
     fn test_reset(mut stochastics_10: Stochastics) {
         stochastics_10.update_raw(1.0, 1.0, 1.0);
-        assert_eq!(stochastics_10.c_sub_1.len(), 1);
-        assert_eq!(stochastics_10.h_sub_l.len(), 1);
 
         stochastics_10.reset();
         assert_eq!(stochastics_10.value_d, 0.0);
@@ -482,20 +536,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_defaults_slowing_1_ratio() {
+    fn test_new_defaults_slowing_1_ma_d() {
         let stoch = Stochastics::new(10, 3);
         assert_eq!(stoch.period_k, 10);
         assert_eq!(stoch.period_d, 3);
         assert_eq!(stoch.slowing, 1);
-        assert_eq!(stoch.ma_type, MovingAverageType::Exponential);
-        assert_eq!(stoch.d_method, StochasticsDMethod::Ratio);
+        assert_eq!(stoch.ma_type, MovingAverageType::Simple);
+        assert_eq!(stoch.d_method, StochasticsDMethod::MovingAverage);
         assert!(
             stoch.slowing_ma.is_none(),
             "slowing_ma should be None when slowing == 1"
         );
         assert!(
-            stoch.d_ma.is_none(),
-            "d_ma should be None when d_method == Ratio"
+            stoch.d_ma.is_some(),
+            "d_ma should exist when d_method == MovingAverage"
         );
     }
 
@@ -525,14 +579,14 @@ mod tests {
 
     #[rstest]
     fn test_backward_compatibility_identical_output() {
-        // Create both old-style and new-style with explicit defaults
+        // `new` must equal `new_with_params` with the documented defaults
         let mut stoch_old = Stochastics::new(10, 10);
         let mut stoch_new = Stochastics::new_with_params(
             10,
             10,
             1,
-            MovingAverageType::Exponential,
-            StochasticsDMethod::Ratio,
+            MovingAverageType::Simple,
+            StochasticsDMethod::MovingAverage,
         );
 
         // Feed identical data to both
@@ -700,6 +754,30 @@ mod tests {
     }
 
     #[rstest]
+    #[case(MovingAverageType::Simple, 5)]
+    #[case(MovingAverageType::Exponential, 5)]
+    #[case(MovingAverageType::DoubleExponential, 7)]
+    #[case(MovingAverageType::Wilder, 5)]
+    #[case(MovingAverageType::Hull, 5)]
+    fn test_composite_warmup_uses_selected_ma(
+        #[case] ma_type: MovingAverageType,
+        #[case] warmup: usize,
+    ) {
+        let mut stoch =
+            Stochastics::new_with_params(3, 2, 2, ma_type, StochasticsDMethod::MovingAverage);
+
+        for i in 1..warmup {
+            let value = i as f64;
+            stoch.update_raw(value + 2.0, value, value + 1.0);
+            assert!(!stoch.initialized(), "initialized at input {i}");
+        }
+
+        let value = warmup as f64;
+        stoch.update_raw(value + 2.0, value, value + 1.0);
+        assert!(stoch.initialized());
+    }
+
+    #[rstest]
     fn test_warmup_period_with_ma_d_method() {
         let mut stoch = Stochastics::new_with_params(
             5,
@@ -805,5 +883,24 @@ mod tests {
         // Should not panic, values should be 0 or previous
         assert!(stoch.value_k.is_finite());
         assert!(stoch.value_d.is_finite());
+    }
+
+    #[rstest]
+    fn test_ratio_flat_window_emits_neutral_k_and_d() {
+        let mut stoch = Stochastics::new_with_params(
+            5,
+            3,
+            1,
+            MovingAverageType::Simple,
+            StochasticsDMethod::Ratio,
+        );
+
+        for _ in 0..5 {
+            stoch.update_raw(100.0, 100.0, 100.0);
+        }
+
+        assert!(stoch.initialized());
+        assert_eq!(stoch.value_k, 50.0);
+        assert_eq!(stoch.value_d, 50.0);
     }
 }

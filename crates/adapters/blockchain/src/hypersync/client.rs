@@ -185,7 +185,7 @@ impl HyperSyncClient {
             return;
         };
 
-        let client = self.client.clone();
+        let client = Arc::clone(&self.client);
         let chain = self.chain.name;
         let Some(dex_extended) = get_dex_extended(chain, &dex) else {
             log::error!("Failed to get DEX registration for {dex} on {chain}");
@@ -194,7 +194,7 @@ impl HyperSyncClient {
         let stream_token = self.cancellation_token.child_token();
         let task_token = stream_token.clone();
         let next_from_block = Arc::new(AtomicU64::new(from_block));
-        let task_next_from_block = next_from_block.clone();
+        let task_next_from_block = Arc::clone(&next_from_block);
         let task_filter = filter.clone();
 
         let mut task = TaskSlot::new();
@@ -247,7 +247,6 @@ impl HyperSyncClient {
         let chain = self.chain.name;
         let mut rx = self
             .client
-            .clone()
             .stream(query, StreamConfig::default())
             .await
             .expect("Failed to create stream");
@@ -315,7 +314,6 @@ impl HyperSyncClient {
         let query = Self::construct_block_query(from_block, to_block);
         let mut rx = self
             .client
-            .clone()
             .stream(query, StreamConfig::default())
             .await
             .unwrap();
@@ -344,7 +342,7 @@ impl HyperSyncClient {
         }
 
         let chain = self.chain.name;
-        let client = self.client.clone();
+        let client = Arc::clone(&self.client);
         let tx = if let Some(tx) = &self.tx {
             tx.clone()
         } else {
@@ -1011,7 +1009,7 @@ mod tests {
         let cancellation_token = tokio_util::sync::CancellationToken::new();
         let task_token = cancellation_token.clone();
         let next_from_block = Arc::new(AtomicU64::new(42));
-        let task_next_from_block = next_from_block.clone();
+        let task_next_from_block = Arc::clone(&next_from_block);
 
         let task = tokio::spawn(async move {
             task_token.cancelled().await;

@@ -192,6 +192,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::MarketStatusAction>()?;
     m.add_class::<crate::enums::OmsType>()?;
     m.add_class::<crate::enums::OptionKind>()?;
+    m.add_class::<crate::enums::OptionSideFilter>()?;
     m.add_class::<crate::enums::OtoTriggerMode>()?;
     m.add_class::<crate::enums::OrderSide>()?;
     m.add_class::<crate::enums::OrderStatus>()?;
@@ -426,7 +427,7 @@ mod tests {
             assert!(py_err.is_instance_of::<PyValueError>(py));
             assert_eq!(
                 py_err.value(py).to_string(),
-                "invalid `OptionSeriesId` value 'DERIBIT:BTC:USD': expected format 'VENUE:UNDERLYING:SETTLEMENT:EXPIRY'"
+                "invalid `OptionSeriesId` value 'DERIBIT:BTC:USD': expected format 'VENUE:UNDERLYING:[REFERENCE:]SETTLEMENT:EXPIRY'"
             );
         });
     }

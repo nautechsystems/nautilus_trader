@@ -702,6 +702,117 @@ fn platform_tls_http2_and_protocol_retries() {
 
 #[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
 #[rstest]
+fn proxy_authentication_survives_tls_redirects_without_reaching_origin() {
+    let Some(config) = tls_server_config() else {
+        run_tls_child(
+            "http::tests::proxy_authentication_survives_tls_redirects_without_reaching_origin",
+            &[("RUST_TEST_THREADS", Some("1"))],
+        );
+        return;
+    };
+
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let addr = listener.local_addr().unwrap();
+                let mut config = (*config).clone();
+                config.alpn_protocols.clear();
+                let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+
+                let peer = tokio::spawn(async move {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let initial = read_headers(&mut stream).await;
+                    stream
+                        .write_all(b"HTTP/1.1 302 Found\r\nLocation: https://localhost:443/secure\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        .await
+                        .unwrap();
+                    drop(stream);
+
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let connect = read_headers(&mut stream).await;
+                    stream
+                        .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                        .await
+                        .unwrap();
+                    let mut stream = acceptor.accept(stream).await.unwrap();
+                    let origin = read_headers(&mut stream).await;
+                    stream
+                        .write_all(b"HTTP/1.1 302 Found\r\nLocation: http://localhost:2/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        .await
+                        .unwrap();
+                    drop(stream);
+
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let final_hop = read_headers(&mut stream).await;
+                    stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\naccepted")
+                        .await
+                        .unwrap();
+                    [initial, connect, origin, final_hop]
+                });
+
+                let client = HttpClient::builder()
+                    .use_system_proxy(false)
+                    .proxy_url(format!("http://user:secret@{addr}"))
+                    .timeout_secs(3)
+                    .build()
+                    .unwrap();
+                let headers = HashMap::from([
+                    ("authorization".into(), "Bearer origin-19".into()),
+                    ("cookie".into(), "session=origin-23".into()),
+                ]);
+                let response = client
+                    .request(
+                        Method::GET,
+                        "http://localhost:1/start".into(),
+                        None,
+                        Some(headers),
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                let requests = peer.await.unwrap();
+                let expected_auth = format!("Basic {}", BASE64.encode("user:secret"));
+
+                for (index, (request, target)) in requests
+                    .iter()
+                    .zip([
+                        "GET http://localhost:1/start HTTP/1.1\r\n",
+                        "CONNECT localhost:443 HTTP/1.1\r\n",
+                        "GET /secure HTTP/1.1\r\n",
+                        "GET http://localhost:2/final HTTP/1.1\r\n",
+                    ])
+                    .enumerate()
+                {
+                    let headers: HashMap<_, _> = request
+                        .lines()
+                        .skip(1)
+                        .filter_map(|line| line.split_once(':'))
+                        .map(|(name, value)| (name.to_ascii_lowercase(), value.trim()))
+                        .collect();
+                    assert!(request.starts_with(target), "{request}");
+                    assert_eq!(headers.get("proxy-authorization").copied(), (index != 2).then_some(expected_auth.as_str()), "{request}");
+                    assert_eq!(headers.get("authorization").copied(), (index == 0).then_some("Bearer origin-19"), "{request}");
+                    assert_eq!(headers.get("cookie").copied(), (index == 0).then_some("session=origin-23"), "{request}");
+                }
+
+                assert_eq!(response.status.as_u16(), 200);
+                assert_eq!(response.headers, HashMap::new());
+                assert_eq!(response.body, Bytes::from_static(b"accepted"));
+            })
+            .await
+            .unwrap();
+        });
+}
+
+#[cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple")))]
+#[rstest]
 fn http2_initial_window_follows_environment() {
     let Some(config) = tls_server_config() else {
         for (value, expected) in [
@@ -934,7 +1045,7 @@ async fn send(
         .await
 }
 
-async fn read_headers(stream: &mut tokio::net::TcpStream) -> String {
+async fn read_headers(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> String {
     let mut bytes = Vec::new();
     while !bytes.ends_with(b"\r\n\r\n") {
         bytes.push(stream.read_u8().await.unwrap());

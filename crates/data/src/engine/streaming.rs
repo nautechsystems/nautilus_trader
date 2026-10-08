@@ -610,11 +610,8 @@ impl DataEngine {
         let used_client_id = self
             .get_client(cmd.client_id.as_ref(), cmd.venue.as_ref())
             .map(|client| client.client_id());
-        let (start_dt, end_dt) =
-            bound_request_dates(cmd.start, cmd.end, now_ns.to_datetime_utc(), true);
-        let start_ns = datetime_to_unix_nanos_or_zero(start_dt);
-        let end_ns = datetime_to_unix_nanos_or_zero(end_dt);
-        let start = Some(start_ns);
+        let (start_dt, _) = bound_request_dates(cmd.start, cmd.end, now_ns.to_datetime_utc(), true);
+        let start = Some(datetime_to_unix_nanos_or_zero(start_dt));
         let end = cmd.end.map(datetime_to_unix_nanos_or_zero);
         let mut data = Vec::new();
 
@@ -641,8 +638,9 @@ impl DataEngine {
             resolve_response_client_id(cmd.client_id, used_client_id),
             instrument_response_venue(cmd.venue, &data),
             data,
-            Some(start_ns),
-            Some(end_ns),
+            // Report the queried window: results sorted by ID cannot be trimmed by `ts_init`
+            start,
+            end,
             now_ns,
             Some(catalog_response_params(cmd.params.as_ref())),
         ));

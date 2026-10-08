@@ -61,7 +61,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     live::runner::{replace_exec_event_sender, replace_system_event_sender},
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
@@ -98,6 +98,7 @@ use nautilus_model::{
     },
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -5464,6 +5465,7 @@ async fn test_generate_reports_fixed_lifecycle_cutoff(
     #[case] start_ms: u64,
     #[case] expected_order_ids: Vec<&str>,
     #[case] expected_trade_ids: Vec<&str>,
+    #[values(false, true)] worker: bool,
 ) {
     const OPEN_MS: i64 = 1_700_000_001_000;
     const CLOSE_MS: i64 = 1_700_000_002_000;
@@ -5508,8 +5510,9 @@ async fn test_generate_reports_fixed_lifecycle_cutoff(
         Some(json!({"code":200,"trades":[opening_trade, closing_trade]}));
 
     let start = Some(UnixNanos::from(start_ms * 1_000_000));
-    let order_reports = client
-        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+    let order_reports = generate_order_status_reports(
+        &client,
+        &GenerateOrderStatusReports::new(
             UUID4::new(),
             UnixNanos::from(CLOSE_MS as u64 * 1_000_000),
             false,
@@ -5518,11 +5521,14 @@ async fn test_generate_reports_fixed_lifecycle_cutoff(
             None,
             None,
             None,
-        ))
-        .await
-        .expect("order reports");
-    let fill_reports = client
-        .generate_fill_reports(GenerateFillReports::new(
+        ),
+        worker,
+    )
+    .await
+    .expect("order reports");
+    let fill_reports = generate_fill_reports(
+        &client,
+        GenerateFillReports::new(
             UUID4::new(),
             UnixNanos::from(CLOSE_MS as u64 * 1_000_000),
             Some(eth_perp_id()),
@@ -5531,9 +5537,11 @@ async fn test_generate_reports_fixed_lifecycle_cutoff(
             None,
             None,
             None,
-        ))
-        .await
-        .expect("fill reports");
+        ),
+        worker,
+    )
+    .await
+    .expect("fill reports");
 
     let actual_order_ids = order_reports
         .iter()
@@ -5560,7 +5568,9 @@ async fn test_generate_reports_fixed_lifecycle_cutoff(
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_fill_reports_keeps_recent_fill_on_start_boundary_page() {
+async fn test_generate_fill_reports_keeps_recent_fill_on_start_boundary_page(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -5585,8 +5595,9 @@ async fn test_generate_fill_reports_keeps_recent_fill_on_start_boundary_page() {
         "next_cursor": "older",
     }));
 
-    let reports = client
-        .generate_fill_reports(GenerateFillReports::new(
+    let reports = generate_fill_reports(
+        &client,
+        GenerateFillReports::new(
             UUID4::new(),
             UnixNanos::default(),
             None,
@@ -5595,9 +5606,11 @@ async fn test_generate_fill_reports_keeps_recent_fill_on_start_boundary_page() {
             None,
             None,
             None,
-        ))
-        .await
-        .expect("fill reports");
+        ),
+        worker,
+    )
+    .await
+    .expect("fill reports");
 
     let trade_ids = reports
         .iter()
@@ -5611,7 +5624,9 @@ async fn test_generate_fill_reports_keeps_recent_fill_on_start_boundary_page() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_fill_reports_skips_trade_seen_on_websocket() {
+async fn test_generate_fill_reports_skips_trade_seen_on_websocket(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -5635,8 +5650,9 @@ async fn test_generate_fill_reports_skips_trade_seen_on_websocket() {
 
     *state.trades_response.lock().await = Some(json!({"code":200,"trades":[trade]}));
 
-    let reports = client
-        .generate_fill_reports(GenerateFillReports::new(
+    let reports = generate_fill_reports(
+        &client,
+        GenerateFillReports::new(
             UUID4::new(),
             UnixNanos::default(),
             None,
@@ -5645,9 +5661,11 @@ async fn test_generate_fill_reports_skips_trade_seen_on_websocket() {
             None,
             None,
             None,
-        ))
-        .await
-        .expect("fill reports");
+        ),
+        worker,
+    )
+    .await
+    .expect("fill reports");
 
     assert!(
         reports.is_empty(),
@@ -5659,7 +5677,9 @@ async fn test_generate_fill_reports_skips_trade_seen_on_websocket() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_fill_reports_is_repeatable_for_reconciliation_source() {
+async fn test_generate_fill_reports_is_repeatable_for_reconciliation_source(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -5679,12 +5699,11 @@ async fn test_generate_fill_reports_is_repeatable_for_reconciliation_source() {
             None,
         )
     };
-    let first = client
-        .generate_fill_reports(request())
+
+    let first = generate_fill_reports(&client, request(), worker)
         .await
         .expect("first reconciliation");
-    let second = client
-        .generate_fill_reports(request())
+    let second = generate_fill_reports(&client, request(), worker)
         .await
         .expect("second reconciliation");
 
@@ -5697,15 +5716,16 @@ async fn test_generate_fill_reports_is_repeatable_for_reconciliation_source() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_fill_reports_rejects_repeated_cursor() {
+async fn test_generate_fill_reports_rejects_repeated_cursor(#[values(false, true)] worker: bool) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
     *state.trades_response.lock().await =
         Some(json!({"code":200,"trades":[],"next_cursor":"stuck"}));
 
-    let err = client
-        .generate_fill_reports(GenerateFillReports::new(
+    let err = generate_fill_reports(
+        &client,
+        GenerateFillReports::new(
             UUID4::new(),
             UnixNanos::default(),
             None,
@@ -5714,9 +5734,11 @@ async fn test_generate_fill_reports_rejects_repeated_cursor() {
             None,
             None,
             None,
-        ))
-        .await
-        .unwrap_err();
+        ),
+        worker,
+    )
+    .await
+    .unwrap_err();
 
     assert!(err.to_string().contains("repeated cursor `stuck`"));
     assert_eq!(state.trades_calls.load(Ordering::Relaxed), 2);
@@ -5773,15 +5795,18 @@ async fn test_failed_fill_sweep_does_not_poison_live_replay() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_reports_rejects_repeated_inactive_cursor() {
+async fn test_generate_order_status_reports_rejects_repeated_inactive_cursor(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
     *state.active_orders_response.lock().await = Some(http_orders_payload(&[], None));
     *state.inactive_orders_response.lock().await = Some(http_orders_payload(&[], Some("stuck")));
 
-    let err = client
-        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+    let err = generate_order_status_reports(
+        &client,
+        &GenerateOrderStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             false,
@@ -5790,9 +5815,11 @@ async fn test_generate_order_status_reports_rejects_repeated_inactive_cursor() {
             None,
             None,
             None,
-        ))
-        .await
-        .unwrap_err();
+        ),
+        worker,
+    )
+    .await
+    .unwrap_err();
 
     assert!(err.to_string().contains("repeated cursor `stuck`"));
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 2);
@@ -5802,14 +5829,17 @@ async fn test_generate_order_status_reports_rejects_repeated_inactive_cursor() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_report_commands_reject_unknown_explicit_instrument_without_http_fanout() {
+async fn test_report_commands_reject_unknown_explicit_instrument_without_http_fanout(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
     let unknown = InstrumentId::from("UNKNOWN-PERP.LIGHTER");
 
-    let order_error = client
-        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+    let order_error = generate_order_status_reports(
+        &client,
+        &GenerateOrderStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             true,
@@ -5818,11 +5848,14 @@ async fn test_report_commands_reject_unknown_explicit_instrument_without_http_fa
             None,
             None,
             None,
-        ))
-        .await
-        .expect_err("unknown order-report instrument must fail");
-    let fill_error = client
-        .generate_fill_reports(GenerateFillReports::new(
+        ),
+        worker,
+    )
+    .await
+    .expect_err("unknown order-report instrument must fail");
+    let fill_error = generate_fill_reports(
+        &client,
+        GenerateFillReports::new(
             UUID4::new(),
             UnixNanos::default(),
             Some(unknown),
@@ -5831,11 +5864,14 @@ async fn test_report_commands_reject_unknown_explicit_instrument_without_http_fa
             None,
             None,
             None,
-        ))
-        .await
-        .expect_err("unknown fill-report instrument must fail");
-    let position_error = client
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+        ),
+        worker,
+    )
+    .await
+    .expect_err("unknown fill-report instrument must fail");
+    let position_error = generate_position_status_reports(
+        &client,
+        &GeneratePositionStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             Some(unknown),
@@ -5843,9 +5879,11 @@ async fn test_report_commands_reject_unknown_explicit_instrument_without_http_fa
             None,
             None,
             None,
-        ))
-        .await
-        .expect_err("unknown position-report instrument must fail");
+        ),
+        worker,
+    )
+    .await
+    .expect_err("unknown position-report instrument must fail");
 
     assert!(order_error.to_string().contains("order report instrument"));
     assert!(fill_error.to_string().contains("fill instrument"));
@@ -5863,7 +5901,9 @@ async fn test_report_commands_reject_unknown_explicit_instrument_without_http_fa
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_open_order_reports_fail_when_an_in_scope_row_cannot_be_parsed() {
+async fn test_open_order_reports_fail_when_an_in_scope_row_cannot_be_parsed(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -5871,8 +5911,9 @@ async fn test_open_order_reports_fail_when_an_in_scope_row_cannot_be_parsed() {
     unmapped_order["market_index"] = json!(999);
     *state.active_orders_response.lock().await = Some(http_orders_payload(&[unmapped_order], None));
 
-    let error = client
-        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+    let error = generate_order_status_reports(
+        &client,
+        &GenerateOrderStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             true,
@@ -5881,9 +5922,11 @@ async fn test_open_order_reports_fail_when_an_in_scope_row_cannot_be_parsed() {
             None,
             None,
             None,
-        ))
-        .await
-        .expect_err("unmapped active order must fail direct reconciliation");
+        ),
+        worker,
+    )
+    .await
+    .expect_err("unmapped active order must fail direct reconciliation");
 
     assert!(
         error
@@ -5898,7 +5941,9 @@ async fn test_open_order_reports_fail_when_an_in_scope_row_cannot_be_parsed() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_single_order_report_fails_when_matching_row_cannot_be_parsed() {
+async fn test_single_order_report_fails_when_matching_row_cannot_be_parsed(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -5907,8 +5952,9 @@ async fn test_single_order_report_fails_when_matching_row_cannot_be_parsed() {
     unmapped_order["market_index"] = json!(999);
     *state.active_orders_response.lock().await = Some(http_orders_payload(&[unmapped_order], None));
 
-    let error = client
-        .generate_order_status_report(&GenerateOrderStatusReport::new(
+    let error = generate_order_status_report(
+        &client,
+        &GenerateOrderStatusReport::new(
             UUID4::new(),
             UnixNanos::default(),
             Some(eth_perp_id()),
@@ -5916,9 +5962,11 @@ async fn test_single_order_report_fails_when_matching_row_cannot_be_parsed() {
             Some(venue_order_id),
             None,
             None,
-        ))
-        .await
-        .expect_err("unmapped matching order must fail direct reconciliation");
+        ),
+        worker,
+    )
+    .await
+    .expect_err("unmapped matching order must fail direct reconciliation");
 
     assert!(
         error
@@ -5934,7 +5982,9 @@ async fn test_single_order_report_fails_when_matching_row_cannot_be_parsed() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_reports_excludes_order_before_identity_restore() {
+async fn test_generate_order_status_reports_excludes_order_before_identity_restore(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -5966,8 +6016,9 @@ async fn test_generate_order_status_reports_excludes_order_before_identity_resto
     *state.inactive_orders_response.lock().await =
         Some(http_orders_payload(&[excluded_order], None));
 
-    let reports = client
-        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+    let reports = generate_order_status_reports(
+        &client,
+        &GenerateOrderStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             false,
@@ -5976,9 +6027,11 @@ async fn test_generate_order_status_reports_excludes_order_before_identity_resto
             None,
             None,
             None,
-        ))
-        .await
-        .expect("order status reports");
+        ),
+        worker,
+    )
+    .await
+    .expect("order status reports");
 
     assert!(reports.is_empty());
     assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
@@ -6015,15 +6068,18 @@ async fn test_generate_order_status_reports_excludes_order_before_identity_resto
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_rejects_repeated_inactive_cursor() {
+async fn test_generate_order_status_report_rejects_repeated_inactive_cursor(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
     *state.active_orders_response.lock().await = Some(http_orders_payload(&[], None));
     *state.inactive_orders_response.lock().await = Some(http_orders_payload(&[], Some("stuck")));
 
-    let err = client
-        .generate_order_status_report(&GenerateOrderStatusReport::new(
+    let err = generate_order_status_report(
+        &client,
+        &GenerateOrderStatusReport::new(
             UUID4::new(),
             UnixNanos::default(),
             Some(eth_perp_id()),
@@ -6031,9 +6087,11 @@ async fn test_generate_order_status_report_rejects_repeated_inactive_cursor() {
             Some(VenueOrderId::from("281476929510999")),
             None,
             None,
-        ))
-        .await
-        .unwrap_err();
+        ),
+        worker,
+    )
+    .await
+    .unwrap_err();
 
     assert!(err.to_string().contains("repeated cursor `stuck`"));
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 2);
@@ -6043,15 +6101,18 @@ async fn test_generate_order_status_report_rejects_repeated_inactive_cursor() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_client_index_does_not_search_inactive_history() {
+async fn test_generate_order_status_report_client_index_does_not_search_inactive_history(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
     *state.active_orders_response.lock().await = Some(http_orders_payload(&[], None));
     *state.inactive_orders_response.lock().await = Some(http_orders_payload(&[], Some("stuck")));
 
-    let report = client
-        .generate_order_status_report(&GenerateOrderStatusReport::new(
+    let report = generate_order_status_report(
+        &client,
+        &GenerateOrderStatusReport::new(
             UUID4::new(),
             UnixNanos::default(),
             Some(eth_perp_id()),
@@ -6059,9 +6120,11 @@ async fn test_generate_order_status_report_client_index_does_not_search_inactive
             None,
             None,
             None,
-        ))
-        .await
-        .expect("client-index lookup");
+        ),
+        worker,
+    )
+    .await
+    .expect("client-index lookup");
 
     assert!(report.is_none());
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 0);
@@ -6071,7 +6134,9 @@ async fn test_generate_order_status_report_client_index_does_not_search_inactive
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_resolves_single_active_client_index() {
+async fn test_generate_order_status_report_resolves_single_active_client_index(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -6104,8 +6169,9 @@ async fn test_generate_order_status_report_resolves_single_active_client_index()
         None,
     ));
 
-    let report = client
-        .generate_order_status_report(&GenerateOrderStatusReport::new(
+    let report = generate_order_status_report(
+        &client,
+        &GenerateOrderStatusReport::new(
             UUID4::new(),
             UnixNanos::default(),
             Some(eth_perp_id()),
@@ -6113,10 +6179,12 @@ async fn test_generate_order_status_report_resolves_single_active_client_index()
             None,
             None,
             None,
-        ))
-        .await
-        .expect("single active client-index lookup")
-        .expect("order report");
+        ),
+        worker,
+    )
+    .await
+    .expect("single active client-index lookup")
+    .expect("order report");
 
     assert_eq!(report.client_order_id, Some(order.client_order_id()));
     assert_eq!(report.venue_order_id, venue_order_id);
@@ -6127,7 +6195,9 @@ async fn test_generate_order_status_report_resolves_single_active_client_index()
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_preserves_pending_modify() {
+async fn test_generate_order_status_report_preserves_pending_modify(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -6188,6 +6258,24 @@ async fn test_generate_order_status_report_preserves_pending_modify() {
         None,
     ));
 
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::from(4),
+        Some(eth_perp_id()),
+        Some(client_order_id),
+        Some(venue_order_id),
+        None,
+        None,
+    );
+
+    let collected = if worker {
+        let task = client.generate_order_status_report_task(&cmd).unwrap();
+        tokio::spawn(task.collection).await.unwrap();
+        Some(task.result)
+    } else {
+        None
+    };
+
     client
         .modify_order(ModifyOrder::new(
             trader_id(),
@@ -6207,19 +6295,13 @@ async fn test_generate_order_status_report_preserves_pending_modify() {
         .expect("modify_order");
     await_send_tx_count(&state, 1).await;
 
-    let report = client
-        .generate_order_status_report(&GenerateOrderStatusReport::new(
-            UUID4::new(),
-            UnixNanos::from(4),
-            Some(eth_perp_id()),
-            Some(client_order_id),
-            Some(venue_order_id),
-            None,
-            None,
-        ))
-        .await
-        .expect("pending modify lookup")
-        .expect("order report");
+    let report = if let Some(result) = collected {
+        result.await
+    } else {
+        client.generate_order_status_report(&cmd).await
+    }
+    .expect("pending modify lookup")
+    .expect("order report");
 
     assert_eq!(report.client_order_id, Some(client_order_id));
     assert_eq!(report.venue_order_id, venue_order_id);
@@ -6251,7 +6333,9 @@ async fn test_generate_order_status_report_preserves_pending_modify() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_rejects_ambiguous_active_client_index() {
+async fn test_generate_order_status_report_rejects_ambiguous_active_client_index(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -6281,8 +6365,9 @@ async fn test_generate_order_status_report_rejects_ambiguous_active_client_index
         None,
     ));
 
-    let err = client
-        .generate_order_status_report(&GenerateOrderStatusReport::new(
+    let err = generate_order_status_report(
+        &client,
+        &GenerateOrderStatusReport::new(
             UUID4::new(),
             UnixNanos::default(),
             Some(eth_perp_id()),
@@ -6290,9 +6375,11 @@ async fn test_generate_order_status_report_rejects_ambiguous_active_client_index
             None,
             None,
             None,
-        ))
-        .await
-        .unwrap_err();
+        ),
+        worker,
+    )
+    .await
+    .unwrap_err();
 
     assert!(
         err.to_string()
@@ -6305,14 +6392,17 @@ async fn test_generate_order_status_report_rejects_ambiguous_active_client_index
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_order_status_reports_stop_repeated_active_market_seed_cursor() {
+async fn test_order_status_reports_stop_repeated_active_market_seed_cursor(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
     *state.inactive_orders_response.lock().await = Some(http_orders_payload(&[], Some("stuck")));
 
-    let error = client
-        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+    let error = generate_order_status_reports(
+        &client,
+        &GenerateOrderStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             true,
@@ -6321,9 +6411,11 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor() {
             None,
             None,
             None,
-        ))
-        .await
-        .expect_err("incomplete active-market seed must fail reconciliation");
+        ),
+        worker,
+    )
+    .await
+    .expect_err("incomplete active-market seed must fail reconciliation");
 
     assert!(error.to_string().contains("repeated cursor `stuck`"));
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 2);
@@ -6338,6 +6430,7 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor() {
 async fn test_account_all_positions_empty_update_retains_cached_position(
     #[case] sign: i8,
     #[case] expected_side: PositionSide,
+    #[values(false, true)] worker: bool,
 ) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, _cache) = build_client(addr);
@@ -6386,8 +6479,9 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
          {unexpected_close:?}",
     );
 
-    let positions = client
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+    let positions = generate_position_status_reports(
+        &client,
+        &GeneratePositionStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             None,
@@ -6395,9 +6489,11 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
             None,
             None,
             None,
-        ))
-        .await
-        .expect("position reports");
+        ),
+        worker,
+    )
+    .await
+    .expect("position reports");
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].account_id, account_id());
     assert_eq!(positions[0].instrument_id, eth_perp_id());
@@ -6422,6 +6518,7 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
 #[tokio::test(flavor = "multi_thread")]
 async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_report(
     #[case] zero_position_row: bool,
+    #[values(false, true)] worker: bool,
 ) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, _cache) = build_client(addr);
@@ -6435,8 +6532,9 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
             let client_ptr = std::ptr::addr_of!(client);
             async move {
                 let client = unsafe { &*client_ptr };
-                !client
-                    .generate_position_status_reports(&GeneratePositionStatusReports::new(
+                !generate_position_status_reports(
+                    client,
+                    &GeneratePositionStatusReports::new(
                         UUID4::new(),
                         UnixNanos::default(),
                         None,
@@ -6444,10 +6542,12 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
                         None,
                         None,
                         None,
-                    ))
-                    .await
-                    .unwrap_or_default()
-                    .is_empty()
+                    ),
+                    worker,
+                )
+                .await
+                .unwrap_or_default()
+                .is_empty()
             }
         },
         Duration::from_secs(5),
@@ -6510,8 +6610,9 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
         "flat snapshot must emit exactly one flat report: {duplicate_flat:?}",
     );
 
-    let positions = client
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+    let positions = generate_position_status_reports(
+        &client,
+        &GeneratePositionStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             None,
@@ -6519,9 +6620,11 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
             None,
             None,
             None,
-        ))
-        .await
-        .expect("position reports");
+        ),
+        worker,
+    )
+    .await
+    .expect("position reports");
     assert!(
         positions.is_empty(),
         "flat position snapshot must clear the prior cache, was {positions:?}",
@@ -6532,7 +6635,9 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached_position() {
+async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached_position(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, _cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -6577,8 +6682,9 @@ async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached
             async move {
                 // SAFETY: this test owns `client` exclusively.
                 let client = unsafe { &*client_ptr };
-                client
-                    .generate_position_status_reports(&GeneratePositionStatusReports::new(
+                generate_position_status_reports(
+                    client,
+                    &GeneratePositionStatusReports::new(
                         UUID4::new(),
                         UnixNanos::default(),
                         None,
@@ -6586,17 +6692,20 @@ async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached
                         None,
                         None,
                         None,
-                    ))
-                    .await
-                    .is_err()
+                    ),
+                    worker,
+                )
+                .await
+                .is_err()
             }
         },
         Duration::from_secs(2),
     )
     .await;
 
-    let error = client
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+    let error = generate_position_status_reports(
+        &client,
+        &GeneratePositionStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             None,
@@ -6604,9 +6713,11 @@ async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached
             None,
             None,
             None,
-        ))
-        .await
-        .expect_err("incomplete position snapshot must fail direct reconciliation");
+        ),
+        worker,
+    )
+    .await
+    .expect_err("incomplete position snapshot must fail direct reconciliation");
 
     assert!(
         error
@@ -6719,7 +6830,9 @@ async fn test_bounded_mass_status_rejects_stale_position_coverage_after_reconnec
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prior_position() {
+async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prior_position(
+    #[values(false, true)] worker: bool,
+) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -6732,8 +6845,9 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
             let client_ptr = std::ptr::addr_of!(client);
             async move {
                 let client = unsafe { &*client_ptr };
-                !client
-                    .generate_position_status_reports(&GeneratePositionStatusReports::new(
+                !generate_position_status_reports(
+                    client,
+                    &GeneratePositionStatusReports::new(
                         UUID4::new(),
                         UnixNanos::default(),
                         None,
@@ -6741,10 +6855,12 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
                         None,
                         None,
                         None,
-                    ))
-                    .await
-                    .unwrap_or_default()
-                    .is_empty()
+                    ),
+                    worker,
+                )
+                .await
+                .unwrap_or_default()
+                .is_empty()
             }
         },
         Duration::from_secs(5),
@@ -6809,8 +6925,9 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
     assert_eq!(flat_report.position_side, PositionSide::Flat);
     assert!(flat_report.quantity.is_zero());
 
-    let positions = client
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+    let positions = generate_position_status_reports(
+        &client,
+        &GeneratePositionStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
             None,
@@ -6818,13 +6935,591 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
             None,
             None,
             None,
-        ))
-        .await
-        .expect("position reports");
+        ),
+        worker,
+    )
+    .await
+    .expect("position reports");
     assert!(
         positions.is_empty(),
         "empty position snapshot after reconnect must clear the prior cache, was {positions:?}",
     );
 
     client.disconnect().await.expect("disconnect");
+}
+
+async fn run_report_collection<T: 'static>(task: ExecutionReportTask<T>) -> anyhow::Result<T> {
+    let core_thread = std::thread::current().id();
+    tokio::spawn(async move {
+        assert_ne!(std::thread::current().id(), core_thread);
+        task.collection.await;
+    })
+    .await
+    .expect("collection worker");
+
+    assert_eq!(std::thread::current().id(), core_thread);
+    task.result.await
+}
+
+async fn generate_order_status_report(
+    client: &LighterExecutionClient,
+    cmd: &GenerateOrderStatusReport,
+    worker: bool,
+) -> anyhow::Result<Option<OrderStatusReport>> {
+    if worker {
+        run_report_collection(
+            client
+                .generate_order_status_report_task(cmd)
+                .expect("single-order hook"),
+        )
+        .await
+    } else {
+        client.generate_order_status_report(cmd).await
+    }
+}
+
+async fn generate_order_status_reports(
+    client: &LighterExecutionClient,
+    cmd: &GenerateOrderStatusReports,
+    worker: bool,
+) -> anyhow::Result<Vec<OrderStatusReport>> {
+    if worker {
+        run_report_collection(
+            client
+                .generate_order_status_reports_task(cmd)
+                .expect("bulk-order hook"),
+        )
+        .await
+    } else {
+        client.generate_order_status_reports(cmd).await
+    }
+}
+
+async fn generate_fill_reports(
+    client: &LighterExecutionClient,
+    cmd: GenerateFillReports,
+    worker: bool,
+) -> anyhow::Result<Vec<FillReport>> {
+    if worker {
+        run_report_collection(client.generate_fill_reports_task(&cmd).expect("fill hook")).await
+    } else {
+        client.generate_fill_reports(cmd).await
+    }
+}
+
+async fn generate_position_status_reports(
+    client: &LighterExecutionClient,
+    cmd: &GeneratePositionStatusReports,
+    worker: bool,
+) -> anyhow::Result<Vec<PositionStatusReport>> {
+    if worker {
+        run_report_collection(
+            client
+                .generate_position_status_reports_task(cmd)
+                .expect("position hook"),
+        )
+        .await
+    } else {
+        client.generate_position_status_reports(cmd).await
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_report_task_fields_match_inline() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    *state.active_orders_response.lock().await = Some(http_orders_payload(
+        &[http_order_fixture(
+            "281476929510301",
+            "47",
+            "open",
+            "0.0010",
+        )],
+        None,
+    ));
+    *state.trades_response.lock().await =
+        Some(json!({"code":200,"trades":[http_trade_fixture(19_209_006_905, 47)]}));
+
+    let orders = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(eth_perp_id()),
+        None,
+        None,
+        None,
+        None,
+    );
+    let inline = client.generate_order_status_reports(&orders).await.unwrap();
+    let mut worker =
+        run_report_collection(client.generate_order_status_reports_task(&orders).unwrap())
+            .await
+            .unwrap();
+    assert_eq!(inline.len(), 1);
+    assert_eq!(worker.len(), 1);
+    assert_ne!(worker[0].report_id, inline[0].report_id);
+    worker[0].report_id = inline[0].report_id;
+    worker[0].ts_init = inline[0].ts_init;
+    assert_eq!(worker, inline);
+
+    let single = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(eth_perp_id()),
+        None,
+        Some(VenueOrderId::from("281476929510301")),
+        None,
+        None,
+    );
+    let inline = client
+        .generate_order_status_report(&single)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut worker =
+        run_report_collection(client.generate_order_status_report_task(&single).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+    assert_ne!(worker.report_id, inline.report_id);
+    worker.report_id = inline.report_id;
+    worker.ts_init = inline.ts_init;
+    assert_eq!(worker, inline);
+
+    let fills = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(eth_perp_id()),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let inline = client.generate_fill_reports(fills.clone()).await.unwrap();
+    let mut worker = run_report_collection(client.generate_fill_reports_task(&fills).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(inline.len(), 1);
+    assert_eq!(worker.len(), 1);
+    assert_ne!(worker[0].report_id, inline[0].report_id);
+    worker[0].report_id = inline[0].report_id;
+    worker[0].ts_init = inline[0].ts_init;
+    assert_eq!(worker, inline);
+
+    let positions = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let inline = client
+        .generate_position_status_reports(&positions)
+        .await
+        .unwrap();
+    let worker = run_report_collection(
+        client
+            .generate_position_status_reports_task(&positions)
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(worker, inline);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::finish(false, false)]
+#[case::discard(true, false)]
+#[case::stop(false, true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_fill_report_task_finalizes_against_current_live_delivery(
+    #[case] discard: bool,
+    #[case] stop: bool,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _cache) = build_client(addr);
+    client.connect().await.unwrap();
+    await_subscribe_count(&state, 4).await;
+    let trade = http_trade_fixture(19_209_006_906, 48);
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[trade.clone()]}));
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(eth_perp_id()),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let task = client.generate_fill_reports_task(&cmd).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+
+    if stop {
+        client.reset().unwrap();
+        let error = task.result.await.unwrap_err();
+        assert_eq!(error.to_string(), "Lighter report session stopped");
+        client.disconnect().await.unwrap();
+        return;
+    }
+
+    let result = if discard {
+        drop(task.result);
+        None
+    } else {
+        Some(task.result)
+    };
+
+    state.push_frame(&json!({"type":"update/account_all_trades", "channel":format!("account_all_trades:{TEST_ACCOUNT_INDEX}"), "trades":{"0":[trade]}}));
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(2), |event| {
+        matches!(event, ExecutionEvent::Report(ExecutionReport::Fill(_)))
+    })
+    .await
+    .expect("collection must not mark trade reconciled");
+
+    let ExecutionEvent::Report(ExecutionReport::Fill(report)) = event else {
+        unreachable!()
+    };
+
+    assert_eq!(report.trade_id, TradeId::from("19209006906"));
+
+    if let Some(result) = result {
+        assert_eq!(result.await.unwrap(), Vec::<FillReport>::new());
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_position_report_task_reads_snapshot_at_finish() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _cache) = build_client(addr);
+    client.connect().await.unwrap();
+    await_subscribe_count(&state, 4).await;
+
+    let cmd = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(eth_perp_id()),
+        None,
+        None,
+        None,
+        None,
+    );
+    let task = client.generate_position_status_reports_task(&cmd).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+    let mut snapshot = load_json("ws_account_all_positions_update.json");
+    snapshot["type"] = json!("subscribed/account_all_positions");
+    snapshot["positions"]["0"]["sign"] = json!(-1);
+    state.push_frame(&snapshot);
+    next_event_matching(&mut rx, Duration::from_secs(2), |event| matches!(event, ExecutionEvent::Report(ExecutionReport::Position(report)) if report.position_side == PositionSide::Short)).await.unwrap();
+    let expected = client.generate_position_status_reports(&cmd).await.unwrap();
+    let actual = task.result.await.unwrap();
+    assert_eq!(actual.len(), 1);
+    assert_eq!(actual[0].quantity, Quantity::from("1.5000"));
+    assert_eq!(actual[0].position_side, PositionSide::Short);
+    assert_eq!(actual, expected);
+    client.disconnect().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_fill_report_task_keeps_owned_instruments_during_update() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(eth_perp_id()),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let task = client.generate_fill_reports_task(&cmd).unwrap();
+    let mut response = state.trades_response.lock().await;
+    *response = Some(json!({"code":200,"trades":[http_trade_fixture(19_209_006_908, 49)]}));
+
+    let worker = tokio::spawn(task.collection);
+    wait_until_async(
+        || async { state.trades_calls.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let InstrumentAny::CryptoPerpetual(mut instrument) =
+        cache.borrow().instrument(&eth_perp_id()).unwrap().clone()
+    else {
+        unreachable!()
+    };
+
+    instrument.size_precision = 5;
+    instrument.size_increment = Quantity::from("0.00001");
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+        .unwrap();
+    drop(response);
+    worker.await.unwrap();
+    let reports = task.result.await.unwrap();
+    let updated = client.generate_fill_reports(cmd).await.unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(updated.len(), 1);
+    assert_eq!(reports[0].last_qty.precision, 4);
+    assert_eq!(updated[0].last_qty.precision, 5);
+    assert_eq!(
+        reports[0].last_qty.as_decimal(),
+        updated[0].last_qty.as_decimal()
+    );
+    assert_eq!(reports[0].trade_id, TradeId::from("19209006908"));
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::single(0)]
+#[case::bulk(1)]
+#[case::fills(2)]
+#[case::positions(3)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_report_task_rejects_receipt_after_disconnect(#[case] kind: u8) {
+    let (addr, _state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.unwrap();
+
+    let error = match kind {
+        0 => {
+            let cmd = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(eth_perp_id()),
+                None,
+                Some(VenueOrderId::from("281476929510301")),
+                None,
+                None,
+            );
+            let task = client.generate_order_status_report_task(&cmd).unwrap();
+            tokio::spawn(task.collection).await.unwrap();
+            client.disconnect().await.unwrap();
+            task.result.await.unwrap_err()
+        }
+        1 => {
+            let cmd = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                true,
+                Some(eth_perp_id()),
+                None,
+                None,
+                None,
+                None,
+            );
+            let task = client.generate_order_status_reports_task(&cmd).unwrap();
+            tokio::spawn(task.collection).await.unwrap();
+            client.disconnect().await.unwrap();
+            task.result.await.unwrap_err()
+        }
+        2 => {
+            let cmd = GenerateFillReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(eth_perp_id()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            let task = client.generate_fill_reports_task(&cmd).unwrap();
+            tokio::spawn(task.collection).await.unwrap();
+            client.disconnect().await.unwrap();
+            task.result.await.unwrap_err()
+        }
+        3 => {
+            let cmd = GeneratePositionStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(eth_perp_id()),
+                None,
+                None,
+                None,
+                None,
+            );
+            let task = client.generate_position_status_reports_task(&cmd).unwrap();
+            tokio::spawn(task.collection).await.unwrap();
+            client.disconnect().await.unwrap();
+            task.result.await.unwrap_err()
+        }
+        _ => unreachable!(),
+    };
+
+    assert_eq!(error.to_string(), "Lighter report session stopped");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_bulk_report_task_records_discovered_markets_only_at_finish(
+    #[values(false, true)] partial: bool,
+    #[values(false, true)] stop: bool,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let mut row = http_order_fixture("281476929510306", "52", "open", "0.0000");
+
+    if partial {
+        row["market_index"] = json!(999);
+    }
+
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[row], None));
+
+    let scoped = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(eth_perp_id()),
+        None,
+        None,
+        None,
+        None,
+    );
+    let task = client.generate_order_status_reports_task(&scoped).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[], None));
+
+    let unscoped = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let before = client
+        .generate_order_status_reports(&unscoped)
+        .await
+        .unwrap();
+    assert!(before.is_empty());
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
+
+    if stop {
+        client.reset().unwrap();
+    }
+
+    let result = task.result.await;
+
+    if stop {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Lighter report session stopped"
+        );
+    } else if partial {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "incomplete Lighter order reports: failed to parse Lighter active order 281476929510306 for market_index=0",
+        );
+    } else {
+        let reports = result.unwrap();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(
+            reports[0].venue_order_id,
+            VenueOrderId::from("281476929510306")
+        );
+    }
+
+    let after = client
+        .generate_order_status_reports(&unscoped)
+        .await
+        .unwrap();
+    assert!(after.is_empty());
+    assert_eq!(
+        state.inactive_orders_calls.load(Ordering::Relaxed),
+        if stop { 2 } else { 1 }
+    );
+    assert_eq!(
+        state.active_orders_calls.load(Ordering::Relaxed),
+        if stop { 1 } else { 2 }
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_bulk_report_task_restores_identity_from_current_cache() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let venue_order_id = VenueOrderId::from("281476929510305");
+    *state.active_orders_response.lock().await = Some(http_orders_payload(
+        &[http_order_fixture(
+            venue_order_id.as_str(),
+            "51",
+            "open",
+            "0.0000",
+        )],
+        None,
+    ));
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(eth_perp_id()),
+        None,
+        None,
+        None,
+        None,
+    );
+    let task = client.generate_order_status_reports_task(&cmd).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+    let order = make_limit_order(
+        "O-RESTORED-AFTER-COLLECTION",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    let client_order_id = order.client_order_id();
+    cache_order(&cache, order);
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(OrderAccepted::new(
+            trader_id(),
+            strategy_id(),
+            eth_perp_id(),
+            client_order_id,
+            venue_order_id,
+            account_id(),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            false,
+        )))
+        .unwrap();
+    let reports = task.result.await.unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].client_order_id, Some(client_order_id));
+    assert_eq!(reports[0].venue_order_id, venue_order_id);
+    assert_eq!(reports[0].order_status, OrderStatus::Accepted);
+    assert_eq!(
+        cache
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap()
+            .status(),
+        OrderStatus::Accepted
+    );
+    client.disconnect().await.unwrap();
 }

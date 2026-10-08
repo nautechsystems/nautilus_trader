@@ -18,6 +18,7 @@
 use std::collections::VecDeque;
 
 use ahash::{AHashMap, AHashSet};
+use nautilus_core::UUID4;
 use nautilus_model::{
     identifiers::{ClientOrderId, StrategyId, VenueOrderId},
     types::Quantity,
@@ -34,6 +35,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub(crate) struct PendingReplaceState {
+    id: UUID4,
     pub(crate) total_quantity: Option<Quantity>,
     awaiting_reconciliation: bool,
 }
@@ -435,6 +437,7 @@ impl OcmState {
         self.pending_replace_state.insert(
             key,
             PendingReplaceState {
+                id: UUID4::new(),
                 total_quantity,
                 awaiting_reconciliation: false,
             },
@@ -463,6 +466,16 @@ impl OcmState {
             .is_some_and(|pending| pending.awaiting_reconciliation)
     }
 
+    pub(crate) fn pending_replace_reconciliation_ids(
+        &self,
+    ) -> AHashMap<(ClientOrderId, BetId), UUID4> {
+        self.pending_replace_state
+            .iter()
+            .filter(|(_, pending)| pending.awaiting_reconciliation)
+            .map(|(key, pending)| (key.clone(), pending.id))
+            .collect()
+    }
+
     pub(crate) fn take_pending_replace(
         &mut self,
         client_order_id: ClientOrderId,
@@ -476,6 +489,49 @@ impl OcmState {
         self.pending_replace_state
             .keys()
             .any(|(candidate, _)| candidate == client_order_id)
+    }
+
+    pub(crate) fn order_status_supplemental_ids(
+        &self,
+        mut client_order_ids: AHashSet<ClientOrderId>,
+    ) -> (AHashSet<BetId>, AHashMap<CustomerOrderRef, AHashSet<BetId>>) {
+        let mut customer_order_refs = AHashMap::new();
+
+        for (client_order_id, bet_id) in self.pending_replace_state.keys() {
+            client_order_ids.insert(*client_order_id);
+            if let Some(correlation) = self.order_correlations.get(client_order_id) {
+                for customer_order_ref in &correlation.customer_order_refs {
+                    customer_order_refs
+                        .entry(customer_order_ref.clone())
+                        .or_insert_with(AHashSet::new)
+                        .insert(bet_id.clone());
+                }
+            }
+        }
+
+        client_order_ids.extend(
+            self.pending_reductions
+                .values()
+                .filter(|pending| pending.confirmed_quantity.is_none())
+                .map(|pending| pending.client_order_id),
+        );
+        let bet_ids = client_order_ids
+            .iter()
+            .filter_map(|client_order_id| self.order_correlations.get(client_order_id))
+            .flat_map(|correlation| correlation.venue_order_ids.iter().cloned())
+            .chain(
+                self.pending_replace_state
+                    .keys()
+                    .map(|(_, bet_id)| bet_id.clone()),
+            )
+            .chain(
+                self.pending_reductions
+                    .iter()
+                    .filter(|(_, pending)| pending.confirmed_quantity.is_none())
+                    .map(|(bet_id, _)| bet_id.clone()),
+            )
+            .collect();
+        (bet_ids, customer_order_refs)
     }
 
     /// Returns `true` when `bet_id` is the order's most recently placed Bet.
@@ -594,6 +650,16 @@ impl OcmState {
             .flat_map(|correlation| &correlation.venue_order_ids)
             .filter(|bet_id| self.replaced_venue_order_ids.contains(*bet_id))
             .map(|bet_id| self.fill_tracker.matched_quantity(bet_id))
+            .sum()
+    }
+
+    pub(crate) fn replaced_voided_quantity(&self, client_order_id: &ClientOrderId) -> Decimal {
+        self.order_correlations
+            .get(client_order_id)
+            .into_iter()
+            .flat_map(|correlation| &correlation.venue_order_ids)
+            .filter(|bet_id| self.replaced_venue_order_ids.contains(*bet_id))
+            .map(|bet_id| self.fill_tracker.voided_quantity(bet_id))
             .sum()
     }
 
@@ -923,6 +989,35 @@ mod tests {
             "ambiguous-bet",
         ));
         assert!(state.should_suppress_cancel(&ambiguous_client_order_id, "ambiguous-bet",));
+    }
+
+    #[rstest]
+    fn test_order_status_supplemental_ids_include_current_and_legacy_pending_replace_refs() {
+        let mut state = OcmState::default();
+        let client_order_id =
+            ClientOrderId::from("O-20240101-550e8400-e29b-41d4-a716-446655440000");
+        let strategy_id = StrategyId::from("S-001");
+        let old_bet_id = "old-bet";
+        let current_ref = make_customer_order_ref(client_order_id.as_str());
+        let legacy_ref = make_customer_order_ref_legacy(client_order_id.as_str());
+        state.restore_order(client_order_id, strategy_id, VenueOrderId::from(old_bet_id));
+        state.register_pending_replace(
+            client_order_id,
+            old_bet_id.to_string(),
+            Some(Quantity::from(10)),
+        );
+
+        let (bet_ids, customer_order_refs) = state.order_status_supplemental_ids(AHashSet::new());
+
+        assert_ne!(current_ref, legacy_ref);
+        assert_eq!(bet_ids, AHashSet::from_iter([old_bet_id.to_string()]));
+        assert_eq!(
+            customer_order_refs,
+            AHashMap::from_iter([
+                (current_ref, AHashSet::from_iter([old_bet_id.to_string()])),
+                (legacy_ref, AHashSet::from_iter([old_bet_id.to_string()])),
+            ]),
+        );
     }
 
     #[rstest]

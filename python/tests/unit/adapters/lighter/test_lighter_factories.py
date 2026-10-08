@@ -16,6 +16,8 @@
 Test lighter factories behavior.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from unit.adapters.example_modules import load_example_module
 
@@ -40,6 +42,47 @@ from nautilus_trader.model import Venue
 
 
 lighter_exec_tester = load_example_module("lighter", "exec_tester")
+lighter_composite_mm = load_example_module("lighter", "nvda_composite_mm")
+
+
+def test_lighter_composite_mm_scopes_reconciliation_to_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Test composite market maker reconciles only its configured target.
+    """
+    builder = MagicMock()
+    builder.with_reconciliation.return_value = builder
+    builder.with_exec_engine_config.return_value = builder
+    builder.with_delay_post_stop_secs.return_value = builder
+    builder.add_data_client.return_value = builder
+    builder.add_exec_client.return_value = builder
+    node_type = MagicMock()
+    node_type.builder.return_value = builder
+    monkeypatch.setattr(lighter_composite_mm, "LiveNode", node_type)
+    monkeypatch.setattr(lighter_composite_mm, "DATABENTO_API_KEY", "test-api-key")
+
+    lighter_composite_mm.main()
+
+    builder.with_reconciliation.assert_called_once_with(reconciliation=True)
+    config = builder.with_exec_engine_config.call_args.args[0]
+    assert config.reconciliation is True
+    assert config.reconciliation_lookback_mins == 60
+    assert config.reconciliation_instrument_ids == [str(lighter_composite_mm.INSTRUMENT_ID)]
+    assert (
+        str(lighter_composite_mm.SIGNAL_INSTRUMENT_ID) not in config.reconciliation_instrument_ids
+    )
+    assert "BTC-PERP.LIGHTER" not in config.reconciliation_instrument_ids
+    assert config.filter_unclaimed_external_orders is False
+    assert config.filter_position_reports is False
+    assert config.generate_missing_orders is True
+    node = builder.build.return_value
+    strategy_type, strategy_config = node.add_builtin_strategy.call_args.args
+    assert strategy_type == "CompositeMarketMaker"
+    assert strategy_config.instrument_id == lighter_composite_mm.INSTRUMENT_ID
+    assert strategy_config.signal_instrument_id == lighter_composite_mm.SIGNAL_INSTRUMENT_ID
+    assert strategy_config.signal_skew_factor == 55.0
+    node.run.assert_called_once_with()
 
 
 def test_lighter_facade_exports_integrator_revocation() -> None:

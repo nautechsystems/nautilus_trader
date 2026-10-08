@@ -94,19 +94,9 @@ impl Client {
 
     pub(super) async fn send(
         &self,
-        mut request: Request<Full<Bytes>>,
+        request: Request<Full<Bytes>>,
         redirects: HttpRedirectPolicy,
     ) -> Result<Response<Incoming>, HttpClientError> {
-        if request.uri().scheme_str() == Some("http")
-            && !request.headers().contains_key(PROXY_AUTHORIZATION)
-            && let Some(proxy) = self.proxies.intercept(request.uri())
-            && let Some(auth) = proxy.basic_auth()
-        {
-            request
-                .headers_mut()
-                .insert(PROXY_AUTHORIZATION, auth.clone());
-        }
-
         let policy = Redirects {
             policy: redirects,
             count: 0,
@@ -128,7 +118,17 @@ impl Service<Request<Full<Bytes>>> for Client {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, request: Request<Full<Bytes>>) -> Self::Future {
+    fn call(&mut self, mut request: Request<Full<Bytes>>) -> Self::Future {
+        if request.uri().scheme_str() == Some("http")
+            && !request.headers().contains_key(PROXY_AUTHORIZATION)
+            && let Some(proxy) = self.proxies.intercept(request.uri())
+            && let Some(auth) = proxy.basic_auth()
+        {
+            request
+                .headers_mut()
+                .insert(PROXY_AUTHORIZATION, auth.clone());
+        }
+
         let client = self.client.clone();
         Box::pin(async move {
             let mut retries = 0;

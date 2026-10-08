@@ -35,6 +35,7 @@ use nautilus_model::{
         OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
         PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
     },
+    instruments::NautilusInstrumentType,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use nautilus_serialization::arrow::{
@@ -53,8 +54,13 @@ pub(crate) fn validate_catalog_schema(schema: &Schema) -> anyhow::Result<()> {
             .is_ok_and(|field| field.data_type() != &timestamp_data_type())
     });
 
+    let has_legacy_instrument_metadata = schema
+        .metadata()
+        .get("class")
+        .is_some_and(|type_name| type_name.parse::<NautilusInstrumentType>().is_ok());
+
     anyhow::ensure!(
-        !legacy_timestamps && !is_nautilus_legacy_schema(schema),
+        !legacy_timestamps && !has_legacy_instrument_metadata && !is_nautilus_legacy_schema(schema),
         "Legacy catalog schema is not supported by runtime queries; run `nautilus catalog migrate-parquet` to migrate to a separate destination before reading"
     );
     Ok(())

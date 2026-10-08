@@ -28,7 +28,6 @@ use nautilus_model::data::{
     TradeTick, close::InstrumentClose,
 };
 use nautilus_serialization::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBatch};
-use object_store::ObjectStoreExt;
 
 use crate::{
     backend::parquet::{
@@ -363,7 +362,7 @@ impl ParquetDataCatalog {
         }
 
         for file in files_to_remove {
-            self.delete_listed_file(&file)?;
+            self.delete_file(&file)?;
         }
 
         Ok(())
@@ -460,20 +459,10 @@ impl ParquetDataCatalog {
         }
 
         for file in files_to_remove {
-            self.delete_listed_file(&file)?;
+            self.delete_file(&file)?;
         }
 
         Ok(())
-    }
-
-    fn delete_listed_file(&self, path: &str) -> anyhow::Result<()> {
-        let object_path = self.to_object_path_parsed(path)?;
-        self.execute_async(|| async {
-            self.object_store
-                .delete(&object_path)
-                .await
-                .map_err(anyhow::Error::from)
-        })
     }
 
     fn files_for_delete(

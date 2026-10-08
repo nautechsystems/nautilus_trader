@@ -90,7 +90,7 @@ pub(crate) struct MarketOrderSubmitResult {
 pub(crate) struct UnknownSubmitError {
     pub reason: String,
     pub expected_venue_order_id: VenueOrderId,
-    pub expected_base_qty: Option<Decimal>,
+    pub expected_base_qty: Decimal,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -272,7 +272,7 @@ impl OrderSubmitter {
                             expected_venue_order_id,
                         ),
                         expected_venue_order_id,
-                        expected_base_qty: Some(signed_base_qty),
+                        expected_base_qty: signed_base_qty,
                     }
                     .into());
                 }
@@ -285,7 +285,7 @@ impl OrderSubmitter {
                 return Err(UnknownSubmitError {
                     reason: e.to_string(),
                     expected_venue_order_id,
-                    expected_base_qty: Some(signed_base_qty),
+                    expected_base_qty: signed_base_qty,
                 }
                 .into());
             }
@@ -428,18 +428,17 @@ impl OrderSubmitter {
             .map_err(|e| anyhow::anyhow!("Failed to fetch order status: {e}"))
     }
 
-    /// Prepares multiple limit order submissions in parallel.
-    pub(crate) async fn prepare_limit_order_submissions(
+    pub(crate) fn prepare_limit_order_submissions(
         &self,
         requests: &[LimitOrderSubmitRequest],
     ) -> Vec<anyhow::Result<SignedLimitOrderSubmission>> {
-        let futures = requests
+        requests
             .iter()
-            .map(|request| self.prepare_limit_order_submission(request));
-        futures_util::future::join_all(futures).await
+            .map(|request| self.prepare_limit_order_submission(request))
+            .collect()
     }
 
-    pub(crate) async fn prepare_limit_order_submission(
+    pub(crate) fn prepare_limit_order_submission(
         &self,
         request: &LimitOrderSubmitRequest,
     ) -> anyhow::Result<SignedLimitOrderSubmission> {
@@ -868,6 +867,69 @@ mod tests {
         };
 
         assert_eq!(submit_response_outcome(&response, time_in_force), expected);
+    }
+
+    #[rstest]
+    #[case::mismatched(
+        true,
+        Some("0xother"),
+        Some("rejected"),
+        "earlier attempt was ambiguous; final response returned an unexpected order ID"
+    )]
+    #[case::matching(
+        true,
+        Some("0xexpected"),
+        Some("rejected"),
+        "earlier attempt was ambiguous; final response: rejected"
+    )]
+    #[case::missing(
+        true,
+        None,
+        Some("rejected"),
+        "earlier attempt was ambiguous; final response: rejected"
+    )]
+    #[case::no_reason(
+        true,
+        Some("0xexpected"),
+        None,
+        "earlier attempt was ambiguous; final response: no venue rejection reason"
+    )]
+    #[case::invalid_id(
+        true,
+        Some("not ASCII \u{00e9}"),
+        Some("rejected"),
+        "earlier attempt was ambiguous; final response: rejected"
+    )]
+    #[case::first_attempt(
+        false,
+        None,
+        None,
+        "response contained neither a non-empty order ID nor a venue rejection reason"
+    )]
+    fn test_submit_response_unknown_reason(
+        #[case] earlier_attempt_unknown: bool,
+        #[case] order_id: Option<&str>,
+        #[case] error_msg: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let response = OrderResponse {
+            success: false,
+            order_id: order_id.map(str::to_string),
+            status: None,
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
+            error_msg: error_msg.map(str::to_string),
+        };
+
+        let reason = submit_response_unknown_reason(
+            &response,
+            earlier_attempt_unknown,
+            VenueOrderId::from("0xexpected"),
+        );
+
+        assert_eq!(reason, expected);
     }
 
     #[rstest]

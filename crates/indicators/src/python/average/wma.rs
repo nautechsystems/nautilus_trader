@@ -31,13 +31,17 @@ use crate::{
 impl WeightedMovingAverage {
     /// An indicator which calculates a weighted moving average across a rolling window.
     #[new]
-    #[pyo3(signature = (period, weights, price_type=None))]
+    #[pyo3(signature = (period, weights=None, price_type=None))]
     pub fn py_new(
         period: usize,
-        weights: Vec<f64>,
+        weights: Option<Vec<f64>>,
         price_type: Option<PriceType>,
     ) -> PyResult<Self> {
-        Self::new_checked(period, weights, price_type).map_err(to_pyvalue_err)
+        match weights {
+            Some(weights) => Self::with_weights_checked(period, weights, price_type),
+            None => Self::new_checked(period, price_type),
+        }
+        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

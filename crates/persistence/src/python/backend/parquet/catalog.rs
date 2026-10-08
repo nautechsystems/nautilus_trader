@@ -20,7 +20,9 @@
 
 use std::collections::HashMap;
 
-use nautilus_common::enums::Environment;
+use nautilus_common::{
+    config::ConfigError, enums::Environment, python::config_error_to_pyvalue_err,
+};
 use nautilus_core::{
     UnixNanos,
     python::{to_pytype_err, to_pyvalue_err},
@@ -145,8 +147,8 @@ impl PyParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// Returns an error if `compression` is not one of the listed codes, or the underlying
-    /// [`ParquetDataCatalog`] cannot be created.
+    /// Returns an error if `compression` is not one of the listed codes, `batch_size` or
+    /// `max_row_group_size` is zero, or the underlying [`ParquetDataCatalog`] cannot be created.
     #[new]
     #[pyo3(signature = (base_path, storage_options=None, batch_size=None, compression=None, max_row_group_size=None))]
     pub fn py_new(
@@ -171,7 +173,10 @@ impl PyParquetDataCatalog {
             compression,
             max_row_group_size,
         )
-        .map_err(|e| PyIOError::new_err(format!("Failed to create ParquetDataCatalog: {e}")))?;
+        .map_err(|e| match e.downcast::<ConfigError>() {
+            Ok(e) => config_error_to_pyvalue_err(e),
+            Err(e) => PyIOError::new_err(format!("Failed to create ParquetDataCatalog: {e}")),
+        })?;
 
         Ok(Self { inner })
     }

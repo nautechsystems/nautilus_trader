@@ -58,17 +58,22 @@ pub fn from_pyobject_pyo3<T>(py: Python<'_>, value: &Bound<'_, PyAny>) -> Result
 where
     T: DeserializeOwned,
 {
+    let json_str = serialize_pyobject_pyo3(py, value)?;
+    serde_json::from_str(&json_str).map_err(to_pyvalue_err)
+}
+
+pub(super) fn serialize_pyobject_pyo3(
+    py: Python<'_>,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<String> {
     // `ensure_ascii=False` keeps non-ASCII characters as raw UTF-8 in the JSON output.
     // Without this, `\uXXXX` escapes force `serde_json` onto the owned-string path,
     // which `visit_str`-only visitors like `ustr::Ustr` reject as "expected a borrowed string".
     let kwargs = PyDict::new(py);
     kwargs.set_item("ensure_ascii", false)?;
-    let json_str: String = PyModule::import(py, "json")?
+    PyModule::import(py, "json")?
         .call_method("dumps", (value,), Some(&kwargs))?
-        .extract()?;
-
-    let instance = serde_json::from_str(&json_str).map_err(to_pyvalue_err)?;
-    Ok(instance)
+        .extract()
 }
 
 /// Convert a Rust type that implements `Serialize` to a Python dictionary.

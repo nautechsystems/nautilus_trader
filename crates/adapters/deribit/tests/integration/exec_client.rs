@@ -46,7 +46,10 @@ use nautilus_common::{
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, SystemEvent,
-        execution::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder},
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GeneratePositionStatusReports,
+            ModifyOrder, SubmitOrder,
+        },
         system::SocketState,
     },
     testing::wait_until_async,
@@ -65,7 +68,7 @@ use nautilus_deribit::{
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
     events::{AccountState, OrderEventAny},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     orders::{Order, OrderAny, OrderTestBuilder},
@@ -73,6 +76,7 @@ use nautilus_model::{
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde::Deserialize;
 use serde_json::{Value, json, value::RawValue};
 use ustr::Ustr;
@@ -153,6 +157,11 @@ async fn handle_jsonrpc_request(
         }
         "private/get_account_summaries" => {
             let mut data = load_json("http_get_account_summaries.json");
+            data["id"] = json!(id);
+            Json(data).into_response()
+        }
+        "private/get_positions" => {
+            let mut data = load_json("http_get_positions.json");
             data["id"] = json!(id);
             Json(data).into_response()
         }
@@ -742,6 +751,39 @@ async fn test_exec_client_connect_emits_account_state() {
         found_account_state,
         "Expected AccountState event during connect"
     );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_position_status_reports_with_fractional_leverage() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+
+    client.connect().await.unwrap();
+
+    let cmd = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_position_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].account_id, AccountId::from("DERIBIT-001"));
+    assert_eq!(reports[0].instrument_id, test_instrument_id());
+    assert_eq!(reports[0].position_side, PositionSide::Long);
+    assert_eq!(reports[0].quantity, Quantity::from("50"));
+    assert_eq!(reports[0].signed_decimal_qty, dec!(50));
+    assert_eq!(reports[0].venue_position_id, None);
+    assert_eq!(reports[0].avg_px_open, Some(dec!(7440.18)));
 
     client.disconnect().await.unwrap();
 }

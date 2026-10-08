@@ -10,7 +10,7 @@
 
 # %% [markdown]
 # ## Prerequisites
-# - Python 3.12-3.14
+# - Python 3.13-3.14
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
 #   (`pip install -U --pre nautilus_trader`). The `--pre` flag is required while 2.x
 #   ships as `2.0.0rcN`.

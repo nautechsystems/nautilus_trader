@@ -25,11 +25,13 @@ use nautilus_model::{
 use serde::{Deserialize, Serialize};
 
 pub mod request;
+pub mod response;
 pub mod subscribe;
 pub mod unsubscribe;
 
 // Re-exports
 pub use request::RequestPoolSnapshot;
+pub use response::PoolSnapshotResponse;
 pub use subscribe::{
     SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
     SubscribePoolLiquidityUpdates, SubscribePoolSwaps,

@@ -65,7 +65,7 @@ Databento's
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - [NautilusTrader installed](../getting_started/installation.md).
 - A clone of the NautilusTrader repository. The snippets read
   `crates/adapters/databento/publishers.json` and import the strategy from

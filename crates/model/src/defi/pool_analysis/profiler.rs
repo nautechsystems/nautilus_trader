@@ -1024,6 +1024,8 @@ impl PoolProfiler {
     ///
     /// Calculates required token amounts for the specified liquidity amount,
     /// updates pool state, and returns the resulting mint event.
+    /// Rejects the mint before changing pool state if the resulting gross liquidity at either
+    /// boundary tick exceeds the pool's maximum liquidity per tick.
     ///
     /// # Errors
     ///
@@ -1031,6 +1033,7 @@ impl PoolProfiler {
     /// - Pool is not initialized.
     /// - Tick range is invalid.
     /// - Amount calculations fail.
+    /// - Resulting tick liquidity exceeds the per-tick limit, or a liquidity calculation overflows.
     pub fn execute_mint(
         &mut self,
         recipient: Address,
@@ -1529,19 +1532,17 @@ impl PoolProfiler {
     ) -> anyhow::Result<()> {
         let current_tick = self.state.current_tick;
         let position_key = PoolPosition::get_position_key(owner, tick_lower, tick_upper);
-        let position = self
-            .positions
-            .entry(position_key)
-            .or_insert(PoolPosition::new(*owner, tick_lower, tick_upper, 0));
 
         // Only validate when burning (negative liquidity_delta)
         if liquidity_delta < 0 {
+            let position_liquidity = self
+                .positions
+                .get(&position_key)
+                .map_or(0, |position| position.liquidity);
             let burn_amount = liquidity_delta.unsigned_abs();
-            if position.liquidity < burn_amount {
+            if position_liquidity < burn_amount {
                 anyhow::bail!(
-                    "Position liquidity {} is less than the requested burn amount of {}",
-                    position.liquidity,
-                    burn_amount
+                    "Position liquidity {position_liquidity} is less than the requested burn amount of {burn_amount}"
                 );
             }
         }
@@ -1562,8 +1563,19 @@ impl PoolProfiler {
                 .tick_map
                 .get_tick(tick_value)
                 .map_or(0, |tick| tick.liquidity_gross);
-            try_liquidity_math_add(liquidity_gross, liquidity_delta)?;
+            let liquidity_after = try_liquidity_math_add(liquidity_gross, liquidity_delta)?;
+            if liquidity_after > self.tick_map.max_liquidity_per_tick {
+                anyhow::bail!(
+                    "Liquidity {liquidity_after} exceeds maximum per tick {} at tick {tick_value}",
+                    self.tick_map.max_liquidity_per_tick,
+                );
+            }
         }
+
+        let position = self
+            .positions
+            .entry(position_key)
+            .or_insert(PoolPosition::new(*owner, tick_lower, tick_upper, 0));
 
         // Update tickmaps.
         let flipped_lower = self.tick_map.update(
@@ -1629,8 +1641,11 @@ impl PoolProfiler {
 
     /// Calculates the liquidity utilization rate for the pool.
     ///
-    /// The utilization rate measures what percentage of total deployed liquidity
+    /// The utilization rate measures what fraction of total deployed liquidity
     /// is currently active (in-range and earning fees) at the current price tick.
+    /// Returns zero when no position liquidity is tracked, otherwise truncates to six decimal places.
+    /// Partial-history replay can produce values above one when active liquidity includes positions
+    /// whose mint events were not replayed.
     #[must_use]
     pub fn liquidity_utilization_rate(&self) -> f64 {
         const PRECISION: u32 = 1_000_000; // 6 decimal places
@@ -1648,9 +1663,7 @@ impl PoolProfiler {
         )
         .unwrap_or(U256::ZERO);
 
-        // Safe to cast to u64: Since active_liquidity <= total_liquidity,
-        // the ratio is guaranteed to be <= PRECISION (1_000_000), which fits in u64
-        ratio.to::<u64>() as f64 / f64::from(PRECISION)
+        f64::from(ratio) / f64::from(PRECISION)
     }
 
     /// Validates tick range for position operations.

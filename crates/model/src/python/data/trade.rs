@@ -22,7 +22,7 @@ use std::{
 use nautilus_core::{
     UnixNanos,
     python::{
-        IntoPyObjectNautilusExt,
+        IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err,
         serialization::{from_dict_pyo3, to_dict_pyo3},
         to_pyvalue_err,
     },
@@ -96,15 +96,28 @@ impl TradeTick {
         let ts_event = py_tuple.get_item(7)?.cast::<PyInt>()?.extract::<u64>()?;
         let ts_init = py_tuple.get_item(8)?.cast::<PyInt>()?.extract::<u64>()?;
 
-        self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
-        self.price = Price::from_raw(price_raw, price_prec);
-        self.size = Quantity::from_raw(size_raw, size_prec);
-        self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).ok_or_else(|| {
+        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+        let price = Price::from_raw_checked(price_raw, price_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let size = Quantity::from_raw_checked(size_raw, size_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+
+        let aggressor_side = AggressorSide::from_u8(aggressor_side_u8).ok_or_else(|| {
             to_pyvalue_err(format!("Invalid aggressor_side value: {aggressor_side_u8}"))
         })?;
-        self.trade_id = TradeId::from(trade_id_str);
-        self.ts_event = ts_event.into();
-        self.ts_init = ts_init.into();
+
+        let trade_id =
+            TradeId::new_checked(trade_id_str).map_err(correctness_error_to_pyvalue_err)?;
+
+        *self = Self {
+            instrument_id,
+            price,
+            size,
+            aggressor_side,
+            trade_id,
+            ts_event: ts_event.into(),
+            ts_init: ts_init.into(),
+        };
 
         Ok(())
     }
@@ -250,10 +263,15 @@ impl TradeTick {
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
+        let price = Price::from_raw_checked(price_raw, price_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+        let size = Quantity::from_raw_checked(size_raw, size_prec)
+            .map_err(correctness_error_to_pyvalue_err)?;
+
         Self::new_checked(
             instrument_id,
-            Price::from_raw(price_raw, price_prec),
-            Quantity::from_raw(size_raw, size_prec),
+            price,
+            size,
             aggressor_side,
             trade_id,
             ts_event.into(),
@@ -316,7 +334,10 @@ mod tests {
         data::{TradeTick, stubs::stub_trade_ethusdt_buy},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
-        types::{Price, Quantity},
+        types::{
+            Price, Quantity,
+            price::{PRICE_RAW_MAX, PRICE_RAW_MIN},
+        },
     };
 
     #[rstest]
@@ -340,6 +361,35 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_py_from_raw_rejects_out_of_range_price(stub_trade_ethusdt_buy: TradeTick) {
+        let trade = stub_trade_ethusdt_buy;
+        let raw = PRICE_RAW_MAX.saturating_add(1);
+
+        Python::initialize();
+        Python::attach(|_| {
+            let error = TradeTick::py_from_raw(
+                trade.instrument_id,
+                raw,
+                trade.price.precision,
+                trade.size.raw,
+                trade.size.precision,
+                trade.aggressor_side,
+                trade.trade_id,
+                trade.ts_event.as_u64(),
+                trade.ts_init.as_u64(),
+            )
+            .unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "ValueError: raw value {raw} outside valid range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}]"
+                )
+            );
+        });
     }
 
     #[rstest]

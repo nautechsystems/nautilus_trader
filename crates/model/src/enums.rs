@@ -803,11 +803,15 @@ impl InstrumentClass {
     }
 
     /// Returns whether this instrument class allows negative prices.
+    ///
+    /// Futures allow negative prices, which occur as real settlement prices (e.g. WTI crude
+    /// oil in April 2020) and in back-adjusted continuous price series. Inverse instruments
+    /// whose notional divides by price still require a positive price.
     #[must_use]
     pub const fn allows_negative_price(&self) -> bool {
         matches!(
             self,
-            Self::Option | Self::FuturesSpread | Self::OptionSpread
+            Self::Future | Self::Option | Self::FuturesSpread | Self::OptionSpread
         )
     }
 
@@ -1154,6 +1158,71 @@ pub enum OptionKind {
     Call = 1,
     /// A Put option gives the holder the right, but not the obligation, to sell an underlying asset at a specified strike price within a specified period of time.
     Put = 2,
+}
+
+/// Selects which option kinds an option chain carries at each strike position.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
+)]
+pub enum OptionSideFilter {
+    /// Calls and puts at every strike.
+    #[default]
+    Both = 1,
+    /// Calls only.
+    Calls = 2,
+    /// Puts only.
+    Puts = 3,
+    /// Out-of-the-money wings: puts below the ATM strike, calls above it, both at the ATM strike.
+    Otm = 4,
+}
+
+impl OptionSideFilter {
+    /// Returns whether `kind` belongs to the chain at a strike whose ordering relative to the
+    /// ATM strike is `position` (`Less` = below ATM, `Greater` = above ATM).
+    #[must_use]
+    pub fn includes(&self, kind: OptionKind, position: std::cmp::Ordering) -> bool {
+        match self {
+            Self::Both => true,
+            Self::Calls => kind == OptionKind::Call,
+            Self::Puts => kind == OptionKind::Put,
+            Self::Otm => match position {
+                std::cmp::Ordering::Less => kind == OptionKind::Put,
+                std::cmp::Ordering::Greater => kind == OptionKind::Call,
+                std::cmp::Ordering::Equal => true,
+            },
+        }
+    }
 }
 
 /// The numeraire convention for option greeks published by a venue.
@@ -2177,6 +2246,7 @@ enum_strum_serde!(MarketStatus);
 enum_strum_serde!(MarketStatusAction);
 enum_strum_serde!(OmsType);
 enum_strum_serde!(OptionKind);
+enum_strum_serde!(OptionSideFilter);
 enum_strum_serde!(OrderSide);
 enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
@@ -2448,12 +2518,12 @@ mod tests {
     }
 
     #[rstest]
+    #[case(InstrumentClass::Future, true)]
     #[case(InstrumentClass::Option, true)]
     #[case(InstrumentClass::FuturesSpread, true)]
     #[case(InstrumentClass::OptionSpread, true)]
     #[case(InstrumentClass::Spot, false)]
     #[case(InstrumentClass::Swap, false)]
-    #[case(InstrumentClass::Future, false)]
     #[case(InstrumentClass::Forward, false)]
     #[case(InstrumentClass::Cfd, false)]
     #[case(InstrumentClass::Bond, false)]
@@ -3152,5 +3222,82 @@ mod tests {
     #[case(r#"{"order":"BUY","position":true}"#)]
     fn test_optional_sides_serde_rejects_invalid_values(#[case] json: &str) {
         assert!(serde_json::from_str::<OptionalSides>(json).is_err());
+    }
+
+    #[rstest]
+    #[case(
+        OptionSideFilter::Both,
+        OptionKind::Call,
+        std::cmp::Ordering::Less,
+        true
+    )]
+    #[case(
+        OptionSideFilter::Both,
+        OptionKind::Put,
+        std::cmp::Ordering::Greater,
+        true
+    )]
+    #[case(
+        OptionSideFilter::Calls,
+        OptionKind::Call,
+        std::cmp::Ordering::Less,
+        true
+    )]
+    #[case(
+        OptionSideFilter::Calls,
+        OptionKind::Put,
+        std::cmp::Ordering::Less,
+        false
+    )]
+    #[case(
+        OptionSideFilter::Puts,
+        OptionKind::Put,
+        std::cmp::Ordering::Greater,
+        true
+    )]
+    #[case(
+        OptionSideFilter::Puts,
+        OptionKind::Call,
+        std::cmp::Ordering::Greater,
+        false
+    )]
+    #[case(OptionSideFilter::Otm, OptionKind::Put, std::cmp::Ordering::Less, true)]
+    #[case(
+        OptionSideFilter::Otm,
+        OptionKind::Call,
+        std::cmp::Ordering::Less,
+        false
+    )]
+    #[case(
+        OptionSideFilter::Otm,
+        OptionKind::Call,
+        std::cmp::Ordering::Greater,
+        true
+    )]
+    #[case(
+        OptionSideFilter::Otm,
+        OptionKind::Put,
+        std::cmp::Ordering::Greater,
+        false
+    )]
+    #[case(
+        OptionSideFilter::Otm,
+        OptionKind::Call,
+        std::cmp::Ordering::Equal,
+        true
+    )]
+    #[case(
+        OptionSideFilter::Otm,
+        OptionKind::Put,
+        std::cmp::Ordering::Equal,
+        true
+    )]
+    fn test_option_side_filter_includes(
+        #[case] filter: OptionSideFilter,
+        #[case] kind: OptionKind,
+        #[case] position: std::cmp::Ordering,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(filter.includes(kind, position), expected);
     }
 }

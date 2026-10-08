@@ -769,7 +769,7 @@ async fn test_option_chain_reference_price_response(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     replace_data_event_sender(tx);
     let client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, create_test_config(addr)).unwrap();
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         *DERIBIT_VENUE,
         Ustr::from("BTC"),
         Ustr::from("BTC"),

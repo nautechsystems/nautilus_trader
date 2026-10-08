@@ -27,7 +27,7 @@ through the Nautilus Databento adapter.
 - The **signal residual** is `(databento_mid / baseline) - 1.0`.
 - The **quote shift** is `signal_skew_factor * residual - inventory_skew_factor * net_position`.
 
-With no configured baseline, the strategy captures the first observed `NVDA.EQUS`
+With no configured baseline, the strategy captures the first valid `NVDA.EQUS`
 mid as the reference price. The residual starts at zero and measures NVDA's move
 from that first signal mid, not the Lighter/Databento basis. Set the
 `SIGNAL_BASELINE` constant in the example source to pin the reference price for
@@ -51,6 +51,7 @@ flowchart LR
     end
 
     subgraph Strategy ["CompositeMarketMaker"]
+        RD{{"valid signal and baseline"}}
         TH{{"no target orders OR anchor/signal impact<br/>>= requote_threshold_bps"}}
         CA["cancel_all_orders()"]
         SK["shift = signal_skew - inventory_skew"]
@@ -59,7 +60,10 @@ flowchart LR
     end
 
     DQ --> DS --> DR --> SK
-    LQ --> LM --> TH
+    DR -.-> RD
+    LQ --> RD
+    RD -->|yes| LM --> TH
+    RD -->|no| LQ
     TH -->|yes| CA --> SK --> QU --> PO --> EX
     TH -->|no| LQ
 ```
@@ -70,10 +74,10 @@ inside the same event-driven runtime.
 
 ## Prerequisites
 
-- A Rust toolchain (MSRV 1.98.1 or newer).
+- A Rust toolchain (MSRV 1.99.0 or newer).
 - A Cargo project with the Nautilus, Lighter, and Databento crates as
   dependencies (see [Project setup](#project-setup)).
-- Python 3.12+ to regenerate the rendered panels.
+- Python 3.13+ to regenerate the rendered panels.
 - A Databento API key with live access to Databento US Equities Mini
   (`EQUS.MINI`), the default dataset for the bundled `NVDA.EQUS` route. Higher
   tiers such as `EQUS.PLUS` need a separate Databento license; select one with
@@ -211,6 +215,8 @@ excerpt is abridged: among other lines, it omits the source constants, the
 `node.run().await?` call. The [example source][example-script] has the complete `main`:
 
 ```rust
+use nautilus_live::node::config::LiveExecutionEngineConfig;
+
 let lighter_environment = LIGHTER_ENVIRONMENT;
 let trader_id = TraderId::from(TRADER_ID);
 let account_id = AccountId::from(ACCOUNT_ID);
@@ -244,7 +250,13 @@ strategy_config.base.order_id_tag = Some("001".to_string());
 
 let mut node = LiveNode::builder(trader_id, Environment::Live)?
     .with_name("LIGHTER-NVDA-COMPOSITE-MM-001".to_string())
+    .with_exec_engine_config(LiveExecutionEngineConfig {
+        reconciliation_lookback_mins: Some(60),
+        reconciliation_instrument_ids: Some(vec![instrument_id.to_string()]),
+        ..Default::default()
+    })
     .with_reconciliation(!DRY_RUN)
+    .with_delay_post_stop_secs(5)
     .add_data_client(
         None,
         Box::new(DatabentoDataClientFactory::new()),
@@ -283,8 +295,18 @@ cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --feature
 For a testnet smoke run, keep `LIGHTER_ENVIRONMENT` as
 `LighterEnvironment::Testnet` and use the `LIGHTER_TESTNET_*` credential
 variables. If the run is outside the Databento US Equities cash session, it can
-still validate node startup, routing, Lighter data, and the order lifecycle. The
-Databento residual remains zero until the first `NVDA.EQUS` quote arrives.
+still validate node startup, routing, and Lighter data. The strategy waits for a
+valid `NVDA.EQUS` quote before submitting its first orders, so order lifecycle
+validation requires the Databento signal.
+
+With reconciliation enabled, both examples reconcile only the configured Lighter
+target instrument, with a 60-minute lookback. Reports for other Lighter markets on
+the account are skipped. On stop, the strategy cancels its own target orders and
+submits reduce-only market orders to close its own target positions. Confirm that
+no orders or positions from the run remain after shutdown; fills can arrive while
+cancellation is pending. Start with a flat target position on the account.
+Lighter nets all exposure in a market, while the strategy caps and closes only the
+position it owns.
 
 ## Strategy parameters
 
@@ -293,11 +315,11 @@ Databento residual remains zero until the first `NVDA.EQUS` quote arrives.
 | `instrument_id`         | `NVDA-PERP.LIGHTER` | Lighter RWA perpetual to quote.                                |
 | `signal_instrument_id`  | `NVDA.EQUS`         | Databento US Equities Mini signal feed.                        |
 | `trade_size`            | `0.05`              | Size per bid or ask.                                           |
-| `max_position`          | `0.20`              | Hard cap on net Lighter exposure.                              |
+| `max_position`          | `0.20`              | Hard cap on the strategy's target exposure.                    |
 | `half_spread_bps`       | `25`                | Half-spread around the Lighter anchor.                         |
 | `inventory_skew_factor` | `2.0`               | Price units per unit of net position.                          |
 | `signal_skew_factor`    | `55.0`              | Price units per unit of normalized Databento residual.         |
-| `signal_baseline`       | First signal mid    | Optional reference price for the Databento residual.           |
+| `signal_baseline`       | First valid mid     | Optional reference price for the Databento residual.           |
 | `requote_threshold_bps` | `5`                 | Anchor or signal-impact move that triggers cancel and requote. |
 
 With a Lighter mid of `207.00` and `half_spread_bps=25`, the unskewed half
@@ -308,10 +330,16 @@ shifts both sides down by `0.10` USD.
 
 ## Requote behavior
 
-Signal ticks update internal state but do not submit orders by themselves. Until
-the first Databento quote arrives, the residual is zero. The next Lighter quote
-tick reads the latest signal residual and checks the quote state. A quote cycle
-occurs when:
+Signal ticks update internal state but do not submit orders by themselves. With
+nonzero `signal_skew_factor`, target ticks wait for a signal quote with positive,
+uncrossed bid and ask prices and a finite, positive baseline. The first valid
+signal mid supplies the baseline when `signal_baseline` is unset. An explicit
+baseline remains unchanged and still requires a valid signal quote; an invalid
+baseline prevents quoting. Setting `signal_skew_factor=0` allows quoting without
+a signal or baseline.
+
+After readiness, the next Lighter quote tick reads the latest signal residual and
+checks the quote state. A quote cycle occurs when:
 
 - no target orders are open or in-flight;
 - the Lighter anchor moves by at least `requote_threshold_bps`; or

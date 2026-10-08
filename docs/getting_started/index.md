@@ -2,7 +2,7 @@
 
 ## 1. Install
 
-Set up a Python 3.12-3.14 environment and install the package:
+Set up a Python 3.13-3.14 environment and install the package:
 
 ```bash
 pip install -U --pre nautilus_trader

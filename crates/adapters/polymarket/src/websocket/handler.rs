@@ -102,8 +102,6 @@ pub(super) struct FeedHandler {
     auth_tracker: AuthTracker,
     // True once SubscribeUser has been explicitly requested by the caller
     user_subscribed: bool,
-    // True once the current market-channel session has sent its initial subscribe payload.
-    market_subscription_initialized: bool,
     market_heartbeat_next: Option<(tokio::time::Instant, u64)>,
     // Assets awaiting first authoritative data, keyed by the connection that wrote the subscribe.
     market_subscription_epochs: AHashMap<String, u64>,
@@ -143,7 +141,6 @@ impl FeedHandler {
             initial_market_replay,
             auth_tracker,
             user_subscribed,
-            market_subscription_initialized: false,
             market_heartbeat_next: None,
             market_subscription_epochs: AHashMap::new(),
             message_buffer: Vec::new(),
@@ -187,7 +184,7 @@ impl FeedHandler {
             self.subscriptions.mark_subscribe(id);
         }
 
-        let payload = if self.market_subscription_initialized {
+        let payload = if self.market_heartbeat_next.is_some() {
             serde_json::to_string(&MarketSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 operation: "subscribe",
@@ -227,8 +224,7 @@ impl FeedHandler {
                     }
                 }
 
-                if !self.market_subscription_initialized {
-                    self.market_subscription_initialized = true;
+                if self.market_heartbeat_next.is_none() {
                     self.schedule_market_heartbeat(connection_epoch);
                 }
 
@@ -573,7 +569,6 @@ impl FeedHandler {
                     match raw {
                         Message::Text(text) => {
                             if text == RECONNECTED {
-                                self.market_subscription_initialized = false;
                                 self.market_heartbeat_next = None;
                                 self.resubscribe_all(connection_epoch).await;
                                 return Some(PolymarketWsMessage::Reconnected { shard_id: None });
@@ -979,6 +974,52 @@ mod tests {
             expected_subscription,
         );
         assert_eq!(messages[3], POLYMARKET_HEARTBEAT_PAYLOAD);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn incremental_market_subscription_preserves_heartbeat_deadline() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let connection_epoch = client.connection_epoch();
+        let (mut handler, _raw_tx, _) = market_handler_with(client);
+
+        handler
+            .try_send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
+            .await
+            .expect("send initial subscription");
+        let heartbeat_next = Some((
+            tokio::time::Instant::now() + Duration::from_secs(POLYMARKET_HEARTBEAT_SECS),
+            connection_epoch,
+        ));
+        assert_eq!(handler.market_heartbeat_next, heartbeat_next);
+
+        tokio::time::advance(Duration::from_secs(POLYMARKET_HEARTBEAT_SECS / 2)).await;
+        handler
+            .try_send_subscribe_market(&["second-asset".to_string()], None)
+            .await
+            .expect("send incremental subscription");
+        wait_for_recorded_messages(&messages, 2).await;
+
+        let messages = messages.lock().clone();
+        assert_eq!(handler.market_heartbeat_next, heartbeat_next);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[0]).expect("valid initial payload"),
+            json!({
+                "assets_ids": [MARKET_ASSET_ID],
+                "type": "market",
+                "initial_dump": true,
+            }),
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[1]).expect("valid incremental payload"),
+            json!({
+                "assets_ids": ["second-asset"],
+                "operation": "subscribe",
+                "initial_dump": true,
+            }),
+        );
     }
 
     #[rstest]

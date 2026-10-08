@@ -16,7 +16,9 @@
 use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{
+        IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err, to_pyruntime_err, to_pyvalue_err,
+    },
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
@@ -28,7 +30,7 @@ use crate::{
     fees::MakerTakerFeeRates,
     identifiers::AccountId,
     position::Position,
-    python::instruments::pyobject_to_instrument_any,
+    python::{account::resolve_balance_currency, instruments::pyobject_to_instrument_any},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
@@ -108,8 +110,9 @@ impl BettingAccount {
 
     #[pyo3(name = "balance_total")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
-        self.balance_total(currency)
+    fn py_balance_total(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(self.balance_total(Some(currency)))
     }
 
     #[pyo3(name = "balances_total")]
@@ -119,8 +122,9 @@ impl BettingAccount {
 
     #[pyo3(name = "balance_free")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_free(&self, currency: Option<Currency>) -> Option<Money> {
-        self.balance_free(currency)
+    fn py_balance_free(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(self.balance_free(Some(currency)))
     }
 
     #[pyo3(name = "balances_free")]
@@ -130,8 +134,9 @@ impl BettingAccount {
 
     #[pyo3(name = "balance_locked")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
-        self.balance_locked(currency)
+    fn py_balance_locked(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(self.balance_locked(Some(currency)))
     }
 
     #[pyo3(name = "balances_locked")]
@@ -141,8 +146,9 @@ impl BettingAccount {
 
     #[pyo3(name = "balance")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance(&self, currency: Option<Currency>) -> Option<AccountBalance> {
-        Account::balance(self, currency).copied()
+    fn py_balance(&self, currency: Option<Currency>) -> PyResult<Option<AccountBalance>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance(self, Some(currency)).copied())
     }
 
     #[pyo3(name = "balances")]
@@ -244,6 +250,10 @@ impl BettingAccount {
     ///
     /// For `Sell` (back) the impact is the negative stake (quantity).
     /// For `Buy` (lay) the impact is the negative liability (quantity * (price - 1)).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the impact cannot be represented in the quote currency.
     #[pyo3(name = "balance_impact")]
     fn py_balance_impact(
         &self,
@@ -254,7 +264,8 @@ impl BettingAccount {
         py: Python,
     ) -> PyResult<Money> {
         let instrument = pyobject_to_instrument_any(py, instrument)?;
-        Ok(self.balance_impact(&instrument, quantity, price, order_side))
+        self.balance_impact(&instrument, quantity, price, order_side)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     #[pyo3(name = "to_dict")]

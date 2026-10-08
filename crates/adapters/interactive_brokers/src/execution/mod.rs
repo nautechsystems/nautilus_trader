@@ -21,4 +21,11 @@ pub mod core;
 pub mod parse;
 pub mod transform;
 
+mod commands;
+mod incarnations;
+mod order_state;
+mod reports;
+mod spreads;
+mod updates;
+
 pub use core::InteractiveBrokersExecutionClient;

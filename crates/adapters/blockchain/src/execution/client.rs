@@ -171,7 +171,7 @@ impl BlockchainExecutionClient {
     ) -> anyhow::Result<Self> {
         let transaction_limits = Self::transaction_limits(&config)?;
         let chain = Arc::new(config.chain.clone());
-        let cache = BlockchainCache::new(chain.clone());
+        let cache = BlockchainCache::new(Arc::clone(&chain));
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             config.http_rpc_url.clone().into_inner(),
             config.rpc_requests_per_second,
@@ -189,14 +189,14 @@ impl BlockchainExecutionClient {
             "Verification chain anchor name does not match the configured chain"
         );
         let verification = VerificationCoordinator::new(
-            http_rpc_client.clone(),
+            Arc::clone(&http_rpc_client),
             config.http_rpc_url.expose_secret(),
             verification_config,
             config.rpc_requests_per_second,
         )?;
         let wallet_address = validate_address(config.wallet_address.as_str())?;
         let erc20_contract = Erc20Contract::new_with_timeout(
-            http_rpc_client.clone(),
+            Arc::clone(&http_rpc_client),
             Some(EXECUTION_RPC_TIMEOUT_SECS),
             true,
         );
@@ -499,7 +499,7 @@ impl BlockchainExecutionClient {
         } else {
             let token_info = self.erc20_contract.fetch_token_info(token_address).await?;
             let token = Token::new(
-                self.chain.clone(),
+                Arc::clone(&self.chain),
                 *token_address,
                 token_info.name,
                 token_info.symbol,
@@ -984,7 +984,7 @@ impl BlockchainExecutionClient {
             .collect::<Vec<_>>();
 
         Ok(TransactionExecutor {
-            http_rpc_client: self.http_rpc_client.clone(),
+            http_rpc_client: Arc::clone(&self.http_rpc_client),
             verification: self.verification.clone(),
             manifest_version: verification_config.manifest_version.clone(),
             manifest_digest: verification_config.manifest_digest.clone(),
@@ -4812,7 +4812,7 @@ fn validate_finalized_swap_fill(
         .checked_mul(NANOSECONDS_IN_SECOND)
         .ok_or_else(|| anyhow::anyhow!("Finalized block timestamp overflows nanoseconds"))?;
     let mut swap = event.to_pool_swap(
-        plan.pool.chain.clone(),
+        Arc::clone(&plan.pool.chain),
         plan.instrument_id,
         plan.pool.pool_identifier,
         UnixNanos::from(timestamp_ns),
@@ -4901,7 +4901,7 @@ async fn load_verified_wallet_after_fill(
         );
         let identity = identities[0];
         let token = Token::new(
-            plan.pool.chain.clone(),
+            Arc::clone(&plan.pool.chain),
             address,
             identity.name.clone(),
             identity.symbol.clone(),
@@ -6489,16 +6489,16 @@ mod tests {
 
     fn test_pool() -> Pool {
         let chain = Arc::new(chains::ARBITRUM.clone());
-        let dex = UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&UNISWAP_V3.dex);
         let weth = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
             18,
         );
         let usdc = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
             "USD Coin".to_string(),
             "USDC".to_string(),
@@ -6764,7 +6764,7 @@ mod tests {
             AccountId::from("BLOCKCHAIN-001"),
             AccountType::Wallet,
             None,
-            cache.clone(),
+            Rc::clone(&cache),
         );
 
         let client = BlockchainExecutionClient::new(core, config)?;
@@ -7078,7 +7078,7 @@ mod tests {
             AccountId::from("BLOCKCHAIN-001"),
             AccountType::Wallet,
             None,
-            cache.clone(),
+            Rc::clone(&cache),
         );
 
         let client = BlockchainExecutionClient::new(core, config).unwrap();
@@ -9911,7 +9911,7 @@ mod tests {
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let config = ExecutionManagerConfig::default();
         let max_retries = config.inflight_max_retries;
-        let mut manager = ExecutionManager::new(clock, cache.clone(), config).unwrap();
+        let mut manager = ExecutionManager::new(clock, Rc::clone(&cache), config).unwrap();
 
         // The open-order check registers the client's retention requirement, as LiveNode does
         assert!(manager.check_open_orders(&[&client]).await.is_empty());
@@ -12838,16 +12838,16 @@ mod tests {
         // and WETH is token1, so the base token (WETH, by token priority) sits in the
         // token1 position and the swap quotes zero_for_one = false
         let chain = Arc::new(chains::ARBITRUM.clone());
-        let dex = UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&UNISWAP_V3.dex);
         let usdc = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
             "USD Coin".to_string(),
             "USDC".to_string(),
             6,
         );
         let weth = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
@@ -13434,16 +13434,16 @@ mod tests {
     #[rstest]
     fn resolve_pool_rejects_ambiguous_token_priority() {
         let chain = Arc::new(chains::ARBITRUM.clone());
-        let dex = UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&UNISWAP_V3.dex);
         let token_a = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("1111111111111111111111111111111111111111"),
             "Token A".to_string(),
             "TOKA".to_string(),
             18,
         );
         let token_b = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("2222222222222222222222222222222222222222"),
             "Token B".to_string(),
             "TOKB".to_string(),

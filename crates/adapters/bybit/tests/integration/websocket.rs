@@ -63,6 +63,8 @@ use ustr::Ustr;
 #[derive(Clone)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
+    upgrade_requests: Arc<AtomicUsize>,
+    upgrade_gate: tokio::sync::watch::Sender<bool>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>, // (topic, success)
     fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
@@ -78,6 +80,8 @@ impl Default for TestServerState {
     fn default() -> Self {
         Self {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
+            upgrade_requests: Arc::new(AtomicUsize::new(0)),
+            upgrade_gate: tokio::sync::watch::channel(true).0,
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             subscription_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             fail_next_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -128,6 +132,9 @@ impl TestServerState {
 
 // WebSocket handler
 async fn handle_websocket(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
+    state.upgrade_requests.fetch_add(1, Ordering::Relaxed);
+    let mut gate = state.upgrade_gate.subscribe();
+    gate.wait_for(|open| *open).await.unwrap();
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
@@ -2315,6 +2322,122 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
     );
 
     client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_after_close_and_connect_resends_topic() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/public/linear");
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    let topics = vec!["publicTrade.BTCUSDT".to_string()];
+
+    client.connect().await.unwrap();
+    client.subscribe(topics.clone()).await.unwrap();
+    wait_until_async(
+        || async { !state.subscription_events.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+    client.close().await.unwrap();
+    state.clear_subscription_events().await;
+
+    client.connect().await.unwrap();
+    client.subscribe(topics).await.unwrap();
+    let events =
+        wait_for_subscription_events(&state, Duration::from_secs(5), |events| !events.is_empty())
+            .await;
+
+    assert_eq!(events, vec![("publicTrade.BTCUSDT".to_string(), true)]);
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_failed_before_connect_is_sent_after_connect() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/public/linear");
+
+    let mut client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    let topics = vec!["publicTrade.BTCUSDT".to_string()];
+
+    let error = client.subscribe(topics.clone()).await.unwrap_err();
+    client.connect().await.unwrap();
+    client.subscribe(topics).await.unwrap();
+    let events =
+        wait_for_subscription_events(&state, Duration::from_secs(5), |events| !events.is_empty())
+            .await;
+
+    assert_eq!(
+        error.to_string(),
+        "WebSocket send error: Failed to send subscribe command: channel closed"
+    );
+    assert_eq!(events, vec![("publicTrade.BTCUSDT".to_string(), true)]);
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_failed_during_connect_is_sent_after_connect() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/public/linear");
+
+    let client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Linear,
+        BybitEnvironment::Mainnet,
+        Some(ws_url),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    let topics = vec!["publicTrade.BTCUSDT".to_string()];
+    let mut connecting = client.clone();
+    state.upgrade_gate.send_replace(false);
+
+    // Return the clone since dropping it drops the receiver the handler forwards to
+    let connect_task = tokio::spawn(async move {
+        let result = connecting.connect().await;
+        (connecting, result)
+    });
+
+    wait_until_async(
+        || async { state.upgrade_requests.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let error = client.subscribe(topics.clone()).await.unwrap_err();
+    state.upgrade_gate.send_replace(true);
+    let (mut connected, result) = connect_task.await.unwrap();
+    result.unwrap();
+    client.subscribe(topics).await.unwrap();
+    let events =
+        wait_for_subscription_events(&state, Duration::from_secs(5), |events| !events.is_empty())
+            .await;
+
+    assert_eq!(
+        error.to_string(),
+        "WebSocket send error: Failed to send subscribe command: channel closed"
+    );
+    assert_eq!(events, vec![("publicTrade.BTCUSDT".to_string(), true)]);
+
+    connected.close().await.unwrap();
 }
 
 #[rstest]

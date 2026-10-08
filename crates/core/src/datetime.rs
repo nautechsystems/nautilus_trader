@@ -44,10 +44,12 @@ pub const NANOSECONDS_IN_MINUTE: u64 = 60 * NANOSECONDS_IN_SECOND;
 pub const NANOSECONDS_IN_DAY: u64 = 24 * 60 * NANOSECONDS_IN_MINUTE;
 
 /// Number of seconds in one minute.
-pub const SECONDS_IN_MINUTE: u64 = 60;
+pub const SECONDS_IN_MINUTE: u64 = SECONDS_IN_MINUTE_U32 as u64;
+const SECONDS_IN_MINUTE_U32: u32 = 60;
 
 /// Number of seconds in one hour.
-pub const SECONDS_IN_HOUR: u64 = 60 * SECONDS_IN_MINUTE;
+pub const SECONDS_IN_HOUR: u64 = SECONDS_IN_HOUR_U32 as u64;
+const SECONDS_IN_HOUR_U32: u32 = 60 * SECONDS_IN_MINUTE_U32;
 
 /// Number of seconds in one day.
 pub const SECONDS_IN_DAY: u64 = 24 * SECONDS_IN_HOUR;
@@ -90,12 +92,13 @@ pub fn get_timezone(name: &str) -> Result<TimeZone, jiff::Error> {
     BUNDLED_TIME_ZONE_DATABASE.get(name)
 }
 
-fn civil_from_days(days_since_epoch: i64) -> (i32, u32, u32) {
+fn civil_from_days(days_since_epoch: u32) -> (i32, u32, u32) {
     // Howard Hinnant's civil calendar algorithm maps UTC epoch days to a
     // Gregorian date using integer arithmetic only. The input is already UTC,
     // so no timezone or leap-second rules are involved in this formatter.
+    // UnixNanos covers UTC day indexes 0..=213_503; every calendar intermediate fits u32.
     let z = days_since_epoch + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let era = z / 146_097;
     let day_of_era = z - era * 146_097;
     let year_of_era =
         (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
@@ -103,14 +106,14 @@ fn civil_from_days(days_since_epoch: i64) -> (i32, u32, u32) {
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_prime = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
-    let year = year + i64::from(month <= 2);
+    let month = if month_prime < 10 {
+        month_prime + 3
+    } else {
+        month_prime - 9
+    };
+    let year = year + u32::from(month <= 2);
 
-    (
-        i32::try_from(year).expect("year fits in i32"),
-        u32::try_from(month).expect("month is positive"),
-        u32::try_from(day).expect("day is positive"),
-    )
+    (i32::try_from(year).expect("year fits in i32"), month, day)
 }
 
 struct DateTimeParts {
@@ -131,10 +134,18 @@ fn push_digit(out: &mut String, digit: u32) {
     out.push(char::from(b'0' + digit as u8));
 }
 
+const DIGIT_PAIRS: &str = concat!(
+    "0001020304050607080910111213141516171819",
+    "2021222324252627282930313233343536373839",
+    "4041424344454647484950515253545556575859",
+    "6061626364656667686970717273747576777879",
+    "8081828384858687888990919293949596979899",
+);
+
 fn push_2_digits(out: &mut String, value: u32) {
     debug_assert!(value < 100);
-    push_digit(out, value / 10);
-    push_digit(out, value % 10);
+    let offset = value as usize * 2;
+    out.push_str(&DIGIT_PAIRS[offset..offset + 2]);
 }
 
 fn push_3_digits(out: &mut String, value: u32) {
@@ -146,32 +157,28 @@ fn push_3_digits(out: &mut String, value: u32) {
 fn push_4_digits(out: &mut String, value: i32) {
     debug_assert!((0..=9_999).contains(&value));
     let value = u32::try_from(value).expect("year is non-negative");
-    push_digit(out, value / 1_000);
-    push_digit(out, (value / 100) % 10);
+    push_2_digits(out, value / 100);
     push_2_digits(out, value % 100);
 }
 
 fn push_9_digits(out: &mut String, value: u32) {
     debug_assert!(value < 1_000_000_000);
-    let mut divisor = 100_000_000;
-    while divisor > 0 {
-        push_digit(out, value / divisor % 10);
-        divisor /= 10;
-    }
+    push_3_digits(out, value / 1_000_000);
+    push_3_digits(out, value / 1_000 % 1_000);
+    push_3_digits(out, value % 1_000);
 }
 
 fn split_unix_nanos(unix_nanos: UnixNanos) -> DateTimeParts {
     let nanos = unix_nanos.as_u64();
     let total_seconds = nanos / NANOSECONDS_IN_SECOND;
     let subsec_nanos = u32::try_from(nanos % NANOSECONDS_IN_SECOND).expect("subsecond fits u32");
-    let days = total_seconds / SECONDS_IN_DAY;
-    let seconds_of_day = total_seconds % SECONDS_IN_DAY;
-    let (year, month, day) =
-        civil_from_days(i64::try_from(days).expect("days since epoch fits i64"));
-    let hour = u32::try_from(seconds_of_day / SECONDS_IN_HOUR).expect("hour fits u32");
-    let minute =
-        u32::try_from((seconds_of_day % SECONDS_IN_HOUR) / SECONDS_IN_MINUTE).expect("minute fits");
-    let second = u32::try_from(seconds_of_day % SECONDS_IN_MINUTE).expect("second fits");
+    let days = u32::try_from(total_seconds / SECONDS_IN_DAY).expect("days since epoch fits u32");
+    let seconds_of_day =
+        u32::try_from(total_seconds % SECONDS_IN_DAY).expect("seconds of day fits u32");
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds_of_day / SECONDS_IN_HOUR_U32;
+    let minute = (seconds_of_day % SECONDS_IN_HOUR_U32) / SECONDS_IN_MINUTE_U32;
+    let second = seconds_of_day % SECONDS_IN_MINUTE_U32;
 
     DateTimeParts {
         year,
@@ -1335,5 +1342,25 @@ mod tests {
     #[case(u64::MAX, 18_446_744_073_709_551_000)]
     fn test_floor_to_nearest_microsecond(#[case] input: u64, #[case] expected: u64) {
         assert_eq!(floor_to_nearest_microsecond(input), expected);
+    }
+
+    #[rstest]
+    fn test_formatters_match_jiff_on_every_representable_utc_day() {
+        for day in 0..=u64::MAX / NANOSECONDS_IN_DAY {
+            for nanos in [
+                day * NANOSECONDS_IN_DAY,
+                (day * NANOSECONDS_IN_DAY).saturating_add(NANOSECONDS_IN_DAY - 1),
+            ] {
+                let timestamp = Timestamp::from_nanosecond(i128::from(nanos)).unwrap();
+                assert_eq!(
+                    unix_nanos_to_iso8601(UnixNanos::from(nanos)),
+                    format!("{timestamp:.9}")
+                );
+                assert_eq!(
+                    unix_nanos_to_iso8601_millis(UnixNanos::from(nanos)),
+                    format!("{timestamp:.3}")
+                );
+            }
+        }
     }
 }

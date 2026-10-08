@@ -1,13 +1,12 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0rc6"
+version = "2.0.0rc7"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
   "Operating System :: OS Independent",
   "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Rust",
@@ -22,7 +21,7 @@ classifiers = [
 license = "LGPL-3.0-only"
 license-files = ["LICENSE"]
 readme = "../README.md"
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.13,<3.15"
 dependencies = []
 
 [project.optional-dependencies]
@@ -71,7 +70,7 @@ environments = [
   "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 exclude-newer = "7 days"
-exclude-newer-package = { ruff = "2026-09-24T21:00:00Z" }
+exclude-newer-package = { ruff = "2026-10-01T19:00:00Z" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
@@ -154,7 +153,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.15.0", "ruff>=0.16.9", "ty>=0.0.80"]
+dev = ["maturin==1.15.0", "ruff>=0.16.10", "ty>=0.0.84"]
 test = [
   "pyarrow>=25.0.0",
   "polars",
@@ -163,7 +162,7 @@ test = [
   "pytest-cov>=7.1.0",
   "pytest-memray>=1.10.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   "pytest-xdist[psutil]>=3.8.0",
-  "uvicorn>=0.53.0",
+  "uvicorn>=0.54.0",
   "uvloop>=0.22.1; sys_platform != 'win32'",
 ]
 docs = [
@@ -174,7 +173,7 @@ docs = [
 ]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 100
 exclude = [
   "stubs/**",
@@ -380,6 +379,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "TD003",
 ] # Optional timer demo is left commented on purpose
 "examples/live/interactive_brokers/_common.py" = ["S603"]
+"examples/live/interactive_brokers/notebooks/**/*.py" = [
+  "ERA001",
+] # Jupytext notebook headers are not commented-out code
 "examples/live/polymarket/updown_smoke_tester.py" = ["TRY004"]
 "tests/**/*.py" = [
   "A002",

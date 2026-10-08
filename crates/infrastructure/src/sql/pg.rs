@@ -706,6 +706,26 @@ database = "nautilus"
     }
 
     #[rstest]
+    fn test_postgres_connect_options_connection_string_masks_password() {
+        let config = PostgresConnectOptions::new(
+            "db.example.com".to_string(),
+            6543,
+            "trader".to_string(),
+            "pw".to_string(),
+            "orders".to_string(),
+        );
+
+        let url = config.connection_string();
+        let masked_url = config.connection_string_masked();
+
+        assert_eq!(url, "postgres://trader:pw@db.example.com:6543/orders");
+        assert_eq!(
+            masked_url,
+            "postgres://trader:***@db.example.com:6543/orders"
+        );
+    }
+
+    #[rstest]
     fn test_split_sql_statements_basic() {
         let sql = "CREATE TABLE a (id INT); CREATE TABLE b (id INT);";
         assert_eq!(

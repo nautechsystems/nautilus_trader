@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
@@ -27,7 +28,6 @@ impl KeltnerPosition {
     /// Creates a new `KeltnerPosition` instance.
     #[new]
     #[pyo3(signature = (period, k_multiplier, ma_type=None, ma_type_atr=None, use_previous=None, atr_floor=None))]
-    #[must_use]
     pub fn py_new(
         period: usize,
         k_multiplier: f64,
@@ -35,8 +35,8 @@ impl KeltnerPosition {
         ma_type_atr: Option<MovingAverageType>,
         use_previous: Option<bool>,
         atr_floor: Option<f64>,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             period,
             k_multiplier,
             ma_type,
@@ -44,6 +44,7 @@ impl KeltnerPosition {
             use_previous,
             atr_floor,
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

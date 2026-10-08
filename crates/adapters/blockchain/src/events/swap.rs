@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::sync::Arc;
+
 use alloy::primitives::{Address, I256, U160};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -104,7 +106,7 @@ impl SwapEvent {
     ) -> PoolSwap {
         PoolSwap::new(
             chain,
-            self.dex.clone(),
+            Arc::clone(&self.dex),
             instrument_id,
             pool_identifier,
             self.block_number,

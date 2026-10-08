@@ -88,7 +88,7 @@ confidence-threshold = 0.8
 name = "implied-vol"
 version = "*"
 expression = "MIT"
-license-files = [{ path = "LICENSE", hash = 0xb0803f0e }]
+license-files = [{ path = "LICENSE", hash = 0x526ab6d5 }]
 
 # dydx-proto uses "LicenseRef-dYdX-Custom" but is effectively MIT licensed.
 # The dYdX custom license is a permissive license compatible with MIT terms.
@@ -223,6 +223,10 @@ skip = [
 
   # Windows platform crates - notoriously fragmented across Windows SDK versions
   { crate = "windows-sys:<0.61" },
+
+  # Arrow and Parquet retain zstd 0.13 while compression-codecs and Databento use 0.14
+  { crate = "zstd:=0.13.3" },
+  { crate = "zstd-safe:=7.3.0" },
 ]
 
 skip-tree = []

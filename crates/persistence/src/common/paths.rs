@@ -25,7 +25,7 @@
 //! so parsing behaves identically on every platform. Call sites must use these
 //! helpers instead of splitting raw paths on `/`.
 
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 use nautilus_common::enums::Environment;
 use nautilus_model::data::NautilusDataType;
@@ -204,6 +204,24 @@ pub(crate) fn local_writer_directory(path: &str) -> anyhow::Result<PathBuf> {
         "Streaming writers append to local files, writer path must be local, was {path}"
     );
     Ok(PathBuf::from(file_uri_to_native_path(&uri)))
+}
+
+/// Creates the directory a local path or `file://` URI names, including missing parents.
+///
+/// Does nothing for a remote URI.
+///
+/// # Errors
+///
+/// Returns an error if a relative path cannot be resolved against the current directory, or if
+/// the directory cannot be created.
+pub fn create_local_directory(path: &str) -> anyhow::Result<()> {
+    let uri = normalize_path_to_uri(path)?;
+
+    if uri.starts_with("file://") {
+        fs::create_dir_all(file_uri_to_native_path(&uri))?;
+    }
+
+    Ok(())
 }
 
 /// Returns the folder a streaming writer groups `environment` runs under, below its writer path.
@@ -397,9 +415,25 @@ fn has_custom_data_prefix(components: &[String], type_index: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UUID4;
     use rstest::rstest;
+    use tempfile::TempDir;
 
     use super::*;
+
+    #[rstest]
+    fn create_local_directory_creates_local_path_and_skips_remote_uri() {
+        let directory = TempDir::new().unwrap();
+        let local = directory.path().join("catalog").join("nested");
+        let bucket = format!("nautilus-{}", UUID4::new());
+
+        create_local_directory(&local.to_string_lossy()).unwrap();
+        create_local_directory(&format!("s3://{bucket}/catalog")).unwrap();
+
+        assert!(local.is_dir());
+        // Treating the remote URI as a local path would create it below the working directory
+        assert!(!PathBuf::from("s3:").join(&bucket).exists());
+    }
 
     #[rstest]
     fn normalize_path_separators_converts_backslashes() {

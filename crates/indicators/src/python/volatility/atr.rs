@@ -28,14 +28,13 @@ impl AverageTrueRange {
     /// An indicator which calculates an Average True Range (ATR) across a rolling window.
     #[new]
     #[pyo3(signature = (period, ma_type=None, use_previous=None, value_floor=None))]
-    #[must_use]
     pub fn py_new(
         period: usize,
         ma_type: Option<MovingAverageType>,
         use_previous: Option<bool>,
         value_floor: Option<f64>,
-    ) -> Self {
-        Self::new(period, ma_type, use_previous, value_floor)
+    ) -> PyResult<Self> {
+        Self::new_checked(period, ma_type, use_previous, value_floor).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -43,6 +42,24 @@ impl AverageTrueRange {
             "AverageTrueRange({},{},{},{})",
             self.period, self.ma_type, self.use_previous, self.value_floor,
         )
+    }
+
+    #[getter]
+    #[pyo3(name = "ma_type")]
+    const fn py_ma_type(&self) -> MovingAverageType {
+        self.ma_type
+    }
+
+    #[getter]
+    #[pyo3(name = "use_previous")]
+    const fn py_use_previous(&self) -> bool {
+        self.use_previous
+    }
+
+    #[getter]
+    #[pyo3(name = "value_floor")]
+    const fn py_value_floor(&self) -> f64 {
+        self.value_floor
     }
 
     #[getter]

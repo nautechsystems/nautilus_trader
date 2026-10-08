@@ -19,7 +19,7 @@ pub mod order_builder;
 pub mod parse;
 
 pub(crate) mod context;
-pub(crate) mod order_fill_tracker;
+pub(crate) mod fill_tracker;
 pub(crate) mod pending;
 pub(crate) mod reconciliation;
 pub(crate) mod settlement;
@@ -72,8 +72,8 @@ use ustr::Ustr;
 pub(crate) use self::reports::get_pusd_currency;
 use self::{
     context::OrderContextRegistry,
+    fill_tracker::OrderFillTrackerMap,
     order_builder::PolymarketOrderBuilder,
-    order_fill_tracker::OrderFillTrackerMap,
     pending::{PendingCancelTracker, PendingSubmitTracker},
     settlement::SettlementRegistry,
     submitter::OrderSubmitter,

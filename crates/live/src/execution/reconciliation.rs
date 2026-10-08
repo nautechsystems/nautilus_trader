@@ -37,8 +37,8 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::reconciliation::{
-    create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
-    is_inferred_reconciliation_trade_id_format, should_reconciliation_update,
+    create_position_reconciliation_venue_order_id, inferred_reconciliation_trade_ids,
+    should_reconciliation_update,
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -630,74 +630,7 @@ pub(super) fn sort_reconciliation_events(events: &mut Vec<OrderEventAny>) {
 ///
 /// Returns an error if the order requires replay and its cached history cannot be replayed.
 pub(super) fn has_active_inferred_fill(order: &OrderAny) -> anyhow::Result<bool> {
-    let events = order.events();
-    let trade_ids = order.trade_ids();
-
-    let is_candidate = |fill: &OrderFilled| {
-        fill.reconciliation
-            && is_inferred_reconciliation_trade_id_format(&fill.trade_id)
-            && trade_ids.contains(&&fill.trade_id)
-    };
-
-    if !events
-        .iter()
-        .any(|event| matches!(event, OrderEventAny::Filled(fill) if is_candidate(fill)))
-    {
-        return Ok(false);
-    }
-
-    let Some((first, remaining)) = events.split_first() else {
-        return Ok(false);
-    };
-
-    let mut projected = OrderAny::from_events(vec![(*first).clone()]).map_err(|e| {
-        anyhow::anyhow!(
-            "cannot replay order {} for inferred fill detection: {e}",
-            order.client_order_id(),
-        )
-    })?;
-
-    for event in remaining {
-        projected.apply((*event).clone()).map_err(|e| {
-            anyhow::anyhow!(
-                "cannot replay order {} for inferred fill detection: {e}",
-                order.client_order_id(),
-            )
-        })?;
-
-        let OrderEventAny::Filled(fill) = event else {
-            continue;
-        };
-
-        if !is_candidate(fill) {
-            continue;
-        }
-
-        let external_position_id = PositionId::new(format!("{}-EXTERNAL", fill.instrument_id));
-        let position_ids = [fill.position_id, Some(external_position_id)];
-
-        let inferred = position_ids.into_iter().flatten().any(|position_id| {
-            create_inferred_reconciliation_trade_id(
-                fill.account_id,
-                fill.instrument_id,
-                fill.client_order_id,
-                Some(fill.venue_order_id),
-                fill.order_side,
-                fill.order_type,
-                projected.filled_qty(),
-                fill.last_qty,
-                fill.last_px,
-                position_id,
-                fill.ts_event,
-            ) == fill.trade_id
-        });
-
-        if inferred {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
+    Ok(!inferred_reconciliation_trade_ids(order)?.is_empty())
 }
 
 /// Calculates inferred-fill commission using the responsible execution client.

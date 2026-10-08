@@ -23,48 +23,63 @@ use nautilus_core::UnixNanos;
 use pyo3::{prelude::*, pyclass::CompareOp};
 
 use crate::{
-    identifiers::{OptionSeriesId, Venue},
+    identifiers::{InstrumentId, OptionSeriesId, Venue},
     python::option_series_id_error_to_pyvalue_err,
 };
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OptionSeriesId {
-    /// Identifies a unique option series: a specific venue + underlying + settlement currency + expiration.
+    /// Identifies an option series and the instrument supplying its reference price.
+    ///
+    /// A reference matching `<UNDERLYING>.<VENUE>` uses the four-part representation. Others use
+    /// `VENUE:UNDERLYING:UNDERLYING_INSTRUMENT_ID:SETTLEMENT:EXPIRY`.
+    /// The reference instrument participates in equality, hashing, and ordering.
     #[new]
+    #[pyo3(signature = (venue, underlying, settlement_currency, expiration_ns, underlying_instrument_id=None))]
     fn py_new(
         venue: &str,
         underlying: &str,
         settlement_currency: &str,
         expiration_ns: u64,
+        underlying_instrument_id: Option<InstrumentId>,
     ) -> PyResult<Self> {
         Self::from_expiry_ns(
             venue,
             underlying,
             settlement_currency,
             UnixNanos::from(expiration_ns),
+            underlying_instrument_id,
         )
         .map_err(option_series_id_error_to_pyvalue_err)
     }
 
-    /// Creates an `OptionSeriesId` from venue name, underlying symbol, settlement currency, and date string.
+    /// Creates a series from a date string and an optional typed reference instrument.
     ///
-    /// The `date_str` is parsed via `UnixNanos::FromStr`, which accepts `"YYYY-MM-DD"`,
-    /// RFC 3339 timestamps, integer nanoseconds, or floating-point seconds.
+    /// The date accepts `YYYY-MM-DD`, RFC 3339, integer nanoseconds, or floating-point seconds.
+    /// An absent reference derives `<UNDERLYING>.<VENUE>`.
     ///
     /// # Errors
     ///
-    /// Returns an error if `venue` or `date_str` is invalid.
+    /// Returns an error if the venue, derived underlying instrument, or expiration is invalid.
     #[staticmethod]
     #[pyo3(name = "from_expiry")]
+    #[pyo3(signature = (venue, underlying, settlement_currency, date_str, underlying_instrument_id=None))]
     fn py_from_expiry(
         venue: &str,
         underlying: &str,
         settlement_currency: &str,
         date_str: &str,
+        underlying_instrument_id: Option<InstrumentId>,
     ) -> PyResult<Self> {
-        Self::from_expiry(venue, underlying, settlement_currency, date_str)
-            .map_err(option_series_id_error_to_pyvalue_err)
+        Self::from_expiry(
+            venue,
+            underlying,
+            settlement_currency,
+            date_str,
+            underlying_instrument_id,
+        )
+        .map_err(option_series_id_error_to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -83,6 +98,12 @@ impl OptionSeriesId {
     #[pyo3(name = "underlying")]
     fn py_underlying(&self) -> String {
         self.underlying.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "underlying_instrument_id")]
+    fn py_underlying_instrument_id(&self) -> InstrumentId {
+        self.underlying_instrument_id
     }
 
     #[getter]

@@ -49,8 +49,8 @@ class BBMeanReversionConfig(StrategyConfig):
         bb_period: int = 20,
         bb_std: float = 2.0,
         rsi_period: int = 14,
-        rsi_buy_threshold: float = 0.30,
-        rsi_sell_threshold: float = 0.70,
+        rsi_buy_threshold: float = 30.0,
+        rsi_sell_threshold: float = 70.0,
         close_positions_on_stop: bool = True,
         **_kwargs: Any,
     ) -> None:

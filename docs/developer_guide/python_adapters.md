@@ -451,7 +451,7 @@ build-backend = "maturin"
 [project]
 name = "external-adapter"
 version = "0.1.0"
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.13,<3.15"
 dependencies = ["nautilus-trader"]
 
 [tool.maturin]

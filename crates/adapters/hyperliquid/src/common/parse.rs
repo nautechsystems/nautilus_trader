@@ -79,6 +79,7 @@ use rust_decimal::Decimal;
 use crate::{
     common::{
         enums::{
+            HyperliquidAccountAbstraction,
             HyperliquidBarInterval::{self, *},
             HyperliquidOrderStatus, HyperliquidTpSl,
         },
@@ -889,6 +890,28 @@ pub fn parse_trigger_order_type(is_market: bool, tpsl: &HyperliquidTpSl) -> Orde
     }
 }
 
+/// Parses trigger semantics from a REST `orderType` label.
+///
+/// REST order rows (`frontendOpenOrders`, `historicalOrders`) describe conditional orders with
+/// labels such as `"Stop Market"` or `"Take Profit Limit"`, rather than the `tpsl` and
+/// `isMarket` fields carried by WebSocket order updates.
+///
+/// # Returns
+///
+/// The trigger kind and whether the order executes as market once triggered, or `None` when
+/// the label does not describe a trigger order (for example `"Limit"` or `"Market"`).
+#[must_use]
+pub fn parse_trigger_order_type_label(label: &str) -> Option<(HyperliquidTpSl, bool)> {
+    let tpsl = if label.starts_with("Take Profit") {
+        HyperliquidTpSl::Tp
+    } else if label.starts_with("Stop") {
+        HyperliquidTpSl::Sl
+    } else {
+        return None;
+    };
+    Some((tpsl, label.ends_with("Market")))
+}
+
 /// Extracts order status from WebSocket order data.
 ///
 /// # Returns
@@ -1018,10 +1041,22 @@ pub fn parse_account_balances_and_margins(
 
 /// Merges perp clearinghouse balances with spot balances into a unified set.
 ///
-/// The perp parser already reflects combined USDC when its cross-margin summary
+/// Unified and portfolio margin accounts report every balance and hold in the spot
+/// clearinghouse state, so balances come from spot alone and the spot USDC `hold` becomes the
+/// account-wide margin entry. That hold covers margin on every USDC-collateralized perp dex plus
+/// USDC reserved by resting spot orders; margin on dexes collateralized in another token shows
+/// up as that token's locked balance. The perp summary describes only the default dex in these
+/// modes: its `totalRawUsd` goes negative while longs are open and its `withdrawable` is per-dex.
+///
+/// Otherwise the perp parser already reflects combined USDC when its cross-margin summary
 /// carries collateral or margin state, so this parser appends only non-USDC spot
 /// tokens in that case. If the perp state has no margin summary, or the summary
 /// is present but zeroed, spot USDC is used verbatim.
+///
+/// Account updates keep any currency an update omits, so spot tokens the venue lists at zero are
+/// reported at zero, clearing a previous balance, and USDC is always reported, at zero when there
+/// is no USDC balance. On accounts without spot collateral this needs a perp summary; with none,
+/// no zeroed entries are reported and the previous balances are kept.
 ///
 /// # Errors
 ///
@@ -1029,7 +1064,27 @@ pub fn parse_account_balances_and_margins(
 pub fn parse_combined_account_balances_and_margins(
     perp_state: &ClearinghouseState,
     spot_state: &SpotClearinghouseState,
+    abstraction: HyperliquidAccountAbstraction,
 ) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
+    if abstraction.uses_spot_collateral() {
+        let mut balances = parse_spot_account_balances(spot_state)?;
+        push_zeroed_balances(&mut balances, spot_state);
+
+        let mut margins = Vec::new();
+
+        if let Some(usdc) = spot_state
+            .balances
+            .iter()
+            .find(|balance| balance.coin.as_str() == "USDC")
+            && usdc.hold > Decimal::ZERO
+        {
+            let margin_used = Money::from_decimal(usdc.hold, Currency::USDC())?;
+            margins.push(MarginBalance::new(margin_used, margin_used, None));
+        }
+
+        return Ok((balances, margins));
+    }
+
     let (mut balances, margins) = parse_account_balances_and_margins(perp_state)?;
 
     let perp_reflects_usdc = perp_state
@@ -1055,7 +1110,33 @@ pub fn parse_combined_account_balances_and_margins(
         balances.push(balance);
     }
 
+    // Without a perp summary the response is not a full account reading, so report no zeroed
+    // entries and keep the previous balances and margins rather than clear them
+    if perp_state.cross_margin_summary.is_some() {
+        push_zeroed_balances(&mut balances, spot_state);
+    }
+
     Ok((balances, margins))
+}
+
+// Account updates keep any currency an update omits, so a balance that reached zero must still be
+// reported to clear the previous one: spot tokens the venue lists at zero, and USDC whenever the
+// update would otherwise carry none. The venue keeps every token an
+// account has held as a zero row, so these entries recur on every update; a token dropped from
+// the spot state entirely still keeps its last balance
+fn push_zeroed_balances(balances: &mut Vec<AccountBalance>, spot_state: &SpotClearinghouseState) {
+    let zeroed_spot = spot_state
+        .balances
+        .iter()
+        .filter(|balance| balance.total.is_zero())
+        .map(|balance| crate::http::parse::get_currency(balance.coin.as_str()));
+
+    for currency in zeroed_spot.chain(std::iter::once(Currency::USDC())) {
+        if !balances.iter().any(|balance| balance.currency == currency) {
+            let zero = Money::zero(currency);
+            balances.push(AccountBalance::new(zero, zero, zero));
+        }
+    }
 }
 
 /// Parses Hyperliquid spot clearinghouse state into Nautilus account balances.
@@ -1544,6 +1625,21 @@ mod tests {
             parse_trigger_order_type(false, &HyperliquidTpSl::Tp),
             OrderType::LimitIfTouched
         );
+    }
+
+    #[rstest]
+    #[case("Stop Market", Some((HyperliquidTpSl::Sl, true)))]
+    #[case("Stop Limit", Some((HyperliquidTpSl::Sl, false)))]
+    #[case("Take Profit Market", Some((HyperliquidTpSl::Tp, true)))]
+    #[case("Take Profit Limit", Some((HyperliquidTpSl::Tp, false)))]
+    #[case("Limit", None)]
+    #[case("Market", None)]
+    #[case("", None)]
+    fn test_parse_trigger_order_type_label(
+        #[case] label: &str,
+        #[case] expected: Option<(HyperliquidTpSl, bool)>,
+    ) {
+        assert_eq!(parse_trigger_order_type_label(label), expected);
     }
 
     #[rstest]
@@ -2265,8 +2361,12 @@ mod tests {
         }"#;
         let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
 
-        let (balances, margins) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::Disabled,
+        )
+        .unwrap();
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
@@ -2299,8 +2399,12 @@ mod tests {
         }"#;
         let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
 
-        let (balances, margins) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::Disabled,
+        )
+        .unwrap();
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
@@ -2334,8 +2438,12 @@ mod tests {
         }"#;
         let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
 
-        let (balances, margins) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::Disabled,
+        )
+        .unwrap();
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
@@ -2368,8 +2476,12 @@ mod tests {
         }"#;
         let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
 
-        let (balances, margins) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::Disabled,
+        )
+        .unwrap();
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
@@ -2402,8 +2514,12 @@ mod tests {
         }"#;
         let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
 
-        let (balances, margins) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::Disabled,
+        )
+        .unwrap();
 
         assert_eq!(margins.len(), 1);
         assert_eq!(balances.len(), 2);
@@ -2436,8 +2552,12 @@ mod tests {
         }"#;
         let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
 
-        let (balances, margins) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::Disabled,
+        )
+        .unwrap();
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
@@ -2460,12 +2580,128 @@ mod tests {
         }"#;
         let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
 
-        let (balances, _) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+        let (balances, _) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::Disabled,
+        )
+        .unwrap();
 
         assert_eq!(balances.len(), 1);
         assert_eq!(balances[0].currency.code, "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(50));
+    }
+
+    // Unified account holding longs on the default dex and on a HIP-3 dex: the perp summary
+    // carries a negative `totalRawUsd` (`accountValue - totalNtlPos`) and a per-dex
+    // `withdrawable`, while spot USDC holds the collateral and `hold` is the margin used across
+    // every dex (180 default + 240 on a HIP-3 dex).
+    #[rstest]
+    fn test_parse_combined_unified_account_with_open_positions_uses_spot_usdc() {
+        let perp_state: ClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_clearinghouse_state_unified_open_positions.json"
+        ))
+        .unwrap();
+
+        let spot_state: SpotClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_spot_clearinghouse_state_unified_open_positions.json"
+        ))
+        .unwrap();
+
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::UnifiedAccount,
+        )
+        .unwrap();
+
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code, "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(512.25));
+        assert_eq!(balances[0].free.as_decimal(), dec!(92.25));
+        assert_eq!(balances[0].locked.as_decimal(), dec!(420.0));
+        assert_eq!(balances[1].currency.code, "PURR");
+        assert_eq!(margins.len(), 1);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(420.0));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(420.0));
+    }
+
+    #[rstest]
+    fn test_parse_combined_unified_account_flat_has_no_margin() {
+        let perp_state: ClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_clearinghouse_state_unified_flat.json"
+        ))
+        .unwrap();
+        let spot_state: SpotClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_spot_clearinghouse_state_unified_flat.json"
+        ))
+        .unwrap();
+
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::UnifiedAccount,
+        )
+        .unwrap();
+
+        assert_eq!(balances.len(), 1);
+        assert_eq!(balances[0].total.as_decimal(), dec!(100));
+        assert_eq!(balances[0].free.as_decimal(), dec!(100));
+        assert!(margins.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_combined_unified_account_without_usdc_ignores_perp_summary() {
+        let perp_state: ClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_clearinghouse_state_unified_without_usdc.json"
+        ))
+        .unwrap();
+        let spot_state: SpotClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_spot_clearinghouse_state_unified_without_usdc.json"
+        ))
+        .unwrap();
+
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::UnifiedAccount,
+        )
+        .unwrap();
+
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code, "PURR");
+        // USDC is reported as zero from spot rather than taken from the perp summary
+        assert_eq!(balances[1].currency.code, "USDC");
+        assert!(balances[1].total.is_zero());
+        assert!(balances[1].free.is_zero());
+        assert!(margins.is_empty());
+    }
+
+    // Portfolio margin borrows against other collateral, so spot USDC can go negative.
+    #[rstest]
+    fn test_parse_combined_portfolio_margin_uses_spot_including_negative_usdc() {
+        let perp_state: ClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_clearinghouse_state_portfolio_margin_negative_usdc.json"
+        ))
+        .unwrap();
+        let spot_state: SpotClearinghouseState = serde_json::from_str(include_str!(
+            "../../test_data/http_spot_clearinghouse_state_portfolio_margin_negative_usdc.json"
+        ))
+        .unwrap();
+
+        let (balances, margins) = parse_combined_account_balances_and_margins(
+            &perp_state,
+            &spot_state,
+            HyperliquidAccountAbstraction::PortfolioMargin,
+        )
+        .unwrap();
+
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code, "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(-25));
+        assert_eq!(balances[1].currency.code, "HYPE");
+        assert_eq!(margins.len(), 1);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(50));
     }
 
     fn limit_order(price: &str) -> OrderAny {

@@ -32,6 +32,7 @@ use ahash::AHashSet;
 use nautilus_common::{enums::Environment, live::block_on_nautilus_with};
 use nautilus_core::UnixNanos;
 use nautilus_model::data::Data;
+use object_store::path::Path as ObjectPath;
 
 use crate::{
     common::{
@@ -66,7 +67,14 @@ pub(crate) struct PromotionSession {
 
 impl PromotionSession {
     pub(crate) fn from_uri(uri: &str) -> Option<Self> {
-        if let Ok(url) = url::Url::parse(uri)
+        let uri_local_encoded = uri.starts_with("file://").then(|| {
+            normalize_path_separators(uri)
+                .replace('%', "%25")
+                .replace('#', "%23")
+                .replace('?', "%3F")
+        });
+
+        if let Ok(url) = url::Url::parse(uri_local_encoded.as_deref().unwrap_or(uri))
             && let Some(session) = Self::from_url(url)
         {
             return Some(session);
@@ -99,8 +107,16 @@ impl PromotionSession {
         url.set_query(None);
         url.set_fragment(None);
 
+        let root_uri = if url.scheme() == "file" {
+            let root_path = ObjectPath::from_url_path(url.path()).ok()?;
+            let root_prefix = url.as_str().strip_suffix(url.path())?;
+            format!("{root_prefix}/{root_path}")
+        } else {
+            url.to_string()
+        };
+
         Some(Self {
-            root_uri: url.to_string(),
+            root_uri,
             environment,
             instance_id,
         })
@@ -298,6 +314,7 @@ where
     files: Vec<String>,
     use_ts_event_for_ts_init: bool,
     delete_feather_after_commit: bool,
+    schedule: Option<Arc<Mutex<PromotionSchedule>>>,
 }
 
 impl<B> PromotionWork<B>
@@ -319,13 +336,20 @@ where
             files,
             use_ts_event_for_ts_init,
             delete_feather_after_commit,
+            schedule: None,
         }
+    }
+
+    pub(crate) fn with_schedule(mut self, schedule: Arc<Mutex<PromotionSchedule>>) -> Self {
+        self.schedule = Some(schedule);
+        self
     }
 
     pub(crate) fn execute(self) -> PromotionResult {
         let files = self.files.clone();
+        let schedule = self.schedule.clone();
 
-        match panic::catch_unwind(AssertUnwindSafe(|| self.execute_inner())) {
+        let result = match panic::catch_unwind(AssertUnwindSafe(|| self.execute_inner())) {
             Ok(result) => result,
             Err(payload) => PromotionResult {
                 files,
@@ -339,7 +363,16 @@ where
                     panic_payload_message(payload.as_ref()),
                 )),
             },
+        };
+
+        if let Some(schedule) = schedule {
+            schedule
+                .lock()
+                .expect("promotion schedule lock poisoned")
+                .complete(&result);
         }
+
+        result
     }
 
     pub(crate) fn files(&self) -> &[String] {
@@ -690,10 +723,6 @@ where
         })
     }
 
-    pub(crate) fn submit(&self, work: T) -> anyhow::Result<()> {
-        self.submitter().submit(work)
-    }
-
     pub(crate) fn submitter(&self) -> PromotionSubmitter<T> {
         PromotionSubmitter {
             tx: self.tx.clone(),
@@ -752,7 +781,7 @@ where
     B: StagedPromotionBackend,
 {
     worker: Option<PromotionWorker<PromotionWork<B>>>,
-    scheduled_paths: Arc<Mutex<AHashSet<String>>>,
+    schedule: Arc<Mutex<PromotionSchedule>>,
     last_commit_time_ns: UnixNanos,
 }
 
@@ -760,10 +789,13 @@ impl<B> PromotionDriver<B>
 where
     B: StagedPromotionBackend,
 {
-    pub(crate) fn new(last_commit_time_ns: UnixNanos) -> Self {
+    pub(crate) fn new(last_commit_time_ns: UnixNanos, files: Vec<String>) -> Self {
         Self {
             worker: None,
-            scheduled_paths: Arc::new(Mutex::new(AHashSet::new())),
+            schedule: Arc::new(Mutex::new(PromotionSchedule {
+                pending_paths: files.into_iter().collect(),
+                scheduled_paths: AHashSet::new(),
+            })),
             last_commit_time_ns,
         }
     }
@@ -778,10 +810,6 @@ where
         self.last_commit_time_ns = now;
     }
 
-    pub(crate) fn schedule_new(&self, files: Vec<String>) -> anyhow::Result<Vec<String>> {
-        schedule_new_paths(&self.scheduled_paths, files)
-    }
-
     pub(crate) fn submit(
         &mut self,
         work: PromotionWork<B>,
@@ -789,11 +817,10 @@ where
     ) -> anyhow::Result<()> {
         let files = work.files().to_vec();
 
-        if self.worker.is_none() {
-            self.worker = Some(PromotionWorker::spawn(worker_name)?);
-        }
-
-        if let Err(e) = self.worker.as_mut().unwrap().submit(work) {
+        if let Err(e) = self
+            .submitter(worker_name)
+            .and_then(|submitter| submitter.submit(work))
+        {
             self.unschedule(&files);
             return Err(e);
         }
@@ -812,8 +839,8 @@ where
         Ok(self.worker.as_ref().unwrap().submitter())
     }
 
-    pub(crate) fn scheduled_paths(&self) -> Arc<Mutex<AHashSet<String>>> {
-        Arc::clone(&self.scheduled_paths)
+    pub(crate) fn schedule(&self) -> Arc<Mutex<PromotionSchedule>> {
+        Arc::clone(&self.schedule)
     }
 
     pub(crate) fn drain_completed(&mut self) -> anyhow::Result<Vec<PromotionResult>> {
@@ -850,46 +877,58 @@ where
     }
 
     pub(crate) fn unschedule(&self, files: &[String]) {
-        let mut scheduled_paths = self
-            .scheduled_paths
+        self.schedule
             .lock()
-            .expect("promotion schedule lock poisoned");
+            .expect("promotion schedule lock poisoned")
+            .unschedule(files);
+    }
+}
 
+pub(crate) struct PromotionSchedule {
+    pending_paths: AHashSet<String>,
+    scheduled_paths: AHashSet<String>,
+}
+
+impl PromotionSchedule {
+    pub(crate) fn unschedule(&mut self, files: &[String]) {
         for file in files {
-            scheduled_paths.remove(file);
+            self.scheduled_paths.remove(file);
         }
     }
 
-    pub(crate) fn unschedule_uncommitted(&self, files: &[String], committed_paths: &[String]) {
-        let committed_paths = committed_paths
+    fn complete(&mut self, result: &PromotionResult) {
+        let committed = result
+            .committed_paths
             .iter()
-            .map(String::as_str)
+            .chain(&result.deleted_paths)
             .collect::<AHashSet<_>>();
 
-        let mut scheduled_paths = self
-            .scheduled_paths
-            .lock()
-            .expect("promotion schedule lock poisoned");
-
-        for file in files {
-            if !committed_paths.contains(file.as_str()) {
-                scheduled_paths.remove(file);
+        for file in &result.files {
+            if result.converted.is_ok() || committed.contains(file) {
+                self.scheduled_paths.remove(file);
+                self.pending_paths.remove(file);
             }
         }
     }
 }
 
 pub(crate) fn schedule_new_paths(
-    scheduled_paths: &Arc<Mutex<AHashSet<String>>>,
+    schedule: &Arc<Mutex<PromotionSchedule>>,
     files: Vec<String>,
 ) -> anyhow::Result<Vec<String>> {
-    let mut scheduled = scheduled_paths
+    let mut schedule = schedule
         .lock()
         .map_err(|e| anyhow::anyhow!("Promotion schedule lock poisoned: {e}"))?;
-    Ok(files
-        .into_iter()
-        .filter(|file| scheduled.insert(file.clone()))
-        .collect())
+    schedule.pending_paths.extend(files);
+    let mut files = schedule
+        .pending_paths
+        .iter()
+        .filter(|file| !schedule.scheduled_paths.contains(*file))
+        .cloned()
+        .collect::<Vec<_>>();
+    files.sort();
+    schedule.scheduled_paths.extend(files.iter().cloned());
+    Ok(files)
 }
 
 impl<B> PromotionTask for PromotionWork<B>
@@ -904,7 +943,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::{
         any::Any,
         sync::{Arc, Mutex},
@@ -915,7 +954,8 @@ mod tests {
     use rstest::rstest;
 
     use super::{
-        PromotionBackend, PromotionSession, PromotionSink, PromotionWork, StagedPromotionBackend,
+        PromotionBackend, PromotionSchedule, PromotionSession, PromotionSink, PromotionWork,
+        StagedPromotionBackend,
     };
     use crate::{
         common::{conversion::FeatherConversionSummary, storage::create_storage_backend_from_path},
@@ -1217,5 +1257,12 @@ mod tests {
                 "promote",
             ]
         );
+    }
+
+    pub(crate) fn assert_scheduled_count(
+        schedule: &Arc<Mutex<PromotionSchedule>>,
+        expected: usize,
+    ) {
+        assert_eq!(schedule.lock().unwrap().scheduled_paths.len(), expected);
     }
 }

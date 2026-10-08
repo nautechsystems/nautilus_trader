@@ -86,7 +86,7 @@ pub(crate) async fn sync_ws_subscription_with_resolution_and_terminal_async(
             condition_id
                 .as_ref()
                 .and_then(|condition_id| watchlist.get(condition_id))
-                .is_some_and(&has_active_data_owner)
+                .is_some_and(has_active_data_owner)
                 || watchlist.values().any(has_active_data_owner)
         };
     let wants_subscribe = wants_resolution

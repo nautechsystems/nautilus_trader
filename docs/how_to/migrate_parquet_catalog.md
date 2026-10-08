@@ -137,12 +137,23 @@ destination format preserves order IDs for subsequent writes.
   that are neither `uint64` nor nanosecond Arrow timestamps, and unknown fingerprints fail preflight with every
   problem listed, before any destination write.
 
-### Sources to validate before cutover
+### Verified sources and cutover checks
 
-The conversions above are exercised against catalogs written by the current development format. Check the destination
-carefully when the source contains:
+The end-to-end migration fixture comes from develop commit `1602043deb`, built with the `high-precision` feature
+enabled. It covers quotes, trades, bars, fixed-depth order books, `CurrencyPair` instruments, account-state records,
+and a generic custom data type. The tests compare decoded destination values against the original values and check
+that the source files remain byte-identical. This fixture does not establish a minimum supported release or cover
+every historical catalog format.
+
+Instrument regression tests also cover `CryptoPerpetual` files with legacy `class` metadata, both `uint64` and
+`timestamp("ns", tz="UTC")` timestamps, and with or without the removed `maker_fee` and `taker_fee` columns.
+Migration drops those fee columns because the current instrument model no longer stores them. Runtime queries reject
+these legacy instrument files and direct users to the migration command; they do not convert files while reading.
+
+Check the destination carefully when the source contains:
 
 - Data written by an older Nautilus release.
+- Instrument types other than `CurrencyPair` and `CryptoPerpetual`.
 - Adapter custom data types with Arrow support, such as Betfair, Binance, Deribit, and Hyperliquid.
 - Deltas, mark and index prices, closes, Greeks, current-shape funding, or record families other than
   `account_state`.

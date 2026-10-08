@@ -328,7 +328,7 @@ impl BlockchainCache {
     async fn load_tokens(&mut self) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let (tokens, invalid_tokens) = tokio::try_join!(
-                database.load_tokens(self.chain.clone()),
+                database.load_tokens(Arc::clone(&self.chain)),
                 database.load_invalid_token_addresses(self.chain.chain_id)
             )?;
 
@@ -360,7 +360,7 @@ impl BlockchainCache {
                 .get_dex(dex_id)
                 .ok_or_else(|| anyhow::anyhow!("DEX {dex_id:?} has not been registered"))?;
             let pool_rows = database
-                .load_pools(self.chain.clone(), &dex_id.to_string())
+                .load_pools(Arc::clone(&self.chain), &dex_id.to_string())
                 .await?;
             log::debug!(
                 "Loading {} pools for DEX {} from cache database",
@@ -401,7 +401,11 @@ impl BlockchainCache {
                 return Ok(None);
             };
             database
-                .load_pool(self.chain.clone(), &dex_id.to_string(), pool_identifier)
+                .load_pool(
+                    Arc::clone(&self.chain),
+                    &dex_id.to_string(),
+                    pool_identifier,
+                )
                 .await?
         };
 
@@ -455,8 +459,8 @@ impl BlockchainCache {
         let ts_init = pool_row.creation_block_timestamp.unwrap_or_default();
 
         let mut pool = Pool::new(
-            self.chain.clone(),
-            dex.clone(),
+            Arc::clone(&self.chain),
+            Arc::clone(dex),
             pool_row.address,
             pool_identifier,
             pool_row.creation_block,
@@ -489,7 +493,7 @@ impl BlockchainCache {
     async fn load_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let block_timestamps = database
-                .load_block_timestamps(self.chain.clone(), from_block)
+                .load_block_timestamps(Arc::clone(&self.chain), from_block)
                 .await?;
 
             // Verify block number sequence consistency
@@ -605,7 +609,7 @@ impl BlockchainCache {
         log::debug!("Adding dex {} to the cache", dex.name);
 
         if let Some(database) = &self.database {
-            database.add_dex(dex.clone()).await?;
+            database.add_dex(Arc::clone(&dex)).await?;
         }
 
         self.dexes.insert(dex.name, dex);
@@ -1357,8 +1361,8 @@ mod tests {
         .await?;
         // Asymmetric values (4, 6) catch a token0/token1 column swap.
         let update = PoolFeeProtocolUpdate::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             instrument_id,
             pool_identifier,
             13,
@@ -1421,8 +1425,8 @@ mod tests {
             .add_pool_event_blocks_batch(chain.chain_id, &[test_block(13, ts)])
             .await?;
         let update = PoolFeeProtocolUpdate::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             instrument_id,
             pool_identifier,
             13,
@@ -1486,8 +1490,8 @@ mod tests {
         .await?;
         // Asymmetric amounts (111, 222) catch a token0/token1 column swap.
         let collect = PoolFeeProtocolCollect::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             instrument_id,
             pool_identifier,
             13,
@@ -1828,8 +1832,8 @@ mod tests {
         let creation_ts = UnixNanos::from(1_700_000_003_000_000_000);
 
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             creation_block,
@@ -1840,7 +1844,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
 
         cache.add_dex(dex).await?;
@@ -1886,8 +1890,8 @@ mod tests {
         let pool_identifier = PoolIdentifier::from_address(pool_address);
 
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             10, // creation block, distinct from the snapshot blocks below
@@ -1898,7 +1902,7 @@ mod tests {
             UnixNanos::default(),
         );
         let instrument_id = pool.instrument_id;
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
         cache.add_dex(dex).await?;
         cache.add_token(token0).await?;
@@ -2007,8 +2011,8 @@ mod tests {
         let pool_identifier = PoolIdentifier::from_address(pool_address);
 
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             10,
@@ -2019,7 +2023,7 @@ mod tests {
             UnixNanos::default(),
         );
         let instrument_id = pool.instrument_id;
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
         cache.add_dex(dex).await?;
         cache.add_token(token0).await?;
@@ -2129,8 +2133,8 @@ mod tests {
             PoolIdentifier::from_address(address!("0x1111111111111111111111111111111111111111"));
 
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             30,
@@ -2140,7 +2144,7 @@ mod tests {
             Some(10),
             UnixNanos::default(),
         );
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
         cache.add_dex(dex).await?;
         cache.add_token(token0).await?;
@@ -2193,8 +2197,8 @@ mod tests {
         let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
         let pool_identifier = PoolIdentifier::from_address(pool_address);
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             10,
@@ -2209,7 +2213,7 @@ mod tests {
         // Unreachable RPC so the on-chain compare cannot fetch the block and must fall back to the
         // stored verdict.
         let config = BlockchainDataClientConfig::builder()
-            .chain(chain.clone())
+            .chain(Arc::clone(&chain))
             .dex_ids(vec![DexType::UniswapV3])
             .http_rpc_url("http://127.0.0.1:9".into())
             .use_hypersync_for_live_data(true)
@@ -2306,8 +2310,8 @@ mod tests {
         async fn events(&self, to_block: u64) -> anyhow::Result<Vec<DexPoolData>> {
             self.database()
                 .stream_pool_events(
-                    self.chain.clone(),
-                    self.dex.clone(),
+                    Arc::clone(&self.chain),
+                    Arc::clone(&self.dex),
                     self.pool.instrument_id,
                     self.pool.pool_identifier,
                     None,
@@ -2328,8 +2332,8 @@ mod tests {
         let token1 = usdc(&chain);
         let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             PoolIdentifier::from_address(pool_address),
             10,
@@ -2339,9 +2343,9 @@ mod tests {
             Some(10),
             UnixNanos::default(),
         );
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
-        cache.add_dex(dex.clone()).await?;
+        cache.add_dex(Arc::clone(&dex)).await?;
         cache.add_token(token0).await?;
         cache.add_token(token1).await?;
         cache.add_pool(pool.clone()).await?;
@@ -2359,8 +2363,8 @@ mod tests {
         fixture: &PoolEventSyncFixture,
     ) -> (PoolFeeProtocolUpdate, PoolFeeProtocolCollect) {
         let update = PoolFeeProtocolUpdate::new(
-            fixture.chain.clone(),
-            fixture.dex.clone(),
+            Arc::clone(&fixture.chain),
+            Arc::clone(&fixture.dex),
             fixture.pool.instrument_id,
             fixture.pool.pool_identifier,
             12,
@@ -2373,8 +2377,8 @@ mod tests {
             UnixNanos::from(1_700_000_012_000_000_000),
         );
         let collect = PoolFeeProtocolCollect::new(
-            fixture.chain.clone(),
-            fixture.dex.clone(),
+            Arc::clone(&fixture.chain),
+            Arc::clone(&fixture.dex),
             fixture.pool.instrument_id,
             fixture.pool.pool_identifier,
             13,
@@ -2393,8 +2397,8 @@ mod tests {
 
     fn expected_swap(fixture: &PoolEventSyncFixture) -> PoolSwap {
         PoolSwap::new(
-            fixture.chain.clone(),
-            fixture.dex.clone(),
+            Arc::clone(&fixture.chain),
+            Arc::clone(&fixture.dex),
             fixture.pool.instrument_id,
             fixture.pool.pool_identifier,
             11,
@@ -2954,7 +2958,7 @@ mod tests {
 
     fn weth(chain: &SharedChain) -> Token {
         Token::new(
-            chain.clone(),
+            Arc::clone(chain),
             address!("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
@@ -2964,7 +2968,7 @@ mod tests {
 
     fn usdc(chain: &SharedChain) -> Token {
         Token::new(
-            chain.clone(),
+            Arc::clone(chain),
             address!("0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8"),
             "USD Coin".to_string(),
             "USDC".to_string(),

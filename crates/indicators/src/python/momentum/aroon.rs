@@ -25,9 +25,8 @@ impl AroonOscillator {
     /// The Aroon Oscillator calculates the Aroon Up and Aroon Down indicators to
     /// determine if an instrument is trending, and the strength of the trend.
     #[new]
-    #[must_use]
-    pub fn py_new(period: usize) -> Self {
-        Self::new(period)
+    pub fn py_new(period: usize) -> PyResult<Self> {
+        Self::new_checked(period).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

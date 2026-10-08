@@ -72,6 +72,10 @@ azure_catalog = ParquetDataCatalog(
 )
 ```
 
+The base path of a remote URI, after the bucket, container, or host, must not contain spaces,
+non-ASCII characters, or characters that object-store paths encode, such as `~`, `%`, `#`, `?`,
+`^`, or `|`. The catalog rejects such a URI when it opens, with an error that names it.
+
 ## Compression and row groups
 
 `DataCatalogConfig` sets how a configured catalog reads and writes data files:
@@ -212,6 +216,8 @@ trades = catalog.query_trade_ticks(
 - For bars, `bar_spec` combines with the instrument ID to select an `EXTERNAL` bar type. Explicit
   `bar_types` can select internal, external, or composite bars.
 - `optimize_file_loading` registers whole directories when possible.
+- `batch_deltas` (default `True`) replays `OrderBookDelta` data as `OrderBookDeltas` batches closed
+  by `F_LAST`. See [order book delta replay](../backtesting/apis-and-runs.md#order-book-delta-replay).
 
 ### Basic usage examples
 
@@ -372,7 +378,8 @@ ranged deletes.
 Reset Parquet file names to match their content timestamps so filename-based filtering remains
 accurate. `reset_all_file_names()` processes the entire catalog; `reset_data_file_names(...)`
 targets a data path. Supply an instrument ID for data types partitioned by instrument. Without one,
-the operation recursively reads the type directory and moves the renamed files into that directory.
+the operation recursively reads the type directory and renames each file within its own instrument
+directory, checking every directory's intervals before renaming any file.
 
 ```python
 catalog.reset_all_file_names()

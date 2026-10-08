@@ -329,7 +329,6 @@ create_development_wheels() {
   local version=$2
 
   mkdir -p "$dist"
-  printf 'cp312-%s\n' "$version" > "${dist}/nautilus_trader-${version}-cp312-cp312-manylinux_2_34_x86_64.whl"
   printf 'cp313-%s\n' "$version" > "${dist}/nautilus_trader-${version}-cp313-cp313-manylinux_2_34_x86_64.whl"
   printf 'cp314-%s\n' "$version" > "${dist}/nautilus_trader-${version}-cp314-cp314-manylinux_2_34_x86_64.whl"
 }
@@ -339,7 +338,7 @@ create_full_wheels() {
   local version=$2
 
   mkdir -p "$dist"
-  for python_tag in cp312 cp313 cp314; do
+  for python_tag in cp313 cp314; do
     printf '%s-linux-x86\n' "$python_tag" > "${dist}/nautilus_trader-${version}-${python_tag}-${python_tag}-manylinux_2_34_x86_64.whl"
     printf '%s-linux-arm\n' "$python_tag" > "${dist}/nautilus_trader-${version}-${python_tag}-${python_tag}-manylinux_2_35_aarch64.whl"
     printf '%s-macos\n' "$python_tag" > "${dist}/nautilus_trader-${version}-${python_tag}-${python_tag}-macosx_11_0_arm64.whl"
@@ -363,7 +362,7 @@ test_artifact_matrix() {
     PUBLISH_WHEEL_VERSION="$version" PUBLISH_WHEEL_MATRIX=development \
       bash "${repo_root}/scripts/ci/validate-wheel-artifacts.bash" manifest
   )
-  [[ "$(wc -l < "${valid}/manifest" | tr -d ' ')" == "3" ]] || fail "Valid matrix must have three wheels"
+  [[ "$(wc -l < "${valid}/manifest" | tr -d ' ')" == "2" ]] || fail "Valid matrix must have two wheels"
 
   create_development_wheels "${missing}/dist" "$version"
   rm "${missing}/dist/nautilus_trader-${version}-cp314-cp314-manylinux_2_34_x86_64.whl"
@@ -387,8 +386,8 @@ test_artifact_matrix() {
     PUBLISH_WHEEL_VERSION=2.0.0rc3.dev20260803 PUBLISH_WHEEL_MATRIX=nightly \
       bash "${repo_root}/scripts/ci/validate-wheel-artifacts.bash" manifest
   )
-  [[ "$(wc -l < "${nightly}/manifest" | tr -d ' ')" == "12" ]] ||
-    fail "Valid nightly matrix must have twelve wheels"
+  [[ "$(wc -l < "${nightly}/manifest" | tr -d ' ')" == "8" ]] ||
+    fail "Valid nightly matrix must have eight wheels"
 
   create_full_wheels "${stable}/dist" "2.0.0rc3"
   (
@@ -396,8 +395,8 @@ test_artifact_matrix() {
     PUBLISH_WHEEL_VERSION=2.0.0rc3 PUBLISH_WHEEL_MATRIX=stable \
       bash "${repo_root}/scripts/ci/validate-wheel-artifacts.bash" manifest
   )
-  [[ "$(wc -l < "${stable}/manifest" | tr -d ' ')" == "12" ]] ||
-    fail "Valid stable matrix must have twelve wheels"
+  [[ "$(wc -l < "${stable}/manifest" | tr -d ' ')" == "8" ]] ||
+    fail "Valid stable matrix must have eight wheels"
 
   run_expect_failure "$output" bash -c \
     "cd '$stable' && PUBLISH_WHEEL_VERSION='2.0.0rc3.dev20260803' PUBLISH_WHEEL_MATRIX=stable bash '$repo_root/scripts/ci/validate-wheel-artifacts.bash' manifest"
@@ -685,7 +684,6 @@ test_publication_transaction() {
   run_expect_failure "$output" run_transaction "$upload_failure" "$version" '' "$failed_upload"
   cmp -s "${upload_failure}/original-index.html" "${upload_failure}/r2/index.html" ||
     fail "Partial upload changed the old index"
-  assert_file "${upload_failure}/r2/nautilus_trader-${version}-cp312-cp312-manylinux_2_34_x86_64.whl"
   assert_file "${upload_failure}/r2/nautilus_trader-${version}-cp313-cp313-manylinux_2_34_x86_64.whl"
   assert_absent "${upload_failure}/r2/${failed_upload}"
   assert_file "${upload_failure}/r2/${old}"
@@ -704,21 +702,21 @@ test_publication_transaction() {
   if [[ -s "${stale}/uv.log" ]]; then
     fail "Stale publication ran public-index verification"
   fi
-  for python_tag in cp312 cp313 cp314; do
+  for python_tag in cp313 cp314; do
     assert_absent \
       "${stale}/r2/nautilus_trader-${version}-${python_tag}-${python_tag}-manylinux_2_34_x86_64.whl"
   done
 
   prepare_transaction "$mismatch" "$version"
   printf 'wrong-current-bytes\n' > \
-    "${mismatch}/r2/nautilus_trader-${version}-cp312-cp312-manylinux_2_34_x86_64.whl"
+    "${mismatch}/r2/nautilus_trader-${version}-cp313-cp313-manylinux_2_34_x86_64.whl"
   write_index "${mismatch}/r2"
   cp "${mismatch}/r2/index.html" "${mismatch}/original-index.html"
   run_expect_failure "$output" run_transaction "$mismatch" "$version"
   cmp -s "${mismatch}/original-index.html" "${mismatch}/r2/index.html" ||
     fail "Mismatched existing object changed the index"
   mismatched_bytes="$(cat \
-    "${mismatch}/r2/nautilus_trader-${version}-cp312-cp312-manylinux_2_34_x86_64.whl")"
+    "${mismatch}/r2/nautilus_trader-${version}-cp313-cp313-manylinux_2_34_x86_64.whl")"
   if [[ "$mismatched_bytes" != "wrong-current-bytes" ]]; then
     fail "Mismatched existing object was overwritten"
   fi
@@ -731,7 +729,7 @@ test_publication_transaction() {
   run_expect_failure "$output" run_transaction "$extra" "$version"
   cmp -s "${extra}/original-index.html" "${extra}/r2/index.html" ||
     fail "Unexpected current-version object changed the index"
-  assert_absent "${extra}/r2/nautilus_trader-${version}-cp312-cp312-manylinux_2_34_x86_64.whl"
+  assert_absent "${extra}/r2/nautilus_trader-${version}-cp313-cp313-manylinux_2_34_x86_64.whl"
 }
 
 test_policy_and_version

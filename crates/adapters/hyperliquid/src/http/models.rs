@@ -307,6 +307,9 @@ pub struct OutcomeMarket {
     pub name: String,
     /// Venue-provided market description.
     pub description: String,
+    /// Quote and settlement token code when supplied by the venue.
+    #[serde(default)]
+    pub quote_token: Option<String>,
     /// Side specifications for the binary outcome.
     #[serde(default)]
     pub side_specs: Vec<OutcomeSideSpec>,
@@ -633,6 +636,9 @@ pub struct HyperliquidFill {
         deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub builder_fee: Option<Decimal>,
+    /// Optional client order ID (hex representation of the venue CLOID).
+    #[serde(default)]
+    pub cloid: Option<String>,
 }
 
 /// Represents order status response from `POST /info` with `type: "orderStatus"`.

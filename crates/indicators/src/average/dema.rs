@@ -15,6 +15,7 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
@@ -23,6 +24,7 @@ use nautilus_model::{
 use crate::{
     average::ema::ExponentialMovingAverage,
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
 /// The Double Exponential Moving Average attempts to a smoother average with less
@@ -101,13 +103,26 @@ impl DoubleExponentialMovingAverage {
     /// # Panics
     ///
     /// Panics if `period` is not a positive integer (> 0).
+    /// Window periods must not exceed the shared indicator period limit.
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        assert!(
+        Self::new_checked(period, price_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        price_type: Option<PriceType>,
+    ) -> anyhow::Result<Self> {
+        check_predicate_true(
+            period <= MAX_PERIOD,
+            &format!("window periods cannot exceed {MAX_PERIOD}"),
+        )?;
+
+        check_predicate_true(
             period > 0,
-            "DoubleExponentialMovingAverage: `period` must be a positive integer (> 0)"
-        );
-        Self {
+            "DoubleExponentialMovingAverage: `period` must be a positive integer (> 0)",
+        )?;
+        Ok(Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
@@ -116,7 +131,7 @@ impl DoubleExponentialMovingAverage {
             initialized: false,
             ema1: ExponentialMovingAverage::new(period, price_type),
             ema2: ExponentialMovingAverage::new(period, price_type),
-        }
+        })
     }
 }
 
@@ -130,20 +145,23 @@ impl MovingAverage for DoubleExponentialMovingAverage {
     }
 
     fn update_raw(&mut self, value: f64) {
-        if !self.has_inputs {
-            self.has_inputs = true;
-            self.value = value;
+        if !value.is_finite() {
+            return;
         }
-
         self.ema1.update_raw(value);
-        self.ema2.update_raw(self.ema1.value);
-
-        self.value = 2.0f64.mul_add(self.ema1.value, -self.ema2.value);
-        self.count += 1;
-
-        if !self.initialized && self.count >= self.period {
-            self.initialized = true;
+        self.count = self.ema1.count();
+        self.has_inputs = self.ema1.has_inputs();
+        if !self.ema1.initialized() {
+            return;
         }
+
+        self.ema2.update_raw(self.ema1.value());
+        if !self.ema2.initialized() {
+            return;
+        }
+
+        self.value = 2.0f64.mul_add(self.ema1.value(), -self.ema2.value());
+        self.initialized = true;
     }
 }
 
@@ -159,7 +177,6 @@ mod tests {
         average::dema::DoubleExponentialMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
-        testing::assert_approx_equal,
     };
 
     #[rstest]
@@ -174,24 +191,27 @@ mod tests {
     #[rstest]
     fn test_value_with_one_input(mut indicator_dema_10: DoubleExponentialMovingAverage) {
         indicator_dema_10.update_raw(1.0);
-        assert_eq!(indicator_dema_10.value, 1.0);
+        assert_eq!(indicator_dema_10.value, 0.0);
+        assert!(!indicator_dema_10.initialized());
     }
 
     #[rstest]
     fn test_value_with_three_inputs(mut indicator_dema_10: DoubleExponentialMovingAverage) {
-        indicator_dema_10.update_raw(1.0);
-        indicator_dema_10.update_raw(2.0);
-        indicator_dema_10.update_raw(3.0);
-        assert_approx_equal(indicator_dema_10.value, 1.90458302029);
+        for value in 1..=3 {
+            indicator_dema_10.update_raw(f64::from(value));
+        }
+        assert_eq!(indicator_dema_10.value, 0.0);
+        assert!(!indicator_dema_10.initialized());
     }
 
     #[rstest]
     fn test_initialized_with_required_input(mut indicator_dema_10: DoubleExponentialMovingAverage) {
-        for i in 1..10 {
+        // Composite warmup for period 10 is 2 * 10 - 1 = 19 inputs
+        for i in 1..19 {
             indicator_dema_10.update_raw(f64::from(i));
+            assert!(!indicator_dema_10.initialized);
         }
-        assert!(!indicator_dema_10.initialized);
-        indicator_dema_10.update_raw(10.0);
+        indicator_dema_10.update_raw(19.0);
         assert!(indicator_dema_10.initialized);
     }
 
@@ -201,7 +221,10 @@ mod tests {
         stub_quote: QuoteTick,
     ) {
         indicator_dema_10.handle_quote(&stub_quote).unwrap();
-        assert_eq!(indicator_dema_10.value, 1501.0);
+        assert_eq!(indicator_dema_10.count, 1);
+        assert_eq!(indicator_dema_10.value, 0.0);
+        assert!(indicator_dema_10.has_inputs);
+        assert!(!indicator_dema_10.initialized);
     }
 
     #[rstest]
@@ -210,7 +233,10 @@ mod tests {
         stub_trade: TradeTick,
     ) {
         indicator_dema_10.handle_trade(&stub_trade);
-        assert_eq!(indicator_dema_10.value, 1500.0);
+        assert_eq!(indicator_dema_10.count, 1);
+        assert_eq!(indicator_dema_10.value, 0.0);
+        assert!(indicator_dema_10.has_inputs);
+        assert!(!indicator_dema_10.initialized);
     }
 
     #[rstest]
@@ -219,17 +245,20 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_dema_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(indicator_dema_10.value, 1522.0);
+        assert_eq!(indicator_dema_10.count, 1);
+        assert_eq!(indicator_dema_10.value, 0.0);
         assert!(indicator_dema_10.has_inputs);
         assert!(!indicator_dema_10.initialized);
     }
 
     #[rstest]
     fn test_reset(mut indicator_dema_10: DoubleExponentialMovingAverage) {
-        indicator_dema_10.update_raw(1.0);
-        assert_eq!(indicator_dema_10.count, 1);
-        assert!(indicator_dema_10.ema1.count() > 0);
-        assert!(indicator_dema_10.ema2.count() > 0);
+        for value in 1..=10 {
+            indicator_dema_10.update_raw(f64::from(value));
+        }
+        assert_eq!(indicator_dema_10.count, 10);
+        assert_eq!(indicator_dema_10.ema1.count(), 10);
+        assert_eq!(indicator_dema_10.ema2.count(), 1);
 
         indicator_dema_10.reset();
 
@@ -237,7 +266,6 @@ mod tests {
         assert_eq!(indicator_dema_10.count, 0);
         assert!(!indicator_dema_10.has_inputs);
         assert!(!indicator_dema_10.initialized);
-
         assert_eq!(indicator_dema_10.ema1.count(), 0);
         assert_eq!(indicator_dema_10.ema2.count(), 0);
     }
@@ -261,31 +289,23 @@ mod tests {
 
     #[rstest]
     fn test_counters_are_in_sync(mut indicator_dema_10: DoubleExponentialMovingAverage) {
-        for i in 1..=indicator_dema_10.period {
-            indicator_dema_10.update_raw(i as f64);
-            assert_eq!(
-                indicator_dema_10.count(),
-                i,
-                "outer count diverged at iteration {i}"
-            );
-            assert_eq!(
-                indicator_dema_10.ema1.count(),
-                i,
-                "ema1 count diverged at iteration {i}"
-            );
+        for input_count in 1..=19 {
+            indicator_dema_10.update_raw(input_count as f64);
+            assert_eq!(indicator_dema_10.count(), input_count);
+            assert_eq!(indicator_dema_10.ema1.count(), input_count);
             assert_eq!(
                 indicator_dema_10.ema2.count(),
-                i,
-                "ema2 count diverged at iteration {i}"
+                input_count.saturating_sub(indicator_dema_10.period - 1)
             );
         }
+
         assert!(indicator_dema_10.initialized());
     }
 
     #[rstest]
     fn test_inner_ema_values_are_reset(mut indicator_dema_10: DoubleExponentialMovingAverage) {
-        for i in 1..=3 {
-            indicator_dema_10.update_raw(f64::from(i));
+        for value in 1..=19 {
+            indicator_dema_10.update_raw(f64::from(value));
         }
         assert_ne!(indicator_dema_10.ema1.value(), 0.0);
         assert_ne!(indicator_dema_10.ema2.value(), 0.0);
@@ -306,20 +326,12 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         assert_eq!(indicator_dema_10.count(), 0);
-
         indicator_dema_10.handle_quote(&stub_quote).unwrap();
-        assert_eq!(indicator_dema_10.count(), 1);
-        assert_eq!(indicator_dema_10.ema1.count(), 1);
-        assert_eq!(indicator_dema_10.ema2.count(), 1);
-
         indicator_dema_10.handle_trade(&stub_trade);
-        assert_eq!(indicator_dema_10.count(), 2);
-        assert_eq!(indicator_dema_10.ema1.count(), 2);
-        assert_eq!(indicator_dema_10.ema2.count(), 2);
-
         indicator_dema_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+
         assert_eq!(indicator_dema_10.count(), 3);
         assert_eq!(indicator_dema_10.ema1.count(), 3);
-        assert_eq!(indicator_dema_10.ema2.count(), 3);
+        assert_eq!(indicator_dema_10.ema2.count(), 0);
     }
 }

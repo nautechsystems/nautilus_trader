@@ -30,17 +30,17 @@ use nautilus_core::time::nanos_since_unix_epoch;
 use object_store::{
     CopyOptions, Error as ObjectStoreError, GetOptions, GetResult, ListResult, MultipartUpload,
     ObjectMeta, ObjectStore, ObjectStoreExt, PutMultipartOptions, PutOptions, PutPayload,
-    PutResult, Result as ObjectStoreResult, path::Path as ObjectPath,
+    PutResult, RenameOptions, Result as ObjectStoreResult, path::Path as ObjectPath,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use url::Url;
 
 pub use crate::common::paths::normalize_path_to_uri;
 use crate::{
-    backend::parquet::io::create_object_store_from_path,
+    backend::parquet::io::{create_object_store_from_path, decode_object_store_segment},
     common::paths::{
-        environment_directory, environment_from_directory, file_uri_to_native_path,
-        make_object_store_path, path_to_file_uri,
+        create_local_directory, environment_directory, environment_from_directory,
+        file_uri_to_native_path, make_object_store_path, path_to_file_uri,
     },
     writer::run::RunStatus,
 };
@@ -154,7 +154,8 @@ impl StorageBackend {
         datafusion_root_url(&self.original_uri)
     }
 
-    /// Lists immediate child directory stems below a storage-relative subdirectory.
+    /// Lists immediate child directory stems below a storage-relative subdirectory, decoded from
+    /// their percent-encoded object-store form.
     ///
     /// This is used by catalog data and run-session discovery so local, memory, and cloud
     /// backends share one object-store listing path.
@@ -176,7 +177,7 @@ impl StorageBackend {
             if let Some(relative_path) = path.strip_prefix(&prefix_str)
                 && let Some(stem) = relative_path.split('/').find(|segment| !segment.is_empty())
             {
-                stems.insert(stem.to_string());
+                stems.insert(decode_object_store_segment(stem));
             }
         }
 
@@ -292,7 +293,7 @@ impl StorageBackend {
         let mut manifests = Vec::new();
 
         for file in files {
-            if let Some(manifest) = self.read_run_manifest_at(&ObjectPath::from(file)).await? {
+            if let Some(manifest) = self.read_run_manifest_at(&ObjectPath::parse(file)?).await? {
                 manifests.push(manifest);
             }
         }
@@ -408,9 +409,7 @@ pub fn create_storage_backend_from_path(
         ));
     }
 
-    if uri.starts_with("file://") {
-        fs::create_dir_all(file_uri_to_native_path(&uri))?;
-    }
+    create_local_directory(&uri)?;
 
     let (object_store, base_path, original_uri) =
         create_object_store_from_path(&uri, storage_options)?;
@@ -512,14 +511,141 @@ impl ObjectStore for SortedListObjectStore {
     ) -> ObjectStoreResult<()> {
         self.inner.copy_opts(from, to, opts).await
     }
+
+    async fn rename_opts(
+        &self,
+        from: &ObjectPath,
+        to: &ObjectPath,
+        opts: RenameOptions,
+    ) -> ObjectStoreResult<()> {
+        self.inner.rename_opts(from, to, opts).await
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use object_store::memory::InMemory;
     use rstest::rstest;
     use tempfile::TempDir;
 
     use super::*;
+
+    // Counts native renames so a forwarded rename is distinguishable from copy then delete
+    #[derive(Debug)]
+    struct RenameCountingStore {
+        inner: InMemory,
+        renames: AtomicUsize,
+    }
+
+    impl Display for RenameCountingStore {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("rename-counting")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ObjectStore for RenameCountingStore {
+        async fn put_opts(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            opts: PutOptions,
+        ) -> ObjectStoreResult<PutResult> {
+            self.inner.put_opts(location, payload, opts).await
+        }
+
+        async fn put_multipart_opts(
+            &self,
+            location: &ObjectPath,
+            opts: PutMultipartOptions,
+        ) -> ObjectStoreResult<Box<dyn MultipartUpload>> {
+            self.inner.put_multipart_opts(location, opts).await
+        }
+
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> ObjectStoreResult<GetResult> {
+            self.inner.get_opts(location, options).await
+        }
+
+        fn list(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectMeta>> {
+            self.inner.list(prefix)
+        }
+
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> ObjectStoreResult<ListResult> {
+            self.inner.list_with_delimiter(prefix).await
+        }
+
+        fn delete_stream(
+            &self,
+            locations: BoxStream<'static, ObjectStoreResult<ObjectPath>>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectPath>> {
+            self.inner.delete_stream(locations)
+        }
+
+        async fn copy_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            opts: CopyOptions,
+        ) -> ObjectStoreResult<()> {
+            self.inner.copy_opts(from, to, opts).await
+        }
+
+        async fn rename_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            opts: RenameOptions,
+        ) -> ObjectStoreResult<()> {
+            self.renames.fetch_add(1, Ordering::Relaxed);
+            self.inner.rename_opts(from, to, opts).await
+        }
+    }
+
+    #[rstest]
+    fn storage_backend_forwards_rename_to_inner_store() {
+        let inner = Arc::new(RenameCountingStore {
+            inner: InMemory::new(),
+            renames: AtomicUsize::new(0),
+        });
+
+        let storage = storage_backend(inner.clone(), String::new(), "memory://".to_string());
+        let from = ObjectPath::from("backtest/run-001/quotes.feather");
+        let to = ObjectPath::from("backtest/run-001/quotes-renamed.feather");
+
+        let (moved, source) = futures::executor::block_on(async {
+            storage
+                .object_store
+                .put(&from, b"quotes".to_vec().into())
+                .await
+                .unwrap();
+            storage.object_store.rename(&from, &to).await.unwrap();
+            let moved = storage
+                .object_store
+                .get(&to)
+                .await
+                .unwrap()
+                .bytes()
+                .await
+                .unwrap();
+            (moved, storage.object_store.head(&from).await)
+        });
+
+        assert_eq!(inner.renames.load(Ordering::Relaxed), 1);
+        assert_eq!(moved.as_ref(), b"quotes");
+        assert!(matches!(source, Err(ObjectStoreError::NotFound { .. })));
+    }
 
     #[rstest]
     fn storage_location_resolves_relative_file_uris() {
@@ -641,6 +767,46 @@ mod tests {
         assert_eq!(manifest.status, RunStatus::Completed);
         assert!(manifest.empty);
         assert_eq!(manifest.schema_version, 1);
+    }
+
+    #[rstest]
+    fn storage_backend_lists_manifest_of_run_with_encoded_name() {
+        let storage = create_storage_backend_from_path("memory://", None).unwrap();
+        futures::executor::block_on(storage.write_run_manifest(
+            Environment::Backtest,
+            "run-é",
+            RunStatus::Completed,
+            true,
+        ))
+        .unwrap();
+
+        let manifests = futures::executor::block_on(
+            storage.list_run_manifests(environment_directory(Environment::Backtest)),
+        )
+        .unwrap();
+        let manifest =
+            futures::executor::block_on(storage.read_run_manifest(Environment::Backtest, "run-é"))
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(manifests, vec![manifest]);
+    }
+
+    #[rstest]
+    fn storage_backend_lists_run_ids_with_encoded_name() {
+        let storage = create_storage_backend_from_path("memory://", None).unwrap();
+        futures::executor::block_on(storage.write_run_manifest(
+            Environment::Backtest,
+            "run-é",
+            RunStatus::Completed,
+            true,
+        ))
+        .unwrap();
+
+        let runs =
+            futures::executor::block_on(storage.list_run_ids(Environment::Backtest)).unwrap();
+
+        assert_eq!(runs, vec!["run-é".to_string()]);
     }
 
     #[rstest]
@@ -842,6 +1008,26 @@ mod tests {
         assert_eq!(
             storage.datafusion_root_url().unwrap().as_str(),
             "s3://nautilus-test/"
+        );
+    }
+
+    #[cfg(feature = "cloud")]
+    #[rstest]
+    fn create_storage_backend_rejects_base_path_that_paths_change() {
+        let uri = "s3://nautilus-test/préfix";
+
+        let error = create_storage_backend_from_path(uri, None)
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(
+            error,
+            format!(
+                "Storage URI '{uri}' has a base path that URL parsing or object-store path \
+                 encoding changes; use a base path without spaces, non-ASCII, or reserved \
+                 characters"
+            )
         );
     }
 }

@@ -1240,7 +1240,7 @@ fn request_option_chain_reference_price(
     instrument_id: InstrumentId,
 ) -> RequestOptionChainReferencePrice {
     RequestOptionChainReferencePrice::new(
-        OptionSeriesId::new(
+        OptionSeriesId::new_derived(
             *DERIVE_VENUE,
             Ustr::from("ETH"),
             Ustr::from("USDC"),

@@ -31,6 +31,76 @@ Greeks-relevant metadata varies by instrument type:
 - `BinaryOption`: has `expiration_ns` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
+## Option identifiers
+
+### Series references
+
+`OptionSeriesId` includes a reference-price `InstrumentId` in equality, hashing, and ordering.
+Python constructors default the optional final argument to `<UNDERLYING>.<VENUE>`.
+
+```python
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OptionSeriesId
+
+series_id = OptionSeriesId.from_expiry(
+    "DERIBIT", "BTC", "USDC", "2026-03-20", InstrumentId.from_str("BTCUSDT.BINANCE")
+)
+```
+
+Serialized forms:
+
+- **Derived reference**: `VENUE:UNDERLYING:SETTLEMENT:EXPIRY`.
+- **Other reference**: `VENUE:UNDERLYING:UNDERLYING_INSTRUMENT_ID:SETTLEMENT:EXPIRY`.
+
+Both forms round-trip through `from_str`, including colons in reference symbols and nanosecond expiries.
+Update four-field readers before using other references. Display retains fractional expiry seconds in Python
+values, message bus topics, and handler IDs.
+
+| Rust API                        | Reference                                     |
+| ------------------------------- | --------------------------------------------- |
+| `new`, `from_crypto_option`     | Required `InstrumentId`.                      |
+| `new_derived`                   | Derived; four arguments.                      |
+| `from_expiry`, `from_expiry_ns` | Final `Option<InstrumentId>`; `None` derives. |
+
+Rust struct literals require `underlying_instrument_id`. Derivation rejects empty or whitespace-only underlyings.
+
+Local chain discovery and ATM bootstrap require derived references. The local engine rejects other
+references and does not subscribe to the reference instrument. External-client commands are forwarded.
+
+### Computed contract IDs
+
+Rust `compute_option_instrument_id` combines `OptionContractSpec` and `OptionSymbologyScheme`.
+The contract's actual underlying is independent of the series' price reference.
+
+**CME Globex** accepts futures codes such as `ESH6`, rather than `ES`:
+
+- **Roots**: ES, NQ, RTY, MES, MNQ, SR3 SOFR, and CL WTI weeklies on nominal weekday schedules.
+- **Expiry**: Equity quarterlies take precedence when futures and quarterly-expiry months match;
+  end-of-month (EOM) contracts use the last weekday.
+- **Digits**: The year suffix follows the underlying's one- or two-digit convention. Strikes use whole
+  index points for equities and hundredths for SOFR and WTI.
+
+The **Options Symbology Initiative (OSI)** defaults to the underlying symbol, with an optional root
+override and eight-digit strikes in exact thousandths.
+
+Unsupported roots, expiry dates, and strike precision return typed errors, including nominal WTI
+monthly dates and Micro E-mini (MES, MNQ) expiries on or after June 29, 2026.
+
+:::info
+Validate candidate IDs against instrument definitions for actual listings and holiday-adjusted expiries.
+:::
+
+## Option selection types
+
+`OptionSideFilter` selects calls, puts, both, or out-of-the-money wings, including both sides at ATM.
+Rust `StrikeSearchProfile` validates construction and deserialization:
+
+- Non-empty, positive, unique increments in caller preference order.
+- Non-negative grid origin.
+- Positive candidate limit.
+
+Chain subscription APIs accept neither type.
+
 ## Subscribing to Greeks
 
 Venues like Deribit, Bybit, and OKX publish real-time Greeks alongside their options markets.
@@ -138,6 +208,8 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
 - **Raw mode** (`snapshot_interval_ms=None`): Each quote or Greeks update for an
   active instrument publishes a slice immediately. Suitable for latency-sensitive
   strategies that react to individual updates.
+
+The engine rejects `snapshot_interval_ms=0`; use `None` for raw mode.
 
 ## Backtesting option chains
 

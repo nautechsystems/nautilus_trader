@@ -378,6 +378,11 @@ impl ExecutionManager {
     }
 
     /// Returns retained submissions which still lack a native outcome or venue confirmation.
+    ///
+    /// Only the node's shutdown path reads this, so it is gated with its callers: without the
+    /// `node` feature the method has none, and a dependent crate that leaves the feature off would
+    /// see it as dead code.
+    #[cfg(feature = "node")]
     pub(crate) fn unresolved_submission_ids(&self) -> Vec<ClientOrderId> {
         self.submissions
             .keys()
@@ -4638,10 +4643,12 @@ impl ExecutionManager {
         let replace_inferred_fill = !fills.is_empty()
             && matches!(
                 report.order_status,
-                OrderStatus::Canceled
+                OrderStatus::Accepted
+                    | OrderStatus::Canceled
                     | OrderStatus::Expired
                     | OrderStatus::Filled
                     | OrderStatus::PartiallyFilled
+                    | OrderStatus::Triggered
             );
         let mut prepared_fills = Vec::new();
         let mut prepared_fill_keys = fill_queue
@@ -4674,7 +4681,11 @@ impl ExecutionManager {
 
         let report_filled = report.filled_qty.as_decimal();
 
-        let inferred_qty = if report_filled.is_zero() {
+        let inferred_qty = if report_filled.is_zero()
+            || matches!(
+                report.order_status,
+                OrderStatus::Accepted | OrderStatus::Triggered
+            ) {
             None
         } else if replace_inferred_fill {
             if real_fill_total < report_filled {

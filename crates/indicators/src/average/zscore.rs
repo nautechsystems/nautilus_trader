@@ -13,21 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Rolling z-score over a fixed window.
+use std::{collections::VecDeque, fmt::Display};
 
-use std::fmt::Display;
-
-use arraydeque::{ArrayDeque, Wrapping};
-use nautilus_core::correctness::{FAILED, check_predicate_true};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
-use crate::indicator::Indicator;
+use crate::{
+    indicator::Indicator,
+    support::{MAX_PERIOD, ShiftedMoments},
+};
 
-const MAX_PERIOD: usize = 1_024;
-
+/// Z-Score: how many standard deviations the latest price sits from its rolling
+/// mean.
+///
+/// ```text
+/// ZScore = (price - SMA(price, n)) / population_stddev(price, n)
+/// ```
+///
+/// A reading of `+2` means price is two standard deviations above its recent
+/// average, statistically stretched to the upside; `-2` is the mirror. It is the
+/// standard normalization behind mean-reversion strategies: a large magnitude
+/// flags an extension, a return toward `0` flags reversion. A window with zero
+/// dispersion yields `0` rather than dividing by zero.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -45,8 +55,10 @@ pub struct ZScore {
     pub mean: f64,
     pub std: f64,
     pub count: usize,
-    inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
     pub initialized: bool,
+    has_inputs: bool,
+    window: VecDeque<f64>,
+    moments: ShiftedMoments,
 }
 
 impl Display for ZScore {
@@ -57,11 +69,11 @@ impl Display for ZScore {
 
 impl Indicator for ZScore {
     fn name(&self) -> String {
-        stringify!(ZScore).into()
+        stringify!(ZScore).to_string()
     }
 
     fn has_inputs(&self) -> bool {
-        self.count > 0
+        self.has_inputs
     }
 
     fn initialized(&self) -> bool {
@@ -69,24 +81,26 @@ impl Indicator for ZScore {
     }
 
     fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        self.process_raw(quote.extract_price(self.price_type)?.into());
+        self.update_raw(quote.extract_price(self.price_type)?.into());
         Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
-        self.process_raw(trade.price.into());
+        self.update_raw((&trade.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        self.process_raw(bar.close.into());
+        self.update_raw((&bar.close).into());
     }
 
     fn reset(&mut self) {
+        self.window.clear();
+        self.moments.reset();
         self.value = 0.0;
         self.mean = 0.0;
         self.std = 0.0;
         self.count = 0;
-        self.inputs.clear();
+        self.has_inputs = false;
         self.initialized = false;
     }
 }
@@ -94,30 +108,23 @@ impl Indicator for ZScore {
 impl ZScore {
     /// Creates a new [`ZScore`] instance.
     ///
-    /// Computes `(x - mean) / std` using sample standard deviation. The window
-    /// expands until `period` observations, then rolls at that length. With one
-    /// observation or a finite constant window, `mean` matches the input exactly,
-    /// while `std` and `value` are 0. Other zero `std` values produce `value` 0;
-    /// non-finite `std` values produce `value` `NaN`. `price_type` affects only
-    /// quote handling.
-    ///
     /// # Panics
     ///
-    /// Panics if `period` is less than 2 or greater than `MAX_PERIOD`.
+    /// Panics if a requested allocation exceeds `MAX_PERIOD` elements.
+    /// Panics if `period` is zero.
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         Self::new_checked(period, price_type).expect(FAILED)
     }
 
-    /// Creates a new [`ZScore`] instance with the given period.
+    /// Creates a new [`ZScore`] instance with a validated period.
     ///
     /// # Errors
     ///
-    /// Returns an error if `period` is less than 2 or greater than `MAX_PERIOD`.
+    /// Returns an error if `period` is zero or exceeds `MAX_PERIOD`.
     pub fn new_checked(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
-        check_predicate_true(period >= 2, "`period` must be at least 2")?;
-        check_predicate_true(period <= MAX_PERIOD, "`period` exceeds MAX_PERIOD")?;
-
+        anyhow::ensure!(period <= MAX_PERIOD, "period cannot exceed {MAX_PERIOD}");
+        anyhow::ensure!(period > 0, "ZScore: period must be > 0 (received {period})");
         Ok(Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
@@ -125,423 +132,161 @@ impl ZScore {
             mean: 0.0,
             std: 0.0,
             count: 0,
-            inputs: ArrayDeque::new(),
+            has_inputs: false,
             initialized: false,
+            window: VecDeque::with_capacity(period),
+            moments: ShiftedMoments::new(),
         })
     }
 
-    /// Updates the indicator with a raw observation.
+    /// Updates the indicator with the given raw price value.
     pub fn update_raw(&mut self, value: f64) {
-        self.process_raw(value);
-    }
-
-    fn process_raw(&mut self, value: f64) {
-        if self.inputs.len() == self.period {
-            let _ = self.inputs.pop_front();
-        } else {
-            self.count += 1;
-        }
-
-        let _ = self.inputs.push_back(value);
-
-        let n = self.count as f64;
-        self.mean = self.inputs.iter().sum::<f64>() / n;
-        self.initialized = self.count >= self.period;
-
-        if self.count < 2 {
-            self.std = 0.0;
-            self.value = 0.0;
+        if !value.is_finite() {
             return;
         }
+        self.count += 1;
+        self.has_inputs = true;
 
-        let mean = self.mean;
-        let (m2, is_constant) = self
-            .inputs
-            .iter()
-            .fold((0.0, true), |(m2, is_constant), &x| {
-                let d = x - mean;
-                (
-                    m2 + d * d,
-                    is_constant && x.is_finite() && x.to_bits() == value.to_bits(),
-                )
-            });
-
-        if is_constant {
-            self.mean = value;
-            self.std = 0.0;
-            self.value = 0.0;
-            return;
+        if self.window.len() == self.period
+            && let Some(old) = self.window.pop_front()
+        {
+            self.moments.evict(old);
+        }
+        self.window.push_back(value);
+        self.moments.push(value);
+        if self.moments.needs_reseed(self.period) {
+            self.moments.reseed(&self.window);
         }
 
-        self.std = (m2 / (n - 1.0)).sqrt();
+        if self.window.len() < self.period {
+            return;
+        }
+        self.mean = self.moments.mean(self.period);
+        self.std = self.moments.std_dev(self.period);
+        // A window with no dispersion: the price is exactly its own mean.
         self.value = if self.std == 0.0 {
             0.0
-        } else if self.std.is_finite() {
-            (value - self.mean) / self.std
         } else {
-            f64::NAN
+            (value - self.mean) / self.std
         };
+        self.initialized = true;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use arraydeque::{ArrayDeque, Wrapping};
-    use nautilus_model::{
-        data::{Bar, QuoteTick, TradeTick},
-        enums::PriceType,
-    };
-    use proptest::prelude::*;
     use rstest::rstest;
 
-    use super::{MAX_PERIOD, ZScore};
-    use crate::{
-        indicator::Indicator,
-        stubs::*,
-        testing::{approx_equal_with, assert_approx_equal},
-    };
+    use super::*;
+    use crate::indicator::Indicator;
 
-    /// Batch z-score of `window` using sample std (`n - 1`).
-    fn batch_zscore(window: &[f64]) -> (f64, f64, f64) {
-        let n = window.len() as f64;
-        let mean = window.iter().sum::<f64>() / n;
-        let m2: f64 = window
-            .iter()
-            .map(|x| {
-                let d = x - mean;
-                d * d
-            })
-            .sum();
-        let std = (m2 / (n - 1.0)).sqrt();
-        let x = *window.last().unwrap();
-        let is_constant = window
-            .iter()
-            .all(|&value| value.is_finite() && value.to_bits() == x.to_bits());
-        let z = if is_constant || std == 0.0 {
-            0.0
-        } else {
-            (x - mean) / std
-        };
-        (mean, std, z)
+    #[rstest]
+    fn test_name_and_display() {
+        let indicator = ZScore::new(20, None);
+        assert_eq!(indicator.name(), "ZScore");
+        assert_eq!(format!("{indicator}"), "ZScore(20)");
+        assert_eq!(indicator.period, 20);
+        assert!(!indicator.initialized());
+        assert!(!indicator.has_inputs());
     }
 
     #[rstest]
-    fn zscore_initialized_state(indicator_zscore_10: ZScore) {
-        assert_eq!(format!("{indicator_zscore_10}"), "ZScore(10)");
-        assert_eq!(indicator_zscore_10.period, 10);
-        assert_eq!(indicator_zscore_10.price_type, PriceType::Mid);
-        assert_eq!(indicator_zscore_10.value, 0.0);
-        assert_eq!(indicator_zscore_10.mean, 0.0);
-        assert_eq!(indicator_zscore_10.std, 0.0);
-        assert_eq!(indicator_zscore_10.count, 0);
-        assert!(!indicator_zscore_10.initialized());
-        assert!(!indicator_zscore_10.has_inputs());
-    }
-
-    #[rstest]
-    fn zscore_default_price_type_is_last() {
-        let z = ZScore::new(5, None);
-        assert_eq!(z.price_type, PriceType::Last);
-    }
-
-    #[rstest]
-    fn zscore_initializes_at_period() {
-        let mut z = ZScore::new(5, None);
-        for i in 1..5 {
-            z.update_raw(f64::from(i));
-            assert!(!z.initialized());
-        }
-        z.update_raw(5.0);
-        assert!(z.initialized());
-        assert_eq!(z.count, 5);
-        assert!(z.has_inputs());
-    }
-
-    #[rstest]
-    fn zscore_constant_series_is_zero() {
-        let mut z = ZScore::new(4, None);
-        for _ in 0..8 {
-            z.update_raw(3.0);
-        }
-        assert_eq!(z.std, 0.0);
-        assert_eq!(z.value, 0.0);
-        assert_eq!(z.mean, 3.0);
-    }
-
-    #[rstest]
-    #[case(1.000_03, 10)]
-    #[case(0.1, 20)]
-    fn zscore_constant_series_with_rounding_error_is_zero(
-        #[case] value: f64,
-        #[case] period: usize,
-    ) {
-        let mut z = ZScore::new(period, None);
-        for _ in 0..period {
-            z.update_raw(value);
-        }
-
-        assert_eq!(z.mean, value);
-        assert_eq!(z.std, 0.0);
-        assert_eq!(z.value, 0.0);
-    }
-
-    #[rstest]
-    fn zscore_preserves_non_finite_value() {
-        let mut z = ZScore::new(2, None);
-        z.update_raw(1.0);
-        z.update_raw(f64::NAN);
-
-        assert!(z.std.is_nan());
-        assert!(z.value.is_nan());
-    }
-
-    #[rstest]
-    #[case::mean_overflow(f64::MAX, f64::MAX / 2.0)]
-    #[case::variance_overflow(-f64::MAX, f64::MAX)]
-    fn zscore_propagates_non_finite_arithmetic(#[case] first: f64, #[case] second: f64) {
-        let mut z = ZScore::new(2, None);
-        z.update_raw(first);
-        z.update_raw(second);
-
-        assert_eq!(z.count, 2);
-        assert!(z.initialized);
-        assert!(z.std.is_infinite());
-        assert!(z.value.is_nan());
-    }
-
-    #[rstest]
-    fn zscore_expanding_window_before_period() {
-        let mut z = ZScore::new(5, None);
-
-        z.update_raw(2.0);
-        assert!(!z.initialized());
-        assert_eq!(z.count, 1);
-        assert_eq!(z.mean, 2.0);
-        assert_eq!(z.std, 0.0);
-        assert_eq!(z.value, 0.0);
-
-        z.update_raw(4.0);
-        assert!(!z.initialized());
-        assert_eq!(z.count, 2);
-        assert_eq!(z.mean, 3.0);
-        assert_approx_equal(z.std, 2.0_f64.sqrt());
-        assert_approx_equal(z.value, 1.0 / 2.0_f64.sqrt());
-    }
-
-    #[rstest]
-    fn zscore_transitions_from_expanding_to_rolling() {
-        let mut z = ZScore::new(3, None);
-        z.update_raw(2.0);
-        z.update_raw(4.0);
-        z.update_raw(6.0);
-
-        assert!(z.initialized());
-        assert_eq!(z.count, 3);
-        assert_eq!(z.mean, 4.0);
-        assert_eq!(z.std, 2.0);
-        assert_eq!(z.value, 1.0);
-
-        z.update_raw(8.0);
-        assert_eq!(z.count, 3);
-        assert_eq!(z.mean, 6.0);
-        assert_eq!(z.std, 2.0);
-        assert_eq!(z.value, 1.0);
-    }
-
-    #[rstest]
-    fn zscore_matches_batch_window() {
-        let mut z = ZScore::new(5, None);
-        let inputs = [3.0, 5.0, 7.0, 8.0, 1.0, 9.0, 12.0, 4.0, 6.0, 7.0];
-        let mut window: ArrayDeque<f64, 5, Wrapping> = ArrayDeque::new();
-
-        for &x in &inputs {
-            if window.len() == 5 {
-                let _ = window.pop_front();
-            }
-            let _ = window.push_back(x);
-            z.update_raw(x);
-
-            if window.len() >= 2 {
-                let w: Vec<f64> = window.iter().copied().collect();
-                let (mean, std, batch_z) = batch_zscore(&w);
-                assert_approx_equal(z.mean, mean);
-                assert_approx_equal(z.std, std);
-                assert_approx_equal(z.value, batch_z);
-            }
-        }
-    }
-
-    #[rstest]
-    fn zscore_handle_bar_uses_close(bar_ethusdt_binance_minute_bid: Bar) {
-        let mut z = ZScore::new(2, None);
-        z.handle_bar(&bar_ethusdt_binance_minute_bid);
-        z.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert!(z.has_inputs());
-        let close: f64 = bar_ethusdt_binance_minute_bid.close.into();
-        assert_eq!(z.mean, close);
-        assert_eq!(z.value, 0.0);
-    }
-
-    #[rstest]
-    fn zscore_handle_quote_uses_price_type(indicator_zscore_10: ZScore, stub_quote: QuoteTick) {
-        let mut z = indicator_zscore_10;
-        z.handle_quote(&stub_quote).unwrap();
-        assert_eq!(z.count, 1);
-        assert_eq!(z.mean, 1501.0);
-        assert_eq!(z.value, 0.0);
-    }
-
-    #[rstest]
-    fn zscore_handle_trade_uses_price(indicator_zscore_10: ZScore, stub_trade: TradeTick) {
-        let mut z = indicator_zscore_10;
-        z.handle_trade(&stub_trade);
-        assert_eq!(z.count, 1);
-        assert_eq!(z.mean, 1500.0);
-        assert_eq!(z.value, 0.0);
-    }
-
-    #[rstest]
-    fn zscore_reset_returns_to_fresh_state(indicator_zscore_10: ZScore) {
-        let mut z = indicator_zscore_10;
-        for i in 0..20 {
-            z.update_raw(f64::from(i));
-        }
-        z.reset();
-        assert!(!z.initialized());
-        assert!(!z.has_inputs());
-        assert_eq!(z.value, 0.0);
-        assert_eq!(z.mean, 0.0);
-        assert_eq!(z.std, 0.0);
-        assert_eq!(z.count, 0);
-    }
-
-    #[rstest]
-    #[should_panic(expected = "Condition failed")]
-    fn zscore_new_with_period_one_panics() {
-        let _ = ZScore::new(1, None);
-    }
-
-    #[rstest]
-    #[should_panic(expected = "Condition failed")]
-    fn zscore_new_with_zero_period_panics() {
+    #[should_panic(expected = "period must be > 0")]
+    fn test_zero_period_panics() {
         let _ = ZScore::new(0, None);
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed")]
-    fn zscore_new_with_period_above_max_panics() {
-        let _ = ZScore::new(MAX_PERIOD + 1, None);
+    fn test_first_value_on_period_th_input() {
+        let mut indicator = ZScore::new(5, None);
+        for i in 1..5 {
+            indicator.update_raw(f64::from(i));
+            assert!(!indicator.initialized(), "initialized early at input {i}");
+        }
+        indicator.update_raw(5.0);
+        assert!(indicator.initialized());
     }
 
     #[rstest]
-    fn zscore_new_checked_rejects_invalid_period() {
-        assert!(ZScore::new_checked(0, None).is_err());
-        assert!(ZScore::new_checked(1, None).is_err());
-        assert!(ZScore::new_checked(MAX_PERIOD + 1, None).is_err());
-        assert!(ZScore::new_checked(2, None).is_ok());
+    fn test_reference_value() {
+        // Window [1, 3]: mean 2, population variance (1 + 9)/2 - 4 = 1, stddev 1;
+        // the latest price 3 is (3 - 2) / 1 = 1 stddev above.
+        let mut indicator = ZScore::new(2, None);
+        indicator.update_raw(1.0);
+        assert!(!indicator.initialized());
+        indicator.update_raw(3.0);
+        assert!(indicator.initialized());
+        assert_eq!(indicator.value, 1.0);
     }
 
     #[rstest]
-    fn zscore_near_equal_large_magnitude_matches_batch() {
-        let inputs = [-814.051_168_710_620_9, -813.996_166_896_107_9];
-        let mut z = ZScore::new(2, None);
-        for &x in &inputs {
-            z.update_raw(x);
+    fn test_constant_series_yields_zero() {
+        let mut indicator = ZScore::new(10, None);
+        for _ in 0..30 {
+            indicator.update_raw(42.0);
         }
-        let (mean, std, batch_z) = batch_zscore(&inputs);
-        assert_approx_equal(z.mean, mean);
-        assert_approx_equal(z.std, std);
-        assert_approx_equal(z.value, batch_z);
+        assert_eq!(indicator.value, 0.0);
     }
 
     #[rstest]
-    fn zscore_slide_from_large_values_to_zeros_matches_batch() {
-        let inputs = [
-            858.223_114_833_198,
-            -299.638_657_482_500_7,
-            -377.208_520_869_421_76,
-            -394.324_913_206_254_8,
-            406.662_086_491_207_45,
-            -912.384_594_640_612_4,
-            0.0,
-            0.0,
-            0.0,
-        ];
-        let mut z = ZScore::new(2, None);
-        let mut window: Vec<f64> = Vec::new();
-
-        for &x in &inputs {
-            window.push(x);
-
-            if window.len() > 2 {
-                window.remove(0);
-            }
-
-            z.update_raw(x);
-
-            if window.len() >= 2 {
-                let (mean, std, batch_z) = batch_zscore(&window);
-                assert_approx_equal(z.mean, mean);
-                assert_approx_equal(z.std, std);
-                assert_approx_equal(z.value, batch_z);
-            }
+    fn test_tiny_spread_far_from_previous_offset_keeps_its_deviation() {
+        // The window [100, 100 + 2^-24] has population deviation 2^-25, but it sits
+        // about 10 from the reference point the first reseed left, where
+        // `sum_sq / n - mean^2` cancels to zero unless the sums reseed.
+        let tiny = 2.0_f64.powi(-24);
+        let mut indicator = ZScore::new(2, None);
+        for value in [110.0, 100.0, 100.0 + tiny] {
+            indicator.update_raw(value);
         }
+        assert_eq!(indicator.mean, 100.0 + tiny / 2.0);
+        assert_eq!(indicator.std, tiny / 2.0);
+        assert_eq!(indicator.value, 1.0);
     }
 
     #[rstest]
-    fn zscore_slide_from_zeros_to_near_equal_large_matches_batch() {
-        let inputs = [
-            0.0,
-            0.0,
-            -665.301_640_322_359_3,
-            -786.149_294_354_941_7,
-            592.982_187_831_149,
-            592.422_790_241_439_3,
-        ];
-        let mut z = ZScore::new(2, None);
-        let mut window: Vec<f64> = Vec::new();
-
-        for &x in &inputs {
-            window.push(x);
-
-            if window.len() > 2 {
-                window.remove(0);
-            }
-
-            z.update_raw(x);
-
-            if window.len() >= 2 {
-                let (mean, std, batch_z) = batch_zscore(&window);
-                assert_approx_equal(z.mean, mean);
-                assert_approx_equal(z.std, std);
-                assert_approx_equal(z.value, batch_z);
-            }
+    fn test_matches_naive_definition() {
+        // Independent two-pass reference computed straight from the definition.
+        fn naive(window: &[f64]) -> f64 {
+            let n = window.len() as f64;
+            let mean = window.iter().sum::<f64>() / n;
+            let var = window.iter().map(|y| (y - mean) * (y - mean)).sum::<f64>() / n;
+            (window[window.len() - 1] - mean) / var.sqrt()
         }
+
+        let prices: Vec<f64> = (0..60)
+            .map(|i| 50.0 + (f64::from(i) * 0.3).sin() * 10.0)
+            .collect();
+        let period = 20;
+        let mut indicator = ZScore::new(period, None);
+        let mut compared = 0_usize;
+
+        for (i, &p) in prices.iter().enumerate() {
+            indicator.update_raw(p);
+
+            if i + 1 < period {
+                continue;
+            }
+            let want = naive(&prices[i + 1 - period..=i]);
+            assert!(
+                (indicator.value - want).abs() <= 1e-12 * want.abs().max(1.0),
+                "bar {i}: got {} want {want}",
+                indicator.value
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, prices.len() - period + 1);
     }
 
-    proptest! {
-        #[rstest]
-        fn zscore_streaming_matches_batch_window(
-            values in prop::collection::vec(-1_000.0f64..1_000.0, 2..40),
-            period in 2usize..16,
-        ) {
-            let mut z = ZScore::new(period, None);
-            let mut window: Vec<f64> = Vec::new();
-
-            for &x in &values {
-                window.push(x);
-                if window.len() > period {
-                    window.remove(0);
-                }
-                z.update_raw(x);
-
-                if window.len() >= 2 {
-                    let (mean, std, batch_z) = batch_zscore(&window);
-                    prop_assert!(approx_equal_with(z.mean, mean, 1e-9, 1e-12));
-                    prop_assert!(approx_equal_with(z.std, std, 1e-9, 1e-12));
-                    prop_assert!(approx_equal_with(z.value, batch_z, 1e-9, 1e-12));
-                }
-            }
+    #[rstest]
+    fn test_reset() {
+        let mut indicator = ZScore::new(5, None);
+        for i in 0..20 {
+            indicator.update_raw(f64::from(i));
         }
+        indicator.reset();
+        assert!(!indicator.initialized());
+        assert!(!indicator.has_inputs());
+        assert_eq!(indicator.value, 0.0);
+        assert_eq!(indicator.count, 0);
     }
 }

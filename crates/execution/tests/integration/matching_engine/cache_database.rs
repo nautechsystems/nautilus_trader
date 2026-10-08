@@ -45,10 +45,12 @@ use ustr::Ustr;
 #[derive(Debug, Default)]
 struct FailNthAddOrderState {
     fail_add_order_on: Option<usize>,
+    fail_add_position: bool,
     fail_index_order_position: bool,
     add_order_calls: usize,
     accounts: AHashMap<AccountId, AccountAny>,
     orders: AHashMap<ClientOrderId, OrderAny>,
+    order_events: Vec<OrderEventAny>,
     order_snapshots: Vec<OrderSnapshot>,
     position_snapshots: Vec<PositionSnapshot>,
 }
@@ -69,6 +71,10 @@ impl FailNthAddOrderDatabaseControl {
         self.state.lock().fail_index_order_position = fail;
     }
 
+    pub(super) fn set_fail_add_position(&self, fail: bool) {
+        self.state.lock().fail_add_position = fail;
+    }
+
     pub(super) fn set_accounts(&self, accounts: impl IntoIterator<Item = AccountAny>) {
         self.state.lock().accounts = accounts
             .into_iter()
@@ -81,6 +87,10 @@ impl FailNthAddOrderDatabaseControl {
             .into_iter()
             .map(|order| (order.client_order_id(), order))
             .collect();
+    }
+
+    pub(super) fn order_events(&self) -> Vec<OrderEventAny> {
+        self.state.lock().order_events.clone()
     }
 
     #[allow(dead_code, reason = "used by the sibling exec_engine test module")]
@@ -292,6 +302,10 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
     }
 
     fn add_position(&self, _position: &Position) -> anyhow::Result<()> {
+        if self.control.state.lock().fail_add_position {
+            anyhow::bail!("test add position failure");
+        }
+
         Ok(())
     }
 
@@ -395,7 +409,12 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
         Ok(())
     }
 
-    fn update_order(&self, _order_event: &OrderEventAny) -> anyhow::Result<()> {
+    fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()> {
+        self.control
+            .state
+            .lock()
+            .order_events
+            .push(order_event.clone());
         Ok(())
     }
 

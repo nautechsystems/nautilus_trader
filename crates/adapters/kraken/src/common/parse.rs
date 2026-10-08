@@ -68,24 +68,70 @@ fn parse_rfc3339_timestamp(value: &str, field: &str) -> anyhow::Result<UnixNanos
         .map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
-/// Normalizes a Kraken currency code by stripping the legacy X/Z prefix.
+/// Maps a Kraken asset code to the standard code the platform uses.
 ///
-/// Kraken uses legacy prefixes for some currencies (e.g., XXBT for Bitcoin, XETH for Ethereum,
-/// ZUSD for USD). This function strips those prefixes for consistent lookups.
+/// Kraken prefixes some legacy assets with `X` or `Z`, but the prefix is not a rule: `XTZ`, `ZRX`
+/// and `XAUT` legitimately begin with those letters. The mapping is therefore an explicit table,
+/// and a code it does not list is returned unchanged.
 #[inline]
 pub fn normalize_currency_code(code: &str) -> &str {
-    code.strip_prefix("X")
-        .or_else(|| code.strip_prefix("Z"))
-        .unwrap_or(code)
+    KRAKEN_ASSET_CODES
+        .iter()
+        .find(|(kraken, _)| *kraken == code)
+        .map_or(code, |(_, standard)| *standard)
 }
 
-/// Maps Kraken REST `wsname` base codes that differ from their WS v2 accepted equivalents.
+/// Normalizes a venue asset key whose casing is not guaranteed.
 ///
-/// Kraken's REST `/0/public/AssetPairs` `wsname` field is supposed to be the WS-ready
-/// symbol, but some entries are stale. Each entry is `(rest_wsname_code, ws_v2_code)`.
-const KRAKEN_SYMBOL_RENAMES: &[(&str, &str)] = &[
-    ("XBT", "BTC"),  // XBT is Bitcoin's ISO 4217 code; WS v2 requires BTC
-    ("XDG", "DOGE"), // XDG is Kraken's legacy altname for Dogecoin; WS v2 requires DOGE
+/// The Kraken Futures account endpoints key balances by their own spelling, which is not
+/// consistently upper case, so match on the upper-cased key and return the standard code.
+pub fn normalize_asset_key(code: &str) -> String {
+    let upper = code.to_uppercase();
+    normalize_currency_code(&upper).to_string()
+}
+
+/// Maps Kraken's asset codes to the standard code the platform uses.
+///
+/// Kraken prefixes some legacy assets with `X` or `Z`, but the prefix is not a rule: `XTZ`, `ZRX`,
+/// `XAUT` and others legitimately begin with those letters and must survive untouched. Enumerate
+/// the mappings and pass everything else through, as Kraken's own CLI does.
+///
+/// `XXDG` and `XDG` map to `DOGE` rather than Kraken's own `XDG`, for the same reason `XBT` maps to
+/// `BTC`: the goal is the standard code, which is also what Kraken's WebSocket v2 API uses.
+const KRAKEN_ASSET_CODES: &[(&str, &str)] = &[
+    ("XXBT", "BTC"),
+    ("XBT", "BTC"),
+    ("XXDG", "DOGE"),
+    ("XDG", "DOGE"),
+    ("XETC", "ETC"),
+    ("XETH", "ETH"),
+    ("XLTC", "LTC"),
+    ("XMLN", "MLN"),
+    ("XREP", "REP"),
+    ("XXLM", "XLM"),
+    ("XXMR", "XMR"),
+    ("XXRP", "XRP"),
+    ("XZEC", "ZEC"),
+    ("ZARS", "ARS"),
+    ("ZAUD", "AUD"),
+    ("ZCAD", "CAD"),
+    ("ZCLP", "CLP"),
+    ("ZCOP", "COP"),
+    ("ZDKK", "DKK"),
+    ("ZEUR", "EUR"),
+    ("ZGBP", "GBP"),
+    ("ZGEL", "GEL"),
+    ("ZGHS", "GHS"),
+    ("ZJPY", "JPY"),
+    ("ZLKR", "LKR"),
+    ("ZMXN", "MXN"),
+    ("ZPLN", "PLN"),
+    ("ZSEK", "SEK"),
+    ("ZUGX", "UGX"),
+    ("ZUSD", "USD"),
+    ("ZVND", "VND"),
+    ("ZXOF", "XOF"),
+    ("KFEE", "FEE"),
 ];
 
 /// Normalizes a Kraken spot `wsname` symbol to the form accepted by WS v2.
@@ -99,14 +145,8 @@ pub fn normalize_spot_symbol(symbol: &str) -> String {
     let Some((base, quote)) = symbol.split_once('/') else {
         return symbol.to_string();
     };
-    let base = KRAKEN_SYMBOL_RENAMES
-        .iter()
-        .find(|(old, _)| *old == base)
-        .map_or(base, |(_, new)| new);
-    let quote = KRAKEN_SYMBOL_RENAMES
-        .iter()
-        .find(|(old, _)| *old == quote)
-        .map_or(quote, |(_, new)| new);
+    let base = normalize_currency_code(base);
+    let quote = normalize_currency_code(quote);
     format!("{base}/{quote}")
 }
 
@@ -440,12 +480,36 @@ fn parse_quantity(value: &str, field: &str) -> anyhow::Result<Quantity> {
     Quantity::from_str(value).map_err(|e| anyhow::anyhow!("Failed to parse {field}='{value}': {e}"))
 }
 
+/// Resolves a venue-reported fee currency, preferring the instrument's own definition.
+///
+/// A code the instrument already carries keeps that definition, so its precision is preserved
+/// rather than replaced by whatever the registry holds. Anything else, such as a base-currency fee
+/// on an inverse contract, resolves normally.
+pub fn fee_currency(reported: &str, instrument: &InstrumentAny) -> Currency {
+    let code = normalize_currency_code(reported);
+
+    for candidate in [
+        Some(instrument.quote_currency()),
+        instrument.base_currency(),
+        Some(instrument.settlement_currency()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if candidate.code.as_str() == code {
+            return candidate;
+        }
+    }
+
+    get_currency(code)
+}
+
 /// Returns a currency from the internal map or creates a new crypto currency.
 ///
 /// Uses [`Currency::get_or_create_crypto`] to handle unknown currency codes,
 /// which automatically registers newly listed Kraken assets.
 pub fn get_currency(code: &str) -> Currency {
-    Currency::get_or_create_crypto(code)
+    Currency::get_or_create_crypto(normalize_currency_code(code))
 }
 
 /// Parses a Kraken trade array into a Nautilus trade tick.
@@ -1178,7 +1242,15 @@ pub fn parse_futures_fill_report(
         _ => anyhow::bail!("Unsupported instrument type for futures fill report"),
     };
 
-    let commission = Money::from_decimal(fill.fee_paid.unwrap_or(Decimal::ZERO), quote_currency)?;
+    // The venue reports the fee currency, which on an inverse contract is not the quote.
+    let commission_currency = fill
+        .fee_currency
+        .as_deref()
+        .map_or(quote_currency, |reported| {
+            fee_currency(reported, instrument)
+        });
+    let commission =
+        Money::from_decimal(fill.fee_paid.unwrap_or(Decimal::ZERO), commission_currency)?;
 
     let liquidity_side = fill.fill_type.into();
 
@@ -1399,7 +1471,7 @@ mod tests {
         match instrument {
             InstrumentAny::CurrencyPair(pair) => {
                 assert_eq!(pair.id.venue.as_str(), "KRAKEN");
-                assert_eq!(pair.base_currency.code, "XXBT");
+                assert_eq!(pair.base_currency.code, "BTC");
                 assert_eq!(pair.quote_currency.code, "USDT");
                 assert_eq!(pair.price_increment.as_decimal(), dec!(0.1));
                 assert_eq!(pair.size_increment.as_decimal(), dec!(0.00000001));
@@ -2194,16 +2266,42 @@ mod tests {
     }
 
     #[rstest]
-    #[case("XXBT", "XBT")]
+    #[case("XXBT", "BTC")]
+    #[case("XBT", "BTC")]
+    #[case("XXDG", "DOGE")]
+    #[case("XDG", "DOGE")]
     #[case("XETH", "ETH")]
     #[case("ZUSD", "USD")]
     #[case("ZEUR", "EUR")]
+    #[case("KFEE", "FEE")]
     #[case("BTC", "BTC")]
     #[case("ETH", "ETH")]
     #[case("USDT", "USDT")]
     #[case("SOL", "SOL")]
+    // Codes that legitimately begin with X or Z must survive: a prefix strip would corrupt them.
+    #[case("XTZ", "XTZ")]
+    #[case("XRP", "XRP")]
+    #[case("XLM", "XLM")]
+    #[case("XAUT", "XAUT")]
+    #[case("XCN", "XCN")]
+    #[case("ZRX", "ZRX")]
+    #[case("ZEC", "ZEC")]
+    #[case("ZK", "ZK")]
     fn test_normalize_currency_code(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(normalize_currency_code(input), expected);
+    }
+
+    /// Kraken Futures keys account balances by its own spelling, which is not upper case.
+    #[rstest]
+    #[case("xbt", "BTC")]
+    #[case("XBT", "BTC")]
+    #[case("xxbt", "BTC")]
+    #[case("zeur", "EUR")]
+    #[case("usd", "USD")]
+    #[case("xtz", "XTZ")]
+    #[case("flr", "FLR")]
+    fn test_normalize_asset_key_is_case_tolerant(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(normalize_asset_key(input), expected);
     }
 
     #[rstest]
@@ -2301,7 +2399,7 @@ mod tests {
                 assert_eq!(ta.raw_symbol.as_str(), "AAPLxUSD");
                 assert_eq!(ta.asset_class, AssetClass::Equity);
                 assert_eq!(ta.base_currency.code, "AAPLx");
-                assert_eq!(ta.quote_currency.code, "ZUSD");
+                assert_eq!(ta.quote_currency.code, "USD");
                 assert_eq!(ta.price_precision, 2);
                 assert_eq!(ta.size_precision, 8);
                 assert_eq!(ta.price_increment.as_decimal(), dec!(0.01));

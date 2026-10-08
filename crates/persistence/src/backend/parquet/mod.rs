@@ -21,7 +21,7 @@ use parquet::basic::{BrotliLevel, Compression, GzipLevel, ZstdLevel};
 
 use crate::{
     catalog::{factory as catalog_factory, traits as catalog_traits},
-    config::{CatalogCompression, validate_catalog_counts},
+    config::CatalogCompression,
 };
 
 pub mod catalog;
@@ -59,7 +59,6 @@ pub(crate) fn open_catalog(
         config.params.as_ref(),
         &[],
     )?;
-    validate_catalog_counts(config.batch_size, config.max_row_group_size)?;
 
     catalog::ParquetDataCatalog::from_uri(
         &config.uri,
@@ -217,6 +216,34 @@ mod tests {
         config.max_row_group_size = max_row_group_size;
 
         let error = open_catalog(&config).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "invalid {field}: must be a positive number of rows; omit the field for the \
+                 backend default"
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::batch_size(Some(0), None, "batch_size")]
+    #[case::max_row_group_size(None, Some(0), "max_row_group_size")]
+    fn from_uri_rejects_zero_count(
+        #[case] batch_size: Option<usize>,
+        #[case] max_row_group_size: Option<usize>,
+        #[case] field: &str,
+    ) {
+        let directory = TempDir::new().unwrap();
+
+        let error = catalog::ParquetDataCatalog::from_uri(
+            &directory.path().to_string_lossy(),
+            None,
+            batch_size,
+            None,
+            max_row_group_size,
+        )
+        .unwrap_err();
 
         assert_eq!(
             error.to_string(),

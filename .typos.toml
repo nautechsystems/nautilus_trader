@@ -90,6 +90,7 @@ canceller = "canceller"
 # Industry standard abbreviations and technical terms
 CMO = "CMO" # Chande Momentum Oscillator
 BSE = "BSE" # Bombay Stock Exchange
+RTO = "RTO" # CME Russell 2000 quarterly option root
 Pn = "Pn" # Part of PnL (Profit and Loss)
 PnL = "PnL" # Profit and Loss
 PnLs = "PnLs" # Plural of PnL
@@ -115,6 +116,9 @@ SETTELMENT = "SETTELMENT" # Binance API: DELIVERED_SETTELMENT income type (their
 Alo = "Alo" # Hyperliquid API: Add Liquidity Only (post-only TIF)
 BadAloPx = "BadAloPx" # Hyperliquid API: rejection code for post-only orders
 sweeden = "sweeden" # Polymarket API tag slug
+
+# Kraken legacy asset codes (their own spellings, used verbatim on the wire)
+ZARS = "ZARS" # Kraken: Argentine peso, ARS behind Kraken's legacy Z prefix
 
 # Blockchain names (official branding)
 Superseed = "Superseed" # Superseed blockchain (chain ID 10001)

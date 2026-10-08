@@ -314,9 +314,15 @@ The public data client supports these DeFi subscriptions and requests:
 | Flash events      | `SubscribePoolFlashEvents`, `UnsubscribePoolFlashEvents`           | Selects flash events for one pool instrument.                                                      |
 | Pool snapshot     | `RequestPoolSnapshot`                                              | Publishes the pool definition, then a usable snapshot when cache bootstrap and validation succeed. |
 
-Subscriptions share the underlying block and DEX event feeds. Removing one subscription does not
-stop a feed that another subscription still owns. Pool snapshot requests require Postgres because
-bootstrap reads stored pool and event state through the cache database.
+Subscriptions share the underlying block and DEX event feeds. The client counts owners for each
+pool address and event type, so removing one subscription does not stop a feed that another
+subscription still owns. This holds when a complete pool subscription overlaps a narrower one: the
+narrower event types stay active after `UnsubscribePool`, and the reverse. The data engine keeps a
+pool's profiler updater until no data client has a remaining pool subscription for it.
+
+A pool snapshot response carries the ID of its request. The data engine discards a response whose
+bootstrap was canceled by a final unsubscribe, a reset, or a disconnect. Pool snapshot requests
+require Postgres because bootstrap reads stored pool and event state through the cache database.
 
 :::warning
 DeFi pool definitions and account-state updates publish on typed message-bus routers. A

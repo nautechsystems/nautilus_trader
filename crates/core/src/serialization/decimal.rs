@@ -49,8 +49,9 @@
 //! [`serialize_decimal_as_str`](crate::serialization::serialize_decimal_as_str) and
 //! [`serialize_optional_decimal_as_str`](crate::serialization::serialize_optional_decimal_as_str).
 //! These JSON number contracts do not extend to MessagePack or other Serde formats.
-//! Existing permissive parsing in the parent module retains its semantics, except that oversized
-//! integer inputs return errors instead of panicking.
+//! The parent module's permissive deserializers accept null and empty strings, round excess
+//! fractional digits, and preserve exactly representable scientific strings.
+//! Oversized integer inputs return errors.
 
 use std::str::FromStr;
 

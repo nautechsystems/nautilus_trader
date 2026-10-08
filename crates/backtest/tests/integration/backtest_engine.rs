@@ -37,7 +37,8 @@ use nautilus_common::{
     },
     component::Component,
     enums::ComponentState,
-    msgbus, nautilus_actor,
+    msgbus::{self, TypedHandler},
+    nautilus_actor,
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
@@ -63,7 +64,7 @@ use nautilus_model::{
         OrderStatus, PositionAdjustmentType, PriceType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    events::{OrderEventAny, OrderFilled},
+    events::{AccountState, OrderEventAny, OrderFilled},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
         StrategyId, Symbol, TradeId, Venue,
@@ -76,6 +77,7 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
+use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::trader::Trader;
 use nautilus_trading::{
     ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, Strategy, StrategyConfig,
@@ -1905,6 +1907,102 @@ fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: Cry
         result.summary["account.BINANCE.balance.USDT.locked"],
         balance.locked.to_string(),
     );
+}
+
+#[rstest]
+fn test_funding_settlement_generates_one_account_state(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    // Same setup as `test_run_processes_scheduled_funding_settlement`, so the balance after the
+    // funding payment matches the one asserted there
+    let mut engine = create_engine_with_fee_model(
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0004))).into(),
+    );
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let settlement_ns = UnixNanos::from(4_000_000_000);
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        Data::MarkPrice(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1000.00"),
+            UnixNanos::from(2_500_000_000),
+            UnixNanos::from(2_500_000_000),
+        )),
+        Data::FundingRate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        )),
+        quote(instrument_id, "1000.00", "1001.00", 5_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    let published = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let published = Rc::clone(&published);
+        move |state: &AccountState| published.borrow_mut().push(state.clone())
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, None);
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    let [position] = positions.as_slice() else {
+        panic!("expected one open position");
+    };
+    let [adjustment] = position.adjustments.as_slice() else {
+        panic!("expected one position adjustment");
+    };
+    assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
+
+    let account = cache.account(&position.account_id).unwrap();
+    let settlement_states: Vec<_> = account
+        .events()
+        .into_iter()
+        .filter(|state| state.ts_event == settlement_ns)
+        .collect();
+
+    // The funding payment changes the balance once and leaves the margins unchanged
+    assert_eq!(
+        settlement_states.len(),
+        1,
+        "funding settlement generated {} account states; identical balances and margins: {}",
+        settlement_states.len(),
+        settlement_states
+            .windows(2)
+            .all(|pair| pair[0].balances == pair[1].balances && pair[0].margins == pair[1].margins),
+    );
+
+    let state = &settlement_states[0];
+    let prior_state = account
+        .events()
+        .into_iter()
+        .rfind(|state| state.ts_event < settlement_ns)
+        .expect("expected an account state before the funding settlement");
+    let [balance] = state.balances.as_slice() else {
+        panic!("expected one balance");
+    };
+    assert_eq!(balance.total, Money::from("999998.5996 USDT"));
+    assert_eq!(state.margins, prior_state.margins);
+
+    // Account state subscribers see the settlement's state once
+    let published_ids: Vec<_> = published
+        .borrow()
+        .iter()
+        .filter(|published| published.ts_event == settlement_ns)
+        .map(|published| published.event_id)
+        .collect();
+    assert_eq!(published_ids, vec![state.event_id]);
 }
 
 #[rstest]
@@ -6888,11 +6986,193 @@ fn test_latency_order_settles_on_instrument_data_or_timer(
 }
 
 #[rstest]
-fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt: CryptoPerpetual) {
+#[case::same_day(true, DurationNanos::from_hours(1), None, false, "3950.00")]
+#[case::overnight(true, DurationNanos::from_hours(4), None, false, "3950.00")]
+#[case::weekend(true, DurationNanos::from_mins(2941), None, false, "3950.00")]
+#[case::equity_curve_disabled(false, DurationNanos::from_mins(2941), None, false, "3950.00")]
+#[case::data_at_midnight(true, DurationNanos::from_hours(2), None, false, "3950.00")]
+#[case::other_data_at_midnight(true, DurationNanos::from_mins(2941), None, true, "3950.00")]
+#[case::strategy_timer_at_midnight(
+    true,
+    DurationNanos::from_mins(2941),
+    Some(DurationNanos::from_hours(2)),
+    false,
+    "3904.00"
+)]
+#[case::strategy_timer_after_midnight(
+    true,
+    DurationNanos::from_mins(2941),
+    Some(DurationNanos::from_hours(3)),
+    false,
+    "3904.00"
+)]
+#[case::strategy_timer_with_data(
+    true,
+    DurationNanos::from_hours(2),
+    Some(DurationNanos::from_hours(2)),
+    false,
+    "3950.00"
+)]
+fn test_latency_order_settles_across_equity_curve_timers(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] equity_curve: bool,
+    #[case] reopen_after: DurationNanos,
+    #[case] settlement_after: Option<DurationNanos>,
+    #[case] other_data_at_midnight: bool,
+    #[case] expected_price: &str,
+) {
+    let instrument_id = crypto_perpetual_ethusdt.id;
+
+    let bar_type = BarType::new(
+        instrument_id,
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+        AggregationSource::External,
+    );
+    let friday = UnixNanos::from(1_673_042_400_000_000_000);
+    let reopen = friday + reopen_after;
+    let settlement_timer = settlement_after.map(|after| friday + after);
+
+    let data = [(friday, "3904.00"), (reopen, "3950.00")]
+        .into_iter()
+        .map(|(timestamp, value)| {
+            let price = Price::from(value);
+            Data::Bar(Bar::new(
+                bar_type,
+                price,
+                price,
+                price,
+                price,
+                Quantity::from("100.000"),
+                timestamp,
+                timestamp,
+            ))
+        })
+        .collect();
+
+    let mut engine = BacktestEngine::new(BacktestEngineConfig {
+        portfolio: Some(PortfolioConfig {
+            equity_curve,
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+    .unwrap();
+
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(instrument_id.venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                    DurationNanos::new(1_000_000),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                )))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    if other_data_at_midnight {
+        let mut other = crypto_perpetual_ethusdt.clone();
+        other.id = InstrumentId::new(Symbol::from("BTCUSDT"), instrument_id.venue);
+        other.raw_symbol = Symbol::from("BTCUSDT");
+        let other_id = other.id;
+        engine
+            .add_instrument(&InstrumentAny::CryptoPerpetual(other))
+            .unwrap();
+        let midnight = friday.floor(DurationNanos::from_days(1)) + DurationNanos::from_days(1);
+        engine
+            .add_data(
+                vec![quote(other_id, "5000.00", "5001.00", midnight.as_u64())],
+                None,
+                true,
+                true,
+            )
+            .unwrap();
+    }
+
+    engine
+        .add_instrument(&InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt))
+        .unwrap();
+    engine.add_data(data, None, true, true).unwrap();
+    engine
+        .add_strategy(OpenOnFirstBar::new(
+            instrument_id,
+            bar_type,
+            settlement_timer,
+        ))
+        .unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("1.000"));
+    assert_eq!(positions[0].events.len(), 1);
+    assert_eq!(
+        (
+            positions[0].events[0].last_px,
+            positions[0].events[0].ts_event,
+        ),
+        (
+            Price::from(expected_price),
+            settlement_timer.unwrap_or(reopen),
+        ),
+    );
+
+    let snapshots = engine
+        .kernel()
+        .portfolio()
+        .snapshots(&positions[0].account_id);
+    let mut expected_snapshots = Vec::new();
+
+    if equity_curve {
+        expected_snapshots.push(friday);
+        let day = DurationNanos::from_days(1);
+        let mut midnight = friday.floor(day) + day;
+        while midnight <= reopen {
+            expected_snapshots.push(midnight);
+            midnight += day;
+        }
+
+        expected_snapshots.push(reopen);
+    }
+
+    assert_eq!(
+        snapshots
+            .iter()
+            .map(|snapshot| snapshot.ts_event)
+            .collect::<Vec<_>>(),
+        expected_snapshots,
+    );
+}
+
+#[rstest]
+#[case::without_snapshots(None, 3_000_000_000)]
+#[case::with_snapshots(Some(500), 5_000_000_000)]
+fn test_trailing_final_tick_order_settles_with_latency(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] snapshot_interval_ms: Option<u64>,
+    #[case] final_quote_ts: u64,
+) {
     // The shutdown advance also covers commands emitted on the final data tick
     // (not just on_stop). Without it, the order submitted at the last quote sits
     // inflight past ts_now and never fills, leaving the position one fill short.
-    let config = BacktestEngineConfig::default();
+    let config = BacktestEngineConfig {
+        portfolio: Some(PortfolioConfig {
+            snapshot_interval_ms,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
     let mut engine = BacktestEngine::new(config).unwrap();
     let venue_config = SimulatedVenueConfig::builder()
         .venue(Venue::from("BINANCE"))
@@ -6925,7 +7205,7 @@ fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt:
     let quotes = vec![
         quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
         quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
-        quote(instrument_id, "1000.00", "1001.00", 3_000_000_000),
+        quote(instrument_id, "2000.00", "2001.00", final_quote_ts),
     ];
     engine.add_data(quotes, None, true, true).unwrap();
 
@@ -6945,6 +7225,41 @@ fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt:
         Quantity::from("3.000"),
         "expected all three quotes (including the trailing one) to fill",
     );
+    let end_ns = UnixNanos::from(final_quote_ts) + DurationNanos::from_secs(1);
+    assert_eq!(
+        open[0]
+            .events
+            .iter()
+            .map(|event| (event.last_px, event.ts_event))
+            .collect::<Vec<_>>(),
+        vec![
+            (Price::from("1001.00"), UnixNanos::from(2_000_000_000)),
+            (Price::from("2001.00"), UnixNanos::from(final_quote_ts)),
+            (Price::from("2001.00"), end_ns),
+        ],
+    );
+
+    if snapshot_interval_ms.is_some() {
+        let snapshots = engine.kernel().portfolio().snapshots(&open[0].account_id);
+        assert_eq!(
+            snapshots
+                .iter()
+                .map(|snapshot| snapshot.ts_event)
+                .collect::<Vec<_>>(),
+            [
+                1_000_000_000,
+                2_500_000_000,
+                3_000_000_000,
+                3_500_000_000,
+                4_000_000_000,
+                4_500_000_000,
+                5_000_000_000,
+                6_000_000_000,
+            ]
+            .map(UnixNanos::from)
+            .to_vec(),
+        );
+    }
 
     let bt_result = engine.get_result();
     assert_eq!(
@@ -6953,7 +7268,7 @@ fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt:
     );
     assert_eq!(
         engine.backtest_end(),
-        Some(UnixNanos::from(4_000_000_000)),
+        Some(end_ns),
         "expected backtest_end to advance to the trailing inflight arrival",
     );
 }

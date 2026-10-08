@@ -242,8 +242,8 @@ pub struct HyperliquidExecutionClientConfig {
     pub ws_post_timeout_secs: u64,
     /// Poll interval in seconds for `outcomeMeta` settlement detection.
     /// Disabled by default; venue `Settlement` fills drive HIP-4 settlement
-    /// through the standard user-fills stream. Set to a non-zero value only
-    /// when the venue fill stream is unavailable.
+    /// through the standard user-fills stream. Keep disabled: metadata inference
+    /// can emit closing fills for markets that are still trading.
     #[builder(default = 0)]
     pub outcome_settlement_poll_secs: u64,
 }

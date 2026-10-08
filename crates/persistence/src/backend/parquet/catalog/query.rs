@@ -745,7 +745,7 @@ impl ParquetDataCatalog {
 
         let files = if let Some(f) = files {
             f.into_iter()
-                .map(|p| self.to_object_path(&p).map(|op| op.to_string()))
+                .map(|p| self.to_object_path_parsed(&p).map(|op| op.to_string()))
                 .collect::<anyhow::Result<Vec<_>>>()?
         } else {
             self.list_parquet_files_with_criteria(

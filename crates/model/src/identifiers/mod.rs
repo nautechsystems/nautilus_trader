@@ -37,6 +37,7 @@ pub mod client_order_id;
 pub mod component_id;
 pub mod exec_algorithm_id;
 pub mod instrument_id;
+pub mod option_instrument_id;
 pub mod option_series_id;
 pub mod order_list_id;
 pub mod position_id;
@@ -59,6 +60,10 @@ pub use crate::identifiers::{
     component_id::ComponentId,
     exec_algorithm_id::ExecAlgorithmId,
     instrument_id::{GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, InstrumentIdError},
+    option_instrument_id::{
+        OptionContractSpec, OptionInstrumentIdError, OptionSymbologyScheme,
+        cme_globex_option_symbol, compute_option_instrument_id, osi_option_symbol,
+    },
     option_series_id::{OptionSeriesId, OptionSeriesIdError},
     order_list_id::OrderListId,
     position_id::PositionId,

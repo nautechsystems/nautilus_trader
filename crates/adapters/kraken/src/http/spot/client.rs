@@ -37,8 +37,8 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
     enums::{
-        AccountType, BookType, CurrencyType, MarketStatusAction, OrderSide, OrderType,
-        PositionSide, TimeInForce, TriggerType,
+        AccountType, AvgPxReconciliation, BookType, CurrencyType, MarketStatusAction, OrderSide,
+        OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -2087,21 +2087,16 @@ impl KrakenSpotHttpClient {
                 // Kraken defines available funds as `balance + credit - credit_used -
                 // hold_trade`, so net credit belongs in `total` for `free` to derive to it.
                 let total = balance + credit - credit_used;
-                if total.is_zero() {
-                    return None;
-                }
 
-                let normalized_code = currency_code
-                    .strip_prefix("X")
-                    .or_else(|| currency_code.strip_prefix("Z"))
-                    .unwrap_or(currency_code);
+                let normalized_code = normalize_currency_code(currency_code);
 
                 if skip_margin_wallet && normalized_code == target_code {
                     return None;
                 }
 
                 let locked = Decimal::from_str_exact(&entry.hold_trade).ok()?;
-                let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
+                let currency =
+                    Currency::new(normalized_code, 8, 0, normalized_code, CurrencyType::Crypto);
                 AccountBalance::from_total_and_locked(total, locked, currency).ok()
             })
             .chain(margin_entry)
@@ -2467,6 +2462,31 @@ impl KrakenSpotHttpClient {
         }
     }
 
+    /// Returns whether a bulk position read covers `instrument_id`, so that an absent report is
+    /// evidence the position is flat.
+    ///
+    /// This mirrors [`Self::request_position_status_reports`] with `instrument_id` left unset.
+    /// Margin mode reads `OpenPositions`, which reports leveraged positions only, and cash mode
+    /// without `use_spot_position_reports` reads nothing, so neither covers a spot holding. The
+    /// wallet read covers an instrument only when it would enumerate it, which one shared
+    /// predicate decides for the read and for this answer alike.
+    pub fn covers_bulk_position_reports(
+        &self,
+        instrument_id: InstrumentId,
+        account_type: AccountType,
+        use_spot_position_reports: bool,
+        quote_currency: Ustr,
+    ) -> bool {
+        if account_type == AccountType::Margin || !use_spot_position_reports {
+            return false;
+        }
+
+        self.get_cached_instrument(&instrument_id.symbol.inner())
+            .is_some_and(|instrument| {
+                wallet_report_base_currency(&instrument, quote_currency).is_some()
+            })
+    }
+
     /// Generates position reports from Kraken `OpenPositions` (margin mode).
     async fn generate_margin_position_reports(
         &self,
@@ -2487,7 +2507,7 @@ impl KrakenSpotHttpClient {
         // instrument when opposing lots exist on the same pair. Aggregation uses `Decimal`
         // so opposing lots cancel exactly and partial-close noise does not leave residual
         // float dust in the reported quantity.
-        let mut agg: IndexMap<String, (Decimal, InstrumentId)> = IndexMap::new();
+        let mut agg: IndexMap<String, OpenPositionAggregate> = IndexMap::new();
 
         let target_pair: Option<Ustr> = match &instrument_id {
             Some(target_id) => match self.get_cached_instrument(&target_id.symbol.inner()) {
@@ -2535,15 +2555,38 @@ impl KrakenSpotHttpClient {
                 KrakenOrderSide::Sell => -lot_net,
             };
 
+            // `cost` is the quote volume for the whole `vol`, so the lot's entry price is their
+            // ratio. Accumulate each side separately: a blended average across opposing lots
+            // would not describe the surviving exposure.
+            let cost = Decimal::from_str_exact(&pos.cost)
+                .with_context(|| format!("OpenPositions: failed to parse cost for {}", pos.pair))?;
+
             let entry = agg
                 .entry(pos.pair.clone())
-                .or_insert((Decimal::ZERO, instrument.id()));
-            entry.0 += signed_lot;
+                .or_insert_with(|| OpenPositionAggregate::new(instrument.id()));
+            entry.signed_qty += signed_lot;
+
+            if !vol.is_zero() {
+                let entry_px = cost / vol;
+
+                match pos.side {
+                    KrakenOrderSide::Buy => {
+                        entry.long_qty += lot_net;
+                        entry.long_notional += lot_net * entry_px;
+                    }
+                    KrakenOrderSide::Sell => {
+                        entry.short_qty += lot_net;
+                        entry.short_notional += lot_net * entry_px;
+                    }
+                }
+            }
         }
 
         let mut reports = Vec::new();
 
-        for (_, (signed_qty, inst_id)) in agg {
+        for (_, aggregate) in agg {
+            let signed_qty = aggregate.signed_qty;
+            let inst_id = aggregate.instrument_id;
             let instrument = self
                 .get_cached_instrument(&inst_id.symbol.inner())
                 .ok_or_else(|| InstrumentLookupError::not_found(inst_id))?;
@@ -2559,9 +2602,22 @@ impl KrakenSpotHttpClient {
                 .map_err(|e| {
                     anyhow::anyhow!("OpenPositions: failed to build Quantity for {inst_id}: {e:?}")
                 })?;
+            let avg_px_open = aggregate.avg_px_open(side);
             let report = PositionStatusReport::new(
-                account_id, inst_id, side, quantity, ts_init, ts_init, None, None, None,
-            );
+                account_id,
+                inst_id,
+                side,
+                quantity,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                avg_px_open,
+            )
+            // Kraken averages the lots that remain open under FIFO, so after a partial close it
+            // describes the surviving lots rather than the opening fills. It can open a position
+            // from flat, but must not be compared with a netting average.
+            .with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly);
             reports.push(report);
         }
 
@@ -2632,7 +2688,7 @@ impl KrakenSpotHttpClient {
                     None => return Ok(reports),
                 };
 
-                let coin = Ustr::from(normalize_currency_code(base_currency.code.as_str()));
+                let coin = Ustr::from(base_currency.code.as_str());
                 let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
                 let side = if wallet_balance > Decimal::ZERO {
@@ -2659,21 +2715,14 @@ impl KrakenSpotHttpClient {
                 reports.push(report);
             }
         } else {
-            let quote_filter = quote_currency;
-
             let instruments_guard = self.instruments_cache.load();
             for instrument in instruments_guard.values() {
-                let quote_currency = match instrument.quote_currency() {
-                    currency if currency.code == quote_filter => currency,
-                    _ => continue,
+                let Some(base_currency) = wallet_report_base_currency(instrument, quote_currency)
+                else {
+                    continue;
                 };
 
-                let base_currency = match instrument.base_currency() {
-                    Some(currency) => currency,
-                    None => continue,
-                };
-
-                let coin = Ustr::from(normalize_currency_code(base_currency.code.as_str()));
+                let coin = Ustr::from(base_currency.code.as_str());
                 let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
                 if wallet_balance.is_zero() {
@@ -2692,7 +2741,7 @@ impl KrakenSpotHttpClient {
                     "Spot position: {} {} (quote: {})",
                     quantity,
                     base_currency.code,
-                    quote_currency.code
+                    instrument.quote_currency().code
                 );
 
                 let report = PositionStatusReport::new(
@@ -3320,11 +3369,71 @@ fn collect_spot_statuses(
 /// Maps raw symbol (altname, e.g. "XBTUSD") to leverage tiers.
 type LeverageTiersCache = Arc<AtomicMap<Ustr, (Vec<i32>, Vec<i32>)>>;
 
+/// Accumulates `OpenPositions` lots for one pair.
+///
+/// Each side is tracked separately, so the entry average describes the side that survives netting
+/// rather than blending opposing lots.
+struct OpenPositionAggregate {
+    instrument_id: InstrumentId,
+    signed_qty: Decimal,
+    long_qty: Decimal,
+    long_notional: Decimal,
+    short_qty: Decimal,
+    short_notional: Decimal,
+}
+
+impl OpenPositionAggregate {
+    fn new(instrument_id: InstrumentId) -> Self {
+        Self {
+            instrument_id,
+            signed_qty: Decimal::ZERO,
+            long_qty: Decimal::ZERO,
+            long_notional: Decimal::ZERO,
+            short_qty: Decimal::ZERO,
+            short_notional: Decimal::ZERO,
+        }
+    }
+
+    /// Returns the entry average for the netted side, or `None` when it cannot be derived.
+    fn avg_px_open(&self, side: PositionSide) -> Option<Decimal> {
+        match side {
+            PositionSide::Long if !self.long_qty.is_zero() => {
+                Some(self.long_notional / self.long_qty)
+            }
+            PositionSide::Short if !self.short_qty.is_zero() => {
+                Some(self.short_notional / self.short_qty)
+            }
+            _ => None,
+        }
+    }
+}
+
 struct TradeBalanceSnapshot {
     margins: Vec<MarginBalance>,
     metrics: IndexMap<String, String>,
     free_margin: Decimal,
     equity: Decimal,
+}
+
+/// Returns the base currency whose wallet balance the bulk position read reports for `instrument`,
+/// or `None` when the read skips it.
+///
+/// The read only covers pairs quoted in the configured `spot_positions_quote_currency`, and it
+/// needs a base currency to name the holding. A configured code matches in either spelling, so an
+/// existing `ZEUR` setting still selects euro-quoted instruments now that they carry `EUR`. Both
+/// decisions live here so that the coverage declared through
+/// [`KrakenSpotHttpClient::covers_bulk_position_reports`] cannot drift from what the read actually
+/// enumerates.
+fn wallet_report_base_currency(
+    instrument: &InstrumentAny,
+    quote_currency: Ustr,
+) -> Option<Currency> {
+    let quote_filter = Ustr::from(normalize_currency_code(quote_currency.as_str()));
+    if instrument.quote_currency().code != quote_filter {
+        return None;
+    }
+
+    instrument.base_currency()
 }
 
 /// Parses an optional `BalanceEx` credit amount, treating an absent field as zero.
@@ -3341,9 +3450,9 @@ fn optional_credit_amount(value: Option<&str>) -> Option<Decimal> {
 
 /// Resolves the Nautilus [`Currency`] used to denominate `TradeBalance` margin metrics.
 ///
-/// Kraken's `TradeBalance` defaults to `ZUSD` when no asset is supplied. This strips
-/// Kraken's legacy `X`/`Z` prefixes and falls back to a 2dp fiat currency for unknown
-/// codes so unusual collateral assets still produce a tagged `MarginBalance`.
+/// Kraken's `TradeBalance` defaults to `ZUSD` when no asset is supplied. This maps Kraken's
+/// legacy asset codes to their standard equivalents and falls back to a 2dp fiat currency for
+/// unknown codes so unusual collateral assets still produce a tagged `MarginBalance`.
 fn trade_balance_currency(asset: Option<&str>) -> Currency {
     let raw = asset.unwrap_or("ZUSD");
     let normalized = normalize_currency_code(raw);
@@ -3707,6 +3816,91 @@ mod tests {
                 .to_string()
                 .contains("Unsupported trigger type for Kraken Spot")
         );
+    }
+
+    fn cache_spot_pair(
+        client: &KrakenSpotHttpClient,
+        symbol: &str,
+        quote: Currency,
+    ) -> InstrumentId {
+        let instrument_id = InstrumentId::from(symbol);
+
+        client.cache_instrument(InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new(instrument_id.symbol.as_str()))
+                .base_currency(Currency::BTC())
+                .quote_currency(quote)
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(0.into())
+                .ts_init(0.into())
+                .build()
+                .unwrap(),
+        ));
+
+        instrument_id
+    }
+
+    /// Bulk position coverage must answer for exactly the instruments the bulk read enumerates.
+    ///
+    /// The wallet read only reports pairs quoted in `spot_positions_quote_currency`, so claiming
+    /// coverage for every instrument would let an absent report force-close a holding the read
+    /// could never have reported.
+    #[rstest]
+    #[case(AccountType::Margin, true, "XBT/USDT.KRAKEN", false)]
+    #[case(AccountType::Margin, false, "XBT/USDT.KRAKEN", false)]
+    #[case(AccountType::Cash, false, "XBT/USDT.KRAKEN", false)]
+    #[case(AccountType::Cash, true, "XBT/USDT.KRAKEN", true)]
+    #[case(AccountType::Cash, true, "XBT/USD.KRAKEN", false)]
+    #[case(AccountType::Cash, true, "XBT/EUR.KRAKEN", false)]
+    fn test_covers_bulk_position_reports(
+        #[case] account_type: AccountType,
+        #[case] use_spot_position_reports: bool,
+        #[case] instrument: &str,
+        #[case] expected: bool,
+    ) {
+        let client = KrakenSpotHttpClient::default();
+        cache_spot_pair(&client, "XBT/USDT.KRAKEN", Currency::USDT());
+        cache_spot_pair(&client, "XBT/USD.KRAKEN", Currency::USD());
+
+        // `XBT/EUR` is never cached, standing for an instrument the read cannot enumerate.
+        let covered = client.covers_bulk_position_reports(
+            InstrumentId::from(instrument),
+            account_type,
+            use_spot_position_reports,
+            Ustr::from("USDT"),
+        );
+
+        assert_eq!(covered, expected);
+    }
+
+    /// A legacy quote code must select the same instruments as its standard spelling.
+    ///
+    /// Instruments now carry standard codes, so `ZEUR` has to normalize to `EUR` or an existing
+    /// setting would stop matching and an absent report could close a holding the read still sees.
+    #[rstest]
+    fn test_covers_bulk_position_reports_accepts_legacy_quote_code() {
+        let client = KrakenSpotHttpClient::default();
+        let eur = cache_spot_pair(&client, "XBT/EUR.KRAKEN", Currency::EUR());
+        cache_spot_pair(&client, "XBT/USDT.KRAKEN", Currency::USDT());
+
+        let legacy =
+            client.covers_bulk_position_reports(eur, AccountType::Cash, true, Ustr::from("ZEUR"));
+        let standard =
+            client.covers_bulk_position_reports(eur, AccountType::Cash, true, Ustr::from("EUR"));
+        let other = client.covers_bulk_position_reports(
+            InstrumentId::from("XBT/USDT.KRAKEN"),
+            AccountType::Cash,
+            true,
+            Ustr::from("ZEUR"),
+        );
+
+        assert!(legacy);
+        assert!(standard);
+        assert!(!other);
     }
 
     fn cache_test_spot_instrument(client: &KrakenSpotHttpClient) -> InstrumentId {

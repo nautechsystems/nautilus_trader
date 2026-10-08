@@ -15,13 +15,15 @@
 
 use std::fmt::Display;
 
-use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::indicator::Indicator;
 
-const MAX_PERIOD: usize = 1_024;
-
+/// On-Balance Volume: Granville's cumulative signed-volume series.
+///
+/// Each bar adds `+volume`, `-volume`, or `0` depending on whether its close
+/// is above, below, or equal to the previous close. The first bar establishes
+/// the baseline at `0`.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -33,16 +35,15 @@ const MAX_PERIOD: usize = 1_024;
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
 )]
 pub struct OnBalanceVolume {
-    pub period: usize,
     pub value: f64,
     pub initialized: bool,
     has_inputs: bool,
-    obv: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    previous_close: Option<f64>,
 }
 
 impl Display for OnBalanceVolume {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({})", self.name(), self.period)
+        write!(f, "{}()", self.name())
     }
 }
 
@@ -60,72 +61,50 @@ impl Indicator for OnBalanceVolume {
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        self.update_raw(
-            (&bar.open).into(),
-            (&bar.close).into(),
-            (&bar.volume).into(),
-        );
+        self.update_raw((&bar.close).into(), (&bar.volume).into());
     }
 
     fn reset(&mut self) {
-        self.obv.clear();
+        self.previous_close = None;
         self.value = 0.0;
         self.has_inputs = false;
         self.initialized = false;
     }
 }
 
+impl Default for OnBalanceVolume {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OnBalanceVolume {
     /// Creates a new [`OnBalanceVolume`] instance.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if:
-    /// - `period` is greater than `MAX_PERIOD`.
     #[must_use]
-    pub fn new(period: usize) -> Self {
-        assert!(
-            period <= MAX_PERIOD,
-            "OnBalanceVolume: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
-        );
-
+    pub const fn new() -> Self {
         Self {
-            period,
             value: 0.0,
-            obv: ArrayDeque::new(),
+            previous_close: None,
             has_inputs: false,
             initialized: false,
         }
     }
 
-    pub fn update_raw(&mut self, open: f64, close: f64, volume: f64) {
-        let delta = if close > open {
-            volume
-        } else if close < open {
-            -volume
-        } else {
-            0.0
-        };
-
-        if self.period == 0 {
-            // Unbounded cumulative OBV
-            self.value += delta;
-        } else {
-            // Rolling sum over the last `period` deltas
-            if self.obv.len() == self.period {
-                let _ = self.obv.pop_front();
-            }
-            let _ = self.obv.push_back(delta);
-            self.value = self.obv.iter().sum();
+    pub fn update_raw(&mut self, close: f64, volume: f64) {
+        if !close.is_finite() || !volume.is_finite() || volume < 0.0 {
+            return;
         }
 
-        if !self.initialized {
-            self.has_inputs = true;
-
-            if self.period == 0 || self.obv.len() >= self.period {
-                self.initialized = true;
+        if let Some(previous_close) = self.previous_close {
+            if close > previous_close {
+                self.value += volume;
+            } else if close < previous_close {
+                self.value -= volume;
             }
         }
+        self.previous_close = Some(close);
+        self.has_inputs = true;
+        self.initialized = true;
     }
 }
 
@@ -134,95 +113,56 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::stubs::obv_10;
 
     #[rstest]
-    fn test_name_returns_expected_string(obv_10: OnBalanceVolume) {
-        assert_eq!(obv_10.name(), "OnBalanceVolume");
+    fn test_name_returns_expected_string() {
+        assert_eq!(OnBalanceVolume::new().name(), "OnBalanceVolume");
     }
 
     #[rstest]
-    fn test_str_repr_returns_expected_string(obv_10: OnBalanceVolume) {
-        assert_eq!(format!("{obv_10}"), "OnBalanceVolume(10)");
+    fn test_str_repr_returns_expected_string() {
+        assert_eq!(format!("{}", OnBalanceVolume::new()), "OnBalanceVolume()");
     }
 
     #[rstest]
-    fn test_period_returns_expected_value(obv_10: OnBalanceVolume) {
-        assert_eq!(obv_10.period, 10);
+    fn test_initialized_without_inputs_returns_false() {
+        assert!(!OnBalanceVolume::new().initialized());
     }
 
     #[rstest]
-    fn test_initialized_without_inputs_returns_false(obv_10: OnBalanceVolume) {
-        assert!(!obv_10.initialized());
-    }
-
-    #[rstest]
-    fn test_value_with_all_higher_inputs_returns_expected_value(mut obv_10: OnBalanceVolume) {
-        let open_values = [
-            104.25, 105.50, 106.75, 108.00, 109.25, 110.50, 111.75, 113.00, 114.25, 115.50, 116.75,
-            118.00, 119.25, 120.50, 121.75,
-        ];
-
-        let close_values = [
-            105.50, 106.75, 108.00, 109.25, 110.50, 111.75, 113.00, 114.25, 115.50, 116.75, 118.00,
-            119.25, 120.50, 121.75, 123.00,
-        ];
-
-        let volume_values = [
-            1000.0, 1200.0, 1500.0, 1800.0, 2000.0, 2200.0, 2500.0, 2800.0, 3000.0, 3200.0, 3500.0,
-            3800.0, 4000.0, 4200.0, 4500.0,
-        ];
-
-        for i in 0..15 {
-            obv_10.update_raw(open_values[i], close_values[i], volume_values[i]);
-        }
-
-        assert!(obv_10.initialized());
-        assert_eq!(obv_10.value, 33700.0);
-    }
-
-    #[rstest]
-    fn test_reset_successfully_returns_indicator_to_fresh_state(mut obv_10: OnBalanceVolume) {
-        obv_10.update_raw(1.00020, 1.00050, 1000.0);
-        obv_10.update_raw(1.00030, 1.00060, 1200.0);
-        obv_10.update_raw(1.00070, 1.00080, 1500.0);
-
-        obv_10.reset();
-
-        assert!(!obv_10.initialized());
-        assert_eq!(obv_10.value, 0.0);
-        assert_eq!(obv_10.obv.len(), 0);
-        assert!(!obv_10.has_inputs);
-        assert!(!obv_10.initialized);
-    }
-
-    #[rstest]
-    fn test_value_respects_period_window() {
-        let mut obv = OnBalanceVolume::new(3);
-
-        // Each bar closes up, so delta = +volume; the early large volume must
-        // leave the 3-period window.
-        obv.update_raw(1.0, 2.0, 1000.0); // delta +1000 (early spike)
-        obv.update_raw(1.0, 2.0, 1.0);
-        obv.update_raw(1.0, 2.0, 2.0);
-        obv.update_raw(1.0, 2.0, 3.0);
-
-        // Window is now [1, 2, 3]: the 1000 spike has been evicted, so value = 6.
-        assert_eq!(obv.value, 6.0);
-    }
-
-    #[rstest]
-    fn test_period_zero_is_unbounded_cumulative() {
-        let mut obv = OnBalanceVolume::new(0);
-
-        // Feed more than MAX_PERIOD up-closes of +1; a fixed 1024-wide deque
-        // would cap the sum, but period == 0 is an unbounded cumulative total.
-        let count = MAX_PERIOD + 100;
-        for _ in 0..count {
-            obv.update_raw(1.0, 2.0, 1.0);
-        }
-
+    fn test_first_bar_establishes_zero_baseline() {
+        let mut obv = OnBalanceVolume::new();
+        obv.update_raw(100.0, 5_000.0);
         assert!(obv.initialized());
-        assert_eq!(obv.value, count as f64);
+        assert_eq!(obv.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_cumulative_close_versus_previous_close() {
+        let mut obv = OnBalanceVolume::new();
+        obv.update_raw(100.0, 1_000.0); // baseline
+        obv.update_raw(101.0, 2_000.0); // up: +2000
+        obv.update_raw(100.5, 500.0); // down: -500
+        obv.update_raw(100.5, 900.0); // flat: 0
+        obv.update_raw(102.0, 100.0); // up: +100
+
+        assert_eq!(obv.value, 1_600.0);
+    }
+
+    #[rstest]
+    fn test_reset_successfully_returns_indicator_to_fresh_state() {
+        let mut obv = OnBalanceVolume::new();
+        obv.update_raw(100.0, 1_000.0);
+        obv.update_raw(101.0, 2_000.0);
+
+        obv.reset();
+
+        assert!(!obv.initialized());
+        assert_eq!(obv.value, 0.0);
+        assert!(!obv.has_inputs);
+
+        // Post-reset the first bar is a baseline again
+        obv.update_raw(50.0, 4_000.0);
+        assert_eq!(obv.value, 0.0);
     }
 }

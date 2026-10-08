@@ -1595,6 +1595,29 @@ pub struct OKXServerTime {
     pub ts: u64,
 }
 
+/// Represents a fee group from `GET /api/v5/account/trade-fee`.
+///
+/// Rates retain OKX signs: positive values are rebates and negative values are commissions.
+/// Missing or empty rates are `None`, distinct from an explicit zero rate.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXFeeGroup {
+    /// Fee group ID, interpreted together with the parent response's instrument type.
+    pub group_id: String,
+    /// Maker fee rate.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub maker: Option<Decimal>,
+    /// Taker fee rate.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub taker: Option<Decimal>,
+    /// Maker fee rate for RPI orders.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub rpi_maker: Option<Decimal>,
+    /// Legacy ELP maker fee rate, retained independently when both names are present.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub elp_maker: Option<Decimal>,
+}
+
 /// Represents a fee rate entry from `GET /api/v5/account/trade-fee`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1602,14 +1625,21 @@ pub struct OKXFeeRate {
     /// Fee level (VIP tier) - indicates the user's VIP tier (0-9).
     #[serde(deserialize_with = "crate::common::parse::deserialize_vip_level")]
     pub level: OKXVipLevel,
-    /// Taker fee rate for crypto-margined contracts.
+    /// Legacy taker fee rate for crypto-margined contracts; empty when absent.
+    #[serde(default)]
     pub taker: String,
-    /// Maker fee rate for crypto-margined contracts.
+    /// Legacy maker fee rate for crypto-margined contracts; empty when absent.
+    #[serde(default)]
     pub maker: String,
-    /// Taker fee rate for USDT-margined contracts.
+    /// Legacy taker fee rate for USDT-margined contracts; empty when absent.
+    #[serde(default)]
     pub taker_u: String,
-    /// Maker fee rate for USDT-margined contracts.
+    /// Legacy maker fee rate for USDT-margined contracts; empty when absent.
+    #[serde(default)]
     pub maker_u: String,
+    /// Fee groups returned for the requested scope, without selecting a rate.
+    #[serde(default)]
+    pub fee_group: Vec<OKXFeeGroup>,
     /// Maker fee rate for RPI orders.
     #[serde(
         default,
@@ -1626,7 +1656,7 @@ pub struct OKXFeeRate {
     /// Event contract settlement fee rate.
     #[serde(default)]
     pub settle: String,
-    /// Instrument type (SPOT, MARGIN, SWAP, FUTURES, OPTION).
+    /// Instrument type (SPOT, MARGIN, SWAP, FUTURES, OPTION, EVENTS).
     pub inst_type: OKXInstrumentType,
     /// Fee schedule category (being deprecated).
     #[serde(default)]
@@ -2662,6 +2692,118 @@ mod tests {
 
         assert_eq!(fee_rate.settle, "-0.001");
         assert_eq!(fee_rate.inst_type, OKXInstrumentType::Events);
+    }
+
+    #[rstest]
+    #[case::missing(None, None)]
+    #[case::empty(Some(""), None)]
+    #[case::zero(Some("0"), Some(Decimal::ZERO))]
+    #[case::commission(Some("-0.001"), Some(Decimal::from_str_exact("-0.001").unwrap()))]
+    #[case::rebate(Some("0.0002"), Some(Decimal::from_str_exact("0.0002").unwrap()))]
+    fn test_fee_group_rates_preserve_unavailable_zero_and_signs(
+        #[case] value: Option<&str>,
+        #[case] expected: Option<Decimal>,
+    ) {
+        let mut payload = serde_json::json!({"groupId": "1"});
+
+        if let Some(value) = value {
+            for field in ["maker", "taker", "rpiMaker", "elpMaker"] {
+                payload[field] = serde_json::json!(value);
+            }
+        }
+
+        let group: OKXFeeGroup = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(group.group_id, "1");
+        assert_eq!(group.maker, expected);
+        assert_eq!(group.taker, expected);
+        assert_eq!(group.rpi_maker, expected);
+        assert_eq!(group.elp_maker, expected);
+    }
+
+    #[rstest]
+    #[case::rpi_only(Some("-0.00015"), None)]
+    #[case::elp_only(None, Some("-0.00016"))]
+    #[case::both_equal(Some("-0.00015"), Some("-0.00015"))]
+    #[case::both_distinct(Some("-0.00015"), Some("-0.00016"))]
+    fn test_fee_group_preserves_rpi_and_elp_independently(
+        #[case] rpi: Option<&str>,
+        #[case] elp: Option<&str>,
+    ) {
+        let mut payload = serde_json::json!({"groupId": "1"});
+        if let Some(value) = rpi {
+            payload["rpiMaker"] = serde_json::json!(value);
+        }
+
+        if let Some(value) = elp {
+            payload["elpMaker"] = serde_json::json!(value);
+        }
+
+        let group: OKXFeeGroup = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(
+            group.rpi_maker,
+            rpi.map(|value| Decimal::from_str_exact(value).unwrap())
+        );
+        assert_eq!(
+            group.elp_maker,
+            elp.map(|value| Decimal::from_str_exact(value).unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_fee_rate_preserves_legacy_scalars_alongside_groups() {
+        let fee_rate: OKXFeeRate = serde_json::from_value(serde_json::json!({
+            "level": "Lv1",
+            "maker": "-0.0008",
+            "taker": "-0.001",
+            "makerU": "",
+            "takerU": "0",
+            "feeGroup": [{"groupId": "1", "maker": "0.0002", "taker": "-0.0005"}],
+            "instType": "SPOT",
+            "ts": "1763979985847"
+        }))
+        .unwrap();
+
+        assert_eq!(fee_rate.maker, "-0.0008");
+        assert_eq!(fee_rate.taker, "-0.001");
+        assert_eq!(fee_rate.maker_u, "");
+        assert_eq!(fee_rate.taker_u, "0");
+        assert_eq!(fee_rate.fee_group.len(), 1);
+        assert_eq!(
+            fee_rate.fee_group[0].maker,
+            Some(Decimal::from_str_exact("0.0002").unwrap())
+        );
+        assert_eq!(
+            fee_rate.fee_group[0].taker,
+            Some(Decimal::from_str_exact("-0.0005").unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_fee_rate_missing_scalars_do_not_imply_zero() {
+        let fee_rate: OKXFeeRate = serde_json::from_value(serde_json::json!({
+            "level": "Lv1",
+            "instType": "SPOT",
+            "ts": "1763979985847"
+        }))
+        .unwrap();
+
+        assert!(fee_rate.maker.is_empty());
+        assert!(fee_rate.taker.is_empty());
+        assert!(fee_rate.maker_u.is_empty());
+        assert!(fee_rate.taker_u.is_empty());
+        assert!(fee_rate.fee_group.is_empty());
+    }
+
+    #[rstest]
+    fn test_fee_group_rejects_invalid_rates(
+        #[values("maker", "taker", "rpiMaker", "elpMaker")] field: &str,
+    ) {
+        let mut payload = serde_json::json!({"groupId": "1"});
+        payload[field] = serde_json::json!("invalid");
+
+        assert!(serde_json::from_value::<OKXFeeGroup>(payload).is_err());
     }
 
     #[rstest]

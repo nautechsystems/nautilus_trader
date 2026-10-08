@@ -21,14 +21,17 @@ use std::{
 };
 
 use arrow::{
-    array::{FixedSizeBinaryArray, UInt64Array},
+    array::{FixedSizeBinaryArray, StringArray, UInt64Array},
     datatypes::{DataType, Field, Schema, TimeUnit},
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::{Bar, Data, NautilusDataType, NautilusRecordType, OrderBookDepth, QuoteTick, TradeTick},
+    data::{
+        Bar, Data, NautilusDataType, NautilusRecordType, OrderBookDepth, QuoteTick, TradeTick,
+        stubs::quote_ethusdt_binance,
+    },
     events::AccountState,
-    instruments::NautilusInstrumentType,
+    instruments::{InstrumentAny, NautilusInstrumentType, stubs::crypto_perpetual_ethusdt},
 };
 use nautilus_persistence::{
     backend::parquet::{
@@ -41,7 +44,13 @@ use nautilus_persistence::{
     },
     test_data::RustTestCustomData,
 };
-use nautilus_serialization::{arrow::DecodeTypedFromRecordBatch, ensure_custom_data_registered};
+use nautilus_serialization::{
+    arrow::{
+        ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch,
+        record_batch_with_u64_timestamps,
+    },
+    ensure_custom_data_registered,
+};
 use object_store::local::LocalFileSystem;
 use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
 use rstest::rstest;
@@ -122,6 +131,137 @@ fn runtime_queries_reject_legacy_catalogs(
         result.unwrap_err().to_string(),
         "Legacy catalog schema is not supported by runtime queries; run `nautilus catalog migrate-parquet` to migrate to a separate destination before reading"
     );
+}
+
+#[rstest]
+fn runtime_queries_and_migration_accept_non_instrument_class_metadata() {
+    let temporary = TempDir::new().unwrap();
+    let source = temporary.path().join("source");
+    let target = temporary.path().join("destination");
+    let file = source.join("data/quotes/ETHUSDT-PERP.BINANCE/quote.parquet");
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+
+    let quote = quote_ethusdt_binance();
+    let mut metadata = QuoteTick::chunk_metadata(&[quote]);
+    metadata.insert("class".to_string(), "QuoteTick".to_string());
+    let batch = QuoteTick::encode_batch(&metadata, &[quote]).unwrap();
+    let mut writer =
+        ArrowWriter::try_new(fs::File::create(&file).unwrap(), batch.schema(), None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+    let original = catalog_files(&source);
+    let mut catalog = ParquetDataCatalog::new(&source, None, None, None, None);
+
+    let quotes = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
+    let mut destination = ParquetDataCatalog::new(&target, None, None, None, None);
+    let migrated = destination
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+
+    assert_eq!(report.migrated_files, 1);
+    assert_eq!(report.migrated_rows, 1);
+    assert_eq!(report.skipped_files, 0);
+    assert_eq!(
+        serde_json::to_value(&quotes).unwrap(),
+        serde_json::to_value([quote]).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&migrated).unwrap(),
+        serde_json::to_value([quote]).unwrap()
+    );
+    assert_eq!(catalog_files(&source), original);
+}
+
+#[rstest]
+fn migration_converts_class_instruments(
+    #[values(false, true)] utc_timestamps: bool,
+    #[values(false, true)] fee_columns: bool,
+) {
+    let temporary = TempDir::new().unwrap();
+    let source = temporary.path().join("source");
+    let target = temporary.path().join("destination");
+    let file = source.join("data/crypto_perpetual/ETHUSDT-PERP.BINANCE/instrument.parquet");
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.ts_event = 1_700_000_000_000_000_123.into();
+    instrument.ts_init = 1_700_000_000_000_000_126.into();
+    let instruments = vec![InstrumentAny::CryptoPerpetual(instrument)];
+    let metadata = InstrumentAny::chunk_metadata(&instruments);
+    let batch = InstrumentAny::encode_batch(&metadata, &instruments).unwrap();
+
+    let batch = if utc_timestamps {
+        batch
+    } else {
+        record_batch_with_u64_timestamps(&batch).unwrap()
+    };
+
+    let mut metadata = batch.schema().metadata().clone();
+    let type_name = metadata.remove("type_name").unwrap();
+    metadata.insert("class".to_string(), type_name);
+    let mut fields = batch.schema().fields().to_vec();
+    let mut columns = batch.columns().to_vec();
+
+    if fee_columns {
+        let offset = batch.schema().index_of("margin_maint").unwrap() + 1;
+
+        for (index, (name, value)) in [("maker_fee", "0.0002"), ("taker_fee", "0.0004")]
+            .into_iter()
+            .enumerate()
+        {
+            fields.insert(
+                offset + index,
+                Arc::new(Field::new(name, DataType::Utf8, false)),
+            );
+            columns.insert(offset + index, Arc::new(StringArray::from(vec![value])));
+        }
+    }
+
+    let schema = Arc::new(Schema::new_with_metadata(fields, metadata));
+    let batch = RecordBatch::try_new(Arc::clone(&schema), columns).unwrap();
+    let mut writer = ArrowWriter::try_new(fs::File::create(&file).unwrap(), schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+    let original = catalog_files(&source);
+
+    let dry_run = migrate_parquet_catalog(config(&source, &target, true)).unwrap();
+    assert_eq!(dry_run.migrated_files, 0);
+    assert!(!target.exists());
+
+    let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
+    let destination = ParquetDataCatalog::new(&target, None, None, None, None);
+    let migrated = destination.query_instruments(None).unwrap();
+    let destination_files = catalog_files(&target);
+    let schema = ParquetRecordBatchReaderBuilder::try_new(
+        fs::File::open(target.join(&destination_files[0].0)).unwrap(),
+    )
+    .unwrap()
+    .schema()
+    .clone();
+    let mut source_catalog = ParquetDataCatalog::new(&source, None, None, None, None);
+    let runtime_error = source_catalog.query_instruments(None).unwrap_err();
+    let filtered_error = source_catalog
+        .query_instruments_filtered_with_where(None, None, None, Some("false"))
+        .unwrap_err();
+
+    assert_eq!(report.migrated_files, 1);
+    assert_eq!(report.migrated_rows, 1);
+    assert_eq!(report.skipped_files, 0);
+    assert_eq!(
+        schema.as_ref(),
+        &InstrumentAny::get_schema(Some(InstrumentAny::chunk_metadata(&instruments)))
+    );
+    assert_eq!(
+        serde_json::to_value(&migrated).unwrap(),
+        serde_json::to_value(&instruments).unwrap()
+    );
+    assert_eq!(catalog_files(&source), original);
+    let expected_error = "Legacy catalog schema is not supported by runtime queries; run `nautilus catalog migrate-parquet` to migrate to a separate destination before reading";
+    assert_eq!(runtime_error.to_string(), expected_error);
+    assert_eq!(filtered_error.to_string(), expected_error);
 }
 
 #[rstest]

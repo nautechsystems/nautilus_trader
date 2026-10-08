@@ -2529,6 +2529,7 @@ mod tests {
         assert_eq!(event.last_qty, Quantity::new(25.0, 0));
         assert_eq!(event.last_px, Price::from("50500.00"));
         assert_eq!(event.liquidity_side, expected);
+        assert_eq!(event.commission, None);
     }
 
     #[rstest]

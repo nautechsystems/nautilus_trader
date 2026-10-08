@@ -198,8 +198,8 @@ impl CanonicalScenario {
                     "blake3:be57c858fd2d34e157342f64260c4d517abc2f7a5f67dce73d43858ea1b2bf1a"
                         .to_string(),
                 result_digest: expected_result_digest(
-                    "blake3:14fee63698f0b3afd4ed0fe0710733a2c677929efc975d82456c64d4e9e732c1",
-                    "blake3:c2cf16fff2bc490e553c6c2958e4e1d66a3d4d7ddbe413752bd542fcfd7d100e",
+                    "blake3:af19677c389328849e47fe5054b8a48bef8e0884975a6bca79a59168550eaf68",
+                    "blake3:c060d4fbd5bdfd519d6718e8e9ba57c2b4ffdbbe2c8a12574f8b0f1505103faa",
                 ),
             },
             Self::PassiveLimitOrders => CanonicalFingerprint {
@@ -215,7 +215,7 @@ impl CanonicalScenario {
                     "blake3:7702ff4aa9ca1d26061419e9185a5bcfed0418fb0f24725ee36fd7d4323d79f5"
                         .to_string(),
                 result_digest:
-                    "blake3:4aaa0bdd015b1d4df4c1c850d3f1527f3d099ac717dd38500625c1d0ed24b403"
+                    "blake3:bdf55fed6226757d296b891b8c0271c4e81571ad3e569dcc1304e29d1ec05a72"
                         .to_string(),
             },
             Self::BarEmaCross => CanonicalFingerprint {
@@ -231,8 +231,8 @@ impl CanonicalScenario {
                     "blake3:ba1b5311a979bcfb6b58a4a9c478b4f00d0c577ce0c5c9cb3328f84ee921d9fc"
                         .to_string(),
                 result_digest: expected_result_digest(
-                    "blake3:e62f1f8cb2f77dc5c118b02ae0d9481236d1fd69a7f26928482e2406d9556a1e",
-                    "blake3:d269453558b68dd3dae266c1ab44fa454fdb034678fc383eb4f2b3edb4156bc1",
+                    "blake3:a6b8a6e9f1f1576f53413bf73190bc8e55cccd91491db4e86dd2abb83ae942f7",
+                    "blake3:eb31ad11e645e6ea771d2f63c2aac14775a5c007f940cbcfc78f8437ac94d816",
                 ),
             },
         }

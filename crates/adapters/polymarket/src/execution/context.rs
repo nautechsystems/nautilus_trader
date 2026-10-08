@@ -38,14 +38,6 @@ pub(crate) struct OrderContextRegistry {
     inner: Mutex<RegistryInner>,
 }
 
-#[derive(Debug, Default)]
-struct RegistryInner {
-    contexts: AHashMap<VenueOrderId, OrderContext>,
-    client_to_venue: AHashMap<ClientOrderId, VenueOrderId>,
-    accepted: AHashSet<VenueOrderId>,
-    closed: AHashSet<ClientOrderId>,
-}
-
 impl OrderContextRegistry {
     /// Records the context for a tracked order under its venue order ID.
     pub(crate) fn register_context(&self, venue_order_id: VenueOrderId, context: OrderContext) {
@@ -105,6 +97,14 @@ impl OrderContextRegistry {
             .get(&venue_order_id)
             .is_some_and(|context| guard.closed.contains(&context.identity.client_order_id))
     }
+}
+
+#[derive(Debug, Default)]
+struct RegistryInner {
+    contexts: AHashMap<VenueOrderId, OrderContext>,
+    client_to_venue: AHashMap<ClientOrderId, VenueOrderId>,
+    accepted: AHashSet<VenueOrderId>,
+    closed: AHashSet<ClientOrderId>,
 }
 
 #[cfg(test)]
@@ -174,6 +174,35 @@ mod tests {
             } else {
                 original_id
             })
+        );
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Gtc)]
+    #[case(TimeInForce::Fok)]
+    #[case(TimeInForce::Ioc)]
+    fn test_recovered_context_preserves_current_economics(#[case] time_in_force: TimeInForce) {
+        let registry = OrderContextRegistry::default();
+        let venue_order_id = VenueOrderId::from("V-RECOVERED");
+        let captured = test_context();
+
+        let current = OrderContext {
+            quantity: Quantity::from("23.45"),
+            price: Some(Price::from("0.6789")),
+            time_in_force,
+            is_post_only: false,
+            ..captured
+        };
+
+        registry.register_context(venue_order_id, current);
+
+        registry.recover_context(venue_order_id, captured);
+        registry.recover_context(venue_order_id, captured);
+
+        assert_eq!(registry.get(&venue_order_id), Some(current));
+        assert_eq!(
+            registry.venue_order_id(&captured.identity.client_order_id),
+            Some(venue_order_id)
         );
     }
 

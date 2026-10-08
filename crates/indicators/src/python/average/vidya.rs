@@ -29,16 +29,22 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl VariableIndexDynamicAverage {
-    /// Creates a new `VariableIndexDynamicAverage` instance.
+    /// Variable index dynamic average.
     #[new]
-    #[pyo3(signature = (period, price_type=None, cmo_ma_type=None))]
-    #[must_use]
+    #[pyo3(signature = (period, price_type=None, cmo_ma_type=None, cmo_period=None))]
     pub fn py_new(
         period: usize,
         price_type: Option<PriceType>,
         cmo_ma_type: Option<MovingAverageType>,
-    ) -> Self {
-        Self::new(period, price_type, cmo_ma_type)
+        cmo_period: Option<usize>,
+    ) -> PyResult<Self> {
+        Self::new_checked(
+            period,
+            cmo_period.unwrap_or(period),
+            price_type,
+            cmo_ma_type,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -58,6 +64,12 @@ impl VariableIndexDynamicAverage {
     #[pyo3(name = "period")]
     const fn py_period(&self) -> usize {
         self.period
+    }
+
+    #[getter]
+    #[pyo3(name = "cmo_period")]
+    const fn py_cmo_period(&self) -> usize {
+        self.cmo_period
     }
 
     #[getter]
