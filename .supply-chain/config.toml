@@ -1407,7 +1407,7 @@ version = "0.1.65"
 criteria = "safe-to-deploy"
 
 [[exemptions.ibapi]]
-version = "3.3.0"
+version = "5.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.icu_collections]]

@@ -15,9 +15,11 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
 
+from _common import default_databento_data_instrument_id
 from _common import default_es_future_instrument_id
 from _common import default_es_put_option_instrument_id
 from _common import default_es_put_spread_instrument_id
+from _common import default_spx_index_instrument_id
 from _common import default_ym_future_instrument_id
 
 from nautilus_trader.adapters import interactive_brokers
@@ -176,7 +178,10 @@ class IbV2SubscriptionStrategy(Strategy):
                 strategy_id=StrategyId.from_str("IB-V2-SUBSCRIPTION-STRATEGY"),
             ),
         )
-        self.instrument_id = env_instrument_id("IB_V2_SUBSCRIPTION_INSTRUMENT_ID", "^SPX.CBOE")
+        self.instrument_id = env_instrument_id(
+            "IB_V2_SUBSCRIPTION_INSTRUMENT_ID",
+            default_spx_index_instrument_id(),
+        )
         self.bar_type = bar_type_from_env("IB_V2_SUBSCRIPTION_BAR_TYPE", self.instrument_id)
         self._subscribed = False
         self._quote_count = 0
@@ -282,7 +287,10 @@ class DatabentoSubscriptionStrategy(Strategy):
                 strategy_id=StrategyId.from_str("IB-V2-DATABENTO-SUBSCRIPTION"),
             ),
         )
-        self.instrument_id = env_instrument_id("IB_V2_DATABENTO_DATA_INSTRUMENT_ID", "SPY.XNAS")
+        self.instrument_id = env_instrument_id(
+            "IB_V2_DATABENTO_DATA_INSTRUMENT_ID",
+            default_databento_data_instrument_id(),
+        )
         self.bar_type = bar_type_from_env("IB_V2_DATABENTO_BAR_TYPE", self.instrument_id)
         self._quote_count = 0
         self._bar_count = 0
@@ -299,7 +307,7 @@ class DatabentoSubscriptionStrategy(Strategy):
             )
             self.subscribe_quotes(self.instrument_id, client_id=databento_client_id())
 
-        if env_bool("IB_V2_DATABENTO_SUBSCRIBE_BARS", default=True):
+        if env_bool("IB_V2_DATABENTO_SUBSCRIBE_BARS", True):
             print(
                 f"{self.strategy_id}: subscribing Databento bars for {self.bar_type}",
                 flush=True,
@@ -415,6 +423,8 @@ class IbV2OrderStrategy(Strategy):
         )
         self.instrument: Any | None = None
         self._orders_submitted = False
+        self._quotes_subscribed = False
+        self._order_run_id = uuid4().hex[:8]
 
     def on_start(self) -> None:
         """
@@ -430,7 +440,7 @@ class IbV2OrderStrategy(Strategy):
         cached_instrument = self.cache.instrument(self.instrument_id)
         if cached_instrument is not None:
             self.instrument = cached_instrument
-            self._submit_example_orders_once()
+            self._subscribe_quotes_or_submit()
             return
 
         print(f"{self.strategy_id}: requesting {self.instrument_id}", flush=True)
@@ -444,7 +454,26 @@ class IbV2OrderStrategy(Strategy):
             return
 
         self.instrument = instrument
-        self._submit_example_orders_once()
+        self._subscribe_quotes_or_submit()
+
+    def _subscribe_quotes_or_submit(self) -> None:
+        if not env_bool("IB_V2_WAIT_FOR_QUOTE", True):
+            self._submit_example_orders_once()
+            return
+
+        if self._quotes_subscribed:
+            return
+
+        self._quotes_subscribed = True
+        print(f"{self.strategy_id}: waiting for a quote for {self.instrument_id}", flush=True)
+        self.subscribe_quotes(self.instrument_id, client_id=ib_client_id())
+
+    def on_quote(self, quote: Any) -> None:
+        """
+        On quote.
+        """
+        if quote.instrument_id == self.instrument_id:
+            self._submit_example_orders_once()
 
     def _submit_example_orders_once(self) -> None:
         if self._orders_submitted:
@@ -467,7 +496,7 @@ class IbV2OrderStrategy(Strategy):
         """
         Client order id.
         """
-        return ClientOrderId.from_str(f"{self.strategy_id}-{suffix}")
+        return ClientOrderId.from_str(f"IBV2-{self._order_run_id}-{suffix}")
 
     def init_id(self) -> UUID4:
         """
@@ -625,6 +654,20 @@ class IbV2OrderStrategy(Strategy):
             flush=True,
         )
         self.cancel_order(order.client_order_id, client_id=ib_client_id())
+
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
+        if not env_bool("IB_V2_ENABLE_ORDER_SUBMISSION"):
+            return
+
+        if env_bool("IB_V2_CANCEL_ON_STOP", True):
+            self.cancel_all_orders(self.instrument_id, client_id=ib_client_id())
+        if env_bool("IB_V2_CLOSE_ON_STOP", True):
+            self.close_all_positions(self.instrument_id, client_id=ib_client_id())
+        if self._quotes_subscribed:
+            self.unsubscribe_quotes(self.instrument_id, client_id=ib_client_id())
 
 
 class BracketOrderStrategy(IbV2OrderStrategy):
@@ -1054,3 +1097,4 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
 
         if self._startup_requested and env_bool("IB_V2_ENABLE_LIVE_BARS"):
             self.unsubscribe_bars(self.bar_type, client_id=ib_client_id())
+        super().on_stop()

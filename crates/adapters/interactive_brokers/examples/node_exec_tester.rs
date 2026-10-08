@@ -15,14 +15,17 @@
 
 //! Example demonstrating live execution testing with the Interactive Brokers adapter.
 //!
-//! Run live smoke with:
+//! Build the node and tester configuration with:
 //! `cargo run --example ib-exec-tester --package nautilus-interactive-brokers --features examples`
+//!
+//! Set `NAUTILUS_IB_RUN=1` to connect. Set `NAUTILUS_IB_LIVE_ORDERS=1` as a second opt-in to
+//! submit orders. Select an order profile with `NAUTILUS_IB_EXEC_PROFILE`.
 //!
 //! Run embedded config unit tests with:
 //! `cargo test --example ib-exec-tester --package nautilus-interactive-brokers --features examples`
 //!
-//! Edit the constants below to change the TWS/Gateway connection, target
-//! instrument, order size, and exec spec profile.
+//! Edit the constants below to change the TWS/Gateway connection and order size. The tester
+//! trades the live quarterly ES contract so it works outside stock market hours.
 //!
 //! Required environment variable:
 //! - `NAUTILUS_IB_ACCOUNT_ID` is your IB account, for example `U1234567`
@@ -50,15 +53,19 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
-// Each variant is exercised by the tests and selected by editing EXEC_SPEC_PROFILE,
-// but only the default is constructed in a non-test build
-#[allow(dead_code)]
+#[path = "contracts/active_future.rs"]
+mod active_future;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IbExecutionSpecProfile {
     Lifecycle,
     CancelModify,
     Rejection,
     Options,
+    Stop,
+    StopLimit,
+    Trailing,
+    Bracket,
     UnsupportedFlags,
 }
 
@@ -72,19 +79,33 @@ const STRATEGY_ID: &str = "IB-EXEC-TESTER-001";
 const HOST: &str = DEFAULT_HOST;
 const PORT: u16 = DEFAULT_TWS_PORT;
 const CLIENT_ID: i32 = DEFAULT_CLIENT_ID;
-const INSTRUMENT_ID: &str = "AAPL=STK.SMART";
-const MARKET_DATA_TYPE: &str = "realtime";
+// Delayed data streams without a real-time subscription; override with
+// `NAUTILUS_IB_MARKET_DATA_TYPE` when the account is entitled to real-time data.
+const MARKET_DATA_TYPE: &str = "delayed";
 const ORDER_QTY: &str = "1";
 const AUTO_STOP_SECS: u64 = 0;
-const EXEC_SPEC_PROFILE: IbExecutionSpecProfile = IbExecutionSpecProfile::Lifecycle;
+const EXEC_SPEC_PROFILE: &str = "lifecycle";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let account_id_raw = env::var("NAUTILUS_IB_ACCOUNT_ID")?;
+    let run = env_enabled("NAUTILUS_IB_RUN");
+    let live_orders = env_enabled("NAUTILUS_IB_LIVE_ORDERS");
+    validate_live_opt_ins(run, live_orders)?;
+
+    let account_id_raw = match env::var("NAUTILUS_IB_ACCOUNT_ID") {
+        Ok(value) => value,
+        Err(e) if run => return Err(e.into()),
+        Err(_) => "U1234567".to_string(),
+    };
     let trader_id = TraderId::from(TRADER_ID);
-    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
-    let market_data_type = parse_market_data_type(MARKET_DATA_TYPE);
+    let instrument_id = active_future::es_future_instrument_id();
+    let market_data_type = parse_market_data_type(
+        &env::var("NAUTILUS_IB_MARKET_DATA_TYPE").unwrap_or_else(|_| MARKET_DATA_TYPE.to_string()),
+    );
     let order_qty = Quantity::from(ORDER_QTY);
+    let profile = parse_exec_spec_profile(
+        &env::var("NAUTILUS_IB_EXEC_PROFILE").unwrap_or_else(|_| EXEC_SPEC_PROFILE.to_string()),
+    );
 
     let routing = RoutingConfig::builder().default(true).build();
 
@@ -131,15 +152,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     let tester_config = exec_tester_config_for_profile(
-        EXEC_SPEC_PROFILE,
+        profile,
         instrument_id,
         ClientId::new(IB),
         order_qty,
+        live_orders,
     );
 
     node.add_strategy(ExecTester::new(tester_config))?;
+    if !run {
+        println!("Built Interactive Brokers exec tester node. Set NAUTILUS_IB_RUN=1 to connect.");
+        return Ok(());
+    }
+
     schedule_auto_stop(&node, AUTO_STOP_SECS);
     node.run().await?;
+
+    Ok(())
+}
+
+fn env_enabled(name: &str) -> bool {
+    env::var(name).is_ok_and(|value| value == "1")
+}
+
+fn validate_live_opt_ins(run: bool, live_orders: bool) -> Result<(), std::io::Error> {
+    if live_orders && !run {
+        return Err(std::io::Error::other(
+            "NAUTILUS_IB_LIVE_ORDERS=1 requires NAUTILUS_IB_RUN=1",
+        ));
+    }
 
     Ok(())
 }
@@ -151,6 +192,21 @@ fn parse_market_data_type(value: &str) -> MarketDataType {
         "delayed" => MarketDataType::Delayed,
         "delayed-frozen" | "delayed_frozen" => MarketDataType::DelayedFrozen,
         value => panic!("invalid NAUTILUS_IB_MARKET_DATA_TYPE={value}"),
+    }
+}
+
+fn parse_exec_spec_profile(value: &str) -> IbExecutionSpecProfile {
+    match value {
+        "lifecycle" => IbExecutionSpecProfile::Lifecycle,
+        "cancel-modify" | "cancel_modify" => IbExecutionSpecProfile::CancelModify,
+        "rejection" => IbExecutionSpecProfile::Rejection,
+        "options" => IbExecutionSpecProfile::Options,
+        "stop" => IbExecutionSpecProfile::Stop,
+        "stop-limit" | "stop_limit" => IbExecutionSpecProfile::StopLimit,
+        "trailing" => IbExecutionSpecProfile::Trailing,
+        "bracket" => IbExecutionSpecProfile::Bracket,
+        "unsupported-flags" | "unsupported_flags" => IbExecutionSpecProfile::UnsupportedFlags,
+        value => panic!("invalid NAUTILUS_IB_EXEC_PROFILE={value}"),
     }
 }
 
@@ -184,25 +240,26 @@ fn exec_tester_config_for_profile(
     instrument_id: InstrumentId,
     client_id: ClientId,
     order_qty: Quantity,
+    live_orders: bool,
 ) -> ExecTesterConfig {
     let builder = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_instrument_ids: Some(vec![instrument_id]),
+            use_uuid_client_order_ids: true,
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
-        .dry_run(DRY_RUN)
+        .dry_run(DRY_RUN || !live_orders)
         .log_data(false);
 
     match profile {
         IbExecutionSpecProfile::Lifecycle => builder
             .open_position_on_start_qty(order_qty.as_decimal())
+            .open_position_on_first_quote(true)
             .enable_limit_buys(false)
             .enable_limit_sells(false)
-            .close_positions_on_stop(true)
             .build()
             .unwrap(),
         IbExecutionSpecProfile::CancelModify => builder
@@ -221,9 +278,44 @@ fn exec_tester_config_for_profile(
             .unwrap(),
         IbExecutionSpecProfile::Options => builder
             .open_position_on_start_qty(order_qty.as_decimal())
+            .open_position_on_first_quote(true)
             .enable_limit_buys(false)
             .enable_limit_sells(false)
-            .close_positions_on_stop(true)
+            .build()
+            .unwrap(),
+        IbExecutionSpecProfile::Stop => builder
+            .enable_limit_buys(false)
+            .enable_limit_sells(false)
+            .enable_stop_buys(true)
+            .enable_stop_sells(true)
+            .stop_order_type(OrderType::StopMarket)
+            .modify_stop_orders_to_maintain_offset(true)
+            .build()
+            .unwrap(),
+        IbExecutionSpecProfile::StopLimit => builder
+            .enable_limit_buys(false)
+            .enable_limit_sells(false)
+            .enable_stop_buys(true)
+            .enable_stop_sells(true)
+            .stop_order_type(OrderType::StopLimit)
+            .stop_limit_offset_ticks(25)
+            .build()
+            .unwrap(),
+        IbExecutionSpecProfile::Trailing => builder
+            .enable_limit_buys(false)
+            .enable_limit_sells(false)
+            .enable_stop_buys(true)
+            .enable_stop_sells(true)
+            .stop_order_type(OrderType::TrailingStopMarket)
+            .trailing_offset(rust_decimal::Decimal::new(25, 0))
+            .build()
+            .unwrap(),
+        IbExecutionSpecProfile::Bracket => builder
+            .enable_limit_buys(true)
+            .enable_limit_sells(true)
+            .enable_brackets(true)
+            .bracket_entry_order_type(OrderType::Limit)
+            .bracket_offset_ticks(500)
             .build()
             .unwrap(),
         IbExecutionSpecProfile::UnsupportedFlags => builder
@@ -257,7 +349,26 @@ mod tests {
             instrument_id(),
             ClientId::new(IB),
             Quantity::from("1"),
+            true,
         )
+    }
+
+    #[rstest::rstest]
+    fn test_default_connection_opt_in_keeps_tester_in_dry_run() {
+        let config = exec_tester_config_for_profile(
+            IbExecutionSpecProfile::Lifecycle,
+            instrument_id(),
+            ClientId::new(IB),
+            Quantity::from("1"),
+            false,
+        );
+
+        assert!(config.dry_run);
+        assert!(validate_live_opt_ins(true, false).is_ok());
+        assert_eq!(
+            validate_live_opt_ins(false, true).unwrap_err().to_string(),
+            "NAUTILUS_IB_LIVE_ORDERS=1 requires NAUTILUS_IB_RUN=1",
+        );
     }
 
     #[rstest::rstest]
@@ -265,6 +376,7 @@ mod tests {
         let config = config(IbExecutionSpecProfile::Lifecycle);
 
         assert_eq!(config.open_position_on_start_qty, Some(Decimal::ONE));
+        assert!(config.open_position_on_first_quote);
         assert!(!config.enable_limit_buys);
         assert!(!config.enable_limit_sells);
         assert!(config.close_positions_on_stop);
@@ -295,9 +407,53 @@ mod tests {
         let config = config(IbExecutionSpecProfile::Options);
 
         assert_eq!(config.open_position_on_start_qty, Some(Decimal::ONE));
+        assert!(config.open_position_on_first_quote);
         assert!(!config.enable_limit_buys);
         assert!(!config.enable_limit_sells);
         assert!(config.close_positions_on_stop);
+    }
+
+    #[rstest::rstest]
+    fn test_stop_exec_spec_profile_enables_modifiable_stop_orders() {
+        let config = config(IbExecutionSpecProfile::Stop);
+
+        assert!(!config.enable_limit_buys);
+        assert!(!config.enable_limit_sells);
+        assert!(config.enable_stop_buys);
+        assert!(config.enable_stop_sells);
+        assert_eq!(config.stop_order_type, OrderType::StopMarket);
+        assert!(config.modify_stop_orders_to_maintain_offset);
+    }
+
+    #[rstest::rstest]
+    fn test_stop_limit_exec_spec_profile_enables_stop_limit_orders() {
+        let config = config(IbExecutionSpecProfile::StopLimit);
+
+        assert!(config.enable_stop_buys);
+        assert!(config.enable_stop_sells);
+        assert_eq!(config.stop_order_type, OrderType::StopLimit);
+        assert_eq!(config.stop_limit_offset_ticks, Some(25));
+    }
+
+    #[rstest::rstest]
+    fn test_trailing_exec_spec_profile_enables_trailing_stop_orders() {
+        let config = config(IbExecutionSpecProfile::Trailing);
+
+        assert!(config.enable_stop_buys);
+        assert!(config.enable_stop_sells);
+        assert_eq!(config.stop_order_type, OrderType::TrailingStopMarket);
+        assert_eq!(config.trailing_offset, Some(Decimal::new(25, 0)));
+    }
+
+    #[rstest::rstest]
+    fn test_bracket_exec_spec_profile_enables_bracket_orders() {
+        let config = config(IbExecutionSpecProfile::Bracket);
+
+        assert!(config.enable_limit_buys);
+        assert!(config.enable_limit_sells);
+        assert!(config.enable_brackets);
+        assert_eq!(config.bracket_entry_order_type, OrderType::Limit);
+        assert_eq!(config.bracket_offset_ticks, 500);
     }
 
     #[rstest::rstest]

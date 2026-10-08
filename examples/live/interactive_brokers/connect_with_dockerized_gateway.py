@@ -16,12 +16,10 @@ import os
 
 from _common import add_strategy_from_config
 from _common import build_ib_live_node
-from _common import default_cl_future
-from _common import default_es_future_instrument_id
-from _common import default_ym_future_instrument_id
+from _common import default_docker_subscription_instrument_id
+from _common import docker_instrument_provider_config
 from _common import env_bool
 from _common import env_int
-from _common import instrument_provider_config
 from _common import is_ib_endpoint_reachable
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
@@ -36,8 +34,11 @@ def main() -> None:
     ib = interactive_brokers
     host, port = resolve_ib_endpoint()
     gateway = None
+    run_node = env_bool("IB_V2_RUN_NODE")
 
-    if not is_ib_endpoint_reachable(host, port) or env_bool("IB_V2_FORCE_DOCKERIZED_GATEWAY"):
+    if run_node and (
+        not is_ib_endpoint_reachable(host, port) or env_bool("IB_V2_FORCE_DOCKERIZED_GATEWAY")
+    ):
         username = os.getenv("TWS_USERNAME")
         password = os.getenv("TWS_PASSWORD")
         if not username or not password:
@@ -57,43 +58,12 @@ def main() -> None:
         port = gateway.port
 
     account_id = os.getenv("TWS_ACCOUNT") if env_bool("IB_V2_ENABLE_EXECUTION") else None
-    cl_local_symbol, cl_instrument_id, _ = default_cl_future()
-    os.environ.setdefault("IB_V2_SUBSCRIPTION_INSTRUMENT_ID", "EUR/USD.IDEALPRO")
-    os.environ.setdefault("IB_V2_SUBSCRIBE_QUOTES", "1")
-    provider_config = instrument_provider_config(
-        load_ids=[
-            "EUR/USD.IDEALPRO",
-            "BTC/USD.PAXOS",
-            "SPY.ARCA",
-            "V.NYSE",
-            os.getenv("IB_V2_DOCKER_YM_INSTRUMENT_ID", default_ym_future_instrument_id()),
-            os.getenv("IB_V2_DOCKER_CL_INSTRUMENT_ID", cl_instrument_id),
-            os.getenv("IB_V2_DOCKER_ES_INSTRUMENT_ID", default_es_future_instrument_id()),
-        ],
-        load_contracts=[
-            {
-                "secType": ib.IbSecurityType.STOCK.as_str(),
-                "symbol": "SPY",
-                "exchange": "SMART",
-                "primaryExchange": "ARCA",
-                "build_options_chain": True,
-                "min_expiry_days": 7,
-                "max_expiry_days": 14,
-            },
-            {
-                "secType": ib.IbSecurityType.CONTINUOUS_FUTURE.as_str(),
-                "exchange": "CME",
-                "symbol": "ES",
-                "build_futures_chain": True,
-            },
-            {
-                "secType": ib.IbSecurityType.FUTURE.as_str(),
-                "exchange": "NYMEX",
-                "localSymbol": os.getenv("IB_V2_DOCKER_CL_LOCAL_SYMBOL", cl_local_symbol),
-                "build_futures_chain": False,
-            },
-        ],
+    os.environ.setdefault(
+        "IB_V2_SUBSCRIPTION_INSTRUMENT_ID",
+        default_docker_subscription_instrument_id(),
     )
+    os.environ.setdefault("IB_V2_SUBSCRIBE_QUOTES", "1")
+    provider_config = docker_instrument_provider_config()
     node = build_ib_live_node(
         name="IB-V2-DOCKER-001",
         trader_id="IB-V2-DOCKER-001",
@@ -109,13 +79,22 @@ def main() -> None:
         "ib_v2_order_strategies:IbV2SubscriptionStrategy",
     )
 
-    print(f"Running v2 IB node against {host}:{port}; press Ctrl+C to stop.", flush=True)
-    schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 0))
-    try:
-        node.run()
-    finally:
-        if gateway is not None:
-            gateway.stop_blocking()
+    if run_node:
+        print(
+            f"Running v2 IB node against {host}:{port}; press Ctrl+C to stop.",
+            flush=True,
+        )
+        schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 0))
+        try:
+            node.run()
+        finally:
+            if gateway is not None:
+                gateway.stop_blocking()
+    else:
+        print(
+            "Built v2 Dockerized IB Gateway node. Set IB_V2_RUN_NODE=1 to connect.",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":
