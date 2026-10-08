@@ -696,18 +696,19 @@ every holding it covers and an absent report is genuine evidence of flat.
 
 - Open orders: Fetches all currently active futures orders.
 - Historical orders: Fetches closed and filled orders when `open_only=False`.
-- Order events: Full order lifecycle history via `/api/history/v3/orders`
-  endpoint. The history lists every lifecycle event, so the read hands back one report per
-  order: the open-order snapshot when the venue still lists the order, else its latest history
-  state. The contract name is resolved as the venue spells it, exactly first and then
-  case-insensitively. The history carries no trigger price, so a stop order is reported as the
-  limit or market order it executes as once triggered, and venue-initiated orders (liquidation,
-  assignment, unwind, block, RFQ, hedge) are reported as market orders. A row the adapter cannot
-  represent is skipped with a warning and leaves the set incomplete: an event kind the adapter
-  does not know, an order whose type the venue reports as `Unknown` or omits, an unknown
-  direction, and a timestamp before the epoch. `OrderNotFound` carries no order state and is
-  skipped without affecting completeness; a venue error reported with a success status fails the
-  read.
+- Order events: Full order lifecycle history via `/api/history/v3/orders` endpoint. A read takes one
+  page: Kraken's `/history` endpoints share a pool of 100 tokens, replenished at 100 every 10
+  minutes, with fill history, so a page that hands back a continuation token logs a warning and
+  leaves the set incomplete rather than reading further. The history lists every lifecycle event, so
+  the read hands back one report per order: the open-order snapshot when the venue still lists the
+  order, else its latest history state. The contract name is resolved as the venue spells it,
+  exactly first and then case-insensitively. The history carries no trigger price, so a stop order
+  is reported as the limit or market order it executes as once triggered, and venue-initiated orders
+  (liquidation, assignment, unwind, block, RFQ, hedge) are reported as market orders. A row the
+  adapter cannot represent is skipped with a warning and leaves the set incomplete: an event kind
+  the adapter does not know, an order whose type the venue reports as `Unknown` or omits, an unknown
+  direction, and a timestamp before the epoch. `OrderNotFound` carries no order state and is skipped
+  without affecting completeness; a venue error reported with a success status fails the read.
 
 **Fill reports:**
 

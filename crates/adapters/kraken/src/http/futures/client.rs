@@ -1717,8 +1717,11 @@ impl KrakenFuturesHttpClient {
     /// Requests order status reports, also reporting whether the set is complete.
     ///
     /// An in-scope open order whose instrument cannot be resolved fails the read. The flag is
-    /// `false` when a record cannot be parsed, or a historical record's instrument cannot be
-    /// resolved, which `ExecutionMassStatus::set_report_window` records for bounded history.
+    /// `false` when a record cannot be parsed, a historical record's instrument cannot be
+    /// resolved, a history row could not be represented, or the history page hands back a
+    /// continuation token: the read takes one page, since Kraken's `/history` endpoints share a
+    /// pool of 100 tokens, replenished at 100 every 10 minutes, with fill history.
+    /// `ExecutionMassStatus::set_report_window` records the flag for bounded history.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -1841,6 +1844,18 @@ impl KrakenFuturesHttpClient {
                 .get_order_events(end_ms, start_ms, None)
                 .await
                 .map_err(|e| anyhow::anyhow!("get_order_events failed: {e}"))?;
+
+            // A page that hands back a continuation token leaves events of the window unread.
+            if response
+                .continuation_token
+                .as_deref()
+                .is_some_and(|token| !token.is_empty())
+            {
+                log::warn!(
+                    "Order history window since={start_ms:?} before={end_ms:?} holds more events than one page; the events beyond it are not read, marking the set incomplete"
+                );
+                complete = false;
+            }
 
             // The history lists every lifecycle event, so an order appears once per event. Each
             // report reconciles against the same cached state, so the read hands back one report
@@ -4181,21 +4196,21 @@ mod tests {
         );
     }
 
-    /// A history row the projection cannot represent marks the checked read incomplete while
-    /// the rows it can represent are still reported.
-    #[rstest]
-    #[tokio::test]
-    async fn test_request_order_status_reports_marks_the_set_incomplete_for_a_skipped_history_row()
-    {
+    /// A history page of two rows on `PF_XBTUSD`; the first row's order type is `first_order_type`
+    /// and the page hands back `continuation_token` when one is given.
+    fn history_page(first_order_type: &str, continuation_token: Option<&str>) -> String {
+        let token = continuation_token
+            .map(|token| format!(r#","continuationToken":"{token}""#))
+            .unwrap_or_default();
+        format!(
+            r#"{{"elements":[{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{{"uid":"H-SKIP-1","tradeable":"PF_XBTUSD","direction":"Sell","quantity":"3","filled":"1","limitPrice":"70000","orderType":"{first_order_type}","clientId":"cl-1","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}}}}}},{{"uid":"e2","timestamp":1680877245500,"event":{{"OrderPlaced":{{"order":{{"uid":"H-KEEP-2","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"2","filled":"0.5","limitPrice":"69500","orderType":"Limit","clientId":"cl-2","reduceOnly":false,"timestamp":1680877245500,"lastUpdateTimestamp":1680877245500}}}}}}}}]{token}}}"#
+        )
+    }
+
+    /// A client against a mock venue with no open orders whose order history serves `history`.
+    async fn history_test_client(history: Arc<RwLock<String>>) -> KrakenFuturesHttpClient {
         use axum::{Router, extract::State, http::header, routing::any};
 
-        fn history_page(first_order_type: &str) -> String {
-            format!(
-                r#"{{"elements":[{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{{"uid":"H-SKIP-1","tradeable":"PF_XBTUSD","direction":"Sell","quantity":"3","filled":"1","limitPrice":"70000","orderType":"{first_order_type}","clientId":"cl-1","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}}}}}},{{"uid":"e2","timestamp":1680877245500,"event":{{"OrderPlaced":{{"order":{{"uid":"H-KEEP-2","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"2","filled":"0.5","limitPrice":"69500","orderType":"Limit","clientId":"cl-2","reduceOnly":false,"timestamp":1680877245500,"lastUpdateTimestamp":1680877245500}}}}}}}}]}}"#
-            )
-        }
-
-        let history = Arc::new(RwLock::new(history_page("Limit")));
         let app = Router::new()
             .route(
                 "/derivatives/api/v3/openorders",
@@ -4215,14 +4230,14 @@ mod tests {
                     )
                 }),
             )
-            .with_state(history.clone());
+            .with_state(history);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let client = KrakenFuturesHttpClient::with_credentials(
+        KrakenFuturesHttpClient::with_credentials(
             "test".to_string(),
             "test".to_string(),
             KrakenEnvironment::Live,
@@ -4234,7 +4249,54 @@ mod tests {
             None,
             10,
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    /// A page that hands back a continuation token leaves events of the window unread, so the
+    /// read reports the page's rows and marks the set incomplete; without a token the same page
+    /// reads complete.
+    #[rstest]
+    #[case::token(Some("c2ltYjE3OA=="), false)]
+    #[case::no_token(None, true)]
+    #[tokio::test]
+    async fn test_request_order_status_reports_marks_a_page_with_a_continuation_token_incomplete(
+        #[case] continuation_token: Option<&str>,
+        #[case] expected_complete: bool,
+    ) {
+        let history = Arc::new(RwLock::new(history_page("Limit", continuation_token)));
+        let client = history_test_client(history).await;
+        cache_test_futures_instrument(&client);
+
+        let (reports, complete) = client
+            .request_order_status_reports_checked(
+                AccountId::from("KRAKEN-001"),
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(complete, expected_complete);
+        assert_eq!(
+            reports
+                .iter()
+                .map(|report| report.venue_order_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["H-SKIP-1", "H-KEEP-2"],
+            "the page's rows are reported either way"
+        );
+    }
+
+    /// A history row the projection cannot represent marks the checked read incomplete while
+    /// the rows it can represent are still reported.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_marks_the_set_incomplete_for_a_skipped_history_row()
+    {
+        let history = Arc::new(RwLock::new(history_page("Limit", None)));
+        let client = history_test_client(history.clone()).await;
         let instrument_id = cache_test_futures_instrument(&client);
         let account_id = AccountId::from("KRAKEN-001");
 
@@ -4250,7 +4312,7 @@ mod tests {
         );
         assert_eq!(control.len(), 2);
 
-        *history.write() = history_page("Unknown");
+        *history.write() = history_page("Unknown", None);
         let (reports, complete) = client
             .request_order_status_reports_checked(account_id, None, None, None, false)
             .await

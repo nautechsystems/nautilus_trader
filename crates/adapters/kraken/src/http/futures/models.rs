@@ -493,7 +493,7 @@ impl<'de> Deserialize<'de> for FuturesOrderHistoryEvent {
     }
 }
 
-/// An event that carries one order: placed, cancelled or rejected.
+/// An event that carries one order: placed, canceled or rejected.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FuturesOrderHistoryOrderEvent {
@@ -1515,15 +1515,15 @@ mod tests {
     #[rstest]
     fn test_parse_futures_order_events_keeps_the_tradeable_and_formats_timestamps() {
         let response = order_history_events("http_futures_order_events.json");
-        let cancelled = &response.order_events[2].order;
+        let canceled = &response.order_events[2].order;
 
-        assert_eq!(cancelled.symbol, "pi_xbtusd");
-        assert_eq!(cancelled.timestamp, "2023-04-07T13:00:00.000Z");
-        assert_eq!(cancelled.last_update_timestamp, "2023-04-07T16:00:00.000Z");
-        assert!(cancelled.reduce_only);
-        assert_eq!(cancelled.limit_price, Some(dec!(26000.0)));
+        assert_eq!(canceled.symbol, "pi_xbtusd");
+        assert_eq!(canceled.timestamp, "2023-04-07T13:00:00.000Z");
+        assert_eq!(canceled.last_update_timestamp, "2023-04-07T16:00:00.000Z");
+        assert!(canceled.reduce_only);
+        assert_eq!(canceled.limit_price, Some(dec!(26000.0)));
         assert_eq!(
-            cancelled.stop_price, None,
+            canceled.stop_price, None,
             "the history schema has no trigger price"
         );
     }
