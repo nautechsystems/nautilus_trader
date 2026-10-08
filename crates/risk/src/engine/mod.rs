@@ -43,7 +43,7 @@ use nautilus_execution::trailing::{
     trailing_stop_calculate_with_bid_ask, trailing_stop_calculate_with_last,
 };
 use nautilus_model::{
-    accounts::{Account, AccountAny, WalletAccount},
+    accounts::{Account, AccountAny},
     enums::{
         AggregationSource, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
         TradingState, TrailingOffsetType, TriggerType,
@@ -55,7 +55,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{LIMIT_ORDER_TYPES, Order, OrderAny, STOP_ORDER_TYPES},
-    types::{Currency, Money, Price, Quantity, fixed::raw_scales_match, quantity::QuantityRaw},
+    types::{Currency, Money, Price, Quantity, quantity::QuantityRaw},
 };
 use nautilus_portfolio::Portfolio;
 use rust_decimal::Decimal;
@@ -2092,17 +2092,17 @@ impl AccountRisk<'_> {
             })
     }
 
-    // A wallet can observe a token at a different raw scale than the instrument uses for the
-    // same currency code, so its reservations are deducted at the observed balance precision
+    // Wallet reservations are held at the observed balance precision, and like the wallet's own
+    // locks they cannot be deducted once the observed precision has changed
     fn deduct_reservation(&self, free: Money, amount: Money) -> Result<Money, String> {
-        let amount = if matches!(self.account, AccountAny::Wallet(_))
-            && !raw_scales_match(free.currency.precision, amount.currency.precision)
+        if matches!(self.account, AccountAny::Wallet(_))
+            && amount.currency.precision != free.currency.precision
         {
-            WalletAccount::normalize_reservation(amount, free.currency)
-                .map_err(|e| e.to_string())?
-        } else {
-            amount
-        };
+            return Err(format!(
+                "reserved balance precision {} differed from balance precision {} for {}",
+                amount.currency.precision, free.currency.precision, free.currency
+            ));
+        }
 
         free.checked_sub(amount).ok_or_else(|| {
             "reserved balance exceeds Money bounds or has incompatible scale".to_string()
@@ -2808,6 +2808,19 @@ impl AccountRisk<'_> {
                         .to_string(),
                     );
                 })?
+        } else if let Some(funding) =
+            self.wallet_buy_funding(order, quantity, price, notional.currency)
+        {
+            let funding = funding.map_err(|detail| {
+                self.check.reject(
+                    self.engine,
+                    order,
+                    &OrderDeniedReason::NotionalCalculationFailed { detail }.to_string(),
+                );
+            })?;
+
+            // Denials report the amount checked against free balance
+            return Ok((funding, -funding));
         } else {
             match order.order_side() {
                 OrderSide::Buy => -notional,
@@ -2816,6 +2829,43 @@ impl AccountRisk<'_> {
         };
 
         Ok((notional, impact))
+    }
+
+    // A wallet locks the quote amount of a quote-quantity buy, and the notional of any other buy
+    // rounded up at the observed balance precision, so that amount is checked and reserved.
+    // Without an observed balance in the funding currency, the buy is checked against zero free
+    // balance
+    fn wallet_buy_funding(
+        &self,
+        order: &OrderAny,
+        quantity: Quantity,
+        price: Price,
+        notional_currency: Currency,
+    ) -> Option<Result<Money, String>> {
+        let AccountAny::Wallet(wallet) = &self.account else {
+            return None;
+        };
+
+        if !order.is_buy() {
+            return None;
+        }
+
+        if order.is_quote_quantity() {
+            let quote_currency = self.instrument.quote_currency();
+            let currency = wallet
+                .balance_total(Some(quote_currency))
+                .map_or(quote_currency, |observed| observed.currency);
+            return Some(
+                Money::from_quantity(order.leaves_qty(), currency).map_err(|e| e.to_string()),
+            );
+        }
+
+        wallet.balance_total(Some(notional_currency))?;
+        Some(
+            wallet
+                .calculate_balance_locked(self.instrument, OrderSide::Buy, quantity, price, None)
+                .map_err(|e| e.to_string()),
+        )
     }
 
     fn balance_increase(
@@ -2831,25 +2881,29 @@ impl AccountRisk<'_> {
         let previous = if was_reducing {
             Ok(Money::zero(impact.currency))
         } else if let AccountAny::Betting(betting) = &mut self.account {
-            betting.calculate_balance_locked(
-                self.instrument,
-                order.order_side(),
-                quantity,
-                price,
-                None,
-            )
+            betting
+                .calculate_balance_locked(
+                    self.instrument,
+                    order.order_side(),
+                    quantity,
+                    price,
+                    None,
+                )
+                .map_err(|e| e.to_string())
+        } else if let Some(funding) = self.check.original(order).and_then(|original| {
+            self.wallet_buy_funding(original, quantity, price, impact.currency)
+        }) {
+            funding
         } else {
             self.instrument
                 .try_calculate_notional_value(quantity, price, None)
+                .map_err(|e| e.to_string())
         }
-        .map_err(|e| {
+        .map_err(|detail| {
             self.check.reject(
                 self.engine,
                 order,
-                &OrderDeniedReason::NotionalCalculationFailed {
-                    detail: e.to_string(),
-                }
-                .to_string(),
+                &OrderDeniedReason::NotionalCalculationFailed { detail }.to_string(),
             );
         })?;
 

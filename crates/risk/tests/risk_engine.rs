@@ -7556,7 +7556,7 @@ fn test_submit_order_counts_approved_orders_not_yet_reflected_in_free_balance(
 }
 
 // A wallet can observe a token at a different precision than the instrument uses for the same
-// currency code, so reservations are deducted at the observed balance precision
+// currency code, so reservations are held at the observed balance precision
 #[rstest]
 #[case::observed_finer(sell_balance_precision(), FIXED_PRECISION)]
 #[case::observed_coarser(FIXED_PRECISION, sell_balance_precision())]
@@ -7628,7 +7628,141 @@ fn test_submit_order_deducts_reservations_from_mixed_precision_wallet_balance(
     let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
     let reason = OrderDeniedReason::NotionalExceedsFreeBalance {
         free_balance: Money::from_decimal(dec!(3), observed).unwrap(),
-        notional: Money::from_decimal(dec!(4), instrument.quote_currency).unwrap(),
+        notional: Money::from_decimal(dec!(4), observed).unwrap(),
+    };
+    let actual: Vec<_> = events
+        .iter()
+        .map(|event| (event.client_order_id(), event.event_type(), event.message()))
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![(
+            orders[2].client_order_id(),
+            OrderEventType::Denied,
+            Some(Ustr::from(&reason.to_string()))
+        )]
+    );
+    assert_eq!(commands, approved);
+}
+
+// A wallet funds a buy with its notional rounded up to the observed balance precision, or with
+// the quote amount of a quote-quantity buy, so a reservation must hold that amount rather than
+// the instrument notional. The raw scales differ in the mixed case only with `defi` enabled
+#[rstest]
+#[case::mixed_scale(
+    6,
+    sell_balance_precision(),
+    6,
+    2,
+    false,
+    [("1.55", "3.123456"), ("1", "5.158643"), ("1", "0.000001")],
+    ("0", "0.000001")
+)]
+#[case::same_scale(
+    2,
+    3,
+    3,
+    0,
+    false,
+    [("1", "6.001"), ("1", "1.001"), ("1", "2.990")],
+    ("2.98", "2.99")
+)]
+#[case::quote_quantity(
+    2,
+    2,
+    2,
+    2,
+    true,
+    [("7.00", "3.00"), ("1", "2.99"), ("1", "0.02")],
+    ("0.01", "0.02")
+)]
+fn test_submit_order_reserves_wallet_funding_of_fractional_buys(
+    #[case] observed_precision: u8,
+    #[case] instrument_precision: u8,
+    #[case] price_precision: u8,
+    #[case] size_precision: u8,
+    #[case] first_quote_quantity: bool,
+    #[case] buys: [(&str, &str); 3],
+    #[case] denied_free_and_funding: (&str, &str),
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let token = |precision| Currency::new("TOKEN", precision, 0, "Token", CurrencyType::Crypto);
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("ETH/TOKEN.BINANCE"))
+        .raw_symbol(Symbol::from("ETH/TOKEN"))
+        .base_currency(Currency::ETH())
+        .quote_currency(token(instrument_precision))
+        .price_precision(price_precision)
+        .price_increment(Price::new(
+            10_f64.powi(-i32::from(price_precision)),
+            price_precision,
+        ))
+        .size_precision(size_precision)
+        .size_increment(Quantity::new(
+            10_f64.powi(-i32::from(size_precision)),
+            size_precision,
+        ))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let observed = token(observed_precision);
+    let total = Money::from_decimal(dec!(10), observed).unwrap();
+    let state = AccountState::new(
+        AccountId::from("BINANCE-001"),
+        AccountType::Wallet,
+        vec![AccountBalance::new(total, Money::zero(observed), total)],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    let mut cache = Cache::default();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    cache
+        .add_account(AccountAny::Wallet(WalletAccount::new(state, true)))
+        .unwrap();
+    let orders: Vec<_> = buys
+        .iter()
+        .enumerate()
+        .map(|(i, (quantity, price))| {
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id)
+                .client_order_id(ClientOrderId::from(format!("O-00{}", i + 1).as_str()))
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from(*quantity))
+                .price(Price::from(*price))
+                .quote_quantity(i == 0 && first_quote_quantity)
+                .build()
+        })
+        .collect();
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let approved = vec![
+        submit_order_command(&orders[0]),
+        submit_order_command(&orders[1]),
+    ];
+
+    for command in &approved {
+        risk_engine.execute(command.clone());
+    }
+    risk_engine.execute(submit_order_command(&orders[2]));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    let (free, funding) = denied_free_and_funding;
+    let reason = OrderDeniedReason::NotionalExceedsFreeBalance {
+        free_balance: Money::from_decimal(free.parse().unwrap(), observed).unwrap(),
+        notional: Money::from_decimal(funding.parse().unwrap(), observed).unwrap(),
     };
     let actual: Vec<_> = events
         .iter()

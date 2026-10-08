@@ -341,17 +341,11 @@ impl WalletAccount {
         })
     }
 
-    /// Returns the reservation `locked` at the precision of the observed balance `currency`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `locked` is negative or invalid, or cannot be represented in
-    /// `currency` without overflow or loss of precision.
     #[allow(
         clippy::useless_conversion,
         reason = "the raw width differs when high-precision is disabled"
     )]
-    pub fn normalize_reservation(locked: Money, currency: Currency) -> CorrectnessResult<Money> {
+    fn normalize_reservation(locked: Money, currency: Currency) -> CorrectnessResult<Money> {
         if locked.is_negative() {
             return Err(CorrectnessError::PredicateViolation {
                 message: format!("locked balance was negative: {locked}"),
