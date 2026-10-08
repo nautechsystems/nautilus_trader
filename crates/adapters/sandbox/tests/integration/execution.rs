@@ -60,7 +60,7 @@ use nautilus_model::{
         MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::{
-        AccountState, OrderDenied, OrderEventAny, OrderFilled, OrderPendingCancel,
+        AccountState, OrderDenied, OrderEventAny, OrderEventType, OrderFilled, OrderPendingCancel,
         OrderPendingUpdate, PositionClosed, PositionEvent, account::stubs::margin_account_state,
     },
     identifiers::{
@@ -6331,6 +6331,271 @@ fn test_submit_order_list_bracket_reduce_only_exits_accepted_after_entry_fill(
     );
     assert_eq!(cache.order(&sl_id).unwrap().status(), OrderStatus::Accepted);
     assert_eq!(cache.order(&tp_id).unwrap().status(), OrderStatus::Accepted);
+}
+
+#[rstest]
+#[case::limit(OrderType::Limit, "1500.00")]
+#[case::stop_market(OrderType::StopMarket, "2500.00")]
+fn test_reduce_only_oto_bar_fills_preserve_child_lifecycle(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+    #[values(OmsType::Netting, OmsType::Hedging)] oms_type: OmsType,
+    #[case] entry_type: OrderType,
+    #[case] entry_price: &str,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.oms_type = oms_type;
+        config.bar_execution = true;
+        config.bar_adaptive_high_low_ordering = true;
+    });
+
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let mut state = margin_account_state();
+    state.account_id = account_id;
+    context
+        .cache
+        .borrow_mut()
+        .add_account(MarginAccount::new(state, false).into())
+        .unwrap();
+    let mut execution =
+        ExecutionEngine::new(context.test_clock.clone(), context.cache.clone(), None);
+    let strategy_id = StrategyId::from("S-001");
+    execution.register_oms_type(strategy_id, oms_type);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+    context.client.start().unwrap();
+    context
+        .client
+        .process_quote_tick(&QuoteTick::new(
+            instrument.id(),
+            Price::from("1999.00"),
+            Price::from("2001.00"),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
+    let entry_id = ClientOrderId::from("O-BAR-ENTRY");
+    let sl_id = ClientOrderId::from("O-BAR-SL");
+    let tp_id = ClientOrderId::from("O-BAR-TP");
+    let mut entry = OrderTestBuilder::new(entry_type);
+    entry
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.000"))
+        .client_order_id(entry_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![sl_id, tp_id]);
+
+    if entry_type == OrderType::Limit {
+        entry.price(Price::from(entry_price));
+    } else {
+        entry.trigger_price(Price::from(entry_price));
+    }
+
+    let entry = entry.build();
+    let sl = OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("10.000"))
+        .trigger_price(Price::from("100.00"))
+        .client_order_id(sl_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![tp_id])
+        .reduce_only(true)
+        .build();
+    let tp = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("10.000"))
+        .price(Price::from("3000.00"))
+        .client_order_id(tp_id)
+        .parent_order_id(entry_id)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![sl_id])
+        .reduce_only(true)
+        .build();
+    let orders = [entry, sl, tp];
+    for order in &orders {
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &orders,
+        ))
+        .unwrap();
+
+    while let Ok(event) = rx.try_recv() {
+        if let ExecutionEvent::Order(event) = event {
+            execution.process(&event);
+        }
+    }
+
+    let bar = Bar::new(
+        BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id())),
+        Price::from("2000.00"),
+        Price::from("3000.00"),
+        Price::from("1400.00"),
+        Price::from("2500.00"),
+        Quantity::from("8.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    context.client.process_bar(&bar).unwrap();
+    assert_eq!(
+        context
+            .cache
+            .borrow()
+            .positions_total_count(None, None, None, None, None),
+        0
+    );
+    let mut events = Vec::new();
+
+    while let Ok(event) = rx.try_recv() {
+        if let ExecutionEvent::Order(event) = event {
+            execution.process(&event);
+            events.push(event);
+        }
+    }
+
+    assert_eq!(
+        events
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) =>
+                    Some((fill.client_order_id, fill.last_qty, fill.last_px)),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        if entry_type == OrderType::Limit {
+            vec![
+                (entry_id, Quantity::from("2.000"), Price::from(entry_price)),
+                (tp_id, Quantity::from("2.000"), Price::from("3000.00")),
+            ]
+        } else {
+            vec![
+                (entry_id, Quantity::from("2.000"), Price::from(entry_price)),
+                (tp_id, Quantity::from("2.000"), Price::from("3000.00")),
+                (entry_id, Quantity::from("8.000"), Price::from("2500.01")),
+            ]
+        }
+    );
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        if entry_type == OrderType::Limit {
+            vec![
+                (OrderEventType::Filled, entry_id),
+                (OrderEventType::Accepted, sl_id),
+                (OrderEventType::Accepted, tp_id),
+                (OrderEventType::Updated, sl_id),
+                (OrderEventType::Updated, tp_id),
+                (OrderEventType::Filled, tp_id),
+                (OrderEventType::Canceled, sl_id),
+            ]
+        } else {
+            vec![
+                (OrderEventType::Filled, entry_id),
+                (OrderEventType::Accepted, sl_id),
+                (OrderEventType::Accepted, tp_id),
+                (OrderEventType::Updated, tp_id),
+                (OrderEventType::Filled, tp_id),
+                (OrderEventType::Canceled, sl_id),
+                (OrderEventType::Filled, entry_id),
+            ]
+        }
+    );
+    let cache = context.cache.borrow();
+    let positions = cache.positions(None, Some(&instrument.id()), Some(&strategy_id), None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(
+        positions[0].side,
+        if entry_type == OrderType::Limit {
+            PositionSide::Flat
+        } else {
+            PositionSide::Long
+        }
+    );
+    assert_eq!(
+        positions[0].quantity,
+        Quantity::from(if entry_type == OrderType::Limit {
+            "0.000"
+        } else {
+            "8.000"
+        })
+    );
+    assert_eq!(*cache.position_id(&entry_id).unwrap(), positions[0].id);
+    assert_eq!(*cache.position_id(&tp_id).unwrap(), positions[0].id);
+    let entry = cache.order(&entry_id).unwrap();
+    assert_eq!(
+        entry.status(),
+        if entry_type == OrderType::Limit {
+            OrderStatus::PartiallyFilled
+        } else {
+            OrderStatus::Filled
+        }
+    );
+    assert_eq!(entry.quantity(), Quantity::from("10.000"));
+    assert_eq!(
+        entry.filled_qty(),
+        Quantity::from(if entry_type == OrderType::Limit {
+            "2.000"
+        } else {
+            "10.000"
+        })
+    );
+    assert_eq!(
+        entry.leaves_qty(),
+        Quantity::from(if entry_type == OrderType::Limit {
+            "8.000"
+        } else {
+            "0.000"
+        })
+    );
+    let tp = cache.order(&tp_id).unwrap();
+    assert_eq!(tp.status(), OrderStatus::Filled);
+    assert_eq!(tp.quantity(), Quantity::from("2.000"));
+    assert_eq!(tp.filled_qty(), Quantity::from("2.000"));
+    assert_eq!(tp.leaves_qty(), Quantity::from("0.000"));
+
+    let sl_quantity = if entry_type == OrderType::Limit {
+        "2.000"
+    } else {
+        "10.000"
+    };
+
+    let sl = cache.order(&sl_id).unwrap();
+    assert_eq!(sl.status(), OrderStatus::Canceled);
+    assert_eq!(sl.quantity(), Quantity::from(sl_quantity));
+    assert_eq!(sl.filled_qty(), Quantity::from("0.000"));
+    assert_eq!(sl.leaves_qty(), Quantity::from(sl_quantity));
 }
 
 /// A zero-leg command is due on arrival, so it is applied inline ahead of a command still in

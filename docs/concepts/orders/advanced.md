@@ -170,6 +170,11 @@ The venue compares quantities in the parent's units:
 Reduce-only children also track the position between these events, as described in
 [Backtest reduce-only resizing](#backtest-reduce-only-resizing).
 
+Reduce-only OTO children resize when a parent fill releases them, and again on later parent fills.
+Fills awaiting cache delivery count toward the available position quantity. A released exit can fill
+in the same bar when a later step in the [OHLC price simulation](../backtesting/bar-execution.md#ohlc-price-simulation)
+reaches its matching price.
+
 #### Enforcing a full-fill trigger in strategy code
 
 If the execution context does not provide the required full-fill behavior:
@@ -181,9 +186,10 @@ If the execution context does not provide the required full-fill behavior:
 
 :::warning
 Full-fill release leaves a partially filled position without its contingent exits until the parent
-finishes. Partial release reduces that delay, but the current backtest mode does not guarantee that
-child quantities track each partial fill. Check quantities and adapter behavior before treating a
-child as complete protection.
+finishes. Partial release reduces that delay. In backtests, reduce-only children with enforcement
+enabled track the available position quantity, subject to parent caps. Other children do not
+automatically track each partial fill. Check quantities and adapter behavior before treating a child
+as complete protection.
 :::
 
 ### One-Cancels-Other (OCO)

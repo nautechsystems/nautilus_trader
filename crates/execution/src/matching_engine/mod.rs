@@ -5111,10 +5111,15 @@ impl OrderMatchingEngine {
             && order.is_reduce_only()
         {
             let cache = self.cache.as_ref().borrow();
+            if let Some(position_id) = Self::position_id_for_order(&cache, order) {
+                let position = cache
+                    .position(&position_id)
+                    .map(|position| position.clone_without_events());
+                return (Some(position_id), position);
+            }
 
-            if let Some(position) = cache.position_for_order(&order.client_order_id()) {
-                let position = position.clone_without_events();
-                return (Some(position.id), Some(position));
+            if self.config.support_contingent_orders && order.parent_order_id().is_some() {
+                return (None, None);
             }
 
             if let Some(position) = Self::open_position_reduced_by_order(&cache, order) {
@@ -5122,7 +5127,18 @@ impl OrderMatchingEngine {
             }
         }
 
-        let venue_position_id = self.ids_generator.get_position_id(order, generate);
+        let pending_position_id = if self.oms_type == OmsType::Hedging {
+            self.pending_fills.values().find_map(|fill| {
+                (fill.client_order_id == order.client_order_id())
+                    .then_some(fill.position_id)
+                    .flatten()
+            })
+        } else {
+            None
+        };
+
+        let venue_position_id =
+            pending_position_id.or_else(|| self.ids_generator.get_position_id(order, generate));
 
         let position = {
             let cache = self.cache.as_ref().borrow();
@@ -5136,15 +5152,10 @@ impl OrderMatchingEngine {
     }
 
     fn position_for_order_in_cache(&self, cache: &Cache, order: &OrderAny) -> Option<Position> {
-        if let Some(position) = cache.position_for_order(&order.client_order_id()) {
-            return Some(position.clone_without_events());
-        }
-
-        if self.restricts_short_selling()
-            && let Some(position_id) = Self::position_id_for_order(cache, order)
-            && let Some(position) = cache.position(&position_id)
-        {
-            return Some(position.clone_without_events());
+        if let Some(position_id) = Self::position_id_for_order(cache, order) {
+            return cache
+                .position(&position_id)
+                .map(|position| position.clone_without_events());
         }
 
         if self.oms_type == OmsType::Netting {
@@ -5160,6 +5171,10 @@ impl OrderMatchingEngine {
             && self.config.use_reduce_only
             && order.is_reduce_only()
         {
+            if self.config.support_contingent_orders && order.parent_order_id().is_some() {
+                return None;
+            }
+
             return Self::open_position_reduced_by_order(cache, order);
         }
 
@@ -5496,10 +5511,7 @@ impl OrderMatchingEngine {
         order: &OrderAny,
         position: Option<&Position>,
     ) -> anyhow::Result<Option<Quantity>> {
-        if self.config.use_reduce_only
-            && order.is_reduce_only()
-            && (position.is_some() || self.restricts_short_selling())
-        {
+        if self.config.use_reduce_only && order.is_reduce_only() {
             return Ok(Some(self.position_quantity_remaining(order, position)?));
         }
 
@@ -5512,10 +5524,6 @@ impl OrderMatchingEngine {
         position: Option<&Position>,
     ) -> anyhow::Result<Quantity> {
         let precision = self.instrument.size_precision();
-
-        if position.is_none() && !self.restricts_short_selling() {
-            return Ok(Quantity::zero(precision));
-        }
 
         self.purge_applied_fills();
         let quantity = self.position_quantity(&self.cache.borrow(), order, position)?;
@@ -5700,7 +5708,7 @@ impl OrderMatchingEngine {
         )?;
 
         // Resolve implicit membership before dispatch can close the cached position
-        let reduce_only_order_ids = position
+        let mut reduce_only_order_ids = position
             .map(|position| self.reduce_only_order_ids(position.id))
             .unwrap_or_default();
 
@@ -5724,14 +5732,27 @@ impl OrderMatchingEngine {
             .get(&order.client_order_id())
             .copied()
             .unwrap_or(order.filled_qty());
-        let post_fill_leaves_qty = order.quantity().saturating_sub(post_fill_filled_qty);
+
+        let post_fill_quantity = self
+            .pending_updates
+            .borrow()
+            .get(&order.client_order_id())
+            .and_then(|updates| updates.last())
+            .map_or_else(
+                || {
+                    self.cache
+                        .borrow()
+                        .order(&order.client_order_id())
+                        .map_or(order.quantity(), |order| order.quantity())
+                },
+                |update| update.quantity,
+            );
+
+        let post_fill_leaves_qty = post_fill_quantity.saturating_sub(post_fill_filled_qty);
         let fully_filled = post_fill_leaves_qty.is_zero();
 
         if order.is_closed() || fully_filled {
-            if self.core.order_exists(order.client_order_id()) {
-                self.delete_core_order(order.client_order_id());
-            }
-
+            self.delete_core_order(order.client_order_id());
             self.remove_queue_position(order.client_order_id());
 
             // MarketToLimit reads `cached_filled_qty` in its caller to compute leaves;
@@ -5754,6 +5775,7 @@ impl OrderMatchingEngine {
                             };
 
                             if child_order.is_closed()
+                                || child_order.leaves_qty().is_zero()
                                 || child_order.is_active_local()
                                 || self.canceled_oto_order_ids.contains(client_order_id)
                             {
@@ -5765,9 +5787,10 @@ impl OrderMatchingEngine {
                             }
 
                             // Check if we need to index position id
-                            if let (None, Some(position_id)) =
-                                (child_order.position_id(), order.position_id())
-                            {
+                            if let (None, Some(position_id)) = (
+                                child_order.position_id(),
+                                order.position_id().or(venue_position_id),
+                            ) {
                                 self.cache
                                     .borrow_mut()
                                     .add_position_id(
@@ -5830,6 +5853,9 @@ impl OrderMatchingEngine {
                 }
                 ContingencyType::Ouo => {
                     if let Some(linked_orders_ids) = order.linked_order_ids() {
+                        let mut excluded = linked_orders_ids.to_vec();
+                        excluded.push(order.client_order_id());
+
                         for client_order_id in linked_orders_ids {
                             let child_order = match self.order_snapshot(*client_order_id) {
                                 Some(child_order) => child_order,
@@ -5845,9 +5871,8 @@ impl OrderMatchingEngine {
                                 .get(&child_order.client_order_id())
                                 .copied()
                                 .unwrap_or(child_order.filled_qty());
-
-                            if post_fill_leaves_qty.is_zero() && child_order.is_open() {
-                                self.cancel_order(&child_order, None);
+                            if post_fill_leaves_qty.is_zero() && !child_order.is_closed() {
+                                self.cancel_order_excluding(&child_order, None, &excluded);
                             } else if child_order.is_open()
                                 && child_filled_qty >= post_fill_leaves_qty
                             {
@@ -5877,14 +5902,54 @@ impl OrderMatchingEngine {
         }
 
         if let Some(position) = position {
-            let mut reduce_only_order_ids = reduce_only_order_ids;
             reduce_only_order_ids.extend(self.reduce_only_order_ids(position.id));
-            reduce_only_order_ids.sort_unstable();
-            reduce_only_order_ids.dedup();
-            self.sync_reduce_only_orders(order, position, &reduce_only_order_ids)?;
         }
 
+        reduce_only_order_ids.extend(self.reduce_only_linked_order_ids(
+            order,
+            venue_position_id.or(position.map(|position| position.id)),
+        ));
+        reduce_only_order_ids.sort_unstable();
+        reduce_only_order_ids.dedup();
+        self.sync_reduce_only_orders(order, position, &reduce_only_order_ids)?;
+
         Ok(())
+    }
+
+    fn reduce_only_linked_order_ids(
+        &self,
+        order: &OrderAny,
+        position_id: Option<PositionId>,
+    ) -> Vec<ClientOrderId> {
+        if !self.config.support_contingent_orders || !self.config.use_reduce_only {
+            return Vec::new();
+        }
+
+        let Some(linked_order_ids) = order.linked_order_ids() else {
+            return Vec::new();
+        };
+
+        let cache = self.cache.borrow();
+        let position_id = position_id
+            .or_else(|| Self::position_id_for_order(&cache, order))
+            .or_else(|| {
+                self.position_for_order_in_cache(&cache, order)
+                    .map(|position| position.id)
+            });
+
+        linked_order_ids
+            .iter()
+            .filter(|id| {
+                cache.order(id).is_some_and(|linked| {
+                    linked.strategy_id() == order.strategy_id()
+                        && Self::position_id_for_order(&cache, &linked).or_else(|| {
+                            self.position_for_order_in_cache(&cache, &linked)
+                                .map(|position| position.id)
+                        }) == position_id
+                })
+            })
+            .copied()
+            .collect()
     }
 
     fn reduce_only_order_ids(&self, position_id: PositionId) -> Vec<ClientOrderId> {
@@ -5922,7 +5987,7 @@ impl OrderMatchingEngine {
     fn sync_reduce_only_orders(
         &mut self,
         filled_order: &OrderAny,
-        position: &Position,
+        position: Option<&Position>,
         order_ids: &[ClientOrderId],
     ) -> anyhow::Result<()> {
         for &client_order_id in order_ids {
@@ -5937,18 +6002,26 @@ impl OrderMatchingEngine {
                 continue;
             };
 
-            if !order.is_reduce_only() || !order.is_open() || !order.is_passive() {
+            if !order.is_reduce_only() || order.is_closed() || !order.is_passive() {
                 continue;
             }
 
             // Re-read after dispatch: synchronous handlers can apply this fill immediately,
             // while pending fills account for a cache that has not acknowledged it yet.
-            let position = self.cache.borrow().position(&position.id).map_or_else(
-                || position.clone_without_events(),
-                |position| position.clone_without_events(),
-            );
+            let position = {
+                let cache = self.cache.borrow();
+                position.map_or_else(
+                    || self.position_for_order_in_cache(&cache, &order),
+                    |position| {
+                        Some(cache.position(&position.id).map_or_else(
+                            || position.clone_without_events(),
+                            |position| position.clone_without_events(),
+                        ))
+                    },
+                )
+            };
 
-            let remaining = self.position_quantity_remaining(&order, Some(&position))?;
+            let remaining = self.position_quantity_remaining(&order, position.as_ref())?;
             if remaining.is_zero() {
                 self.cancel_reduce_only_order(&order, filled_order.client_order_id())?;
                 continue;
@@ -7227,7 +7300,6 @@ impl OrderMatchingEngine {
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
                 if excluded.contains(client_order_id) {
-                    // The venue has not received this order's submit yet
                     continue;
                 }
 
@@ -9042,7 +9114,7 @@ mod tests {
             let before = events.borrow().len();
             let ids = engine.reduce_only_order_ids(position_id);
             engine
-                .sync_reduce_only_orders(&closing, &position, &ids)
+                .sync_reduce_only_orders(&closing, Some(&position), &ids)
                 .unwrap();
             assert_eq!(events.borrow().len(), before);
         }
@@ -9377,7 +9449,7 @@ mod tests {
             .unwrap();
         let ids = engine.reduce_only_order_ids(position_id);
         engine
-            .sync_reduce_only_orders(&closing, &position, &ids)
+            .sync_reduce_only_orders(&closing, Some(&position), &ids)
             .unwrap();
         let events = events.borrow();
         let actual: Vec<_> = events

@@ -44,7 +44,7 @@ use nautilus_execution::{
     },
 };
 use nautilus_model::{
-    accounts::cash::CashAccount,
+    accounts::{CashAccount, MarginAccount},
     data::{
         Bar, BarType, BookOrder, DEPTH10_LEN, IndexPriceUpdate, InstrumentClose, OptionGreeks,
         OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
@@ -58,6 +58,7 @@ use nautilus_model::{
     },
     events::{
         OrderEmulated, OrderEventAny, OrderEventType, OrderFilled, OrderRejected, OrderReleased,
+        account::stubs::margin_account_state,
         order::spec::{OrderEmulatedSpec, OrderFilledSpec, OrderRejectedSpec, OrderReleasedSpec},
     },
     identifiers::{
@@ -22182,6 +22183,1440 @@ const BRACKET_ENTRY_ID: &str = "O-19700101-000000-001-001-1";
 const BRACKET_SL_ID: &str = "O-19700101-000000-001-001-2";
 const BRACKET_TP_ID: &str = "O-19700101-000000-001-001-3";
 const BRACKET_EXPIRE_NS: u64 = 1_500_000_000_000_000_000;
+
+#[rstest]
+fn test_reduce_only_oto_fresh_position_tracks_parent_and_exit_fills(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OmsType::Netting, OmsType::Hedging)] oms_type: OmsType,
+    #[values(false, true)] deferred: bool,
+    #[values(false, true)] stop: bool,
+) {
+    let orders = bracket_orders(
+        &instrument_eth_usdt,
+        "10.000",
+        "1500.00",
+        TimeInForce::Gtc,
+        true,
+    );
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        orders[0].account_id().unwrap(),
+        oms_type,
+        BookType::L2_MBP,
+        engine_config(),
+    );
+    submit_orders(&mut engine, account_id, orders.to_vec());
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "2.000",
+            1,
+        );
+    });
+
+    {
+        let cache = cache.borrow();
+        let positions = cache.positions(None, Some(&instrument_eth_usdt.id()), None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].side, PositionSide::Long);
+        assert_eq!(positions[0].quantity, Quantity::from("2.000"));
+
+        for id in [BRACKET_SL_ID, BRACKET_TP_ID] {
+            let order = cache.order(&ClientOrderId::from(id)).unwrap();
+            assert_eq!(order.status(), OrderStatus::Accepted);
+            assert_eq!(order.quantity(), Quantity::from("2.000"));
+            assert_eq!(order.filled_qty(), Quantity::from("0.000"));
+            assert_eq!(order.leaves_qty(), Quantity::from("2.000"));
+        }
+    }
+
+    let entry_id = ClientOrderId::from(BRACKET_ENTRY_ID);
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+    let tp_id = ClientOrderId::from(BRACKET_TP_ID);
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Filled, entry_id),
+            (OrderEventType::Accepted, sl_id),
+            (OrderEventType::Accepted, tp_id),
+            (OrderEventType::Updated, sl_id),
+            (OrderEventType::Updated, tp_id)
+        ],
+    );
+
+    let (exit_id, sibling_id, exit_price) = if stop {
+        (sl_id, tp_id, "50.00")
+    } else {
+        (tp_id, sl_id, "3000.00")
+    };
+
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            exit_price,
+            "1.000",
+            2,
+        );
+    });
+
+    {
+        let cache = cache.borrow();
+        let position_id = *cache.position_id(&entry_id).unwrap();
+        assert_eq!(
+            cache.position(&position_id).unwrap().quantity,
+            Quantity::from("1.000")
+        );
+        let exit = cache.order(&exit_id).unwrap();
+        let sibling = cache.order(&sibling_id).unwrap();
+        assert_eq!(exit.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(exit.quantity(), Quantity::from("2.000"));
+        assert_eq!(exit.filled_qty(), Quantity::from("1.000"));
+        assert_eq!(exit.leaves_qty(), Quantity::from("1.000"));
+        assert_eq!(sibling.quantity(), Quantity::from("1.000"));
+        assert_eq!(sibling.filled_qty(), Quantity::from("0.000"));
+        assert_eq!(sibling.leaves_qty(), Quantity::from("1.000"));
+    }
+
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "3.000",
+            3,
+        );
+    });
+
+    {
+        let cache = cache.borrow();
+        let position_id = *cache.position_id(&entry_id).unwrap();
+        assert_eq!(
+            cache.position(&position_id).unwrap().quantity,
+            Quantity::from("4.000")
+        );
+        let exit = cache.order(&exit_id).unwrap();
+        let sibling = cache.order(&sibling_id).unwrap();
+        assert_eq!(exit.quantity(), Quantity::from("5.000"));
+        assert_eq!(exit.filled_qty(), Quantity::from("1.000"));
+        assert_eq!(exit.leaves_qty(), Quantity::from("4.000"));
+        assert_eq!(sibling.quantity(), Quantity::from("4.000"));
+        assert_eq!(sibling.leaves_qty(), Quantity::from("4.000"));
+    }
+
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            exit_price,
+            "20.000",
+            4,
+        );
+    });
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Filled, exit_id),
+            (OrderEventType::Canceled, sibling_id)
+        ],
+    );
+    {
+        let cache = cache.borrow();
+        let positions = cache.positions(None, Some(&instrument_eth_usdt.id()), None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].side, PositionSide::Flat);
+        assert_eq!(positions[0].quantity, Quantity::from("0.000"));
+        let exit = cache.order(&exit_id).unwrap();
+        assert_eq!(exit.status(), OrderStatus::Filled);
+        assert_eq!(exit.quantity(), Quantity::from("5.000"));
+        assert_eq!(exit.filled_qty(), Quantity::from("5.000"));
+        assert_eq!(exit.leaves_qty(), Quantity::from("0.000"));
+        assert_eq!(
+            cache.order(&sibling_id).unwrap().status(),
+            OrderStatus::Canceled
+        );
+    }
+
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            exit_price,
+            "20.000",
+            5,
+        );
+    });
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler),
+        Vec::<OrderEventAny>::new()
+    );
+}
+
+#[rstest]
+fn test_reduce_only_oto_fresh_position_closes_within_one_bar(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(OmsType::Netting, OmsType::Hedging)] oms_type: OmsType,
+    #[values(false, true)] deferred: bool,
+) {
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        bar_adaptive_high_low_ordering: true,
+        ..engine_config()
+    };
+
+    let orders = bracket_orders(
+        &instrument_eth_usdt,
+        "10.000",
+        "1500.00",
+        TimeInForce::Gtc,
+        true,
+    );
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        orders[0].account_id().unwrap(),
+        oms_type,
+        BookType::L1_MBP,
+        config,
+    );
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1999.00"),
+        Price::from("2001.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    ));
+    submit_orders(&mut engine, account_id, orders.to_vec());
+    clear_order_event_handler_messages(&handler);
+
+    let bar = Bar::new(
+        BarType::from(format!(
+            "{}-1-MINUTE-LAST-EXTERNAL",
+            instrument_eth_usdt.id()
+        )),
+        Price::from("2000.00"),
+        Price::from("3000.00"),
+        Price::from("1400.00"),
+        Price::from("2500.00"),
+        Quantity::from("8.000"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    run_with_dispatch(&mut engine, deferred, |engine| engine.process_bar(&bar));
+    let events = get_order_event_handler_messages(&handler);
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.client_order_id, fill.last_qty, fill.last_px))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![
+            (
+                ClientOrderId::from(BRACKET_ENTRY_ID),
+                Quantity::from("2.000"),
+                Price::from("1500.00")
+            ),
+            (
+                ClientOrderId::from(BRACKET_TP_ID),
+                Quantity::from("2.000"),
+                Price::from("3000.00")
+            )
+        ]
+    );
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Filled, BRACKET_ENTRY_ID.into()),
+            (OrderEventType::Accepted, BRACKET_SL_ID.into()),
+            (OrderEventType::Accepted, BRACKET_TP_ID.into()),
+            (OrderEventType::Updated, BRACKET_SL_ID.into()),
+            (OrderEventType::Updated, BRACKET_TP_ID.into()),
+            (OrderEventType::Filled, BRACKET_TP_ID.into()),
+            (OrderEventType::Canceled, BRACKET_SL_ID.into())
+        ]
+    );
+    {
+        let cache = cache.borrow();
+        let positions = cache.positions(None, Some(&instrument_eth_usdt.id()), None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].side, PositionSide::Flat);
+        assert_eq!(positions[0].quantity, Quantity::from("0.000"));
+        assert_eq!(
+            *cache
+                .position_id(&ClientOrderId::from(BRACKET_TP_ID))
+                .unwrap(),
+            positions[0].id
+        );
+        let tp = cache.order(&ClientOrderId::from(BRACKET_TP_ID)).unwrap();
+        assert_eq!(tp.status(), OrderStatus::Filled);
+        assert_eq!(tp.quantity(), Quantity::from("2.000"));
+        assert_eq!(tp.filled_qty(), Quantity::from("2.000"));
+        assert_eq!(tp.leaves_qty(), Quantity::from("0.000"));
+        assert_eq!(
+            cache
+                .order(&ClientOrderId::from(BRACKET_SL_ID))
+                .unwrap()
+                .status(),
+            OrderStatus::Canceled
+        );
+    }
+
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| engine.process_bar(&bar));
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(events.len(), 1);
+
+    let OrderEventAny::Filled(fill) = &events[0] else {
+        panic!("Expected the working parent to fill again");
+    };
+
+    assert_eq!(fill.client_order_id, ClientOrderId::from(BRACKET_ENTRY_ID));
+    assert_eq!(fill.last_qty, Quantity::from("2.000"));
+    let cache = cache.borrow();
+    let positions = cache.positions(None, Some(&instrument_eth_usdt.id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].side, PositionSide::Long);
+    assert_eq!(positions[0].quantity, Quantity::from("2.000"));
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from(BRACKET_TP_ID))
+            .unwrap()
+            .status(),
+        OrderStatus::Filled
+    );
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from(BRACKET_SL_ID))
+            .unwrap()
+            .status(),
+        OrderStatus::Canceled
+    );
+}
+
+#[rstest]
+fn test_reduce_only_oto_deferred_hedging_keeps_parent_position(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] existing_position: bool,
+) {
+    let orders = bracket_orders(
+        &instrument_eth_usdt,
+        "10.000",
+        "1500.00",
+        TimeInForce::Gtc,
+        true,
+    );
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        orders[0].account_id().unwrap(),
+        OmsType::Hedging,
+        BookType::L2_MBP,
+        engine_config(),
+    );
+    let other_id = ClientOrderId::from("O-OTHER-POSITION");
+
+    if existing_position {
+        let mut other = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .price(Price::from("1000.00"))
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(other_id)
+            .submit(true)
+            .build();
+        engine.process_order(&mut other, account_id);
+        add_then_remove_liquidity(
+            &mut engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1000.00",
+            "1.000",
+            1,
+        );
+    }
+
+    submit_orders(&mut engine, account_id, orders.to_vec());
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, true, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "2.000",
+            2,
+        );
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "3.000",
+            3,
+        );
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            "3000.00",
+            "20.000",
+            4,
+        );
+    });
+
+    let events = get_order_event_handler_messages(&handler);
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.client_order_id, fill.last_qty, fill.position_id))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 3);
+    let position_id = fills[0].2.unwrap();
+    assert_eq!(
+        fills,
+        vec![
+            (
+                BRACKET_ENTRY_ID.into(),
+                Quantity::from("2.000"),
+                Some(position_id)
+            ),
+            (
+                BRACKET_ENTRY_ID.into(),
+                Quantity::from("3.000"),
+                Some(position_id)
+            ),
+            (
+                BRACKET_TP_ID.into(),
+                Quantity::from("5.000"),
+                Some(position_id)
+            )
+        ]
+    );
+    let cache = cache.borrow();
+    assert_eq!(
+        cache.positions_total_count(None, None, None, None, None),
+        1 + usize::from(existing_position)
+    );
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(position.side, PositionSide::Flat);
+    assert_eq!(position.quantity, Quantity::from("0.000"));
+    assert_eq!(
+        *cache
+            .position_id(&ClientOrderId::from(BRACKET_TP_ID))
+            .unwrap(),
+        position_id
+    );
+
+    if existing_position {
+        let other_position_id = *cache.position_id(&other_id).unwrap();
+        let other = cache.position(&other_position_id).unwrap();
+        assert_eq!(other.side, PositionSide::Long);
+        assert_eq!(other.quantity, Quantity::from("1.000"));
+        assert_ne!(other_position_id, position_id);
+    }
+
+    let tp = cache.order(&ClientOrderId::from(BRACKET_TP_ID)).unwrap();
+    assert_eq!(tp.status(), OrderStatus::Filled);
+    assert_eq!(tp.quantity(), Quantity::from("5.000"));
+    assert_eq!(tp.filled_qty(), Quantity::from("5.000"));
+    assert_eq!(tp.leaves_qty(), Quantity::from("0.000"));
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from(BRACKET_SL_ID))
+            .unwrap()
+            .status(),
+        OrderStatus::Canceled
+    );
+}
+
+#[rstest]
+#[case::reduce_only(true, true, "2.000", OrderStatus::Accepted)]
+#[case::enforcement_disabled(false, true, "10.000", OrderStatus::Rejected)]
+#[case::generic_children(true, false, "10.000", OrderStatus::Accepted)]
+fn test_oto_fresh_child_sizing_respects_reduce_only_enforcement(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] use_reduce_only: bool,
+    #[case] reduce_only: bool,
+    #[case] expected: &str,
+    #[case] expected_status: OrderStatus,
+    #[values(false, true)] deferred: bool,
+) {
+    let orders = bracket_orders(
+        &instrument_eth_usdt,
+        "10.000",
+        "1500.00",
+        TimeInForce::Gtc,
+        reduce_only,
+    );
+
+    let config = OrderMatchingEngineConfig {
+        use_reduce_only,
+        ..engine_config()
+    };
+
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        orders[0].account_id().unwrap(),
+        OmsType::Netting,
+        BookType::L2_MBP,
+        config,
+    );
+    submit_orders(&mut engine, account_id, orders.to_vec());
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "2.000",
+            1,
+        );
+    });
+
+    let cache = cache.borrow();
+    for id in [BRACKET_SL_ID, BRACKET_TP_ID] {
+        let order = cache.order(&ClientOrderId::from(id)).unwrap();
+        assert_eq!(order.status(), expected_status);
+        assert_eq!(order.quantity(), Quantity::from(expected));
+        assert_eq!(order.filled_qty(), Quantity::from("0.000"));
+        assert_eq!(order.leaves_qty(), Quantity::from(expected));
+    }
+
+    let updates: Vec<_> = get_order_event_handler_messages(&handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Updated(update) => Some((update.client_order_id, update.quantity)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        updates,
+        if use_reduce_only && reduce_only {
+            vec![
+                (BRACKET_SL_ID.into(), Quantity::from("2.000")),
+                (BRACKET_TP_ID.into(), Quantity::from("2.000")),
+            ]
+        } else {
+            vec![]
+        }
+    );
+}
+
+#[rstest]
+fn test_reduce_only_fill_resize_cancels_ouo_peer_without_surplus_update(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+) {
+    let orders = bracket_orders(
+        &instrument_eth_usdt,
+        "10.000",
+        "1500.00",
+        TimeInForce::Gtc,
+        true,
+    );
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        orders[0].account_id().unwrap(),
+        OmsType::Netting,
+        BookType::L2_MBP,
+        engine_config(),
+    );
+    submit_orders(&mut engine, account_id, orders.to_vec());
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Sell,
+        "1500.00",
+        "2.000",
+        1,
+    );
+    let tp_id = ClientOrderId::from(BRACKET_TP_ID);
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+    let mut modify = modify_bracket_entry(&instrument_eth_usdt, Some("10.000"), None);
+    modify.client_order_id = tp_id;
+    engine.process_modify(&modify, account_id);
+    assert_eq!(
+        cache.borrow().order(&tp_id).unwrap().quantity(),
+        Quantity::from("10.000")
+    );
+    assert_eq!(
+        cache.borrow().order(&sl_id).unwrap().quantity(),
+        Quantity::from("10.000")
+    );
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            "3000.00",
+            "20.000",
+            2,
+        );
+    });
+
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Updated, tp_id),
+            (OrderEventType::Filled, tp_id),
+            (OrderEventType::Canceled, sl_id)
+        ]
+    );
+
+    let OrderEventAny::Updated(update) = events[0] else {
+        panic!("Expected the fill quantity cap");
+    };
+
+    assert_eq!(update.quantity, Quantity::from("2.000"));
+    let cache = cache.borrow();
+    let position_id = *cache
+        .position_id(&ClientOrderId::from(BRACKET_ENTRY_ID))
+        .unwrap();
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(position.side, PositionSide::Flat);
+    assert_eq!(position.quantity, Quantity::from("0.000"));
+    let tp = cache.order(&tp_id).unwrap();
+    assert_eq!(tp.status(), OrderStatus::Filled);
+    assert_eq!(tp.quantity(), Quantity::from("2.000"));
+    assert_eq!(tp.filled_qty(), Quantity::from("2.000"));
+    assert_eq!(tp.leaves_qty(), Quantity::from("0.000"));
+    let sl = cache.order(&sl_id).unwrap();
+    assert_eq!(sl.status(), OrderStatus::Canceled);
+    assert_eq!(sl.quantity(), Quantity::from("10.000"));
+    assert_eq!(sl.filled_qty(), Quantity::from("0.000"));
+    assert_eq!(sl.leaves_qty(), Quantity::from("10.000"));
+}
+
+#[rstest]
+fn test_reduce_only_oto_market_parent_preserves_hedging_position(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+    #[values(false, true)] existing_position: bool,
+) {
+    let mut orders = bracket_orders(
+        &instrument_eth_usdt,
+        "10.000",
+        "1500.00",
+        TimeInForce::Gtc,
+        true,
+    );
+    orders[0] = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.000"))
+        .client_order_id(BRACKET_ENTRY_ID.into())
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![BRACKET_SL_ID.into(), BRACKET_TP_ID.into()])
+        .submit(true)
+        .build();
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        orders[0].account_id().unwrap(),
+        OmsType::Hedging,
+        BookType::L2_MBP,
+        engine_config(),
+    );
+    let other_id = ClientOrderId::from("MARKET-PARENT-OTHER");
+
+    if existing_position {
+        let mut other = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .price(Price::from("1000.00"))
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(other_id)
+            .submit(true)
+            .build();
+        engine.process_order(&mut other, account_id);
+        add_then_remove_liquidity(
+            &mut engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1000.00",
+            "1.000",
+            1,
+        );
+    }
+
+    let ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("2.000"),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask).unwrap();
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        submit_orders(engine, account_id, orders.to_vec());
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            "3000.00",
+            "20.000",
+            3,
+        );
+    });
+
+    let entry_id = ClientOrderId::from(BRACKET_ENTRY_ID);
+    let tp_id = ClientOrderId::from(BRACKET_TP_ID);
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+    let events = get_order_event_handler_messages(&handler);
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((
+                fill.client_order_id,
+                fill.last_qty,
+                fill.last_px,
+                fill.position_id,
+            )),
+            _ => None,
+        })
+        .collect();
+
+    let cache = cache.borrow();
+    let position_id = *cache.position_id(&entry_id).unwrap();
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(position.side, PositionSide::Flat);
+    assert_eq!(position.quantity, Quantity::from("0.000"));
+    assert_eq!(
+        fills,
+        vec![
+            (
+                entry_id,
+                Quantity::from("2.000"),
+                Price::from("1500.00"),
+                None
+            ),
+            (
+                tp_id,
+                Quantity::from("2.000"),
+                Price::from("3000.00"),
+                if deferred { None } else { Some(position_id) }
+            ),
+        ]
+    );
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Filled, entry_id),
+            (OrderEventType::Accepted, sl_id),
+            (OrderEventType::Accepted, tp_id),
+            (OrderEventType::Updated, sl_id),
+            (OrderEventType::Updated, tp_id),
+            (OrderEventType::Filled, tp_id),
+            (OrderEventType::Canceled, sl_id),
+        ]
+    );
+    assert_eq!(
+        cache.positions_total_count(None, None, None, None, None),
+        1 + usize::from(existing_position)
+    );
+
+    for (id, status, filled, leaves) in [
+        (tp_id, OrderStatus::Filled, "2.000", "0.000"),
+        (sl_id, OrderStatus::Canceled, "0.000", "2.000"),
+    ] {
+        let order = cache.order(&id).unwrap();
+        assert_eq!(order.status(), status);
+        assert_eq!(order.quantity(), Quantity::from("2.000"));
+        assert_eq!(order.filled_qty(), Quantity::from(filled));
+        assert_eq!(order.leaves_qty(), Quantity::from(leaves));
+        assert_eq!(cache.position_id(&id), Some(&position_id));
+    }
+
+    if existing_position {
+        let other_position_id = *cache.position_id(&other_id).unwrap();
+        assert_ne!(other_position_id, position_id);
+        let other = cache.position(&other_position_id).unwrap();
+        assert_eq!(other.side, PositionSide::Long);
+        assert_eq!(other.quantity, Quantity::from("1.000"));
+    }
+}
+
+#[rstest]
+fn test_reduce_only_oto_deferred_netting_preserves_existing_exposure(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+    #[values(false, true)] closed_position: bool,
+) {
+    let orders = bracket_orders(
+        &instrument_eth_usdt,
+        "10.000",
+        "1500.00",
+        TimeInForce::Gtc,
+        true,
+    );
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        orders[0].account_id().unwrap(),
+        OmsType::Netting,
+        BookType::L2_MBP,
+        engine_config(),
+    );
+    let open_id = ClientOrderId::from("EXISTING-NETTING-LONG");
+    let mut opening = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(open_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("5.000"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut opening, account_id);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Sell,
+        "1000.00",
+        "5.000",
+        1,
+    );
+    let position_id = *cache.borrow().position_id(&open_id).unwrap();
+
+    if closed_position {
+        let mut closing = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .client_order_id(ClientOrderId::from("EXISTING-NETTING-CLOSE"))
+            .side(OrderSide::Sell)
+            .price(Price::from("1000.00"))
+            .quantity(Quantity::from("5.000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+        engine.process_order(&mut closing, account_id);
+        add_then_remove_liquidity(
+            &mut engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            "1000.00",
+            "5.000",
+            4,
+        );
+        assert_eq!(
+            cache.borrow().position(&position_id).unwrap().side,
+            PositionSide::Flat
+        );
+    }
+
+    submit_orders(&mut engine, account_id, orders.to_vec());
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "2.000",
+            2,
+        );
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            "3000.00",
+            "20.000",
+            3,
+        );
+    });
+
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Filled, BRACKET_ENTRY_ID.into()),
+            (OrderEventType::Accepted, BRACKET_SL_ID.into()),
+            (OrderEventType::Accepted, BRACKET_TP_ID.into()),
+            (OrderEventType::Updated, BRACKET_SL_ID.into()),
+            (OrderEventType::Updated, BRACKET_TP_ID.into()),
+            (OrderEventType::Filled, BRACKET_TP_ID.into()),
+            (OrderEventType::Canceled, BRACKET_SL_ID.into()),
+        ]
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) =>
+                    Some((fill.client_order_id, fill.last_qty, fill.last_px)),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                BRACKET_ENTRY_ID.into(),
+                Quantity::from("2.000"),
+                Price::from("1500.00")
+            ),
+            (
+                BRACKET_TP_ID.into(),
+                Quantity::from("2.000"),
+                Price::from("3000.00")
+            ),
+        ]
+    );
+    let cache = cache.borrow();
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 1);
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(
+        position.side,
+        if closed_position {
+            PositionSide::Flat
+        } else {
+            PositionSide::Long
+        }
+    );
+    assert_eq!(
+        position.quantity,
+        Quantity::from(if closed_position { "0.000" } else { "5.000" })
+    );
+
+    for (id, status, filled, leaves) in [
+        (BRACKET_TP_ID, OrderStatus::Filled, "2.000", "0.000"),
+        (BRACKET_SL_ID, OrderStatus::Canceled, "0.000", "2.000"),
+    ] {
+        let order = cache.order(&ClientOrderId::from(id)).unwrap();
+        assert_eq!(order.status(), status);
+        assert_eq!(order.quantity(), Quantity::from("2.000"));
+        assert_eq!(order.filled_qty(), Quantity::from(filled));
+        assert_eq!(order.leaves_qty(), Quantity::from(leaves));
+        assert_eq!(
+            cache.position_id(&ClientOrderId::from(id)),
+            Some(&position_id)
+        );
+    }
+}
+
+#[rstest]
+fn test_reduce_only_ouo_fill_keeps_peer_hedging_position(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+) {
+    let account = AccountId::from("ACCOUNT-001");
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        account,
+        OmsType::Hedging,
+        BookType::L2_MBP,
+        engine_config(),
+    );
+    let opening_ids = [
+        ClientOrderId::from("LONG-OPEN"),
+        ClientOrderId::from("SHORT-OPEN"),
+    ];
+
+    for (id, side, price, quantity) in [
+        (opening_ids[0], OrderSide::Buy, "1000.00", "7.000"),
+        (opening_ids[1], OrderSide::Sell, "2000.00", "5.000"),
+    ] {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .client_order_id(id)
+            .side(side)
+            .price(Price::from(price))
+            .quantity(Quantity::from(quantity))
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, account_id);
+        add_then_remove_liquidity(
+            &mut engine,
+            &instrument_eth_usdt,
+            side.opposite(),
+            price,
+            quantity,
+            1,
+        );
+    }
+
+    let position_ids = opening_ids.map(|id| *cache.borrow().position_id(&id).unwrap());
+    let exit_ids = [
+        ClientOrderId::from("SHORT-EXIT"),
+        ClientOrderId::from("LONG-EXIT"),
+    ];
+    let mut exits = Vec::new();
+
+    for (id, peer, side, price, position_id) in [
+        (
+            exit_ids[0],
+            exit_ids[1],
+            OrderSide::Buy,
+            "1500.00",
+            position_ids[1],
+        ),
+        (
+            exit_ids[1],
+            exit_ids[0],
+            OrderSide::Sell,
+            "3000.00",
+            position_ids[0],
+        ),
+    ] {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .client_order_id(id)
+            .side(side)
+            .price(Price::from(price))
+            .quantity(Quantity::from("5.000"))
+            .reduce_only(true)
+            .contingency_type(ContingencyType::Ouo)
+            .linked_order_ids(vec![peer])
+            .submit(true)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), Some(position_id), None, false)
+            .unwrap();
+        exits.push(order);
+    }
+
+    for mut order in exits {
+        engine.process_order(&mut order, account_id);
+    }
+
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "1.000",
+            2,
+        );
+    });
+
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Filled, exit_ids[0]),
+            (OrderEventType::Updated, exit_ids[1])
+        ]
+    );
+
+    let OrderEventAny::Updated(update) = events[1] else {
+        panic!("Expected the OUO peer resize");
+    };
+
+    assert_eq!(update.quantity, Quantity::from("4.000"));
+    let cache = cache.borrow();
+    let short = cache.position(&position_ids[1]).unwrap();
+    assert_eq!(short.side, PositionSide::Short);
+    assert_eq!(short.quantity, Quantity::from("4.000"));
+    let long = cache.position(&position_ids[0]).unwrap();
+    assert_eq!(long.side, PositionSide::Long);
+    assert_eq!(long.quantity, Quantity::from("7.000"));
+    let peer = cache.order(&exit_ids[1]).unwrap();
+    assert_eq!(peer.status(), OrderStatus::Accepted);
+    assert_eq!(peer.quantity(), Quantity::from("4.000"));
+    assert_eq!(peer.filled_qty(), Quantity::from("0.000"));
+    assert_eq!(peer.leaves_qty(), Quantity::from("4.000"));
+    assert_eq!(cache.position_id(&exit_ids[1]), Some(&position_ids[0]));
+}
+
+#[rstest]
+fn test_reduce_only_unindexed_child_respects_disabled_contingencies(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+) {
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        AccountId::from("ACCOUNT-001"),
+        OmsType::Hedging,
+        BookType::L2_MBP,
+        OrderMatchingEngineConfig {
+            support_contingent_orders: false,
+            ..engine_config()
+        },
+    );
+
+    let open_id = ClientOrderId::from("UNINDEXED-CHILD-LONG");
+    let mut opening = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(open_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("5.000"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut opening, account_id);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Sell,
+        "1000.00",
+        "5.000",
+        1,
+    );
+    let position_id = *cache.borrow().position_id(&open_id).unwrap();
+    let parent_id = ClientOrderId::from("UNFILLED-PARENT");
+    let exit_id = ClientOrderId::from("UNINDEXED-CHILD-EXIT");
+    let mut parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("500.00"))
+        .quantity(Quantity::from("10.000"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![exit_id])
+        .submit(true)
+        .build();
+    engine.process_order(&mut parent, account_id);
+    let mut exit = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(exit_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("3000.00"))
+        .quantity(Quantity::from("3.000"))
+        .reduce_only(true)
+        .submit(true)
+        .build();
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        engine.process_order(&mut exit, account_id);
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            "3000.00",
+            "3.000",
+            2,
+        );
+    });
+
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![
+            (OrderEventType::Accepted, exit_id),
+            (OrderEventType::Filled, exit_id)
+        ]
+    );
+
+    let OrderEventAny::Filled(fill) = &events[1] else {
+        panic!("Expected the reduce-only exit fill");
+    };
+
+    assert_eq!(fill.last_qty, Quantity::from("3.000"));
+    assert_eq!(fill.last_px, Price::from("3000.00"));
+    assert_eq!(fill.position_id, Some(position_id));
+    let cache = cache.borrow();
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(position.side, PositionSide::Long);
+    assert_eq!(position.quantity, Quantity::from("2.000"));
+    let exit = cache.order(&exit_id).unwrap();
+    assert_eq!(exit.status(), OrderStatus::Filled);
+    assert_eq!(exit.quantity(), Quantity::from("3.000"));
+    assert_eq!(exit.filled_qty(), Quantity::from("3.000"));
+    assert_eq!(exit.leaves_qty(), Quantity::from("0.000"));
+    assert_eq!(cache.position_id(&exit_id), None);
+    let parent = cache.order(&parent_id).unwrap();
+    assert_eq!(parent.status(), OrderStatus::Accepted);
+    assert_eq!(parent.quantity(), Quantity::from("10.000"));
+    assert_eq!(parent.filled_qty(), Quantity::from("0.000"));
+    assert_eq!(parent.leaves_qty(), Quantity::from("10.000"));
+    assert_eq!(cache.position_id(&parent_id), None);
+}
+
+#[rstest]
+fn test_reduce_only_linked_sync_respects_disabled_contingencies(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+) {
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        AccountId::from("ACCOUNT-001"),
+        OmsType::Hedging,
+        BookType::L2_MBP,
+        OrderMatchingEngineConfig {
+            support_contingent_orders: false,
+            ..engine_config()
+        },
+    );
+
+    let open_id = ClientOrderId::from("EXISTING-LONG");
+    let mut opening = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(open_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("7.000"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut opening, account_id);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument_eth_usdt,
+        OrderSide::Sell,
+        "1000.00",
+        "7.000",
+        1,
+    );
+    let position_id = *cache.borrow().position_id(&open_id).unwrap();
+    let peer_id = ClientOrderId::from("EXISTING-EXIT");
+    let mut peer = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(peer_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("3000.00"))
+        .quantity(Quantity::from("3.000"))
+        .reduce_only(true)
+        .submit(true)
+        .build();
+    peer.set_position_id(Some(position_id));
+    cache
+        .borrow_mut()
+        .add_order(peer.clone(), Some(position_id), None, false)
+        .unwrap();
+    engine.process_order(&mut peer, account_id);
+    let fresh_id = ClientOrderId::from("FRESH-ENTRY");
+    let mut fresh = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(fresh_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("2.000"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![peer_id])
+        .submit(true)
+        .build();
+    engine.process_order(&mut fresh, account_id);
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "2.000",
+            2,
+        );
+    });
+
+    assert_eq!(
+        get_order_event_handler_messages(&handler)
+            .iter()
+            .map(|event| (event.event_type(), event.client_order_id()))
+            .collect::<Vec<_>>(),
+        vec![(OrderEventType::Filled, fresh_id)]
+    );
+    let cache = cache.borrow();
+    let peer = cache.order(&peer_id).unwrap();
+    assert_eq!(peer.status(), OrderStatus::Accepted);
+    assert_eq!(peer.quantity(), Quantity::from("3.000"));
+    assert_eq!(peer.filled_qty(), Quantity::from("0.000"));
+    assert_eq!(peer.leaves_qty(), Quantity::from("3.000"));
+    let existing = cache.position(&position_id).unwrap();
+    assert_eq!(existing.side, PositionSide::Long);
+    assert_eq!(existing.quantity, Quantity::from("7.000"));
+    assert_eq!(cache.position_id(&peer_id), Some(&position_id));
+    let fresh_position_id = *cache.position_id(&fresh_id).unwrap();
+    assert_ne!(fresh_position_id, position_id);
+    let fresh_position = cache.position(&fresh_position_id).unwrap();
+    assert_eq!(fresh_position.side, PositionSide::Long);
+    assert_eq!(fresh_position.quantity, Quantity::from("2.000"));
+}
+
+fn bracket_margin_engine(
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    oms_type: OmsType,
+    book_type: BookType,
+    config: OrderMatchingEngineConfig,
+) -> (
+    CachingEngine,
+    Rc<RefCell<Cache>>,
+    TypedIntoMessageSavingHandler<OrderEventAny>,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let mut state = margin_account_state();
+    state.account_id = account_id;
+    cache
+        .borrow_mut()
+        .add_account(MarginAccount::new(state, false).into())
+        .unwrap();
+
+    let mut execution = ExecutionEngine::new(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        None,
+    );
+    execution.register_oms_type(StrategyId::test_default(), oms_type);
+    let execution = RefCell::new(execution);
+    let messages = Rc::new(RefCell::new(Vec::new()));
+    let saved = messages.clone();
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::exec_engine_process(),
+        TypedIntoHandler::from(move |event: OrderEventAny| {
+            execution.borrow_mut().process(&event);
+            saved.borrow_mut().push(event);
+        }),
+    );
+
+    let handler = TypedIntoMessageSavingHandler::new_with_messages(
+        Some(Ustr::from("ExecEngine.process")),
+        messages,
+    );
+
+    let engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        book_type,
+        oms_type,
+        AccountType::Margin,
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        config,
+    );
+    (
+        CachingEngine {
+            engine,
+            cache: cache.clone(),
+        },
+        cache,
+        handler,
+    )
+}
+
+#[rstest]
+fn test_ouo_full_fill_cancels_each_peer_once(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_position(cache.clone(), instrument_eth_usdt.clone());
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        Some(engine_config()),
+    );
+    let ids = [
+        ClientOrderId::from("OUO-A"),
+        ClientOrderId::from("OUO-B"),
+        ClientOrderId::from("OUO-C"),
+    ];
+
+    let orders = ids
+        .into_iter()
+        .zip(["3000.00", "4000.00", "5000.00"])
+        .map(|(id, price)| {
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument_eth_usdt.id())
+                .client_order_id(id)
+                .side(OrderSide::Sell)
+                .quantity(Quantity::from("2.000"))
+                .price(Price::from(price))
+                .contingency_type(ContingencyType::Ouo)
+                .linked_order_ids(ids.into_iter().filter(|peer| *peer != id).collect())
+                .submit(true)
+                .build()
+        })
+        .collect();
+
+    submit_orders(&mut engine, account_id, orders);
+    clear_order_event_handler_messages(&handler);
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Buy,
+            "3000.00",
+            "2.000",
+            1,
+        );
+    });
+
+    let transitions: Vec<_> = get_order_event_handler_messages(&handler)
+        .iter()
+        .map(|event| (event.event_type(), event.client_order_id()))
+        .collect();
+    assert_eq!(
+        transitions,
+        vec![
+            (OrderEventType::Filled, ids[0]),
+            (OrderEventType::Canceled, ids[1]),
+            (OrderEventType::Canceled, ids[2])
+        ]
+    );
+}
 
 // Entry BUY LIMIT as OTO, with a STOP_MARKET SL at 100 and a LIMIT TP at 3000 linked OUO as
 // `OrderFactory.bracket` links them. That factory also makes the exits reduce-only, so fills
