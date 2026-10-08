@@ -1287,10 +1287,9 @@ async fn test_futures_open_order_reports_error_on_unresolved_symbol() {
 async fn test_futures_position_reports_error_on_unresolved_symbol() {
     let (client, _rx, _cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
-    *state.futures_open_positions_json.lock().await = Some(
-        r#"{"result":"success","openPositions":[{"side":"long","symbol":"PF_UNKNOWNUSD","price":27500.5,"fillTime":"2023-04-07T15:45:10.739Z","size":1000,"unrealizedFunding":0.0}]}"#
-            .to_string(),
-    );
+    *state.futures_open_positions_json.lock().await = Some(load_test_data(
+        "http_futures_open_positions_unresolved.json",
+    ));
 
     let error = client
         .generate_position_status_reports(&GeneratePositionStatusReports::new(
@@ -1313,16 +1312,15 @@ async fn test_futures_position_reports_error_on_unresolved_symbol() {
     );
 }
 
-const FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED: &str = r#"{"result":"success","openOrders":[{"order_id":"V-HELD","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"},{"order_id":"V-UNRESOLVED","symbol":"PF_UNKNOWNUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}]}"#;
-
 /// Out of scope, an unresolvable row is skipped: a scoped read only reports its own instrument.
 #[rstest]
 #[tokio::test]
 async fn test_futures_scoped_open_order_read_skips_an_unresolved_row_of_another_symbol() {
     let (client, _rx, _cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
-    *state.futures_open_orders_json.lock().await =
-        Some(FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED.to_string());
+    *state.futures_open_orders_json.lock().await = Some(load_test_data(
+        "http_futures_open_orders_held_and_unresolved.json",
+    ));
 
     let reports = client
         .generate_order_status_reports(&GenerateOrderStatusReports::new(
@@ -1349,8 +1347,9 @@ async fn test_futures_scoped_open_order_read_skips_an_unresolved_row_of_another_
 async fn test_futures_order_status_report_lookup_is_scoped_to_its_instrument() {
     let (client, _rx, _cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
-    *state.futures_open_orders_json.lock().await =
-        Some(FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED.to_string());
+    *state.futures_open_orders_json.lock().await = Some(load_test_data(
+        "http_futures_open_orders_held_and_unresolved.json",
+    ));
 
     let cmd = GenerateOrderStatusReport::new(
         UUID4::new(),
@@ -1377,8 +1376,9 @@ async fn test_futures_order_status_report_lookup_is_scoped_to_its_instrument() {
 async fn test_futures_query_order_is_scoped_to_its_instrument() {
     let (client, mut rx, _cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
-    *state.futures_open_orders_json.lock().await =
-        Some(FUTURES_OPEN_ORDERS_HELD_AND_UNRESOLVED.to_string());
+    *state.futures_open_orders_json.lock().await = Some(load_test_data(
+        "http_futures_open_orders_held_and_unresolved.json",
+    ));
 
     client
         .query_order(QueryOrder::new(
@@ -1409,10 +1409,9 @@ async fn test_futures_query_order_is_scoped_to_its_instrument() {
 async fn test_futures_scoped_position_read_skips_an_unresolved_row_of_another_symbol() {
     let (client, _rx, _cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
-    *state.futures_open_positions_json.lock().await = Some(
-        r#"{"result":"success","openPositions":[{"side":"long","symbol":"PI_XBTUSD","price":27500.5,"fillTime":"2023-04-07T15:45:10.739Z","size":1000,"unrealizedFunding":0.0},{"side":"long","symbol":"PF_UNKNOWNUSD","price":1.5,"fillTime":"2023-04-07T15:45:10.739Z","size":10,"unrealizedFunding":0.0}]}"#
-            .to_string(),
-    );
+    *state.futures_open_positions_json.lock().await = Some(load_test_data(
+        "http_futures_open_positions_scoped_unresolved.json",
+    ));
 
     let reports = client
         .generate_position_status_reports(&GeneratePositionStatusReports::new(
@@ -1441,10 +1440,9 @@ async fn test_futures_scoped_position_read_skips_an_unresolved_row_of_another_sy
 async fn test_futures_position_read_fails_on_an_unparsable_position() {
     let (client, _rx, _cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
-    *state.futures_open_positions_json.lock().await = Some(
-        r#"{"result":"success","openPositions":[{"side":"long","symbol":"PI_XBTUSD","price":27500.5,"fillTime":"2023-04-07T15:45:10.739Z","size":-1000,"unrealizedFunding":0.0}]}"#
-            .to_string(),
-    );
+    *state.futures_open_positions_json.lock().await = Some(load_test_data(
+        "http_futures_open_positions_negative_size.json",
+    ));
 
     let error = client
         .generate_position_status_reports(&GeneratePositionStatusReports::new(
