@@ -1045,7 +1045,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 .find(|r| r.venue_order_id == venue_order_id)
             {
                 Some(report) => emitter.send_order_status_report(report),
-                None => log::warn!(
+                None => log::debug!(
                     "Order {venue_order_id} not among the open orders of {instrument_id}; no report emitted"
                 ),
             }
