@@ -558,13 +558,16 @@ impl FuturesOrderHistoryResponse {
     /// body without an `elements` array fails it as a parse error, so neither reads as an empty
     /// page. An update, and a refused edit, are represented by the order as it stands afterwards.
     /// A not-found event carries no order state and is skipped. A kind the documentation does not
-    /// list, an order whose direction the venue could not decode, and an order with a timestamp
-    /// before the epoch may carry order state the projection cannot read, so each is skipped
-    /// with a warning and counted in `skipped_rows`, which leaves the set incomplete. The venue
-    /// fills the required `limitPrice` of a market order with a zero or an empty string and a
-    /// missing client id with an empty string, so a market-like order carries no price and an
-    /// empty client id is `None`; a limit order keeps its price even at zero, since futures
-    /// instruments allow non-positive prices. The contract name is kept as the venue spells it;
+    /// list, an order whose direction the venue could not decode, an order whose type is missing
+    /// or reported as `Unknown`, and an order with a timestamp before the epoch may carry order
+    /// state the projection cannot read, so each is skipped with a warning and counted in
+    /// `skipped_rows`, which leaves the set incomplete. `Unknown` is how the venue reports a
+    /// source type it could not decode, so it establishes no order type, and in particular not a
+    /// market order. The venue fills the required `limitPrice` of a market order with a zero or
+    /// an empty string and a missing client id with an empty string, so a market-like order (a
+    /// market order or a venue-initiated kind) carries no price and an empty client id is
+    /// `None`; a limit order keeps its price even at zero, since futures instruments allow
+    /// non-positive prices. The contract name is kept as the venue spells it;
     /// the readers resolve it case-insensitively. The history order carries no trigger price, and
     /// the engine cannot materialize a stop order without one, so a stop row is reported as the
     /// limit or market order it executes as once triggered.
@@ -658,38 +661,52 @@ impl FuturesOrderHistoryResponse {
                     }
                 };
 
+                // `Unknown` is how the venue reports a source type it could not decode, so
+                // neither it nor a missing type establishes what the order is.
+                let kind = match order.order_type {
+                    Some(KrakenFuturesHistoryOrderType::Unknown) | None => {
+                        let situation = if order.order_type.is_none() {
+                            "order type missing"
+                        } else {
+                            "order type reported as Unknown"
+                        };
+                        log::warn!(
+                            "Skipping order history event {} for order {} (client id {:?}) on {}: {situation}; the set is incomplete",
+                            element.uid,
+                            order.uid,
+                            order.client_id.as_deref().filter(|id| !id.is_empty()),
+                            order.tradeable
+                        );
+                        skipped_rows += 1;
+                        return None;
+                    }
+                    Some(kind) => kind,
+                };
+
                 let market_like = matches!(
-                    order.order_type,
-                    None | Some(
-                        KrakenFuturesHistoryOrderType::Market
-                            | KrakenFuturesHistoryOrderType::Liquidation
-                            | KrakenFuturesHistoryOrderType::PartialLiquidation
-                            | KrakenFuturesHistoryOrderType::CoveredLiquidation
-                            | KrakenFuturesHistoryOrderType::Assignment
-                            | KrakenFuturesHistoryOrderType::HedgeAssignment
-                            | KrakenFuturesHistoryOrderType::Unwind
-                            | KrakenFuturesHistoryOrderType::Block
-                            | KrakenFuturesHistoryOrderType::Rfq
-                            | KrakenFuturesHistoryOrderType::Unknown
-                    )
+                    kind,
+                    KrakenFuturesHistoryOrderType::Market
+                        | KrakenFuturesHistoryOrderType::Liquidation
+                        | KrakenFuturesHistoryOrderType::PartialLiquidation
+                        | KrakenFuturesHistoryOrderType::CoveredLiquidation
+                        | KrakenFuturesHistoryOrderType::Assignment
+                        | KrakenFuturesHistoryOrderType::HedgeAssignment
+                        | KrakenFuturesHistoryOrderType::Unwind
+                        | KrakenFuturesHistoryOrderType::Block
+                        | KrakenFuturesHistoryOrderType::Rfq
                 );
-                let limit_price = match order.order_type {
+                let limit_price = match kind {
                     _ if market_like => None,
                     // A stop with the placeholder price has no limit leg.
-                    Some(KrakenFuturesHistoryOrderType::Stop) => {
+                    KrakenFuturesHistoryOrderType::Stop => {
                         order.limit_price.filter(|price| !price.is_zero())
                     }
                     _ => order.limit_price,
                 };
-                let order_type = match (order.order_type, limit_price) {
-                    (Some(KrakenFuturesHistoryOrderType::Stop), Some(_)) => {
-                        KrakenFuturesOrderType::Limit
-                    }
-                    (Some(KrakenFuturesHistoryOrderType::Stop), None) => {
-                        KrakenFuturesOrderType::Market
-                    }
-                    (Some(kind), _) => kind.into(),
-                    (None, _) => KrakenFuturesOrderType::Unknown,
+                let order_type = match (kind, limit_price) {
+                    (KrakenFuturesHistoryOrderType::Stop, Some(_)) => KrakenFuturesOrderType::Limit,
+                    (KrakenFuturesHistoryOrderType::Stop, None) => KrakenFuturesOrderType::Market,
+                    (kind, _) => kind.into(),
                 };
 
                 Some(FuturesOrderEventWrapper {
@@ -1563,26 +1580,77 @@ mod tests {
         );
     }
 
-    /// An `Unknown` order type and an undocumented event kind must not fail the surrounding
-    /// page. A refused edit reports the order as it stands; a not-found event and an undocumented
-    /// kind carry no order state and are skipped.
+    /// An order whose type the venue reports as `Unknown` establishes no order type, so its row
+    /// is skipped and counted, while the sibling rows of the page are kept with their fields
+    /// intact. A not-found event carries no state and is skipped without counting; an
+    /// undocumented kind may carry state and counts.
     #[rstest]
-    fn test_parse_futures_order_events_tolerates_unknown_enum_values() {
+    fn test_parse_futures_order_events_skips_an_unknown_order_type_and_keeps_siblings() {
         let response = order_history_events("http_futures_order_events_unknown.json");
 
-        assert_eq!(response.order_events.len(), 2);
+        assert_eq!(response.order_events.len(), 1);
+        let sibling = &response.order_events[0];
+        assert_eq!(sibling.event_type, KrakenFuturesOrderEventType::Edit);
+        assert_eq!(sibling.reduced_quantity, None);
+        assert_eq!(sibling.order.order_id, "abc");
+        assert_eq!(sibling.order.cli_ord_id, None);
+        assert_eq!(sibling.order.order_type, KrakenFuturesOrderType::Limit);
+        assert_eq!(sibling.order.symbol, "PF_XBTUSD");
+        assert_eq!(sibling.order.side, KrakenOrderSide::Buy);
+        assert_eq!(sibling.order.quantity, dec!(1.0));
+        assert_eq!(sibling.order.filled, dec!(0.5));
+        assert_eq!(sibling.order.limit_price, Some(dec!(70000.0)));
+        assert_eq!(sibling.order.stop_price, None);
+        assert_eq!(sibling.order.timestamp, "2026-05-18T00:00:00.000Z");
         assert_eq!(
-            response.order_events[0].order.order_type,
-            KrakenFuturesOrderType::Unknown
+            sibling.order.last_update_timestamp,
+            "2026-05-18T00:00:01.000Z"
         );
+        assert!(!sibling.order.reduce_only);
         assert_eq!(
-            response.order_events[1].event_type,
-            KrakenFuturesOrderEventType::Edit
+            response.server_time.as_deref(),
+            Some("2026-05-18T00:00:03.000Z")
         );
-        assert_eq!(response.order_events[1].order.filled, dec!(0.5));
+        assert_eq!(response.continuation_token, None);
+        assert_eq!(
+            response.skipped_rows, 2,
+            "the Unknown type and the undocumented kind count; the not-found event does not"
+        );
+    }
+
+    /// `Unknown` is how the venue reports a source type it could not decode, so neither it nor a
+    /// missing type establishes what the order is: the row is skipped with its price rather than
+    /// reported as a market order, the sibling row is kept, and the set is incomplete.
+    #[rstest]
+    #[case::missing_type("")]
+    #[case::undocumented_type(r#""orderType":"SomethingNew","#)]
+    fn test_parse_futures_order_events_skips_an_unmappable_order_type(#[case] order_type: &str) {
+        let data = format!(
+            r#"{{"elements":[{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{{"uid":"o1","tradeable":"PF_XBTUSD","direction":"Sell","quantity":"3","filled":"1",{order_type}"limitPrice":"70000","clientId":"cl-1","reduceOnly":true,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}}}}}},{{"uid":"e2","timestamp":1680877245500,"event":{{"OrderPlaced":{{"order":{{"uid":"o2","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"2","filled":"0.5","limitPrice":"69500.5","orderType":"Limit","clientId":"cl-2","reduceOnly":false,"timestamp":1680877245500,"lastUpdateTimestamp":1680877245500}}}}}}}}]}}"#
+        );
+        let response = order_history_events_from(&data);
+
+        assert_eq!(response.order_events.len(), 1);
+        let sibling = &response.order_events[0];
+        assert_eq!(sibling.event_type, KrakenFuturesOrderEventType::Place);
+        assert_eq!(sibling.order.order_id, "o2");
+        assert_eq!(sibling.order.cli_ord_id.as_deref(), Some("cl-2"));
+        assert_eq!(sibling.order.order_type, KrakenFuturesOrderType::Limit);
+        assert_eq!(sibling.order.symbol, "PF_XBTUSD");
+        assert_eq!(sibling.order.side, KrakenOrderSide::Buy);
+        assert_eq!(sibling.order.quantity, dec!(2));
+        assert_eq!(sibling.order.filled, dec!(0.5));
+        assert_eq!(sibling.order.limit_price, Some(dec!(69500.5)));
+        assert_eq!(sibling.order.stop_price, None);
+        assert_eq!(sibling.order.timestamp, "2023-04-07T14:20:45.500Z");
+        assert_eq!(
+            sibling.order.last_update_timestamp,
+            "2023-04-07T14:20:45.500Z"
+        );
+        assert!(!sibling.order.reduce_only);
         assert_eq!(
             response.skipped_rows, 1,
-            "the undocumented kind may carry state; the not-found event carries none"
+            "the skip leaves the set incomplete"
         );
     }
 

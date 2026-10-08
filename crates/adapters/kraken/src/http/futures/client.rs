@@ -4181,6 +4181,98 @@ mod tests {
         );
     }
 
+    /// A history row the projection cannot represent marks the checked read incomplete while
+    /// the rows it can represent are still reported.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_marks_the_set_incomplete_for_a_skipped_history_row()
+    {
+        use axum::{Router, extract::State, http::header, routing::any};
+
+        fn history_page(first_order_type: &str) -> String {
+            format!(
+                r#"{{"elements":[{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{{"uid":"H-SKIP-1","tradeable":"PF_XBTUSD","direction":"Sell","quantity":"3","filled":"1","limitPrice":"70000","orderType":"{first_order_type}","clientId":"cl-1","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}}}}}},{{"uid":"e2","timestamp":1680877245500,"event":{{"OrderPlaced":{{"order":{{"uid":"H-KEEP-2","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"2","filled":"0.5","limitPrice":"69500","orderType":"Limit","clientId":"cl-2","reduceOnly":false,"timestamp":1680877245500,"lastUpdateTimestamp":1680877245500}}}}}}}}]}}"#
+            )
+        }
+
+        let history = Arc::new(RwLock::new(history_page("Limit")));
+        let app = Router::new()
+            .route(
+                "/derivatives/api/v3/openorders",
+                any(|| async {
+                    (
+                        [(header::CONTENT_TYPE, "application/json")],
+                        r#"{"result":"success","openOrders":[]}"#,
+                    )
+                }),
+            )
+            .route(
+                "/api/history/v3/orders",
+                any(|State(history): State<Arc<RwLock<String>>>| async move {
+                    (
+                        [(header::CONTENT_TYPE, "application/json")],
+                        history.read().clone(),
+                    )
+                }),
+            )
+            .with_state(history.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+        let instrument_id = cache_test_futures_instrument(&client);
+        let account_id = AccountId::from("KRAKEN-001");
+
+        // Control: the same page with a decodable type reads complete, so the flag below is
+        // driven by the undecodable type rather than by the page itself.
+        let (control, complete) = client
+            .request_order_status_reports_checked(account_id, None, None, None, false)
+            .await
+            .unwrap();
+        assert!(
+            complete,
+            "the control must be complete, or the skip proves nothing"
+        );
+        assert_eq!(control.len(), 2);
+
+        *history.write() = history_page("Unknown");
+        let (reports, complete) = client
+            .request_order_status_reports_checked(account_id, None, None, None, false)
+            .await
+            .unwrap();
+
+        assert!(
+            !complete,
+            "a skipped history row must leave the set incomplete"
+        );
+        assert_eq!(reports.len(), 1);
+        let report = &reports[0];
+        assert_eq!(report.venue_order_id, VenueOrderId::from("H-KEEP-2"));
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.client_order_id, Some(ClientOrderId::from("cl-2")));
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.quantity, Quantity::from("2"));
+        assert_eq!(report.filled_qty, Quantity::from("0.5"));
+        assert_eq!(report.price, Some(Price::from("69500")));
+    }
+
     fn cache_test_futures_instrument(client: &KrakenFuturesHttpClient) -> InstrumentId {
         let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
 

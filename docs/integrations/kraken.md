@@ -702,9 +702,12 @@ every holding it covers and an absent report is genuine evidence of flat.
   state. The contract name is resolved as the venue spells it, exactly first and then
   case-insensitively. The history carries no trigger price, so a stop order is reported as the
   limit or market order it executes as once triggered, and venue-initiated orders (liquidation,
-  assignment, unwind, block, RFQ, hedge) are reported as market orders. An event without order
-  state, such as `OrderNotFound` or a kind the adapter does not know, is skipped with a warning;
-  a venue error reported with a success status fails the read.
+  assignment, unwind, block, RFQ, hedge) are reported as market orders. A row the adapter cannot
+  represent is skipped with a warning and leaves the set incomplete: an event kind the adapter
+  does not know, an order whose type the venue reports as `Unknown` or omits, an unknown
+  direction, and a timestamp before the epoch. `OrderNotFound` carries no order state and is
+  skipped without affecting completeness; a venue error reported with a success status fails the
+  read.
 
 **Fill reports:**
 
