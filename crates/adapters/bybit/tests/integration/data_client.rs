@@ -1695,6 +1695,65 @@ async fn test_data_client_book_quote_topic_lifetime(
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_data_client_failed_quote_subscription_keeps_shared_book_topic() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+    let quotes = SubscribeQuotes::new(
+        instrument_id,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let book = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(1),
+        false,
+        None,
+        None,
+    );
+    let unsubscribe_quotes = UnsubscribeQuotes::new(
+        instrument_id,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    // The command channel is closed before connect, so the quote subscription fails
+    client.subscribe_quotes(quotes).unwrap();
+    client.connect().await.unwrap();
+    client.subscribe_book_deltas(book).unwrap();
+    let subscribed = next_book_deltas(&mut rx).await;
+    client.unsubscribe_quotes(&unsubscribe_quotes).unwrap();
+    let mut snapshot = load_test_data("ws_orderbook_snapshot.json");
+    snapshot["ts"] = 1_709_891_700_000_u64.into();
+    state.book_updates.lock().await.push(snapshot);
+    let updated = next_book_deltas(&mut rx).await;
+
+    assert_eq!(
+        subscribed.ts_event,
+        UnixNanos::new(1_709_891_679_000_000_000)
+    );
+    assert_eq!(updated.ts_event, UnixNanos::new(1_709_891_700_000_000_000));
+    assert_eq!(*state.subscriptions.lock().await, ["orderbook.1.BTCUSDT"]);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[case::open(false, 1_672_324_800_000_000_000)]
 #[case::close(true, 1_672_325_100_000_000_000)]
 #[tokio::test]

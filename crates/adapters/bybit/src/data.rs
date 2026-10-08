@@ -1338,12 +1338,32 @@ impl DataClient for BybitDataClient {
             }
 
             self.quote_subs.insert(instrument_id);
+            let quote_subs = Arc::clone(&self.quote_subs);
 
             self.spawn_ws(
                 async move {
-                    ws.subscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
+                    if let Err(e) = ws
+                        .subscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
                         .await
-                        .context("orderbook subscription for quotes")
+                    {
+                        // A stale entry, or a leftover reference that a retry would ride, lets a
+                        // later unsubscribe drop the depth-1 book's topic, and an unsubscribe that
+                        // removed the entry first already released the reference.
+                        let mut removed = false;
+                        quote_subs.rcu(|subs| removed = subs.remove(&instrument_id));
+
+                        if removed
+                            && let Err(e) = ws
+                                .unsubscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
+                                .await
+                        {
+                            log::warn!("Failed to unsubscribe after quote subscription error: {e}");
+                        }
+
+                        return Err(e).context("orderbook subscription for quotes");
+                    }
+
+                    Ok(())
                 },
                 "quote subscription (orderbook)",
             );
@@ -2325,7 +2345,7 @@ mod tests {
         messages::{
             DataEvent,
             data::{
-                SubscribeBookDeltas, SubscribeCustomData, UnsubscribeBookDeltas,
+                SubscribeBookDeltas, SubscribeCustomData, SubscribeQuotes, UnsubscribeBookDeltas,
                 UnsubscribeCustomData,
             },
         },
@@ -2655,6 +2675,44 @@ mod tests {
             "WebSocket send error: Failed to send subscribe command: channel closed",
         );
         assert!(!client.liquidation_subs.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_failed_quote_subscription_releases_registration() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let mut client =
+            BybitDataClient::new(*BYBIT_CLIENT_ID, BybitDataClientConfig::default()).unwrap();
+        let ws = client.ws_clients[0].clone();
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let command = SubscribeQuotes::new(
+            instrument_id,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        // The disconnected command channel rejects each send, so a retry must subscribe again
+        for _ in 0..2 {
+            client.subscribe_quotes(command.clone()).unwrap();
+            wait_until_async(
+                || async { !client.quote_subs.contains(&instrument_id) },
+                Duration::from_secs(2),
+            )
+            .await;
+        }
+
+        let error = ws.subscribe_orderbook(instrument_id, 1).await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "WebSocket send error: Failed to send subscribe command: channel closed",
+        );
+        assert!(!client.quote_subs.contains(&instrument_id));
     }
 
     #[rstest]
