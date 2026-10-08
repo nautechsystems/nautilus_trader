@@ -269,32 +269,33 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 Kraken sends a CRC32 checksum with each Spot `book` snapshot and update, computed over the top ten
 levels of each side at the venue's wire scales. By default the adapter validates it against its
-shadow book, rendering prices at `pair_decimals` and quantities at `lot_decimals` from
-`AssetPairs`; for a handful of pairs the price scale is one digit finer than the tick size, so the
-instrument carries it when it is finer (a coarser scale would truncate the price digits). On
-mismatch the adapter emits a `Clear` delta, drops the shadow book, unsubscribes and resubscribes
-the symbol at its depth with a snapshot, and ignores further updates until that snapshot arrives;
-every `book` unsubscribe names the depth, since the venue keys the subscription by symbol and
-depth. The recovery is serialized with the user's own subscription changes, so a replacement
-subscription is never cancelled by a stale recovery, and frames of a replaced subscription that
-arrive before its snapshot are dropped. If the snapshot does not arrive within 10 seconds the data
-client requests it again, doubling the wait each time up to five requests, then logs an error and
-leaves the book cleared until the next subscription change or reconnect; this watchdog is the only
-retry for a `book` recovery, and a replacement subscription starts its own wait rather than
-inheriting its predecessor's. The watchdog runs whether or not checksum validation is enabled,
-since it recovers a stream whose snapshot never arrived rather than a checksum mismatch. A `book`
-subscribe the venue rejects drops the book with an error log naming the venue's reason and when the
-next request is due: the rejection counts as one failed request, so the watchdog asks again after
-20 seconds and keeps doubling, and a pair the venue will not serve is given up after four more
-rejections, about five minutes, while a transient rejection recovers within 20 seconds. A reconnect
-retires the subscribes on record and replays each `book` subscribe under its original request id,
-so a replay's answer is matched to no request; a replay the venue rejects is noticed by the watchdog
-within its base wait of 10 seconds. A shadow book dropped off the frame path, by a rejection or by
-the watchdog retiring a replaced subscription's book, is cleared downstream with a `Clear` delta.
-Three mismatches on one instrument with no valid update between them switch validation off for
-that instrument with an error log and keep its book as received, so a book the venue hashes
-differently cannot loop on resubscription; a snapshot that validates does not reset the count.
-Kraken Futures `book` messages carry no checksum. To disable validation:
+shadow book, rendering prices at `pair_decimals` and quantities at `lot_decimals` from `AssetPairs`;
+for a handful of pairs the price scale is one digit finer than the tick size, so the instrument
+carries it when it is finer (a coarser scale would truncate the price digits). On mismatch the
+adapter emits a `Clear` delta, drops the shadow book, unsubscribes and resubscribes the symbol at
+its depth with a snapshot, and ignores further updates until that snapshot arrives; every `book`
+unsubscribe names the depth, since the venue keys the subscription by symbol and depth. The recovery
+is serialized with the user's own subscription changes, so a replacement subscription is never
+cancelled by a stale recovery, and frames of a replaced subscription that arrive before its snapshot
+are dropped. If the snapshot does not arrive within 10 seconds the data client requests it again,
+doubling the wait each time up to five requests, then logs an error and leaves the book cleared
+until the next subscription change or reconnect; this watchdog is the only retry for a `book`
+recovery, and a replacement subscription starts its own wait rather than inheriting its
+predecessor's. The watchdog runs whether or not checksum validation is enabled, since it recovers a
+stream whose snapshot never arrived rather than a checksum mismatch. A `book` subscribe the venue
+rejects while its book is still waiting is logged at error with the venue's reason and when the next
+request is due: the rejection counts as one failed request, so the watchdog asks again after 20
+seconds and keeps doubling, and a pair the venue will not serve is given up after four more
+rejections, about five minutes, while a transient rejection recovers within 20 seconds; a rejection
+that arrives after a later request's snapshot has fed the book is ignored. A reconnect retires the
+subscribes on record and replays each `book` subscribe under its original request id, so a replay's
+answer is matched to no request; a replay the venue rejects is noticed by the watchdog within its
+base wait of 10 seconds. A shadow book dropped off the frame path, by a reconnect or by the watchdog
+retiring a replaced subscription's book, is cleared downstream with a `Clear` delta. Three
+mismatches on one instrument with no valid update between them switch validation off for that
+instrument with an error log and keep its book as received, so a book the venue hashes differently
+cannot loop on resubscription; a snapshot that validates does not reset the count. Kraken Futures
+`book` messages carry no checksum. To disable validation:
 
 ```python
 config = KrakenDataClientConfig(

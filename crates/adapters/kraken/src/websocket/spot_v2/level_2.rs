@@ -140,11 +140,9 @@ pub(crate) struct L2SnapshotCheck {
     pub(crate) cleared: Vec<InstrumentId>,
 }
 
-/// What rejecting a `book` subscribe did to the instrument's state.
+/// What rejecting a `book` subscribe did to the instrument's wait.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct L2Rejection {
-    /// The rejection dropped a shadow book, so the consumer's book is to be cleared.
-    pub(crate) cleared: bool,
     /// When the snapshot is requested again, or `None` at the request cap.
     pub(crate) next_request_due: Option<UnixNanos>,
 }
@@ -241,7 +239,8 @@ impl L2BookState {
         }
     }
 
-    /// Drops the shadow books and the mismatch counts after a reconnect.
+    /// Drops the shadow books and the mismatch counts after a reconnect, returning the instruments
+    /// whose book it dropped so the consumer's books are cleared.
     ///
     /// The replayed subscriptions deliver fresh snapshots, so every instrument that had a book or
     /// a wait gets a wait starting at `now` under its last seen generation: an
@@ -250,7 +249,7 @@ impl L2BookState {
     /// the venue drops is then noticed by [`Self::overdue_snapshots`]. The replacement stream gets
     /// the full allowance of mismatches; an instrument whose validation is off stays off. The
     /// unsubscribed-frame warnings are cleared, since the replay sends every subscribe again.
-    pub(crate) fn reset_after_reconnect(&mut self, now: UnixNanos) {
+    pub(crate) fn reset_after_reconnect(&mut self, now: UnixNanos) -> Vec<InstrumentId> {
         let mut restarted: Vec<(InstrumentId, u64)> = self
             .awaiting_snapshot
             .iter()
@@ -267,35 +266,40 @@ impl L2BookState {
                 .insert(instrument_id, SnapshotWait::fresh(now, generation));
         }
 
-        self.books.clear();
+        let dropped: Vec<InstrumentId> = self.books.drain().map(|(id, _)| id).collect();
         self.mismatches.clear();
         self.unsubscribed_warned.clear();
+        dropped
     }
 
     /// Records that the venue rejected the `book` subscribe sent for `generation`.
     ///
-    /// The book is dropped, since no snapshot is coming, and the wait restarts at `now` with the
-    /// rejected request counted as one failed attempt: a request the watchdog made is counted when
+    /// The wait restarts at `now` with the rejected request counted as one failed attempt: a request the watchdog made is counted when
     /// it goes out, and the subscribe or recovery that opened the wait is counted here, so the
     /// next request is due after the doubled base wait rather than the base wait. A pair the venue
     /// will not serve reaches the request cap after five rejections; a rejection the venue takes
     /// back, such as a rate limit while a reconnect fans out many recoveries, recovers at the next
-    /// request.
+    /// request. A rejection that arrives after a later request's snapshot has rebuilt the book is
+    /// stale and returns `None`: the stream is healthy, and acting on it would clear a fed book.
     pub(crate) fn reject_subscription(
         &mut self,
         instrument_id: InstrumentId,
         generation: u64,
         now: UnixNanos,
-    ) -> L2Rejection {
-        let cleared = self.books.remove(&instrument_id).is_some();
+    ) -> Option<L2Rejection> {
+        if self.books.contains_key(&instrument_id)
+            && !self.awaiting_snapshot.contains_key(&instrument_id)
+        {
+            return None;
+        }
+
         let wait = self.arm_snapshot_wait(instrument_id, generation, now);
         wait.since = now;
         wait.attempts = wait.attempts.max(1);
 
-        L2Rejection {
-            cleared,
+        Some(L2Rejection {
             next_request_due: wait.next_request_due(),
-        }
+        })
     }
 
     /// The wait for `generation`'s snapshot: armed at `now` unless one for that generation is
@@ -351,8 +355,6 @@ impl L2BookState {
             .retain(|instrument_id, _| held_ids.contains(instrument_id));
         self.last_generation
             .retain(|instrument_id, _| held_ids.contains(instrument_id));
-        self.unsubscribed_warned
-            .retain(|instrument_id| held_ids.contains(instrument_id));
         self.mismatches
             .retain(|instrument_id, _| held_ids.contains(instrument_id));
         self.validation_disabled
@@ -1427,15 +1429,13 @@ mod tests {
         );
     }
 
-    /// A subscribe the venue rejects drops the book and counts as one failed request: the next
-    /// request is due after the doubled base wait, each later rejection restarts the wait at the
-    /// attempts the watchdog has counted, and the fifth rejection reaches the cap.
+    /// A rejection that arrives after a later request's snapshot has rebuilt the book is stale: the
+    /// stream is healthy, so the book is kept and no wait is armed.
     #[rstest]
-    fn test_a_rejected_subscription_counts_one_failed_request_then_doubles_to_the_cap() {
+    fn test_a_late_rejection_of_a_fed_book_is_ignored() {
         let mut state = L2BookState::new(true);
         let instrument = instrument(1, None);
         let instrument_id = instrument.id();
-        let held = [(instrument_id, sub(10))];
         state
             .process_book(
                 &book_data(GUIDE_SNAPSHOT),
@@ -1449,7 +1449,50 @@ mod tests {
 
         let rejection = state.reject_subscription(instrument_id, 7, at(1));
 
-        assert!(rejection.cleared, "the book is dropped");
+        assert_eq!(
+            rejection, None,
+            "a fed book is not dropped by a stale rejection"
+        );
+        assert!(state.books.contains_key(&instrument_id));
+        assert!(!state.awaiting_snapshot.contains_key(&instrument_id));
+    }
+
+    /// The warning about frames with no subscription fires once per instrument: an instrument
+    /// in that state is by definition not held, so the tick that prunes unheld state leaves the
+    /// warning armed rather than re-arming it every second.
+    #[rstest]
+    fn test_the_tick_keeps_the_unsubscribed_warning() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+
+        state
+            .process_book(&book_data(GUIDE_SNAPSHOT), &instrument, 0, true, None, TS)
+            .unwrap();
+        assert!(state.unsubscribed_warned.contains(&instrument_id));
+
+        state.overdue_snapshots(at(1), &[]);
+
+        assert!(
+            state.unsubscribed_warned.contains(&instrument_id),
+            "the tick does not re-arm the warning"
+        );
+    }
+
+    /// A subscribe the venue rejects counts as one failed request: the next request is due after
+    /// the doubled base wait, each later rejection restarts the wait at the attempts the watchdog
+    /// has counted, and the fifth rejection reaches the cap.
+    #[rstest]
+    fn test_a_rejected_subscription_counts_one_failed_request_then_doubles_to_the_cap() {
+        let mut state = L2BookState::new(true);
+        let instrument = instrument(1, None);
+        let instrument_id = instrument.id();
+        let held = [(instrument_id, sub(10))];
+
+        let rejection = state
+            .reject_subscription(instrument_id, 7, at(1))
+            .expect("a subscription without a book is waiting for its snapshot");
+
         assert_eq!(
             rejection.next_request_due,
             Some(at(21)),
@@ -1482,8 +1525,9 @@ mod tests {
         let mut t = 21;
         for (rejections, wait_secs) in [(2, 40), (3, 80), (4, 160)] {
             t += 1;
-            let rejection = state.reject_subscription(instrument_id, 7, at(t));
-            assert!(!rejection.cleared, "no book to drop");
+            let rejection = state
+                .reject_subscription(instrument_id, 7, at(t))
+                .expect("the wait is still live");
             assert_eq!(
                 rejection.next_request_due,
                 Some(at(t + wait_secs)),
@@ -1508,7 +1552,11 @@ mod tests {
         );
 
         let fifth = state.reject_subscription(instrument_id, 7, at(t + 1));
-        assert_eq!(fifth.next_request_due, None, "the cap is reached");
+        assert_eq!(
+            fifth.expect("the wait is still live").next_request_due,
+            None,
+            "the cap is reached"
+        );
         assert!(
             state
                 .overdue_snapshots(at(100_000), &held)
@@ -1807,8 +1855,9 @@ mod tests {
             .unwrap();
         assert!(state.books.contains_key(&instrument_id));
 
-        state.reset_after_reconnect(at(1));
+        let dropped = state.reset_after_reconnect(at(1));
 
+        assert_eq!(dropped, vec![instrument_id], "the dropped book is reported");
         assert!(state.books.is_empty());
         assert_eq!(
             state.awaiting_snapshot[&instrument_id],
