@@ -828,8 +828,9 @@ pub enum KrakenFuturesHistoryDirection {
 
 /// Order type as the Kraken Futures order history reports it.
 ///
-/// The venue-initiated kinds (liquidation, assignment, unwind, block, RFQ and the hedge
-/// variants) execute against the account at market, so they map to a market order.
+/// The venue-initiated kinds (liquidation, assignment, hedge assignment, unwind, block and RFQ)
+/// execute against the account at market, so they map to a market order; the hedge
+/// immediate-or-cancel kind keeps its limit price as an IOC order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum KrakenFuturesHistoryOrderType {
     Limit,

@@ -1571,8 +1571,8 @@ async fn test_futures_order_status_reports_fold_history_events_per_order() {
             "e2",
             "H-FOLD-1",
             "PI_XBTUSD",
-            "2",
-            "2",
+            "3",
+            "0",
             1680877245600,
         ),
         futures_history_element(

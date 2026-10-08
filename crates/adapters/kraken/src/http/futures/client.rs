@@ -35,8 +35,8 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, FundingRateUpdate, TradeTick},
     enums::{
-        AccountType, BookType, CurrencyType, MarketStatusAction, OrderSide, OrderStatus, OrderType,
-        TimeInForce, TriggerType,
+        AccountType, BookType, CurrencyType, MarketStatusAction, OrderSide, OrderType, TimeInForce,
+        TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -96,6 +96,10 @@ const BATCH_CANCEL_LIMIT: usize = 50;
 
 /// Maximum operations per batch order request for Kraken Futures API.
 const BATCH_ORDER_LIMIT: usize = 10;
+
+/// The response header Kraken documents for the order history continuation token; the body's
+/// `continuationToken` is read first and this header stands in when the body carries none.
+const NEXT_CONTINUATION_TOKEN_HEADER: &str = "Next-Continuation-Token";
 
 /// Raw HTTP client for low-level Kraken Futures API operations.
 ///
@@ -170,6 +174,7 @@ impl KrakenFuturesRawHttpClient {
             base_url,
             client: HttpClient::builder()
                 .headers(Self::default_headers())
+                .header_keys(vec![NEXT_CONTINUATION_TOKEN_HEADER.to_string()])
                 .keyed_quotas(Self::rate_limiter_quotas(max_requests_per_second)?)
                 .default_quota(Self::default_quota(max_requests_per_second)?)
                 .timeout_secs(timeout_secs)
@@ -219,6 +224,7 @@ impl KrakenFuturesRawHttpClient {
             client: HttpClient::builder()
                 .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
+                .header_keys(vec![NEXT_CONTINUATION_TOKEN_HEADER.to_string()])
                 .keyed_quotas(Self::rate_limiter_quotas(max_requests_per_second)?)
                 .default_quota(Self::default_quota(max_requests_per_second)?)
                 .timeout_secs(timeout_secs)
@@ -411,6 +417,21 @@ impl KrakenFuturesRawHttpClient {
         url: String,
         query_string: &str,
     ) -> anyhow::Result<T, KrakenHttpError> {
+        let response = self
+            .send_get_with_query_raw(endpoint, url, query_string)
+            .await?;
+
+        Self::deserialize_body(&response)
+    }
+
+    /// Sends the authenticated GET of [`Self::send_get_with_query`] and hands back the whole
+    /// response, for an endpoint that answers in its headers as well as its body.
+    async fn send_get_with_query_raw(
+        &self,
+        endpoint: &str,
+        url: String,
+        query_string: &str,
+    ) -> anyhow::Result<HttpResponse, KrakenHttpError> {
         let _guard = self.auth_mutex.lock().await;
         let cancellation_token = self.cancellation_token();
 
@@ -472,11 +493,17 @@ impl KrakenFuturesRawHttpClient {
             )));
         }
 
-        let response_text = String::from_utf8(response.body.to_vec()).map_err(|e| {
+        Ok(response)
+    }
+
+    fn deserialize_body<T: DeserializeOwned>(
+        response: &HttpResponse,
+    ) -> anyhow::Result<T, KrakenHttpError> {
+        let response_text = std::str::from_utf8(&response.body).map_err(|e| {
             KrakenHttpError::ParseError(format!("Failed to parse response as UTF-8: {e}"))
         })?;
 
-        serde_json::from_str(&response_text).map_err(|e| {
+        serde_json::from_str(response_text).map_err(|e| {
             KrakenHttpError::ParseError(format!("Failed to deserialize futures response: {e}"))
         })
     }
@@ -795,10 +822,27 @@ impl KrakenFuturesRawHttpClient {
 
         // For signing: query params go in postData, not endpoint
         // Kraken: message = postData + nonce + endpoint
-        let response: FuturesOrderHistoryResponse = self
-            .send_get_with_query(endpoint, url, &query_string)
+        let response = self
+            .send_get_with_query_raw(endpoint, url, &query_string)
             .await?;
-        response.into_order_events()
+        let page: FuturesOrderHistoryResponse = Self::deserialize_body(&response)?;
+        let mut events = page.into_order_events()?;
+
+        // Kraken documents the token in the response header and shows it in the body, so a page
+        // that carries it in the header alone must not read as the last one.
+        if events
+            .continuation_token
+            .as_deref()
+            .is_none_or(str::is_empty)
+        {
+            events.continuation_token = response
+                .headers
+                .get(NEXT_CONTINUATION_TOKEN_HEADER)
+                .filter(|token| !token.is_empty())
+                .cloned();
+        }
+
+        Ok(events)
     }
 
     /// Requests the status of specific orders (requires authentication).
@@ -1719,8 +1763,8 @@ impl KrakenFuturesHttpClient {
     /// An in-scope open order whose instrument cannot be resolved fails the read. The flag is
     /// `false` when a record cannot be parsed, a historical record's instrument cannot be
     /// resolved, a history row could not be represented, or the history page hands back a
-    /// continuation token: the read takes one page, since Kraken's `/history` endpoints share a
-    /// pool of 100 tokens, replenished at 100 every 10 minutes, with fill history.
+    /// continuation token: the read takes one page, since every Kraken `/history` endpoint draws
+    /// on one pool of 100 tokens, replenished at 100 every 10 minutes, at a token per page.
     /// `ExecutionMassStatus::set_report_window` records the flag for bounded history.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
@@ -3232,28 +3276,18 @@ fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut AmountsB
 
 /// Whether `candidate` describes a later state of the same order than `existing`.
 ///
-/// The later `ts_last` wins. The venue stamps events at millisecond precision, so an order placed
-/// and executed within one millisecond ties; the terminal state then wins, and the larger filled
-/// quantity after that, so arrival order never decides.
+/// A closed order does not reopen, so a closed state beats an open one whatever their stamps: an
+/// open state stamped later, such as a refused edit logged after a cancel, describes the order as
+/// it stood before it closed. Between two states of the same kind the later `ts_last` wins, and on
+/// a tie, which the venue's millisecond stamps allow, the larger filled quantity.
 fn supersedes(candidate: &OrderStatusReport, existing: &OrderStatusReport) -> bool {
-    if candidate.ts_last != existing.ts_last {
-        return candidate.ts_last > existing.ts_last;
-    }
-
-    let terminal = |report: &OrderStatusReport| {
-        matches!(
-            report.order_status,
-            OrderStatus::Filled
-                | OrderStatus::Canceled
-                | OrderStatus::Expired
-                | OrderStatus::Rejected
-                | OrderStatus::Voided
-        )
-    };
-
-    match (terminal(candidate), terminal(existing)) {
+    match (
+        candidate.order_status.is_closed(),
+        existing.order_status.is_closed(),
+    ) {
         (true, false) => true,
         (false, true) => false,
+        _ if candidate.ts_last != existing.ts_last => candidate.ts_last > existing.ts_last,
         _ => candidate.filled_qty > existing.filled_qty,
     }
 }
@@ -3263,7 +3297,7 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use ahash::AHashMap;
-    use nautilus_model::instruments::CryptoPerpetual;
+    use nautilus_model::{enums::OrderStatus, instruments::CryptoPerpetual};
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -4207,9 +4241,15 @@ mod tests {
         )
     }
 
-    /// A client against a mock venue with no open orders whose order history serves `history`.
-    async fn history_test_client(history: Arc<RwLock<String>>) -> KrakenFuturesHttpClient {
-        use axum::{Router, extract::State, http::header, routing::any};
+    /// A client against a mock venue with no open orders whose order history serves `history`,
+    /// with `header_token` in the `Next-Continuation-Token` header when one is given.
+    async fn history_test_client(
+        history: Arc<RwLock<String>>,
+        header_token: Option<&'static str>,
+    ) -> KrakenFuturesHttpClient {
+        use axum::{
+            Router, body::Body, extract::State, http::header, response::Response, routing::any,
+        };
 
         let app = Router::new()
             .route(
@@ -4223,12 +4263,17 @@ mod tests {
             )
             .route(
                 "/api/history/v3/orders",
-                any(|State(history): State<Arc<RwLock<String>>>| async move {
-                    (
-                        [(header::CONTENT_TYPE, "application/json")],
-                        history.read().clone(),
-                    )
-                }),
+                any(
+                    move |State(history): State<Arc<RwLock<String>>>| async move {
+                        let mut response =
+                            Response::builder().header(header::CONTENT_TYPE, "application/json");
+
+                        if let Some(token) = header_token {
+                            response = response.header(NEXT_CONTINUATION_TOKEN_HEADER, token);
+                        }
+                        response.body(Body::from(history.read().clone())).unwrap()
+                    },
+                ),
             )
             .with_state(history);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -4252,19 +4297,21 @@ mod tests {
         .unwrap()
     }
 
-    /// A page that hands back a continuation token leaves events of the window unread, so the
-    /// read reports the page's rows and marks the set incomplete; without a token the same page
-    /// reads complete.
+    /// A page that hands back a continuation token, in the body or only in the
+    /// `Next-Continuation-Token` header, leaves events of the window unread, so the read reports
+    /// the page's rows and marks the set incomplete; without a token the same page reads complete.
     #[rstest]
-    #[case::token(Some("c2ltYjE3OA=="), false)]
-    #[case::no_token(None, true)]
+    #[case::body_token(Some("c2ltYjE3OA=="), None, false)]
+    #[case::header_token(None, Some("c2ltYjE3OA=="), false)]
+    #[case::no_token(None, None, true)]
     #[tokio::test]
     async fn test_request_order_status_reports_marks_a_page_with_a_continuation_token_incomplete(
-        #[case] continuation_token: Option<&str>,
+        #[case] body_token: Option<&str>,
+        #[case] header_token: Option<&'static str>,
         #[case] expected_complete: bool,
     ) {
-        let history = Arc::new(RwLock::new(history_page("Limit", continuation_token)));
-        let client = history_test_client(history).await;
+        let history = Arc::new(RwLock::new(history_page("Limit", body_token)));
+        let client = history_test_client(history, header_token).await;
         cache_test_futures_instrument(&client);
 
         let (reports, complete) = client
@@ -4289,6 +4336,45 @@ mod tests {
         );
     }
 
+    /// A closed order does not reopen: a refused edit logged after the cancel carries the order as
+    /// it stood before the cancel, so the order is reported canceled although the refusal is
+    /// stamped later.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_keep_a_closed_order_closed_after_a_refused_edit() {
+        let order = |last_update_ms: u64| {
+            format!(
+                r#"{{"uid":"H-CLOSED","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":{last_update_ms}}}"#
+            )
+        };
+        // Newest first, as the venue sorts: the refused edit at T2, the cancel at T1, the
+        // placement at T0.
+        let page = format!(
+            r#"{{"elements":[{{"uid":"e3","timestamp":1680877400000,"event":{{"OrderEditRejected":{{"oldOrder":{},"reason":"order_for_edit_not_found"}}}}}},{{"uid":"e2","timestamp":1680877300000,"event":{{"OrderCancelled":{{"order":{},"reason":"cancelled_by_user"}}}}}},{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{},"reason":"new_user_order"}}}}}}]}}"#,
+            order(1680876930250),
+            order(1680877300000),
+            order(1680876930250),
+        );
+        let client = history_test_client(Arc::new(RwLock::new(page)), None).await;
+        cache_test_futures_instrument(&client);
+
+        let (reports, complete) = client
+            .request_order_status_reports_checked(
+                AccountId::from("KRAKEN-001"),
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        assert!(complete);
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0].venue_order_id, VenueOrderId::from("H-CLOSED"));
+        assert_eq!(reports[0].order_status, OrderStatus::Canceled);
+    }
+
     /// A history row the projection cannot represent marks the checked read incomplete while
     /// the rows it can represent are still reported.
     #[rstest]
@@ -4296,7 +4382,7 @@ mod tests {
     async fn test_request_order_status_reports_marks_the_set_incomplete_for_a_skipped_history_row()
     {
         let history = Arc::new(RwLock::new(history_page("Limit", None)));
-        let client = history_test_client(history.clone()).await;
+        let client = history_test_client(history.clone(), None).await;
         let instrument_id = cache_test_futures_instrument(&client);
         let account_id = AccountId::from("KRAKEN-001");
 
