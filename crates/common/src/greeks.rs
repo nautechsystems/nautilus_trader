@@ -472,6 +472,20 @@ impl GreeksCalculator {
 
         let same_venue_id = InstrumentId::from(format!("{underlying}.{}", instrument_id.venue));
         let cache = self.cache.borrow();
+        let mut cross_venue_underlyings = self.cross_venue_underlyings.borrow_mut();
+
+        // Forget a remembered match once it leaves the cache, so adding it back later goes
+        // through the ambiguity check again.
+        let remembered_id = match cross_venue_underlyings.get(&underlying) {
+            Some(&underlying_id) if cache.instrument(&underlying_id).is_some() => {
+                Some(underlying_id)
+            }
+            Some(_) => {
+                cross_venue_underlyings.remove(&underlying);
+                None
+            }
+            None => None,
+        };
 
         // A futures spread cached for the option's venue stands in for an uncached underlying
         if cache.instrument(&same_venue_id).is_some()
@@ -483,9 +497,7 @@ impl GreeksCalculator {
             return Ok(same_venue_id);
         }
 
-        if let Some(&underlying_id) = self.cross_venue_underlyings.borrow().get(&underlying)
-            && cache.instrument(&underlying_id).is_some()
-        {
+        if let Some(underlying_id) = remembered_id {
             return Ok(underlying_id);
         }
 
@@ -502,9 +514,7 @@ impl GreeksCalculator {
         match matches.len() {
             0 => Ok(same_venue_id),
             1 => {
-                self.cross_venue_underlyings
-                    .borrow_mut()
-                    .insert(underlying, matches[0]);
+                cross_venue_underlyings.insert(underlying, matches[0]);
                 Ok(matches[0])
             }
             _ => {
@@ -1964,6 +1974,56 @@ mod tests {
             .unwrap();
 
         assert_eq!(underlying_id, InstrumentId::from("AAPL.ARCX"));
+    }
+
+    #[rstest]
+    #[case::no_underlying_cached(&[])]
+    #[case::same_venue_cached(&["AAPL.OPRA"])]
+    fn test_resolve_underlying_instrument_id_forgets_match_once_purged(
+        #[case] cached_while_purged: &[&str],
+    ) {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS"]);
+        calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        {
+            let mut cache = calculator.cache.borrow_mut();
+            cache.purge_instrument(InstrumentId::from("AAPL.XNAS"));
+
+            for equity_id in cached_while_purged {
+                cache
+                    .add_instrument(InstrumentAny::Equity(equity_with_id(equity_id)))
+                    .unwrap();
+            }
+        }
+        calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        {
+            let mut cache = calculator.cache.borrow_mut();
+            for equity_id in cached_while_purged {
+                cache.purge_instrument(InstrumentId::from(*equity_id));
+            }
+
+            for equity_id in ["AAPL.XNAS", "AAPL.ARCX"] {
+                cache
+                    .add_instrument(InstrumentAny::Equity(equity_with_id(equity_id)))
+                    .unwrap();
+            }
+        }
+        let error = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Ambiguous underlying for option AAPL250417C00150000.OPRA: AAPL.ARCX, AAPL.XNAS"
+        );
     }
 
     #[rstest]
