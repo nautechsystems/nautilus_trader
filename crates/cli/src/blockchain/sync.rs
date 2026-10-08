@@ -141,7 +141,7 @@ pub(crate) async fn run_sync_blocks(
         database.database,
     );
     let config = BlockchainDataClientConfig::builder()
-        .chain(chain.clone())
+        .chain(Arc::clone(&chain))
         .http_rpc_url(String::new().into()) // we dont need to http rpc url for block syncing
         .use_hypersync_for_live_data(true)
         .postgres_cache_database_config(postgres_connect_options)

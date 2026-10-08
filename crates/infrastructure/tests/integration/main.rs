@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![warn(clippy::clone_on_ref_ptr)]
+
 mod test_cache_database_postgres;
 mod test_cache_postgres;
 mod test_cache_redis;
