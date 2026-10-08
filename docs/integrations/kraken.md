@@ -202,8 +202,9 @@ unknown to the platform and were registered as 8-decimal crypto; `EUR` and `USD`
 with 2 decimals, and `JPY` with none. That affects the instrument quote currency, REST fill
 commissions and the PnL derived from them. Account balances keep their 8-decimal precision, because
 the balance parsers construct their own currency from the code rather than resolving a registered
-one. The single exception runs the other way: the futures flex `portfolioValue` entry was built on
-the 2-decimal `USD` and now shares the 8-decimal balance currency, which widens it without loss.
+one. Two exceptions run the other way: the futures flex `portfolioValue` entry and the account-wide
+USD margin entries were built on the 2-decimal `USD` and now share the 8-decimal balance currency,
+which widens them without loss.
 :::
 
 ### Spot markets
@@ -701,6 +702,15 @@ every holding it covers and an absent report is genuine evidence of flat.
 
 - Open positions: Fetches all active futures positions.
 - Real-time data: Includes unrealized funding, average price, and position size.
+
+**Account state:**
+
+- Balances: One entry per asset across wallets, as described under Currency codes.
+- Margins: One entry per currency, summed across wallets as balances are, at eight decimals. A flex
+  wallet's requirement is in USD, from its `initialMargin` and `maintenanceMargin`. A
+  single-collateral wallet's is in its `currency`, so a `fi_xbtusd` requirement is reported in BTC,
+  and its available funds bound that currency's balance alone. A wallet without a usable
+  `currency` contributes no margin entry, reports none of its assets as locked, and logs a warning.
 
 :::note
 **Futures time filtering**: The Kraken Futures fills endpoint does not support
