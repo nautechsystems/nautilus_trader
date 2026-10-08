@@ -2487,7 +2487,7 @@ fn test_pipeline_unsupported_variant_drops_response(
     let parent_id = UUID4::new();
     let leg_id = UUID4::new();
 
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         venue,
         Ustr::from("ES"),
         Ustr::from("USD"),

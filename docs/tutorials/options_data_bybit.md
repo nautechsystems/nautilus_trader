@@ -261,7 +261,7 @@ chain stream in the V5 public WebSocket docs.
 **`OptionSeriesId`** identifies a single expiry series:
 
 ```rust
-let series_id = OptionSeriesId::new(
+let series_id = OptionSeriesId::new_derived(
     Venue::new("BYBIT"),    // venue
     Ustr::from("BTC"),      // underlying
     Ustr::from("USDT"),     // settlement currency

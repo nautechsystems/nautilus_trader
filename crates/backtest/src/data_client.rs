@@ -392,7 +392,7 @@ mod tests {
         let venue = Venue::new("BACKTEST");
         let cache = Rc::new(RefCell::new(Cache::default()));
         let client = BacktestDataClient::new(client_id, venue, cache);
-        let series_id = OptionSeriesId::new(
+        let series_id = OptionSeriesId::new_derived(
             venue,
             Ustr::from("BTC"),
             Ustr::from("BTC"),

@@ -7,12 +7,21 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added Rust candidate option IDs for supported CME Globex and OSI equity/index contracts, thanks @faysou
+- Added reference instruments to `OptionSeriesId` with compatible derived-reference serialization, thanks @faysou
+- Added `OptionSideFilter` and Rust `StrikeSearchProfile` model types for option selection, thanks @faysou
 - Added negative price support for futures, except inverse futures (#5190), thanks @DeLuke84
 - Added `BacktestDataConfig.batch_deltas` for batched book delta replay (#5215), thanks for reporting @nicezic
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 
 ### Breaking Changes
 
+- Changed Rust `OptionSeriesId::new` to require a reference instrument; use `new_derived` to derive it
+- Changed Rust `OptionSeriesId::from_expiry` and `from_expiry_ns`; pass `None` as the final argument to derive a reference
+- Changed Rust `OptionSeriesId::from_crypto_option` and struct literals to require `underlying_instrument_id`
+- Changed `OptionSeriesId` equality, hashing, and ordering to include the reference instrument
+- Changed `OptionSeriesId` strings with fractional expiries, including topics and handler IDs, to retain nanoseconds
+- Changed `OptionSeriesId` to reject empty or whitespace-only underlying symbols when deriving a reference
 - Changed `BacktestNode` to batch book deltas by default, so fills can differ; set `batch_deltas=False` to opt out
 - Changed batched `BacktestNode` replay to reject deltas without a closing `F_LAST`; `batch_deltas=False` opts out
 

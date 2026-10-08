@@ -1730,7 +1730,7 @@ fn test_subscription_facade_sends_exact_command_matrix(
     let depth = NonZeroUsize::new(19);
     let interval_ms = NonZeroUsize::new(250).unwrap();
     let bar_type = BarType::from_str(&format!("{instrument_id}-3-MINUTE-LAST-EXTERNAL")).unwrap();
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         Venue::from("OPRA"),
         Ustr::from("AAPL"),
         Ustr::from("USD"),
@@ -2119,7 +2119,7 @@ fn test_release_subscriptions_emits_retained_unsubscribe_commands(
     let remaining_client_id = ClientId::from("RETAINED-REMAINING-CLIENT");
     let interval_ms = NonZeroUsize::new(347).unwrap();
     let bar_type = BarType::from_str(&format!("{instrument_id}-3-MINUTE-LAST-EXTERNAL")).unwrap();
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         Venue::from("OPRA"),
         Ustr::from("MSFT"),
         Ustr::from("USD"),
@@ -2623,7 +2623,7 @@ fn test_option_chain_resubscription_sends_edit_and_retains_latest_identity(
         MessagingSwitchboard::data_engine_queue_execute(),
         handler,
     );
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         Venue::from("OPRA"),
         Ustr::from("AAPL"),
         Ustr::from("USD"),
@@ -4452,7 +4452,7 @@ fn test_subscribe_and_receive_option_chain(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         Venue::from("OPRA"),
         Ustr::from("AAPL"),
         Ustr::from("USD"),
@@ -4782,7 +4782,7 @@ fn test_unsubscribe_option_chain(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         Venue::from("OPRA"),
         Ustr::from("AAPL"),
         Ustr::from("USD"),
@@ -6021,7 +6021,7 @@ fn test_release_subscriptions_removes_every_handler_family_and_is_idempotent(
     let instrument_id = audusd_sim.id;
     let interval_ms = NonZeroUsize::new(100).unwrap();
     let bar_type = BarType::from_str(&format!("{instrument_id}-1-MINUTE-LAST-INTERNAL")).unwrap();
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         Venue::from("OPRA"),
         Ustr::from("AAPL"),
         Ustr::from("USD"),

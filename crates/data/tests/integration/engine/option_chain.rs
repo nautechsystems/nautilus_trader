@@ -350,6 +350,34 @@ fn test_external_option_chain_edit_moves_owner_to_new_client(
 }
 
 #[rstest]
+#[case("")]
+#[case("   ")]
+fn test_option_chain_update_skips_invalid_deserialized_underlying(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    #[case] underlying: &str,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock, cache.clone());
+    let option = nautilus_model::instruments::stubs::option_contract_appl();
+    let mut value = serde_json::to_value(option).unwrap();
+    value["underlying"] = json!(underlying);
+    let option: OptionContract = serde_json::from_value(value).unwrap();
+    let instrument = InstrumentAny::OptionContract(option);
+    data_engine.borrow_mut().process(&instrument);
+
+    assert_eq!(instrument.underlying(), Some(Ustr::from(underlying)));
+    assert_eq!(
+        cache
+            .borrow()
+            .instrument(&instrument.id())
+            .unwrap()
+            .underlying(),
+        Some(Ustr::from(underlying)),
+    );
+}
+
+#[rstest]
 fn test_subscribe_option_chain_fixed_range_creates_manager(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -449,6 +477,94 @@ fn test_subscribe_option_chain_rejects_zero_snapshot_interval(
 
     assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
     assert!(recorder.borrow().is_empty());
+}
+
+#[rstest]
+#[case(false, false)]
+#[case(false, true)]
+#[case(true, false)]
+#[case(true, true)]
+fn test_subscribe_option_chain_rejects_explicit_reference(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    #[case] dynamic: bool,
+    #[case] subscribed_derived: bool,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    register_mock_client(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+    cache
+        .borrow_mut()
+        .add_instrument(make_btc_option("50000.000", OptionKind::Call))
+        .unwrap();
+    let derived = make_series_id();
+
+    if subscribed_derived {
+        data_engine
+            .borrow_mut()
+            .execute(make_subscribe_option_chain(
+                derived,
+                vec![Price::from("50000.000")],
+                Some(client_id),
+                Some(venue),
+            ));
+    }
+
+    recorder.borrow_mut().clear();
+    let timers: Vec<String> = clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .map(String::from)
+        .collect();
+
+    let explicit = OptionSeriesId::new(
+        derived.venue,
+        derived.underlying,
+        derived.settlement_currency,
+        derived.expiration_ns,
+        InstrumentId::from("BTCUSDT.BINANCE"),
+    );
+
+    let command = if dynamic {
+        make_subscribe_option_chain_atm(explicit, client_id, venue)
+    } else {
+        make_subscribe_option_chain(
+            explicit,
+            vec![Price::from("50000.000")],
+            Some(client_id),
+            Some(venue),
+        )
+    };
+
+    data_engine.borrow_mut().execute(command);
+
+    assert!(!data_engine.borrow().has_option_chain_manager(&explicit));
+    assert_eq!(
+        data_engine.borrow().has_option_chain_manager(&derived),
+        subscribed_derived,
+    );
+    assert!(recorder.borrow().is_empty());
+    assert_eq!(
+        clock
+            .borrow()
+            .timer_names()
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>(),
+        timers,
+    );
 }
 
 #[rstest]
@@ -1635,7 +1751,7 @@ fn test_unsubscribe_option_chain_cancels_pending_reference_price_request(
         .execute(make_subscribe_option_chain_atm(series_id, client_id, venue));
     let request_id = option_chain_reference_price_request_id(&recorder);
 
-    let other_series_id = OptionSeriesId::new(
+    let other_series_id = OptionSeriesId::new_derived(
         venue,
         Ustr::from("BTC"),
         Ustr::from("BTC"),
@@ -1802,7 +1918,7 @@ fn test_option_chain_reference_price_timeout_tracks_concurrent_requests(
     let first_series = make_series_id();
     let second_expiration = first_series.expiration_ns + DurationNanos::from_secs(5);
 
-    let second_series = OptionSeriesId::new(
+    let second_series = OptionSeriesId::new_derived(
         venue,
         Ustr::from("BTC"),
         Ustr::from("BTC"),
@@ -2553,7 +2669,7 @@ fn make_option_chain_greeks(instrument_id: InstrumentId, underlying_price: f64) 
 }
 
 fn make_series_id() -> OptionSeriesId {
-    OptionSeriesId::new(
+    OptionSeriesId::new_derived(
         Venue::new("DERIBIT"),
         ustr::Ustr::from("BTC"),
         ustr::Ustr::from("BTC"),

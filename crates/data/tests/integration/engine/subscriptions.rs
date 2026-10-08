@@ -4385,7 +4385,7 @@ fn non_streamable_subscribe_cases(
     client_id: ClientId,
     venue: Venue,
 ) -> Vec<(&'static str, SubscribeCommand)> {
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         Venue::new("DERIBIT"),
         Ustr::from("BTC"),
         Ustr::from("BTC"),

@@ -90,6 +90,7 @@ canceller = "canceller"
 # Industry standard abbreviations and technical terms
 CMO = "CMO" # Chande Momentum Oscillator
 BSE = "BSE" # Bombay Stock Exchange
+RTO = "RTO" # CME Russell 2000 quarterly option root
 Pn = "Pn" # Part of PnL (Profit and Loss)
 PnL = "PnL" # Profit and Loss
 PnLs = "PnLs" # Plural of PnL

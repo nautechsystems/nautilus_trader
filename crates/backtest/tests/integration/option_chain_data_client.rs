@@ -110,7 +110,7 @@ fn test_atm_relative_subscription_unblocks_via_backtest_client() {
             .add_instrument(make_btc_option(strike, OptionKind::Put));
     }
 
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         venue,
         Ustr::from("BTC"),
         Ustr::from("BTC"),

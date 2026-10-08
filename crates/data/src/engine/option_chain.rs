@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::correctness::check_valid_string_utf8;
+
 use super::{
     ClientId, DataEngine, Debug, DeferredCommand, DurationNanos, Instrument, InstrumentAny,
     InstrumentClass, InstrumentId, OptionChainManager, OptionChainReferencePriceResponse,
@@ -138,9 +140,14 @@ impl DataEngine {
             return;
         };
 
+        if let Err(e) = check_valid_string_utf8(underlying, "underlying") {
+            log::warn!("Skipping option-chain update for {}: {e}", instrument.id());
+            return;
+        }
+
         let venue = instrument.id().venue;
         let settlement = instrument.settlement_currency().code;
-        let series_id = OptionSeriesId::new(venue, underlying, settlement, expiration_ns);
+        let series_id = OptionSeriesId::new_derived(venue, underlying, settlement, expiration_ns);
 
         // Clone Rc to release borrow on self.option_chain_managers before accessing self.clients
         let Some(manager_rc) = self.option_chain_managers.get(&series_id).cloned() else {
@@ -270,6 +277,14 @@ impl DataEngine {
     }
 
     pub(super) fn subscribe_option_chain(&mut self, cmd: &SubscribeOptionChain) {
+        if !cmd.series_id.is_derived() {
+            log::error!(
+                "Cannot subscribe option chain {}: explicit reference instruments are unsupported",
+                cmd.series_id,
+            );
+            return;
+        }
+
         self.drain_deferred_commands();
         let series_id = cmd.series_id;
         self.stop_option_chain_greeks_bootstrap(series_id);
@@ -296,70 +311,61 @@ impl DataEngine {
 
         // For dynamic strike ranges, request a reference price from the adapter
         // to enable instant bootstrap without waiting for the first WebSocket tick.
-        if !matches!(cmd.strike_range, StrikeRange::Fixed(_)) {
-            let resolved_client_id = self
+        if !matches!(cmd.strike_range, StrikeRange::Fixed(_))
+            && let Some(client_id) = self
                 .get_client(cmd.client_id.as_ref(), Some(&series_id.venue))
-                .map(|c| c.client_id);
+                .map(|c| c.client_id)
+            && let Some(instrument_id) = {
+                let cache = self.cache.borrow();
+                cache
+                    .instruments(&series_id.venue, Some(&series_id.underlying))
+                    .iter()
+                    .filter(|i| {
+                        i.instrument_class() == InstrumentClass::Option
+                            && i.expiration_ns() == Some(series_id.expiration_ns)
+                            && i.settlement_currency().code == series_id.settlement_currency
+                    })
+                    .min_by_key(|i| i.id())
+                    .map(|i| i.id())
+            }
+        {
+            let request_id = UUID4::new();
+            let ts_init = self.clock.borrow().timestamp_ns();
 
-            if let Some(client_id) = resolved_client_id {
-                let request_id = UUID4::new();
-                let ts_init = self.clock.borrow().timestamp_ns();
+            let request = RequestOptionChainReferencePrice::new(
+                series_id,
+                instrument_id,
+                Some(client_id),
+                request_id,
+                ts_init,
+                None,
+            );
+            let deadline_ns = ts_init.saturating_add(OPTION_CHAIN_REFERENCE_PRICE_TIMEOUT);
+            self.pending_option_chain_requests.insert(
+                request_id,
+                PendingOptionChainRequest {
+                    command: cmd.clone(),
+                    sample_instrument_id: instrument_id,
+                    deadline_ns,
+                },
+            );
 
-                let sample_instrument_id = {
-                    let cache = self.cache.borrow();
-                    cache
-                        .instruments(&series_id.venue, Some(&series_id.underlying))
-                        .iter()
-                        .filter(|i| {
-                            i.instrument_class() == InstrumentClass::Option
-                                && i.expiration_ns() == Some(series_id.expiration_ns)
-                                && i.settlement_currency().code == series_id.settlement_currency
-                        })
-                        .min_by_key(|i| i.id())
-                        .map(|i| i.id())
-                };
+            if !self.schedule_option_chain_reference_price_timeout() {
+                self.bootstrap_all_pending_option_chains();
+                return;
+            }
 
-                if let Some(instrument_id) = sample_instrument_id {
-                    let request = RequestOptionChainReferencePrice::new(
-                        series_id,
-                        instrument_id,
-                        Some(client_id),
-                        request_id,
-                        ts_init,
-                        None,
-                    );
-                    let deadline_ns = ts_init.saturating_add(OPTION_CHAIN_REFERENCE_PRICE_TIMEOUT);
-                    self.pending_option_chain_requests.insert(
-                        request_id,
-                        PendingOptionChainRequest {
-                            command: cmd.clone(),
-                            sample_instrument_id: instrument_id,
-                            deadline_ns,
-                        },
-                    );
+            let req_cmd = RequestCommand::OptionChainReferencePrice(request);
+            if let Err(e) = self.execute_request(req_cmd) {
+                log::warn!("Failed to request option-chain reference price for {series_id}: {e}");
 
-                    if !self.schedule_option_chain_reference_price_timeout() {
-                        self.bootstrap_all_pending_option_chains();
-                        return;
-                    }
-
-                    let req_cmd = RequestCommand::OptionChainReferencePrice(request);
-                    if let Err(e) = self.execute_request(req_cmd) {
-                        log::warn!(
-                            "Failed to request option-chain reference price for {series_id}: {e}"
-                        );
-
-                        if let Some(pending) =
-                            self.pending_option_chain_requests.remove(&request_id)
-                        {
-                            self.maintain_option_chain_reference_price_timeout();
-                            self.create_option_chain_manager_with_greeks_bootstrap(pending);
-                        }
-                    }
-
-                    return;
+                if let Some(pending) = self.pending_option_chain_requests.remove(&request_id) {
+                    self.maintain_option_chain_reference_price_timeout();
+                    self.create_option_chain_manager_with_greeks_bootstrap(pending);
                 }
             }
+
+            return;
         }
 
         self.create_option_chain_manager(cmd, None);

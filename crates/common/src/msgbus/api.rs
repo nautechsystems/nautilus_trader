@@ -3933,7 +3933,7 @@ mod tests {
             &DataResponse::OptionChainReferencePrice(OptionChainReferencePriceResponse::new(
                 correlation_id,
                 client_id,
-                OptionSeriesId::new(
+                OptionSeriesId::new_derived(
                     venue,
                     Ustr::from("BTC"),
                     Ustr::from("BTC"),

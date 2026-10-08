@@ -57,7 +57,7 @@ def test_option_series_id_from_expiry_and_from_str() -> None:
         (
             "DERIBIT:BTC:USD",
             "invalid `OptionSeriesId` value 'DERIBIT:BTC:USD': "
-            "expected format 'VENUE:UNDERLYING:SETTLEMENT:EXPIRY'",
+            "expected format 'VENUE:UNDERLYING:[REFERENCE:]SETTLEMENT:EXPIRY'",
         ),
         (
             ":BTC:USD:1700000000000000000",

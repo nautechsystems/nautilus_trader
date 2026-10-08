@@ -2642,7 +2642,7 @@ class Runtime:
         let client = native_execution_client.client;
 
         let series =
-            OptionSeriesId::new(Venue::from("SIM"), "BTC".into(), "USD".into(), 197.into());
+            OptionSeriesId::new_derived(Venue::from("SIM"), "BTC".into(), "USD".into(), 197.into());
 
         let request = RequestOptionChainReferencePrice::new(
             series,

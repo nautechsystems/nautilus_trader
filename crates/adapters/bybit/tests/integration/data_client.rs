@@ -651,7 +651,7 @@ async fn test_option_chain_reference_price_response(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
     let client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         *BYBIT_VENUE,
         Ustr::from("BTC"),
         Ustr::from("USDC"),
