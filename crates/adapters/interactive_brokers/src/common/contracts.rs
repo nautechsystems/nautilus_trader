@@ -92,12 +92,12 @@ impl ConfiguredContract {
         for (key, value) in entries {
             map.insert(key.to_string(), value);
         }
+
         Some(Value::Object(map))
     }
 
     fn chain_entries(&self) -> Vec<(&'static str, Value)> {
         let mut entries = Vec::new();
-
         if let Some(value) = self.build_options_chain {
             entries.push((KEY_BUILD_OPTIONS_CHAIN, Value::from(value)));
         }
@@ -194,7 +194,6 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
     };
 
     let get_f64 = |key: &str| -> f64 { obj.get(key).and_then(|v| v.as_f64()).unwrap_or(0.0) };
-
     let get_bool = |key: &str| -> bool { obj.get(key).and_then(|v| v.as_bool()).unwrap_or(false) };
 
     let parse_option_right = |key: &str| -> Option<OptionRight> {
@@ -217,6 +216,7 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
 
     // Parse security type
     let sec_type_str = get_str("secType");
+
     let security_type = if sec_type_str.is_empty() {
         SecurityType::Stock
     } else {
@@ -343,6 +343,7 @@ pub fn parse_configured_contract_from_json(json: &Value) -> anyhow::Result<Confi
     let build_futures_chain = configured_bool(obj, KEY_BUILD_FUTURES_CHAIN)?;
     let min_expiry_days = configured_u32(obj, KEY_MIN_EXPIRY_DAYS)?;
     let max_expiry_days = configured_u32(obj, KEY_MAX_EXPIRY_DAYS)?;
+
     let options_chain_exchange = match configured_string(obj, KEY_OPTIONS_CHAIN_EXCHANGE)? {
         Some(exchange) => Some(exchange),
         None => configured_string(obj, KEY_OPTIONS_CHAIN_EXCHANGE_ALT)?,

@@ -62,6 +62,7 @@ pub(super) fn parse_order_data_to_report(
         "IB order {} has invalid quantities",
         data.order_id
     );
+
     let mut report = parse_order_status_to_report(
         &OrderStatus {
             order_id: data.order_id,
@@ -154,6 +155,7 @@ pub(crate) fn fill_position_avg_px_from_fills(
                 fill.account_id == report.account_id && fill.instrument_id == report.instrument_id
             })
             .collect();
+
         fills.sort_by_key(|fill| fill.ts_event);
 
         if let Some((quantity, avg_px)) = netting_entry(&fills)
@@ -173,6 +175,7 @@ fn netting_entry(fills: &[&FillReport]) -> Option<(Decimal, Decimal)> {
     for fill in fills {
         let last_qty = fill.last_qty.as_decimal();
         let last_px = fill.last_px.as_decimal();
+
         let signed_qty = match fill.order_side {
             OrderSide::Buy => last_qty,
             OrderSide::Sell => -last_qty,
@@ -184,6 +187,7 @@ fn netting_entry(fills: &[&FillReport]) -> Option<(Decimal, Decimal)> {
         } else if last_qty > quantity.abs() {
             avg_px = last_px;
         }
+
         quantity += signed_qty;
     }
 
@@ -206,6 +210,7 @@ pub(crate) fn link_order_contingencies(
     orders: &[ibapi::orders::Order],
 ) {
     debug_assert_eq!(reports.len(), orders.len());
+
     let order_ids: Vec<ClientOrderId> = reports
         .iter()
         .map(|report| {
@@ -252,6 +257,7 @@ pub(crate) fn link_order_contingencies(
                 | ibapi::orders::OcaType::ReduceWithoutBlock => Some(ContingencyType::Ouo),
                 _ => None,
             };
+
             let linked: Vec<ClientOrderId> = members
                 .iter()
                 .filter(|member| **member != index)
@@ -447,6 +453,7 @@ pub fn parse_order_status_to_report(
 
     // Get quantity
     let total_quantity = order.map_or(0.0, |order| order.total_quantity);
+
     let quantity = Quantity::new(
         total_quantity.max(order_status.filled + order_status.remaining),
         size_precision,
@@ -705,9 +712,11 @@ pub fn parse_execution_time(time_str: &str) -> anyhow::Result<UnixNanos> {
     // Hyphenated, space-less form (e.g. "20250225-15:15:00") is always UTC.
     if !time_str.contains(' ') {
         let normalized = time_str.replace('-', " ");
+
         let dt = DateTime::strptime(NAIVE_FORMAT, &normalized).map_err(|e| {
             anyhow::anyhow!("Failed to parse execution timestamp '{time_str}': {e}")
         })?;
+
         return datetime_to_unix_nanos(Offset::UTC.to_timestamp(dt)?, time_str);
     }
 
@@ -715,9 +724,11 @@ pub fn parse_execution_time(time_str: &str) -> anyhow::Result<UnixNanos> {
     // The timezone token itself never contains a space, so `splitn(3, ' ')`
     // correctly groups IANA names such as "America/New_York".
     let mut parts = time_str.splitn(3, ' ');
+
     let (Some(date), Some(time)) = (parts.next(), parts.next()) else {
         anyhow::bail!("Invalid execution time format: {time_str}");
     };
+
     let tz_str = parts.next().unwrap_or("").trim();
 
     let naive_str = format!("{date} {time}");
@@ -749,6 +760,7 @@ fn localize_with_zone(dt: DateTime, tz_str: &str, time_str: &str) -> anyhow::Res
             "Unrecognized execution timezone '{tz_str}' in '{time_str}'. Configure TWS / IB Gateway to emit a standard timezone (e.g. UTC)"
         )
     })?;
+
     let ambiguous = zone.to_ambiguous_timestamp(dt);
     match ambiguous.offset() {
         AmbiguousOffset::Unambiguous { .. } => Ok(ambiguous.unambiguous()?),
@@ -835,6 +847,7 @@ mod tests {
             None,
             Some(Decimal::from_str("229.81").unwrap()),
         )];
+
         let other_fill = FillReport::new(
             account_id,
             InstrumentId::from("AAPL.NASDAQ"),
@@ -851,6 +864,7 @@ mod tests {
             UnixNanos::default(),
             None,
         );
+
         let mut fill_reports: Vec<_> = fills
             .into_iter()
             .enumerate()
@@ -874,6 +888,7 @@ mod tests {
                 )
             })
             .collect();
+
         fill_reports.push(other_fill);
 
         fill_position_avg_px_from_fills(&mut reports, &fill_reports);
@@ -888,6 +903,7 @@ mod tests {
     fn test_fill_missing_avg_px_uses_fill_reports() {
         let instrument_id = InstrumentId::from("ESZ6.XCME");
         let account_id = AccountId::from("IB-DU001");
+
         let order_report = |venue_order_id: &str, avg_px: Option<Decimal>| {
             let mut report = OrderStatusReport::new(
                 account_id,
@@ -908,6 +924,7 @@ mod tests {
             report.avg_px = avg_px;
             report
         };
+
         let fill = |venue_order_id: &str, trade_id: &str, qty: u64, px: &str| {
             FillReport::new(
                 account_id,
@@ -926,6 +943,7 @@ mod tests {
                 None,
             )
         };
+
         let mut reports = vec![
             order_report("PERM-1", None),
             order_report("PERM-2", Some(Decimal::from(7))),
@@ -1158,6 +1176,7 @@ mod tests {
     #[rstest]
     fn test_parse_order_status_to_report_spread_allows_negative_avg_fill_price() {
         let instrument_provider = create_test_instrument_provider();
+
         let instrument_id = InstrumentId::new(
             Symbol::from("(1)SPY C400___((1))SPY C410"),
             Venue::from("SMART"),
@@ -1243,6 +1262,7 @@ mod tests {
             why_held: String::new(),
             market_cap_price: Some(0.0),
         };
+
         let order = Order {
             action: Action::Buy,
             total_quantity: 10.0,
@@ -1274,12 +1294,14 @@ mod tests {
     fn test_parse_order_status_to_report_recovers_completed_order_quantity() {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Filled,
             filled: 3.0,
             remaining: 0.0,
             ..Default::default()
         };
+
         let order = Order {
             total_quantity: 0.0,
             filled_quantity: 3.0,
@@ -1304,11 +1326,13 @@ mod tests {
     fn test_parse_order_status_to_report_sets_stop_trigger_type() {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Cancelled,
             remaining: 1.0,
             ..Default::default()
         };
+
         let order = Order {
             total_quantity: 1.0,
             order_type: "STP".to_string(),
@@ -1355,11 +1379,13 @@ mod tests {
     ) {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Filled,
             filled: 1.0,
             ..Default::default()
         };
+
         let order = Order {
             total_quantity: 1.0,
             order_type: "LMT".to_string(),
@@ -1398,11 +1424,13 @@ mod tests {
     ) {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Filled,
             filled: 1.0,
             ..Default::default()
         };
+
         let order = Order {
             total_quantity: 1.0,
             order_type: ib_order_type.to_string(),
@@ -1932,6 +1960,7 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
+
         assert_eq!(
             links,
             vec![
@@ -2005,6 +2034,7 @@ mod tests {
         #[case] expected: Option<Quantity>,
     ) {
         let instrument_provider = create_test_instrument_provider();
+
         let order = Order {
             total_quantity: 5.0,
             order_type: "LMT".to_string(),
@@ -2012,6 +2042,7 @@ mod tests {
             display_size,
             ..Default::default()
         };
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Submitted,
             remaining: 5.0,
@@ -2039,6 +2070,7 @@ mod tests {
         #[case] expected_ts_last: u64,
     ) {
         let instrument_provider = create_test_instrument_provider();
+
         let mut data = OrderData {
             order_id: 1,
             order: Order {
@@ -2048,6 +2080,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         data.order_state.completed_time = completed_time.to_string();
 
         let report = parse_order_data_to_report(

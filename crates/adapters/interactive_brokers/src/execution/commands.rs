@@ -106,6 +106,7 @@ impl InteractiveBrokersExecutionClient {
         )?;
 
         let ts_event = clock.get_time_ns();
+
         let event = OrderSubmitted::new(
             cmd.order_init.trader_id,
             cmd.strategy_id,
@@ -156,6 +157,7 @@ impl InteractiveBrokersExecutionClient {
         }
 
         let trailing_offset_type = trailing_offset_type?;
+
         if matches!(
             trailing_offset_type,
             TrailingOffsetType::Price | TrailingOffsetType::BasisPoints
@@ -244,7 +246,6 @@ impl InteractiveBrokersExecutionClient {
         }
 
         let price_magnifier = instrument_provider.get_price_magnifier(&cmd.instrument_id) as f64;
-
         if let Some(price) = cmd.price {
             ib_order.limit_price = Some(price.as_f64() / price_magnifier);
         }
@@ -275,6 +276,7 @@ impl InteractiveBrokersExecutionClient {
                 } else {
                     ib_order.aux_price = Some(trailing_offset);
                 }
+
                 ib_order.trail_stop_price = Some(converted_trigger_price);
             } else {
                 ib_order.aux_price = Some(converted_trigger_price);
@@ -339,6 +341,7 @@ impl InteractiveBrokersExecutionClient {
                             order.instrument_id = cmd.instrument_id;
                         }
                     }
+
                     Self::mark_pending_modify(cmd, ib_order_id, orders, &ib_order)?;
 
                     if let Err(e) = client.submit_order(ib_order_id, &contract, &ib_order).await {
@@ -411,6 +414,7 @@ impl InteractiveBrokersExecutionClient {
             // IB moves a trailing stop's trigger with the market, so only a requested one is checked
             trail_stop_price: cmd.trigger_price.and(ib_order.trail_stop_price),
         });
+
         Ok(())
     }
 
@@ -488,6 +492,7 @@ impl InteractiveBrokersExecutionClient {
             )?;
 
             let ts_event = clock.get_time_ns();
+
             let event = OrderSubmitted::new(
                 order.trader_id(),
                 strategy_id,
@@ -519,6 +524,7 @@ impl InteractiveBrokersExecutionClient {
                         order.client_order_id()
                     );
                 }
+
                 Self::cancel_untransmitted_order_list_predecessors(
                     &orders[..index],
                     &ib_order_ids,
@@ -592,6 +598,7 @@ impl InteractiveBrokersExecutionClient {
                             )
                         })?,
                 };
+
                 ib_order.parent_id = parent_ib_order_id;
             }
 
@@ -619,6 +626,7 @@ impl InteractiveBrokersExecutionClient {
 
         for order in predecessors {
             let client_order_id = order.client_order_id();
+
             let Some(ib_order_id) = ib_order_ids.get(&client_order_id).copied() else {
                 continue;
             };
@@ -667,6 +675,7 @@ impl InteractiveBrokersExecutionClient {
     ) -> anyhow::Result<()> {
         for order in predecessors {
             let client_order_id = order.client_order_id();
+
             let Some(ib_order_id) = ib_order_ids.get(&client_order_id).copied() else {
                 continue;
             };
@@ -690,6 +699,7 @@ impl InteractiveBrokersExecutionClient {
             });
 
             let ts_event = clock.get_time_ns();
+
             let event = OrderCanceled::new(
                 order.trader_id(),
                 strategy_id,
@@ -764,6 +774,7 @@ impl InteractiveBrokersExecutionClient {
                 Self::remove_order_tracking(ib_order_id, context.client_order_id, orders)?;
 
                 let reason = format!("{failure_prefix}: {reason}");
+
                 let event = OrderRejected::new(
                     context.trader_id,
                     context.strategy_id,
@@ -834,6 +845,7 @@ mod tests {
             trailing_percent,
             ..Default::default()
         };
+
         let mut cmd = modify_trigger_cmd();
         cmd.params = trailing_offset.map(|offset| {
             let mut params = Params::new();
@@ -861,6 +873,7 @@ mod tests {
             trail_stop_price: Some(148.0),
             ..Default::default()
         };
+
         let mut ib_order = original.clone();
 
         let error = InteractiveBrokersExecutionClient::apply_modify_fields_to_ib_order(

@@ -61,6 +61,7 @@ impl InteractiveBrokersExecutionClient {
             exec_data.execution.perm_id,
             &exec_data.execution.order_reference,
         )?;
+
         let context = match &correlation {
             OrderCorrelation::Tracked { context, .. }
             | OrderCorrelation::Duplicate { context, .. } => Some(context),
@@ -84,11 +85,13 @@ impl InteractiveBrokersExecutionClient {
                     "IB execution {} conflicts with its tracked contract",
                     exec_data.execution.execution_id
                 );
+
                 let expected_side = if context.order_side == OrderSide::Buy {
                     "BOT"
                 } else {
                     "SLD"
                 };
+
                 anyhow::ensure!(
                     matches!(&correlation, OrderCorrelation::Duplicate { .. })
                         || exec_data.execution.side.as_str() == expected_side,
@@ -107,6 +110,7 @@ impl InteractiveBrokersExecutionClient {
                         }
                     }
                 }
+
                 let client_order_id = context.client_order_id;
                 Ok((order_id, Some(context), Some(client_order_id)))
             }
@@ -163,6 +167,7 @@ impl InteractiveBrokersExecutionClient {
             .spawner()
             .context("failed to acquire IB execution session task spawner")?;
         let cancellation_token = tasks.cancellation_token();
+
         let venue_ctx = NoticeVenueContext {
             client: client.as_arc().clone(),
             request_timeout_secs: self.config.request_timeout,
@@ -220,6 +225,7 @@ impl InteractiveBrokersExecutionClient {
             .spawner()
             .context("failed to acquire IB execution session task spawner")?;
         let cancellation_token = tasks.cancellation_token();
+
         let venue_ctx = NoticeVenueContext {
             client: client.as_arc().clone(),
             request_timeout_secs: self.config.request_timeout,
@@ -460,12 +466,15 @@ impl InteractiveBrokersExecutionClient {
             } else {
                 tracing::error!("Received IB error notice: {notice}");
             }
+
             return Ok(());
         };
+
         let order = {
             let state = orders.lock()?;
             state.active_orders.get(&order_id).cloned()
         };
+
         let Some(order) = order else {
             // The transport forwards every request-scoped error to the order update
             // stream; ids that do not resolve to a tracked order belong to data or
@@ -483,8 +492,10 @@ impl InteractiveBrokersExecutionClient {
                     notice
                 );
             }
+
             return Ok(());
         };
+
         let client_order_id = order.client_order_id;
 
         if order.accepted {
@@ -610,6 +621,7 @@ impl InteractiveBrokersExecutionClient {
                 account_id,
             );
         }
+
         Ok(())
     }
 
@@ -780,6 +792,7 @@ impl InteractiveBrokersExecutionClient {
                 );
                 return;
             };
+
             // A terminal order was already closed by the update stream during the query
             let Some(tracked) = state.active_orders.get(&ib_order_id) else {
                 tracing::debug!(
@@ -787,6 +800,7 @@ impl InteractiveBrokersExecutionClient {
                 );
                 return;
             };
+
             Self::absent_order_terminal_event(
                 completed,
                 rejection_reason,
@@ -841,6 +855,7 @@ impl InteractiveBrokersExecutionClient {
                     _ => {}
                 }
             }
+
             Ok(false)
         })
         .await
@@ -872,6 +887,7 @@ impl InteractiveBrokersExecutionClient {
                     _ => {}
                 }
             }
+
             Ok(None)
         })
         .await
@@ -907,6 +923,7 @@ impl InteractiveBrokersExecutionClient {
                 ))
             });
         };
+
         let venue_order_id = ib_venue_order_id(ib_order_id, perm_id);
 
         // A partially filled order cannot be rejected, so an Inactive remainder is canceled
@@ -1024,6 +1041,7 @@ impl InteractiveBrokersExecutionClient {
                 if !Self::execution_in_account(exec_data, ib_account)? {
                     return Ok(());
                 }
+
                 Self::execution_context(exec_data, orders, instrument_provider, account_id)?;
                 // Record the own-fill delta immediately so the position stream cannot
                 // observe the post-fill quantity before the fill is known; the id
@@ -1095,6 +1113,7 @@ impl InteractiveBrokersExecutionClient {
 
                 {
                     let mut cache = commission_cache.lock();
+
                     // IB uses -1.0 as a pending-sentinel before the real commission arrives;
                     // clamp only that sentinel to zero (legitimate rebates can be negative).
                     let commission_value = if commission.commission == -1.0_f64 {
@@ -1102,6 +1121,7 @@ impl InteractiveBrokersExecutionClient {
                     } else {
                         commission.commission
                     };
+
                     cache.insert(
                         commission.execution_id.clone(),
                         (commission_value, commission.currency.clone()),
@@ -1157,6 +1177,7 @@ impl InteractiveBrokersExecutionClient {
                     if order_data.order.account != ib_account {
                         return Ok(());
                     }
+
                     let mut normalized_order = order_data.clone();
                     let correlation = orders.lock()?.correlate(
                         order_data.order.client_id,
@@ -1175,6 +1196,7 @@ impl InteractiveBrokersExecutionClient {
                             "IB order reference has conflicting instrument identity"
                         );
                     }
+
                     let sibling = orders
                         .lock()?
                         .observe_order_data(order_data, account_id, false)?;
@@ -1210,6 +1232,7 @@ impl InteractiveBrokersExecutionClient {
                     if let OrderCorrelation::Tracked { order_id, .. } = correlation {
                         normalized_order.order_id = order_id;
                     }
+
                     let order_data = &normalized_order;
                     let status_str = order_data.order_state.status.as_str();
                     tracing::debug!(
@@ -1246,8 +1269,10 @@ impl InteractiveBrokersExecutionClient {
                                     Ok,
                                 )?
                         };
+
                         let venue_order_id =
                             parse::ib_venue_order_id(order_data.order_id, order_data.order.perm_id);
+
                         if Self::emit_order_accepted_if_needed(
                             order_data.order_id,
                             venue_order_id,
@@ -1309,6 +1334,7 @@ impl InteractiveBrokersExecutionClient {
                 .get(&order_data.order_id)
                 .map(|order| (order.trader_id, order.strategy_id))
         };
+
         let Some((trader_id, strategy_id)) = actor_ids else {
             // External orders whose `order_ref` parses as a client order id refresh
             // through here without tracked state; nothing to update.
@@ -1325,6 +1351,7 @@ impl InteractiveBrokersExecutionClient {
                 if order.perm_id == 0 && order_data.order.perm_id != 0 {
                     order.perm_id = order_data.order.perm_id;
                 }
+
                 // Clear the pending modify only when this openOrder reflects the
                 // requested values; an unrelated refresh (e.g. induced by an
                 // all-open-orders query) must not resolve it.
@@ -1352,11 +1379,13 @@ impl InteractiveBrokersExecutionClient {
             if order.last_update == update {
                 return Ok(());
             }
+
             order.last_update = update;
         }
 
         let venue_order_id =
             parse::ib_venue_order_id(order_data.order_id, order_data.order.perm_id);
+
         let event = OrderUpdated::new(
             trader_id,
             strategy_id,
@@ -1455,17 +1484,21 @@ impl InteractiveBrokersExecutionClient {
             orders.lock()?.archive_finished_groups();
             return Ok(());
         }
+
         let correlation =
             orders
                 .lock()?
                 .correlate(status.client_id, status.order_id, status.perm_id, "")?;
         let mut normalized = status.clone();
+
         let order = match correlation {
             OrderCorrelation::Tracked { order_id, context } => {
                 let state = orders.lock()?;
+
                 let Some(active) = state.active_orders.get(&order_id) else {
                     return Ok(());
                 };
+
                 anyhow::ensure!(
                     active.client_order_id == context.client_order_id,
                     "IB status refers to an order ID reused by another order"
@@ -1483,6 +1516,7 @@ impl InteractiveBrokersExecutionClient {
             }
             OrderCorrelation::Untracked { .. } => return Ok(()),
         };
+
         let status = &normalized;
         let client_order_id = order.client_order_id;
         let instrument_id = order.instrument_id;
@@ -1737,14 +1771,17 @@ impl InteractiveBrokersExecutionClient {
         if !Self::execution_in_account(exec_data, ib_account)? {
             return Ok(());
         }
+
         let (tracking_order_id, tracked_context, correlated_id) =
             Self::execution_context(exec_data, orders, instrument_provider, account_id)?;
+
         let client_order_id = correlated_id.unwrap_or_else(|| {
             ClientOrderId::from(
                 parse::ib_venue_order_id(exec_data.execution.order_id, exec_data.execution.perm_id)
                     .as_str(),
             )
         });
+
         let instrument_id = if let Some(context) = tracked_context.as_ref() {
             context.instrument_id
         } else if let Some(cached_id) =
@@ -1759,6 +1796,7 @@ impl InteractiveBrokersExecutionClient {
             (0.0, exec_data.contract.currency.to_string())
         } else {
             let mut cache = commission_cache.lock();
+
             let Some((commission, commission_currency)) =
                 cache.remove(&exec_data.execution.execution_id)
             else {
@@ -1768,6 +1806,7 @@ impl InteractiveBrokersExecutionClient {
                 );
                 return Ok(());
             };
+
             (commission, commission_currency)
         };
 
@@ -1788,6 +1827,7 @@ impl InteractiveBrokersExecutionClient {
         let spread_instrument_id = tracked_context
             .as_ref()
             .map(|context| context.instrument_id);
+
         let is_spread = if let Some(spread_id) = spread_instrument_id {
             if let Some(instrument) = instrument_provider.find(&spread_id) {
                 instrument.is_spread()
@@ -1833,6 +1873,7 @@ impl InteractiveBrokersExecutionClient {
                     );
                     return Ok(());
                 }
+
                 order.spread_fill_ids.insert(fill_id);
             }
         }
@@ -1876,6 +1917,7 @@ impl InteractiveBrokersExecutionClient {
                             exec_sender,
                         )?;
                     }
+
                     return Ok(());
                 }
             }
@@ -1900,6 +1942,7 @@ impl InteractiveBrokersExecutionClient {
                 fill_report.venue_order_id =
                     parse::ib_venue_order_id(tracking_order_id, context.perm_id);
             }
+
             let quote_currency = instrument_provider
                 .find(&context.instrument_id)
                 .with_context(|| {
@@ -1909,6 +1952,7 @@ impl InteractiveBrokersExecutionClient {
                     )
                 })?
                 .quote_currency();
+
             let event = OrderFilled::new(
                 context.trader_id,
                 context.strategy_id,
@@ -1943,6 +1987,7 @@ impl InteractiveBrokersExecutionClient {
             } else {
                 IbOrderSelector::OrderId(exec_data.execution.order_id)
             };
+
             Self::hold_fill(
                 Some(fill_report),
                 target,
@@ -1994,6 +2039,7 @@ impl InteractiveBrokersExecutionClient {
                 venue_ctx,
             );
         }
+
         exec_sender.send(ExecutionEvent::Report(ExecutionReport::Order(Box::new(
             report,
         ))))?;
@@ -2022,12 +2068,14 @@ impl InteractiveBrokersExecutionClient {
                     fill,
                 ))))?;
             }
+
             return Ok(());
         };
 
         if !orders.lock()?.hold_fill(target, fill) {
             return Ok(());
         }
+
         let client = Arc::clone(&venue_ctx.client);
         let timeout = FILL_HOLD_TIMEOUT.min(Duration::from_secs(venue_ctx.request_timeout_secs));
         let cancellation = venue_ctx.cancellation.child_token();
@@ -2071,6 +2119,7 @@ impl InteractiveBrokersExecutionClient {
                 ))))?;
             }
         }
+
         Ok(())
     }
 
@@ -2109,6 +2158,7 @@ impl InteractiveBrokersExecutionClient {
             .fills_held
             .remove(&target)
             .unwrap_or_default();
+
         let resolved = match result {
             Ok(Ok(Some(resolved))) => Some(resolved),
             Ok(Ok(None)) => {
@@ -2140,7 +2190,6 @@ impl InteractiveBrokersExecutionClient {
         if let Some((mut report, mut fills)) = resolved {
             if let Some(client_order_id) = client_order_id {
                 report.client_order_id = Some(client_order_id);
-
                 for fill in &mut fills {
                     fill.client_order_id = Some(client_order_id);
                 }
@@ -2151,11 +2200,13 @@ impl InteractiveBrokersExecutionClient {
                     .lock()?
                     .observe_duplicate_fills_resolved(perm_id, report.filled_qty.as_f64());
             }
+
             held.retain(|fill| {
                 !fills
                     .iter()
                     .any(|resolved| resolved.trade_id == fill.trade_id)
             });
+
             exec_sender.send(ExecutionEvent::Report(ExecutionReport::OrderWithFills(
                 Box::new(report),
                 fills,
@@ -2167,6 +2218,7 @@ impl InteractiveBrokersExecutionClient {
                 fill,
             ))))?;
         }
+
         Ok(())
     }
 
@@ -2193,9 +2245,11 @@ impl InteractiveBrokersExecutionClient {
         let avg_px = Price::new(converted_avg_price, instrument.price_precision());
 
         let mut state = orders.lock()?;
+
         let order = state.active_orders.get_mut(&order_id).with_context(|| {
             format!("Tracked state not found for Interactive Brokers order {order_id}")
         })?;
+
         order.avg_px = Some(avg_px);
 
         Ok(())

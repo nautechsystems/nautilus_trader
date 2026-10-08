@@ -76,6 +76,7 @@ pub fn py_list_to_contracts(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Contract>> {
     for item in list.iter() {
         contracts.push(py_to_contract(&item)?);
     }
+
     Ok(contracts)
 }
 
@@ -86,6 +87,7 @@ pub fn py_list_to_json_values(obj: &Bound<'_, PyAny>) -> PyResult<Vec<serde_json
     for item in list.iter() {
         values.push(py_to_json_value(&item)?);
     }
+
     Ok(values)
 }
 
@@ -158,6 +160,7 @@ pub fn contract_to_pydict<'py>(
             leg_dict.set_item("exemptCode", leg.exempt_code)?;
             combo_legs.append(leg_dict)?;
         }
+
         dict.set_item("comboLegs", combo_legs)?;
     }
 
@@ -268,6 +271,7 @@ pub fn contract_details_to_pyobject(
         for item in &details.sec_id_list {
             sec_id_list.set_item(&item.tag, &item.value)?;
         }
+
         details_dict.set_item("secIdList", sec_id_list)?;
     }
 

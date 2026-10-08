@@ -168,6 +168,7 @@ impl DockerizedIBGateway {
             let Some((timestamp, message)) = line.split_once(' ') else {
                 return false;
             };
+
             timestamp.parse::<Timestamp>().is_ok_and(|timestamp| {
                 timestamp >= started_at && Self::logs_indicate_ready(message)
             })
@@ -204,6 +205,7 @@ impl DockerizedIBGateway {
             TradingMode::Paper => "Paper",
             TradingMode::Live => "Live",
         };
+
         let port = Self::host_port_for_mode(config.trading_mode);
 
         // Generate container name
@@ -253,6 +255,7 @@ impl DockerizedIBGateway {
             .context("Gateway container start time is invalid")?;
         let since = i32::try_from(started_at.as_second())
             .context("Gateway container start time exceeds the Docker log API range")?;
+
         let logs_options = LogsOptions {
             stdout: true,
             stderr: true,
@@ -267,11 +270,13 @@ impl DockerizedIBGateway {
 
         while let Some(log_result) = logs_stream.next().await {
             let log_output = log_result.context("Failed to read log chunk")?;
+
             // Handle LogOutput enum variants
             let log_bytes = match log_output {
                 LogOutput::StdOut { message } | LogOutput::StdErr { message } => message,
                 LogOutput::StdIn { message } | LogOutput::Console { message } => message,
             };
+
             let log_string = String::from_utf8_lossy(&log_bytes);
             if Self::session_logs_indicate_ready(&log_string, started_at) {
                 logged_in = true;
@@ -292,6 +297,7 @@ impl DockerizedIBGateway {
             all: true,
             ..Default::default()
         };
+
         let containers = self
             .docker
             .list_containers(Some(list_options))
@@ -395,6 +401,7 @@ impl DockerizedIBGateway {
             TradingMode::Paper => "paper",
             TradingMode::Live => "live",
         };
+
         let env = vec![
             format!("TWS_USERID={}", self.username.expose_secret()),
             format!("TWS_PASSWORD={}", self.password.expose_secret()),
@@ -503,6 +510,7 @@ impl DockerizedIBGateway {
             all: true,
             ..Default::default()
         };
+
         let containers = self
             .docker
             .list_containers(Some(list_options))

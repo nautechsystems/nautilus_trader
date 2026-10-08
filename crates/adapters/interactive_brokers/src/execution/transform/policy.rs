@@ -50,9 +50,11 @@ pub(super) fn apply_quantity_policy(
                  a SELL must use the base quantity"
             );
         }
+
         ib_order.cash_qty = Some(order.quantity().as_f64());
         ib_order.total_quantity = 0.0;
     }
+
     Ok(())
 }
 

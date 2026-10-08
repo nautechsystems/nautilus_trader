@@ -66,6 +66,7 @@ mod tests {
             ts_event: UnixNanos::from(456_u64),
             ts_init: UnixNanos::from(789_u64),
         };
+
         let json = serde_json::to_string(&event).unwrap();
         let restored: InteractiveBrokersSubscriptionIdle = serde_json::from_str(&json).unwrap();
         assert_eq!(restored, event);

@@ -110,6 +110,7 @@ impl StreamContext {
             .stream_config
             .idle_timeout_secs
             .map(Duration::from_secs);
+
         SubscriptionMonitor {
             client_id: self.stream_config.client_id,
             instrument_id: self.instrument_id,
@@ -161,15 +162,20 @@ impl SubscriptionMonitor {
         if self.deadline.take().is_none() || self.cancellation_token.is_cancelled() {
             return true;
         }
+
         let state = self.data_farm_state.state.lock();
         if state.recovery(self.recovery_scope).recovery_generation != self.farm_generation {
             return true;
         }
+
         drop(state);
+
         let Some(timeout) = self.timeout else {
             return true;
         };
+
         let now = self.clock.get_time_ns();
+
         let event = InteractiveBrokersSubscriptionIdle {
             client_id: self.client_id,
             instrument_id: self.instrument_id,
@@ -179,6 +185,7 @@ impl SubscriptionMonitor {
             ts_event: now,
             ts_init: now,
         };
+
         tracing::warn!(
             "IB {} subscription for {} has received no market data for {}s",
             self.subscription,
@@ -236,6 +243,7 @@ where
             StreamAction::Stop | StreamAction::Continue => return Ok(()),
             StreamAction::Resubscribe => {
                 subscription.cancel().await;
+
                 farm_generation = if context.recovery_scope == DataFarmRecoveryScope::MarketData {
                     context.data_farm_state.recovery_generation()
                 } else {
@@ -354,6 +362,7 @@ impl DataFarmIdentity {
             2157 | 2158 => DataFarmKind::SecurityDefinition,
             _ => return None,
         };
+
         let name = notice
             .message
             .rsplit_once(':')
@@ -379,6 +388,7 @@ impl DataFarmRecoveryState {
 
         if self.recoveries.len() > DATA_FARM_RECOVERY_HISTORY_LIMIT {
             let (_, pruned_since_ns) = self.recoveries.pop_front().unwrap();
+
             if let Some((_, retained_since_ns)) = self.recoveries.front_mut() {
                 // Preserve the earliest replay boundary for streams lagging behind the history
                 *retained_since_ns = (*retained_since_ns).min(pruned_since_ns);
@@ -510,6 +520,7 @@ impl DataFarmConnectionState {
         let scope_degraded_since_ns = state.degraded_scopes.remove(&family_scope);
         let family_degraded_since_ns =
             earliest_data_loss_ns(farm_degraded_since_ns, scope_degraded_since_ns);
+
         let historical_bars_recovery_since_ns = match farm.kind {
             DataFarmKind::MarketData | DataFarmKind::HistoricalData => earliest_data_loss_ns(
                 family_degraded_since_ns,
@@ -535,6 +546,7 @@ impl DataFarmConnectionState {
         if family_degraded_since_ns.is_none() && historical_bars_recovery_since_ns.is_none() {
             return false;
         }
+
         drop(state);
         self.recovery_notify.notify_waiters();
         true
@@ -576,6 +588,7 @@ impl DataFarmConnectionState {
             if self.recovery_generation_for(scope) != generation {
                 return;
             }
+
             notified.await;
         }
     }
@@ -652,7 +665,6 @@ pub(super) fn calculate_historical_bar_subscription_duration(
         ((now_ns.as_u64().saturating_sub(start_ns.as_u64())) / 1_000_000_000) as i64;
     let minimum_seconds = bar_seconds.saturating_mul(HISTORICAL_BAR_MIN_COUNT);
     let duration_seconds = requested_seconds.max(minimum_seconds).max(bar_seconds);
-
     if duration_seconds >= 86_400 {
         let duration_days = ((duration_seconds + 86_399) / 86_400).min(i32::MAX as i64) as i32;
         duration_days.days()
@@ -745,6 +757,7 @@ impl HistoricalBarCompletion {
         if self.last_published_ns.is_some_and(|ts| bar.ts_event <= ts) {
             return Vec::new();
         }
+
         let mut completed = Vec::new();
 
         if let Some(pending) = self.pending.take() {
@@ -762,6 +775,7 @@ impl HistoricalBarCompletion {
         if let Some(last) = completed.last() {
             self.last_published_ns = Some(last.ts_event);
         }
+
         completed
     }
 
@@ -775,6 +789,7 @@ impl HistoricalBarCompletion {
         if self.deadline().is_none_or(|deadline| now < deadline) {
             return None;
         }
+
         let bar = self.pending.take()?;
         self.last_published_ns = Some(bar.ts_event);
         Some(bar)
@@ -800,6 +815,7 @@ pub(super) async fn handle_historical_bars_subscription(
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting historical bars subscription for {}", bar_type);
     let first_start_ns = resolve_historical_bar_start_ns(start_ns, clock.get_time_ns());
+
     let stream_state = Arc::new(tokio::sync::Mutex::new(HistoricalBarStreamState {
         first_start_ns,
         replay_start_ns: first_start_ns,
@@ -807,6 +823,7 @@ pub(super) async fn handle_historical_bars_subscription(
         had_connection: false,
         completion: HistoricalBarCompletion::default(),
     }));
+
     let context = StreamContext {
         stream_config,
         client,
@@ -819,6 +836,7 @@ pub(super) async fn handle_historical_bars_subscription(
         price_precision,
         size_precision,
     };
+
     let trading_hours = if use_rth {
         TradingHours::Regular
     } else {
@@ -839,6 +857,7 @@ pub(super) async fn handle_historical_bars_subscription(
                     );
                     state.replay_start_ns
                 };
+
                 let duration = calculate_historical_bar_subscription_duration(
                     bar_type,
                     replay_start_ns,
@@ -1042,7 +1061,6 @@ async fn send_completed_historical_bars(
         .await
         .completion
         .observe(bar, context.clock.get_time_ns());
-
     completed.into_iter().all(|bar| {
         context
             .data_sender
@@ -1187,6 +1205,7 @@ pub(super) async fn handle_quote_subscription(
     stream_config: StreamConfig,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting quote subscription for {}", instrument_id);
+
     let context = StreamContext {
         stream_config,
         client,
@@ -1259,6 +1278,7 @@ pub(super) async fn handle_option_greeks_subscription(
     stream_config: StreamConfig,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting option greeks subscription for {}", instrument_id);
+
     let context = StreamContext {
         stream_config,
         client,
@@ -1330,6 +1350,7 @@ pub(super) async fn handle_index_price_subscription(
     stream_config: StreamConfig,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting index price subscription for {}", instrument_id);
+
     let context = StreamContext {
         stream_config,
         client,
@@ -1566,6 +1587,7 @@ pub(super) async fn handle_trade_subscription(
     stream_config: StreamConfig,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting trade subscription for {}", instrument_id);
+
     let context = StreamContext {
         stream_config,
         client,
@@ -1590,6 +1612,7 @@ pub(super) async fn handle_trade_subscription(
                 } else {
                     builder.last().await
                 };
+
                 subscription.context("Failed to create tick-by-tick trade subscription")
             })
         },
@@ -1632,6 +1655,7 @@ pub(super) async fn handle_realtime_bars_subscription(
     stream_config: StreamConfig,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting bars subscription for {}", bar_type);
+
     let trading_hours = if use_rth {
         TradingHours::Regular
     } else {
@@ -2170,6 +2194,7 @@ pub(super) async fn handle_market_depth_subscription(
                     .subscribe()
                     .await
                     .context("Failed to create market depth subscription")?;
+
                 let ts_clear = context.clock.get_time_ns();
                 let clear = OrderBookDelta::clear(context.instrument_id, 0, ts_clear, ts_clear);
                 context
@@ -2283,6 +2308,7 @@ where
                 tracing::debug!("Market data subscription cancelled for {}", instrument_id);
                 return Ok(StreamAction::Stop);
             }
+
             Ok(StreamAction::Continue)
         }
         Ok(SubscriptionItem::Data(TickTypes::SnapshotEnd)) => {
@@ -2351,6 +2377,7 @@ where
                 tracing::debug!("Option greeks subscription cancelled for {}", instrument_id);
                 return Ok(StreamAction::Stop);
             }
+
             Ok(StreamAction::Continue)
         }
         Ok(SubscriptionItem::Data(TickTypes::SnapshotEnd)) => {
@@ -2387,6 +2414,7 @@ where
                 );
                 return Ok(StreamAction::Continue);
             }
+
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
             let index_price = parse_index_price(
@@ -2404,6 +2432,7 @@ where
             {
                 return Ok(StreamAction::Stop);
             }
+
             Ok(StreamAction::Continue)
         }
         Ok(SubscriptionItem::Data(TickTypes::PriceSize(price_size)))
@@ -2417,6 +2446,7 @@ where
                 );
                 return Ok(StreamAction::Continue);
             }
+
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
             let index_price = parse_index_price(
@@ -2434,6 +2464,7 @@ where
             {
                 return Ok(StreamAction::Stop);
             }
+
             Ok(StreamAction::Continue)
         }
         Ok(SubscriptionItem::Notice(_)) => Ok(StreamAction::Continue),
@@ -2621,6 +2652,7 @@ async fn process_option_open_interest_tick(
 
     let ts_event = clock.get_time_ns();
     let ts_init = ts_event;
+
     let greeks = {
         let mut cache = option_greeks_cache.lock().await;
         cache.update_open_interest(instrument_id, open_interest, ts_event, ts_init)
@@ -2915,6 +2947,7 @@ mod tests {
             },
             UnixNanos::from(20),
         );
+
         data_farm_state.mark_farm_degraded(
             DataFarmIdentity {
                 kind: DataFarmKind::HistoricalData,
@@ -2922,6 +2955,7 @@ mod tests {
             },
             UnixNanos::from(10),
         );
+
         data_farm_state.handle_notice(
             &notice(2104, "Market data farm connection is OK:usfarm"),
             clock,
@@ -3039,6 +3073,7 @@ mod tests {
             },
             UnixNanos::from(20),
         );
+
         data_farm_state.mark_farm_degraded(
             DataFarmIdentity {
                 kind: DataFarmKind::MarketData,
@@ -3046,6 +3081,7 @@ mod tests {
             },
             UnixNanos::from(10),
         );
+
         data_farm_state.handle_notice(
             &notice(2104, "Market data farm connection is OK:usfarm.nj"),
             clock,
@@ -3184,6 +3220,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         let ask_action = process_quote_tick_result(
             Ok::<_, &'static str>(TickTypes::Price(TickPrice {
                 tick_type: TickType::Ask,
@@ -3230,6 +3267,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         let ask_action = process_quote_tick_result(
             Ok::<_, &'static str>(TickTypes::Price(TickPrice {
                 tick_type: TickType::DelayedAsk,
@@ -3301,6 +3339,7 @@ mod tests {
                 last_quote = Some(quote);
             }
         }
+
         let quote = last_quote.expect("expected at least one quote from delayed ticks");
         assert_eq!(quote.bid_price.as_decimal(), dec!(10));
         assert_eq!(quote.ask_price.as_decimal(), dec!(11));
@@ -3383,6 +3422,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         process_quote_tick_result(
             Ok::<_, &'static str>(TickTypes::PriceSize(TickPriceSize {
                 price_tick_type: TickType::Ask,
@@ -3443,6 +3483,7 @@ mod tests {
             .await
             .unwrap();
         }
+
         assert!(matches!(
             receiver.try_recv().unwrap(),
             DataEvent::Data(Data::Quote(_))
@@ -3464,6 +3505,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         process_quote_tick_result(
             Ok::<_, &'static str>(TickTypes::Price(TickPrice {
                 tick_type: TickType::Ask,
@@ -3507,6 +3549,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         process_quote_tick_result(
             Ok::<_, &'static str>(TickTypes::Price(TickPrice {
                 tick_type: TickType::Ask,
@@ -3541,6 +3584,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         process_quote_tick_result(
             Ok::<_, &'static str>(TickTypes::Size(TickSize {
                 tick_type: TickType::AskSize,
@@ -3683,6 +3727,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         assert!(matches!(bid_action, StreamAction::Continue));
         assert!(receiver.try_recv().is_err());
 
@@ -3700,6 +3745,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         assert!(matches!(ask_action, StreamAction::Continue));
         assert!(receiver.try_recv().is_err());
 
@@ -3715,6 +3761,7 @@ mod tests {
         )
         .await
         .unwrap();
+
         assert!(matches!(oi_action, StreamAction::Continue));
         assert!(receiver.try_recv().is_err());
 
@@ -3840,6 +3887,7 @@ mod tests {
                 special_conditions: String::new(),
             }))
             .unwrap();
+
         drop(trade_sender);
 
         process_trade_stream(
@@ -3900,6 +3948,7 @@ mod tests {
                     );
                     break;
                 }
+
                 tokio::task::yield_now().await;
             }
         });
@@ -3949,6 +3998,7 @@ mod tests {
                 count: 2,
             }))
             .unwrap();
+
         drop(bar_sender);
 
         process_realtime_bar_stream(
@@ -3977,6 +4027,7 @@ mod tests {
             }
             other => panic!("unexpected event: {other:?}"),
         }
+
         assert!(last_bars.lock().await.contains_key(&bar_type_str));
     }
 
@@ -3999,6 +4050,7 @@ mod tests {
                 size: 5.0,
             })))
             .unwrap();
+
         depth_sender
             .send(Ok(MarketDepths::MarketDepthL2(MarketDepthL2 {
                 position: 2,
@@ -4010,6 +4062,7 @@ mod tests {
                 smart_depth: true,
             })))
             .unwrap();
+
         depth_sender
             .send(Ok(MarketDepths::MarketDepthL2(MarketDepthL2 {
                 position: 2,
@@ -4021,6 +4074,7 @@ mod tests {
                 smart_depth: true,
             })))
             .unwrap();
+
         drop(depth_sender);
 
         process_market_depth_stream(
@@ -4096,6 +4150,7 @@ mod tests {
                     size: 5.0,
                 })))
                 .unwrap();
+
             drop(depth_sender);
 
             let action = process_market_depth_stream(
@@ -4153,6 +4208,7 @@ mod tests {
                 size: 5.0,
             })))
             .unwrap();
+
         depth_sender.send(Ok(MarketDepths::Reset)).unwrap();
         depth_sender
             .send(Ok(MarketDepths::MarketDepth(MarketDepth {
@@ -4163,6 +4219,7 @@ mod tests {
                 size: 6.0,
             })))
             .unwrap();
+
         drop(depth_sender);
 
         let action = process_market_depth_stream(
@@ -4230,6 +4287,7 @@ mod tests {
                 }))
                 .unwrap();
         }
+
         drop(trade_sender);
 
         process_trade_stream(
@@ -4257,6 +4315,7 @@ mod tests {
                 other => panic!("unexpected event: {other:?}"),
             }
         }
+
         assert_eq!(trades, vec![(-1.0, 3.0), (-1.25, 2.0)]);
     }
 
@@ -4274,6 +4333,7 @@ mod tests {
     fn test_update_quote_from_price_tick_ignores_last() {
         let instrument_id = instrument_id();
         let mut cache = QuoteCache::new();
+
         let quote = update_quote_from_price_tick(
             &mut cache,
             instrument_id,
@@ -4287,6 +4347,7 @@ mod tests {
             nautilus_core::UnixNanos::new(1),
             nautilus_core::UnixNanos::new(1),
         );
+
         assert!(quote.is_none());
     }
     fn idle_monitor(
@@ -4298,6 +4359,7 @@ mod tests {
         let (data_sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let timeout = timeout_secs.map(Duration::from_secs);
         let clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::from(101_u64))));
+
         let monitor = SubscriptionMonitor {
             client_id: ClientId::from("IB-DATA-17"),
             instrument_id: instrument_id(),
@@ -4312,6 +4374,7 @@ mod tests {
             recovery_scope: DataFarmRecoveryScope::MarketData,
             farm_generation: 0,
         };
+
         (monitor, receiver)
     }
 
@@ -4325,6 +4388,7 @@ mod tests {
         let DataEvent::Data(Data::Custom(custom)) = receiver.try_recv().unwrap() else {
             panic!("Expected a subscription idle custom event");
         };
+
         custom
             .data
             .as_any()
@@ -4420,6 +4484,7 @@ mod tests {
             }
             _ => unreachable!(),
         }
+
         monitor.wait_for_idle().await;
         assert!(monitor.notify_idle());
         assert!(receiver.is_empty());
@@ -4465,12 +4530,14 @@ mod tests {
             .await
             .unwrap()
         });
+
         tokio::task::yield_now().await;
         tokio::time::advance(Duration::from_secs(2)).await;
 
         for _ in 0..1000 {
             notices.handle_notice(&notice(2108, "Market data farm is inactive"), clock);
         }
+
         tokio::time::advance(Duration::from_secs(3)).await;
         tokio::task::yield_now().await;
         let event = receive_idle(&mut receiver);
@@ -4501,6 +4568,7 @@ mod tests {
             subscription_idle_timeout_secs: Some(17),
             ..Default::default()
         };
+
         let stream = StreamConfig::new(ClientId::from("IB-DATA-17"), &config);
         assert_eq!(stream.client_id, ClientId::from("IB-DATA-17"));
         assert_eq!(stream.all_last_trades, all_last_trades);
@@ -4524,6 +4592,7 @@ mod tests {
 
     fn minute_bar(close_secs: u64, close: &str) -> Bar {
         let ts = UnixNanos::from(close_secs * 1_000_000_000);
+
         Bar::new(
             minute_bar_type(),
             Price::from("100.00"),

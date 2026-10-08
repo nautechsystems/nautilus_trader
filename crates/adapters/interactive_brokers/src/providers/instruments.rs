@@ -155,6 +155,7 @@ impl InteractiveBrokersInstrumentProvider {
     /// Create a new `InteractiveBrokersInstrumentProvider`.
     pub fn new(config: InteractiveBrokersInstrumentProviderConfig) -> Self {
         let symbology = Symbology::new(config.symbology_method);
+
         Self {
             config,
             symbology,
@@ -185,6 +186,7 @@ impl InteractiveBrokersInstrumentProvider {
                 ..Default::default()
             },
         );
+
         self.price_magnifiers.insert(instrument_id, price_magnifier);
     }
 
@@ -226,6 +228,7 @@ impl InteractiveBrokersInstrumentProvider {
                 }
             }
         }
+
         Ok(())
     }
 
@@ -244,6 +247,7 @@ impl InteractiveBrokersInstrumentProvider {
             provider: self,
             client,
         };
+
         self.initialize_with_loader(&loader).await
     }
 
@@ -285,6 +289,7 @@ impl InteractiveBrokersInstrumentProvider {
 
         for (index, configured) in self.config.load_contracts.iter().enumerate() {
             let contract = &configured.contract;
+
             let mut contract_ids = loader.load_contract(configured).await.with_context(|| {
                 format!("Failed to load configured IB contract at index {index}: {contract:?}")
             })?;
@@ -317,6 +322,7 @@ impl InteractiveBrokersInstrumentProvider {
         if count > 0 {
             tracing::debug!("Seeded IB instrument provider with {count} cached instruments");
         }
+
         count
     }
 
@@ -332,9 +338,11 @@ impl InteractiveBrokersInstrumentProvider {
 
         for instrument in instruments {
             let instrument_id = instrument.id();
+
             let Some(contract) = contract_from_instrument_info(&instrument) else {
                 continue;
             };
+
             let Some(price_magnifier) =
                 price_magnifier_from_instrument_info(&instrument).filter(|value| *value >= 0)
             else {
@@ -352,6 +360,7 @@ impl InteractiveBrokersInstrumentProvider {
                 added += 1;
             }
         }
+
         added
     }
 
@@ -546,6 +555,7 @@ impl InteractiveBrokersInstrumentProvider {
                         combo_leg.contract_id
                     )
                 })?;
+
             let ratio = IbAction::from_str(combo_leg.action.as_str())
                 .context("Invalid BAG combo leg action")?
                 .signed_multiplier()
@@ -754,6 +764,7 @@ impl InteractiveBrokersInstrumentProvider {
         let max_expiry_days = json_u32(spec, KEY_MAX_EXPIRY_DAYS).or(self.config.max_expiry_days);
         let options_chain_exchange = json_string(spec, KEY_OPTIONS_CHAIN_EXCHANGE)
             .or_else(|| json_string(spec, KEY_OPTIONS_CHAIN_EXCHANGE_ALT));
+
         let chain_contract = if contract.security_type == SecurityType::ContinuousFuture
             && (build_futures_chain || build_options_chain)
         {
@@ -786,6 +797,7 @@ impl InteractiveBrokersInstrumentProvider {
         } else {
             contract.clone()
         };
+
         let chain_trading_class = (!chain_contract.trading_class.is_empty())
             .then_some(chain_contract.trading_class.as_str());
 
@@ -1258,10 +1270,10 @@ impl InteractiveBrokersInstrumentProvider {
 
         if !ids_to_load.is_empty() {
             let mut filters = std::collections::HashMap::new();
-
             if force_instrument_update {
                 filters.insert("force_instrument_update".to_string(), "true".to_string());
             }
+
             let filters = if filters.is_empty() {
                 None
             } else {
@@ -1294,6 +1306,7 @@ impl InteractiveBrokersInstrumentProvider {
         } else {
             for configured in &self.config.load_contracts {
                 let spec = configured.chain_spec_json();
+
                 match self
                     .load_contract_spec(client, &configured.contract, spec.as_ref())
                     .await
@@ -1431,6 +1444,7 @@ impl InteractiveBrokersInstrumentProvider {
             );
             return Ok(());
         }
+
         // Convert instrument ID to IB contract
         let exchange = filters
             .as_ref()
@@ -1477,6 +1491,7 @@ impl InteractiveBrokersInstrumentProvider {
                     instrument_id
                 );
             }
+
             return Ok(());
         }
 
@@ -1495,6 +1510,7 @@ impl InteractiveBrokersInstrumentProvider {
                 instrument_id
             );
         }
+
         Ok(())
     }
 
@@ -1545,6 +1561,7 @@ impl InteractiveBrokersInstrumentProvider {
         let instrument_id = self
             .instrument_id_from_contract(&details.contract, resolved_venue)
             .context("Failed to convert IB contract to instrument ID")?;
+
         let instrument = match parse_ib_contract_to_instrument(details, instrument_id) {
             Ok(instrument) => instrument,
             Err(e) => {
@@ -1592,7 +1609,6 @@ impl InteractiveBrokersInstrumentProvider {
     ) -> bool {
         let should_update =
             force_instrument_update || !self.instruments.contains_key(&instrument_id);
-
         if should_update {
             self.instruments.insert(instrument_id, instrument);
         }
@@ -1607,6 +1623,7 @@ impl InteractiveBrokersInstrumentProvider {
                 self.contract_id_to_instrument_id
                     .insert(contract_id, instrument_id);
             }
+
             self.price_magnifiers.insert(
                 instrument_id,
                 normalize_price_magnifier(details.price_magnifier),
@@ -1616,6 +1633,7 @@ impl InteractiveBrokersInstrumentProvider {
                 self.contract_id_to_instrument_id
                     .insert(contract.contract_id, instrument_id);
             }
+
             self.contracts.insert(instrument_id, contract);
         }
 
@@ -1644,6 +1662,7 @@ impl InteractiveBrokersInstrumentProvider {
                             "Invalid filter_callable path {filter_callable:?}; expected module.callable"
                         )
                     })?;
+
                 let callable = PyModule::import(py, module_name)
                     .map_err(|e| anyhow::anyhow!("Failed to import {module_name}: {e}"))?
                     .getattr(callable_name)
@@ -1721,6 +1740,7 @@ impl InteractiveBrokersInstrumentProvider {
                             }
                         }
                     }
+
                     false
                 })
                 .collect()
@@ -1806,6 +1826,7 @@ impl InteractiveBrokersInstrumentProvider {
         if underlying.security_type == SecurityType::Future {
             option_chain_request = option_chain_request.exchange(exchange);
         }
+
         let mut option_chain_stream = option_chain_request
             .subscribe()
             .await
@@ -2296,6 +2317,7 @@ impl InteractiveBrokersInstrumentProvider {
                 self.contract_id_to_instrument_id
                     .insert(bag_contract.contract_id, spread_instrument_id);
             }
+
             return Ok(0);
         }
 
@@ -2468,8 +2490,10 @@ impl InteractiveBrokersInstrumentProvider {
                                 self.contract_id_to_instrument_id
                                     .insert(contract.contract_id, instrument_id);
                             }
+
                             self.contracts.insert(instrument_id, contract);
                         }
+
                         loaded_count += 1;
                     }
                     Err(e) => {
@@ -2493,6 +2517,7 @@ impl InteractiveBrokersInstrumentProvider {
                     self.contract_id_to_instrument_id
                         .insert(contract.contract_id, instrument_id);
                 }
+
                 self.contracts.insert(instrument_id, contract.clone());
             }
         }
@@ -2503,6 +2528,7 @@ impl InteractiveBrokersInstrumentProvider {
                     self.contract_id_to_instrument_id
                         .insert(details.contract.contract_id, instrument_id);
                 }
+
                 self.contracts
                     .insert(instrument_id, details.contract.clone());
                 self.contract_details.insert(instrument_id, details.clone());
@@ -2589,6 +2615,7 @@ mod tests {
             if self.fail_next_id.swap(false, Ordering::SeqCst) {
                 anyhow::bail!("Socket disconnected");
             }
+
             Ok(self
                 .resolve_ids
                 .load(Ordering::SeqCst)
@@ -2604,6 +2631,7 @@ mod tests {
             if self.yield_on_load {
                 tokio::task::yield_now().await;
             }
+
             Ok(if self.resolve_contracts.load(Ordering::SeqCst) {
                 vec![InstrumentId::new(
                     Symbol::from("MSFT"),
@@ -2696,9 +2724,11 @@ mod tests {
         );
 
         let cached = provider.find(&requested_id).unwrap();
+
         let InstrumentAny::OptionContract(option) = cached else {
             panic!("expected option contract");
         };
+
         assert_eq!(option.id, requested_id);
         assert_eq!(option.id.venue.as_str(), "OPRA");
         assert!(
@@ -2759,23 +2789,27 @@ mod tests {
                 serde_json::Value::from(price_magnifier),
             );
         }
+
         info
     }
 
     #[tokio::test]
     async fn test_initialize_loads_all_configured_inputs_once() {
         let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
+
         let contract_spec = Contract {
             security_type: SecurityType::Stock,
             symbol: ibapi::contracts::Symbol::from("MSFT"),
             exchange: Exchange::from("NASDAQ"),
             ..Default::default()
         };
+
         let config = InteractiveBrokersInstrumentProviderConfig {
             load_ids: [instrument_id].into_iter().collect(),
             load_contracts: vec![ConfiguredContract::from(contract_spec)],
             ..Default::default()
         };
+
         let provider = InteractiveBrokersInstrumentProvider::new(config);
         let loader = TestStartupLoader::new(true, true);
 
@@ -2798,17 +2832,20 @@ mod tests {
     #[tokio::test]
     async fn test_initialize_fails_closed_and_retries_unresolved_input() {
         let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
+
         let contract_spec = Contract {
             security_type: SecurityType::Stock,
             symbol: ibapi::contracts::Symbol::from("MSFT"),
             exchange: Exchange::from("NASDAQ"),
             ..Default::default()
         };
+
         let config = InteractiveBrokersInstrumentProviderConfig {
             load_ids: [instrument_id].into_iter().collect(),
             load_contracts: vec![ConfiguredContract::from(contract_spec)],
             ..Default::default()
         };
+
         let provider = InteractiveBrokersInstrumentProvider::new(config);
         let loader = TestStartupLoader::new(true, false);
 
@@ -2828,10 +2865,12 @@ mod tests {
     #[tokio::test]
     async fn test_initialize_preserves_load_error_and_allows_retry() {
         let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
+
         let config = InteractiveBrokersInstrumentProviderConfig {
             load_ids: [instrument_id].into_iter().collect(),
             ..Default::default()
         };
+
         let provider = InteractiveBrokersInstrumentProvider::new(config);
         let loader = TestStartupLoader::new(true, true);
         loader.fail_next_id.store(true, Ordering::SeqCst);
@@ -2852,10 +2891,12 @@ mod tests {
     #[tokio::test]
     async fn test_initialize_serializes_concurrent_calls() {
         let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
+
         let config = InteractiveBrokersInstrumentProviderConfig {
             load_ids: [instrument_id].into_iter().collect(),
             ..Default::default()
         };
+
         let provider = InteractiveBrokersInstrumentProvider::new(config);
         let mut loader = TestStartupLoader::new(true, true);
         loader.yield_on_load = true;
@@ -2978,6 +3019,7 @@ mod tests {
         let cache_path = provider.config.cache_path.as_ref().unwrap().clone();
         let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("XNAS"));
         let instrument = create_test_instrument(instrument_id);
+
         let contract = Contract {
             contract_id: 265598,
             symbol: ibapi::contracts::Symbol::from("AAPL"),
@@ -2987,6 +3029,7 @@ mod tests {
             currency: ibapi::contracts::Currency::from("USD"),
             ..Default::default()
         };
+
         let details = ibapi::contracts::ContractDetails {
             contract: contract.clone(),
             price_magnifier: 1,
@@ -3029,6 +3072,7 @@ mod tests {
             filter_sec_types: [IbSecurityType::Option].into_iter().collect(),
             ..Default::default()
         };
+
         let provider = InteractiveBrokersInstrumentProvider::new(config);
 
         assert!(provider.is_filtered_sec_type(&SecurityType::Option.to_string()));
@@ -3041,6 +3085,7 @@ mod tests {
         let ib_instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("XNAS"));
         let non_ib_instrument_id =
             InstrumentId::new(Symbol::from("BTCUSDT"), Venue::from("BINANCE"));
+
         let contract = Contract {
             contract_id: 265598,
             symbol: ibapi::contracts::Symbol::from("AAPL"),
@@ -3050,6 +3095,7 @@ mod tests {
             currency: ibapi::contracts::Currency::from("USD"),
             ..Default::default()
         };
+
         let ib_instrument = create_test_instrument_with_info(
             ib_instrument_id,
             Some(create_contract_info(&contract, Some(100))),
@@ -3095,6 +3141,7 @@ mod tests {
 
         // Create an expired cache manually
         let old_timestamp = Timestamp::now() - jiff::SignedDuration::from_hours(24 * (10));
+
         let expired_cache = InstrumentCache {
             cache_timestamp: old_timestamp,
             contract_id_to_instrument_id: vec![],
@@ -3124,6 +3171,7 @@ mod tests {
         let mut cache = Cache::default();
         assert_eq!(provider.seed_from_cache(&cache), 0);
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+
         let contract = Contract {
             contract_id: 265598,
             symbol: ibapi::contracts::Symbol::from("AAPL"),
@@ -3132,6 +3180,7 @@ mod tests {
             currency: ibapi::contracts::Currency::from("USD"),
             ..Default::default()
         };
+
         let instrument = create_test_instrument_with_info(
             instrument_id,
             Some(create_contract_info(&contract, Some(100))),
@@ -3157,10 +3206,12 @@ mod tests {
     ) {
         let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+
         let contract = Contract {
             contract_id: 265598,
             ..Default::default()
         };
+
         let instrument = create_test_instrument_with_info(
             instrument_id,
             Some(create_contract_info(&contract, magnifier)),

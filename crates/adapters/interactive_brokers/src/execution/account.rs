@@ -121,6 +121,7 @@ where
     on_snapshot(account_snapshot(client, ib_account, &accumulator).await?);
 
     let client = Arc::clone(client);
+
     let future = async move {
         while read_account_summary_cycle(
             &mut subscription,
@@ -135,11 +136,13 @@ where
                 Err(e) => tracing::warn!("Failed to build account snapshot: {}", e),
             }
         }
+
         tracing::warn!(
             "IB account summary stream ended for account: {}",
             ib_account
         );
     };
+
     session_tasks
         .spawn(future)
         .context("Failed to register IB account summary task")?;
@@ -330,6 +333,7 @@ fn merge_account_summary_margin(margins: &mut Vec<MarginBalance>, summary: &Acco
             return;
         }
     };
+
     let value = match parse_balance_decimal(&summary.value)
         .and_then(|d| Money::from_decimal(d, currency).map_err(|e| anyhow::anyhow!(e.to_string())))
     {
@@ -389,6 +393,7 @@ impl AccountSummaryBalance {
         else {
             return Ok(None);
         };
+
         let free = self
             .available_funds
             .or(self.buying_power)
@@ -423,6 +428,7 @@ fn merge_account_summary_balance(
 
     let currency = parse_currency(&summary.currency)?;
     let value = parse_balance_decimal(&summary.value)?;
+
     let balance = match balances.iter_mut().find(|b| b.currency == currency) {
         Some(balance) => balance,
         None => {
@@ -499,6 +505,7 @@ pub async fn subscribe_pnl(
             }
         }
     };
+
     session_tasks
         .spawn(future)
         .context("Failed to register IB PnL task")?;
@@ -532,10 +539,12 @@ pub async fn record_own_fill(
 ) -> anyhow::Result<bool> {
     let quantity = Decimal::from_f64_retain(quantity)
         .context("Failed to convert own fill quantity to Decimal")?;
+
     let signed_quantity = match side {
         ExecutionSide::Bought => quantity,
         ExecutionSide::Sold => -quantity,
     };
+
     let mut tracker = position_tracker.lock().await;
     if !tracker.own_fill_ids.insert(execution_id.to_string()) {
         return Ok(false);
@@ -710,6 +719,7 @@ pub async fn subscribe_positions(
                         {
                             Ok(Some(instrument)) => {
                                 let instrument_id = instrument.id();
+
                                 let position_side = if new_quantity.is_zero() {
                                     PositionSide::Flat
                                 } else if new_quantity > Decimal::ZERO {
@@ -800,6 +810,7 @@ pub async fn subscribe_positions(
             }
         }
     };
+
     session_tasks
         .spawn(future)
         .context("Failed to register IB position task")?;
@@ -865,6 +876,7 @@ mod tests {
         for summary in summaries {
             merge_account_summary_balance(&mut balances, summary).unwrap();
         }
+
         finalize_account_summary_balances(balances).unwrap()
     }
 

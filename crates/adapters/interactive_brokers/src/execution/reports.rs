@@ -220,11 +220,13 @@ impl IbReportClient {
             } else {
                 true
             };
+
             let matches_venue = if let Some(filter_venue_id) = cmd.venue_order_id {
                 r.venue_order_id == filter_venue_id
             } else {
                 true
             };
+
             matches_client && matches_venue
         });
 
@@ -486,6 +488,7 @@ impl IbReportClient {
                             position.contract.contract_id, position.contract.security_type
                         )),
                     };
+
                     let instrument_id = instrument.id();
 
                     // Filter by instrument_id if specified
@@ -587,6 +590,7 @@ impl IbReportClient {
 
         for exec_data in combo_executions {
             let perm_id = exec_data.execution.perm_id;
+
             let instrument_id = match combo_contracts
                 .get(&perm_id)
                 .context("IB returned no combo order for the execution")
@@ -630,6 +634,7 @@ impl IbReportClient {
                     contracts.insert(data.order.perm_id, data.contract);
                 }
             }
+
             let mut completed = client.completed_orders(false).await?;
             while let Some(item) = completed.next().await {
                 if let SubscriptionItem::Data(Orders::OrderData(data)) = item?
@@ -638,6 +643,7 @@ impl IbReportClient {
                     contracts.insert(data.order.perm_id, data.contract);
                 }
             }
+
             Ok::<_, anyhow::Error>(contracts)
         })
         .await

@@ -149,6 +149,7 @@ impl InteractiveBrokersDataClientConfig {
                 "subscription_idle_timeout_secs exceeds the supported clock range",
             );
         }
+
         Ok(())
     }
 }

@@ -66,6 +66,7 @@ impl OrderTrackerState {
         if self.groups.contains_key(&client_order_id) {
             return Some(client_order_id);
         }
+
         self.groups.iter().find_map(|(parent, group)| {
             group
                 .members
@@ -93,6 +94,7 @@ impl OrderTrackerState {
         let Some(parent) = self.incarnation_parents.get(&perm_id).copied() else {
             return;
         };
+
         let group = if self.groups.contains_key(&parent) {
             self.groups.get_mut(&parent)
         } else {
@@ -168,6 +170,7 @@ impl OrderTrackerState {
                         data: snapshot,
                     },
                 );
+
                 OrderIncarnationGroup {
                     parent: parent.clone(),
                     account_id,
@@ -175,12 +178,15 @@ impl OrderTrackerState {
                     members,
                 }
             });
+
             self.groups.insert(parent_id, group);
         }
+
         let group = self.groups.get_mut(&parent_id).expect("group was inserted");
         self.incarnation_parents.insert(parent.perm_id, parent_id);
         self.incarnation_parents.insert(perm_id, parent_id);
         let new_member = !group.members.contains_key(&perm_id);
+
         let member = group.members.entry(perm_id).or_insert(BrokerIncarnation {
             data: None,
             route: None,
@@ -204,17 +210,20 @@ impl OrderTrackerState {
             member.terminal |= terminal;
             member.seen = !member.terminal;
             let mut snapshot = data.clone();
+
             if let Some(previous) = &member.data {
                 if previous.order_state.status == OrderStatusKind::Filled
                     || (member.terminal && !terminal)
                 {
                     snapshot.order_state.status = previous.order_state.status.clone();
                 }
+
                 snapshot.order.filled_quantity = snapshot
                     .order
                     .filled_quantity
                     .max(previous.order.filled_quantity);
             }
+
             member.data = Some(snapshot);
         }
 
@@ -244,6 +253,7 @@ impl OrderTrackerState {
                 if data.order.perm_id > 0 {
                     self.order_snapshots
                         .insert(data.order.perm_id, data.clone());
+
                     if let Some(order) = self.order_mut(order_id) {
                         if order.perm_id == 0 {
                             order.perm_id = data.order.perm_id;
@@ -261,6 +271,7 @@ impl OrderTrackerState {
                         completed,
                     );
                 }
+
                 Ok(None)
             }
             OrderCorrelation::Duplicate { order_id, context } => {
@@ -307,6 +318,7 @@ impl OrderTrackerState {
         if status.perm_id == group.parent.perm_id {
             return None;
         }
+
         member.data.clone().map(|data| (group.parent.clone(), data))
     }
 
@@ -318,6 +330,7 @@ impl OrderTrackerState {
         let Some(group) = self.groups.get(&parent_id) else {
             return (Vec::new(), Vec::new());
         };
+
         let mut route_counts = AHashMap::new();
 
         for member in group
@@ -329,6 +342,7 @@ impl OrderTrackerState {
                 *route_counts.entry(route).or_insert(0_usize) += 1;
             }
         }
+
         let mut routes = Vec::new();
         let mut unresolved = Vec::new();
 
@@ -342,6 +356,7 @@ impl OrderTrackerState {
                 .data
                 .as_ref()
                 .map(|data| IbAction::from(data.order.action).order_side());
+
             if order_side.is_some_and(|side| member_side != Some(side)) {
                 continue;
             }
@@ -359,6 +374,7 @@ impl OrderTrackerState {
                 _ => unresolved.push(*perm_id),
             }
         }
+
         routes.sort_unstable();
         unresolved.sort_unstable();
         (routes, unresolved)
@@ -401,9 +417,11 @@ impl OrderTrackerState {
                         }
                     }
                 }
+
                 self.group_history.insert(id, group);
             }
         }
+
         self.incarnation_parents
             .retain(|_, id| self.groups.contains_key(id) || self.group_history.contains_key(id));
     }
@@ -434,7 +452,9 @@ impl InteractiveBrokersExecutionClient {
                 return Ok(());
             }
         }
+
         let mut unresolved_fills = Vec::new();
+
         let refresh = async {
             for completed in [false, true] {
                 let subscription = if completed {
@@ -442,6 +462,7 @@ impl InteractiveBrokersExecutionClient {
                 } else {
                     client.all_open_orders().await?
                 };
+
                 let mut subscription = subscription.filter_data();
                 while let Some(item) = subscription.next().await {
                     let Orders::OrderData(data) = item? else {
@@ -451,8 +472,10 @@ impl InteractiveBrokersExecutionClient {
                     if data.order.account != ib_account {
                         continue;
                     }
+
                     let parent = {
                         let state = orders.lock()?;
+
                         let Some(group) = state.groups.get(&parent_id) else {
                             continue;
                         };
@@ -463,8 +486,10 @@ impl InteractiveBrokersExecutionClient {
                         {
                             continue;
                         }
+
                         group.parent.clone()
                     };
+
                     let resolved = provider.resolve_instrument_id_for_contract(&data.contract)?;
                     anyhow::ensure!(
                         resolved == parent.instrument_id,
@@ -511,8 +536,10 @@ impl InteractiveBrokersExecutionClient {
                     }
                 }
             }
+
             Ok::<_, anyhow::Error>(())
         };
+
         tokio::time::timeout(Duration::from_secs(request_timeout_secs), refresh)
             .await
             .context("timed out refreshing IB order incarnations")??;
@@ -561,6 +588,7 @@ impl InteractiveBrokersExecutionClient {
             } else {
                 duplicate_client_order_id(account_id, perm_id)?
             };
+
             let send = tokio::time::timeout(
                 Duration::from_secs(request_timeout_secs),
                 client.cancel_order(order_id, ""),
@@ -600,6 +628,7 @@ impl InteractiveBrokersExecutionClient {
                 }
             }
         }
+
         orders.lock()?.archive_finished_groups();
         Ok(())
     }

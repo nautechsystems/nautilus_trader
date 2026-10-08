@@ -102,6 +102,7 @@ impl DataClientFactory for InteractiveBrokersDataClientFactory {
             ib_config.instrument_provider.clone(),
         ));
         instrument_provider.seed_from_cache(&cache.borrow());
+
         let client = InteractiveBrokersDataClient::new(
             ClientId::from(name),
             ib_config,
@@ -307,10 +308,12 @@ mod tests {
     #[rstest]
     fn test_interactive_brokers_exec_client_factory_uses_config_account_id() {
         let factory = InteractiveBrokersExecutionClientFactory::new();
+
         let config = InteractiveBrokersExecutionClientConfig {
             account_id: Some(String::from("U7654321")),
             ..Default::default()
         };
+
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let result = factory.create(

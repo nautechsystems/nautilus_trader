@@ -57,7 +57,6 @@ pub fn tick_size_to_precision(tick_size: f64) -> u8 {
     let s = format!("{tick_size:.10}");
     let s = s.trim_end_matches('0');
     let parts: Vec<&str> = s.split('.').collect();
-
     if parts.len() == 2 {
         parts[1].len().min(8) as u8
     } else {
@@ -94,6 +93,7 @@ pub fn expiry_timestring_to_unix_nanos(
                 .and_then(|session| session.split_once('-'))
                 .map(|(_, end)| end)
         });
+
         let (date, time) = match session_end {
             Some(end) => end.split_once(':').unwrap_or((expiry, end)),
             // IB lists only the coming week of sessions, so a later expiry takes the
@@ -103,10 +103,12 @@ pub fn expiry_timestring_to_unix_nanos(
                 details.and_then(last_session_close).unwrap_or("0000"),
             ),
         };
+
         let time = match time.len() {
             4 => format!("{}:{}:00", &time[0..2], &time[2..4]),
             _ => anyhow::bail!("Invalid expiry session end '{time}' for {expiry}"),
         };
+
         (date, time, contract_timezone)
     } else {
         let mut parts = expiry.split_whitespace();
@@ -119,6 +121,7 @@ pub fn expiry_timestring_to_unix_nanos(
         if parts.next().is_some() {
             anyhow::bail!("Invalid expiry format: {expiry}");
         }
+
         (date, time, timezone)
     };
 
@@ -147,6 +150,7 @@ fn localize_expiry(datetime: DateTime, timezone: &str, expiry: &str) -> anyhow::
     let zone = get_timezone(timezone).with_context(|| {
         format!("Unknown IB contract timezone '{timezone}' for expiry {expiry}")
     })?;
+
     let ambiguous = zone.to_ambiguous_timestamp(datetime);
     match ambiguous.offset() {
         AmbiguousOffset::Unambiguous { .. } => Ok(ambiguous.unambiguous()?),
@@ -167,7 +171,6 @@ pub fn parse_ib_contract_to_instrument(
     instrument_id: InstrumentId,
 ) -> anyhow::Result<InstrumentAny> {
     let sec_type = &details.contract.security_type;
-
     match sec_type {
         SecurityType::Stock => Ok(parse_equity_contract(details, instrument_id)),
         SecurityType::ForexPair => Ok(parse_forex_contract(details, instrument_id)),
@@ -326,6 +329,7 @@ fn parse_futures_contract(
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
     let expiry = &details.contract.last_trade_date_or_contract_month;
+
     let expiration_ns = match expiry_timestring_to_unix_nanos(expiry, Some(details)) {
         Ok(expiration_ns) => expiration_ns,
         // Continuous futures can report contract details without a last-trade date.
@@ -349,7 +353,6 @@ fn parse_futures_contract(
     let activation_ns = activation_from_expiration(expiration_ns);
 
     let multiplier = parse_contract_multiplier(&details.contract.multiplier, 1.0);
-
     let raw_symbol = if matches!(
         details.contract.security_type,
         SecurityType::ContinuousFuture
@@ -408,6 +411,7 @@ fn parse_option_contract(
 
     let multiplier = parse_contract_multiplier(&details.contract.multiplier, 100.0);
     let asset_class = sec_type_to_asset_class(details.under_security_type.as_str());
+
     let underlying =
         if details.under_security_type == "IND" && !details.under_symbol.starts_with('^') {
             format!("^{}", details.under_symbol)
@@ -504,9 +508,11 @@ mod tests {
             size_increment: Some(0.0001),
             ..Default::default()
         };
+
         let instrument_id = InstrumentId::from("BTC/USD.PAXOS");
 
         let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
         let InstrumentAny::CurrencyPair(pair) = instrument else {
             panic!("expected spot currency pair");
         };
@@ -607,6 +613,7 @@ mod tests {
             under_security_type: "IND".to_string(),
             ..Default::default()
         };
+
         let instrument_id = InstrumentId::new(
             NautilusSymbol::from("SPXW  260313P06630000"),
             Venue::from("SMART"),
@@ -638,9 +645,11 @@ mod tests {
             price_magnifier: 100,
             ..Default::default()
         };
+
         let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("XNAS"));
 
         let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
         let InstrumentAny::Equity(equity) = instrument else {
             panic!("expected equity");
         };
@@ -682,6 +691,7 @@ mod tests {
             under_security_type: "IND".to_string(),
             ..Default::default()
         };
+
         let instrument_id = InstrumentId::new(NautilusSymbol::from("ES"), Venue::from("CME"));
 
         let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
@@ -709,6 +719,7 @@ mod tests {
             under_symbol: "SPY".to_string(),
             ..Default::default()
         };
+
         let leg2 = ContractDetails {
             contract: Contract {
                 symbol: Symbol::from("SPY"),
@@ -723,6 +734,7 @@ mod tests {
             under_symbol: "SPY".to_string(),
             ..Default::default()
         };
+
         let instrument_id =
             InstrumentId::from("(1)SPY   260120C00400000_((-1))SPY   260120C00410000.SMART");
 
@@ -876,6 +888,7 @@ pub fn parse_futures_spread_instrument_id(
     } else {
         Ustr::from(first_details.under_symbol.as_str())
     };
+
     let multiplier =
         Quantity::from_str(&first_contract.multiplier).unwrap_or_else(|_| Quantity::new(1.0, 0));
     let min_tick = leg_contract_details

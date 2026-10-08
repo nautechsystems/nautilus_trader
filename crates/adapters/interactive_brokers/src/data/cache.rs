@@ -120,8 +120,10 @@ impl QuoteCache {
                 cached.bid_price = None;
                 cached.bid_size = None;
             }
+
             return None;
         }
+
         let cached = self
             .quotes
             .entry(instrument_id)
@@ -161,8 +163,10 @@ impl QuoteCache {
                 cached.ask_price = None;
                 cached.ask_size = None;
             }
+
             return None;
         }
+
         let cached = self
             .quotes
             .entry(instrument_id)
@@ -223,8 +227,10 @@ impl QuoteCache {
             if let Some(cached) = self.quotes.get_mut(&instrument_id) {
                 cached.bid_size = None;
             }
+
             return None;
         }
+
         checked_quantity(size, size_precision)?;
 
         let cached = self
@@ -299,8 +305,10 @@ impl QuoteCache {
             if let Some(cached) = self.quotes.get_mut(&instrument_id) {
                 cached.ask_size = None;
             }
+
             return None;
         }
+
         checked_quantity(size, size_precision)?;
 
         let cached = self
@@ -444,9 +452,9 @@ impl OptionGreeksCache {
                 if let Some(theta) = computation.theta {
                     greeks.theta = theta;
                 }
+
                 greeks.rho = 0.0; // IB does not publish rho in tickOptionComputation
                 cached.greeks = Some(greeks);
-
                 if let Some(mark_iv) = computation.implied_volatility {
                     cached.mark_iv = Some(mark_iv);
                 }

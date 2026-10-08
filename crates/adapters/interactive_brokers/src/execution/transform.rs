@@ -101,6 +101,7 @@ fn transform_order_type(
     price_magnifier: f64,
 ) -> (&'static str, Option<f64>, Option<f64>) {
     let ib_order_type = IbOrderType::from_nautilus(order_type, time_in_force);
+
     let (limit_price, aux_price) = match order_type {
         NautilusOrderType::Market | NautilusOrderType::MarketToLimit => (None, None),
         NautilusOrderType::Limit => (convert_price_opt(price, price_magnifier), None),
@@ -253,6 +254,7 @@ mod tests {
             .quantity(Quantity::from(100))
             .time_in_force(NautilusTimeInForce::AtTheOpen)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -267,6 +269,7 @@ mod tests {
     fn test_tags_apply_market_on_open_alias() {
         let tags_json = r#"{"orderType":"MarketOnOpen"}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -284,6 +287,7 @@ mod tests {
     #[case::snake_key(r#"{"time_in_force":"DTC"}"#, TimeInForce::DayTillCanceled)]
     fn test_tags_apply_time_in_force(#[case] tags_json: &str, #[case] expected: TimeInForce) {
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -298,6 +302,7 @@ mod tests {
     fn test_tags_apply_at_auction_alias() {
         let tags_json = r#"{"orderType":"AtAuction","limitPrice":150.0}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -321,6 +326,7 @@ mod tests {
             "stockRangeUpper": 155.0
         }"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -340,6 +346,7 @@ mod tests {
     fn test_tags_apply_auction_relative_fields() {
         let tags_json = r#"{"orderType":"AuctionRelative","auxPrice":0.01}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -399,6 +406,7 @@ mod tests {
             "softDollarTier": {"name": "tier", "value": "val", "display_name": "display"}
         }"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -478,6 +486,7 @@ mod tests {
     fn test_invalid_tag_set_rejects_order_transform() {
         let tags_json = r#"{"whatIf": true, "displaySize": "invalid"}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -497,6 +506,7 @@ mod tests {
     fn test_non_utc_datetime_tag_rejects_order_transform() {
         let tags_json = r#"{"activeStartTime": "20250101 09:30:00 EST"}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -530,6 +540,7 @@ mod tests {
             .time_in_force(NautilusTimeInForce::Gtd)
             .expire_time(expire_time)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -554,6 +565,7 @@ mod tests {
             .trailing_offset(dec!(0.5))
             .trailing_offset_type(TrailingOffsetType::Price)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -579,6 +591,7 @@ mod tests {
             .trailing_offset(dec!(25))
             .trailing_offset_type(TrailingOffsetType::BasisPoints)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -604,6 +617,7 @@ mod tests {
             .trailing_offset(dec!(5))
             .trailing_offset_type(TrailingOffsetType::Ticks)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -642,6 +656,7 @@ mod tests {
             ]
         }"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -653,6 +668,7 @@ mod tests {
         assert!(ib_order.what_if);
         assert!(ib_order.conditions_cancel_order);
         assert_eq!(ib_order.conditions.len(), 2);
+
         match &ib_order.conditions[0] {
             OrderCondition::Price(condition) => {
                 assert_eq!(condition.contract_id, 265598);
@@ -686,6 +702,7 @@ mod tests {
             .price(Price::from("150.00"))
             .order_list_id(OrderListId::from("OL-001"))
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -711,6 +728,7 @@ mod tests {
                 r#"IBOrderTags:{"ocaGroup":"CUSTOM-GROUP","ocaType":1}"#,
             )])
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );

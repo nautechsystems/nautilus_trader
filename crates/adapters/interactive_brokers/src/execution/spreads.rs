@@ -34,6 +34,7 @@ impl InteractiveBrokersExecutionClient {
 
         {
             let mut state = orders.lock()?;
+
             let Some(order) = state.order_mut(exec_data.execution.order_id) else {
                 anyhow::bail!(
                     "Tracked state not found for Interactive Brokers order {}",
@@ -61,6 +62,7 @@ impl InteractiveBrokersExecutionClient {
             Some(leg_id) => leg_id,
             None => Self::resolve_contract_instrument_id(instrument_provider, &exec_data.contract)?,
         };
+
         let spread_legs = parse_spread_instrument_id_to_legs(&fill.spread_instrument_id)?;
         anyhow::ensure!(
             spread_legs.iter().any(|(id, _)| *id == leg_id),
@@ -88,15 +90,18 @@ impl InteractiveBrokersExecutionClient {
     ) -> anyhow::Result<()> {
         let released = {
             let mut state = orders.lock()?;
+
             let order = state.order_mut(order_id).with_context(|| {
                 format!("Tracked state not found for Interactive Brokers order {order_id}")
             })?;
+
             order
                 .spread_fills_held
                 .fills
                 .push_back((tokio::time::Instant::now(), fill));
             Self::release_spread_fills(&mut order.spread_fills_held)?
         };
+
         Self::send_spread_fills(released, exec_sender)
     }
 
@@ -109,9 +114,11 @@ impl InteractiveBrokersExecutionClient {
     ) -> anyhow::Result<()> {
         let released = {
             let mut state = orders.lock()?;
+
             let order = state.order_mut(order_id).with_context(|| {
                 format!("Tracked state not found for Interactive Brokers order {order_id}")
             })?;
+
             *order
                 .spread_fills_held
                 .leg_quantities
@@ -119,6 +126,7 @@ impl InteractiveBrokersExecutionClient {
                 .or_default() += quantity;
             Self::release_spread_fills(&mut order.spread_fills_held)?
         };
+
         Self::send_spread_fills(released, exec_sender)
     }
 
@@ -143,8 +151,8 @@ impl InteractiveBrokersExecutionClient {
                 let Some(order) = state.order_mut(order_id) else {
                     continue;
                 };
-                let held = &mut order.spread_fills_held.fills;
 
+                let held = &mut order.spread_fills_held.fills;
                 while held
                     .front()
                     .is_some_and(|(held_at, _)| held_at.elapsed() >= SPREAD_LEG_FILLS_TIMEOUT)
@@ -158,8 +166,10 @@ impl InteractiveBrokersExecutionClient {
                     released.push(fill);
                 }
             }
+
             released
         };
+
         Self::send_spread_fills(released, exec_sender)
     }
 
@@ -179,6 +189,7 @@ impl InteractiveBrokersExecutionClient {
                         )
                     })
                     .collect();
+
             let covered = required.iter().all(|(leg_id, quantity)| {
                 held.leg_quantities.get(leg_id).copied().unwrap_or_default()
                     >= quantity - QUANTITY_TOLERANCE
@@ -193,11 +204,13 @@ impl InteractiveBrokersExecutionClient {
                     *sent -= quantity;
                 }
             }
+
             held.leg_quantities
                 .retain(|_, quantity| *quantity > QUANTITY_TOLERANCE);
             let (_, fill) = held.fills.pop_front().expect("front checked above");
             released.push(fill);
         }
+
         Ok(released)
     }
 
@@ -208,6 +221,7 @@ impl InteractiveBrokersExecutionClient {
         for fill in fills {
             exec_sender.send(ExecutionEvent::Order(OrderEventAny::Filled(fill)))?;
         }
+
         Ok(())
     }
 
@@ -238,10 +252,12 @@ impl InteractiveBrokersExecutionClient {
             Money::new(fill.commission, Currency::from(fill.commission_currency));
 
         let leg_position = Self::get_leg_position(&fill.spread_instrument_id, &leg_instrument_id);
+
         let leg_client_order_id = ClientOrderId::new(format!(
             "{}-LEG-{}",
             fill.client_order_id, leg_instrument_id.symbol
         ));
+
         let leg_trade_id = TradeId::new(format!(
             "{}-{}",
             exec_data.execution.execution_id, leg_position

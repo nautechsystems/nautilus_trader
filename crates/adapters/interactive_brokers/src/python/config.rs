@@ -94,6 +94,7 @@ impl InteractiveBrokersDataClientConfig {
             subscription_idle_timeout_secs,
             instrument_provider: instrument_provider.unwrap_or_default(),
         };
+
         config.validate().map_err(to_pyvalue_err)?;
         Ok(config)
     }
@@ -376,6 +377,7 @@ impl InteractiveBrokersInstrumentProviderConfig {
             let dict = json_mod.call_method1("loads", (json_str,))?;
             list.append(dict)?;
         }
+
         Ok(list.unbind())
     }
 

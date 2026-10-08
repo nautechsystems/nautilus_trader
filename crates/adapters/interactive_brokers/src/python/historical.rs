@@ -168,6 +168,7 @@ impl HistoricalInteractiveBrokersClient {
                     let py_obj = data_to_pyobject(py, data)?;
                     py_list.append(py_obj)?;
                 }
+
                 Ok(py_list.into())
             })
         })
@@ -212,6 +213,7 @@ impl HistoricalInteractiveBrokersClient {
                         instrument_any_to_pyobject(py, instrument).map_err(to_pyruntime_err)?;
                     py_list.append(py_obj)?;
                 }
+
                 Ok(py_list.into())
             })
         })

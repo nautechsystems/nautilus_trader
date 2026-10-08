@@ -53,6 +53,7 @@ pub(crate) fn active_quarterly_contract(root: &str, venue: &str, today: Date) ->
                 .expect("single-digit futures symbol");
             return InstrumentId::from(format!("{symbol}.{venue}").as_str());
         }
+
         year += 1;
     }
 }

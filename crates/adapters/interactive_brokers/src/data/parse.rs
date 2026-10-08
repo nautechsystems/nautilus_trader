@@ -42,6 +42,7 @@ fn checked_quantity(size: f64, precision: u8) -> anyhow::Result<Quantity> {
     if (quantity.as_f64() - size).abs() > tolerance {
         anyhow::bail!(QuantityPrecisionError { size, precision });
     }
+
     Ok(quantity)
 }
 
@@ -490,6 +491,7 @@ mod tests {
     #[rstest]
     fn test_parse_realtime_bar() {
         let instrument_id = create_test_instrument_id();
+
         let bar_type = BarType::new(
             instrument_id,
             BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
@@ -564,6 +566,7 @@ mod tests {
     #[rstest]
     fn test_parse_option_computation_to_option_greeks_from_model_tick() {
         let instrument_id = create_test_instrument_id();
+
         let greeks = parse_option_computation_to_option_greeks(
             instrument_id,
             &OptionComputation {
@@ -597,6 +600,7 @@ mod tests {
     #[rstest]
     fn test_parse_option_computation_to_option_greeks_ignores_non_model_tick() {
         let instrument_id = create_test_instrument_id();
+
         let greeks = parse_option_computation_to_option_greeks(
             instrument_id,
             &OptionComputation {

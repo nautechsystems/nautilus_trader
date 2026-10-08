@@ -267,13 +267,16 @@ impl InteractiveBrokersDataClient {
             for subscription in subscriptions.values() {
                 subscription.cancellation_token.cancel();
             }
+
             subscriptions.clear();
         }
+
         {
             let mut subscriptions = lock(&self.option_greeks_subscriptions)?;
             for cancellation_token in subscriptions.values() {
                 cancellation_token.cancel();
             }
+
             subscriptions.clear();
         }
 
@@ -315,13 +318,13 @@ impl InteractiveBrokersDataClient {
                 .context("failed to start IB data command task generation")?;
             self.cancellation_token = self.session_tasks.cancellation_token();
         }
+
         Ok(())
     }
 
     async fn finish_bar_timeout_tasks(&self) {
         let mut tasks = self.bar_timeout_tasks.lock().await;
         let bar_types = tasks.keys().cloned().collect::<Vec<_>>();
-
         for bar_type in bar_types {
             let handle = tasks
                 .get_mut(&bar_type)
@@ -670,8 +673,10 @@ impl DataClient for InteractiveBrokersDataClient {
                 return Err(anyhow::Error::new(e)
                     .context(format!("IB data startup teardown failed: {teardown_error}")));
             }
+
             return Err(anyhow::Error::new(e).context("failed to register IB data farm monitor"));
         }
+
         self.is_connected.store(true, Ordering::Relaxed);
 
         let instrument_count = self.instrument_provider.count();
@@ -717,6 +722,7 @@ impl DataClient for InteractiveBrokersDataClient {
     // Subscription handlers
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to quotes for {}", cmd.instrument_id);
+
         if self.has_subscription(cmd.instrument_id, SubscriptionType::Quotes)? {
             tracing::debug!(
                 "Quote subscription already active for {}",
@@ -782,6 +788,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (cmd.instrument_id, SubscriptionType::Quotes),
@@ -854,6 +861,7 @@ impl DataClient for InteractiveBrokersDataClient {
                             instrument_id,
                             e
                         );
+
                         // Fallback to market_data (reqMktData) - works for BAG contracts
                         if let Err(fallback_err) = handle_quote_subscription(
                             client_clone,
@@ -885,6 +893,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     }
                 }
             }
+
             guard.release();
         };
 
@@ -960,6 +969,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (cmd.instrument_id, SubscriptionType::IndexPrices),
@@ -991,6 +1001,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     e
                 );
             }
+
             guard.release();
         };
 
@@ -1123,6 +1134,7 @@ impl DataClient for InteractiveBrokersDataClient {
         tracing::debug!("Unsubscribing from index prices for {}", cmd.instrument_id);
 
         let mut subscriptions = lock(&self.subscriptions)?;
+
         if let Some(sub_info) =
             subscriptions.remove(&(cmd.instrument_id, SubscriptionType::IndexPrices))
         {
@@ -1157,6 +1169,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to trades for {}", cmd.instrument_id);
+
         if self.has_subscription(cmd.instrument_id, SubscriptionType::Trades)? {
             tracing::debug!(
                 "Trade subscription already active for {}",
@@ -1212,6 +1225,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (cmd.instrument_id, SubscriptionType::Trades),
@@ -1240,6 +1254,7 @@ impl DataClient for InteractiveBrokersDataClient {
             {
                 tracing::error!("Trade subscription error for {}: {:?}", instrument_id, e);
             }
+
             guard.release();
         };
 
@@ -1283,6 +1298,7 @@ impl DataClient for InteractiveBrokersDataClient {
             tracing::debug!("Bar subscription already active for {}", cmd.bar_type);
             return Ok(());
         }
+
         let instrument = self
             .instrument_provider
             .find(&instrument_id)
@@ -1324,6 +1340,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (instrument_id, SubscriptionType::Bars(bar_type)),
@@ -1386,6 +1403,7 @@ impl DataClient for InteractiveBrokersDataClient {
             if let Err(e) = result {
                 tracing::error!("Bars subscription error for {}: {:?}", bar_type, e);
             }
+
             guard.release();
         };
 
@@ -1402,6 +1420,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
         let instrument_id = cmd.bar_type.instrument_id();
         let mut subscriptions = lock(&self.subscriptions)?;
+
         if let Some(sub_info) =
             subscriptions.remove(&(instrument_id, SubscriptionType::Bars(cmd.bar_type)))
         {
@@ -1481,6 +1500,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (cmd.instrument_id, SubscriptionType::BookDeltas),
@@ -1515,6 +1535,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     e
                 );
             }
+
             guard.release();
         };
 
@@ -1533,6 +1554,7 @@ impl DataClient for InteractiveBrokersDataClient {
         tracing::debug!("Unsubscribing from book deltas for {}", cmd.instrument_id);
 
         let mut subscriptions = lock(&self.subscriptions)?;
+
         if let Some(sub_info) =
             subscriptions.remove(&(cmd.instrument_id, SubscriptionType::BookDeltas))
         {
@@ -1551,6 +1573,7 @@ impl DataClient for InteractiveBrokersDataClient {
     // Request handlers
     fn request_instrument(&self, cmd: RequestInstrument) -> anyhow::Result<()> {
         tracing::debug!("Requesting instrument: {}", cmd.instrument_id);
+
         if cmd.start.is_some() {
             tracing::warn!(
                 "Requesting instrument {} with specified `start` which has no effect",
@@ -1594,6 +1617,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
                 self.spawn_command(async move {
                     let filters = params_to_string_filters(params.as_ref());
+
                     if let Err(e) = instrument_provider
                         .fetch_contract_details(&client_clone, instrument_id, force_update, filters)
                         .await
@@ -1805,6 +1829,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 } else {
                     Vec::new()
                 };
+
                 let instruments_count = instruments.len();
 
                 let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1907,6 +1932,7 @@ impl DataClient for InteractiveBrokersDataClient {
             if current_end_date.is_none() {
                 current_end_date = Some(jiff::Timestamp::now());
             }
+
             let current_start_date = cmd_start;
 
             loop {
@@ -1945,6 +1971,7 @@ impl DataClient for InteractiveBrokersDataClient {
                                     continue;
                                 }
                             };
+
                             let ts_event =
                                 super::convert::ib_timestamp_to_unix_nanos(&tick.timestamp);
                             let ts_init = clock.get_time_ns();
@@ -2097,6 +2124,7 @@ impl DataClient for InteractiveBrokersDataClient {
             if current_end_date.is_none() {
                 current_end_date = Some(jiff::Timestamp::now());
             }
+
             let current_start_date = cmd_start;
 
             loop {
@@ -2135,6 +2163,7 @@ impl DataClient for InteractiveBrokersDataClient {
                                     continue;
                                 }
                             };
+
                             let ts_event =
                                 super::convert::ib_timestamp_to_unix_nanos(&tick.timestamp);
                             let ts_init = clock.get_time_ns();
@@ -2313,6 +2342,7 @@ impl DataClient for InteractiveBrokersDataClient {
                         // Convert IB bars to Nautilus bars
                         for ib_bar in &historical_data.bars {
                             let ib_bar = apply_bar_price_magnifier(ib_bar, price_magnifier);
+
                             match ib_bar_to_nautilus_bar(
                                 &ib_bar,
                                 bar_type,
@@ -2346,12 +2376,12 @@ impl DataClient for InteractiveBrokersDataClient {
             // Sort and deduplicate bars as segments might overlap or be out of order from IB.
             all_bars.sort_by_key(|b| b.ts_event);
             all_bars.dedup();
-
             if let Some(limit) = limit
                 && all_bars.len() > limit
             {
                 all_bars = all_bars.split_off(all_bars.len() - limit);
             }
+
             let bars_count = all_bars.len();
 
             let response = DataResponse::Bars(BarsResponse::new(
@@ -2462,6 +2492,7 @@ mod tests {
                 id: next_subscription_id(),
             },
         );
+
         subscriptions.insert(
             (instrument_id, SubscriptionType::Trades),
             SubscriptionInfo {
@@ -2496,6 +2527,7 @@ mod tests {
                 id: next_subscription_id(),
             },
         );
+
         subscriptions.insert(
             (instrument_id, SubscriptionType::Bars(five_minute)),
             SubscriptionInfo {
@@ -2529,6 +2561,7 @@ mod tests {
                 id: first_id,
             },
         );
+
         let stale_guard = SubscriptionGuard {
             subscriptions: Arc::clone(&subscriptions),
             key,
@@ -2544,6 +2577,7 @@ mod tests {
                 id: second_id,
             },
         );
+
         stale_guard.release();
         assert!(subscriptions.lock().unwrap().contains_key(&key));
 
@@ -2552,6 +2586,7 @@ mod tests {
             key,
             id: second_id,
         };
+
         current_guard.release();
         assert!(!subscriptions.lock().unwrap().contains_key(&key));
     }
@@ -2570,6 +2605,7 @@ mod tests {
                 id,
             },
         );
+
         {
             let _guard = SubscriptionGuard {
                 subscriptions: Arc::clone(&subscriptions),
@@ -2578,6 +2614,7 @@ mod tests {
             };
             // Dropped without release(), as when a stream task panics.
         }
+
         assert!(!subscriptions.lock().unwrap().contains_key(&key));
     }
 
@@ -2590,6 +2627,7 @@ mod tests {
         nautilus_common::live::runner::replace_data_event_sender(sender);
 
         let config = InteractiveBrokersDataClientConfig::default();
+
         let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             config.instrument_provider.clone(),
         ));
@@ -2604,6 +2642,7 @@ mod tests {
         nautilus_common::live::runner::replace_data_event_sender(sender);
 
         let config = InteractiveBrokersDataClientConfig::default();
+
         let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             config.instrument_provider.clone(),
         ));
@@ -2638,6 +2677,7 @@ mod tests {
         nautilus_common::live::runner::replace_data_event_sender(sender);
 
         let config = InteractiveBrokersDataClientConfig::default();
+
         let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             config.instrument_provider.clone(),
         ));

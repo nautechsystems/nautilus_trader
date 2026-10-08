@@ -89,6 +89,7 @@ fn test_resolve_instrument_id_for_contract_uses_cached_contract_id() {
     let instrument = equity_aapl();
     let expected_id = instrument.id();
     provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 1);
+
     let contract = Contract {
         contract_id: 265598,
         symbol: Symbol::from("AAPL"),
@@ -111,6 +112,7 @@ fn test_resolve_instrument_id_for_contract_reuses_cached_stock_venue() {
     let instrument = equity_aapl();
     let expected_id = instrument.id();
     provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 1);
+
     let contract = Contract {
         contract_id: 0,
         symbol: Symbol::from("AAPL"),
@@ -137,6 +139,7 @@ fn test_resolve_instrument_id_for_bag_contract_uses_cached_combo_legs() {
     provider.insert_test_instrument(InstrumentAny::from(spread), 9000, 1);
     provider.insert_test_contract_id_mapping(1001, long_leg);
     provider.insert_test_contract_id_mapping(1002, short_leg);
+
     let contract = Contract {
         contract_id: 0,
         symbol: Symbol::from("SPY"),
@@ -215,6 +218,7 @@ fn test_find_all_returns_only_requested_cached_instruments() {
 #[rstest]
 fn test_determine_venue() {
     let provider = create_test_provider();
+
     let contract = Contract {
         contract_id: 0,
         symbol: Symbol::from("AAPL"),
@@ -233,6 +237,7 @@ fn test_determine_venue() {
 #[rstest]
 fn test_determine_venue_with_direct_exchange() {
     let provider = create_test_provider();
+
     let contract = Contract {
         contract_id: 0,
         symbol: Symbol::from("SPY"),
@@ -251,6 +256,7 @@ fn test_determine_venue_with_direct_exchange() {
 #[rstest]
 fn test_determine_stock_venue_uses_primary_exchange_over_fill_exchange() {
     let provider = create_test_provider();
+
     let contract = Contract {
         contract_id: 0,
         symbol: Symbol::from("META"),
@@ -272,8 +278,10 @@ fn test_determine_stock_venue_reuses_compatible_cached_mic_venue() {
         convert_exchange_to_mic_venue: true,
         ..Default::default()
     };
+
     let provider = InteractiveBrokersInstrumentProvider::new(config);
     provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
+
     let contract = Contract {
         contract_id: 0,
         symbol: Symbol::from("AAPL"),
@@ -293,6 +301,7 @@ fn test_determine_stock_venue_reuses_compatible_cached_mic_venue() {
 fn test_determine_stock_smart_venue_reuses_cached_symbol_venue() {
     let provider = create_test_provider();
     provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
+
     let contract = Contract {
         contract_id: 0,
         symbol: Symbol::from("AAPL"),

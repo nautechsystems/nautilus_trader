@@ -109,6 +109,7 @@ pub fn price_type_to_ib_what_to_show_for_security(
     if uses_agg_trades(is_crypto, price_type) {
         return HistoricalWhatToShow::AggTrades;
     }
+
     price_type_to_ib_what_to_show(price_type)
 }
 
@@ -136,6 +137,7 @@ pub fn price_type_to_ib_realtime_what_to_show_for_security(
     if uses_agg_trades(is_crypto, price_type) {
         return RealtimeWhatToShow::AggTrades;
     }
+
     price_type_to_ib_realtime_what_to_show(price_type)
 }
 
@@ -239,6 +241,7 @@ pub fn ib_bar_to_nautilus_bar(
 #[must_use]
 pub fn bar_close_from_open(open: UnixNanos, spec: &BarSpecification) -> UnixNanos {
     let is_day = spec.aggregation == BarAggregation::Day;
+
     let duration = match spec.aggregation {
         BarAggregation::Second
         | BarAggregation::Minute
@@ -246,9 +249,11 @@ pub fn bar_close_from_open(open: UnixNanos, spec: &BarSpecification) -> UnixNano
         | BarAggregation::Day => spec.timedelta(),
         _ => return open,
     };
+
     let Ok(duration) = DurationNanos::try_from(duration) else {
         return open;
     };
+
     let close = open.saturating_add(duration);
     if is_day {
         close.saturating_sub(DurationNanos::new(1))
@@ -301,7 +306,6 @@ pub fn calculate_duration_segments(
     let mut results = Vec::new();
     let duration = end.duration_since(start);
     let mut total_seconds = duration.as_secs();
-
     if duration.subsec_nanos() > 0 {
         total_seconds += 1;
     }
@@ -389,14 +393,16 @@ pub(crate) fn extend_historical_tick_batch<T>(
     let Some(min_ts_nanos) = batch_ticks.iter().map(&ts_event).min() else {
         return false;
     };
+
     let new_end_nanos = min_ts_nanos.as_u64().saturating_sub(1);
+
     let Ok(new_end) = Timestamp::from_nanosecond(i128::from(new_end_nanos)) else {
         return false;
     };
+
     *current_end_date = Some(new_end);
 
     all_ticks.extend(batch_ticks);
-
     if current_start_date
         .zip(*current_end_date)
         .is_some_and(|(start, end)| end <= start)
@@ -479,6 +485,7 @@ mod tests {
     #[rstest]
     fn test_bar_type_to_ib_bar_size_seconds() {
         let instrument_id = create_test_instrument_id();
+
         let bar_type = BarType::new(
             instrument_id,
             BarSpecification::new(1, BarAggregation::Second, PriceType::Last),
@@ -501,6 +508,7 @@ mod tests {
     #[rstest]
     fn test_bar_type_to_ib_bar_size_minutes() {
         let instrument_id = create_test_instrument_id();
+
         let bar_type = BarType::new(
             instrument_id,
             BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
@@ -523,6 +531,7 @@ mod tests {
     #[rstest]
     fn test_bar_type_to_ib_bar_size_hours() {
         let instrument_id = create_test_instrument_id();
+
         let bar_type = BarType::new(
             instrument_id,
             BarSpecification::new(1, BarAggregation::Hour, PriceType::Last),
@@ -536,6 +545,7 @@ mod tests {
     #[rstest]
     fn test_bar_type_to_ib_bar_size_days() {
         let instrument_id = create_test_instrument_id();
+
         let bar_type = BarType::new(
             instrument_id,
             BarSpecification::new(1, BarAggregation::Day, PriceType::Last),
@@ -549,6 +559,7 @@ mod tests {
     #[rstest]
     fn test_bar_type_to_ib_bar_size_unsupported() {
         let instrument_id = create_test_instrument_id();
+
         let bar_type = BarType::new(
             instrument_id,
             BarSpecification::new(12, BarAggregation::Minute, PriceType::Last),
@@ -688,6 +699,7 @@ mod tests {
         };
 
         let instrument_id = create_test_instrument_id();
+
         let bar_type = BarType::new(
             instrument_id,
             BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
@@ -720,6 +732,7 @@ mod tests {
         };
 
         let instrument_id = create_test_instrument_id();
+
         let bar_type = BarType::new(
             instrument_id,
             BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),

@@ -37,6 +37,7 @@ impl OrderTrackerState {
                 reference.is_none_or(|id| id == context.client_order_id || id == child_id),
                 "IB permanent ID {perm_id} has a conflicting order reference {order_ref}"
             );
+
             return if perm_id == context.perm_id {
                 Ok(OrderCorrelation::Tracked {
                     order_id: primary_order_id,
@@ -53,6 +54,7 @@ impl OrderTrackerState {
         let raw = (client_id == self.client_id)
             .then(|| self.order(order_id).map(|order| (order_id, order.clone())))
             .flatten();
+
         let by_perm = if perm_id > 0 {
             self.active_orders
                 .iter()
@@ -62,6 +64,7 @@ impl OrderTrackerState {
         } else {
             None
         };
+
         let by_ref = reference.and_then(|reference| {
             self.order_id_map
                 .get(&reference)
@@ -74,6 +77,7 @@ impl OrderTrackerState {
                         .map(|(id, order)| (*id, order.clone()))
                 })
         });
+
         let identities: Vec<_> = [raw.as_ref(), by_perm.as_ref(), by_ref.as_ref()]
             .into_iter()
             .flatten()
@@ -98,6 +102,7 @@ impl OrderTrackerState {
                 client_order_id: None,
             });
         }
+
         let Some((tracking_id, mut context)) = by_ref.or(by_perm).or(raw) else {
             return Ok(OrderCorrelation::Untracked {
                 client_order_id: reference,
@@ -114,6 +119,7 @@ impl OrderTrackerState {
         if context.perm_id == 0 && perm_id > 0 {
             context.perm_id = perm_id;
         }
+
         Ok(OrderCorrelation::Tracked {
             order_id: tracking_id,
             context,
@@ -142,12 +148,14 @@ impl InteractiveBrokersExecutionClient {
                 if order.account_id().is_some_and(|id| id != account_id) {
                     continue;
                 }
+
                 let instrument_id = order.instrument_id();
                 if instrument_provider.find(&instrument_id).is_none() {
                     instrument_ids.insert(instrument_id);
                 }
             }
         }
+
         let mut instrument_ids: Vec<_> = instrument_ids.into_iter().collect();
         instrument_ids.sort_unstable();
         instrument_ids
@@ -191,6 +199,7 @@ impl InteractiveBrokersExecutionClient {
     pub(super) async fn publish_combo_order_instruments(&self, client: &Client) {
         let mut contracts = Vec::new();
         let timeout_dur = Duration::from_secs(self.config.request_timeout);
+
         let queries = tokio::time::timeout(timeout_dur, async {
             let mut open = client.all_open_orders().await?;
             while let Some(item) = open.next().await {
@@ -198,12 +207,14 @@ impl InteractiveBrokersExecutionClient {
                     contracts.push(data.contract);
                 }
             }
+
             let mut completed = client.completed_orders(false).await?;
             while let Some(item) = completed.next().await {
                 if let SubscriptionItem::Data(Orders::OrderData(data)) = item? {
                     contracts.push(data.contract);
                 }
             }
+
             Ok::<_, anyhow::Error>(())
         })
         .await;
@@ -215,7 +226,6 @@ impl InteractiveBrokersExecutionClient {
         }
 
         let mut loaded = AHashSet::new();
-
         for contract in contracts
             .iter()
             .filter(|contract| contract.security_type == SecurityType::Spread)
@@ -250,6 +260,7 @@ impl InteractiveBrokersExecutionClient {
                     exchange: Exchange::from(combo_leg.exchange.as_str()),
                     ..Default::default()
                 };
+
                 self.instrument_provider
                     .get_instrument(client, &leg_contract)
                     .await?
@@ -348,6 +359,7 @@ impl InteractiveBrokersExecutionClient {
         orders: &OrderTracker,
     ) -> anyhow::Result<(TraderId, StrategyId)> {
         let state = orders.lock()?;
+
         let order = state.active_orders.get(&order_id).with_context(|| {
             format!("Tracked state not found for Interactive Brokers order {order_id}")
         })?;
@@ -436,6 +448,7 @@ impl InteractiveBrokersExecutionClient {
         let client_order_id = target_order.client_order_id();
         // Publish the raw IB route only after the recovered identity is complete.
         let mut state = orders.lock()?;
+
         let perm_id = target_order
             .venue_order_id()
             .and_then(|id| IbOrderSelector::from_venue_order_id(&id).ok())
@@ -471,9 +484,11 @@ impl InteractiveBrokersExecutionClient {
                         spread_fills_held: HeldSpreadFills::default(),
                         last_update: None,
                     });
+
                 return Ok(());
             }
         }
+
         state.order_id_map.insert(client_order_id, ib_order_id);
         state.terminal_orders.remove(&ib_order_id);
         state
@@ -499,6 +514,7 @@ impl InteractiveBrokersExecutionClient {
                     target_order.trigger_price(),
                 )),
             });
+
         state
             .venue_order_id_map
             .insert(ib_order_id, client_order_id);
@@ -527,6 +543,7 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &EventSender<ExecutionEvent>,
     ) -> anyhow::Result<bool> {
         let mut state = orders.lock()?;
+
         let Some(context) = state.active_orders.get_mut(&ib_order_id) else {
             return Ok(false);
         };
@@ -543,6 +560,7 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &EventSender<ExecutionEvent>,
     ) -> anyhow::Result<bool> {
         let mut state = orders.lock()?;
+
         let context = if let Some(context) = state.active_orders.get_mut(&ib_order_id) {
             context
         } else if let Some(context) = state.terminal_orders.get_mut(&ib_order_id) {
