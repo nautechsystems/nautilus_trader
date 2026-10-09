@@ -74,7 +74,7 @@ use nautilus_model::{
         order::spec::{
             OrderCancelRejectedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderFillVoidedSpec,
             OrderFilledSpec, OrderModifyRejectedSpec, OrderPendingCancelSpec,
-            OrderPendingUpdateSpec, OrderRejectedSpec, OrderUpdatedSpec,
+            OrderPendingUpdateSpec, OrderRejectedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -5686,58 +5686,111 @@ fn test_process_order_event_publishes_instrument_order_event_topic(
 }
 
 #[rstest]
-#[case::submitted(false, false, false)]
-#[case::accepted(false, true, false)]
-#[case::pending_submitted(true, false, false)]
-#[case::pending_accepted(true, true, false)]
-#[case::acceptance_overtakes_submitted_cancel(true, false, true)]
-#[case::acceptance_overtakes_accepted_cancel(true, true, true)]
+#[case::submitted(&[], OrderStatus::Submitted, false)]
+#[case::accepted(&[OrderStatus::Accepted], OrderStatus::Accepted, false)]
+#[case::pending_submitted(&[OrderStatus::PendingCancel], OrderStatus::Submitted, false)]
+#[case::pending_accepted(&[OrderStatus::Accepted, OrderStatus::PendingCancel], OrderStatus::Accepted, false)]
+#[case::acceptance_overtakes_submitted_cancel(&[OrderStatus::PendingCancel, OrderStatus::Accepted], OrderStatus::Accepted, false)]
+#[case::acceptance_overtakes_accepted_cancel(&[OrderStatus::Accepted, OrderStatus::PendingCancel, OrderStatus::Accepted], OrderStatus::Accepted, false)]
+#[case::triggered(&[OrderStatus::Accepted, OrderStatus::Triggered], OrderStatus::Triggered, false)]
+#[case::partially_filled(&[OrderStatus::Accepted, OrderStatus::PartiallyFilled], OrderStatus::PartiallyFilled, false)]
+#[case::pending_triggered(&[OrderStatus::Accepted, OrderStatus::Triggered, OrderStatus::PendingCancel], OrderStatus::Triggered, false)]
+#[case::pending_partially_filled(&[OrderStatus::Accepted, OrderStatus::PartiallyFilled, OrderStatus::PendingCancel], OrderStatus::PartiallyFilled, false)]
+#[case::fill_overtakes_cancel(&[OrderStatus::Accepted, OrderStatus::PendingCancel, OrderStatus::PartiallyFilled], OrderStatus::PartiallyFilled, false)]
+#[case::pending_update_accepted_updated(&[OrderStatus::Accepted, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, false)]
+#[case::pending_update_accepted_rejected(&[OrderStatus::Accepted, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, true)]
+#[case::pending_update_triggered_updated(&[OrderStatus::Accepted, OrderStatus::Triggered, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, false)]
+#[case::pending_update_triggered_rejected(&[OrderStatus::Accepted, OrderStatus::Triggered, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, true)]
+#[case::pending_update_partially_filled_updated(&[OrderStatus::Accepted, OrderStatus::PartiallyFilled, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, false)]
+#[case::pending_update_partially_filled_rejected(&[OrderStatus::Accepted, OrderStatus::PartiallyFilled, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, true)]
 fn test_process_cancel_rejected_publishes_event(
     mut execution_engine: ExecutionEngine,
-    #[case] pending_cancel: bool,
-    #[case] accepted_before_cancel: bool,
-    #[case] acceptance_overtakes_cancel: bool,
+    #[case] statuses: &[OrderStatus],
+    #[case] expected_status: OrderStatus,
+    #[case] modify_rejected: bool,
 ) {
     let account_id = AccountId::test_default();
     let venue_order_id = VenueOrderId::from("V-001");
-    let (instrument, order) = prepare_initialized_market_order_with_account(
+
+    let order_type = if statuses.contains(&OrderStatus::Triggered) {
+        OrderType::StopLimit
+    } else {
+        OrderType::Market
+    };
+
+    let (instrument, order) = prepare_initialized_order_with_account(
         &execution_engine,
         CashAccount::default().into(),
+        order_type,
     );
     execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
 
-    if accepted_before_cancel {
-        execution_engine.process(&TestOrderEventStubs::accepted(
-            &order,
-            account_id,
-            venue_order_id,
-        ));
-    }
+    for status in statuses {
+        let cached = cached_order_or(&execution_engine, &order);
 
-    if pending_cancel {
-        execution_engine.process(&OrderEventAny::PendingCancel(build_order_pending_cancel(
-            order.trader_id(),
-            order.strategy_id(),
-            instrument.id(),
-            order.client_order_id(),
-            account_id,
-            cached_order_or(&execution_engine, &order).venue_order_id(),
-        )));
-    }
+        let event = match status {
+            OrderStatus::Accepted => {
+                TestOrderEventStubs::accepted(&order, account_id, venue_order_id)
+            }
+            OrderStatus::Triggered => OrderEventAny::Triggered(
+                OrderTriggeredSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(instrument.id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(account_id)
+                    .venue_order_id(venue_order_id)
+                    .build(),
+            ),
+            OrderStatus::PartiallyFilled => OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(instrument.id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(account_id)
+                    .venue_order_id(venue_order_id)
+                    .order_side(order.order_side())
+                    .order_type(order_type)
+                    .last_qty(Quantity::from(40_000))
+                    .last_px(Price::from("1.00000"))
+                    .currency(instrument.quote_currency())
+                    .build(),
+            ),
+            OrderStatus::PendingUpdate => OrderEventAny::PendingUpdate(build_order_pending_update(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                account_id,
+                cached.venue_order_id(),
+            )),
+            OrderStatus::PendingCancel => OrderEventAny::PendingCancel(build_order_pending_cancel(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                account_id,
+                cached.venue_order_id(),
+            )),
+            _ => panic!("Unsupported setup status: {status}"),
+        };
 
-    if acceptance_overtakes_cancel {
-        execution_engine.process(&TestOrderEventStubs::accepted(
-            &order,
-            account_id,
-            venue_order_id,
-        ));
-    }
+        execution_engine.process(&event);
 
-    let expected_status = if accepted_before_cancel || acceptance_overtakes_cancel {
-        OrderStatus::Accepted
-    } else {
-        OrderStatus::Submitted
-    };
+        let expected = if *status == OrderStatus::PartiallyFilled
+            && cached.status() == OrderStatus::PendingCancel
+        {
+            OrderStatus::PendingCancel
+        } else {
+            *status
+        };
+
+        assert_eq!(
+            cached_order_or(&execution_engine, &order).status(),
+            expected
+        );
+    }
 
     let before_rejection = cached_order_or(&execution_engine, &order);
 
@@ -5788,11 +5841,67 @@ fn test_process_cancel_rejected_publishes_event(
             account_id,
             venue_order_id,
         ));
+        assert_eq!(
+            cached_order_or(&execution_engine, &order).status(),
+            OrderStatus::Accepted
+        );
     }
 
-    let accepted = cached_order_or(&execution_engine, &order);
-    assert_eq!(accepted.status(), OrderStatus::Accepted);
-    assert_eq!(accepted.venue_order_id(), Some(venue_order_id));
+    if expected_status == OrderStatus::PendingUpdate {
+        let resolution = if modify_rejected {
+            OrderEventAny::ModifyRejected(build_order_modify_rejected(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                account_id,
+                Some(venue_order_id),
+            ))
+        } else {
+            OrderEventAny::Updated(build_order_updated(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                Quantity::from(80_000),
+                Some(venue_order_id),
+                Some(account_id),
+                order.price(),
+                order.trigger_price(),
+                None,
+                false,
+            ))
+        };
+
+        execution_engine.process(&resolution);
+
+        let resolved = cached_order_or(&execution_engine, &order);
+        assert_eq!(
+            resolved.status(),
+            before_rejection.previous_status().unwrap()
+        );
+        assert_eq!(
+            resolved.previous_status(),
+            before_rejection.previous_status()
+        );
+        assert_eq!(
+            resolved.quantity(),
+            if modify_rejected {
+                before_rejection.quantity()
+            } else {
+                Quantity::from(80_000)
+            }
+        );
+        assert_eq!(resolved.filled_qty(), before_rejection.filled_qty());
+        assert_eq!(
+            resolved.leaves_qty(),
+            resolved.quantity() - resolved.filled_qty()
+        );
+        assert_eq!(resolved.venue_order_id(), Some(venue_order_id));
+    }
+
+    let cancellable = cached_order_or(&execution_engine, &order);
+    assert_eq!(cancellable.venue_order_id(), Some(venue_order_id));
     execution_engine.process(&OrderEventAny::PendingCancel(build_order_pending_cancel(
         order.trader_id(),
         order.strategy_id(),
@@ -5802,7 +5911,7 @@ fn test_process_cancel_rejected_publishes_event(
         Some(venue_order_id),
     )));
     execution_engine.process(&TestOrderEventStubs::canceled(
-        &accepted,
+        &cancellable,
         account_id,
         Some(venue_order_id),
     ));
@@ -5821,6 +5930,14 @@ fn prepare_initialized_market_order_with_account(
     execution_engine: &ExecutionEngine,
     account: AccountAny,
 ) -> (InstrumentAny, OrderAny) {
+    prepare_initialized_order_with_account(execution_engine, account, OrderType::Market)
+}
+
+fn prepare_initialized_order_with_account(
+    execution_engine: &ExecutionEngine,
+    account: AccountAny,
+    order_type: OrderType,
+) -> (InstrumentAny, OrderAny) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
     let instrument = InstrumentAny::from(audusd_sim());
@@ -5837,13 +5954,16 @@ fn prepare_initialized_market_order_with_account(
         .add_account(account)
         .unwrap();
 
-    let order = OrderTestBuilder::new(OrderType::Market)
+    let order = OrderTestBuilder::new(order_type)
         .trader_id(trader_id)
         .strategy_id(strategy_id)
         .instrument_id(instrument.id())
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .trigger_price(Price::from("1.00000"))
+        .trigger_type(TriggerType::LastPrice)
         .build();
 
     execution_engine
