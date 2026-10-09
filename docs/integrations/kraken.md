@@ -712,8 +712,9 @@ every holding it covers and an absent report is genuine evidence of flat.
   direction, and a timestamp before the epoch. `OrderNotFound` carries no order state and is skipped
   without affecting completeness; a venue error reported with a success status fails the read. A
   terminal history row with an executed quantity carries no average price, so it is priced from the
-  order's fills on the fills page plus those a cached order has already recorded; when they fall
-  short of its filled quantity, the single-order query fails and the bulk read leaves the order out,
+  order's fills on the fills page when they cover its filled quantity exactly, else together with
+  the fills a cached order has recorded, again exactly, and a failed fills read counts as an empty
+  page; when nothing covers it, the single-order query fails and the bulk read leaves the order out,
   so reconciliation defers it rather than infer the executions at the limit price.
 
 **Fill reports:**

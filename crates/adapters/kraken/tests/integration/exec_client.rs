@@ -1825,29 +1825,170 @@ async fn test_futures_history_filled_report_short_of_fills_is_deferred(#[case] r
     }
 }
 
-/// A failed fills read leaves a terminal history row unpriced, so both reads fail rather than
-/// report it.
+/// A failed fills read leaves a terminal history row unpriced: the single-order query fails, and
+/// the bulk read withholds that order while still reporting the others.
+#[rstest]
+#[tokio::test]
+async fn test_futures_history_filled_report_is_withheld_when_the_fills_read_fails() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element(
+            "OrderUpdated",
+            "e2",
+            "H-NOFILLS-1",
+            "PI_XBTUSD",
+            "1000",
+            "1000",
+            1680877245600,
+        ),
+        futures_history_element(
+            "OrderPlaced",
+            "e1",
+            "H-RESTING-1",
+            "PI_XBTUSD",
+            "500",
+            "0",
+            1680877245500,
+        ),
+    ]));
+    *state.fills_response.lock().await =
+        Some(r#"{"result":"error","error":"apiLimitExceeded"}"#.to_string());
+
+    let error = read_history_report(&client, HistoryRead::SingleOrder, "H-NOFILLS-1")
+        .await
+        .expect_err("an unpriced terminal row must not be reported");
+    assert!(
+        error.to_string().contains("Failed to get fills"),
+        "unexpected error: {error}"
+    );
+
+    let reports = client
+        .generate_order_status_reports(&history_orders_cmd())
+        .await
+        .unwrap();
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["H-RESTING-1"],
+        "the unpriced order is withheld and the rest of the read survives"
+    );
+}
+
+/// Caches a 1,000-contract limit buy with venue order ID `venue_order_id` holding `fills`, each
+/// given as `(trade_id, qty, price)`.
+fn cache_order_with_fills(
+    cache: &Rc<RefCell<Cache>>,
+    venue_order_id: &str,
+    fills: &[(&str, &str, &str)],
+) {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(test_instrument_id())
+        .client_order_id(ClientOrderId::new(format!("O-{venue_order_id}")))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1000"))
+        .price(Price::from("27500.5"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    mark_cached_order_submitted(cache, &order);
+    set_venue_order_id_on_cached_order(cache, &order, venue_order_id);
+
+    for (trade_id, qty, price) in fills {
+        let filled = OrderFilled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            VenueOrderId::from(venue_order_id),
+            test_account_id(),
+            TradeId::from(*trade_id),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from(*qty),
+            Price::from(*price),
+            Currency::USD(),
+            LiquiditySide::Taker,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            None,
+            None,
+            None,
+        );
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(filled))
+            .unwrap();
+    }
+}
+
+/// An execution the engine inferred carries a synthetic trade ID, so it is not matched to the
+/// venue fill it stands for; the venue's fills, covering the order on their own, price the report
+/// instead of being added to it.
 #[rstest]
 #[case::single_order(HistoryRead::SingleOrder)]
 #[case::bulk(HistoryRead::Bulk)]
 #[tokio::test]
-async fn test_futures_history_filled_report_fails_when_the_fills_read_fails(
+async fn test_futures_history_filled_report_does_not_count_an_inferred_fill_twice(
     #[case] read: HistoryRead,
 ) {
-    let (client, _rx, _cache, state) =
+    let (client, _rx, cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
+    cache_order_with_fills(&cache, "H-INFERRED-1", &[("inferred-1", "600", "27500.5")]);
     *state.futures_order_history_json.lock().await =
-        Some(filled_history_json("H-NOFILLS-1", "Limit"));
+        Some(filled_history_json("H-INFERRED-1", "Limit"));
+    *state.fills_response.lock().await = Some(futures_fills_json(&[
+        ("f-1", "H-INFERRED-1", "600", "27000.0"),
+        ("f-2", "H-INFERRED-1", "400", "27100.5"),
+    ]));
+
+    let report = read_history_report(&client, read, "H-INFERRED-1")
+        .await
+        .unwrap()
+        .expect("the venue's fills cover the order");
+
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("27040.2").unwrap()),
+        "(600 x 27000.0 + 400 x 27100.5) / 1000, without the inferred fill"
+    );
+}
+
+/// A cached order whose recorded executions cover the report prices it, so the read succeeds even
+/// when the fills read fails.
+#[rstest]
+#[case::single_order(HistoryRead::SingleOrder)]
+#[case::bulk(HistoryRead::Bulk)]
+#[tokio::test]
+async fn test_futures_history_filled_report_is_priced_from_a_covering_cached_order(
+    #[case] read: HistoryRead,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    cache_order_with_fills(
+        &cache,
+        "H-COVERED-1",
+        &[("f-1", "600", "27000.0"), ("f-2", "400", "27100.5")],
+    );
+    *state.futures_order_history_json.lock().await =
+        Some(filled_history_json("H-COVERED-1", "Limit"));
     *state.fills_response.lock().await =
         Some(r#"{"result":"error","error":"apiLimitExceeded"}"#.to_string());
 
-    let error = read_history_report(&client, read, "H-NOFILLS-1")
+    let report = read_history_report(&client, read, "H-COVERED-1")
         .await
-        .expect_err("an unpriced terminal row must not be reported");
+        .unwrap()
+        .expect("the cached order covers the report");
 
-    assert!(
-        error.to_string().contains("Failed to get fills"),
-        "unexpected error: {error}"
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("27040.2").unwrap())
     );
 }
 
