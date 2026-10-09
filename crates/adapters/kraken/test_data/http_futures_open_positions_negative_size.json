@@ -1,0 +1,13 @@
+{
+  "result": "success",
+  "openPositions": [
+    {
+      "side": "long",
+      "symbol": "PI_XBTUSD",
+      "price": 27500.5,
+      "fillTime": "2023-04-07T15:45:10.739Z",
+      "size": -1000,
+      "unrealizedFunding": 0.0
+    }
+  ]
+}

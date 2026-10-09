@@ -1699,8 +1699,9 @@ impl KrakenFuturesHttpClient {
 
     /// Requests order status reports, also reporting whether the set is complete.
     ///
-    /// The flag is `false` when a record was skipped because its instrument could not be resolved,
-    /// which `ExecutionMassStatus::set_report_window` records for bounded history.
+    /// An in-scope open order whose instrument cannot be resolved fails the read. The flag is
+    /// `false` when a record cannot be parsed, or a historical record's instrument cannot be
+    /// resolved, which `ExecutionMassStatus::set_report_window` records for bounded history.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -1805,11 +1806,12 @@ impl KrakenFuturesHttpClient {
                     }
                 }
             } else {
-                log::warn!(
-                    "Instrument not in cache for futures symbol {}, skipping order",
+                // An in-scope open order the client cannot resolve fails the read, as the spot
+                // client's does: dropped, it reads to reconciliation as an order the venue never had.
+                anyhow::bail!(
+                    "OpenOrders: instrument not in cache for futures symbol {}",
                     order.symbol
                 );
-                complete = false;
             }
         }
 
@@ -2053,20 +2055,24 @@ impl KrakenFuturesHttpClient {
                 continue;
             }
 
-            if let Some(instrument) = resolved {
-                match parse_futures_position_status_report(
-                    &position,
-                    &instrument,
-                    account_id,
-                    ts_init,
-                ) {
-                    Ok(report) => all_reports.push(report),
-                    Err(e) => {
-                        let symbol = &position.symbol;
-                        log::warn!("Failed to parse futures position {symbol}: {e}");
-                    }
-                }
-            }
+            // An in-scope position the client cannot resolve or parse fails the read: dropped,
+            // it reads to reconciliation as flat.
+            let Some(instrument) = resolved else {
+                anyhow::bail!(
+                    "OpenPositions: instrument not in cache for futures symbol {}",
+                    position.symbol
+                );
+            };
+
+            let report =
+                parse_futures_position_status_report(&position, &instrument, account_id, ts_init)
+                    .map_err(|e| {
+                    anyhow::anyhow!(
+                        "OpenPositions: failed to parse futures position {}: {e}",
+                        position.symbol
+                    )
+                })?;
+            all_reports.push(report);
         }
 
         Ok(all_reports)

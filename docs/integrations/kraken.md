@@ -566,9 +566,17 @@ cutoff avoids a report set that never existed at the venue, which a moving cutof
 Declaring the cutoff is what lets the engine apply its bounded-history rules; the completeness flag
 described below qualifies that set rather than gating it.
 
-Order and fill records contribute to the completeness flag: the set is incomplete when a record's
-instrument could not be resolved, or when a record could not be parsed. Position records do not
-currently contribute, and the futures position read still drops an unresolved symbol silently.
+An in-scope open order or position whose instrument cannot be resolved fails the read on both
+clients, as the adapter guide's scope table requires: dropped, it would read to reconciliation as
+an order or position the venue never had. A read scoped to an instrument the client does not hold
+returns no rows rather than failing, since the spot and futures clients share the venue and the
+engine may ask either one about an order it has not routed. A position that cannot be parsed
+fails the read on both clients for the same reason. The completeness flag covers the other gaps:
+any order or fill record that cannot be parsed, open or historical, marks the set incomplete on
+both clients, and so does a historical order or fill record whose instrument could not be
+resolved. Position records do not contribute to the flag. The futures single-order status lookup
+and `query_order` read only the queried instrument's orders, so an unresolvable order on another
+contract is out of scope for them rather than failing them.
 
 Spot closed-order and fill reads page through an offset until the venue returns an empty page, and
 stop after 500 pages. A read cut short by that cap logs a warning, and how it surfaces depends on

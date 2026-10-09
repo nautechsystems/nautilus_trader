@@ -174,6 +174,28 @@ async fn wait_for_server(addr: SocketAddr, path: &str) {
     .await;
 }
 
+/// An inverse contract for the `PI_ETHUSD` rows the futures fixtures carry, which the
+/// instruments fixture does not list.
+fn create_test_inverse_futures_instrument() -> InstrumentAny {
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(InstrumentId::from("PI_ETHUSD.KRAKEN"))
+            .raw_symbol(Symbol::new("PI_ETHUSD"))
+            .base_currency(Currency::ETH())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::ETH())
+            .is_inverse(true)
+            .price_precision(1)
+            .size_precision(0)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("1"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    )
+}
+
 #[allow(dead_code)]
 fn create_test_futures_instrument() -> InstrumentAny {
     let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
@@ -2299,22 +2321,31 @@ async fn test_futures_domain_request_order_status_reports_uses_position_size_for
     let instruments = client.request_instruments().await.unwrap();
     client.cache_instruments(&instruments);
 
+    // The fixture also lists a `PI_ETHUSD` order; holding that contract keeps the read unscoped,
+    // which is the read mass status performs.
+    client.cache_instrument(create_test_inverse_futures_instrument());
+
     let account_id = AccountId::from("KRAKEN-001");
     let reports = client
         .request_order_status_reports(account_id, None, None, None, true)
         .await
         .unwrap();
 
-    assert_eq!(reports.len(), 2);
+    assert_eq!(reports.len(), 3);
     assert_eq!(
         reports
             .iter()
             .map(|report| report.venue_order_id.as_str())
             .collect::<Vec<_>>(),
         vec![
+            "2ce038ae-c144-4de7-a0f1-82f7f4fca864",
             "c8135f52-2a86-4e26-b629-43cc37da9dbf",
             "7a9f8b3e-1c2d-4e5f-9a8b-7c6d5e4f3a2b",
         ]
+    );
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("PI_ETHUSD.KRAKEN")
     );
 
     let report = reports
@@ -2334,6 +2365,44 @@ async fn test_futures_domain_request_order_status_reports_uses_position_size_for
     assert_eq!(report.trigger_price, Some(Price::from("1880.4")));
     assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
     assert!(report.reduce_only);
+}
+
+/// Unscoped, the same read fails on the `PI_ETHUSD` row the fixture instruments do not hold: an
+/// in-scope open order that cannot be resolved is an error, not a skipped row.
+#[rstest]
+#[tokio::test]
+async fn test_futures_raw_order_status_reports_fail_on_an_unresolved_open_order() {
+    let (addr, _state) = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = KrakenFuturesHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let error = client
+        .request_order_status_reports(AccountId::from("KRAKEN-001"), None, None, None, true)
+        .await
+        .expect_err("an unresolvable in-scope open order must fail the read");
+
+    assert!(
+        error
+            .to_string()
+            .contains("OpenOrders: instrument not in cache for futures symbol PI_ETHUSD"),
+        "unexpected error: {error}"
+    );
 }
 
 #[rstest]
