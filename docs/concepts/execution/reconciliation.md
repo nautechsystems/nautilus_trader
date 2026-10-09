@@ -237,6 +237,14 @@ reaches the reported status and filled quantity. An explicit position report, op
 quantity target: the engine applies the available fills, generates the difference when configured,
 or leaves the position unresolved.
 
+A retained position is the quantity target instead when the reporting client declares no bulk
+position coverage for the instrument, so a missing report proves nothing. With complete history,
+the fills of an order that is cached, or whose instrument is claimed, apply to the open position
+they resolve to: the order's assigned position, else the NETTING position for its instrument and
+strategy, held by the reporting account. Every such order for that position must be on its closing
+side, and together they must not exceed its quantity; otherwise all of them stay order-only. An
+order that is neither cached nor claimed stays order-only.
+
 This projection applies only to reconciliation recovery. Raw reports remain available. Setting
 `filter_position_reports` makes bounded historical fills order-only, even when the mass status
 contains position reports. See [Bounded history safety](#bounded-history-safety) for the
@@ -701,8 +709,9 @@ orders and fills, and by default generates the orders and fills required to reac
 `generate_missing_orders` does not allow a mismatch to stand.
 
 A bounded fill for an instrument with no in-scope explicit position report does not open, close, or change a
-position, and it does not update portfolio economics. The order still reaches the reported status
-and filled quantity. Raw reconciliation reports remain available.
+position, and it does not update portfolio economics, unless it reduces a retained position as
+described in [Order-only fill projection](#order-only-fill-projection). The order still reaches the
+reported status and filled quantity. Raw reconciliation reports remain available.
 
 For compatibility, a mass status without a declared `lookback_start` can still apply historical
 fills when there is no position report. This exception does not treat a missing report as flat.
@@ -907,7 +916,7 @@ These scenarios apply whether or not the mass status declares a `lookback_start`
 | ----------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | **Explicit open** | Complete, incomplete, or ambiguous bounded history.       | Applies available reports and attempts recovery to the reported quantity and entry average; unresolved differences block startup. |
 | **Explicit flat** | Complete, incomplete, or ambiguous bounded history.       | Applies available reports and closes residual exposure when generation is enabled; unresolved quantity differences block startup. |
-| **Missing**       | Bounded history, with or without a cached predecessor.    | Recovers order state only; fills do not change positions or portfolio economics.                                                  |
+| **Missing**       | Bounded history, with or without a cached predecessor.    | Recovers order state only, unless closing fills reduce a retained position the client cannot cover.                               |
 | **Filtered**      | Position-report or instrument filters exclude the report. | Position-report filtering makes bounded fills order-only; instrument filtering excludes both orders and positions.                |
 
 ## Common reconciliation issues
