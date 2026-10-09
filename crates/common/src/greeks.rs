@@ -30,6 +30,7 @@ use nautilus_model::{
     position::Position,
     types::Price,
 };
+use ustr::Ustr;
 
 use crate::{
     actor::DataActorNative,
@@ -316,6 +317,7 @@ pub struct GreeksCalculator {
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
     cached_futures_spreads: RefCell<AHashMap<InstrumentId, (InstrumentId, Price)>>,
+    cross_venue_underlyings: RefCell<AHashMap<Ustr, InstrumentId>>,
 }
 
 impl GreeksCalculator {
@@ -325,6 +327,7 @@ impl GreeksCalculator {
             cache,
             clock,
             cached_futures_spreads: RefCell::new(AHashMap::new()),
+            cross_venue_underlyings: RefCell::new(AHashMap::new()),
         }
     }
 
@@ -347,7 +350,8 @@ impl GreeksCalculator {
     /// # Errors
     ///
     /// Returns an error if the instrument definition is not found, an option instrument
-    /// has no underlying identifier, or greeks calculation fails.
+    /// has no underlying identifier, its underlying symbol matches instruments on more
+    /// than one other venue, or greeks calculation fails.
     #[expect(clippy::too_many_arguments)]
     pub fn instrument_greeks(
         &self,
@@ -400,8 +404,21 @@ impl GreeksCalculator {
             );
         }
 
+        let has_shocks = spot_shock != 0.0 || vol_shock != 0.0 || time_to_expiry_shock != 0.0;
+
+        // Unshocked cached greeks don't use the underlying, so skip resolving it
+        if use_cached_greeks
+            && !has_shocks
+            && let Some(mut cached_greeks) = self.cache.borrow().greeks(&instrument_id)
+        {
+            if let Some(pos) = position {
+                cached_greeks.pnl = cached_greeks.price - pos.avg_px_open;
+            }
+            return Ok(cached_greeks);
+        }
+
         let underlying_instrument_id =
-            Self::resolve_underlying_instrument_id(&instrument, instrument_id)?;
+            self.resolve_underlying_instrument_id(&instrument, instrument_id)?;
         let mut greeks_data = self.calculate_option_greeks(
             &instrument,
             instrument_id,
@@ -421,7 +438,7 @@ impl GreeksCalculator {
             vol_beta_weights,
         )?;
 
-        if spot_shock != 0.0 || vol_shock != 0.0 || time_to_expiry_shock != 0.0 {
+        if has_shocks {
             greeks_data = self.apply_option_greeks_shocks(
                 &greeks_data,
                 underlying_instrument_id,
@@ -445,6 +462,7 @@ impl GreeksCalculator {
     }
 
     fn resolve_underlying_instrument_id(
+        &self,
         instrument: &InstrumentAny,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<InstrumentId> {
@@ -452,10 +470,63 @@ impl GreeksCalculator {
             anyhow::bail!("Instrument {instrument_id} has no underlying identifier");
         };
 
-        Ok(InstrumentId::from(format!(
-            "{}.{}",
-            underlying, instrument_id.venue
-        )))
+        let same_venue_id = InstrumentId::from(format!("{underlying}.{}", instrument_id.venue));
+        let cache = self.cache.borrow();
+        let mut cross_venue_underlyings = self.cross_venue_underlyings.borrow_mut();
+
+        // Forget a remembered match once it leaves the cache, so adding it back later goes
+        // through the ambiguity check again.
+        let remembered_id = match cross_venue_underlyings.get(&underlying) {
+            Some(&underlying_id) if cache.instrument(&underlying_id).is_some() => {
+                Some(underlying_id)
+            }
+            Some(_) => {
+                cross_venue_underlyings.remove(&underlying);
+                None
+            }
+            None => None,
+        };
+
+        // A futures spread cached for the option's venue stands in for an uncached underlying
+        if cache.instrument(&same_venue_id).is_some()
+            || self
+                .cached_futures_spreads
+                .borrow()
+                .contains_key(&same_venue_id)
+        {
+            return Ok(same_venue_id);
+        }
+
+        if let Some(underlying_id) = remembered_id {
+            return Ok(underlying_id);
+        }
+
+        // An option can list on a different venue than its underlying, so accept a unique
+        // exact-symbol match and remember it, which saves scanning the cache on later calls.
+        // Without one, keep the option's venue.
+        let mut matches: Vec<InstrumentId> = cache
+            .instrument_ids(None)
+            .into_iter()
+            .filter(|id| id.symbol.inner() == underlying)
+            .copied()
+            .collect();
+
+        match matches.len() {
+            0 => Ok(same_venue_id),
+            1 => {
+                cross_venue_underlyings.insert(underlying, matches[0]);
+                Ok(matches[0])
+            }
+            _ => {
+                matches.sort();
+                let names = matches
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                anyhow::bail!("Ambiguous underlying for option {instrument_id}: {names}")
+            }
+        }
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -1299,6 +1370,10 @@ mod tests {
             debug_str.contains("cached_futures_spreads: RefCell { value: {} }"),
             "{debug_str}"
         );
+        assert!(
+            debug_str.contains("cross_venue_underlyings: RefCell { value: {} }"),
+            "{debug_str}"
+        );
     }
 
     #[rstest]
@@ -1775,16 +1850,306 @@ mod tests {
     #[rstest]
     fn test_resolve_underlying_instrument_id_errors_without_underlying() {
         let instrument = InstrumentAny::Equity(equity_aapl_opra());
-        let error = GreeksCalculator::resolve_underlying_instrument_id(
-            &instrument,
-            InstrumentId::from("AAPL.OPRA"),
-        )
-        .unwrap_err();
+        let error = create_test_calculator()
+            .resolve_underlying_instrument_id(&instrument, InstrumentId::from("AAPL.OPRA"))
+            .unwrap_err();
 
         assert_eq!(
             error.to_string(),
             "Instrument AAPL.OPRA has no underlying identifier"
         );
+    }
+
+    fn equity_with_id(instrument_id: &str) -> Equity {
+        let instrument_id = InstrumentId::from(instrument_id);
+        Equity::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(instrument_id.symbol)
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
+    }
+
+    fn calculator_with_option_and_equities(
+        option: OptionContract,
+        equity_ids: &[&str],
+    ) -> GreeksCalculator {
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::OptionContract(option))
+            .unwrap();
+
+        for equity_id in equity_ids {
+            cache
+                .borrow_mut()
+                .add_instrument(InstrumentAny::Equity(equity_with_id(equity_id)))
+                .unwrap();
+        }
+
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        GreeksCalculator::new(cache, clock)
+    }
+
+    #[rstest]
+    #[case::same_venue_preferred(&["AAPL.XNAS", "AAPL.OPRA", "AAPL.ARCX"], "AAPL.OPRA")]
+    #[case::unique_cross_venue_match(&["AAPL.XNAS", "MSFT.XNAS"], "AAPL.XNAS")]
+    #[case::no_match_keeps_option_venue(&["MSFT.XNAS"], "AAPL.OPRA")]
+    fn test_resolve_underlying_instrument_id(#[case] equity_ids: &[&str], #[case] expected: &str) {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, equity_ids);
+
+        let underlying_id = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        assert_eq!(underlying_id, InstrumentId::from(expected));
+    }
+
+    #[rstest]
+    fn test_resolve_underlying_instrument_id_errors_when_cross_venue_match_is_ambiguous() {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS", "AAPL.ARCX"]);
+
+        let error = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Ambiguous underlying for option AAPL250417C00150000.OPRA: AAPL.ARCX, AAPL.XNAS"
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_underlying_instrument_id_reuses_cross_venue_match() {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS"]);
+        let first = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        calculator
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity_with_id("AAPL.ARCX")))
+            .unwrap();
+        let second = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        assert_eq!(first, InstrumentId::from("AAPL.XNAS"));
+        assert_eq!(second, InstrumentId::from("AAPL.XNAS"));
+    }
+
+    #[rstest]
+    fn test_resolve_underlying_instrument_id_rescans_after_match_is_purged() {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS"]);
+        calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        {
+            let mut cache = calculator.cache.borrow_mut();
+            cache
+                .add_instrument(InstrumentAny::Equity(equity_with_id("AAPL.ARCX")))
+                .unwrap();
+            cache.purge_instrument(InstrumentId::from("AAPL.XNAS"));
+        }
+        let underlying_id = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        assert_eq!(underlying_id, InstrumentId::from("AAPL.ARCX"));
+    }
+
+    #[rstest]
+    #[case::no_underlying_cached(&[])]
+    #[case::same_venue_cached(&["AAPL.OPRA"])]
+    fn test_resolve_underlying_instrument_id_forgets_match_once_purged(
+        #[case] cached_while_purged: &[&str],
+    ) {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let instrument = InstrumentAny::OptionContract(option.clone());
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS"]);
+        calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        {
+            let mut cache = calculator.cache.borrow_mut();
+            cache.purge_instrument(InstrumentId::from("AAPL.XNAS"));
+
+            for equity_id in cached_while_purged {
+                cache
+                    .add_instrument(InstrumentAny::Equity(equity_with_id(equity_id)))
+                    .unwrap();
+            }
+        }
+        calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap();
+
+        {
+            let mut cache = calculator.cache.borrow_mut();
+            for equity_id in cached_while_purged {
+                cache.purge_instrument(InstrumentId::from(*equity_id));
+            }
+
+            for equity_id in ["AAPL.XNAS", "AAPL.ARCX"] {
+                cache
+                    .add_instrument(InstrumentAny::Equity(equity_with_id(equity_id)))
+                    .unwrap();
+            }
+        }
+        let error = calculator
+            .resolve_underlying_instrument_id(&instrument, option_id)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Ambiguous underlying for option AAPL250417C00150000.OPRA: AAPL.ARCX, AAPL.XNAS"
+        );
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_reads_cached_greeks_when_underlying_is_ambiguous() {
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::default());
+        let option_id = option.id();
+        let position = position_from_fill(
+            &InstrumentAny::OptionContract(option.clone()),
+            "P-GREEKS-1",
+            "O-GREEKS-1",
+            "T-GREEKS-1",
+            OrderSide::Buy,
+            1,
+            "9.00",
+        );
+        let calculator = calculator_with_option_and_equities(option, &["AAPL.XNAS", "AAPL.ARCX"]);
+        let mut cached_greeks = GreeksData::from_delta(option_id, 0.5, 100.0, UnixNanos::default());
+        cached_greeks.price = 10.5;
+        calculator
+            .cache
+            .borrow_mut()
+            .add_greeks(cached_greeks.clone())
+            .unwrap();
+
+        let greeks = calculator
+            .instrument_greeks(
+                option_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(true),
+                None,
+                None,
+                None,
+                None,
+                Some(position),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(greeks.instrument_id, option_id);
+        assert_eq!(greeks.greeks, cached_greeks.greeks);
+        assert_eq!(greeks.pnl, 1.5);
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_prices_underlying_on_another_venue() {
+        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
+        let expiry = now + jiff::SignedDuration::from_hours(24 * 30);
+        let now_ns = UnixNanos::from(now);
+        let expiry_ns = UnixNanos::from(expiry);
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
+        let option_id = option.id();
+        let same_venue_cache = setup_cache_with_option_and_quotes(
+            option.clone(),
+            InstrumentId::from("AAPL.OPRA"),
+            now_ns,
+        );
+        let cross_venue_cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        cross_venue_cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::OptionContract(option))
+            .unwrap();
+        cross_venue_cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity_with_id("AAPL.XNAS")))
+            .unwrap();
+
+        for (instrument_id, bid, ask) in [
+            (option_id, "10.50", "10.60"),
+            (InstrumentId::from("AAPL.XNAS"), "150.00", "150.10"),
+        ] {
+            cross_venue_cache
+                .borrow_mut()
+                .add_quote(QuoteTick::new(
+                    instrument_id,
+                    Price::from(bid),
+                    Price::from(ask),
+                    Quantity::from(100),
+                    Quantity::from(100),
+                    now_ns,
+                    now_ns,
+                ))
+                .unwrap();
+        }
+
+        let greeks_for = |cache: Rc<RefCell<Cache>>| {
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
+            GreeksCalculator::new(cache, clock)
+                .instrument_greeks(
+                    option_id,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(now_ns),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+        };
+
+        let expected = greeks_for(same_venue_cache);
+        let greeks = greeks_for(cross_venue_cache);
+
+        assert_eq!(greeks.underlying_price, expected.underlying_price);
+        assert_eq!(greeks.vol, expected.vol);
+        assert_eq!(greeks.price, expected.price);
+        assert_eq!(greeks.greeks, expected.greeks);
     }
 
     fn future_with_expiration(
@@ -3920,6 +4285,34 @@ mod tests {
             calculator.get_cached_futures_spread_price(InstrumentId::from(SPREAD_UNDERLYING_ID)),
             None
         );
+    }
+
+    #[rstest]
+    fn test_resolve_underlying_instrument_id_prefers_cached_futures_spread_over_cross_venue_match()
+    {
+        let mut instruments = spread_instruments();
+        instruments.push(InstrumentAny::FuturesContract(future_with_expiration(
+            "ESH4.XCME",
+            "ESH4",
+            spread_expiry_ns(),
+        )));
+        let calculator = spread_calculator(instruments, spread_quotes());
+        calculator
+            .cache_futures_spread(
+                InstrumentId::from(SPREAD_CALL_ID),
+                InstrumentId::from(SPREAD_PUT_ID),
+                InstrumentId::from(SPREAD_REFERENCE_ID),
+            )
+            .unwrap();
+
+        let underlying_id = calculator
+            .resolve_underlying_instrument_id(
+                &InstrumentAny::OptionContract(spread_call()),
+                InstrumentId::from(SPREAD_CALL_ID),
+            )
+            .unwrap();
+
+        assert_eq!(underlying_id, InstrumentId::from(SPREAD_UNDERLYING_ID));
     }
 
     #[rstest]
