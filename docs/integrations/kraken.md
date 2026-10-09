@@ -710,7 +710,11 @@ every holding it covers and an absent report is genuine evidence of flat.
   cannot represent is skipped with a warning and leaves the set incomplete: an event kind the
   adapter does not know, an order whose type the venue reports as `Unknown` or omits, an unknown
   direction, and a timestamp before the epoch. `OrderNotFound` carries no order state and is skipped
-  without affecting completeness; a venue error reported with a success status fails the read.
+  without affecting completeness; a venue error reported with a success status fails the read. A
+  terminal history row with an executed quantity carries no average price, so it is priced from the
+  order's fills on the fills page plus those a cached order has already recorded; when they fall
+  short of its filled quantity, the single-order query fails and the bulk read leaves the order out,
+  so reconciliation defers it rather than infer the executions at the limit price.
 
 **Fill reports:**
 

@@ -47,7 +47,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderStatus, OrderType},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -782,8 +782,27 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 })
         });
 
-        if matched.is_some() {
-            return Ok(matched);
+        if let Some(mut report) = matched {
+            // A terminal history match is priced from fills; short of them the query fails so the
+            // engine defers, as the orders-status window does below.
+            if is_unpriced_terminal_report(&report) {
+                let cached = self.get_cached_order_for_status_command(cmd);
+                let fills = self
+                    .http
+                    .request_fill_reports(account_id, Some(report.instrument_id), None, None)
+                    .await?;
+
+                if let Err(covered) = price_from_fills(&mut report, cached.as_ref(), &fills) {
+                    anyhow::bail!(
+                        "Order {} executed per the order history with fills covering {covered} \
+                         of {}; deferring until the fills feed prices it",
+                        report.venue_order_id,
+                        report.filled_qty,
+                    );
+                }
+            }
+
+            return Ok(Some(report));
         }
 
         let Some(order) = self.get_cached_order_for_status_command(cmd) else {
@@ -874,6 +893,38 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .http
             .request_order_status_reports(account_id, cmd.instrument_id, start, end, cmd.open_only)
             .await?;
+
+        // An unpriced terminal history report is withheld, so the engine counts the order missing
+        // and resolves it through the single-order query, which prices it or defers.
+        if reports.iter().any(is_unpriced_terminal_report) {
+            let fills = self
+                .http
+                .request_fill_reports(account_id, cmd.instrument_id, None, None)
+                .await?;
+            let cache = self.core.cache();
+            reports.retain_mut(|report| {
+                if !is_unpriced_terminal_report(report) {
+                    return true;
+                }
+
+                let cached = cache
+                    .client_order_id(&report.venue_order_id)
+                    .and_then(|client_order_id| cache.order(client_order_id));
+
+                match price_from_fills(report, cached.as_deref(), &fills) {
+                    Ok(()) => true,
+                    Err(covered) => {
+                        log::warn!(
+                            "Withholding executed order {} from the bulk response: fills cover \
+                             {covered} of {}",
+                            report.venue_order_id,
+                            report.filled_qty,
+                        );
+                        false
+                    }
+                }
+            });
+        }
 
         if cmd.open_only {
             let extension = self
@@ -1644,6 +1695,62 @@ impl KrakenFuturesExecutionClient {
         let client_order_id = *cache.client_order_id(&venue_order_id)?;
         cache.order(&client_order_id).map(|o| o.clone())
     }
+}
+
+/// Whether `report` is terminal with an executed quantity it carries no price for.
+///
+/// An order history row has no average price. Unpriced, reconciliation infers the executed
+/// quantity at the report's limit price, and cannot price a market order at all.
+fn is_unpriced_terminal_report(report: &OrderStatusReport) -> bool {
+    matches!(
+        report.order_status,
+        OrderStatus::Filled | OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Voided
+    ) && !report.filled_qty.is_zero()
+        && report.avg_px.is_none()
+}
+
+/// Sets `report.avg_px` to the quantity-weighted price of the order's fills.
+///
+/// The fills a cached order has recorded count at its average price, and a page fill with one of
+/// its trade IDs is not counted again. The fills endpoint returns one page with no cursor, so an
+/// older execution can be absent from it.
+///
+/// # Errors
+///
+/// Returns the covered quantity, leaving the report unpriced, when it falls short of the report's
+/// filled quantity.
+fn price_from_fills(
+    report: &mut OrderStatusReport,
+    cached: Option<&OrderAny>,
+    fills: &[FillReport],
+) -> Result<(), Decimal> {
+    let (mut covered, mut notional) = match cached {
+        Some(order) => {
+            let qty = order.filled_qty().as_decimal();
+            (qty, order.avg_px().unwrap_or(Decimal::ZERO) * qty)
+        }
+        None => (Decimal::ZERO, Decimal::ZERO),
+    };
+    let recorded: HashSet<TradeId> = cached
+        .map(|order| order.trade_ids().into_iter().copied().collect())
+        .unwrap_or_default();
+
+    for fill in fills
+        .iter()
+        .filter(|fill| fill.venue_order_id == report.venue_order_id)
+        .filter(|fill| !recorded.contains(&fill.trade_id))
+    {
+        let qty = fill.last_qty.as_decimal();
+        covered += qty;
+        notional += qty * fill.last_px.as_decimal();
+    }
+
+    if covered.is_zero() || covered < report.filled_qty.as_decimal() {
+        return Err(covered);
+    }
+
+    report.avg_px = Some(notional / covered);
+    Ok(())
 }
 
 fn synthesize_filled_order_status_report(

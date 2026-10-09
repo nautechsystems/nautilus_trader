@@ -66,7 +66,7 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{AccountState, OrderAccepted, OrderEventAny, OrderSubmitted},
+    events::{AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
         TradeId, TraderId, VenueOrderId,
@@ -76,6 +76,7 @@ use nautilus_model::{
         LimitOrder, Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs,
     },
     position::Position,
+    reports::OrderStatusReport,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -1535,7 +1536,7 @@ async fn test_futures_order_status_reports_resolve_the_history_tradeable(
             "H-CASE-1",
             tradeable,
             "2",
-            "2",
+            "0",
             1680877245500,
         )]));
 
@@ -1634,6 +1635,293 @@ async fn test_futures_order_status_reports_keep_the_open_snapshot_over_history()
         reports[0].filled_qty,
         Quantity::from("0"),
         "the open snapshot is the current evidence"
+    );
+}
+
+/// A fills page of `PI_XBTUSD` buys, each given as `(fill_id, order_id, size, price)`.
+fn futures_fills_json(fills: &[(&str, &str, &str, &str)]) -> String {
+    let fills: Vec<String> = fills
+        .iter()
+        .map(|(fill_id, order_id, size, price)| {
+            format!(
+                r#"{{"fill_id":"{fill_id}","symbol":"PI_XBTUSD","side":"buy","order_id":"{order_id}","fillTime":"2023-04-07T15:20:45.500Z","size":{size},"price":{price},"fillType":"taker","fee_paid":0.0,"fee_currency":"USD"}}"#
+            )
+        })
+        .collect();
+    format!(r#"{{"result":"success","fills":[{}]}}"#, fills.join(","))
+}
+
+/// A fully filled history row for a 1,000-contract buy, limit or market.
+fn filled_history_json(order_uid: &str, order_type: &str) -> String {
+    futures_order_history_json(&[futures_history_element(
+        "OrderUpdated",
+        "e1",
+        order_uid,
+        "PI_XBTUSD",
+        "1000",
+        "1000",
+        1680877245500,
+    )
+    .replace(
+        r#""orderType":"Limit""#,
+        &format!(r#""orderType":"{order_type}""#),
+    )])
+}
+
+/// The two reads that reach the order history.
+#[derive(Clone, Copy, Debug)]
+enum HistoryRead {
+    SingleOrder,
+    Bulk,
+}
+
+/// Reads the report for `venue_order_id` through `read`.
+async fn read_history_report(
+    client: &KrakenFuturesExecutionClient,
+    read: HistoryRead,
+    venue_order_id: &str,
+) -> anyhow::Result<Option<OrderStatusReport>> {
+    let venue_order_id = VenueOrderId::from(venue_order_id);
+
+    match read {
+        HistoryRead::SingleOrder => {
+            client
+                .generate_order_status_report(&GenerateOrderStatusReport::new(
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    Some(test_instrument_id()),
+                    None,
+                    Some(venue_order_id),
+                    None,
+                    None,
+                ))
+                .await
+        }
+        HistoryRead::Bulk => client
+            .generate_order_status_reports(&history_orders_cmd())
+            .await
+            .map(|reports| {
+                reports
+                    .into_iter()
+                    .find(|report| report.venue_order_id == venue_order_id)
+            }),
+    }
+}
+
+/// A terminal history row carries no average price, so both reads price it as the
+/// quantity-weighted average of the order's fills, not at its limit price. A market order has no
+/// limit price, so its fills are its only price.
+#[rstest]
+#[case::filled_single_order(HistoryRead::SingleOrder, "Limit", Some("27500.5"))]
+#[case::filled_bulk(HistoryRead::Bulk, "Limit", Some("27500.5"))]
+#[case::market_single_order(HistoryRead::SingleOrder, "Market", None)]
+#[case::market_bulk(HistoryRead::Bulk, "Market", None)]
+#[tokio::test]
+async fn test_futures_history_filled_report_is_priced_from_its_fills(
+    #[case] read: HistoryRead,
+    #[case] order_type: &str,
+    #[case] expected_price: Option<&str>,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await =
+        Some(filled_history_json("H-FILLED-1", order_type));
+    *state.fills_response.lock().await = Some(futures_fills_json(&[
+        ("f-1", "H-FILLED-1", "600", "27000.0"),
+        ("f-2", "H-FILLED-1", "400", "27100.5"),
+        ("f-other", "H-OTHER-1", "5", "1.0"),
+    ]));
+
+    let report = read_history_report(&client, read, "H-FILLED-1")
+        .await
+        .unwrap()
+        .expect("the filled history row is reported");
+
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1000"));
+    assert_eq!(report.price, expected_price.map(Price::from));
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("27040.2").unwrap()),
+        "(600 x 27000.0 + 400 x 27100.5) / 1000"
+    );
+}
+
+/// The same pricing holds for a canceled row with an executed quantity, which is terminal too.
+#[rstest]
+#[case::single_order(HistoryRead::SingleOrder)]
+#[case::bulk(HistoryRead::Bulk)]
+#[tokio::test]
+async fn test_futures_history_canceled_partial_report_is_priced_from_its_fills(
+    #[case] read: HistoryRead,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await =
+        Some(futures_order_history_json(&[futures_history_element(
+            "OrderCancelled",
+            "e1",
+            "H-CANCELED-1",
+            "PI_XBTUSD",
+            "1000",
+            "600",
+            1680877245500,
+        )]));
+    *state.fills_response.lock().await = Some(futures_fills_json(&[
+        ("f-1", "H-CANCELED-1", "200", "27000.0"),
+        ("f-2", "H-CANCELED-1", "400", "27100.5"),
+    ]));
+
+    let report = read_history_report(&client, read, "H-CANCELED-1")
+        .await
+        .unwrap()
+        .expect("the canceled history row is reported");
+
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.filled_qty, Quantity::from("600"));
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("27067").unwrap()),
+        "(200 x 27000.0 + 400 x 27100.5) / 600"
+    );
+}
+
+/// A terminal history row whose fills do not cover its filled quantity is deferred: the
+/// single-order query fails so the engine retries it, and the bulk read leaves the order out, so
+/// the engine counts it missing and resolves it through the single-order query.
+#[rstest]
+#[case::single_order(HistoryRead::SingleOrder)]
+#[case::bulk(HistoryRead::Bulk)]
+#[tokio::test]
+async fn test_futures_history_filled_report_short_of_fills_is_deferred(#[case] read: HistoryRead) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await =
+        Some(filled_history_json("H-SHORT-1", "Limit"));
+    *state.fills_response.lock().await = Some(futures_fills_json(&[(
+        "f-1",
+        "H-SHORT-1",
+        "600",
+        "27000.0",
+    )]));
+
+    let result = read_history_report(&client, read, "H-SHORT-1").await;
+
+    match read {
+        HistoryRead::SingleOrder => {
+            let error = result.expect_err("400 contracts are unpriced, so the query must fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("fills covering 600 of 1000; deferring"),
+                "unexpected error: {error}"
+            );
+        }
+        HistoryRead::Bulk => assert_eq!(
+            result.expect("the bulk read succeeds without the order"),
+            None,
+            "the unpriced order must be left out of the bulk response"
+        ),
+    }
+}
+
+/// A failed fills read leaves a terminal history row unpriced, so both reads fail rather than
+/// report it.
+#[rstest]
+#[case::single_order(HistoryRead::SingleOrder)]
+#[case::bulk(HistoryRead::Bulk)]
+#[tokio::test]
+async fn test_futures_history_filled_report_fails_when_the_fills_read_fails(
+    #[case] read: HistoryRead,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await =
+        Some(filled_history_json("H-NOFILLS-1", "Limit"));
+    *state.fills_response.lock().await =
+        Some(r#"{"result":"error","error":"apiLimitExceeded"}"#.to_string());
+
+    let error = read_history_report(&client, read, "H-NOFILLS-1")
+        .await
+        .expect_err("an unpriced terminal row must not be reported");
+
+    assert!(
+        error.to_string().contains("Failed to get fills"),
+        "unexpected error: {error}"
+    );
+}
+
+/// Fills a cached order has recorded count toward coverage at their recorded price, and once
+/// each, so an execution that has left the single fills page still prices the report.
+#[rstest]
+#[case::single_order_first_fill_off_page(HistoryRead::SingleOrder, false)]
+#[case::single_order_first_fill_on_page(HistoryRead::SingleOrder, true)]
+#[case::bulk_first_fill_off_page(HistoryRead::Bulk, false)]
+#[case::bulk_first_fill_on_page(HistoryRead::Bulk, true)]
+#[tokio::test]
+async fn test_futures_history_filled_report_counts_the_cached_order_fills(
+    #[case] read: HistoryRead,
+    #[case] first_fill_on_page: bool,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(test_instrument_id())
+        .client_order_id(ClientOrderId::new("O-CACHED-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1000"))
+        .price(Price::from("27500.5"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    mark_cached_order_submitted(&cache, &order);
+    set_venue_order_id_on_cached_order(&cache, &order, "H-CACHED-1");
+    let filled = OrderFilled::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::from("H-CACHED-1"),
+        test_account_id(),
+        TradeId::from("f-1"),
+        OrderSide::Buy,
+        OrderType::Limit,
+        Quantity::from("600"),
+        Price::from("27000.0"),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Filled(filled))
+        .unwrap();
+
+    let mut fills = vec![("f-2", "H-CACHED-1", "400", "27100.5")];
+    if first_fill_on_page {
+        fills.insert(0, ("f-1", "H-CACHED-1", "600", "27000.0"));
+    }
+    *state.futures_order_history_json.lock().await =
+        Some(filled_history_json("H-CACHED-1", "Limit"));
+    *state.fills_response.lock().await = Some(futures_fills_json(&fills));
+
+    let report = read_history_report(&client, read, "H-CACHED-1")
+        .await
+        .unwrap()
+        .expect("the cached fills complete the coverage");
+
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("27040.2").unwrap()),
+        "(600 x 27000.0 + 400 x 27100.5) / 1000"
     );
 }
 
