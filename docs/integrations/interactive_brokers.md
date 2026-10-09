@@ -29,6 +29,12 @@ The adapter defaults to `127.0.0.1:4002`. Each process connected to the same TWS
 needs a distinct IB API `client_id`. An execution client ID cannot be a multiple of `1000` because
 the adapter partitions order IDs with `client_id % 1000`.
 
+IB refuses an order ID at or below one the same `client_id` already used, across sessions (error
+103). On connect, the execution client starts above the highest order ID its `client_id` has among
+IB's open and completed orders, and keeps IB's next valid ID only when it falls in the client's
+partition. IB lists completed orders for a limited period only, so a client that left no order open
+can still start below an ID it used before that period.
+
 The data and execution clients can share one provider configuration:
 
 ```python
