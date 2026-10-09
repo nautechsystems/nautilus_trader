@@ -133,6 +133,7 @@ Released on TBD (UTC).
 - Upgraded `ty` package (dev) to v0.0.84
 - Upgraded `uvicorn` package (test) to v0.54.0
 - Upgraded `uvloop` package (test) to v0.23.0
+- Upgraded `sockudo-ws` crate to v3.0.0
 
 ### Documentation Updates
 

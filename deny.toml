@@ -182,7 +182,6 @@ skip = [
   { crate = "foldhash:<0.2" },
   { crate = "num-bigint:<0.5" },
   { crate = "petgraph:<0.8" },
-  { crate = "socket2:<0.6" },
 
   # Signature traits - v2 via cosmrs/tendermint, v3 via ed25519-dalek
   { crate = "ed25519:<3" },

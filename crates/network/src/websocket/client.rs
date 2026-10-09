@@ -580,8 +580,7 @@ impl WebSocketClientInner {
     /// each keeps its own handshake path over the resulting stream.
     ///
     /// `max_message_size_bytes` and `max_frame_size_bytes` override the selected backend's inbound
-    /// caps. `None` passes that backend's current default config. Sockudo applies its message
-    /// default only while reassembling fragments.
+    /// caps. `None` passes that backend's current default config.
     ///
     /// # Errors
     ///
@@ -946,9 +945,7 @@ impl WebSocketClientInner {
 
         let ws =
             SockudoWebSocketStream::from_raw(stream, Role::Client, sockudo_protocol_config(limits));
-        let transport: BoxedWsTransport = Box::pin(
-            SockudoTransport::new(ws).with_max_message_size(limits.max_message_size_bytes),
-        );
+        let transport: BoxedWsTransport = Box::pin(SockudoTransport::new(ws).into_split());
         Ok(transport.split())
     }
 }

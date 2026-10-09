@@ -35,7 +35,6 @@ use tokio_tungstenite::{accept_async, tungstenite};
 const MESSAGE_PAYLOAD: &str = "0123456789abcdef";
 const CAP_BYTES: usize = 8;
 
-// Sockudo's small-frame parser skips the frame cap for payloads of 125 bytes or less
 const FRAME_PAYLOAD_LEN: usize = 126;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -245,6 +244,13 @@ fn assert_inbound(
     InboundExpectation::MessageTooLarge,
     FRAME_PAYLOAD_LEN
 )]
+#[case::tungstenite_small_frame(
+    TransportBackend::Tungstenite,
+    None,
+    Some(CAP_BYTES),
+    InboundExpectation::MessageTooLarge,
+    MESSAGE_PAYLOAD.len()
+)]
 #[case::tungstenite_at_cap(
     TransportBackend::Tungstenite,
     Some(MESSAGE_PAYLOAD.len()),
@@ -277,6 +283,16 @@ fn assert_inbound(
         Some(CAP_BYTES),
         InboundExpectation::FrameTooLarge,
         FRAME_PAYLOAD_LEN
+    )
+)]
+#[cfg_attr(
+    feature = "transport-sockudo",
+    case::sockudo_small_frame(
+        TransportBackend::Sockudo,
+        None,
+        Some(CAP_BYTES),
+        InboundExpectation::FrameTooLarge,
+        MESSAGE_PAYLOAD.len()
     )
 )]
 #[cfg_attr(

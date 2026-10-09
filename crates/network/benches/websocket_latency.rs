@@ -16,6 +16,9 @@
 use std::{env, hint::black_box, time::Instant};
 
 use futures_util::{SinkExt, StreamExt};
+use nautilus_network::transport::{
+    self as nautilus_transport, WsTransport, sockudo::SockudoTransport,
+};
 use tokio::io::{DuplexStream, duplex};
 use tokio_tungstenite::{
     WebSocketStream as TokioWebSocketStream,
@@ -75,6 +78,9 @@ async fn main() -> BenchResult {
         print_row(payload_size, "tokio_tungstenite", &tokio_summary);
         let sockudo_summary = sockudo_roundtrip_text_latency(payload_size, message_count).await?;
         print_row(payload_size, "sockudo_ws", &sockudo_summary);
+        let nautilus_summary =
+            nautilus_sockudo_roundtrip_text_latency(payload_size, message_count).await?;
+        print_row(payload_size, "nautilus_sockudo", &nautilus_summary);
     }
 
     println!();
@@ -87,6 +93,9 @@ async fn main() -> BenchResult {
         print_row(payload_size, "tokio_tungstenite", &tokio_summary);
         let sockudo_summary = sockudo_one_way_binary_latency(payload_size, message_count).await?;
         print_row(payload_size, "sockudo_ws", &sockudo_summary);
+        let nautilus_summary =
+            nautilus_sockudo_one_way_binary_latency(payload_size, message_count).await?;
+        print_row(payload_size, "nautilus_sockudo", &nautilus_summary);
     }
 
     Ok(())
@@ -190,7 +199,9 @@ macro_rules! define_sockudo_latency_benches {
         $one_way:ident,
         $client:ident,
         $server:ident,
-        $module:ident
+        $module:ident,
+        $stream:ty,
+        $wrap:expr
     ) => {
         async fn $roundtrip(
             payload_size: usize,
@@ -278,12 +289,18 @@ macro_rules! define_sockudo_latency_benches {
             Ok(LatencySummary::from_samples(samples))
         }
 
-        fn $client(stream: DuplexStream) -> $module::WebSocketStream<DuplexStream> {
-            $module::WebSocketStream::client(stream, sockudo_config())
+        fn $client(stream: DuplexStream) -> $stream {
+            $wrap(sockudo_ws::WebSocketStream::client(
+                stream,
+                sockudo_config(),
+            ))
         }
 
-        fn $server(stream: DuplexStream) -> $module::WebSocketStream<DuplexStream> {
-            $module::WebSocketStream::server(stream, sockudo_config())
+        fn $server(stream: DuplexStream) -> $stream {
+            $wrap(sockudo_ws::WebSocketStream::server(
+                stream,
+                sockudo_config(),
+            ))
         }
     };
 }
@@ -293,7 +310,19 @@ define_sockudo_latency_benches!(
     sockudo_one_way_binary_latency,
     sockudo_client,
     sockudo_server,
-    sockudo_ws
+    sockudo_ws,
+    sockudo_ws::WebSocketStream<DuplexStream>,
+    std::convert::identity
+);
+
+define_sockudo_latency_benches!(
+    nautilus_sockudo_roundtrip_text_latency,
+    nautilus_sockudo_one_way_binary_latency,
+    nautilus_sockudo_client,
+    nautilus_sockudo_server,
+    nautilus_transport,
+    impl WsTransport,
+    |stream| SockudoTransport::new(stream).into_split()
 );
 
 fn sockudo_config() -> sockudo_ws::Config {

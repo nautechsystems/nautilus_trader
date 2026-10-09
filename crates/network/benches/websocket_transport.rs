@@ -17,6 +17,9 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use futures_util::{SinkExt, StreamExt};
+use nautilus_network::transport::{
+    self as nautilus_transport, WsTransport, sockudo::SockudoTransport,
+};
 use tokio::io::{DuplexStream, duplex};
 use tokio_tungstenite::{
     WebSocketStream as TokioWebSocketStream,
@@ -61,6 +64,17 @@ fn bench_receive_text(c: &mut Criterion) {
                 });
             },
         );
+        group.bench_with_input(
+            BenchmarkId::new("nautilus_sockudo", payload_size),
+            &payload_size,
+            |b, &payload_size| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        nautilus_sockudo_receive_text(payload_size).await.unwrap();
+                    });
+                });
+            },
+        );
     }
 
     group.finish();
@@ -94,6 +108,17 @@ fn bench_send_text(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         sockudo_send_text(payload_size).await.unwrap();
+                    });
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("nautilus_sockudo", payload_size),
+            &payload_size,
+            |b, &payload_size| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        nautilus_sockudo_send_text(payload_size).await.unwrap();
                     });
                 });
             },
@@ -133,6 +158,17 @@ fn bench_roundtrip_text(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         sockudo_roundtrip_text(payload_size).await.unwrap();
+                    });
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("nautilus_sockudo", payload_size),
+            &payload_size,
+            |b, &payload_size| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        nautilus_sockudo_roundtrip_text(payload_size).await.unwrap();
                     });
                 });
             },
@@ -249,7 +285,9 @@ macro_rules! define_sockudo_benches {
         $roundtrip:ident,
         $client:ident,
         $server:ident,
-        $module:ident
+        $module:ident,
+        $stream:ty,
+        $wrap:expr
     ) => {
         async fn $receive(payload_size: usize) -> BenchResult {
             let (client_io, server_io) = duplex(DUPLEX_BUFFER_SIZE);
@@ -343,12 +381,18 @@ macro_rules! define_sockudo_benches {
             Ok(())
         }
 
-        fn $client(stream: DuplexStream) -> $module::WebSocketStream<DuplexStream> {
-            $module::WebSocketStream::client(stream, sockudo_config())
+        fn $client(stream: DuplexStream) -> $stream {
+            $wrap(sockudo_ws::WebSocketStream::client(
+                stream,
+                sockudo_config(),
+            ))
         }
 
-        fn $server(stream: DuplexStream) -> $module::WebSocketStream<DuplexStream> {
-            $module::WebSocketStream::server(stream, sockudo_config())
+        fn $server(stream: DuplexStream) -> $stream {
+            $wrap(sockudo_ws::WebSocketStream::server(
+                stream,
+                sockudo_config(),
+            ))
         }
     };
 }
@@ -359,7 +403,20 @@ define_sockudo_benches!(
     sockudo_roundtrip_text,
     sockudo_client,
     sockudo_server,
-    sockudo_ws
+    sockudo_ws,
+    sockudo_ws::WebSocketStream<DuplexStream>,
+    std::convert::identity
+);
+
+define_sockudo_benches!(
+    nautilus_sockudo_receive_text,
+    nautilus_sockudo_send_text,
+    nautilus_sockudo_roundtrip_text,
+    nautilus_sockudo_client,
+    nautilus_sockudo_server,
+    nautilus_transport,
+    impl WsTransport,
+    |stream| SockudoTransport::new(stream).into_split()
 );
 
 fn sockudo_config() -> sockudo_ws::Config {

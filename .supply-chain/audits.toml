@@ -3309,6 +3309,13 @@ criteria = "safe-to-deploy"
 delta = "0.29.2 -> 0.29.3"
 notes = "Reviewed published generated guarded-clone extraction, iterator type hints, and associated macro changes. Cloning uses checked PyClassGuard extraction; no new unsafe or ambient capability."
 
+[[audits.quanta]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+version = "0.13.0"
+importable = false
+notes = "Scoped to Sockudo's Instant clock with default features disabled. Reviewed lazy OnceLock calibration, bounded calibration loop, saturating duration arithmetic, CPUID-gated counter selection, and platform monotonic clock calls. Unsafe is confined to CPU/OS clock interfaces with initialized outputs; no build script, network, filesystem, process, credential, or automatic upkeep-thread behavior in this use."
+
 [[audits.quinn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3356,6 +3363,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.4.1 -> 4.4.2"
 notes = "Mostly README/docs and cfg-gated test corrections, including clearer HashDoS caveats. Production code changes are comment/doc fixes; no new unsafe, dependencies, build script, filesystem, network, or process behavior."
+
+[[audits.raw-cpuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+version = "11.6.0"
+importable = false
+notes = "Scoped to quanta's CPU capability queries with display and serialization disabled. Reviewed native CPUID architecture guards, supported-leaf checks, vendor classification, invariant-TSC and RDTSCP flags, and repr(C) bounded byte views. No build script or filesystem, network, process, or credential behavior in the enabled library."
 
 [[audits.rcgen]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3710,6 +3724,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.0.1 -> 2.1.0"
 notes = "Reviewed the header-aware handshake builder with token/reserved/control-byte validation, rustls provider deselection (ring moved to dev-dependencies), deflate context-takeover fix, incremental UTF-8 validation, streaming frame unmask, lazy heartbeat timer, atomic activity clock, and handshake leftover replay. No new unsafe, dependencies, build script, filesystem, process, or network capability."
+
+[[audits.sockudo-ws]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.1.0 -> 3.0.0"
+importable = false
+notes = "Scoped to Tokio HTTP/1, SIMD, fastrand, rustls-webpki-roots, and test-util for simulation. Reviewed native split ownership, bounded control queue, retained partial writes, atomic terminal causes, hard deadlines, initialized ReadBuf receive bounds, complete-message and short-frame size checks, UTF-8 access, portable masking, and checked handshake grammar. New quanta clock dependencies are audited separately; no build script, hidden network destination, filesystem, process, or credential capability was added in this graph. Compression, Compio, HTTP/2, HTTP/3, io_uring, and PubSub are outside this certification."
 
 [[audits.syn]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4087,6 +4108,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.3.1 -> 0.3.2"
 notes = "Reviewed checksum-verified published crates. Adds unwant using SeqCst compare_exchange from Want to Idle, preserving canceled state. Includes a state regression test. No new unsafe, dependencies, build, or ambient capabilities."
+
+[[audits.wasip1]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+version = "1.0.0"
+importable = false
+notes = "Scoped to quanta's wasm32-wasi preview1 monotonic clock import; absent from native runtime paths. Reviewed generated clock_time_get ABI, Timestamp output storage, success-only initialized reads, and fixed wasi_snapshot_preview1 import. Other WASI capability bindings are outside the caller scope. No build script or dependencies."
 
 [[audits.wasm-bindgen]]
 who = "Nautech Systems <info@nautechsystems.io>"

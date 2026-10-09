@@ -269,10 +269,9 @@ inbound frame. Both backends apply the message cap after that frame payload is r
 message cap does not shrink the buffer. A zero value is rejected on the builder
 and on both handler and stream connect paths. A message that exceeds the message cap and fits in
 the frame cap fails the read with `MessageTooLarge`. On Sockudo, a frame that exceeds the frame cap
-fails first with `FrameTooLarge`. Sockudo applies its message cap to fragmented messages, and to a
-finished single-frame message only when `max_message_size_bytes` is set. Its small-frame parser
-skips the frame cap when the whole frame of 125 bytes or less is already buffered, so that case is
-not a reliable rejection. Tungstenite reports every frame breach as `MessageTooLarge`.
+fails first with `FrameTooLarge`, including a fully buffered small frame. Both backends apply
+the message cap to single-frame and fragmented messages. Tungstenite reports every frame breach
+as `MessageTooLarge`.
 
 ### Liveness and recovery
 
