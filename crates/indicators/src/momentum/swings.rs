@@ -16,6 +16,7 @@
 use std::fmt::Display;
 
 use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::indicator::Indicator;
@@ -107,12 +108,16 @@ impl Swings {
     /// - `period` exceeds the maximum allowed value of `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize) -> Self {
-        assert!(
+        Self::new_checked(period).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(period: usize) -> anyhow::Result<Self> {
+        anyhow::ensure!(
             period > 0 && period <= MAX_PERIOD,
             "Swings: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
         );
 
-        Self {
+        Ok(Self {
             period,
             high_inputs: ArrayDeque::new(),
             low_inputs: ArrayDeque::new(),
@@ -128,7 +133,7 @@ impl Swings {
             duration: 0,
             since_high: 0,
             since_low: 0,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, timestamp: f64) {
@@ -214,6 +219,26 @@ mod tests {
 
     use super::*;
     use crate::stubs::swings_10;
+
+    #[rstest]
+    #[case(0)]
+    #[case(MAX_PERIOD + 1)]
+    #[case(usize::MAX)]
+    fn test_checked_constructor_rejects_invalid_periods(#[case] period: usize) {
+        let error = Swings::new_checked(period).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("Swings: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})")
+        );
+    }
+
+    #[rstest]
+    fn test_checked_constructor_accepts_maximum_period() {
+        let ind = Swings::new_checked(MAX_PERIOD).unwrap();
+        assert_eq!(ind.period, MAX_PERIOD);
+        assert!(!ind.initialized());
+        assert!(!ind.has_inputs());
+    }
 
     #[rstest]
     fn test_name_returns_expected_string(swings_10: Swings) {

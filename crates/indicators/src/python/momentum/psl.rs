@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
@@ -27,9 +28,8 @@ impl PsychologicalLine {
     /// Creates a new `PsychologicalLine` instance.
     #[new]
     #[pyo3(signature = (period, ma_type=None))]
-    #[must_use]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        Self::new(period, ma_type)
+    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
+        Self::new_checked(period, ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

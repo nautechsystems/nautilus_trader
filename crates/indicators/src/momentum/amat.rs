@@ -16,11 +16,13 @@
 use std::fmt::{Debug, Display};
 
 use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
 const DEFAULT_MA_TYPE: MovingAverageType = MovingAverageType::Exponential;
@@ -107,10 +109,11 @@ impl ArcherMovingAveragesTrends {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// `fast_period`*, *`slow_period`* or *`signal_period`* is 0.
-    /// `slow_period`* ≤ *`fast_period`*.
-    /// `signal_period`* > `MAX_SIGNAL`.
+    /// Panics if:
+    /// - Any period is zero.
+    /// - `slow_period` is not greater than `fast_period`.
+    /// - `signal_period` exceeds the fixed signal buffer limit.
+    /// - `slow_period` exceeds the supported indicator period limit.
     #[must_use]
     pub fn new(
         fast_period: usize,
@@ -118,30 +121,44 @@ impl ArcherMovingAveragesTrends {
         signal_period: usize,
         ma_type: Option<MovingAverageType>,
     ) -> Self {
-        assert!(
+        Self::new_checked(fast_period, slow_period, signal_period, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        fast_period: usize,
+        slow_period: usize,
+        signal_period: usize,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
             fast_period > 0,
             "fast_period must be positive (received {fast_period})"
         );
-        assert!(
+        anyhow::ensure!(
             slow_period > 0,
             "slow_period must be positive (received {slow_period})"
         );
-        assert!(
+        anyhow::ensure!(
             signal_period > 0,
             "signal_period must be positive (received {signal_period})"
         );
-        assert!(
+        anyhow::ensure!(
             slow_period > fast_period,
             "slow_period ({slow_period}) must be greater than fast_period ({fast_period})"
         );
-        assert!(
+        anyhow::ensure!(
             signal_period <= MAX_SIGNAL,
             "signal_period ({signal_period}) must not exceed MAX_SIGNAL ({MAX_SIGNAL})"
         );
 
+        anyhow::ensure!(
+            slow_period <= MAX_PERIOD,
+            "slow_period cannot exceed {MAX_PERIOD}"
+        );
+
         let ma_type = ma_type.unwrap_or(DEFAULT_MA_TYPE);
 
-        Self {
+        Ok(Self {
             fast_period,
             slow_period,
             signal_period,
@@ -154,7 +171,7 @@ impl ArcherMovingAveragesTrends {
             slow_ma_price: SignalBuf::new(),
             has_inputs: false,
             initialized: false,
-        }
+        })
     }
 
     /// Updates the indicator with a new raw price value.
@@ -205,6 +222,49 @@ mod tests {
 
     fn make(fast: usize, slow: usize, signal: usize) {
         let _ = ArcherMovingAveragesTrends::new(fast, slow, signal, None);
+    }
+
+    #[rstest]
+    #[case(0, 2, 1, "fast_period must be positive (received 0)")]
+    #[case(1, 0, 1, "slow_period must be positive (received 0)")]
+    #[case(1, 2, 0, "signal_period must be positive (received 0)")]
+    #[case(2, 2, 1, "slow_period (2) must be greater than fast_period (2)")]
+    #[case(1, 2, MAX_SIGNAL + 1, "signal_period (1025) must not exceed MAX_SIGNAL (1024)")]
+    #[case(1, MAX_PERIOD + 1, 1, "slow_period cannot exceed 16777216")]
+    #[case(usize::MAX - 1, usize::MAX, 1, "slow_period cannot exceed 16777216")]
+    fn test_checked_constructor_rejects_invalid_periods(
+        #[case] fast: usize,
+        #[case] slow: usize,
+        #[case] signal: usize,
+        #[case] message: &str,
+        #[values(
+            MovingAverageType::Simple,
+            MovingAverageType::Exponential,
+            MovingAverageType::DoubleExponential,
+            MovingAverageType::Wilder,
+            MovingAverageType::Hull
+        )]
+        ma_type: MovingAverageType,
+    ) {
+        let error =
+            ArcherMovingAveragesTrends::new_checked(fast, slow, signal, Some(ma_type)).unwrap_err();
+        assert_eq!(error.to_string(), message);
+    }
+
+    #[rstest]
+    fn test_checked_constructor_accepts_maximum_periods() {
+        let ind =
+            ArcherMovingAveragesTrends::new_checked(MAX_PERIOD - 1, MAX_PERIOD, MAX_SIGNAL, None)
+                .unwrap();
+        assert_eq!(
+            (ind.fast_period, ind.slow_period, ind.signal_period),
+            (MAX_PERIOD - 1, MAX_PERIOD, MAX_SIGNAL)
+        );
+        assert_eq!(ind.ma_type, MovingAverageType::Exponential);
+        assert!(!ind.initialized());
+        assert!(!ind.has_inputs());
+        assert!(!ind.long_run);
+        assert!(!ind.short_run);
     }
 
     #[rstest]

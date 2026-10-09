@@ -24,13 +24,12 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl SpreadAnalyzer {
-    /// An indicator which calculates the efficiency ratio across a rolling window.
+    /// Calculates the current bid-ask spread and its average across a rolling window.
     ///
-    /// The Kaufman Efficiency measures the ratio of the relative market speed in
-    /// relation to the volatility, this could be thought of as a proxy for noise.
+    /// A zero capacity is accepted.
     #[new]
-    fn py_new(instrument_id: InstrumentId, capacity: usize) -> Self {
-        Self::new(capacity, instrument_id)
+    fn py_new(instrument_id: InstrumentId, capacity: usize) -> PyResult<Self> {
+        Self::new_checked(capacity, instrument_id).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

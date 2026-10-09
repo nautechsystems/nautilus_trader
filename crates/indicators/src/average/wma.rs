@@ -134,7 +134,7 @@ impl WeightedMovingAverage {
         })
     }
 
-    fn check_period(period: usize) -> anyhow::Result<()> {
+    pub(crate) fn check_period(period: usize) -> anyhow::Result<()> {
         check_predicate_true(period > 0, "`period` must be positive")?;
         check_predicate_true(
             period <= MAX_PERIOD,
