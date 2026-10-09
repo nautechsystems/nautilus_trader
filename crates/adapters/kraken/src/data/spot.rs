@@ -752,15 +752,18 @@ impl KrakenSpotDataClient {
                                 }
                             }
 
-                            // One recovery per instrument per message: a second request for the
-                            // same subscription would cost a second unsubscribe and subscribe
-                            // cycle and a second snapshot for one message.
-                            if let Some(request) = outcome.resync
-                                && !resyncs.iter().any(|r: &L2ResyncRequest| {
+                            // One recovery per instrument per message, the latest: a second request
+                            // for the same subscription would cost a second unsubscribe and
+                            // subscribe cycle and a second snapshot, and only the latest carries
+                            // the epoch the message's last accepted snapshot moved to, so an earlier
+                            // one would be skipped as already served.
+                            if let Some(request) = outcome.resync {
+                                match resyncs.iter_mut().find(|r: &&mut L2ResyncRequest| {
                                     r.instrument_id == request.instrument_id
-                                })
-                            {
-                                resyncs.push(request);
+                                }) {
+                                    Some(existing) => *existing = request,
+                                    None => resyncs.push(request),
+                                }
                             }
                         }
                         Err(e) => log::error!("Failed to parse book deltas: {e}"),
@@ -1852,7 +1855,8 @@ mod tests {
             && RecordFlag::F_LAST.matches(deltas.deltas[0].flags)
     }
 
-    /// Every book in a message that mismatches gets its own resync request.
+    /// Every instrument in a message that mismatches gets one resync request, carrying the epoch of
+    /// its last accepted snapshot.
     #[rstest]
     fn test_l2_handler_returns_one_resync_request_per_mismatching_instrument() {
         let mut harness = L2Harness::new(true);
@@ -1874,6 +1878,15 @@ mod tests {
             resyncs
                 .iter()
                 .all(|r| r.instrument_id == make_instrument().id())
+        );
+        assert_eq!(
+            resyncs[0].epoch,
+            harness
+                .l2_depths
+                .subscription("BTC/USD")
+                .unwrap()
+                .snapshot_epoch,
+            "the surviving request carries the latest epoch, so it is not skipped as served"
         );
     }
 

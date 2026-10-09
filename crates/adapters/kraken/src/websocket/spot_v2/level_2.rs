@@ -442,10 +442,10 @@ impl L2BookState {
     /// Requests the snapshot again for every held subscription whose book is overdue.
     ///
     /// `held` is every `book` subscription the client holds. Per instrument:
-    /// - not held: its book, wait, generation, live request, mismatch count, validation switch and
-    ///   warning are dropped, since a canceled subscription delivers nothing and a later one is a
-    ///   new stream that must not inherit its state; the book is not reported as cleared, since no
-    ///   consumer holds it;
+    /// - not held: its book, wait, generation, live request, mismatch count and validation switch
+    ///   are dropped, since a canceled subscription delivers nothing and a later one is a new stream
+    ///   that must not inherit its state; the book is not reported as cleared, since no consumer
+    ///   holds it; the unsubscribed-frame warning is kept, so a stream in that state warns once;
     /// - held, its latest request live, with a shadow book: the snapshot has arrived, nothing is
     ///   owed (an instrument whose validation is off keeps its book, so it is never overdue);
     /// - held, its latest request not confirmed: the stream that request opens has not started,
