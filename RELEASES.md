@@ -44,6 +44,7 @@ Released on TBD (UTC).
 - Fixed `BacktestNode` streaming runs leaving the engine running after a data load failure
 - Fixed Python indicator constructors aborting the process on invalid periods or oversized capacities
 - Fixed reconciliation rejecting fills on a pending order when a `Filled` report exceeds its quantity
+- Fixed calculated margin equity omitting option value (#5252), thanks for reporting @abhijeetvichare76
 - Fixed Hyperliquid account updates retaining balances reported at zero (#5210), thanks @XBeg9
 - Fixed Hyperliquid reduce-only filled order lookups overstating fill quantity (#5222), thanks @XBeg9
 - Fixed Kraken spot and futures wallets retaining balances reported at zero (#5186), thanks @zhaow-de
@@ -80,6 +81,8 @@ Released on TBD (UTC).
 - Upgraded `uvicorn` package (test) to v0.54.0
 
 ### Documentation Updates
+
+- Clarified `Portfolio` equity rules for calculated and reported margin accounts
 
 ### Deprecations
 

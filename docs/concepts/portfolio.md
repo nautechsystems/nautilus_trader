@@ -129,21 +129,41 @@ equity.
 
 ### Equity formula
 
-Equity combines the account balance with open-position valuation, using a different
-second term depending on account type:
+Equity starts with `balances_total` and adds open-position values per currency:
 
-- **Cash accounts without a base currency and Wallet accounts**: Start with `balances_total`. For
-  positions owned by that account, do not add a base-asset mark value when the balance already holds
-  that asset and the instrument's cost currency differs from its base currency. Add mark values for
-  inverse instruments and positions not represented by a credited balance asset.
-- **Cash accounts with a base currency and betting accounts**:
-  `balances_total + Σ mark_value(open positions)`.
-- **Margin accounts**: `balances_total + Σ unrealized_pnl(open positions)`.
+| Account type                            | Values added to the balance                              |
+| --------------------------------------- | -------------------------------------------------------- |
+| Cash without a base currency, or Wallet | Position marks, with balance exceptions below            |
+| Cash with a base currency, or betting   | All open-position marks                                  |
+| Calculated margin                       | Signed premium marks + unrealized PnL of other positions |
+| Reported margin                         | Unrealized PnL of all open positions                     |
 
-`mark_values()` always returns gross open-position values, including assets already present in a
-multi-currency Cash or Wallet balance. The value-once rule means `equity()` and equity snapshots
-count each non-inverse base asset either as a balance or a mark value, not both. The margin path uses
-the same cached unrealized PnL pipeline that powers `unrealized_pnls()`.
+#### Cash and Wallet valuation
+
+For positions owned by Cash accounts without a base currency or Wallet accounts, exclude a
+non-inverse base asset's mark when the balance already holds that asset and the instrument's cost
+currency differs from its base currency. Inverse instruments and uncredited assets retain their marks.
+
+`mark_values()` always returns gross open-position values, including credited assets. `equity()` and
+snapshots count each non-inverse base asset once, through its balance or its mark.
+
+#### Margin valuation
+
+Calculated margin accounts (`calculate_account_state=true`) update cash from fills; reported accounts
+use venue balances. Venue-scoped margin queries apply each position owner's rule. See
+[accounting](accounting.md) for balance updates.
+
+Premium-based instruments, including options and binary options, exchange notional cash on fill.
+Their signed marks represent assets or liabilities. Futures and perpetuals exchange no notional cash
+and use the unrealized PnL pipeline.
+
+:::note
+Venue totals may represent cash or include position value. Portfolio uses them without normalization,
+so reported-account equity may differ from venue equity.
+:::
+
+- Snapshots report unrealized PnL separately for all positions, including options.
+- Spread combos create no portfolio positions and do not update calculated balances; legs carry their value.
 
 ### Price fallback
 

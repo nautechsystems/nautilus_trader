@@ -22,6 +22,7 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, VirtualClock},
     msgbus::{self, MessageBus, MessagingSwitchboard, TypedHandler},
+    timer::TimeEventCallback,
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos, approx_eq, datetime::NANOSECONDS_IN_DAY};
 use nautilus_model::{
@@ -57,12 +58,16 @@ use nautilus_model::{
             audusd_sim, betting, binary_option, btcusd_bybit, commodity_gold,
             crypto_futures_spread_btc_deribit, crypto_option_btc_deribit, currency_pair_btcusdt,
             default_fx_ccy, equity_aapl, ethusd_bybit, futures_contract_es, futures_spread_es,
+            option_contract_appl, option_spread,
         },
     },
     orders::{Order, OrderAny, OrderTestBuilder},
     position::Position,
     stubs::TestDefault,
-    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MONEY_MAX},
+    types::{
+        AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
+        money::{MONEY_MAX, MONEY_RAW_MAX},
+    },
 };
 use nautilus_portfolio::{Portfolio, config::PortfolioConfig};
 use rstest::{fixture, rstest};
@@ -11228,4 +11233,979 @@ fn test_unrealized_pnl_skips_empty_zero_quote_side(mut portfolio: Portfolio) {
     );
     let snapshot = portfolio.build_snapshot(&account_id).unwrap();
     assert!(snapshot.stale_instruments.contains(&instrument.id()));
+}
+
+#[rstest]
+#[case(OrderSide::Buy, "5.00", "9500 USD", "0 USD", "10000 USD")]
+#[case(OrderSide::Sell, "5.00", "10500 USD", "0 USD", "10000 USD")]
+#[case(OrderSide::Buy, "6.00", "9500 USD", "100 USD", "10100 USD")]
+#[case(OrderSide::Sell, "6.00", "10500 USD", "-100 USD", "9900 USD")]
+fn test_margin_option_equity(
+    mut portfolio: Portfolio,
+    #[case] side: OrderSide,
+    #[case] mark: &str,
+    #[case] cash: &str,
+    #[case] pnl: &str,
+    #[case] equity: &str,
+) {
+    let instrument = InstrumentAny::OptionContract(option_contract_appl());
+    let account_id = AccountId::new("OPRA-001");
+    let mut state = get_margin_account(Some(account_id.as_str()));
+    state.balances = vec![AccountBalance::new(
+        Money::from("10000 USD"),
+        Money::from("0 USD"),
+        Money::from("10000 USD"),
+    )];
+    portfolio.update_account(&state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id(),
+            Price::from(mark),
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    let fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        side,
+        Quantity::from("100"),
+        Price::from("5.00"),
+        PositionId::new("P-OPTION"),
+    );
+    portfolio.update_order(&OrderEventAny::Filled(fill.clone()));
+    let position = Position::new(&instrument, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+    let venue = instrument.id().venue;
+    let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+    assert_eq!(usd_balance_total(&portfolio, account_id), Money::from(cash));
+    assert_eq!(snapshot.unrealized_pnls, vec![Money::from(pnl)]);
+    assert_eq!(
+        portfolio.equity(&venue, Some(&account_id))[&Currency::USD()],
+        Money::from(equity)
+    );
+    assert_eq!(
+        portfolio.equity(&venue, None)[&Currency::USD()],
+        Money::from(equity)
+    );
+    assert_eq!(snapshot.total_equity, vec![Money::from(equity)]);
+}
+
+#[rstest]
+#[case::representable(true)]
+#[case::unrepresentable(false)]
+fn test_margin_option_snapshot_combines_cash_before_money_conversion(
+    mut portfolio: Portfolio,
+    #[case] cash_offsets: bool,
+) {
+    let instrument = InstrumentAny::OptionContract(option_contract_appl());
+    let account_id = AccountId::new("OPRA-001");
+    let value = Money::from_raw(MONEY_RAW_MAX / 4 * 3, Currency::USD()).as_decimal();
+    let expected_equity = Money::from_decimal(value, Currency::USD()).unwrap();
+    let cash = if cash_offsets {
+        Money::from_decimal(-value, Currency::USD()).unwrap()
+    } else {
+        Money::zero(Currency::USD())
+    };
+
+    let mut state = get_margin_account(Some(account_id.as_str()));
+    state.balances = vec![AccountBalance::new(
+        cash,
+        Money::zero(Currency::USD()),
+        cash,
+    )];
+    portfolio.update_account(&state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let price = Price::from_decimal(value).unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id(),
+            price,
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+
+    for position_id in [PositionId::new("P-LARGE-1"), PositionId::new("P-LARGE-2")] {
+        let fill = make_fill_for_account(
+            &instrument,
+            account_id,
+            OrderSide::Buy,
+            Quantity::from("1"),
+            price,
+            position_id,
+        );
+        let position = Position::new(&instrument, fill);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+    }
+
+    let snapshot = portfolio.build_snapshot(&account_id);
+
+    if !cash_offsets {
+        assert_eq!(snapshot, None);
+        return;
+    }
+
+    let snapshot = snapshot.unwrap();
+    assert_eq!(snapshot.unrealized_pnls, vec![Money::zero(Currency::USD())]);
+    assert_eq!(snapshot.total_equity, vec![expected_equity]);
+    assert_eq!(
+        portfolio.equity(&instrument.id().venue, Some(&account_id))[&Currency::USD()],
+        expected_equity
+    );
+    assert_eq!(snapshot.unpriced_instruments, Vec::<InstrumentId>::new());
+    assert!(!snapshot.is_stale);
+}
+
+#[rstest]
+#[case(OrderSide::Buy, "5.00", "0 USD", "10000 USD")]
+#[case(OrderSide::Sell, "5.00", "0 USD", "10000 USD")]
+#[case(OrderSide::Buy, "6.00", "100 USD", "10100 USD")]
+#[case(OrderSide::Sell, "6.00", "-100 USD", "9900 USD")]
+fn test_margin_reported_option_equity_preserves_pnl_valuation(
+    mut portfolio: Portfolio,
+    #[case] side: OrderSide,
+    #[case] mark: &str,
+    #[case] pnl: &str,
+    #[case] equity: &str,
+) {
+    let instrument = InstrumentAny::OptionContract(option_contract_appl());
+    let account_id = AccountId::new("OPRA-001");
+    let mut state = get_margin_account(Some(account_id.as_str()));
+    state.balances = vec![AccountBalance::new(
+        Money::from("10000 USD"),
+        Money::zero(Currency::USD()),
+        Money::from("10000 USD"),
+    )];
+    portfolio.update_account(&state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id(),
+            Price::from(mark),
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    let fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        side,
+        Quantity::from("100"),
+        Price::from("5.00"),
+        PositionId::new("P-REPORTED"),
+    );
+    portfolio.update_order(&OrderEventAny::Filled(fill.clone()));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&Position::new(&instrument, fill), OmsType::Hedging)
+        .unwrap();
+    let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+    assert_eq!(
+        usd_balance_total(&portfolio, account_id),
+        Money::from("10000 USD")
+    );
+    assert_eq!(snapshot.unrealized_pnls, vec![Money::from(pnl)]);
+    assert_eq!(snapshot.total_equity, vec![Money::from(equity)]);
+    assert_eq!(
+        portfolio.equity(&instrument.id().venue, Some(&account_id))[&Currency::USD()],
+        Money::from(equity)
+    );
+    assert_eq!(
+        portfolio.equity(&instrument.id().venue, None)[&Currency::USD()],
+        Money::from(equity)
+    );
+}
+
+#[rstest]
+fn test_margin_equity_mixes_calculated_and_reported_accounts(mut portfolio: Portfolio) {
+    let instrument = InstrumentAny::OptionContract(option_contract_appl());
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id(),
+            Price::from("6.00"),
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+
+    for (account_id, calculated, cash, side, quantity, entry, pnl, equity) in [
+        (
+            "OPRA-001",
+            true,
+            "9500 USD",
+            OrderSide::Buy,
+            "100",
+            "5.00",
+            "100 USD",
+            "10100 USD",
+        ),
+        (
+            "OPRA-002",
+            false,
+            "10500 USD",
+            OrderSide::Sell,
+            "40",
+            "4.00",
+            "-80 USD",
+            "10420 USD",
+        ),
+    ] {
+        let account_id = AccountId::new(account_id);
+        let mut state = get_margin_account(Some(account_id.as_str()));
+        state.balances = vec![AccountBalance::new(
+            Money::from(cash),
+            Money::zero(Currency::USD()),
+            Money::from(cash),
+        )];
+        portfolio.update_account(&state);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .account_mut(&account_id)
+            .unwrap()
+            .set_calculate_account_state(calculated);
+        let fill = make_fill_for_account(
+            &instrument,
+            account_id,
+            side,
+            Quantity::from(quantity),
+            Price::from(entry),
+            PositionId::new(format!("P-{account_id}")),
+        );
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_position(&Position::new(&instrument, fill), OmsType::Hedging)
+            .unwrap();
+        let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+        assert_eq!(snapshot.unrealized_pnls, vec![Money::from(pnl)]);
+        assert_eq!(snapshot.total_equity, vec![Money::from(equity)]);
+        assert_eq!(
+            portfolio.equity(&instrument.id().venue, Some(&account_id))[&Currency::USD()],
+            Money::from(equity)
+        );
+    }
+
+    assert_eq!(
+        portfolio.unrealized_pnl(&instrument.id()),
+        Some(Money::from("20 USD"))
+    );
+    assert_eq!(
+        portfolio.equity(&instrument.id().venue, None)[&Currency::USD()],
+        Money::from("10020 USD")
+    );
+}
+
+#[rstest]
+#[case::binary(
+    InstrumentAny::BinaryOption(binary_option()),
+    "0.500",
+    "0.600",
+    "USDC",
+    "10000",
+    ("9950", "10", "10010")
+)]
+#[case::inverse_option({ let mut i = crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1")); i.is_inverse = true; InstrumentAny::CryptoOption(i) }, "0.050", "0.060", "BTC", "10", ("5", "1", "11"))]
+#[case::future(
+    InstrumentAny::FuturesContract(futures_contract_es(None, None)),
+    "5.00",
+    "6.00",
+    "USD",
+    "10000",
+    ("10000", "100", "10100")
+)]
+#[case::perpetual(
+    InstrumentAny::CryptoPerpetual(ethusd_bybit()),
+    "5.00",
+    "10.00",
+    "ETH",
+    "10",
+    ("10", "10", "20")
+)]
+fn test_margin_equity_instrument_valuation(
+    mut portfolio: Portfolio,
+    #[case] instrument: InstrumentAny,
+    #[case] entry: &str,
+    #[case] mark: &str,
+    #[case] currency: &str,
+    #[case] initial: &str,
+    #[case] expected: (&str, &str, &str),
+) {
+    let (cash, pnl, equity) = expected;
+    let account_id = AccountId::new(format!("{}-001", instrument.id().venue));
+    let currency = Currency::from(currency);
+    let money = |amount: &str| {
+        Money::from_decimal(Decimal::from_str_exact(amount).unwrap(), currency).unwrap()
+    };
+
+    let mut state = get_margin_account(Some(account_id.as_str()));
+    state.balances = vec![AccountBalance::new(
+        money(initial),
+        Money::zero(currency),
+        money(initial),
+    )];
+    portfolio.update_account(&state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id(),
+            Price::from(mark),
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    let fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from(entry),
+        PositionId::new("P-CLASS"),
+    );
+    portfolio.update_order(&OrderEventAny::Filled(fill.clone()));
+    let position = Position::new(&instrument, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+    let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+    assert_eq!(
+        portfolio
+            .cache()
+            .borrow()
+            .account(&account_id)
+            .unwrap()
+            .balance_total(Some(currency)),
+        Some(money(cash))
+    );
+    assert_eq!(snapshot.unrealized_pnls, vec![money(pnl)]);
+    assert_eq!(snapshot.total_equity, vec![money(equity)]);
+    assert_eq!(
+        portfolio.equity(&instrument.id().venue, Some(&account_id))[&currency],
+        money(equity)
+    );
+    assert_eq!(
+        portfolio.equity(&instrument.id().venue, None)[&currency],
+        money(equity)
+    );
+}
+
+#[rstest]
+fn test_margin_option_equity_reduction_and_closure(mut portfolio: Portfolio) {
+    let instrument = InstrumentAny::OptionContract(option_contract_appl());
+    let account_id = AccountId::new("OPRA-001");
+    let mut state = get_margin_account(Some(account_id.as_str()));
+    state.balances = vec![AccountBalance::new(
+        Money::from("10000 USD"),
+        Money::from("0 USD"),
+        Money::from("10000 USD"),
+    )];
+    portfolio.update_account(&state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id(),
+            Price::from("6.00"),
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    let fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("5.00"),
+        PositionId::new("P-REDUCE"),
+    );
+    portfolio.update_order(&OrderEventAny::Filled(fill.clone()));
+    let mut position = Position::new(&instrument, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+
+    for (quantity, cash, pnl) in [("40", "9740 USD", "60 USD"), ("60", "10100 USD", "0 USD")] {
+        let fill = make_fill_for_account(
+            &instrument,
+            account_id,
+            OrderSide::Sell,
+            Quantity::from(quantity),
+            Price::from("6.00"),
+            position.id,
+        );
+        portfolio.update_order(&OrderEventAny::Filled(fill.clone()));
+        position.apply(&fill);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .update_position(&position)
+            .unwrap();
+
+        let event = if position.is_open() {
+            PositionEvent::PositionChanged(get_changed_position(&position))
+        } else {
+            PositionEvent::PositionClosed(get_close_position(&position))
+        };
+
+        portfolio.update_position(&event);
+        let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+        assert_eq!(usd_balance_total(&portfolio, account_id), Money::from(cash));
+        assert_eq!(
+            snapshot.unrealized_pnls,
+            if position.is_open() {
+                vec![Money::from(pnl)]
+            } else {
+                vec![]
+            }
+        );
+        assert_eq!(snapshot.total_equity, vec![Money::from("10100 USD")]);
+        assert_eq!(
+            portfolio.equity(&instrument.id().venue, Some(&account_id))[&Currency::USD()],
+            Money::from("10100 USD")
+        );
+        assert_eq!(
+            portfolio.equity(&instrument.id().venue, None)[&Currency::USD()],
+            Money::from("10100 USD")
+        );
+    }
+}
+
+#[rstest]
+fn test_margin_equity_mixed_positions_and_account_isolation(mut portfolio: Portfolio) {
+    let mut option = option_contract_appl();
+    option.id = InstrumentId::from("AAPL211217C00150000.SIM");
+    let option = InstrumentAny::OptionContract(option);
+    let mut future = futures_contract_es(None, None);
+    future.id = InstrumentId::from("ESM4.SIM");
+    let future = InstrumentAny::FuturesContract(future);
+    let venue = Venue::new("SIM");
+
+    for instrument in [&option, &future] {
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_mark_price(MarkPriceUpdate::new(
+                instrument.id(),
+                if instrument.instrument_class().is_premium_based() {
+                    Price::from("6.00")
+                } else {
+                    Price::from("22.00")
+                },
+                0.into(),
+                0.into(),
+            ))
+            .unwrap();
+    }
+
+    for (account_id, side, quantity, expected_cash, expected_equity, expected_pnl) in [
+        (
+            AccountId::new("SIM-001"),
+            OrderSide::Buy,
+            "100",
+            "9500 USD",
+            "10104 USD",
+            "104 USD",
+        ),
+        (
+            AccountId::new("SIM-002"),
+            OrderSide::Sell,
+            "20",
+            "10100 USD",
+            "9974 USD",
+            "-26 USD",
+        ),
+    ] {
+        let mut state = get_margin_account(Some(account_id.as_str()));
+        state.balances = vec![AccountBalance::new(
+            Money::from("10000 USD"),
+            Money::from("0 USD"),
+            Money::from("10000 USD"),
+        )];
+        portfolio.update_account(&state);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .account_mut(&account_id)
+            .unwrap()
+            .set_calculate_account_state(true);
+
+        for instrument in [&option, &future] {
+            let fill = make_fill_for_account(
+                instrument,
+                account_id,
+                side,
+                if instrument.instrument_class().is_premium_based() {
+                    Quantity::from(quantity)
+                } else if side == OrderSide::Buy {
+                    Quantity::from("2")
+                } else {
+                    Quantity::from("3")
+                },
+                if instrument.instrument_class().is_premium_based() {
+                    Price::from("5.00")
+                } else {
+                    Price::from("20.00")
+                },
+                PositionId::new(format!("P-{account_id}-{}", instrument.instrument_class())),
+            );
+
+            portfolio.update_order(&OrderEventAny::Filled(fill.clone()));
+            let position = Position::new(instrument, fill);
+            portfolio
+                .cache()
+                .borrow_mut()
+                .add_position(&position, OmsType::Hedging)
+                .unwrap();
+            portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+        }
+
+        let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+        assert_eq!(
+            usd_balance_total(&portfolio, account_id),
+            Money::from(expected_cash)
+        );
+        assert_eq!(snapshot.unrealized_pnls, vec![Money::from(expected_pnl)]);
+        assert_eq!(snapshot.total_equity, vec![Money::from(expected_equity)]);
+        assert_eq!(
+            portfolio.equity(&venue, Some(&account_id))[&Currency::USD()],
+            Money::from(expected_equity)
+        );
+    }
+
+    assert_eq!(
+        portfolio.equity(&venue, Some(&AccountId::new("SIM-001")))[&Currency::USD()],
+        Money::from("10104 USD")
+    );
+    // Venue queries retain the selected account balance and include all venue positions
+    assert_eq!(
+        portfolio.equity(&venue, None)[&Currency::USD()],
+        Money::from("9978 USD")
+    );
+}
+
+#[rstest]
+fn test_margin_option_equity_missing_and_stale_prices(mut portfolio: Portfolio) {
+    let instrument = InstrumentAny::OptionContract(option_contract_appl());
+    let account_id = AccountId::new("OPRA-001");
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("5.00"),
+        PositionId::new("P-UNPRICED-OPTION"),
+    );
+    let position = Position::new(&instrument, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    let venue = instrument.id().venue;
+    let unpriced = portfolio.build_snapshot(&account_id).unwrap();
+    assert_eq!(unpriced.unpriced_instruments, vec![instrument.id()]);
+    assert_eq!(
+        portfolio.equity(&venue, Some(&account_id))[&Currency::USD()],
+        Money::from("10 USD")
+    );
+    assert_eq!(
+        portfolio.missing_price_instruments(&venue, Some(&account_id)),
+        vec![instrument.id()]
+    );
+    let quote = get_quote_tick(&instrument, 6.0, 6.0, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    let current = portfolio.build_snapshot(&account_id).unwrap();
+    set_quote(&mut portfolio, &instrument, 0.0, 0.0, "0");
+    let stale = portfolio.build_snapshot(&account_id).unwrap();
+    assert_eq!(current.total_equity, stale.total_equity);
+    assert_eq!(
+        portfolio.equity(&venue, Some(&account_id))[&Currency::USD()],
+        Money::from("16 USD")
+    );
+    assert_eq!(stale.stale_instruments, vec![instrument.id()]);
+    assert!(stale.is_stale);
+    assert!(stale.unpriced_instruments.is_empty());
+    assert!(
+        portfolio
+            .missing_price_instruments(&venue, Some(&account_id))
+            .is_empty()
+    );
+}
+
+#[rstest]
+fn test_margin_option_equity_samples_automatically(simple_cache: Cache, clock: VirtualClock) {
+    let test_clock = Rc::new(RefCell::new(clock));
+    let clock = Rc::clone(&test_clock) as Rc<RefCell<dyn Clock>>;
+    let mut portfolio = Portfolio::new(clock, Rc::new(RefCell::new(simple_cache)), None);
+    let account_id = AccountId::new("OPRA-001");
+    let mut state = get_margin_account(Some(account_id.as_str()));
+    state.balances = vec![AccountBalance::new(
+        Money::from("9500 USD"),
+        Money::from("0 USD"),
+        Money::from("9500 USD"),
+    )];
+    portfolio.update_account(&state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+    let instrument = InstrumentAny::OptionContract(option_contract_appl());
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id(),
+            Price::from("6.00"),
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    let fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("5.00"),
+        PositionId::new("P-AUTO-OPTION"),
+    );
+    let position = Position::new(&instrument, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+    let events = test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(NANOSECONDS_IN_DAY), true);
+    let handlers = test_clock.borrow().match_handlers(events);
+    for handler in handlers {
+        match handler.callback {
+            TimeEventCallback::RustLocal(callback) => {
+                callback(handler.event);
+            }
+            _ => panic!("expected RustLocal callback"),
+        }
+    }
+
+    let snapshots = portfolio.snapshots(&account_id);
+    assert_eq!(snapshots.len(), 2);
+    assert_eq!(snapshots[1].total_equity, vec![Money::from("10100 USD")]);
+    assert_eq!(snapshots[1].unrealized_pnls, vec![Money::from("100 USD")]);
+    assert_eq!(snapshots[1].ts_event, UnixNanos::from(NANOSECONDS_IN_DAY));
+}
+
+#[rstest]
+fn test_margin_option_spread_legs_value_once(mut portfolio: Portfolio) {
+    let spread = InstrumentAny::OptionSpread(option_spread());
+    let account_id = AccountId::new("GLBX-001");
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(spread.clone())
+        .unwrap();
+    let combo = make_fill_for_account(
+        &spread,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("2.00"),
+        PositionId::new("P-COMBO"),
+    );
+    portfolio.update_order(&OrderEventAny::Filled(combo));
+
+    for (name, side, entry, mark) in [
+        ("LEG1", OrderSide::Buy, "5.00", "6.00"),
+        ("LEG2", OrderSide::Sell, "3.00", "3.50"),
+    ] {
+        let mut leg = option_contract_appl();
+        leg.id = InstrumentId::new(Symbol::from(name), spread.id().venue);
+        let instrument = InstrumentAny::OptionContract(leg);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_mark_price(MarkPriceUpdate::new(
+                instrument.id(),
+                Price::from(mark),
+                0.into(),
+                0.into(),
+            ))
+            .unwrap();
+        let fill = make_fill_for_account(
+            &instrument,
+            account_id,
+            side,
+            Quantity::from("1"),
+            Price::from(entry),
+            PositionId::new(name),
+        );
+        portfolio.update_order(&OrderEventAny::Filled(fill.clone()));
+        let position = Position::new(&instrument, fill);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+        portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+    }
+
+    let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+    assert_eq!(
+        usd_balance_total(&portfolio, account_id),
+        Money::from("8 USD")
+    );
+    assert_eq!(snapshot.unrealized_pnls, vec![Money::from("0.50 USD")]);
+    assert_eq!(
+        portfolio.equity(&spread.id().venue, Some(&account_id))[&Currency::USD()],
+        Money::from("10.50 USD")
+    );
+    assert_eq!(
+        snapshot
+            .total_equity
+            .iter()
+            .find(|m| m.currency == Currency::USD()),
+        Some(&Money::from("10.50 USD"))
+    );
+    assert!(
+        portfolio
+            .cache()
+            .borrow()
+            .positions_open(None, Some(&spread.id()), None, None, None)
+            .is_empty()
+    );
+}
+
+#[rstest]
+fn test_margin_option_equity_converts_and_carries_exchange_rate(
+    simple_cache: Cache,
+    clock: VirtualClock,
+) {
+    let config = PortfolioConfig::builder()
+        .use_mark_xrates(true)
+        .build()
+        .unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        Some(config),
+    );
+    let account_id = AccountId::new("OPRA-001");
+    let mut state = get_margin_account(Some(account_id.as_str()));
+    state.base_currency = Some(Currency::EUR());
+    state.balances = vec![AccountBalance::new(
+        Money::from("10000 EUR"),
+        Money::from("0 EUR"),
+        Money::from("10000 EUR"),
+    )];
+    portfolio.update_account(&state);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+    let instrument = InstrumentAny::OptionContract(option_contract_appl());
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let fx = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("USD/EUR"),
+        Some(instrument.id().venue),
+    ));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_instrument(fx.clone())
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_quote(QuoteTick::new(
+            fx.id(),
+            Price::from("0.90000"),
+            Price::from("0.90000"),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .set_mark_xrate(Currency::USD(), Currency::EUR(), 0.9);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            instrument.id(),
+            Price::from("6.00"),
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    let fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("5.00"),
+        PositionId::new("P-OPTION-FX"),
+    );
+    portfolio.update_order(&OrderEventAny::Filled(fill.clone()));
+    let position = Position::new(&instrument, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+    let current = portfolio.build_snapshot(&account_id).unwrap();
+    portfolio.cache().borrow_mut().clear_mark_xrates();
+    portfolio.cache().borrow_mut().purge_instrument(fx.id());
+    let stale = portfolio.build_snapshot(&account_id).unwrap();
+    assert_eq!(
+        portfolio
+            .cache()
+            .borrow()
+            .account(&account_id)
+            .unwrap()
+            .balance_total(Some(Currency::EUR())),
+        Some(Money::from("9550 EUR"))
+    );
+    assert_eq!(current.total_equity, vec![Money::from("10090 EUR")]);
+    assert_eq!(current.base_currency_equity, Some(Money::from("10090 EUR")));
+    assert_eq!(current.unrealized_pnls, vec![Money::from("90 EUR")]);
+    assert!(!current.is_stale);
+    assert_eq!(stale.total_equity, current.total_equity);
+    assert_eq!(stale.base_currency_equity, current.base_currency_equity);
+    assert_eq!(stale.unrealized_pnls, current.unrealized_pnls);
+    assert!(stale.is_stale);
+    assert_eq!(stale.stale_currencies, vec![Currency::USD()]);
+    assert!(stale.unpriced_instruments.is_empty());
+    assert_eq!(
+        portfolio.equity(&instrument.id().venue, Some(&account_id)),
+        IndexMap::from([(Currency::EUR(), Money::from("10090 EUR"))])
+    );
+    assert_eq!(
+        portfolio.equity(&instrument.id().venue, None),
+        IndexMap::from([(Currency::EUR(), Money::from("10090 EUR"))])
+    );
 }
