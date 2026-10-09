@@ -53,7 +53,8 @@ use nautilus_execution::engine::{
 };
 use nautilus_model::{
     accounts::{
-        AccountAny, BettingAccount, CashAccount, MarginAccount, WalletAccount, stubs::cash_account,
+        Account, AccountAny, BettingAccount, CashAccount, MarginAccount, WalletAccount,
+        stubs::cash_account,
     },
     data::{
         Bar, BarSpecification, BarType, QuoteTick, TradeTick,
@@ -8072,6 +8073,92 @@ fn test_submit_order_reserves_wallet_funding_of_fractional_buys(
             Some(Ustr::from(&reason.to_string()))
         )]
     );
+    assert_eq!(commands, approved);
+}
+
+// A wallet locks an order once it is in flight, so the risk engine releases its charge then and
+// the order is counted once, by the wallet's own lock
+#[rstest]
+fn test_submit_order_releases_wallet_reservation_once_order_is_in_flight(
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let token = Currency::new("TOKEN", 2, 0, "Token", CurrencyType::Crypto);
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("ETH/TOKEN.BINANCE"))
+        .raw_symbol(Symbol::from("ETH/TOKEN"))
+        .base_currency(Currency::ETH())
+        .quote_currency(token)
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .size_precision(0)
+        .size_increment(Quantity::from("1"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let account_id = AccountId::from("BINANCE-001");
+    let total = Money::from_decimal(dec!(10), token).unwrap();
+    let state = AccountState::new(
+        account_id,
+        AccountType::Wallet,
+        vec![AccountBalance::new(total, Money::zero(token), total)],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    let mut cache = Cache::default();
+    cache
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    cache
+        .add_account(AccountAny::Wallet(WalletAccount::new(state, true)))
+        .unwrap();
+    let buy = |client_order_id: &str, price: &str| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from(price))
+            .build()
+    };
+    let first = buy("O-001", "6.00");
+    let second = buy("O-002", "4.00");
+    cache.add_order(first.clone(), None, None, false).unwrap();
+    cache.add_order(second.clone(), None, None, false).unwrap();
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let approved = vec![submit_order_command(&first), submit_order_command(&second)];
+    risk_engine.execute(approved[0].clone());
+
+    // The first order is in flight and the portfolio has the wallet lock it, leaving 4.00 free
+    let mut submitted = order_submitted(&first);
+    submitted.account_id = account_id;
+    let submitted = OrderEventAny::Submitted(submitted);
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .update_order(&submitted)
+        .unwrap();
+    risk_engine.portfolio_mut().update_order(&submitted);
+    assert_eq!(
+        risk_engine
+            .cache()
+            .borrow()
+            .account(&account_id)
+            .unwrap()
+            .balance_free(Some(token)),
+        Some(Money::from_decimal(dec!(4), token).unwrap())
+    );
+
+    risk_engine.execute(approved[1].clone());
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert!(events.is_empty());
     assert_eq!(commands, approved);
 }
 
