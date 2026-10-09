@@ -1714,12 +1714,13 @@ impl ExecutionManager {
     /// Without that coverage a missing position report proves nothing, so the retained position
     /// is the only quantity target. An order qualifies when it is cached, or its instrument is
     /// claimed, and its fills resolve to that retained position: the order's indexed position,
-    /// else the position keyed by instrument and strategy when both the engine and the cache
-    /// hold it under NETTING. An order whose fills are all applied already contributes nothing
-    /// and is ignored. Every other qualifying order for the position must be on its closing side,
-    /// and together their unapplied quantity must not exceed the open quantity: a crossing,
-    /// same-side or unknown-side fill needs evidence the retained position cannot give, so all
-    /// of that position's orders stay order-only and a warning names the position. An order that
+    /// else the position keyed by instrument and strategy when both the engine's fill routing and
+    /// the cache hold it under NETTING. An order whose fills are all applied already contributes
+    /// nothing and is ignored. Every other qualifying order for the position, and each of its
+    /// unapplied fills, must be on its closing side, and together their unapplied quantity must
+    /// not exceed the open quantity: a crossing, same-side or unknown-side fill needs evidence the
+    /// retained position cannot give, so all of that position's orders stay order-only and a
+    /// warning names the position. An order that
     /// is neither cached nor claimed stays order-only, since its `EXTERNAL` attribution does not
     /// establish which position it closes.
     fn retained_position_closing_ids(
@@ -1820,7 +1821,16 @@ impl ExecutionManager {
             }
 
             if indexed_position_id.is_none() {
-                let engine_oms_type = exec_engine.resolve_oms_type(strategy_id, &client_id);
+                let fill_client_order_id = order
+                    .as_ref()
+                    .map(|order| order.client_order_id())
+                    .or(client_order_id);
+                let engine_oms_type = exec_engine.fill_oms_type(
+                    fill_client_order_id.as_ref(),
+                    account_id,
+                    &instrument_id,
+                    strategy_id,
+                );
                 let cached_oms_type = cache.oms_type(&position_id);
 
                 if engine_oms_type != OmsType::Netting || cached_oms_type != Some(OmsType::Netting)
@@ -1863,6 +1873,23 @@ impl ExecutionManager {
                         format!(
                             "order {venue_order_id} side {order_side} does not close {}",
                             position.side
+                        ),
+                    )
+                });
+                continue;
+            }
+
+            // The engine applies each fill with its own side, which the venue reports apart from
+            // the order's
+            if let Some(fill) = fills.iter().find(|fill| {
+                !applied_trade_ids.contains(&fill.trade_id) && fill.order_side != order_side
+            }) {
+                withheld.entry(position_id).or_insert_with(|| {
+                    (
+                        instrument_id,
+                        format!(
+                            "order {venue_order_id} fill {} side {} does not close {}",
+                            fill.trade_id, fill.order_side, position.side
                         ),
                     )
                 });

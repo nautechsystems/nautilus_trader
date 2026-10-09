@@ -247,9 +247,9 @@ when all of these hold:
 4. The order is cached, or its instrument is claimed through `external_order_claim`.
 5. The position is open, held by the reporting account, and the one the engine routes the order's
    fills to: the order's assigned position, else the position for its instrument and strategy when
-   both the engine's configured OMS for the strategy and the cached position are NETTING.
-6. Every order resolving to the position with fills not yet applied is on its closing side. An
-   order with an unknown side is not.
+   both the OMS the engine routes the order's fills under and the cached position are NETTING.
+6. Every order resolving to the position with fills not yet applied, and each of those fills, is
+   on its closing side. An order with an unknown side is not.
 7. The combined unapplied quantity of those orders does not exceed the open quantity.
 
 An order whose fills the cache has already applied, such as the order that opened the position
@@ -987,7 +987,8 @@ The reconciliation path preserves these invariants for the reports and positions
    aligns to it, generating orders and fills when configured, or leaves it unresolved. A missing
    report is not flat.
 1. **Missing position report**: an explicitly bounded historical fill with no in-scope position report updates
-   order state only, without changing positions or portfolio economics.
+   order state only, without changing positions or portfolio economics, unless it closes or reduces a
+   retained position under the conditions in [Order-only fill projection](#order-only-fill-projection).
 1. **Position quantity**: reconciled positions match authoritative venue reports within the applicable
    quantity tolerance.
 1. **Entry price**: reported entry averages match within tolerance before startup proceeds, except

@@ -907,8 +907,9 @@ read would actually enumerate: cash mode with `use_spot_position_reports=True`, 
 instrument quoted in `spot_positions_quote_currency` (see Spot position reports, which applies
 the same filter). Under `spot_account_type=Margin` the source is `OpenPositions`, which omits
 unleveraged lots, and cash mode without wallet-derived reports returns nothing at all. Wherever
-coverage is not declared, an absent report leaves the cached position untouched instead of
-closing it.
+coverage is not declared, an absent report does not close the cached position; bounded closing fills
+can, under the conditions in
+[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection).
 
 ## Funding rates
 
