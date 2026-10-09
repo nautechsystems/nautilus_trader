@@ -240,6 +240,14 @@ pub(super) struct RetainedFillState {
     pub(super) netting_lifecycle_starts: IndexMap<AccountInstrumentStrategyKey, UnixNanos>,
 }
 
+/// Unapplied closing quantity of the bounded orders that resolve to one retained open position.
+pub(super) struct RetainedPositionReduction {
+    pub(super) instrument_id: InstrumentId,
+    pub(super) open_qty: Decimal,
+    pub(super) unapplied_qty: Decimal,
+    pub(super) venue_order_ids: Vec<VenueOrderId>,
+}
+
 /// Tracks pending fill identities and their generated reconciliation events.
 #[derive(Default)]
 pub(super) struct ReconciliationFillQueue {

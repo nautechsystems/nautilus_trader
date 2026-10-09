@@ -1440,8 +1440,8 @@ resolution. Continuous position checks therefore never close a position that the
 longer reports; open positions close through fills or settlement.
 
 The adapter declares no bulk position coverage, so a missing report also does not keep a closing
-fill from its position under a lookback window: when the mass status reports are complete, the
-fills of a cached or claimed order that close or reduce a retained position apply to it. See
+fill from its position under a lookback window: fills that close or reduce a retained position can
+apply to it under the conditions in
 [Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection).
 
 ### Settlement precedence

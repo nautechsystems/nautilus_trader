@@ -705,11 +705,11 @@ flag.
 :::warning
 A leveraged position closed while the node was down carries no position report, because a fully
 closed lot is absent from `OpenPositions`. Margin mode declares no bulk position coverage, so when
-`reconciliation_lookback_mins` is set the engine applies the closing fills to the cached position
-only when the history is complete and the closing order is cached, such as a strategy exit submitted
-before the outage, or the instrument is claimed through `external_order_claim`. The fills then close
-the position and record its realized PnL and fees. See
-[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection).
+`reconciliation_lookback_mins` is set the engine can apply the closing fills, such as those of a
+strategy exit submitted before the outage, to the cached position, which then closes and records its
+realized PnL and fees.
+[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection)
+lists the conditions; when one fails, the fills stay order-only.
 
 A closing order that is neither cached nor claimed is attributed to the `EXTERNAL` strategy. With a
 lookback its fills stay order-only: the order reaches `FILLED`, while the cached position keeps both

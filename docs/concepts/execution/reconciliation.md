@@ -237,13 +237,26 @@ reaches the reported status and filled quantity. An explicit position report, op
 quantity target: the engine applies the available fills, generates the difference when configured,
 or leaves the position unresolved.
 
-A retained position is the quantity target instead when the reporting client declares no bulk
-position coverage for the instrument, so a missing report proves nothing. With complete history,
-the fills of an order that is cached, or whose instrument is claimed, apply to the open position
-they resolve to: the order's assigned position, else the NETTING position for its instrument and
-strategy, held by the reporting account. Every such order for that position must be on its closing
-side, and together they must not exceed its quantity; otherwise all of them stay order-only. An
-order that is neither cached nor claimed stays order-only.
+A retained open position is the quantity target instead when the reporting client cannot cover the
+instrument, so a missing report proves nothing. The fills of a bounded order apply to that position
+when all of these hold:
+
+1. The reporting client declares no bulk position coverage for the instrument.
+2. The mass status reports are complete.
+3. `filter_position_reports` is not set.
+4. The order is cached, or its instrument is claimed through `external_order_claim`.
+5. The position is open, held by the reporting account, and the one the engine routes the order's
+   fills to: the order's assigned position, else the position for its instrument and strategy when
+   both the engine's configured OMS for the strategy and the cached position are NETTING.
+6. Every order resolving to the position with fills not yet applied is on its closing side. An
+   order with an unknown side is not.
+7. The combined unapplied quantity of those orders does not exceed the open quantity.
+
+An order whose fills the cache has already applied, such as the order that opened the position
+inside the window, is ignored. When a condition fails, the fills stay order-only. When condition 5
+fails on the OMS, or condition 6 or 7 fails, every order for that position stays order-only and a
+warning names the position, its instrument, and the reason. The orders still reach their reported status, so an
+order can reach `FILLED` while the position stays open.
 
 This projection applies only to reconciliation recovery. Raw reports remain available. Setting
 `filter_position_reports` makes bounded historical fills order-only, even when the mass status

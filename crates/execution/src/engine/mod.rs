@@ -683,6 +683,14 @@ impl ExecutionEngine {
         log::info!("Registered OMS::{oms_type:?} for {strategy_id}");
     }
 
+    /// Returns the OMS type the engine applies to a fill for `strategy_id` whose order belongs
+    /// to `client_id`: the OMS type registered for the strategy unless `UNSPECIFIED`, else the
+    /// client's OMS type, else `NETTING` when no client is registered under that ID.
+    #[must_use]
+    pub fn resolve_oms_type(&self, strategy_id: StrategyId, client_id: &ClientId) -> OmsType {
+        self.resolve_oms_type_for_client(strategy_id, self.get_client(client_id))
+    }
+
     /// Registers external order claims for a strategy.
     ///
     /// Venue-sourced external orders, fills, and materialized reconciliation activity for matching

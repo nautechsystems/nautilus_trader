@@ -105,7 +105,7 @@ use super::{
     recency::RecencyMap,
     reconciliation::{
         FillKey, InflightCheck, PositionQuantityComparison, PositionReconciliationState,
-        PositionReportShape, ReconciliationFillQueue, RetainedFillState,
+        PositionReportShape, ReconciliationFillQueue, RetainedFillState, RetainedPositionReduction,
         create_orphan_fill_order_report, create_position_reconciliation_report,
         create_reconciliation_canceled, distinct_position_reports, has_active_inferred_fill,
         is_exact_order_match, position_avg_px, position_qty_aggregates,
@@ -827,14 +827,12 @@ impl ExecutionManager {
             mut order_only_ids,
         } = self.adjust_mass_status_fills(mass_status);
 
-        let engine_ref = exec_engine.borrow();
         order_only_ids.extend(self.order_only_ids(
             mass_status,
             &adjusted_order_reports,
             &adjusted_fill_reports,
-            engine_ref.get_client(&mass_status.client_id),
+            &exec_engine.borrow(),
         ));
-        drop(engine_ref);
 
         let mut events = Vec::new();
         let mut external_orders = Vec::new();
@@ -1655,7 +1653,7 @@ impl ExecutionManager {
         mass_status: &ExecutionMassStatus,
         order_reports: &IndexMap<VenueOrderId, OrderStatusReport>,
         fill_reports: &IndexMap<VenueOrderId, Vec<FillReport>>,
-        client: Option<&dyn ExecutionClient>,
+        exec_engine: &ExecutionEngine,
     ) -> IndexSet<VenueOrderId> {
         if mass_status.lookback_start().is_none() {
             return IndexSet::new();
@@ -1696,15 +1694,13 @@ impl ExecutionManager {
             venue_order_ids.insert(*venue_order_id);
         }
 
-        if let Some(client) = client
-            && mass_status.reports_complete()
-            && !self.config.filter_position_reports
-        {
+        if mass_status.reports_complete() && !self.config.filter_position_reports {
             let closing_ids = self.retained_position_closing_ids(
+                mass_status.client_id,
                 order_reports,
                 fill_reports,
                 &venue_order_ids,
-                client,
+                exec_engine,
             );
             venue_order_ids.retain(|venue_order_id| !closing_ids.contains(venue_order_id));
         }
@@ -1717,22 +1713,30 @@ impl ExecutionManager {
     ///
     /// Without that coverage a missing position report proves nothing, so the retained position
     /// is the only quantity target. An order qualifies when it is cached, or its instrument is
-    /// claimed, and its fills resolve to that retained position. Every qualifying order for the
-    /// position must be on its closing side, and together their unapplied quantity must not
-    /// exceed the open quantity: a crossing or same-side fill needs evidence the retained
-    /// position cannot give, so all of that position's orders stay order-only. An order that is
-    /// neither cached nor claimed stays order-only, since its `EXTERNAL` attribution does not
+    /// claimed, and its fills resolve to that retained position: the order's indexed position,
+    /// else the position keyed by instrument and strategy when both the engine and the cache
+    /// hold it under NETTING. An order whose fills are all applied already contributes nothing
+    /// and is ignored. Every other qualifying order for the position must be on its closing side,
+    /// and together their unapplied quantity must not exceed the open quantity: a crossing,
+    /// same-side or unknown-side fill needs evidence the retained position cannot give, so all
+    /// of that position's orders stay order-only and a warning names the position. An order that
+    /// is neither cached nor claimed stays order-only, since its `EXTERNAL` attribution does not
     /// establish which position it closes.
     fn retained_position_closing_ids(
         &self,
+        client_id: ClientId,
         order_reports: &IndexMap<VenueOrderId, OrderStatusReport>,
         fill_reports: &IndexMap<VenueOrderId, Vec<FillReport>>,
         venue_order_ids: &IndexSet<VenueOrderId>,
-        client: &dyn ExecutionClient,
+        exec_engine: &ExecutionEngine,
     ) -> IndexSet<VenueOrderId> {
+        let Some(client) = exec_engine.get_client(&client_id) else {
+            return IndexSet::new();
+        };
         let cache = self.cache();
-        let mut reductions: IndexMap<PositionId, (Decimal, Vec<VenueOrderId>)> = IndexMap::new();
-        let mut rejected_positions = IndexSet::new();
+        let mut coverage: IndexMap<InstrumentId, bool> = IndexMap::new();
+        let mut reductions: IndexMap<PositionId, RetainedPositionReduction> = IndexMap::new();
+        let mut withheld: IndexMap<PositionId, (InstrumentId, String)> = IndexMap::new();
 
         for venue_order_id in venue_order_ids {
             let report = order_reports.get(venue_order_id);
@@ -1756,7 +1760,10 @@ impl ExecutionManager {
                 continue;
             };
 
-            if client.provides_bulk_position_coverage(instrument_id) {
+            if *coverage
+                .entry(instrument_id)
+                .or_insert_with(|| client.provides_bulk_position_coverage(instrument_id))
+            {
                 continue;
             }
 
@@ -1768,8 +1775,8 @@ impl ExecutionManager {
                         .and_then(|client_order_id| cache.order(client_order_id))
                 });
 
-            // The engine applies a fill to the order's indexed position, else to the NETTING
-            // position keyed by instrument and strategy
+            // The engine applies a fill to the order's indexed position, else to the position
+            // keyed by instrument and strategy under its configured NETTING OMS
             let (indexed_position_id, strategy_id, cached_side, applied_qty, applied_trade_ids) =
                 if let Some(order) = &order {
                     (
@@ -1792,21 +1799,7 @@ impl ExecutionManager {
                 continue;
             };
 
-            if position.account_id != account_id
-                || (indexed_position_id.is_none()
-                    && cache.oms_type(&position_id) != Some(OmsType::Netting))
-            {
-                continue;
-            }
-
-            let order_side = report
-                .and_then(|report| report.order_side)
-                .or_else(|| fills.first().map(|fill| fill.order_side))
-                .or(cached_side);
-
-            // A closed position has no closing side, so no fill reduces it
-            if order_side != position.closing_order_side() {
-                rejected_positions.insert(position_id);
+            if position.account_id != account_id || !position.is_open() {
                 continue;
             }
 
@@ -1818,24 +1811,109 @@ impl ExecutionManager {
             let unapplied_report_qty = report.map_or(Decimal::ZERO, |report| {
                 (report.filled_qty.as_decimal() - applied_qty).max(Decimal::ZERO)
             });
+            let unapplied_qty = unapplied_fill_qty.max(unapplied_report_qty);
 
-            let reduction = reductions
-                .entry(position_id)
-                .or_insert_with(|| (Decimal::ZERO, Vec::new()));
-            reduction.0 += unapplied_fill_qty.max(unapplied_report_qty);
-            reduction.1.push(*venue_order_id);
+            // Fills already on the cached order were routed when they applied, so they neither
+            // reduce the position nor show which way a new fill moves it
+            if unapplied_qty.is_zero() {
+                continue;
+            }
+
+            if indexed_position_id.is_none() {
+                let engine_oms_type = exec_engine.resolve_oms_type(strategy_id, &client_id);
+                let cached_oms_type = cache.oms_type(&position_id);
+
+                if engine_oms_type != OmsType::Netting || cached_oms_type != Some(OmsType::Netting)
+                {
+                    withheld.entry(position_id).or_insert_with(|| {
+                        let cached_oms_type = cached_oms_type
+                            .map_or_else(|| "none".to_string(), |oms| oms.to_string());
+                        (
+                            instrument_id,
+                            format!(
+                                "order {venue_order_id} resolves to it with engine OMS \
+                                 {engine_oms_type} and cached OMS {cached_oms_type}, not NETTING"
+                            ),
+                        )
+                    });
+                    continue;
+                }
+            }
+
+            let order_side = report
+                .and_then(|report| report.order_side)
+                .or_else(|| fills.first().map(|fill| fill.order_side))
+                .or(cached_side);
+
+            // An unknown side may extend the position as readily as reduce it
+            let Some(order_side) = order_side else {
+                withheld.entry(position_id).or_insert_with(|| {
+                    (
+                        instrument_id,
+                        format!("order {venue_order_id} side is unknown"),
+                    )
+                });
+                continue;
+            };
+
+            if Some(order_side) != position.closing_order_side() {
+                withheld.entry(position_id).or_insert_with(|| {
+                    (
+                        instrument_id,
+                        format!(
+                            "order {venue_order_id} side {order_side} does not close {}",
+                            position.side
+                        ),
+                    )
+                });
+                continue;
+            }
+
+            let reduction =
+                reductions
+                    .entry(position_id)
+                    .or_insert_with(|| RetainedPositionReduction {
+                        instrument_id,
+                        open_qty: position.quantity.as_decimal(),
+                        unapplied_qty: Decimal::ZERO,
+                        venue_order_ids: Vec::new(),
+                    });
+            reduction.unapplied_qty += unapplied_qty;
+            reduction.venue_order_ids.push(*venue_order_id);
         }
 
-        reductions
-            .into_iter()
-            .filter(|(position_id, (quantity, _))| {
-                !rejected_positions.contains(position_id)
-                    && cache
-                        .position_ref(position_id)
-                        .is_some_and(|position| *quantity <= position.quantity.as_decimal())
-            })
-            .flat_map(|(_, (_, venue_order_ids))| venue_order_ids)
-            .collect()
+        let mut closing_ids = IndexSet::new();
+
+        for (position_id, reduction) in reductions {
+            if withheld.contains_key(&position_id) {
+                continue;
+            }
+
+            if reduction.unapplied_qty > reduction.open_qty {
+                withheld.insert(
+                    position_id,
+                    (
+                        reduction.instrument_id,
+                        format!(
+                            "unapplied closing quantity {} exceeds open quantity {}",
+                            reduction.unapplied_qty, reduction.open_qty
+                        ),
+                    ),
+                );
+                continue;
+            }
+
+            closing_ids.extend(reduction.venue_order_ids);
+        }
+
+        for (position_id, (instrument_id, reason)) in &withheld {
+            log::warn!(
+                "Bounded fills for {instrument_id} stay order-only and leave retained position \
+                 {position_id} unchanged: {reason}"
+            );
+        }
+
+        closing_ids
     }
 
     /// Validates cached order origins against the mass status client, logging a warning for each
