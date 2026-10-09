@@ -1986,8 +1986,8 @@ impl FixedTickSchemeRounder {
     ///
     /// # Errors
     ///
-    /// Returns an error if `tick` is not positive.
-    pub fn new(tick: f64) -> anyhow::Result<Self> {
+    /// Returns an error if `tick` is not a valid positive price increment.
+    pub fn new(tick: Price) -> anyhow::Result<Self> {
         Ok(Self {
             scheme: FixedTickScheme::new(tick)?,
         })
@@ -2007,10 +2007,8 @@ impl FixedTickSchemeRounder {
             } else {
                 self.scheme.next_bid_price(-raw, 0, precision)
             };
-            p.map_or_else(
-                || Price::new(raw, precision),
-                |q| Price::new(-q.as_f64(), precision),
-            )
+
+            p.map_or_else(|| Price::new(raw, precision), |q| -q)
         }
     }
 }
@@ -6741,12 +6739,41 @@ mod tests {
         #[case] expected_bid: Price,
         #[case] expected_ask: Price,
     ) {
-        let rounder = FixedTickSchemeRounder::new(0.05).unwrap();
+        let rounder = FixedTickSchemeRounder::new(Price::from("0.05")).unwrap();
 
         let (bid, ask) = rounder.round_prices(raw_bid, raw_ask, 2);
 
         assert_eq!(bid, expected_bid);
         assert_eq!(ask, expected_ask);
+    }
+
+    #[rstest]
+    #[case(
+        Price::from("9000000000.000000001"),
+        -1.0,
+        Price::from("-9000000000.000000001"),
+        Price::from("0.000000000")
+    )]
+    #[case(
+        Price::from("4000000000.000000001"),
+        -4_000_000_001.0,
+        Price::from("-8000000000.000000002"),
+        Price::from("-4000000000.000000001")
+    )]
+    fn test_fixed_tick_scheme_rounder_preserves_exact_negative_prices(
+        #[case] tick: Price,
+        #[case] raw: f64,
+        #[case] expected_bid: Price,
+        #[case] expected_ask: Price,
+    ) {
+        let rounder = FixedTickSchemeRounder::new(tick).unwrap();
+
+        let (bid, ask) = rounder.round_prices(raw, raw, tick.precision);
+
+        assert_eq!(bid, expected_bid);
+        assert_eq!(ask, expected_ask);
+        assert_eq!(bid.precision, expected_bid.precision);
+        assert_eq!(ask.precision, expected_ask.precision);
     }
 
     #[rstest]
@@ -7378,7 +7405,7 @@ mod tests {
         let legs = vec![(leg1, 1_i64), (leg2, -1_i64)];
         let (handler, record) = recording_handler();
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
-        let rounder = FixedTickSchemeRounder::new(0.01).unwrap();
+        let rounder = FixedTickSchemeRounder::new(Price::from("0.01")).unwrap();
 
         let mut agg = SpreadQuoteAggregator::new(
             spread_id,

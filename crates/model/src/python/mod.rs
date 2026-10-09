@@ -253,6 +253,20 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     // Instruments
+    m.add_class::<instruments::tick_scheme::PyFixedTickScheme>()?;
+    m.add_class::<instruments::tick_scheme::PyTieredTickScheme>()?;
+    m.add_function(wrap_pyfunction!(
+        instruments::tick_scheme::py_register_tick_scheme,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        instruments::tick_scheme::py_get_tick_scheme,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        instruments::tick_scheme::py_list_tick_schemes,
+        m
+    )?)?;
     m.add_class::<crate::instruments::BettingInstrument>()?;
     m.add_class::<crate::instruments::BinaryOption>()?;
     m.add_class::<crate::instruments::Cfd>()?;

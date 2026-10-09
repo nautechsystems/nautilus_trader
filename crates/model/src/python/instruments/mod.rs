@@ -596,6 +596,7 @@ pub mod option_contract;
 pub mod option_spread;
 pub mod perpetual_contract;
 pub mod synthetic;
+pub mod tick_scheme;
 pub mod tokenized_asset;
 
 /// Converts an [`InstrumentAny`] into a Python object.

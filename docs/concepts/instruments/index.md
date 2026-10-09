@@ -94,10 +94,88 @@ complete constructor and struct fields for that type.
 | `min_notional`    | Minimum order notional value when known.                            |
 | `max_price`       | Maximum valid quote or order price when known.                      |
 | `min_price`       | Minimum valid quote or order price when known.                      |
-| `tick_scheme`     | Registered variable tick scheme name where the type supports one.   |
+| `tick_scheme`     | Registered tick scheme name used for price navigation.              |
 | `info`            | Adapter metadata preserved from the venue or data source.           |
 | `ts_event`        | UNIX nanosecond timestamp for when the definition event occurred.   |
 | `ts_init`         | UNIX nanosecond timestamp for when Nautilus initialized the object. |
+
+## Tick schemes
+
+A named tick scheme defines the price grid used by an instrument's `next_bid_price`
+and `next_ask_price` methods. Use `FixedTickScheme` for a constant increment or
+`TieredTickScheme` when the increment changes across price ranges.
+
+Register a scheme before passing its name as an instrument's `tick_scheme` constructor
+argument. Register custom schemes before loading saved instrument definitions from a catalog:
+saved definitions contain the scheme name, and loading validates that name against the current
+process's registry.
+
+When migrating from v1, `FixedTickScheme` no longer accepts `min_tick` or `max_tick` and has no
+`min_price` or `max_price` attributes. Fixed schemes use the representable `Price` range, including
+negative prices; the built-in Forex schemes no longer impose their v1 price bounds.
+The `increment` argument requires a `Price`; replace float values with `Price.from_str("0.05")`.
+
+Fixed tick increments use `Price` to preserve their exact value. Navigation returns `None` if the
+instrument's price precision cannot represent the increment exactly.
+
+```rust tab="Rust"
+use nautilus_model::{
+    instruments::{FixedTickScheme, TickScheme, TickSchemeRule, get_tick_scheme, register_tick_scheme},
+    types::Price,
+};
+
+let fixed = FixedTickScheme::new(Price::from("0.05")).unwrap();
+register_tick_scheme("FIVE_CENT", TickScheme::Fixed(fixed)).unwrap();
+let scheme = get_tick_scheme("five_cent").unwrap();
+assert_eq!(scheme.next_bid_price(1.13, 0, 2), Some(Price::from("1.10")));
+assert_eq!(scheme.next_ask_price(1.13, 0, 2), Some(Price::from("1.15")));
+```
+
+```python tab="Python"
+from nautilus_trader.model import FixedTickScheme, Price, get_tick_scheme, register_tick_scheme
+
+register_tick_scheme(
+    FixedTickScheme("FIVE_CENT", price_precision=2, increment=Price.from_str("0.05"))
+)
+scheme = get_tick_scheme("five_cent")
+assert str(scheme.next_bid_price(1.13)) == "1.10"
+assert str(scheme.next_ask_price(1.13)) == "1.15"
+```
+
+Tier definitions use `(start, stop, step)` with an inclusive start and exclusive stop.
+Each tier expands to at most `max_ticks_per_tier` prices, including tiers with an infinite stop.
+The Python default is 100. A finite tier that exceeds the cap is truncated without an error;
+choose a cap large enough to include every required price.
+
+```rust tab="Rust"
+use nautilus_model::instruments::{TickScheme, TieredTickScheme, register_tick_scheme};
+
+let tiers = [(0.05, 10.00, 0.05), (10.00, f64::INFINITY, 0.25)];
+let scheme = TieredTickScheme::new(&tiers, 2, 1000).unwrap();
+register_tick_scheme("OPTION_GRID", TickScheme::Tiered(scheme)).unwrap();
+```
+
+```python tab="Python"
+from nautilus_trader.model import TieredTickScheme, register_tick_scheme
+
+register_tick_scheme(
+    TieredTickScheme(
+        "OPTION_GRID",
+        tiers=[(0.05, 10.00, 0.05), (10.00, float("inf"), 0.25)],
+        price_precision=2,
+        max_ticks_per_tier=1000,
+    ),
+)
+```
+
+Names are ASCII, trimmed, and case-insensitive. Registration lasts for the process lifetime;
+a registered name cannot be replaced or removed. Built-in names such as `BETFAIR` and
+`TOPIX100` are protected, as are aliases such as `FIXED_PRECISION_01` for `FIXED_PRECISION_1`.
+`list_tick_schemes()` returns canonical built-in and registered names in sorted order.
+Rust registration and construction return `TickSchemeError` on invalid input or duplicates;
+lookup returns `None` for an unknown name. Python uses `ValueError` for these failures and
+`TypeError` when registration receives an unsupported object.
+Python callers that catch v1's `KeyError` for unknown or duplicate names must catch `ValueError` instead.
 
 ## Symbology
 

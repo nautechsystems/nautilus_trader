@@ -126,6 +126,11 @@ path = "benches/price_criterion.rs"
 harness = false
 
 [[bench]]
+name = "tick_scheme_criterion"
+path = "benches/tick_scheme_criterion.rs"
+harness = false
+
+[[bench]]
 name = "quantity_criterion"
 path = "benches/quantity_criterion.rs"
 harness = false

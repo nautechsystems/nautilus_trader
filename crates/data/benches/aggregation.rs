@@ -17,8 +17,9 @@
 //!
 //! The bar benchmarks cover the per-update core path, volume splitting, Renko no-brick and brick
 //! emission paths, and side-aware value splitting. The spread benchmark covers quote-driven option
-//! pricing with vegas, including leg price and size combination. Each case measures a public
-//! ingestion method with reusable inputs and excludes aggregator construction from the timed region.
+//! pricing with vegas, including leg price and size combination. Tick rounding covers positive and
+//! negative spread prices. Each case measures a public ingestion or price-rounding method with
+//! reusable inputs and excludes construction from the timed region.
 //!
 //! Run with `cargo bench -p nautilus-data --bench aggregation`.
 
@@ -28,9 +29,9 @@ use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_mai
 use nautilus_common::clock::VirtualClock;
 use nautilus_core::UnixNanos;
 use nautilus_data::aggregation::{
-    BarAggregator, MapVegaProvider, RenkoBarAggregator, SpreadQuoteAggregator, TickBarAggregator,
-    ValueImbalanceBarAggregator, ValueRunsBarAggregator, VolumeBarAggregator,
-    VolumeImbalanceBarAggregator, VolumeRunsBarAggregator,
+    BarAggregator, FixedTickSchemeRounder, MapVegaProvider, RenkoBarAggregator, SpreadPriceRounder,
+    SpreadQuoteAggregator, TickBarAggregator, ValueImbalanceBarAggregator, ValueRunsBarAggregator,
+    VolumeBarAggregator, VolumeImbalanceBarAggregator, VolumeRunsBarAggregator,
 };
 use nautilus_model::{
     data::{BarSpecification, BarType, QuoteTick, trade::TradeTick},
@@ -408,10 +409,37 @@ fn bench_spread_quote_aggregation(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_spread_tick_rounding(c: &mut Criterion) {
+    let rounder = FixedTickSchemeRounder::new(Price::from("0.05")).unwrap();
+    let mut group = c.benchmark_group("spread_tick_rounding");
+
+    for (label, bid, ask, expected_bid, expected_ask) in [
+        ("positive", 10.03, 10.07, "10.00", "10.10"),
+        ("negative", -10.07, -10.03, "-10.10", "-10.00"),
+    ] {
+        let expected_bid = Price::from(expected_bid);
+        let expected_ask = Price::from(expected_ask);
+        let precision = expected_bid.precision;
+        let (rounded_bid, rounded_ask) = rounder.round_prices(bid, ask, precision);
+        assert_eq!((rounded_bid, rounded_ask), (expected_bid, expected_ask));
+        assert_eq!(
+            (rounded_bid.precision, rounded_ask.precision),
+            (expected_bid.precision, expected_ask.precision)
+        );
+
+        group.bench_function(label, |b| {
+            b.iter(|| rounder.round_prices(black_box(bid), black_box(ask), black_box(precision)));
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_bar_update,
     bench_value_side_aggregation,
     bench_spread_quote_aggregation,
+    bench_spread_tick_rounding,
 );
 criterion_main!(benches);
