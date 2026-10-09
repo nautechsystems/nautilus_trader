@@ -173,12 +173,16 @@ pub(super) const fn ib_trigger_method_to_trigger_type(
 
 #[cfg(test)]
 mod tests {
-    use ibapi::orders::OrderCondition;
+    use ibapi::{
+        contracts::{Contract, Exchange, SecurityType, Symbol as IbSymbol},
+        orders::OrderCondition,
+    };
     use nautilus_model::{
         enums::{OrderSide, OrderType, TimeInForce as NautilusTimeInForce, TrailingOffsetType},
         identifiers::{InstrumentId, OrderListId, Symbol as NautilusSymbol, Venue},
+        instruments::{CurrencyPair, InstrumentAny},
         orders::OrderTestBuilder,
-        types::{Price, Quantity},
+        types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -186,6 +190,99 @@ mod tests {
 
     use super::*;
     use crate::config::InteractiveBrokersInstrumentProviderConfig;
+
+    fn create_quote_quantity_crypto_order(
+        order_type: OrderType,
+    ) -> (OrderAny, InteractiveBrokersInstrumentProvider) {
+        let instrument_id =
+            InstrumentId::new(NautilusSymbol::from("BTC/USD"), Venue::from("PAXOS"));
+        let ts = UnixNanos::default();
+        // IB crypto is a non-inverse currency pair; the CRYPTO contract carries the signal
+        let instrument = CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(NautilusSymbol::from("BTC.USD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.25"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(ts)
+            .ts_init(ts)
+            .build()
+            .unwrap();
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        provider.insert_test_instrument(InstrumentAny::CurrencyPair(instrument), 4242, 1);
+        provider.insert_test_contract(
+            instrument_id,
+            Contract {
+                contract_id: 4242,
+                symbol: IbSymbol::from("BTC"),
+                security_type: SecurityType::Crypto,
+                exchange: Exchange::from("PAXOS"),
+                currency: ibapi::contracts::Currency::from("USD"),
+                ..Default::default()
+            },
+        );
+
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("20"))
+            .quote_quantity(true);
+
+        if order_type == OrderType::Limit {
+            builder.price(Price::from("87306.25"));
+        }
+
+        (builder.build(), provider)
+    }
+
+    #[rstest]
+    fn test_quote_quantity_crypto_market_buy_maps_to_cash_qty() {
+        let (order, provider) = create_quote_quantity_crypto_order(OrderType::Market);
+
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect("cash quantity is valid for a crypto MARKET BUY");
+
+        assert_eq!(ib_order.cash_qty, Some(20.0));
+        assert_eq!(ib_order.total_quantity, 0.0);
+    }
+
+    #[rstest]
+    fn test_quote_quantity_limit_order_is_rejected_before_submission() {
+        // IB rejects `cashQty` on non-MARKET orders with error 10244; deny locally instead
+        let (order, provider) = create_quote_quantity_crypto_order(OrderType::Limit);
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("cash quantity must not be sent on a LIMIT order");
+
+        let message = format!("{err:#}");
+        assert!(message.contains("MARKET"), "unexpected reason: {message}");
+        assert!(message.contains("10244"), "unexpected reason: {message}");
+    }
+
+    #[rstest]
+    fn test_quote_quantity_without_crypto_or_inverse_contract_is_rejected() {
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1000"))
+            .quote_quantity(true)
+            .build();
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("quote quantity needs an inverse instrument or crypto contract");
+
+        assert!(format!("{err:#}").contains("base quantity"));
+    }
 
     fn create_test_order_with_tags(tags_json: &str) -> OrderAny {
         let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
