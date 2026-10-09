@@ -229,9 +229,8 @@ pub struct WebSocketConfig {
     pub proxy_url: Option<String>,
     /// Maximum size in bytes of one inbound WebSocket message.
     ///
-    /// `None` passes the selected backend's default message cap of 64 MiB. Sockudo applies that
-    /// default only while reassembling fragments; a finished single-frame message is bounded by the
-    /// frame cap unless this field is set. `Some(0)` is rejected. A message that exceeds this cap
+    /// `None` passes the selected backend's default message cap of 64 MiB. The cap applies to
+    /// single-frame and fragmented messages. `Some(0)` is rejected. A message that exceeds this cap
     /// and fits in the frame cap fails the read with `MessageTooLarge`. This cap does not bound
     /// per-frame memory: both backends apply it after the frame payload is read. Set
     /// `max_frame_size_bytes` for that bound.
@@ -240,9 +239,8 @@ pub struct WebSocketConfig {
     /// Maximum size in bytes of one inbound WebSocket frame payload, excluding the frame header.
     ///
     /// `None` keeps the selected backend's default of 16 MiB. `Some(0)` is rejected. Sockudo reports
-    /// a frame larger than 125 bytes that exceeds the cap as `FrameTooLarge`. Its small-frame parser
-    /// skips the cap when the whole frame is already buffered, so a shorter frame is not reliably
-    /// rejected. Tungstenite uses one capacity error for both limits, so every frame breach is
+    /// a frame that exceeds the cap as `FrameTooLarge`, including a fully buffered small frame.
+    /// Tungstenite uses one capacity error for both limits, so every frame breach is
     /// `MessageTooLarge`. On Sockudo, a frame that exceeds this cap fails before the message cap.
     #[serde(default)]
     pub max_frame_size_bytes: Option<usize>,

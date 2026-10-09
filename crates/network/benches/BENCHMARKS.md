@@ -50,7 +50,7 @@ For policy and the general noise-reduction recipe, see
 
 ## Methodology
 
-The benchmarks compare `tokio-tungstenite 0.30.0` and `sockudo-ws 2.0.1` in
+The July measurement compares `tokio-tungstenite 0.30.0` and `sockudo-ws 2.0.1` in
 the same binary and measurement session.
 
 - Both use established, uncompressed streams over identical 1 MiB in-memory
@@ -65,9 +65,16 @@ the same binary and measurement session.
 - Each p99.9 value covers 50 observations per run; it is useful but noisier
   than p50, p95, or p99.
 
-The benchmark excludes DNS, TCP connect, TLS, HTTP upgrade, kernel network I/O,
+That measurement excludes DNS, TCP connect, TLS, HTTP upgrade, kernel network I/O,
 and external network latency. It also excludes Compio, sockudo's native
 split-stream driver, compression, and keepalive traffic.
+
+The current WebSocket harness also includes `nautilus_sockudo` cases. These use the
+neutral message conversions and Sockudo's native split handles through
+`SockudoTransport::into_split`, matching the client transport adapter. Both endpoints
+use that adapter; the cases do not include the client's reader and writer tasks.
+The raw `sockudo_ws` cases retain the unified stream to distinguish library performance
+from adapter performance. The July tables below cover only the raw streams.
 
 ## Round-trip text latency
 

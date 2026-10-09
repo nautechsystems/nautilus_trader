@@ -33,15 +33,16 @@ use std::{
 };
 
 use bytes::{Bytes, BytesMut};
-use futures_util::{Sink, Stream};
+use futures_util::{Sink, Stream, StreamExt};
 use sockudo_ws::{
     HandshakeResult,
     error::{CloseReason as SockudoCloseReason, Error as SockudoError},
     handshake,
     protocol::Message as SockudoMessage,
-    stream::WebSocketStream,
+    stream::{SplitWriter, WebSocketStream},
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio_util::sync::ReusableBoxFuture;
 
 use super::{
     error::{TransportError, retryable_status},
@@ -361,7 +362,6 @@ impl From<SockudoError> for TransportError {
 pub struct SockudoTransport<S> {
     inner: WebSocketStream<S>,
     pending_flush: bool,
-    max_message_size_bytes: Option<usize>,
 }
 
 impl<S> SockudoTransport<S> {
@@ -372,13 +372,7 @@ impl<S> SockudoTransport<S> {
         Self {
             inner,
             pending_flush: false,
-            max_message_size_bytes: None,
         }
-    }
-
-    pub(crate) const fn with_max_message_size(mut self, limit: Option<usize>) -> Self {
-        self.max_message_size_bytes = limit;
-        self
     }
 
     /// Consumes the adapter and returns the underlying stream.
@@ -420,15 +414,7 @@ where
         }
 
         let result = match Pin::new(&mut self.inner).poll_next(cx) {
-            Poll::Ready(Some(Ok(msg))) => {
-                let message = Message::from(msg);
-                // A finished single-frame message bypasses Sockudo's fragment-only message cap
-                if exceeds_message_cap(self.max_message_size_bytes, &message) {
-                    Poll::Ready(Some(Err(TransportError::MessageTooLarge)))
-                } else {
-                    Poll::Ready(Some(Ok(message)))
-                }
-            }
+            Poll::Ready(Some(Ok(msg))) => Poll::Ready(Some(Ok(Message::from(msg)))),
             Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(TransportError::from(e)))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => return Poll::Pending,
@@ -445,19 +431,6 @@ where
 
         result
     }
-}
-
-fn exceeds_message_cap(limit: Option<usize>, message: &Message) -> bool {
-    let Some(limit) = limit else {
-        return false;
-    };
-
-    let len = match message {
-        Message::Text(bytes) | Message::Binary(bytes) => bytes.len(),
-        Message::Ping(_) | Message::Pong(_) | Message::Close(_) => return false,
-    };
-
-    len > limit
 }
 
 impl<S> Sink<Message> for SockudoTransport<S>
@@ -491,6 +464,127 @@ where
     }
 }
 
+impl<S> SockudoTransport<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    /// Returns a neutral transport backed by Sockudo's native split handles.
+    ///
+    /// Inbound data can progress independently of blocked application writes. Sockudo's
+    /// connection task drives automatic control frames and enforces connection deadlines.
+    /// Call this before sending or receiving messages. A Tokio runtime is required.
+    pub fn into_split(self) -> impl WsTransport {
+        let (reader, writer) = self.inner.split();
+        let read = futures_util::stream::unfold(reader, |mut reader| async move {
+            reader.next().await.map(|message| {
+                (
+                    message.map(Message::from).map_err(TransportError::from),
+                    reader,
+                )
+            })
+        })
+        .fuse();
+        SockudoSplitTransport {
+            read: Box::pin(read),
+            writer: Some(writer),
+            write: ReusableBoxFuture::new(std::future::pending()),
+        }
+    }
+}
+
+struct SockudoSplitTransport<R, S> {
+    read: Pin<Box<R>>,
+    writer: Option<SplitWriter<S>>,
+    write: ReusableBoxFuture<'static, (SplitWriter<S>, Result<(), TransportError>)>,
+}
+
+impl<R, S> Stream for SockudoSplitTransport<R, S>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    R: Stream<Item = Result<Message, TransportError>>,
+{
+    type Item = Result<Message, TransportError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.read.as_mut().poll_next(cx)
+    }
+}
+
+impl<R, S> Sink<Message> for SockudoSplitTransport<R, S>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    R: Stream<Item = Result<Message, TransportError>>,
+{
+    type Error = TransportError;
+
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        std::task::ready!(self.poll_pending_write(cx))?;
+
+        if self.writer.as_ref().is_none_or(SplitWriter::is_closed) {
+            return Poll::Ready(Err(TransportError::ConnectionClosed));
+        }
+
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(mut self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
+        let writer = self.writer.take().ok_or(TransportError::ConnectionClosed)?;
+        self.write.set(write_split(writer, Some(item)));
+        Ok(())
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if let Some(writer) = self.writer.take() {
+            self.write.set(write_split(writer, None));
+        }
+
+        self.poll_pending_write(cx)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        std::task::ready!(self.poll_pending_write(cx))?;
+
+        if self.writer.as_ref().is_none_or(SplitWriter::is_closed) {
+            return Poll::Ready(Ok(()));
+        }
+
+        self.as_mut()
+            .start_send(Message::Close(Some(CloseFrame::new(
+                CloseFrame::NORMAL,
+                "",
+            ))))?;
+        self.poll_pending_write(cx)
+    }
+}
+
+impl<R, S> SockudoSplitTransport<R, S> {
+    fn poll_pending_write(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), TransportError>> {
+        if self.writer.is_some() {
+            return Poll::Ready(Ok(()));
+        }
+
+        let (writer, result) = std::task::ready!(self.write.poll(cx));
+        self.writer = Some(writer);
+        Poll::Ready(result)
+    }
+}
+
+async fn write_split<S>(
+    mut writer: SplitWriter<S>,
+    message: Option<Message>,
+) -> (SplitWriter<S>, Result<(), TransportError>)
+where
+    S: AsyncWrite + Unpin,
+{
+    // Retain the native send future across polls: cancelling it can terminate a partial frame
+    let result = match message {
+        Some(message) => writer.send(message.into()).await,
+        None => writer.flush().await,
+    }
+    .map_err(TransportError::from);
+    (writer, result)
+}
+
 const _: fn() = || {
     fn assert_ws_transport<T: WsTransport>() {}
     assert_ws_transport::<SockudoTransport<tokio::net::TcpStream>>();
@@ -498,6 +592,8 @@ const _: fn() = || {
 
 #[cfg(test)]
 mod tests {
+    use std::future::Future;
+
     use bytes::Bytes;
     use rstest::rstest;
     #[cfg(not(feature = "turmoil"))]
@@ -506,6 +602,227 @@ mod tests {
     use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, duplex};
 
     use super::*;
+
+    #[cfg(not(feature = "turmoil"))]
+    #[tokio::test]
+    async fn test_split_reads_while_application_write_is_blocked() {
+        use futures_util::{SinkExt, StreamExt};
+
+        let (client_io, mut peer) = duplex(32);
+        let config = sockudo_ws::Config::builder()
+            .auto_ping(false)
+            .idle_timeout(0)
+            .build();
+        let transport =
+            SockudoTransport::new(WebSocketStream::client(client_io, config.clone())).into_split();
+        let (mut writer, mut reader) = transport.split();
+        let mut send = Box::pin(writer.send(Message::text("x".repeat(4096))));
+        futures_util::future::poll_fn(|cx| {
+            assert!(send.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        peer.write_all(b"\x81\x04peer").await.unwrap();
+
+        let message = tokio::time::timeout(std::time::Duration::from_secs(1), reader.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(message, Message::text("peer"));
+    }
+
+    #[cfg(not(feature = "turmoil"))]
+    #[tokio::test]
+    async fn test_split_retains_send_after_outer_future_is_cancelled() {
+        use futures_util::{SinkExt, StreamExt};
+
+        let (client_io, peer_io) = duplex(32);
+        let config = sockudo_ws::Config::builder()
+            .auto_ping(false)
+            .idle_timeout(0)
+            .build();
+        let mut transport =
+            SockudoTransport::new(WebSocketStream::client(client_io, config.clone())).into_split();
+        let payload = Message::text("x".repeat(4096));
+        {
+            let mut send = Box::pin(transport.send(payload.clone()));
+            futures_util::future::poll_fn(|cx| {
+                assert!(send.as_mut().poll(cx).is_pending());
+                Poll::Ready(())
+            })
+            .await;
+        }
+
+        let peer_task = tokio::spawn(async move {
+            let mut peer = WebSocketStream::server(peer_io, config);
+            let first = peer.next().await.unwrap().unwrap();
+            let second = peer.next().await.unwrap().unwrap();
+            (Message::from(first), Message::from(second))
+        });
+        transport.flush().await.unwrap();
+        transport.send(Message::text("after")).await.unwrap();
+        let (first, second) = peer_task.await.unwrap();
+
+        assert_eq!(first, payload);
+        assert_eq!(second, Message::text("after"));
+    }
+
+    #[cfg(not(feature = "turmoil"))]
+    #[tokio::test]
+    async fn test_split_retains_partial_read_after_outer_future_is_cancelled() {
+        use futures_util::StreamExt;
+
+        let (client_io, mut peer) = duplex(64);
+        let config = sockudo_ws::Config::builder()
+            .auto_ping(false)
+            .idle_timeout(0)
+            .build();
+        let mut transport =
+            SockudoTransport::new(WebSocketStream::client(client_io, config)).into_split();
+        peer.write_all(b"\x81\x08pa").await.unwrap();
+        {
+            let mut receive = Box::pin(transport.next());
+            futures_util::future::poll_fn(|cx| {
+                assert!(receive.as_mut().poll(cx).is_pending());
+                Poll::Ready(())
+            })
+            .await;
+        }
+        peer.write_all(b"rtial!").await.unwrap();
+        let message = transport.next().await.unwrap().unwrap();
+
+        assert_eq!(message, Message::text("partial!"));
+    }
+
+    #[cfg(not(feature = "turmoil"))]
+    #[tokio::test]
+    async fn test_split_read_stays_ended() {
+        let (client_io, mut peer) = duplex(64);
+        let config = sockudo_ws::Config::builder()
+            .auto_ping(false)
+            .idle_timeout(0)
+            .build();
+        let mut transport =
+            SockudoTransport::new(WebSocketStream::client(client_io, config)).into_split();
+        peer.write_all(b"\x88\x02\x03\xe8").await.unwrap();
+        let close = transport.next().await.unwrap().unwrap();
+        let ended = transport.next().await;
+        let still_ended = transport.next().await;
+
+        assert_eq!(close, Message::Close(Some(CloseFrame::new(1000, ""))));
+        assert!(ended.is_none());
+        assert!(still_ended.is_none());
+    }
+
+    #[cfg(not(feature = "turmoil"))]
+    #[tokio::test]
+    async fn test_split_drives_pong_without_another_read() {
+        use futures_util::StreamExt;
+
+        let (client_io, mut peer) = duplex(64);
+        let config = sockudo_ws::Config::builder()
+            .auto_ping(false)
+            .idle_timeout(0)
+            .build();
+        let mut transport =
+            SockudoTransport::new(WebSocketStream::client(client_io, config.clone())).into_split();
+        peer.write_all(b"\x89\x04ping").await.unwrap();
+        let received = transport.next().await.unwrap().unwrap();
+        let mut peer = WebSocketStream::server(peer, config);
+        let response = tokio::time::timeout(std::time::Duration::from_secs(1), peer.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(received, Message::Ping(Bytes::from_static(b"ping")));
+        assert_eq!(
+            Message::from(response),
+            Message::Pong(Bytes::from_static(b"ping"))
+        );
+    }
+
+    #[cfg(not(feature = "turmoil"))]
+    #[tokio::test]
+    async fn test_split_close_sends_normal_status() {
+        use futures_util::{SinkExt, StreamExt};
+
+        let (client_io, peer_io) = duplex(64);
+        let config = sockudo_ws::Config::builder()
+            .auto_ping(false)
+            .idle_timeout(0)
+            .build();
+        let mut transport =
+            SockudoTransport::new(WebSocketStream::client(client_io, config.clone())).into_split();
+        transport.close().await.unwrap();
+        transport.close().await.unwrap();
+        let mut peer = WebSocketStream::server(peer_io, config);
+        let received = peer.next().await.unwrap().unwrap();
+
+        assert_eq!(
+            Message::from(received),
+            Message::Close(Some(CloseFrame::new(1000, "")))
+        );
+    }
+
+    #[cfg(not(feature = "turmoil"))]
+    #[tokio::test]
+    async fn test_split_close_after_explicit_close_preserves_reason() {
+        use futures_util::{SinkExt, StreamExt};
+
+        let (client_io, peer_io) = duplex(64);
+        let config = sockudo_ws::Config::builder()
+            .auto_ping(false)
+            .idle_timeout(0)
+            .build();
+        let mut transport =
+            SockudoTransport::new(WebSocketStream::client(client_io, config.clone())).into_split();
+        let close = Message::Close(Some(CloseFrame {
+            code: 3001,
+            reason: "finished".into(),
+        }));
+        transport.send(close.clone()).await.unwrap();
+        transport.close().await.unwrap();
+        transport.close().await.unwrap();
+        let mut peer = WebSocketStream::server(peer_io, config);
+        let received = peer.next().await.unwrap().unwrap();
+        let flush = transport.flush().await;
+
+        assert_eq!(Message::from(received), close);
+        assert!(matches!(flush, Err(TransportError::ConnectionClosed)));
+    }
+
+    #[cfg(feature = "turmoil")]
+    #[tokio::test(start_paused = true)]
+    async fn test_sockudo_idle_deadline_uses_simulated_clock() {
+        use futures_util::StreamExt;
+
+        let (client_io, _peer) = tokio::io::duplex(64);
+        let config = sockudo_ws::Config::builder()
+            .auto_ping(false)
+            .idle_timeout(1)
+            .build();
+        let mut transport =
+            SockudoTransport::new(WebSocketStream::client(client_io, config.clone())).into_split();
+        let mut receive = Box::pin(transport.next());
+        futures_util::future::poll_fn(|cx| {
+            assert!(receive.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        tokio::time::advance(std::time::Duration::from_millis(1001)).await;
+        tokio::task::yield_now().await;
+        let result =
+            futures_util::future::poll_fn(|cx| Poll::Ready(receive.as_mut().poll(cx))).await;
+        let Poll::Ready(Some(Err(TransportError::Io(e)))) = result else {
+            panic!("expected simulated idle timeout, was {result:?}");
+        };
+
+        assert_eq!(e.kind(), std::io::ErrorKind::TimedOut);
+        assert_eq!(e.to_string(), SockudoError::IdleTimeout.to_string());
+    }
 
     #[cfg(not(feature = "turmoil"))]
     async fn read_http_request<S>(stream: &mut S) -> Vec<u8>
