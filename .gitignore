@@ -196,5 +196,7 @@ tests/unit_tests/persistence/catalog/
 !/test_data/large/checksums.json
 !/test_data/large/*.metadata.json
 !/test_data/nautilus/*/**.parquet
+!/test_data/nautilus/catalog_1_231_0/**/
+!/test_data/nautilus/catalog_1_231_0/**/*.parquet
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*

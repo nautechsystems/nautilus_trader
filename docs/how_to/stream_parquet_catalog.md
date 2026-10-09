@@ -67,6 +67,10 @@ RotationConfig.scheduled_dates(
 `scheduled_dates` takes an interval duration in nanoseconds and a time of day in nanoseconds since
 midnight, in its IANA `timezone`, which defaults to `UTC`. Sizes and intervals must be positive.
 
+Rotation and interval-based promotion seal open Feather files and can split rows with the same `ts_init` across files.
+Promotion of the later file then rejects the overlapping catalog interval and retains that source. Use no rotation
+and leave `promotion_interval_ms` unset when rows sharing a `ts_init` must stay in one file.
+
 ## Understand query visibility
 
 The shared writer core owns filtering, Feather file appends, rotation, and promotion scheduling.
@@ -139,16 +143,18 @@ Feather file produces two such groups when its records differ in schema, for exa
 book depth staged alongside a populated one for the same instrument. The catalog filename also
 carries a hash of the promotion identity.
 
-Within each Feather file, batches containing only canonical `OrderBookDelta.clear()` rows adopt the
-next nonempty order batch's precision for the same instrument before grouping. Trailing `CLEAR`
-batches use the last preceding nonempty order batch's precision. If the file contains only `CLEAR`
-rows for an instrument, their zero precision stays unchanged. Raw price and size values stay unchanged;
-decoded `CLEAR` prices and sizes use the chosen precision. This keeps `CLEAR` before its snapshot orders
-at equal `ts_init`.
+Within each Feather file, CLEAR-only batches with no side, zero or undefined price, zero size, and
+order ID zero adopt the next nonempty order batch's precision for the same instrument before grouping.
+Trailing CLEAR batches use the last preceding nonempty order batch's precision. If the file contains
+only CLEAR rows for an instrument, their zero precision stays unchanged. Raw price and size values
+stay unchanged; zero fields decode with the chosen precision, while an undefined price remains
+undefined at precision zero.
 
 The catalog requires disjoint closed `ts_init` intervals per identifier directory. Before writing one
 Feather file, promotion unifies groups whose precision metadata differs only by a zero precision and
-whose zero-precision group has no decimal values, and writes one file for the combined interval.
+whose zero-precision group has no decimal values. Promotion writes one file for the combined interval
+and preserves source order among rows with equal `ts_init`, including nonadjacent batches with the
+same schema.
 Groups that still overlap, or that cannot be unified without changing decimal values, fail before
 any catalog file from that Feather source is written. The staged Feather source is retained, and no
 promotion identity is recorded for that source. Automatic promotion and

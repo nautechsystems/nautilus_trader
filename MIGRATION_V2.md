@@ -218,6 +218,90 @@ Query a catalog with `ParquetDataCatalog.query(...)` or a typed method such as
 `query_quote_ticks(...)`, which return typed Python objects, or stream Arrow data with
 `query_data_arrow_stream(...)`.
 
+### Migrate catalog data
+
+The v2 Python catalog API and Arrow schemas differ from v1. Migrate recognized legacy files before querying them
+with v2. The [Parquet migration guide](docs/how_to/migrate_parquet_catalog.md) covers schema fingerprints,
+tested source formats, and recovery from partial migrations.
+
+### Rust catalog integrations
+
+This example copies v2 quote rows through the shared catalog traits:
+
+```rust
+use nautilus_model::data::NautilusDataType;
+use nautilus_persistence::catalog::{
+    traits::{CatalogReader, CatalogWriter},
+    types::CatalogQuery,
+};
+
+fn copy_quotes(
+    source: &mut dyn CatalogReader,
+    target: &mut dyn CatalogWriter,
+) -> anyhow::Result<()> {
+    let query = CatalogQuery::new(NautilusDataType::QuoteTick);
+    let mut session = source.query_batch_session(&query, Some(1_000))?;
+
+    while let Some(batch) = session.next_batch()? {
+        target.write_data_batch(&batch, None, None, None)?;
+    }
+
+    Ok(())
+}
+```
+
+Both catalogs must support the operations used, and the destination must accept the source intervals.
+The example does not preserve known-empty coverage or convert legacy schemas; use the migration command for those.
+
+#### Public API stability
+
+Use the public `CatalogReader`, `CatalogWriter`, and `Catalog` traits, `DataCatalog`, and catalog query types.
+Register backends through `CatalogFactory` closures and `CatalogFactoryRegistry`. Backend internals are not
+extension interfaces.
+
+Rust crates have their own versions; pin compatible versions independently of Python.
+Compatible updates preserve these public contracts.
+Adding a required trait method or changing a signature breaks Rust source compatibility and requires release notes
+and migration guidance.
+
+#### Backend limits
+
+- Optional operations can return `PersistenceError::Unsupported`; distinguish this from a supported operation that fails.
+- Parquet supports only the latest view. Historical `CatalogAsOf` queries fail with
+  `Parquet catalog does not support historical queries`, rather than `PersistenceError::Unsupported`.
+- Query chunk sizes are targets. Equal-timestamp groups can exceed them; instrument and custom queries can collect
+  all results before yielding batches.
+
+### Depth and data variants
+
+Python v2 uses `OrderBookDepth` for variable-length sides and does not export `OrderBookDepth10`.
+Inspect side lengths instead of assuming ten padded levels; sides can be empty or unequal.
+`OrderBookDepthDataWrangler` returns `OrderBookDepth`. Update these Rust variants:
+
+| v1 Rust variant           | v2 Rust variant     |
+| ------------------------- | ------------------- |
+| `Data::Delta`             | `Data::BookDelta`   |
+| `Data::Deltas`            | `Data::BookDeltas`  |
+| `Data::Depth10`           | `Data::BookDepth`   |
+| `Data::MarkPriceUpdate`   | `Data::MarkPrice`   |
+| `Data::IndexPriceUpdate`  | `Data::IndexPrice`  |
+| `Data::FundingRateUpdate` | `Data::FundingRate` |
+
+`Data::BookDeltas` owns a `Box<OrderBookDeltas>` in place of `OrderBookDeltas_API`.
+Exhaustive matches must also handle `Data::Instrument`.
+
+### Streaming and runtime changes
+
+- **Streaming filters**: omit `data_types`, `record_types`, `instrument_types`, and `record_filters` for unfiltered
+  streaming. Use non-empty lists or a non-empty Python `record_filters` dictionary to select records. Rust rejects
+  explicit empty lists; Python `StreamingConfig` treats empty lists and an empty dictionary as omitted filters.
+- **Tokio runtime**: when using `set_runtime`, build with `Builder::new_multi_thread().enable_all()`.
+  A current-thread runtime is rejected.
+- **Numeric text**: high-precision prices and quantities use exact scaled integers. Parse decimal text exactly;
+  do not use v1 display strings to check compatibility.
+- **Custom subscriptions**: specify an identifier to select only that identity. Without one, a subscription also
+  receives identified payloads with the same type and metadata.
+
 ### Enum absence and side names
 
 `AggressorSide.BUYER` and `AggressorSide.SELLER` become `AggressorSide.BUY` and

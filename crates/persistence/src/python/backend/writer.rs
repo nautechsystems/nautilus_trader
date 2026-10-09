@@ -24,7 +24,7 @@ use std::{
 use nautilus_common::{clock::Clock, python::clock::PyClock};
 use nautilus_model::data::{
     Bar, CustomData, Data, IndexPriceUpdate, InstrumentClose, MarkPriceUpdate, OrderBookDelta,
-    OrderBookDepth, QuoteTick, TradeTick,
+    OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
 };
 use pyo3::{exceptions::PyIOError, prelude::*};
 
@@ -155,6 +155,12 @@ pub(crate) fn pyobject_to_data(py: Python, data: Py<PyAny>) -> PyResult<Data> {
 
     if data.is_instance_of::<OrderBookDelta>() {
         return Ok(Data::BookDelta(data.extract::<OrderBookDelta>()?));
+    }
+
+    if data.is_instance_of::<OrderBookDeltas>() {
+        return Ok(Data::BookDeltas(Box::new(
+            data.extract::<OrderBookDeltas>()?,
+        )));
     }
 
     if data.is_instance_of::<OrderBookDepth>() {

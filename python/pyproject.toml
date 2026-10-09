@@ -488,6 +488,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "scripts/check-markdown-tables.py" = ["INP001"]
 "scripts/extract-doc-links.py" = ["INP001"]
 "scripts/security-audit.py" = ["INP001"]
+"test_data/nautilus/catalog_1_231_0/generate.py" = ["INP001", "S101", "T201"]
 "scripts/ci/check_commit_message.py" = ["S603", "T201"]
 "scripts/ci/test_*.py" = [
   "S101",

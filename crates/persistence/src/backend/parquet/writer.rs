@@ -583,6 +583,7 @@ mod tests {
         identifiers::InstrumentId,
         types::{ERROR_PRICE, Price, Quantity},
     };
+    use nautilus_serialization::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBatch};
     use object_store::memory::InMemory;
     use parquet::{
         basic::Compression,
@@ -1247,6 +1248,260 @@ mod tests {
     }
 
     #[rstest]
+    fn parquet_promotion_preserves_every_record_family(#[values(false, true)] automatic: bool) {
+        use nautilus_core::UUID4;
+        use nautilus_model::{
+            enums::{
+                LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType,
+                PositionSide, TimeInForce,
+            },
+            events::{
+                OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
+                OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
+                OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted,
+                OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed,
+                PositionOpened, PositionSnapshot,
+                account::stubs::cash_account_state,
+                order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
+            },
+            identifiers::{
+                AccountId, ClientId, ClientOrderId, PositionId, TradeId, Venue, VenueOrderId,
+            },
+            instruments::{InstrumentAny, stubs::audusd_sim},
+            orders::OrderTestBuilder,
+            position::Position,
+            reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
+            stubs::TestDefault,
+            types::Money,
+        };
+        use strum::IntoEnumIterator;
+        let mut families = ahash::AHashSet::new();
+        macro_rules! promote {
+            ($record:expr) => {
+                families.insert(assert_record_promotion($record, automatic));
+            };
+        }
+        promote!(cash_account_state());
+        promote!(OrderInitialized::test_default());
+        promote!(OrderDenied::test_default());
+        promote!(OrderEmulated::test_default());
+        promote!(OrderSubmitted::test_default());
+        promote!(OrderAccepted::test_default());
+        promote!(OrderRejected::test_default());
+        promote!(OrderPendingCancel::test_default());
+        promote!(OrderCanceled::test_default());
+        promote!(OrderCancelRejected::test_default());
+        promote!(OrderExpired::test_default());
+        promote!(OrderTriggered::test_default());
+        promote!(OrderPendingUpdate::test_default());
+        promote!(OrderReleased::test_default());
+        promote!(OrderModifyRejected::test_default());
+        promote!(OrderUpdated::test_default());
+        promote!(OrderFillVoidedSpec::builder().is_reopened(true).build());
+        let id = InstrumentId::from("AUD/USD.SIM");
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(id)
+            .position_id(PositionId::from("P-009"))
+            .last_px(Price::from("1.23456"))
+            .last_qty(Quantity::from("1234"))
+            .ts_event(11.into())
+            .ts_init(13.into())
+            .build();
+        promote!(fill.clone());
+        let mut position = Position::new(&InstrumentAny::CurrencyPair(audusd_sim()), fill.clone());
+        promote!(PositionOpened::create(
+            &position,
+            &fill,
+            UUID4::default(),
+            17.into()
+        ));
+        promote!(PositionChanged::create(
+            &position,
+            &fill,
+            UUID4::default(),
+            19.into()
+        ));
+        promote!(PositionAdjusted::new(
+            fill.trader_id,
+            fill.strategy_id,
+            id,
+            position.id,
+            fill.account_id,
+            PositionAdjustmentType::Funding,
+            None,
+            Some(Money::from("1.23 USD")),
+            Some("funding".into()),
+            UUID4::default(),
+            23.into(),
+            29.into()
+        ));
+        promote!(PositionSnapshot::from(
+            &position,
+            Some(Money::from("4.56 USD"))
+        ));
+        let closing = OrderFilledSpec::builder()
+            .instrument_id(id)
+            .position_id(position.id)
+            .order_side(OrderSide::Sell)
+            .last_px(Price::from("1.34567"))
+            .last_qty(fill.last_qty)
+            .trade_id(TradeId::from("T-011"))
+            .ts_event(31.into())
+            .ts_init(37.into())
+            .build();
+        position.apply(&closing);
+        promote!(PositionClosed::create(
+            &position,
+            &closing,
+            UUID4::default(),
+            41.into()
+        ));
+        promote!(OrderSnapshot::from(
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(id)
+                .price(Price::from("1.45678"))
+                .quantity(Quantity::from("5678"))
+                .build()
+        ));
+
+        let order = OrderStatusReport::new(
+            AccountId::from("SIM-007"),
+            id,
+            Some(ClientOrderId::from("O-013")),
+            VenueOrderId::from("V-017"),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("123"),
+            Quantity::from("45"),
+            43.into(),
+            47.into(),
+            53.into(),
+            None,
+        );
+
+        let report_fill = FillReport::new(
+            AccountId::from("SIM-007"),
+            id,
+            VenueOrderId::from("V-017"),
+            TradeId::from("T-019"),
+            OrderSide::Buy,
+            Quantity::from("45"),
+            Price::from("1.56789"),
+            Money::from("2.34 USD"),
+            LiquiditySide::Maker,
+            Some(ClientOrderId::from("O-013")),
+            Some(PositionId::from("P-023")),
+            59.into(),
+            61.into(),
+            None,
+        );
+
+        let report_position = PositionStatusReport::new(
+            AccountId::from("SIM-007"),
+            id,
+            PositionSide::Long,
+            Quantity::from("789"),
+            67.into(),
+            71.into(),
+            None,
+            Some(PositionId::from("P-023")),
+            Some(rust_decimal::Decimal::new(16789, 4)),
+        );
+
+        let mut mass = ExecutionMassStatus::new(
+            ClientId::from("CLIENT-029"),
+            AccountId::from("SIM-007"),
+            Venue::from("SIM"),
+            73.into(),
+            None,
+        );
+        mass.add_order_reports(vec![order.clone()]);
+        mass.add_fill_reports(vec![report_fill.clone()]);
+        mass.add_position_reports(vec![report_position.clone()]);
+        promote!(order);
+        promote!(report_fill);
+        promote!(report_position);
+        promote!(mass);
+
+        let expected = NautilusRecordType::iter()
+            .filter(|family| {
+                #[cfg(feature = "defi")]
+                if *family == NautilusRecordType::Defi {
+                    return false;
+                }
+
+                let _ = family;
+                true
+            })
+            .collect::<ahash::AHashSet<_>>();
+
+        assert_eq!(families, expected);
+    }
+
+    fn assert_record_promotion<T>(record: T, automatic: bool) -> NautilusRecordType
+    where
+        T: std::any::Any
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + EncodeToRecordBatch
+            + DecodeTypedFromRecordBatch,
+    {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest/run-record");
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promote_on_close = automatic;
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let mut second = serde_json::to_value(&record).unwrap();
+        second["ts_init"] = serde_json::json!(second["ts_init"].as_u64().unwrap() + 101);
+        let second: T = serde_json::from_value(second).unwrap();
+        assert!(sink.write_any(&record).unwrap());
+        assert!(sink.write_any(&second).unwrap());
+        sink.close().unwrap();
+        let record_type = T::get_schema(None).metadata()["type_name"]
+            .parse::<NautilusRecordType>()
+            .unwrap();
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        if !automatic {
+            catalog
+                .convert_stream_to_data(
+                    "run-record",
+                    &record_type.into(),
+                    Environment::Backtest,
+                    None,
+                    false,
+                )
+                .unwrap();
+        }
+
+        let batches = catalog
+            .query_record_batches(&record_type.into(), None, None, None, None, true)
+            .unwrap();
+
+        let actual = batches
+            .into_iter()
+            .flat_map(|batch| {
+                let schema = batch.schema();
+                T::decode_typed_batch(schema.metadata(), batch).unwrap()
+            })
+            .map(|record| serde_json::to_value(record).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            actual,
+            vec![
+                serde_json::to_value(record).unwrap(),
+                serde_json::to_value(second).unwrap()
+            ]
+        );
+        record_type
+    }
+
+    #[rstest]
     fn parquet_streaming_voided_fill_promotes() {
         use nautilus_model::events::{OrderFillVoided, order::spec::OrderFillVoidedSpec};
         use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
@@ -1289,6 +1544,232 @@ mod tests {
         }
 
         assert_eq!(rows, vec![event]);
+    }
+
+    #[rstest]
+    fn parquet_promotion_preserves_clear_source_order(
+        #[values(false, true)] automatic: bool,
+        #[values(false, true)] batched: bool,
+        #[values(false, true)] undefined_price: bool,
+    ) {
+        use nautilus_model::{
+            data::{BookOrder, OrderBookDelta},
+            enums::{BookAction, OrderSide, RecordFlag},
+            types::PRICE_UNDEF,
+        };
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest/run-clear");
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promote_on_close = automatic;
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let id = InstrumentId::from("AUD/USD.SIM");
+        let ts = UnixNanos::from(1_700_000_000_000_000_123);
+        let mut clear = OrderBookDelta::clear(id, 7, ts, ts);
+        if undefined_price {
+            clear.order.price = Price::from_raw(PRICE_UNDEF, 0);
+        }
+
+        let add = OrderBookDelta::new(
+            id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1.23456"),
+                Quantity::from("7.890"),
+                19,
+            ),
+            RecordFlag::F_LAST as u8 | RecordFlag::F_SNAPSHOT as u8,
+            7,
+            ts,
+            ts,
+        );
+        let mut second_add = add;
+        second_add.order.order_id = 29;
+        second_add.order.price = Price::from("1.34567");
+        second_add.order.size = Quantity::from("8.901");
+        let rows = vec![clear, add, clear, second_add];
+        if batched {
+            sink.write_batch(rows.iter().copied().map(Data::BookDelta).collect())
+                .unwrap();
+        } else {
+            for row in &rows {
+                sink.write_data(Data::BookDelta(*row)).unwrap();
+            }
+        }
+
+        sink.close().unwrap();
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let storage = create_storage_backend_from_path(staging.to_str().unwrap(), None).unwrap();
+        let staged = block_on_nautilus_with(|| storage.list_files("", Some(".feather"))).unwrap();
+        let mut originals = Vec::new();
+
+        for path in &staged {
+            let bytes = block_on_nautilus_with(|| async {
+                storage
+                    .object_store
+                    .get(&object_store::path::Path::from(path.as_str()))
+                    .await
+                    .unwrap()
+                    .bytes()
+                    .await
+                    .unwrap()
+            });
+
+            originals.push(bytes);
+        }
+
+        if !automatic {
+            catalog
+                .convert_stream_to_data(
+                    "run-clear",
+                    &NautilusDataType::OrderBookDelta.into(),
+                    Environment::Backtest,
+                    None,
+                    false,
+                )
+                .unwrap();
+        }
+
+        let actual = catalog
+            .query::<OrderBookDelta>(None, None, None, None, None, true)
+            .unwrap();
+        assert_eq!(actual.len(), rows.len());
+
+        for (actual, expected) in actual.iter().zip(&rows) {
+            assert_eq!(actual.instrument_id, expected.instrument_id);
+            assert_eq!(actual.action, expected.action);
+            assert_eq!(actual.order.side, expected.order.side);
+            assert_eq!(actual.order.price.raw(), expected.order.price.raw());
+
+            let price_precision = if expected.order.price.is_undefined() {
+                0
+            } else {
+                5
+            };
+
+            assert_eq!(actual.order.price.precision, price_precision);
+            assert_eq!(
+                actual.order.size.as_decimal(),
+                expected.order.size.as_decimal()
+            );
+            assert_eq!(actual.order.size.precision, 3);
+            assert_eq!(actual.order.order_id, expected.order.order_id);
+            assert_eq!(actual.flags, expected.flags);
+            assert_eq!(actual.sequence, expected.sequence);
+            assert_eq!(actual.ts_event, expected.ts_event);
+            assert_eq!(actual.ts_init, expected.ts_init);
+        }
+
+        for (path, original) in staged.iter().zip(originals) {
+            let bytes = block_on_nautilus_with(|| async {
+                storage
+                    .object_store
+                    .get(&object_store::path::Path::from(path.as_str()))
+                    .await
+                    .unwrap()
+                    .bytes()
+                    .await
+                    .unwrap()
+            });
+
+            assert_eq!(bytes, original);
+        }
+
+        assert_eq!(staged.len(), 1);
+    }
+
+    #[rstest]
+    #[case::manual(false, false)]
+    #[case::automatic_retained(true, false)]
+    #[case::automatic_delete(true, true)]
+    fn parquet_failed_clear_promotion_preserves_source(
+        #[case] automatic: bool,
+        #[case] delete_source: bool,
+        #[values(false, true)] batched: bool,
+    ) {
+        use nautilus_model::{
+            data::{BookOrder, OrderBookDelta},
+            enums::{BookAction, OrderSide, RecordFlag},
+        };
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest/run-invalid-clear");
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+
+        let mut writer = FeatherWriter::new(
+            staging.clone(),
+            clock.clone(),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+        let id = InstrumentId::from("AUD/USD.SIM");
+        let ts = UnixNanos::from(23);
+        let mut clear = OrderBookDelta::clear(id, 7, ts, ts);
+        clear.order.price = Price::from("1");
+
+        let add = OrderBookDelta::new(
+            id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1.23456"),
+                Quantity::from("7.890"),
+                19,
+            ),
+            RecordFlag::F_LAST as u8,
+            7,
+            ts,
+            ts,
+        );
+
+        if batched {
+            writer.write_batch(vec![clear, add]).unwrap();
+        } else {
+            writer.write(clear).unwrap();
+            writer.write(add).unwrap();
+        }
+
+        writer.close().unwrap();
+        let source = staging.join("order_book_deltas/order_book_deltas_0.feather");
+        let original = fs::read(&source).unwrap();
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+
+        let failure = if automatic {
+            let mut config = WriterConnectConfig::new(
+                staging.to_string_lossy(),
+                Some(local_catalog(&directory)),
+            );
+            config.delete_feather_after_promotion = delete_source;
+            let mut sink = parquet_writer_factory(&config, clock).unwrap();
+            sink.close().unwrap_err()
+        } else {
+            catalog
+                .convert_stream_to_data(
+                    "run-invalid-clear",
+                    &NautilusDataType::OrderBookDelta.into(),
+                    Environment::Backtest,
+                    None,
+                    false,
+                )
+                .unwrap_err()
+        };
+
+        assert!(
+            format!("{failure:#}").contains(
+                "cannot relabel precision metadata for a promotion group that contains decimal values"
+            ),
+            "{failure:#}"
+        );
+        assert_eq!(fs::read(source).unwrap(), original);
+        assert_eq!(
+            catalog
+                .query_files(&NautilusDataType::OrderBookDelta.into(), None, None, None)
+                .unwrap(),
+            Vec::<String>::new()
+        );
     }
 
     #[rstest]

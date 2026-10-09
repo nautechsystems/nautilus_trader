@@ -32,7 +32,7 @@ use datafusion::arrow::{
         OffsetSizeTrait, StructArray, UInt64Array,
     },
     compute::{SortColumn, SortOptions, concat_batches, lexsort_to_indices, take_record_batch},
-    datatypes::{DataType, Schema},
+    datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
 use futures::StreamExt;
@@ -84,6 +84,8 @@ use crate::{
         run::FeatherSessionSource,
     },
 };
+
+const PROMOTION_ROW_INDEX: &str = "nautilus_promotion_row_index";
 
 impl ParquetDataCatalog {
     pub(crate) fn promote_feather_file(
@@ -642,10 +644,33 @@ impl ParquetDataCatalog {
         // A type's file holds every identifier, and custom data metadata does not name it, so
         // rows are grouped by identifier as well as by schema
         let mut groups: IndexMap<(Arc<Schema>, Option<String>), Vec<RecordBatch>> = IndexMap::new();
+        let mut row_offset = 0;
 
         let mut rows = Vec::new();
+
         for batch in batches {
-            rows.extend(split_record_batch_by_identifier(batch)?);
+            anyhow::ensure!(
+                batch.column_by_name(PROMOTION_ROW_INDEX).is_none(),
+                "Feather source uses reserved column {PROMOTION_ROW_INDEX}"
+            );
+            let row_end = row_offset + batch.num_rows() as u64;
+            let mut fields = batch.schema().fields().to_vec();
+            fields.push(Arc::new(Field::new(
+                PROMOTION_ROW_INDEX,
+                DataType::UInt64,
+                false,
+            )));
+            let mut columns = batch.columns().to_vec();
+            columns.push(Arc::new(UInt64Array::from_iter_values(row_offset..row_end)));
+            let batch = RecordBatch::try_new(
+                Arc::new(Schema::new_with_metadata(
+                    fields,
+                    batch.schema().metadata().clone(),
+                )),
+                columns,
+            )?;
+            row_offset = row_end;
+            rows.extend(split_record_batch_by_identifier(&batch)?);
         }
 
         if *data_type == CatalogDataType::Data(NautilusDataType::OrderBookDelta) {
@@ -702,7 +727,9 @@ impl ParquetDataCatalog {
             ready.extend(self.ready_directory_plans(&directory, plans)?);
         }
 
-        for plan in ready {
+        for mut plan in ready {
+            let row_index = plan.batch.schema().index_of(PROMOTION_ROW_INDEX)?;
+            plan.batch.remove_column(row_index);
             self.write_parquet_file_checked(
                 &plan.directory,
                 UnixNanos::from(plan.start_ts),
@@ -1032,8 +1059,7 @@ fn is_canonical_clear_batch(batch: &RecordBatch) -> anyhow::Result<bool> {
     Ok((0..batch.num_rows()).all(|row| {
         action.value_opt(row) == Some(BookAction::Clear.as_ref())
             && order_side.value_opt(row) == Some("NO_ORDER_SIDE")
-            && price.is_valid(row)
-            && price.value(row) == 0
+            && (price.is_null(row) || price.value(row) == 0)
             && size.is_valid(row)
             && size.value(row) == 0
             && order_id.is_valid(row)
@@ -1155,7 +1181,10 @@ fn sort_by_ts_init(batch: &RecordBatch) -> anyhow::Result<RecordBatch> {
         .schema()
         .index_of("ts_init")
         .map_err(|_| anyhow::anyhow!("ts_init column not found"))?;
-    let original_row_index = Arc::new(UInt64Array::from_iter_values(0..batch.num_rows() as u64));
+    let original_row_index = batch
+        .column_by_name(PROMOTION_ROW_INDEX)
+        .cloned()
+        .unwrap_or_else(|| Arc::new(UInt64Array::from_iter_values(0..batch.num_rows() as u64)));
 
     let options = Some(SortOptions {
         descending: false,
@@ -1542,6 +1571,52 @@ mod promotion_group_tests {
     }
 
     #[rstest]
+    fn promotion_rejects_reserved_row_index() {
+        let temp = TempDir::new().unwrap();
+        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let batch = precision_batch("2", vec![1], Some(1));
+        let mut fields = batch.schema().fields().to_vec();
+        fields.push(Arc::new(Field::new(
+            super::PROMOTION_ROW_INDEX,
+            DataType::UInt64,
+            false,
+        )));
+        let mut columns = batch.columns().to_vec();
+        columns.push(Arc::new(UInt64Array::from(vec![19])));
+        let batch = RecordBatch::try_new(
+            Arc::new(Schema::new_with_metadata(
+                fields,
+                batch.schema().metadata().clone(),
+            )),
+            columns,
+        )
+        .unwrap();
+
+        let error = catalog
+            .convert_feather_batches_to_parquet(
+                Environment::Backtest,
+                "run-1",
+                &NautilusDataType::QuoteTick.into(),
+                "backtest/run-1/quotes_1.feather",
+                &[batch],
+                false,
+                Some("replay"),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Feather source uses reserved column nautilus_promotion_row_index"
+        );
+        assert_eq!(
+            catalog
+                .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+                .unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[rstest]
     fn overlapping_incompatible_groups_write_nothing() {
         let temp = TempDir::new().unwrap();
         let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
@@ -1574,13 +1649,19 @@ mod promotion_group_tests {
     }
 
     #[rstest]
-    fn overlapping_groups_keep_source_order_for_equal_ts_init() {
+    fn overlapping_groups_keep_source_order_for_equal_ts_init(
+        #[values(false, true)] repeated_schema: bool,
+    ) {
         let temp = TempDir::new().unwrap();
         let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
-        let batches = vec![
+        let mut batches = vec![
             precision_batch("2", vec![1, 2], Some(10)),
             precision_batch("0", vec![2, 3], None),
         ];
+
+        if repeated_schema {
+            batches.push(precision_batch("2", vec![2, 4], Some(30)));
+        }
 
         catalog
             .convert_feather_batches_to_parquet(
@@ -1608,6 +1689,12 @@ mod promotion_group_tests {
             })
             .unwrap();
 
+        assert!(
+            written
+                .iter()
+                .all(|batch| batch.column_by_name(super::PROMOTION_ROW_INDEX).is_none())
+        );
+
         let rows = written
             .iter()
             .flat_map(|batch| {
@@ -1631,12 +1718,22 @@ mod promotion_group_tests {
             })
             .collect::<Vec<_>>();
 
-        // Coalescing unifies the later group as the left side, so its rows lead on equal ts_init
         assert_eq!(files.len(), 1);
-        assert_eq!(
-            rows,
-            vec![(1, Some(10)), (2, None), (2, Some(10)), (3, None)]
-        );
+
+        let expected = if repeated_schema {
+            vec![
+                (1, Some(10)),
+                (2, Some(10)),
+                (2, None),
+                (2, Some(30)),
+                (3, None),
+                (4, Some(30)),
+            ]
+        } else {
+            vec![(1, Some(10)), (2, Some(10)), (2, None), (3, None)]
+        };
+
+        assert_eq!(rows, expected);
     }
 
     #[rstest]

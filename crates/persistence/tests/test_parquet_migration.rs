@@ -21,7 +21,8 @@ use std::{
 };
 
 use arrow::{
-    array::{FixedSizeBinaryArray, StringArray, UInt64Array},
+    array::{Decimal128Array, FixedSizeBinaryArray, StringArray, UInt64Array},
+    compute::cast,
     datatypes::{DataType, Field, Schema, TimeUnit},
     record_batch::RecordBatch,
 };
@@ -31,7 +32,10 @@ use nautilus_model::{
         stubs::quote_ethusdt_binance,
     },
     events::AccountState,
-    instruments::{InstrumentAny, NautilusInstrumentType, stubs::crypto_perpetual_ethusdt},
+    identifiers::InstrumentId,
+    instruments::{
+        CurrencyPair, InstrumentAny, NautilusInstrumentType, stubs::crypto_perpetual_ethusdt,
+    },
 };
 use nautilus_persistence::{
     backend::parquet::{
@@ -46,8 +50,8 @@ use nautilus_persistence::{
 };
 use nautilus_serialization::{
     arrow::{
-        ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch,
-        record_batch_with_u64_timestamps,
+        ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, StringColumnRef,
+        U64ColumnRef, record_batch_with_u64_timestamps,
     },
     ensure_custom_data_registered,
 };
@@ -56,6 +60,165 @@ use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder}
 use rstest::rstest;
 use serde_json::Value;
 use tempfile::TempDir;
+
+#[rstest]
+#[case("64-bit")]
+#[case("128-bit")]
+fn migration_preserves_released_quotes_and_instruments(#[case] precision: &str) {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test_data/nautilus/catalog_1_231_0")
+        .join(precision);
+    let original = catalog_files(&source);
+    let temporary = TempDir::new().unwrap();
+    let target = temporary.path().join("destination");
+    let expected: Value =
+        serde_json::from_slice(&fs::read(source.join("expected.json")).unwrap()).unwrap();
+    let quotes: Vec<QuoteTick> = serde_json::from_value(expected["quotes"].clone()).unwrap();
+    let instrument = InstrumentAny::CurrencyPair(
+        serde_json::from_value::<CurrencyPair>(expected["instrument"].clone()).unwrap(),
+    );
+
+    let dry_run = migrate_parquet_catalog(config(&source, &target, true)).unwrap();
+    assert_eq!(dry_run.migrated_files, 0);
+    assert!(!target.exists());
+    let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
+    let mut catalog = ParquetDataCatalog::new(&target, None, None, None, None);
+    let actual = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+    let instruments = catalog.query_instruments(None).unwrap();
+    let intervals = catalog
+        .get_intervals(&NautilusDataType::QuoteTick.into(), Some("AUD/USD.SIM"))
+        .unwrap();
+
+    let custom = catalog
+        .query_record_batches(
+            &NautilusDataType::Custom {
+                type_name: "BinanceFuturesMarkPriceUpdate".into(),
+            }
+            .into(),
+            Some("AUD/USD.SIM".to_string()),
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(custom.len(), 1);
+    assert_eq!(custom[0].num_rows(), 1);
+
+    for field in [
+        "instrument_id",
+        "mark",
+        "index",
+        "estimated_settle",
+        "funding_rate",
+    ] {
+        let values =
+            StringColumnRef::try_from_array(custom[0].column_by_name(field).unwrap().as_ref())
+                .unwrap();
+        assert_eq!(values.value(0), expected["custom"][field].as_str().unwrap());
+    }
+
+    for field in ["next_funding_ns", "ts_event", "ts_init"] {
+        let values =
+            U64ColumnRef::try_from_array(custom[0].column_by_name(field).unwrap().as_ref())
+                .unwrap();
+        assert_eq!(values.value(0), expected["custom"][field].as_u64());
+    }
+
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(quotes).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(instruments).unwrap(),
+        serde_json::to_value(vec![instrument]).unwrap()
+    );
+    assert_eq!(
+        intervals,
+        vec![(1_700_000_000_000_000_023, 1_700_000_000_000_000_126)]
+    );
+    assert_eq!(report.migrated_rows, 4);
+    assert_eq!(report.migrated_files, 3);
+    assert_eq!(catalog_files(&source), original);
+}
+
+#[rstest]
+fn migration_partial_failure_preserves_sources_and_requires_empty_retry() {
+    let temporary = TempDir::new().unwrap();
+    let source = temporary.path().join("source");
+    let target = temporary.path().join("destination");
+
+    for (identifier, invalid) in [("AAA.SIM", false), ("ZZZ.SIM", true)] {
+        let mut quote = quote_ethusdt_binance();
+        quote.instrument_id = InstrumentId::from(identifier);
+        let metadata = QuoteTick::chunk_metadata(&[quote]);
+        let batch = QuoteTick::encode_batch(&metadata, &[quote]).unwrap();
+        let mut columns = batch.columns().to_vec();
+        if invalid {
+            let index = batch.schema().index_of("bid_size").unwrap();
+
+            columns[index] = Arc::new(
+                Decimal128Array::from(vec![-10_000_000_000_000_000_i128])
+                    .with_precision_and_scale(38, 16)
+                    .unwrap(),
+            );
+        }
+
+        let batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
+        let path = source
+            .join("data/quotes")
+            .join(identifier)
+            .join("quotes.parquet");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut writer =
+            ArrowWriter::try_new(fs::File::create(path).unwrap(), batch.schema(), None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+    }
+
+    let original = catalog_files(&source);
+    migrate_parquet_catalog(config(&source, &target, true)).unwrap();
+    let failure = migrate_parquet_catalog(config(&source, &target, false)).unwrap_err();
+    let partial = catalog_files(&target);
+    let retry = migrate_parquet_catalog(config(&source, &target, false)).unwrap_err();
+    assert!(format!("{failure:#}").contains("bid_size"), "{failure:#}");
+    assert_eq!(partial.len(), 1);
+    assert!(partial[0].0.starts_with("data/quotes/AAA.SIM"));
+    assert!(retry.to_string().contains("empty"), "{retry}");
+    assert_eq!(catalog_files(&target), partial);
+    assert_eq!(catalog_files(&source), original);
+}
+
+#[rstest]
+fn migration_rejects_source_rows_outside_declared_coverage() {
+    let temporary = TempDir::new().unwrap();
+    let source = temporary.path().join("source");
+    let target = temporary.path().join("destination");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test_data/nautilus/catalog_1_231_0/128-bit/data/quote_tick/AUDUSD.SIM")
+        .join("2023-11-14T22-13-20-000000023Z_2023-11-14T22-13-20-000000126Z.parquet");
+    let path = source
+        .join("data/quote_tick/AUDUSD.SIM")
+        .join("2023-11-14T22-13-20-000000124Z_2023-11-14T22-13-20-000000124Z.parquet");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::copy(fixture, &path).unwrap();
+    let original = catalog_files(&source);
+    migrate_parquet_catalog(config(&source, &target, true)).unwrap();
+
+    let error = migrate_parquet_catalog(config(&source, &target, false)).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("source coverage does not contain its rows"),
+        "{error}"
+    );
+    assert_eq!(catalog_files(&target), Vec::new());
+    assert_eq!(catalog_files(&source), original);
+}
 
 #[rstest]
 #[case("typed")]
@@ -179,6 +342,7 @@ fn runtime_queries_and_migration_accept_non_instrument_class_metadata() {
 fn migration_converts_class_instruments(
     #[values(false, true)] utc_timestamps: bool,
     #[values(false, true)] fee_columns: bool,
+    #[values(false, true)] dictionary_strings: bool,
 ) {
     let temporary = TempDir::new().unwrap();
     let source = temporary.path().join("source");
@@ -217,6 +381,17 @@ fn migration_converts_class_instruments(
                 Arc::new(Field::new(name, DataType::Utf8, false)),
             );
             columns.insert(offset + index, Arc::new(StringArray::from(vec![value])));
+        }
+    }
+
+    if dictionary_strings {
+        for (field, column) in fields.iter_mut().zip(&mut columns) {
+            if field.data_type() == &DataType::Utf8 {
+                let dictionary =
+                    DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+                *column = cast(column, &dictionary).unwrap();
+                *field = Arc::new(field.as_ref().clone().with_data_type(dictionary));
+            }
         }
     }
 
