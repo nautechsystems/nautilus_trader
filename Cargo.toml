@@ -141,7 +141,6 @@ bon = "=3.9.3"
 bytes = { version = "1.12.1", features = ["serde"] }
 capnp = "0.27.2"
 clap = { version = "4.6.7", features = ["derive", "env"] }
-crc32fast = "1.5.2"
 dashmap = "6.2.1"
 datafusion = { version = "55.1.0", default-features = false, features = [
   "parquet",

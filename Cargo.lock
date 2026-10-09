@@ -6299,7 +6299,6 @@ dependencies = [
  "base64 0.23.1",
  "bon",
  "codspeed-criterion-compat",
- "crc32fast",
  "dashmap",
  "derive_builder",
  "dotenvy",

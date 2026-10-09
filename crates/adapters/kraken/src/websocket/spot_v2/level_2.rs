@@ -32,7 +32,11 @@ use nautilus_model::{
 use parking_lot::Mutex;
 use ustr::Ustr;
 
-use super::{checksum::push_scaled, messages::KrakenWsBookData, parse::parse_book_deltas};
+use super::{
+    checksum::{crc32_ieee, push_scaled},
+    messages::KrakenWsBookData,
+    parse::parse_book_deltas,
+};
 use crate::common::consts::KRAKEN_PAIR_DECIMALS_KEY;
 
 /// One logical `book` subscription as the client records it per venue symbol.
@@ -958,7 +962,7 @@ pub(crate) fn compute_checksum(
         push_scaled(buffer, scratch, level.size_decimal(), qty_scale);
     }
 
-    crc32fast::hash(buffer.as_bytes())
+    crc32_ieee(buffer.as_bytes())
 }
 
 fn prune_deltas_to_depth(
