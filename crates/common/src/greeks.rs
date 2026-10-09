@@ -414,6 +414,7 @@ impl GreeksCalculator {
             if let Some(pos) = position {
                 cached_greeks.pnl = cached_greeks.price - pos.avg_px_open;
             }
+
             return Ok(cached_greeks);
         }
 
@@ -474,18 +475,15 @@ impl GreeksCalculator {
         let cache = self.cache.borrow();
         let mut cross_venue_underlyings = self.cross_venue_underlyings.borrow_mut();
 
-        // Forget a remembered match once it leaves the cache, so adding it back later goes
-        // through the ambiguity check again.
-        let remembered_id = match cross_venue_underlyings.get(&underlying) {
-            Some(&underlying_id) if cache.instrument(&underlying_id).is_some() => {
-                Some(underlying_id)
-            }
-            Some(_) => {
-                cross_venue_underlyings.remove(&underlying);
-                None
-            }
-            None => None,
-        };
+        // Drop a purged match before any early return so a re-added instrument is rechecked
+        let remembered_id = cross_venue_underlyings
+            .get(&underlying)
+            .copied()
+            .filter(|id| cache.instrument(id).is_some());
+
+        if remembered_id.is_none() {
+            cross_venue_underlyings.remove(&underlying);
+        }
 
         // A futures spread cached for the option's venue stands in for an uncached underlying
         if cache.instrument(&same_venue_id).is_some()
@@ -501,9 +499,7 @@ impl GreeksCalculator {
             return Ok(underlying_id);
         }
 
-        // An option can list on a different venue than its underlying, so accept a unique
-        // exact-symbol match and remember it, which saves scanning the cache on later calls.
-        // Without one, keep the option's venue.
+        // Remember a unique cross-venue match to avoid rescanning the cache on later calls
         let mut matches: Vec<InstrumentId> = cache
             .instrument_ids(None)
             .into_iter()
@@ -608,6 +604,7 @@ impl GreeksCalculator {
         } else {
             ts_event
         };
+
         let utc_now = utc_now_ns.to_datetime_utc();
         let expiry_utc = instrument
             .expiration_ns()
@@ -625,15 +622,16 @@ impl GreeksCalculator {
 
         let cache = self.cache.borrow();
         let yield_curve = cache.yield_curve(&currency);
+
         let interest_rate = match yield_curve {
             Some(yield_curve) => yield_curve(expiry_in_years),
             None => flat_interest_rate,
         };
+
         let dividend_curve = cache.yield_curve(&underlying_instrument_id.to_string());
         drop(cache);
 
         let mut cost_of_carry = 0.0;
-
         if let Some(dividend_curve) = dividend_curve {
             cost_of_carry = interest_rate - dividend_curve(expiry_in_years);
         } else if let Some(div_yield) = flat_dividend_yield {
@@ -652,6 +650,7 @@ impl GreeksCalculator {
             self.get_price(&vol_index_id)
                 .ok_or_else(|| anyhow::anyhow!("No price available for {vol_index_id}"))?;
         }
+
         let greeks = if update_vol {
             let cached_greeks = self.cache.borrow().greeks(&instrument_id);
             match cached_greeks {
@@ -686,6 +685,7 @@ impl GreeksCalculator {
                 option_price,
             )
         };
+
         let (delta, gamma, vega) = self.modify_greeks(
             greeks.delta,
             greeks.gamma,
@@ -705,6 +705,7 @@ impl GreeksCalculator {
             None,
             None,
         )?;
+
         let greeks_data = GreeksData::new(
             utc_now_ns,
             utc_now_ns,
@@ -914,7 +915,6 @@ impl GreeksCalculator {
 
         if used_index_price.is_some() {
             let mut beta = 1.0;
-
             if let Some(weights) = beta_weights
                 && let Some(&weight) = weights.get(&underlying_instrument_id)
             {
@@ -937,6 +937,7 @@ impl GreeksCalculator {
 
         if used_index_vol.is_some() {
             let mut vega_beta = 1.0;
+
             let used_vol = if unshocked_vol == 0.0 {
                 vol
             } else {
@@ -1128,11 +1129,13 @@ impl GreeksCalculator {
                 "Cannot cache futures spread: missing option instrument {call_instrument_id}"
             );
         };
+
         let Some(put_instrument) = put_instrument else {
             anyhow::bail!(
                 "Cannot cache futures spread: missing option instrument {put_instrument_id}"
             );
         };
+
         let Some(reference_future_instrument) = reference_future_instrument else {
             anyhow::bail!(
                 "Cannot cache futures spread: no reference futures instrument for {futures_instrument_id}"
@@ -1160,6 +1163,7 @@ impl GreeksCalculator {
                 "Cannot cache futures spread: missing call underlying for {call_instrument_id}"
             );
         };
+
         let Some(put_underlying) = put_instrument.underlying() else {
             anyhow::bail!(
                 "Cannot cache futures spread: missing put underlying for {put_instrument_id}"
@@ -1189,11 +1193,13 @@ impl GreeksCalculator {
                 "Cannot cache futures spread: no reference futures price for {futures_instrument_id}"
             )
         })?;
+
         let call_price = self.get_price(&call_instrument_id).ok_or_else(|| {
             anyhow::anyhow!(
                 "Cannot cache futures spread: missing option price for {call_instrument_id}"
             )
         })?;
+
         let put_price = self.get_price(&put_instrument_id).ok_or_else(|| {
             anyhow::anyhow!(
                 "Cannot cache futures spread: missing option price for {put_instrument_id}"
@@ -1315,6 +1321,7 @@ impl GreeksCalculator {
                 let mut cache = cache_ref.borrow_mut();
                 cache.add_greeks(greeks.clone()).unwrap_or_default();
             });
+
             msgbus::subscribe_greeks(pattern, typed_handler, None);
         }
     }
@@ -1969,6 +1976,7 @@ mod tests {
                 .unwrap();
             cache.purge_instrument(InstrumentId::from("AAPL.XNAS"));
         }
+
         let underlying_id = calculator
             .resolve_underlying_instrument_id(&instrument, option_id)
             .unwrap();
@@ -1993,13 +2001,13 @@ mod tests {
         {
             let mut cache = calculator.cache.borrow_mut();
             cache.purge_instrument(InstrumentId::from("AAPL.XNAS"));
-
             for equity_id in cached_while_purged {
                 cache
                     .add_instrument(InstrumentAny::Equity(equity_with_id(equity_id)))
                     .unwrap();
             }
         }
+
         calculator
             .resolve_underlying_instrument_id(&instrument, option_id)
             .unwrap();
@@ -2016,6 +2024,7 @@ mod tests {
                     .unwrap();
             }
         }
+
         let error = calculator
             .resolve_underlying_instrument_id(&instrument, option_id)
             .unwrap_err();
@@ -2220,6 +2229,7 @@ mod tests {
             .borrow_mut()
             .add_instrument(InstrumentAny::Equity(equity_aapl_opra()))
             .unwrap();
+
         let option_quote = QuoteTick::new(
             option_id,
             Price::from("10.50"),
@@ -2229,6 +2239,7 @@ mod tests {
             now_ns,
             now_ns,
         );
+
         let underlying_quote = QuoteTick::new(
             underlying_id,
             Price::from("150.00"),
@@ -2874,6 +2885,7 @@ mod tests {
             now_ns,
             now_ns,
         );
+
         let put_quote = QuoteTick::new(
             put_option.id(),
             Price::from("3.33"),
@@ -2969,6 +2981,7 @@ mod tests {
             now_ns,
             now_ns,
         );
+
         let put_quote = QuoteTick::new(
             put_option.id(),
             Price::from("3.33"),
@@ -2978,6 +2991,7 @@ mod tests {
             now_ns,
             now_ns,
         );
+
         let reference_future_quote = QuoteTick::new(
             reference_future.id(),
             Price::from("155.00"),
@@ -3076,6 +3090,7 @@ mod tests {
             now_ns,
             now_ns,
         );
+
         let put_quote = QuoteTick::new(
             put_option.id(),
             Price::from("3.33"),
@@ -3085,6 +3100,7 @@ mod tests {
             now_ns,
             now_ns,
         );
+
         let target_call_quote = QuoteTick::new(
             target_call_option.id(),
             Price::from("6.75"),
@@ -3094,6 +3110,7 @@ mod tests {
             now_ns,
             now_ns,
         );
+
         let reference_future_quote = QuoteTick::new(
             reference_future.id(),
             Price::from("155.00"),
@@ -4013,7 +4030,6 @@ mod tests {
         quotes: Vec<QuoteTick>,
     ) -> GreeksCalculator {
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
-
         for instrument in instruments {
             cache.borrow_mut().add_instrument(instrument).unwrap();
         }
