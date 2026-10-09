@@ -3017,6 +3017,7 @@ mod tests {
             last_qty: Quantity::from("10.00"),
             last_px: Price::from("0.50"),
             commission: Money::from("0 pUSD"),
+            taker_fee_basis: None,
             ts_event: UnixNanos::from(1_000_u64),
         };
 

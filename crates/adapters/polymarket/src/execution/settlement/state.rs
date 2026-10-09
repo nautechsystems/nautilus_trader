@@ -22,7 +22,7 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 
-use super::admission::AdmittedLeg;
+use super::admission::{AdmittedLeg, TakerFeeBasis};
 
 /// Maximum number of settlement entries created after hydration before the registry faults the
 /// client closed.
@@ -83,6 +83,9 @@ pub(crate) enum LegApplication {
 ///
 /// Venue evidence remains comparable after core application; reconstructed core events may
 /// contain normalized quantities and cannot establish the original stream economics.
+///
+/// `taker_fee_basis` is copied from the first non-failed taker admission. Maker, failed, and
+/// reconstructed legs leave it unset, so a later schedule can still conflict with their commission.
 #[derive(Debug)]
 pub(crate) struct SettlementLeg {
     pub venue_order_id: VenueOrderId,
@@ -93,6 +96,7 @@ pub(crate) struct SettlementLeg {
     pub last_qty: Quantity,
     pub last_px: Price,
     pub commission: Money,
+    pub taker_fee_basis: Option<TakerFeeBasis>,
     pub ts_event: UnixNanos,
     pub application: LegApplication,
     /// The canonical applied fill as published by core, retained for void construction.
@@ -113,6 +117,7 @@ impl SettlementLeg {
             last_qty: leg.last_qty,
             last_px: leg.last_px,
             commission: leg.commission.clone(),
+            taker_fee_basis: leg.taker_fee_basis,
             ts_event: leg.ts_event,
             application: LegApplication::Absent,
             applied_fill: None,
@@ -130,6 +135,7 @@ impl SettlementLeg {
 
 /// Effects the caller must execute after a registry transition.
 #[derive(Debug)]
+#[expect(clippy::large_enum_variant)]
 pub(crate) enum SettlementAction {
     /// Apply the leg by emitting an `OrderFilled` through the established emission machinery.
     ApplyLeg {

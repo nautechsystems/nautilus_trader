@@ -1305,6 +1305,26 @@ If the exact result cannot be represented as `Money`, the adapter returns an err
 zero or a generic commission. See the
 [commission failure contract](../developer_guide/adapters.md#commission-failure-handling).
 
+A taker fill first received on the user WebSocket or from a targeted REST read keeps the fee rate
+and exponent from that admission for the lifetime of the execution client. A client reset clears
+those records. Later confirmation of the same trade, and a fill report for a trade the client
+already holds, recomputes the commission from that basis and the incoming wire size and price. It
+does not use a fee schedule loaded by an instrument update after admission. When the trade's venue
+evidence is otherwise unchanged, the applied fill keeps its original quantity, price, and
+commission, and the trade is not quarantined or hard-faulted. A trade first received after the
+refresh uses the refreshed schedule. Maker commission remains zero. The fee is floored to five
+decimal places from the wire inputs, not from a price snapped to instrument precision.
+
+The retained basis is local instrument metadata, not a venue-reported fee. It does not prove the
+venue charged that amount. A schedule that was missing or wrong at first admission stays on that
+fill.
+
+:::warning
+Fills applied from reconciliation reports, and fills rebuilt from the cache, have no retained
+basis. A later fee-schedule change can still conflict with their applied commission. The adapter
+does not store the basis in the cache.
+:::
+
 A commission construction error fails a direct fill report request, terminal trade-history recovery,
 or complete mass status. Startup returns a mass-status error without applying that client's reports.
 When an active order's trade-history request fails, the adapter logs the error and caps matched
@@ -1520,8 +1540,11 @@ adds the remaining quantity. Wallet holdings do not establish which order filled
 trade references, matched quantity remains capped to confirmed evidence and fills already applied in
 core. Session mode uses the same trade recovery but omits wallet-wide positions; on an empty cache,
 startup restores historical order fills without opening a session position. Taker commission
-reconstruction uses the loaded instrument fee schedule; it does not establish that the schedule is
-unchanged since an older execution. Maker commission remains zero.
+reconstruction for a fill that was not first received on the user WebSocket or a targeted REST read
+uses the loaded instrument fee schedule; it does not establish that the schedule is unchanged since
+an older execution. A taker fill the execution client already holds keeps the fee basis from its
+first admission; see [Fill commission handling](#fill-commission-handling). Maker commission remains
+zero.
 
 Position alignment first uses the combined window and recovered fills. If those fills do not align
 with a wallet position, the adapter tries the original window fills for that position. This preserves

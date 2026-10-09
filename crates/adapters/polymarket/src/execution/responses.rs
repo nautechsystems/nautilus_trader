@@ -2912,6 +2912,7 @@ mod tests {
                 last_qty: venue_fill_qty,
                 last_px: Price::new(0.50, 4),
                 commission: Money::zero(Currency::pUSD()),
+                taker_fee_basis: None,
                 ts_event: UnixNanos::from(900u64),
             }],
         });

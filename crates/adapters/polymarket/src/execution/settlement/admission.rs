@@ -60,6 +60,25 @@ use crate::{
     websocket::messages::PolymarketUserTrade,
 };
 
+/// Fee rate and exponent used to compute one taker leg's commission at its first registry admission.
+///
+/// Later admissions of that leg reuse this basis with the incoming wire size and price. The basis
+/// is local instrument metadata, not a venue-reported fee, and it does not prove the venue charge.
+/// A schedule that was missing or wrong at first admission stays on that fill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TakerFeeBasis {
+    pub rate: Decimal,
+    pub exponent: Decimal,
+}
+
+pub(crate) trait TakerFeeBasisLookup {
+    fn taker_fee_basis(
+        &self,
+        venue_trade_id: &str,
+        venue_order_id: &VenueOrderId,
+    ) -> Option<TakerFeeBasis>;
+}
+
 /// Account and instrument context required to admit trade evidence for the configured account.
 pub(crate) struct AdmissionContext<'a> {
     pub signer_type: PolymarketSignerType,
@@ -67,6 +86,7 @@ pub(crate) struct AdmissionContext<'a> {
     pub api_key: &'a str,
     pub pusd: Currency,
     pub instruments: &'a AtomicMap<Ustr, InstrumentAny>,
+    pub fee_bases: Option<&'a dyn TakerFeeBasisLookup>,
 }
 
 /// Trade evidence from either transport, before shared validation.
@@ -100,6 +120,9 @@ impl Display for AdmissionError {
 }
 
 /// One admitted owned leg of a trade, validated by the shared boundary.
+///
+/// `taker_fee_basis` is the rate and exponent used to compute a non-failed taker commission.
+/// Maker and failed legs leave it unset.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AdmittedLeg {
     pub venue_order_id: VenueOrderId,
@@ -110,6 +133,7 @@ pub(crate) struct AdmittedLeg {
     pub last_qty: Quantity,
     pub last_px: Price,
     pub commission: Money,
+    pub taker_fee_basis: Option<TakerFeeBasis>,
     pub ts_event: UnixNanos,
 }
 
@@ -358,8 +382,9 @@ fn admit_taker_leg(
     let trade_id = checked_trade_id(trade.id, "taker trade")?;
     let order_side = OrderSide::from(trade.side);
 
-    let (last_qty, last_px, commission) = if failed {
-        zero_economics(instrument, ctx)
+    let (last_qty, last_px, commission, taker_fee_basis) = if failed {
+        let (last_qty, last_px, commission) = zero_economics(instrument, ctx);
+        (last_qty, last_px, commission, None)
     } else {
         let size_prec = instrument.size_precision();
         validate_quantity_evidence(
@@ -375,9 +400,23 @@ fn admit_taker_leg(
             instrument,
             &format!("taker trade {} price", trade.id),
         )?;
+        // Fee inputs are the wire size and price; snapped last_px can cross the 5-decimal floor
+        let retained = ctx
+            .fee_bases
+            .and_then(|lookup| lookup.taker_fee_basis(trade.id, &venue_order_id));
+
+        let basis = if let Some(basis) = retained {
+            basis
+        } else {
+            TakerFeeBasis {
+                rate: instrument_taker_fee(instrument)?,
+                exponent: instrument_fee_exponent(instrument)?,
+            }
+        };
+
         let commission = compute_commission(
-            instrument_taker_fee(instrument)?,
-            instrument_fee_exponent(instrument)?,
+            basis.rate,
+            basis.exponent,
             trade.taker_size,
             trade.taker_price,
             LiquiditySide::Taker,
@@ -393,6 +432,7 @@ fn admit_taker_leg(
                     trade.id
                 )
             })?,
+            Some(basis),
         )
     };
 
@@ -405,6 +445,7 @@ fn admit_taker_leg(
         last_qty,
         last_px,
         commission,
+        taker_fee_basis,
         ts_event: trade.ts_event.unwrap_or_default(),
     })
 }
@@ -486,6 +527,7 @@ fn admit_maker_leg(
         last_qty,
         last_px,
         commission,
+        taker_fee_basis: None,
         ts_event: trade.ts_event.unwrap_or_default(),
     })
 }

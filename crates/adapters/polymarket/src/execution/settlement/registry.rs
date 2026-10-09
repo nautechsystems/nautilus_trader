@@ -44,7 +44,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
-    admission::{AdmittedLeg, AdmittedTrade},
+    admission::{AdmittedLeg, AdmittedTrade, TakerFeeBasis, TakerFeeBasisLookup},
     state::{
         LegApplication, MAX_SETTLEMENT_RECORDS, SettlementAction, SettlementLeg, SettlementRecord,
         SettlementState, UncertainOrder, UncertainOrderKind,
@@ -861,6 +861,23 @@ impl SettlementRegistry {
     }
 }
 
+impl TakerFeeBasisLookup for SettlementRegistry {
+    fn taker_fee_basis(
+        &self,
+        venue_trade_id: &str,
+        venue_order_id: &VenueOrderId,
+    ) -> Option<TakerFeeBasis> {
+        let inner = self.inner.lock();
+        inner.records.get(venue_trade_id).and_then(|record| {
+            record
+                .legs
+                .iter()
+                .find(|leg| &leg.venue_order_id == venue_order_id)
+                .and_then(|leg| leg.taker_fee_basis)
+        })
+    }
+}
+
 fn stream_transition(
     inner: &mut RegistryInner,
     key: &str,
@@ -1236,7 +1253,20 @@ fn admitted_economics_diverge(stored: &SettlementLeg, incoming: &AdmittedLeg) ->
 }
 
 fn legs_materially_equal(previous: &[AdmittedLeg], incoming: &[AdmittedLeg]) -> bool {
-    previous.len() == incoming.len() && previous.iter().all(|leg| incoming.contains(leg))
+    // Fee basis is local metadata, not venue evidence. Two schedules can floor to the same
+    // commission, and a basis-less restored fill must not hard-fault on that difference alone.
+    fn without_basis(leg: &AdmittedLeg) -> AdmittedLeg {
+        AdmittedLeg {
+            taker_fee_basis: None,
+            ..leg.clone()
+        }
+    }
+
+    previous.len() == incoming.len()
+        && previous.iter().all(|leg| {
+            let leg = without_basis(leg);
+            incoming.iter().any(|other| without_basis(other) == leg)
+        })
 }
 
 /// Marks an order for a targeted REST read of trades missed during a stream gap, unless it already
@@ -1456,6 +1486,7 @@ fn observed_leg(fill: &OrderFilled) -> SettlementLeg {
             .commission
             .clone()
             .unwrap_or_else(|| Money::zero(fill.currency.clone())),
+        taker_fee_basis: None,
         ts_event: fill.ts_event,
         application: LegApplication::FillObserved,
         applied_fill: Some(Box::new(fill.clone())),
@@ -1571,6 +1602,7 @@ pub(crate) mod tests {
             last_qty: Quantity::from("10.00"),
             last_px: Price::from("0.50"),
             commission: Money::zero(get_pusd_currency()),
+            taker_fee_basis: None,
             ts_event: UnixNanos::from(1_000_u64),
         }
     }
@@ -2123,6 +2155,155 @@ pub(crate) mod tests {
     }
 
     #[rstest]
+    #[case::refreshed_commission(false, false)]
+    #[case::changed_quantity(true, false)]
+    #[case::changed_timestamp(false, true)]
+    fn test_retained_basis_does_not_hide_a_different_admitted_commission(
+        #[case] change_quantity: bool,
+        #[case] change_timestamp: bool,
+    ) {
+        let registry = live_registry();
+        let mut original = taker_leg();
+        original.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::ONE,
+            exponent: rust_decimal::Decimal::ONE,
+        });
+
+        original.commission = Money::from("0.45062 pUSD");
+        registry.note_order_submitted(original.venue_order_id);
+        registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Matched,
+            vec![original.clone()],
+        ));
+        registry.note_leg_enqueued(&original.trade_id);
+        registry.observe_fill_applied(&applied_fill(&original, Some(TRADE)));
+
+        let mut incoming = original.clone();
+        incoming.commission = Money::from("0.06250 pUSD");
+        incoming.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::new(1, 2),
+            exponent: rust_decimal::Decimal::ONE,
+        });
+
+        if change_quantity {
+            incoming.last_qty = Quantity::from("9.00");
+        }
+
+        if change_timestamp {
+            incoming.ts_event = UnixNanos::from(2_000);
+        }
+
+        // A different admitted commission is venue-comparable evidence. The retained basis
+        // does not replace it.
+        let conflicts = true;
+
+        let stream = registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+        let first_rest = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+        let mut repeated = incoming;
+        repeated.commission = Money::from("0.10000 pUSD");
+        let second_rest =
+            registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![repeated]));
+
+        assert!(stream.is_empty());
+        assert!(first_rest.is_empty());
+        assert!(second_rest.is_empty());
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert_eq!(trade_hard_fault(&registry, TRADE).is_some(), conflicts);
+        assert_eq!(
+            registry.ensure_resolved(None, "mass status").is_ok(),
+            !conflicts
+        );
+        assert_eq!(
+            registry.inner.lock().records[TRADE].legs[0].commission,
+            original.commission
+        );
+        assert_eq!(
+            leg_application(&registry, &original.trade_id),
+            Some(LegApplication::FillObserved)
+        );
+    }
+
+    #[rstest]
+    fn test_repeated_rest_ignores_fee_basis_when_commission_matches() {
+        let registry = live_registry();
+        registry.mark_hydrating();
+        let historical = taker_leg();
+        registry.hydrate_fill(&applied_fill(&historical, Some(TRADE)));
+        registry.mark_live();
+
+        let mut first = historical.clone();
+        first.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::ZERO,
+            exponent: rust_decimal::Decimal::ONE,
+        });
+
+        assert!(
+            registry
+                .admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![first]))
+                .is_empty()
+        );
+
+        let mut second = historical;
+        second.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::ZERO,
+            exponent: rust_decimal::Decimal::TWO,
+        });
+
+        assert!(
+            registry
+                .admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![second]))
+                .is_empty()
+        );
+
+        assert_eq!(trade_hard_fault(&registry, TRADE), None);
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert!(registry.ensure_resolved(None, "mass status").is_ok());
+    }
+
+    #[rstest]
+    fn test_retained_basis_keeps_rest_quantity_change_on_unattempted_leg() {
+        let registry = live_registry();
+        let mut original = taker_leg();
+        original.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::ONE,
+            exponent: rust_decimal::Decimal::ONE,
+        });
+
+        original.commission = Money::from("0.45062 pUSD");
+        registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Matched,
+            vec![original.clone()],
+        ));
+
+        let mut incoming = original;
+        incoming.last_qty = Quantity::from("9.00");
+        incoming.commission = Money::from("0.20000 pUSD");
+        let actions = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+
+        assert_eq!(apply_count(&actions), 1);
+        assert_eq!(trade_hard_fault(&registry, TRADE), None);
+        let inner = registry.inner.lock();
+        let stored = &inner.records[TRADE].legs[0];
+        assert_eq!(stored.last_qty, incoming.last_qty);
+        assert_eq!(stored.commission, incoming.commission);
+    }
+
+    #[rstest]
     #[case::matching(|_: &mut AdmittedLeg| {}, false)]
     #[case::quantity(|leg: &mut AdmittedLeg| leg.last_qty = Quantity::from("9.00"), true)]
     #[case::price(|leg: &mut AdmittedLeg| leg.last_px = Price::from("0.60"), true)]
@@ -2270,6 +2451,7 @@ pub(crate) mod tests {
             last_qty: Quantity::from("9.00"),
             last_px: Price::from("0.60"),
             commission: Money::zero(get_pusd_currency()),
+            taker_fee_basis: None,
             ts_event: UnixNanos::from(2_000),
         };
 

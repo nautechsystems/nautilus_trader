@@ -796,6 +796,7 @@ pub(crate) fn build_fill_reports_from_trades(
         api_key: ctx.api_key,
         pusd: ctx.pusd,
         instruments,
+        fee_bases: Some(ctx.settlement.as_ref()),
     };
 
     if let Some(target_order_id) = scope.venue_order_id {
@@ -922,6 +923,7 @@ fn build_target_fill_reports(
     Ok((reports, discards))
 }
 
+#[expect(clippy::large_enum_variant)]
 enum TargetTrade {
     Unrelated,
     Pending,
@@ -2182,6 +2184,7 @@ mod tests {
             api_key: ctx.api_key,
             pusd: ctx.pusd,
             instruments: &instruments,
+            fee_bases: Some(ctx.settlement.as_ref()),
         };
 
         let mut admitted = admit_trade_legs(
@@ -2219,6 +2222,84 @@ mod tests {
             Some(super::super::settlement::state::LegApplication::Absent),
         );
         assert_eq!(ctx.settlement.record_count(), 1);
+        ctx.settlement.ensure_resolved(None, "fills").unwrap();
+    }
+
+    fn instrument_with_fee_schedule(rate: Decimal) -> InstrumentAny {
+        let InstrumentAny::BinaryOption(mut binary) = test_instrument() else {
+            panic!("expected binary option test instrument");
+        };
+
+        let mut info = binary.info.take().unwrap_or_default();
+        info.insert(
+            "fee_schedule".into(),
+            serde_json::json!({
+                "exponent": "1",
+                "rate": rate.to_string(),
+                "takerOnly": true,
+                "rebateRate": "0",
+            }),
+        );
+        binary.info = Some(info);
+        InstrumentAny::BinaryOption(binary)
+    }
+
+    #[rstest]
+    #[case::collection(false)]
+    #[case::target(true)]
+    fn test_fill_reports_use_retained_basis_after_schedule_refresh(#[case] targeted: bool) {
+        let ctx = test_fill_context();
+        let instruments = AtomicMap::new();
+        instruments.insert(
+            Ustr::from(TEST_TOKEN_ID),
+            instrument_with_fee_schedule(dec!(0.01)),
+        );
+        let trade = confirmed_taker_trade();
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+
+        let admission_ctx = AdmissionContext {
+            signer_type: ctx.signer_type,
+            user_address: ctx.user_address,
+            api_key: ctx.api_key,
+            pusd: ctx.pusd,
+            instruments: &instruments,
+            fee_bases: Some(ctx.settlement.as_ref()),
+        };
+
+        let admitted = admit_trade_legs(
+            TradeEvidence::Rest(&trade),
+            &admission_ctx,
+            &[venue_order_id.as_str()],
+        )
+        .unwrap();
+        assert_eq!(admitted.legs[0].commission.as_decimal(), dec!(0.0625));
+        let _ = ctx.settlement.admit_rest_result(&admitted);
+
+        instruments.insert(
+            Ustr::from(TEST_TOKEN_ID),
+            instrument_with_fee_schedule(dec!(0.02)),
+        );
+
+        let (reports, _) = build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            FillReportScope::new(None, targeted.then_some(venue_order_id)),
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].commission.as_decimal(), dec!(0.0625));
+        assert!(
+            super::super::settlement::registry::tests::trade_hard_fault(
+                &ctx.settlement,
+                &admitted.venue_trade_id
+            )
+            .is_none()
+        );
         ctx.settlement.ensure_resolved(None, "fills").unwrap();
     }
 
