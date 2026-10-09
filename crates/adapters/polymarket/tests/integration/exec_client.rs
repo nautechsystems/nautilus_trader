@@ -64,6 +64,7 @@ use nautilus_model::{
         stubs::TestOrderEventStubs,
     },
     position::Position,
+    reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_polymarket::{
@@ -19466,4 +19467,495 @@ async fn test_query_account_does_not_block_within_runtime() {
         "Expected Account event, was {event:?}"
     );
     assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
+}
+
+#[expect(clippy::too_many_arguments)]
+fn recovered_fill_report(
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    trade_id: &str,
+    side: OrderSide,
+    qty: &str,
+    px: &str,
+    commission: &str,
+) -> FillReport {
+    FillReport::new(
+        AccountId::from("POLYMARKET-001"),
+        instrument_id,
+        venue_order_id,
+        TradeId::from(trade_id),
+        side,
+        Quantity::from(qty),
+        Price::from(px),
+        Money::from(commission),
+        LiquiditySide::Taker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(1_000_000_000),
+        UnixNanos::from(1_000_000_000),
+        None,
+    )
+}
+
+fn recovered_filled_report(
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    qty: &str,
+    filled: &str,
+) -> OrderStatusReport {
+    let mut report = OrderStatusReport::new(
+        AccountId::from("POLYMARKET-001"),
+        instrument_id,
+        Some(client_order_id),
+        venue_order_id,
+        OrderSide::Buy.into(),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from(qty),
+        Quantity::from(filled),
+        UnixNanos::from(1_000_000_000),
+        UnixNanos::from(1_000_000_000),
+        UnixNanos::from(1_000_000_000),
+        None,
+    );
+    report.price = Some(Price::from("0.5800"));
+    report.avg_px = Some(dec!(0.56));
+    report
+}
+
+fn seed_polymarket_order(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: &str,
+    venue_order_id: &str,
+    side: OrderSide,
+    quote_quantity: bool,
+    quantity: &str,
+) -> OrderAny {
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut order = make_limit_order_at_price_and_quantity(
+        client_order_id,
+        instrument_id,
+        side,
+        false,
+        quote_quantity,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.5800"),
+        Quantity::from(quantity),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*POLYMARKET_CLIENT_ID), false)
+        .unwrap();
+    submit_and_accept_order(cache, &mut order, venue_order_id);
+    cache
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone()
+}
+
+fn mark_pending(cache: &Rc<RefCell<Cache>>, order: &mut OrderAny, pending: OrderStatus) {
+    let event = match pending {
+        OrderStatus::PendingCancel => OrderEventAny::PendingCancel(OrderPendingCancel::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.account_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            order.venue_order_id(),
+        )),
+        OrderStatus::PendingUpdate => OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.account_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            order.venue_order_id(),
+        )),
+        _ => panic!("pending status required, was {pending:?}"),
+    };
+
+    *order = cache.borrow_mut().update_order(&event).unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_recovered_buy_overfill_applies_exact_fill_through_engine() {
+    let addr = start_mock_server(TestServerState::default()).await;
+    let (client, _rx, cache) = create_test_execution_client(addr);
+    let account_id = AccountId::from("POLYMARKET-001");
+    add_test_account_to_cache(&cache, account_id);
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 6);
+
+    let dust = seed_polymarket_order(
+        &cache,
+        "O-DUST",
+        "0xdust",
+        OrderSide::Buy,
+        false,
+        "100.000000",
+    );
+    let dust_fill = recovered_fill_report(
+        instrument_id,
+        dust.client_order_id(),
+        dust.venue_order_id().unwrap(),
+        "trade-dust",
+        OrderSide::Buy,
+        "100.004000",
+        "0.5600",
+        "0.110000 pUSD",
+    );
+    assert!(client.allows_reconciliation_overfill(&dust, &dust_fill));
+
+    let sell = seed_polymarket_order(
+        &cache,
+        "O-SELL",
+        "0xsell",
+        OrderSide::Sell,
+        false,
+        "10.000000",
+    );
+    let sell_fill = recovered_fill_report(
+        instrument_id,
+        sell.client_order_id(),
+        sell.venue_order_id().unwrap(),
+        "trade-sell",
+        OrderSide::Sell,
+        "10.004000",
+        "0.5600",
+        "0.110000 pUSD",
+    );
+    assert!(!client.allows_reconciliation_overfill(&sell, &sell_fill));
+
+    let quote = seed_polymarket_order(
+        &cache,
+        "O-QUOTE",
+        "0xquote",
+        OrderSide::Buy,
+        true,
+        "5.000000",
+    );
+    let quote_fill = recovered_fill_report(
+        instrument_id,
+        quote.client_order_id(),
+        quote.venue_order_id().unwrap(),
+        "trade-quote",
+        OrderSide::Buy,
+        "5.004000",
+        "0.5600",
+        "0.050000 pUSD",
+    );
+    assert!(!client.allows_reconciliation_overfill(&quote, &quote_fill));
+
+    let open_buy = seed_polymarket_order(
+        &cache,
+        "O-OPEN",
+        "0xopen",
+        OrderSide::Buy,
+        false,
+        "100.000000",
+    );
+    let wrong_venue = recovered_fill_report(
+        instrument_id,
+        open_buy.client_order_id(),
+        VenueOrderId::from("0xother"),
+        "trade-other",
+        OrderSide::Buy,
+        "100.004000",
+        "0.5600",
+        "0.110000 pUSD",
+    );
+    assert!(!client.allows_reconciliation_overfill(&open_buy, &wrong_venue));
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+
+    engine.reconcile_fill_report(&dust_fill);
+    engine.reconcile_fill_report(&dust_fill);
+    {
+        let order = cache
+            .borrow()
+            .order(&dust.client_order_id())
+            .unwrap()
+            .clone();
+        let dust_trade = TradeId::from("trade-dust");
+        assert_eq!(order.quantity(), Quantity::from("100.004000"));
+        assert_eq!(order.filled_qty(), Quantity::from("100.004000"));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.trade_ids(), vec![&dust_trade]);
+        assert_eq!(
+            order.commissions().values().copied().collect::<Vec<_>>(),
+            vec![Money::from("0.110000 pUSD")]
+        );
+        let updated_before_fill = order
+            .events()
+            .iter()
+            .position(|event| matches!(event, OrderEventAny::Updated(_)))
+            .expect("quantity update");
+        let filled_at = order
+            .events()
+            .iter()
+            .position(
+                |event| matches!(event, OrderEventAny::Filled(fill) if fill.trade_id == dust_trade),
+            )
+            .expect("fill");
+        assert!(updated_before_fill < filled_at);
+    }
+
+    let improved = seed_polymarket_order(
+        &cache,
+        "O-IMPROVED",
+        "0ximproved",
+        OrderSide::Buy,
+        false,
+        "9.000000",
+    );
+    let improved_fill = recovered_fill_report(
+        instrument_id,
+        improved.client_order_id(),
+        improved.venue_order_id().unwrap(),
+        "trade-improved",
+        OrderSide::Buy,
+        "9.321429",
+        "0.5600",
+        "0.261000 pUSD",
+    );
+    engine.reconcile_fill_report(&improved_fill);
+    {
+        let order = cache
+            .borrow()
+            .order(&improved.client_order_id())
+            .unwrap()
+            .clone();
+        assert_eq!(order.quantity(), Quantity::from("9.321429"));
+        assert_eq!(order.filled_qty(), Quantity::from("9.321429"));
+        assert_eq!(
+            order.commissions().values().copied().collect::<Vec<_>>(),
+            vec![Money::from("0.261000 pUSD")]
+        );
+    }
+
+    engine.reconcile_fill_report(&sell_fill);
+    engine.reconcile_fill_report(&quote_fill);
+    engine.reconcile_fill_report(&wrong_venue);
+    {
+        let cache = cache.borrow();
+        assert_eq!(
+            cache.order(&sell.client_order_id()).unwrap().quantity(),
+            Quantity::from("10.000000")
+        );
+        assert_eq!(
+            cache.order(&quote.client_order_id()).unwrap().quantity(),
+            Quantity::from("5.000000")
+        );
+        assert!(
+            cache
+                .order(&dust.client_order_id())
+                .unwrap()
+                .trade_ids()
+                .len()
+                == 1
+        );
+        let open = cache.order(&open_buy.client_order_id()).unwrap();
+        assert_eq!(open.quantity(), Quantity::from("100.000000"));
+        assert_eq!(open.status(), OrderStatus::Accepted);
+        assert!(open.trade_ids().is_empty());
+    }
+
+    let fitting = seed_polymarket_order(
+        &cache,
+        "O-FITTING",
+        "0xfitting",
+        OrderSide::Buy,
+        false,
+        "8.000000",
+    );
+    let fitting_fill = recovered_fill_report(
+        instrument_id,
+        fitting.client_order_id(),
+        fitting.venue_order_id().unwrap(),
+        "trade-fitting",
+        OrderSide::Buy,
+        "3.000000",
+        "0.5800",
+        "0.030000 pUSD",
+    );
+    engine.reconcile_fill_report(&fitting_fill);
+    {
+        let order = cache
+            .borrow()
+            .order(&fitting.client_order_id())
+            .unwrap()
+            .clone();
+        assert_eq!(order.quantity(), Quantity::from("8.000000"));
+        assert_eq!(order.filled_qty(), Quantity::from("3.000000"));
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    }
+
+    for (pending, client_order_id, venue_order_id, signed, filled, trade_id, commission) in [
+        (
+            OrderStatus::PendingCancel,
+            "O-CANCEL-DUST",
+            "0xcancel-dust",
+            "100.000000",
+            "100.004000",
+            "trade-cancel-dust",
+            "0.110000 pUSD",
+        ),
+        (
+            OrderStatus::PendingUpdate,
+            "O-UPDATE-DUST",
+            "0xupdate-dust",
+            "100.000000",
+            "100.004000",
+            "trade-update-dust",
+            "0.110000 pUSD",
+        ),
+        (
+            OrderStatus::PendingCancel,
+            "O-CANCEL-IMPROVED",
+            "0xcancel-improved",
+            "9.000000",
+            "9.321429",
+            "trade-cancel-improved",
+            "0.261000 pUSD",
+        ),
+        (
+            OrderStatus::PendingUpdate,
+            "O-UPDATE-IMPROVED",
+            "0xupdate-improved",
+            "9.000000",
+            "9.321429",
+            "trade-update-improved",
+            "0.261000 pUSD",
+        ),
+    ] {
+        let mut order = seed_polymarket_order(
+            &cache,
+            client_order_id,
+            venue_order_id,
+            OrderSide::Buy,
+            false,
+            signed,
+        );
+        mark_pending(&cache, &mut order, pending);
+        let fill = recovered_fill_report(
+            instrument_id,
+            order.client_order_id(),
+            order.venue_order_id().unwrap(),
+            trade_id,
+            OrderSide::Buy,
+            filled,
+            "0.5600",
+            commission,
+        );
+        let report = recovered_filled_report(
+            instrument_id,
+            order.client_order_id(),
+            order.venue_order_id().unwrap(),
+            filled,
+            filled,
+        );
+        engine.reconcile_order_with_fills(&report, std::slice::from_ref(&fill));
+        engine.reconcile_order_with_fills(&report, std::slice::from_ref(&fill));
+        let applied = cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .clone();
+        assert_eq!(
+            applied.quantity(),
+            Quantity::from(filled),
+            "{client_order_id}"
+        );
+        assert_eq!(
+            applied.filled_qty(),
+            Quantity::from(filled),
+            "{client_order_id}"
+        );
+        let trade = TradeId::from(trade_id);
+        assert_eq!(applied.status(), OrderStatus::Filled, "{client_order_id}");
+        assert_eq!(applied.trade_ids(), vec![&trade], "{client_order_id}");
+        assert_eq!(
+            applied.commissions().values().copied().collect::<Vec<_>>(),
+            vec![Money::from(commission)],
+            "{client_order_id}"
+        );
+        let events = applied.events();
+        let updated_at = events
+            .iter()
+            .position(|event| matches!(event, OrderEventAny::Updated(_)))
+            .unwrap();
+        let filled_at = events
+            .iter()
+            .position(|event| matches!(event, OrderEventAny::Filled(_)))
+            .unwrap();
+        assert!(updated_at < filled_at, "{client_order_id}");
+        let cache_ref = cache.borrow();
+        let position =
+            cache_ref.positions_open(None, Some(&instrument_id), None, Some(&account_id), None);
+        assert!(
+            position
+                .iter()
+                .any(|position| position.trade_ids.contains(&trade)),
+            "{client_order_id}"
+        );
+    }
+
+    let mut within = seed_polymarket_order(
+        &cache,
+        "O-WITHIN",
+        "0xwithin",
+        OrderSide::Buy,
+        false,
+        "10.000000",
+    );
+    mark_pending(&cache, &mut within, OrderStatus::PendingCancel);
+    let within_fill = recovered_fill_report(
+        instrument_id,
+        within.client_order_id(),
+        within.venue_order_id().unwrap(),
+        "trade-within",
+        OrderSide::Buy,
+        "4.000000",
+        "0.5800",
+        "0.040000 pUSD",
+    );
+    let within_report = recovered_filled_report(
+        instrument_id,
+        within.client_order_id(),
+        within.venue_order_id().unwrap(),
+        "10.000000",
+        "4.000000",
+    );
+    engine.reconcile_order_with_fills(&within_report, &[within_fill]);
+    {
+        let order = cache
+            .borrow()
+            .order(&within.client_order_id())
+            .unwrap()
+            .clone();
+        assert_eq!(order.quantity(), Quantity::from("10.000000"));
+        assert_eq!(order.filled_qty(), Quantity::from("4.000000"));
+        assert!(
+            order
+                .events()
+                .iter()
+                .all(|event| !matches!(event, OrderEventAny::Updated(_)))
+        );
+    }
 }

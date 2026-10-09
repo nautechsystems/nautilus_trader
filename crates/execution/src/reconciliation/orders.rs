@@ -49,7 +49,9 @@ use super::{
 /// when the venue increased the total quantity and reported a fill that would
 /// otherwise close the order under the stale local quantity. The `Updated`
 /// step is suppressed for pending venue states so a still-unconfirmed amend
-/// cannot mutate the local projection ahead of venue confirmation.
+/// cannot mutate the local projection ahead of venue confirmation. A confirmed `Filled`
+/// report whose filled quantity exceeds the local order quantity still raises that quantity
+/// while a cancel or modify is in flight, so the fill can apply.
 #[must_use]
 pub fn generate_reconciliation_order_events(
     order: &OrderAny,
@@ -286,14 +288,7 @@ fn prepare_reconciliation_order(
     }
 
     if report_is_confirmed_state(report)
-        && (local_accepts_amendment(&working)
-            || (matches!(
-                working.status(),
-                OrderStatus::PendingUpdate | OrderStatus::PendingCancel,
-            ) && matches!(
-                report.order_status,
-                OrderStatus::Canceled | OrderStatus::Expired,
-            )))
+        && (local_accepts_amendment(&working) || pending_terminal_quantity_update(&working, report))
         && should_reconciliation_update(&working, report)
     {
         let updated = create_reconciliation_updated(&working, report, ts_now);
@@ -1368,6 +1363,26 @@ fn local_accepts_amendment(order: &OrderAny) -> bool {
         order.status(),
         OrderStatus::Accepted | OrderStatus::Triggered | OrderStatus::PartiallyFilled
     )
+}
+
+fn pending_terminal_quantity_update(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    if !matches!(
+        order.status(),
+        OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+    ) {
+        return false;
+    }
+
+    if matches!(
+        report.order_status,
+        OrderStatus::Canceled | OrderStatus::Expired
+    ) {
+        return true;
+    }
+
+    report.order_status == OrderStatus::Filled
+        && report.filled_qty > order.quantity()
+        && report.quantity >= report.filled_qty
 }
 
 fn should_accept_before_reconciliation(order: &OrderAny, report: &OrderStatusReport) -> bool {

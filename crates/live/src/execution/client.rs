@@ -47,6 +47,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
+    orders::OrderAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -501,6 +502,12 @@ impl ExecutionClient for LiveExecutionClient {
         self.client
             .borrow()
             .calculate_commission(instrument, last_qty, last_px, liquidity_side)
+    }
+
+    fn allows_reconciliation_overfill(&self, order: &OrderAny, report: &FillReport) -> bool {
+        self.client
+            .borrow()
+            .allows_reconciliation_overfill(order, report)
     }
 }
 

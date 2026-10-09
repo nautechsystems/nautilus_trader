@@ -27,6 +27,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::InstrumentAny,
+    orders::OrderAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -120,6 +121,15 @@ pub trait ExecutionClient {
     /// Returns the maximum absolute position difference tolerated during reconciliation.
     fn position_reconciliation_tolerance(&self) -> Decimal {
         DEFAULT_POSITION_RECONCILIATION_TOLERANCE
+    }
+
+    /// Returns whether reconciliation may raise the order quantity so this fill can apply.
+    ///
+    /// The default is `false`, so an overfill stays rejected when `allow_overfills` is disabled.
+    /// An override must not change client state. The engine raises the quantity to the order's
+    /// filled quantity plus this fill, then applies the fill unchanged.
+    fn allows_reconciliation_overfill(&self, _order: &OrderAny, _report: &FillReport) -> bool {
+        false
     }
 
     /// Returns whether this client can execute orders for the given instrument venue.

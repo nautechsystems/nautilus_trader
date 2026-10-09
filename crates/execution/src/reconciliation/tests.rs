@@ -7104,10 +7104,9 @@ fn test_continuous_reconciliation_amend_before_closing_fill(instrument: Instrume
 fn test_continuous_reconciliation_skips_pre_emit_when_local_pending_cancel(
     instrument: InstrumentAny,
 ) {
-    // PendingCancel has no Updated transition, so the local_accepts_amendment
-    // guard must skip the pre-emit rather than fail apply silently. The
-    // inferred Filled still flows; qty drift persists as a documented
-    // limitation until the pending cancel resolves.
+    // A pending cancel skips a quantity increase that the filled quantity does not
+    // require. OrderUpdated is a valid PendingCancel transition, but it is pre-applied
+    // only for a confirmed terminal report that needs it before the fill.
 
     let client_order_id = ClientOrderId::from("O-001");
     let venue_order_id = VenueOrderId::from("V-001");
@@ -7828,4 +7827,262 @@ fn test_process_mass_status_rejects_zero_quantity(
     assert!(result.orders.is_empty());
     assert_eq!(result.fills.len(), 1);
     assert_eq!(result.fills[&venue_order_id], vec![valid]);
+}
+
+fn pending_buy_order(
+    instrument: &InstrumentAny,
+    pending_status: OrderStatus,
+    quantity: &str,
+) -> OrderAny {
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::from("SIM-001");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .price(Price::from("0.58000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let pending = match pending_status {
+        OrderStatus::PendingUpdate => OrderEventAny::PendingUpdate(build_order_pending_update(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_order_id),
+        )),
+        OrderStatus::PendingCancel => OrderEventAny::PendingCancel(build_order_pending_cancel(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_order_id),
+        )),
+        _ => panic!("pending status required, was {pending_status:?}"),
+    };
+
+    order.apply(pending).unwrap();
+    order
+}
+
+#[rstest]
+#[case::pending_cancel_dust(OrderStatus::PendingCancel, "100.000000", "100.004000", "0.56000")]
+#[case::pending_update_dust(OrderStatus::PendingUpdate, "100.000000", "100.004000", "0.56000")]
+#[case::pending_cancel_price_improvement(
+    OrderStatus::PendingCancel,
+    "9.000000",
+    "9.321429",
+    "0.56000"
+)]
+#[case::pending_update_price_improvement(
+    OrderStatus::PendingUpdate,
+    "9.000000",
+    "9.321429",
+    "0.56000"
+)]
+fn test_pending_filled_overfill_raises_quantity_before_fill(
+    instrument: InstrumentAny,
+    #[case] pending_status: OrderStatus,
+    #[case] signed_qty: &str,
+    #[case] filled_qty: &str,
+    #[case] fill_px: &str,
+) {
+    let order = pending_buy_order(&instrument, pending_status, signed_qty);
+    let mut report = create_test_order_report(
+        order.client_order_id(),
+        order.venue_order_id().unwrap(),
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        Quantity::from(filled_qty),
+        Quantity::from(filled_qty),
+    );
+    report.price = Some(Price::from("0.55000"));
+    report.avg_px = Some(dec!(0.56));
+    report.account_id = order.account_id().unwrap();
+
+    let events =
+        generate_reconciliation_order_pre_fill_events(&order, &report, UnixNanos::default());
+    assert!(
+        matches!(events.first(), Some(OrderEventAny::Updated(_))),
+        "expected OrderUpdated first for {pending_status:?}, found {events:?}"
+    );
+
+    let OrderEventAny::Updated(updated) = &events[0] else {
+        unreachable!()
+    };
+
+    assert_eq!(updated.quantity, Quantity::from(filled_qty));
+    assert_eq!(updated.price, Some(Price::from("0.55000")));
+
+    let raised = apply_events(&order, &events);
+    assert_eq!(raised.quantity(), Quantity::from(filled_qty));
+
+    let mut fill = create_test_fill_report(
+        instrument.id(),
+        order.venue_order_id().unwrap(),
+        TradeId::from("T-OVER"),
+        Quantity::from(filled_qty),
+        Price::from(fill_px),
+    );
+    fill.account_id = order.account_id().unwrap();
+    fill.client_order_id = Some(order.client_order_id());
+    fill.commission = Money::from("0.110000 USD");
+    let applied = reconcile_fill_report(&raised, &fill, &instrument, UnixNanos::default(), false)
+        .expect("fill applies after the quantity raise");
+
+    let OrderEventAny::Filled(filled) = &applied else {
+        panic!("expected OrderFilled, was {applied:?}");
+    };
+
+    assert_eq!(filled.last_qty, Quantity::from(filled_qty));
+    assert_eq!(filled.trade_id, TradeId::from("T-OVER"));
+    assert_eq!(filled.commission, Some(Money::from("0.110000 USD")));
+
+    let replay =
+        generate_reconciliation_order_pre_fill_events(&raised, &report, UnixNanos::default());
+    assert!(
+        replay
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Updated(_))),
+        "replay must not raise quantity again, found {replay:?}"
+    );
+}
+
+#[rstest]
+#[case::pending_cancel(OrderStatus::PendingCancel)]
+#[case::pending_update(OrderStatus::PendingUpdate)]
+fn test_pending_filled_within_quantity_does_not_pre_update(
+    instrument: InstrumentAny,
+    #[case] pending_status: OrderStatus,
+) {
+    let order = pending_buy_order(&instrument, pending_status, "100");
+    let mut report = create_test_order_report(
+        order.client_order_id(),
+        order.venue_order_id().unwrap(),
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        Quantity::from(100),
+        Quantity::from(40),
+    );
+    report.price = Some(Price::from("0.58000"));
+    report.account_id = order.account_id().unwrap();
+
+    let events =
+        generate_reconciliation_order_pre_fill_events(&order, &report, UnixNanos::default());
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Updated(_))),
+        "in-quantity fill must not pre-update, found {events:?}"
+    );
+}
+
+#[rstest]
+#[case::pending_cancel(OrderStatus::PendingCancel)]
+#[case::pending_update(OrderStatus::PendingUpdate)]
+fn test_pending_filled_quantity_decrease_does_not_pre_update(
+    instrument: InstrumentAny,
+    #[case] pending_status: OrderStatus,
+) {
+    let order = pending_buy_order(&instrument, pending_status, "100");
+    let mut report = create_test_order_report(
+        order.client_order_id(),
+        order.venue_order_id().unwrap(),
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        Quantity::from(80),
+        Quantity::from(80),
+    );
+    report.price = Some(Price::from("0.58000"));
+    report.account_id = order.account_id().unwrap();
+
+    let events =
+        generate_reconciliation_order_pre_fill_events(&order, &report, UnixNanos::default());
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Updated(_))),
+        "quantity decrease must stay on the current path, found {events:?}"
+    );
+}
+
+#[rstest]
+#[case::pending_cancel(OrderStatus::PendingCancel)]
+#[case::pending_update(OrderStatus::PendingUpdate)]
+fn test_pending_filled_raised_quantity_without_overfill_does_not_pre_update(
+    instrument: InstrumentAny,
+    #[case] pending_status: OrderStatus,
+) {
+    let order = pending_buy_order(&instrument, pending_status, "100");
+    let mut report = create_test_order_report(
+        order.client_order_id(),
+        order.venue_order_id().unwrap(),
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        Quantity::from(150),
+        Quantity::from(50),
+    );
+    report.price = Some(Price::from("0.58000"));
+    report.account_id = order.account_id().unwrap();
+
+    let events =
+        generate_reconciliation_order_pre_fill_events(&order, &report, UnixNanos::default());
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Updated(_))),
+        "raised quantity below an overfill must not pre-update, found {events:?}"
+    );
+}
+
+#[rstest]
+#[case::pending_cancel(OrderStatus::PendingCancel)]
+#[case::pending_update(OrderStatus::PendingUpdate)]
+fn test_pending_filled_price_drift_without_covering_quantity_does_not_pre_update(
+    instrument: InstrumentAny,
+    #[case] pending_status: OrderStatus,
+) {
+    let order = pending_buy_order(&instrument, pending_status, "100");
+    let mut report = create_test_order_report(
+        order.client_order_id(),
+        order.venue_order_id().unwrap(),
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        order.quantity(),
+        Quantity::from("100.004000"),
+    );
+    report.price = Some(Price::from("0.55000"));
+    report.account_id = order.account_id().unwrap();
+
+    let events =
+        generate_reconciliation_order_pre_fill_events(&order, &report, UnixNanos::default());
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Updated(_))),
+        "price drift without a covering quantity must not pre-update, found {events:?}"
+    );
+
+    let unchanged = apply_events(&order, &events);
+    assert_eq!(unchanged.status(), pending_status);
+    assert_eq!(unchanged.quantity(), order.quantity());
+    assert_eq!(unchanged.price(), Some(Price::from("0.58000")));
 }

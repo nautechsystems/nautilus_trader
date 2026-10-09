@@ -1666,9 +1666,11 @@ See [BUY overfills](#buy-overfills) for how a BUY can receive more shares than i
 
 ### BUY overfills
 
-A Polymarket BUY is sized by the pUSD it spends, so it can receive more shares than it signed. The
-adapter keeps every fill at the venue quantity and raises the order quantity to match. A SELL is
-sized in shares and never fills past its signed quantity.
+A Polymarket BUY is sized by the pUSD it spends, so it can receive more shares than it signed. A
+limit BUY is converted to signed shares before posting. A market BUY is posted in pUSD and updated
+to signed shares when the submit succeeds or its outcome is unknown. The adapter then keeps the
+venue fill quantity and raises the order to match. A SELL is sized in shares, and the venue does
+not credit more than signed.
 
 :::info
 A BUY order's quantity can increase after submission, through an `OrderUpdated` event. Treat its
@@ -1689,35 +1691,48 @@ shares. A full execution receives more than `takerAmount` in two cases:
 
 #### How the adapter raises the order quantity
 
-Nautilus orders are sized in shares, and the execution engine rejects a fill past the order quantity
-by default. The quantity therefore rises before the fill applies, through an `OrderUpdated` event
-recorded in the order's history like any other amendment:
+The execution engine rejects a fill past the order quantity by default, so the quantity rises
+first through an `OrderUpdated` event:
 
-- WebSocket fills: the adapter emits `OrderUpdated` with the cumulative filled quantity, then
-  `OrderFilled`, so the order reaches `Filled`.
-- REST reports: a `Filled` BUY status report carries its evidence-capped filled quantity, plus any
-  quantity voided without reopening, as its quantity. Reconciliation sees that it differs from the
-  cached order and applies a reconciliation `OrderUpdated` before the fills. Status checks accept
-  the raised quantity.
-- Modified orders: the raised quantity covers the whole order, including fills and quantity voided
-  without reopening on earlier venue orders.
+| Path                                                         | Raises when                                                                              | Quantity                                                                |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| WebSocket fill                                               | The adapter holds the order, including a trade found after a user-stream gap             | Cumulative filled quantity                                              |
+| REST report with fills, or an execution-engine status report | The filled quantity exceeds the local order, including during a pending cancel or modify | Evidence-capped filled quantity, plus quantity voided without reopening |
+| Standalone fill report                                       | The order is not already filled                                                          | Filled quantity plus that fill                                          |
 
-Commission is computed on the venue fill quantity.
+A standalone fill keeps its trade id and commission, and a replay does not apply it again. It
+covers a position-check fill and a fill reported with no captured order context. A status report
+for a modified order also includes quantity voided without reopening on earlier venue orders. A
+standalone report does not.
+
+Commission uses the venue fill quantity. Leave `LiveExecutionEngineConfig.allow_overfills`
+disabled. Enabling it skips the standalone raise and applies that fill past the order quantity.
 
 #### Recovery limitations
 
-Two REST recovery paths apply a recovered BUY overfill without raising the order quantity first, so
-the engine rejects the fill unless `LiveExecutionEngineConfig.allow_overfills` is enabled:
+The engine rejects:
 
-- The periodic position check applies recovered fills as standalone reports. A rejected fill holds
-  back position reconciliation until `position_check_threshold_ms` passes. A later check then
-  synthesizes a correcting fill, without the venue commission, when `generate_missing_orders` is
-  enabled.
-- Reconciliation of an order with a pending cancel or modify skips the quantity update for a
-  `Filled` report, so its fills apply against the signed quantity.
+- a SELL fill past the signed quantity
+- a BUY that is quote-sized locally
+- a fill whose venue order id is not one of the order's
+- a later fill on an already filled order
 
-Both paths apply only when the user stream misses the fill and stream-gap trade discovery does not
-recover it.
+These fills are rejected without a quantity raise:
+
+- A startup fill for a cached order with no matching order report. The live manager applies it as
+  an order fill.
+- A position-check fill for an earlier venue order id of a modified order. The manager holds it
+  back because it does not match the order's current venue order id.
+- A status-only report from the live manager.
+- A pending `Filled` report whose filled quantity does not exceed the local order. The fills apply
+  against the unchanged quantity.
+
+An unmatched fill in a runtime mass-status report sent to the execution engine uses the standalone
+raise.
+
+If the position check cannot apply a fill, it holds position reconciliation until
+`position_check_threshold_ms` passes. A later check then synthesizes a correcting fill, without the
+venue commission, when `generate_missing_orders` is enabled.
 
 ### Terminal order handling
 

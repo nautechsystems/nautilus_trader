@@ -516,10 +516,15 @@ the order's current `filled_qty` plus the incoming `last_qty` against the origin
 
 The `allow_overfills` configuration option (default: `False`) controls how overfills are handled:
 
-| `allow_overfills` | Behavior                                                                   |
-| ----------------- | -------------------------------------------------------------------------- |
-| `False`           | Logs and rejects the fill, preserving the order's current state.           |
-| `True`            | Logs a warning, applies the fill, and tracks the excess in `overfill_qty`. |
+| `allow_overfills` | Behavior                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `False`           | Logs and rejects the fill. A standalone reconciliation fill may raise quantity first. |
+| `True`            | Logs a warning, applies the fill, and tracks the excess in `overfill_qty`.            |
+
+When `allow_overfills` is false and the execution client allows that overfill, the engine raises
+the order quantity to the filled quantity plus that fill, then applies the fill. An already filled
+order is not raised. Adapter fill events, fills bundled with an order report, and live-manager
+projected fills do not use this raise.
 
 When overfills are allowed, the order's `overfill_qty` field tracks the excess quantity.
 The order transitions to `FILLED` status and `leaves_qty` is clamped to zero.

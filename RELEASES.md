@@ -37,10 +37,12 @@ Released on TBD (UTC).
 - Fixed simulated released bracket exits canceled with partially filled entries (#5159), thanks @abhijeetvichare76
 - Fixed `BacktestNode` streaming runs leaving the engine running after a data load failure
 - Fixed Python indicator constructors aborting the process on invalid periods or oversized capacities
+- Fixed reconciliation rejecting fills on a pending order when a `Filled` report exceeds its quantity
 - Fixed Hyperliquid account updates retaining balances reported at zero (#5210), thanks @XBeg9
 - Fixed Hyperliquid reduce-only filled order lookups overstating fill quantity (#5222), thanks @XBeg9
 - Fixed Kraken spot and futures wallets retaining balances reported at zero (#5186), thanks @zhaow-de
 - Fixed Polymarket bounded restarts omitting confirmed partial fills from resting orders
+- Fixed Polymarket recovered BUY overfills being rejected instead of raising order quantity
 
 ### Internal Improvements
 

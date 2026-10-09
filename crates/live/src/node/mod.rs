@@ -3514,7 +3514,7 @@ mod tests {
             stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt},
         },
         orders::{
-            OrderAny, OrderList, OrderTestBuilder,
+            Order, OrderAny, OrderList, OrderTestBuilder,
             stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
         },
         reports::{FillReport, PositionStatusReport},
@@ -3544,6 +3544,7 @@ mod tests {
     };
     use crate::{
         execution::{
+            client::LiveExecutionClient,
             manager::{PositionFillReportQuery, ReportClientCoverage},
             submission::{
                 SubmissionRecoveryExhausted, SubmissionRecoveryPolicy, SubmissionRecoverySource,
@@ -7858,6 +7859,292 @@ mod tests {
         .unwrap();
 
         node.process_reconciliation_events(&[inferred]);
+    }
+
+    #[rstest]
+    #[case::rejected(false, "10.0", "10.0", "1.0")]
+    #[case::dust(true, "9.004", "10.004", "10.004")]
+    #[case::price_improvement(true, "12.5", "13.5", "13.5")]
+    fn test_position_check_overfill_raises_before_fill_when_client_allows(
+        #[case] allow: bool,
+        #[case] fill_qty: &str,
+        #[case] expected_qty: &str,
+        #[case] expected_filled: &str,
+    ) {
+        let (mut node, venue_report, mut fill_report) =
+            position_fill_test_fixture("PositionOverfillRaise", Quantity::from(fill_qty));
+        fill_report.commission = Money::from("1.25 USDT");
+        let key = (fill_report.instrument_id, fill_report.account_id);
+
+        let client = StubExecutionClient::new(
+            ClientId::from("POSITION-FILLS"),
+            AccountId::from("TEST-001"),
+            fill_report.instrument_id.venue,
+            OmsType::Netting,
+            None,
+        );
+
+        let client = if allow {
+            client.with_allows_reconciliation_overfill()
+        } else {
+            client
+        };
+
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(LiveExecutionClient::new(Box::new(client))))
+            .unwrap();
+
+        let position_result = position_report_result(&node, venue_report);
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![fill_report.clone()])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&ClientOrderId::from("O-POSITION-FILLS"))
+            .unwrap();
+        assert_eq!(order.quantity(), Quantity::from(expected_qty));
+        assert_eq!(order.filled_qty(), Quantity::from(expected_filled));
+        let applied = order
+            .trade_ids()
+            .iter()
+            .any(|trade_id| trade_id.as_str() == "T-POSITION-AUTHORITATIVE");
+        assert_eq!(applied, allow);
+        let revision = node.exec_manager.position_activity_revision(&key);
+
+        if !allow {
+            return;
+        }
+
+        assert_eq!(revision, 2);
+
+        {
+            let cache = node.kernel.cache.borrow();
+            let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].quantity, Quantity::from(expected_qty));
+            assert_eq!(positions[0].commissions(), vec![Money::from("1.25 USDT")]);
+            assert_eq!(positions[0].trade_ids.len(), 2);
+        }
+
+        let replay_report = position_report_result(
+            &node,
+            PositionStatusReport::new(
+                key.1,
+                key.0,
+                PositionSide::Long,
+                Quantity::from(expected_qty),
+                UnixNanos::from(2_000),
+                UnixNanos::from(2_000),
+                None,
+                None,
+                Some(dec!(100.0)),
+            ),
+        );
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result: replay_report,
+            reports: IndexMap::from([(key, vec![fill_report])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&ClientOrderId::from("O-POSITION-FILLS"))
+            .unwrap();
+        assert_eq!(order.quantity(), Quantity::from(expected_qty));
+        assert_eq!(order.filled_qty(), Quantity::from(expected_filled));
+        assert_eq!(node.exec_manager.position_activity_revision(&key), revision);
+    }
+
+    #[rstest]
+    fn test_position_check_applies_fitting_fill_then_overfill_in_one_cycle() {
+        let (mut node, venue_report, mut overfill) =
+            position_fill_test_fixture("PositionSplitOverfill", Quantity::from("2.0"));
+        overfill.commission = Money::from("0.20 USDT");
+        let key = (overfill.instrument_id, overfill.account_id);
+        let client = StubExecutionClient::new(
+            ClientId::from("POSITION-FILLS"),
+            AccountId::from("TEST-001"),
+            overfill.instrument_id.venue,
+            OmsType::Netting,
+            None,
+        )
+        .with_allows_reconciliation_overfill();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(LiveExecutionClient::new(Box::new(client))))
+            .unwrap();
+
+        let mut fitting = overfill.clone();
+        fitting.trade_id = TradeId::from("T-POSITION-FITTING");
+        fitting.last_qty = Quantity::from("8.0");
+        fitting.commission = Money::from("0.80 USDT");
+        let position_result = position_report_result(&node, venue_report);
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![fitting, overfill])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&ClientOrderId::from("O-POSITION-FILLS"))
+            .unwrap();
+        assert_eq!(order.quantity(), Quantity::from("11.0"));
+        assert_eq!(order.filled_qty(), Quantity::from("11.0"));
+        assert_eq!(order.trade_ids().len(), 3);
+        assert_eq!(node.exec_manager.position_activity_revision(&key), 3);
+        {
+            let cache = node.kernel.cache.borrow();
+            let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].quantity, Quantity::from("11.0"));
+            assert_eq!(positions[0].commissions(), vec![Money::from("1.00 USDT")]);
+        }
+    }
+
+    #[rstest]
+    fn test_position_check_second_overfill_does_not_raise_filled_order() {
+        let (mut node, venue_report, mut first) =
+            position_fill_test_fixture("PositionSecondOverfill", Quantity::from("12.0"));
+        first.commission = Money::from("1.20 USDT");
+        let key = (first.instrument_id, first.account_id);
+        let client = StubExecutionClient::new(
+            ClientId::from("POSITION-FILLS"),
+            AccountId::from("TEST-001"),
+            first.instrument_id.venue,
+            OmsType::Netting,
+            None,
+        )
+        .with_allows_reconciliation_overfill();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(LiveExecutionClient::new(Box::new(client))))
+            .unwrap();
+
+        let mut second = first.clone();
+        second.trade_id = TradeId::from("T-POSITION-LATER");
+        second.last_qty = Quantity::from("1.0");
+        second.commission = Money::from("0.10 USDT");
+        second.ts_event = UnixNanos::from(1_001);
+        let position_result = position_report_result(&node, venue_report);
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![first, second])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&ClientOrderId::from("O-POSITION-FILLS"))
+            .unwrap();
+        assert_eq!(order.quantity(), Quantity::from("13.0"));
+        assert_eq!(order.filled_qty(), Quantity::from("13.0"));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.trade_ids().len(), 2);
+        assert!(
+            order
+                .trade_ids()
+                .iter()
+                .all(|trade_id| trade_id.as_str() != "T-POSITION-LATER")
+        );
+        {
+            let cache = node.kernel.cache.borrow();
+            let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].quantity, Quantity::from("13.0"));
+            assert_eq!(positions[0].commissions(), vec![Money::from("1.20 USDT")]);
+        }
+    }
+
+    #[rstest]
+    fn test_allow_overfills_applies_fill_without_raising_quantity() {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: true,
+                allow_overfills: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let node = LiveNode::build("AllowOverfillNoRaise".to_string(), Some(config)).unwrap();
+        let account_id = AccountId::from("TEST-001");
+        let client_id = ClientId::from("POSITION-FILLS");
+        let client_order_id = ClientOrderId::from("O-ALLOW");
+        let venue_order_id = VenueOrderId::from("V-ALLOW");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        insert_accepted_limit_order_in_node(
+            &node,
+            account_id,
+            client_id,
+            instrument.id(),
+            client_order_id,
+            venue_order_id,
+        );
+        let client = StubExecutionClient::new(
+            client_id,
+            account_id,
+            instrument.id().venue,
+            OmsType::Netting,
+            None,
+        )
+        .with_allows_reconciliation_overfill();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(LiveExecutionClient::new(Box::new(client))))
+            .unwrap();
+
+        let fill = FillReport::new(
+            account_id,
+            instrument.id(),
+            venue_order_id,
+            TradeId::from("T-ALLOW"),
+            OrderSide::Buy,
+            Quantity::from("12.0"),
+            Price::from("100.0"),
+            Money::from("1.00 USDT"),
+            LiquiditySide::Taker,
+            Some(client_order_id),
+            None,
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            None,
+        );
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .reconcile_fill_report(&fill);
+
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap();
+        assert_eq!(order.quantity(), Quantity::from("10.0"));
+        assert_eq!(order.filled_qty(), Quantity::from("12.0"));
+        assert_eq!(order.trade_ids().len(), 1);
     }
 
     fn position_fill_test_fixture(

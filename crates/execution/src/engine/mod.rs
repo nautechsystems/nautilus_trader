@@ -75,8 +75,8 @@ use nautilus_model::{
     },
     events::{
         OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
-        OrderFilled, OrderInitialized, PositionChanged, PositionClosed, PositionEvent,
-        PositionOpened,
+        OrderFilled, OrderInitialized, OrderUpdated, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -1491,10 +1491,13 @@ impl ExecutionEngine {
     /// Reconciles a fill report received at runtime.
     ///
     /// Finds the associated order, validates the fill, and generates an `OrderFilled` event
-    /// if the fill is not a duplicate and won't cause an overfill. When the order is not
-    /// in cache, an external order is bootstrapped from the fill so that venue-initiated
-    /// closures (e.g. Hyperliquid liquidations) that arrive without a companion order
-    /// status report still update the local position.
+    /// if the fill is not a duplicate and won't cause an overfill. When `allow_overfills` is
+    /// disabled and the execution client allows a reconciliation overfill, the engine raises
+    /// the order quantity to the filled quantity plus this fill before applying it. An already
+    /// filled order is not raised again. When the order is not in cache, an external order is
+    /// bootstrapped from the fill so that venue-initiated closures (e.g. Hyperliquid
+    /// liquidations) that arrive without a companion order status report still update the
+    /// local position.
     ///
     /// # Replayed Fills
     ///
@@ -1570,6 +1573,9 @@ impl ExecutionEngine {
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
+        let order = self
+            .raised_order_for_reconciliation_overfill(&order, report, ts_now)
+            .unwrap_or(order);
 
         if let Some(event) = reconcile_fill(
             &order,
@@ -1582,6 +1588,63 @@ impl ExecutionEngine {
                 !fill_precedes_snapshot_reconciled_position(&self.cache.borrow(), report);
             self.handle_event_with_position_application(&event, apply_position);
         }
+    }
+
+    fn raised_order_for_reconciliation_overfill(
+        &mut self,
+        order: &OrderAny,
+        report: &FillReport,
+        ts_now: UnixNanos,
+    ) -> Option<OrderAny> {
+        if self.config.allow_overfills
+            || order.status() == OrderStatus::Filled
+            || order.trade_ids().iter().any(|id| **id == report.trade_id)
+        {
+            return None;
+        }
+
+        let raised_qty = order.filled_qty().checked_add(report.last_qty)?;
+        if raised_qty <= order.quantity()
+            || !self.client_allows_reconciliation_overfill(order, report)
+        {
+            return None;
+        }
+
+        let updated = OrderUpdated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            raised_qty,
+            UUID4::new(),
+            report.ts_event,
+            ts_now,
+            true,
+            order.venue_order_id(),
+            order.account_id(),
+            None,
+            None,
+            None,
+            order.is_quote_quantity(),
+        );
+        self.handle_event(&OrderEventAny::Updated(updated));
+        self.cache
+            .borrow()
+            .order(&order.client_order_id())
+            .map(|order| order.clone())
+    }
+
+    fn client_allows_reconciliation_overfill(&self, order: &OrderAny, report: &FillReport) -> bool {
+        let client_id = self
+            .cache
+            .borrow()
+            .client_id(&order.client_order_id())
+            .copied()
+            .or_else(|| self.routing_map.get(&order.instrument_id().venue).copied())
+            .or(self.default_client_id);
+        client_id
+            .and_then(|client_id| self.clients.get(&client_id))
+            .is_some_and(|client| client.allows_reconciliation_overfill(order, report))
     }
 
     /// Reconciles an [`OrderStatusReport`] paired with companion [`FillReport`]s

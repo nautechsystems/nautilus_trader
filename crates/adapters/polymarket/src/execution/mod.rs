@@ -54,12 +54,13 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl, task::TaskGroup};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, LiquiditySide, OmsType},
+    enums::{AccountType, LiquiditySide, OmsType, OrderSide},
     events::{OrderEventAny, PositionEvent},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::InstrumentAny,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -324,6 +325,16 @@ impl ExecutionClient for PolymarketExecutionClient {
 
     fn position_reconciliation_tolerance(&self) -> Decimal {
         crate::common::consts::POSITION_RECONCILIATION_TOLERANCE
+    }
+
+    fn allows_reconciliation_overfill(&self, order: &OrderAny, report: &FillReport) -> bool {
+        order.order_side() == OrderSide::Buy
+            && report.order_side == OrderSide::Buy
+            && !order.is_quote_quantity()
+            && order
+                .venue_order_ids()
+                .iter()
+                .any(|venue_order_id| **venue_order_id == report.venue_order_id)
     }
 
     // Redemption, including the venue's automatic redemption of winning tokens, removes a Data
