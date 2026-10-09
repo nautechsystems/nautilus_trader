@@ -14055,6 +14055,7 @@ mod tests {
             return;
         };
         client.config.unlimited_approval = true;
+        client.transaction_limits.receipt_timeout_secs = TEST_TIMEOUT.as_secs();
 
         let tx_hash = client
             .approve(WETH_ADDRESS, U256::ZERO, ROUTER_ADDRESS)
