@@ -46,7 +46,8 @@ use crate::{
             parse_spread_instrument_id_to_legs,
         },
         symbology::{
-            determine_venue_from_contract, exchange_to_mic_venue, possible_exchanges_for_venue,
+            determine_venue_from_contract, exchange_to_mic_venue, is_crypto_contract,
+            possible_exchanges_for_venue,
         },
     },
     config::{InteractiveBrokersInstrumentProviderConfig, SymbologyMethod},
@@ -188,6 +189,13 @@ impl InteractiveBrokersInstrumentProvider {
         );
 
         self.price_magnifiers.insert(instrument_id, price_magnifier);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert_test_contract(&self, instrument_id: InstrumentId, contract: Contract) {
+        self.contract_id_to_instrument_id
+            .insert(contract.contract_id, instrument_id);
+        self.contracts.insert(instrument_id, contract);
     }
 
     #[cfg(test)]
@@ -965,6 +973,21 @@ impl InteractiveBrokersInstrumentProvider {
         self.contracts
             .get(instrument_id)
             .map(|entry| entry.value().clone())
+    }
+
+    /// Returns whether the instrument maps to an IB `CRYPTO` contract (PAXOS, ZEROHASH).
+    ///
+    /// IB crypto is modeled as a non-inverse currency pair, so the contract security type is
+    /// the only signal that a quote quantity (`cashQty`) order is valid for it.
+    #[must_use]
+    pub fn is_crypto_instrument(&self, instrument_id: &InstrumentId) -> bool {
+        self.contracts
+            .get(instrument_id)
+            .is_some_and(|entry| is_crypto_contract(entry.value()))
+            || self
+                .contract_details
+                .get(instrument_id)
+                .is_some_and(|entry| is_crypto_contract(&entry.value().contract))
     }
 
     pub fn resolve_contract_for_instrument(
