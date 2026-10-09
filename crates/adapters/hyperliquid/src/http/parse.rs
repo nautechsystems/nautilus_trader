@@ -343,13 +343,11 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
     Ok(defs)
 }
 
-// Default precision for HIP-4 outcome side tokens until the venue exposes
-// per-market values via `outcomeMeta`. Outcomes settle in `[0, 1]` so 4
-// decimals of price granularity (tick `0.0001`) and 2 decimals of size
-// granularity (lot `0.01`) are conservative starting values; refine when
-// real venue payloads land.
-pub const OUTCOME_PRICE_DECIMALS: u32 = 4;
-pub const OUTCOME_SIZE_DECIMALS: u32 = 2;
+// Precision for HIP-4 outcome side tokens, which `outcomeMeta` does not expose.
+// Venue order books and fills price outcomes in steps of `0.00001` (5 decimals)
+// and size them in whole tokens.
+pub const OUTCOME_PRICE_DECIMALS: u32 = 5;
+pub const OUTCOME_SIZE_DECIMALS: u32 = 0;
 
 pub(crate) const DEFAULT_OUTCOME_QUOTE_CURRENCY: &str = "USDC";
 
@@ -2114,8 +2112,8 @@ mod tests {
         assert_eq!(yes.asset_index, 100_000_010);
         assert_eq!(yes.price_decimals, OUTCOME_PRICE_DECIMALS);
         assert_eq!(yes.size_decimals, OUTCOME_SIZE_DECIMALS);
-        assert_eq!(yes.tick_size, dec!(0.0001));
-        assert_eq!(yes.lot_size, dec!(0.01));
+        assert_eq!(yes.tick_size, dec!(0.00001));
+        assert_eq!(yes.lot_size, dec!(1));
         assert_eq!(yes.quote, "USDC");
         assert!(yes.active);
 
@@ -2207,8 +2205,8 @@ mod tests {
         assert_eq!(def.asset_index, asset_index);
         assert_eq!(def.price_decimals, OUTCOME_PRICE_DECIMALS);
         assert_eq!(def.size_decimals, OUTCOME_SIZE_DECIMALS);
-        assert_eq!(def.tick_size, dec!(0.0001));
-        assert_eq!(def.lot_size, dec!(0.01));
+        assert_eq!(def.tick_size, dec!(0.00001));
+        assert_eq!(def.lot_size, dec!(1));
         assert!(def.active);
         assert_eq!(outcome.outcome_index, 20);
         assert_eq!(outcome.outcome_side, side);
@@ -2462,6 +2460,50 @@ mod tests {
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.last_qty.as_decimal(), dec!(1000));
         assert_eq!(report.last_px.as_decimal(), dec!(0.55));
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_outcome_keeps_venue_price() {
+        // Venue outcome prices use five decimals, which must not be rounded away
+        let meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 1473,
+                name: "Recurring".to_string(),
+                description: String::new(),
+                quote_token: Some("USDC".to_string()),
+                side_specs: vec![],
+            }],
+            questions: vec![],
+        };
+
+        let defs = parse_outcome_instruments(&meta).unwrap();
+        let yes = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+
+        let fill = HyperliquidFill {
+            coin: Ustr::from("#14730"),
+            px: dec!(0.61271),
+            sz: dec!(112.0),
+            side: HyperliquidSide::Sell,
+            time: 1_791_262_678_530,
+            start_position: dec!(112.0),
+            dir: HyperliquidFillDirection::Sell,
+            closed_pnl: dec!(-0.0056),
+            hash: "0xbeef".to_string(),
+            oid: 99_002,
+            crossed: true,
+            fee: dec!(0.09223001),
+            tid: 77_002,
+            fee_token: Ustr::from("USDC"),
+            builder_fee: None,
+            cloid: None,
+        };
+
+        let account_id = AccountId::from("HYPERLIQUID-001");
+        let report = parse_fill_report(&fill, &yes, account_id, UnixNanos::default()).unwrap();
+
+        assert_eq!(report.last_px, Price::from("0.61271"));
+        assert_eq!(report.last_qty, Quantity::from("112"));
+        assert_eq!(report.last_qty.precision, 0);
     }
 
     #[rstest]

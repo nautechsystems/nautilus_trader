@@ -492,7 +492,8 @@ Loading emits two `BinaryOption` instruments per outcome (one per side).
 Symbols use the form `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`.
 `expiration_ns` is parsed from the venue description (`expiry:YYYYMMDD-HHMM`,
 UTC). Standalone binaries carry their own expiry; named and fallback outcomes
-inherit from their parent question. Defaults: `0.0001` per tick, `0.01` per lot.
+inherit from their parent question. Prices tick in steps of `0.00001` and sizes are whole
+tokens, matching the venue.
 
 Each instrument's `BinaryOption.info` carries the parsed venue metadata as a
 key/value map (consumed via `info["key"]` in Python or `Params.get_str(...)`
@@ -603,7 +604,7 @@ liquidation). The execution client rejects features that don't apply:
 
 `Limit` and `Market` orders with `GTC`, `IOC`, or `ALO` time-in-force are
 supported. The venue minimum is 10 quote tokens of notional; size `order_qty`
-so that `order_qty * limit_price >= 10`.
+in whole tokens so that `order_qty * limit_price >= 10`.
 
 ### Settlement dispatch
 
