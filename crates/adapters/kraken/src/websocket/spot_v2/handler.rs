@@ -893,6 +893,64 @@ mod tests {
         );
     }
 
+    /// The handler yields a subscribe answer and the book frames after it in wire order, and a
+    /// failed unsubscribe, which the venue reports under the subscribe method with the
+    /// unsubscribe's request id, reaches the stream as a subscribe answer.
+    #[rstest]
+    #[tokio::test]
+    async fn test_next_yields_answers_and_book_frames_in_wire_order() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new(':');
+        subscriptions.mark_subscribe("book:BTC/USD");
+        subscriptions.confirm_subscribe("book:BTC/USD");
+        let mut handler = SpotFeedHandler::new(signal, cmd_rx, raw_rx, subscriptions);
+
+        for text in [
+            r#"{"method":"subscribe","result":{"channel":"book","symbol":"BTC/USD","depth":10,"snapshot":true},"success":true,"time_in":"2026-05-05T10:00:00.123Z","time_out":"2026-05-05T10:00:00.125Z","req_id":3}"#,
+            r#"{"channel":"book","type":"snapshot","data":[{"symbol":"BTC/USD","bids":[{"price":105944.20,"qty":2.5}],"asks":[{"price":105944.30,"qty":3.2}],"checksum":12345,"timestamp":"2023-10-06T17:35:55.440295Z"}]}"#,
+            r#"{"channel":"book","type":"update","data":[{"symbol":"BTC/USD","bids":[{"price":105944.20,"qty":2.0}],"asks":[],"checksum":12346,"timestamp":"2023-10-06T17:35:55.540295Z"}]}"#,
+            r#"{"error":"Subscription with depth 10 not Found BTC/USD","method":"subscribe","req_id":502,"success":false,"symbol":"BTC/USD","time_in":"2026-05-05T10:00:01.123Z","time_out":"2026-05-05T10:00:01.125Z"}"#,
+        ] {
+            raw_tx.send(Message::Text(text.into())).unwrap();
+        }
+
+        let Some(KrakenSpotWsMessage::SubscriptionAck {
+            req_id: Some(3),
+            success: true,
+            ..
+        }) = handler.next().await
+        else {
+            panic!("expected the confirmation first");
+        };
+        let Some(KrakenSpotWsMessage::Book {
+            is_snapshot: true, ..
+        }) = handler.next().await
+        else {
+            panic!("expected the snapshot second");
+        };
+        let Some(KrakenSpotWsMessage::Book {
+            is_snapshot: false, ..
+        }) = handler.next().await
+        else {
+            panic!("expected the update third");
+        };
+        let failed_unsubscribe = handler.next().await;
+        let Some(KrakenSpotWsMessage::SubscriptionAck {
+            req_id: Some(502),
+            symbol: Some(symbol),
+            success: false,
+            ..
+        }) = failed_unsubscribe
+        else {
+            panic!(
+                "expected the failed unsubscribe as a subscribe answer, was {failed_unsubscribe:?}"
+            );
+        };
+        assert_eq!(symbol, ustr::Ustr::from("BTC/USD"));
+    }
+
     #[rstest]
     fn test_parse_level3_snapshot_with_subscription_passes() {
         let handler = create_test_handler();
