@@ -139,6 +139,13 @@ Feather file produces two such groups when its records differ in schema, for exa
 book depth staged alongside a populated one for the same instrument. The catalog filename also
 carries a hash of the promotion identity.
 
+Within each Feather file, batches containing only canonical `OrderBookDelta.clear()` rows adopt the
+next nonempty order batch's precision for the same instrument before grouping. Trailing `CLEAR`
+batches use the last preceding nonempty order batch's precision. If the file contains only `CLEAR`
+rows for an instrument, their zero precision stays unchanged. Raw price and size values stay unchanged;
+decoded `CLEAR` prices and sizes use the chosen precision. This keeps `CLEAR` before its snapshot orders
+at equal `ts_init`.
+
 The catalog requires disjoint closed `ts_init` intervals per identifier directory. Before writing one
 Feather file, promotion unifies groups whose precision metadata differs only by a zero precision and
 whose zero-precision group has no decimal values, and writes one file for the combined interval.

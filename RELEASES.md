@@ -45,6 +45,7 @@ Released on TBD (UTC).
 - Fixed Python indicator constructors aborting the process on invalid periods or oversized capacities
 - Fixed reconciliation rejecting fills on a pending order when a `Filled` report exceeds its quantity
 - Fixed calculated margin equity omitting option value (#5252), thanks for reporting @abhijeetvichare76
+- Fixed streaming Parquet promotion failing on `OrderBookDelta.clear()` snapshots (#5268), thanks for reporting @hellow-star
 - Fixed Hyperliquid account updates retaining balances reported at zero (#5210), thanks @XBeg9
 - Fixed Hyperliquid reduce-only filled order lookups overstating fill quantity (#5222), thanks @XBeg9
 - Fixed Kraken spot and futures wallets retaining balances reported at zero (#5186), thanks @zhaow-de

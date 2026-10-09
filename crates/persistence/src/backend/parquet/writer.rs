@@ -575,7 +575,11 @@ mod tests {
     use nautilus_common::enums::Environment;
     use nautilus_core::{Params, UnixNanos};
     use nautilus_model::{
-        data::{Data, DataBatch, NautilusDataType, NautilusRecordType, QuoteTick},
+        data::{
+            BookOrder, Data, DataBatch, NautilusDataType, NautilusRecordType, OrderBookDelta,
+            QuoteTick,
+        },
+        enums::{BookAction, OrderSide, RecordFlag},
         identifiers::InstrumentId,
         types::{ERROR_PRICE, Price, Quantity},
     };
@@ -1362,6 +1366,208 @@ mod tests {
         let storage = create_storage_backend_from_path(staging.to_str().unwrap(), None).unwrap();
         let staged = block_on_nautilus_with(|| storage.list_files("", Some(".feather"))).unwrap();
         assert_eq!(staged.len(), usize::from(!automatic));
+    }
+
+    #[rstest]
+    fn parquet_promotion_preserves_clear_snapshots(
+        #[values(false, true)] automatic: bool,
+        #[values(false, true)] batch_write: bool,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-clear");
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promote_on_close = automatic;
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let id = InstrumentId::from("AUD/USD.SIM");
+        let mut deltas = Vec::new();
+        for (sequence, timestamp, price, size) in [
+            (41, 100, "1.23", "4.500"),
+            (42, 200, "1.24", "6.700"),
+            (43, 300, "1.2345", "8.90000"),
+        ] {
+            deltas.push(OrderBookDelta::clear(
+                id,
+                sequence,
+                (timestamp - 1).into(),
+                timestamp.into(),
+            ));
+
+            for (side, order_id, flags) in [
+                (OrderSide::Buy, 71, RecordFlag::F_SNAPSHOT as u8),
+                (
+                    OrderSide::Sell,
+                    72,
+                    RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+                ),
+            ] {
+                deltas.push(OrderBookDelta::new(
+                    id,
+                    BookAction::Add,
+                    BookOrder::new(side, Price::from(price), Quantity::from(size), order_id),
+                    flags,
+                    sequence,
+                    (timestamp - 1).into(),
+                    timestamp.into(),
+                ));
+            }
+        }
+
+        deltas.push(OrderBookDelta::clear(id, 44, 399.into(), 400.into()));
+        if batch_write {
+            sink.write_batch(deltas.iter().copied().map(Data::from).collect())
+                .unwrap();
+        } else {
+            for delta in &deltas {
+                sink.write_data(Data::BookDelta(*delta)).unwrap();
+            }
+        }
+
+        sink.close().unwrap();
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        if !automatic {
+            catalog
+                .convert_stream_to_data(
+                    "run-clear",
+                    &NautilusDataType::OrderBookDelta.into(),
+                    Environment::Backtest,
+                    None,
+                    false,
+                )
+                .unwrap();
+        }
+
+        let batch = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::OrderBookDelta))
+            .unwrap();
+
+        let DataBatch::BookDelta(rows) = batch else {
+            panic!("expected order book deltas");
+        };
+
+        assert_eq!(rows.len(), deltas.len());
+
+        for (actual, expected) in rows.as_ref().iter().zip(&deltas) {
+            let (price_precision, size_precision) = if expected.sequence < 43 {
+                (2, 3)
+            } else {
+                (4, 5)
+            };
+
+            assert_eq!(actual.instrument_id, expected.instrument_id);
+            assert_eq!(actual.action, expected.action);
+            assert_eq!(actual.order.side, expected.order.side);
+            assert_eq!(actual.order.price.raw(), expected.order.price.raw());
+            assert_eq!(actual.order.price.precision, price_precision);
+            assert_eq!(actual.order.size.raw(), expected.order.size.raw());
+            assert_eq!(actual.order.size.precision, size_precision);
+            assert_eq!(actual.order.order_id, expected.order.order_id);
+            assert_eq!(actual.flags, expected.flags);
+            assert_eq!(actual.sequence, expected.sequence);
+            assert_eq!(actual.ts_event, expected.ts_event);
+            assert_eq!(actual.ts_init, expected.ts_init);
+        }
+    }
+
+    #[rstest]
+    #[case::real_add(BookAction::Add, Some(OrderSide::Buy), "1", "2", 0)]
+    #[case::clear_side(BookAction::Clear, Some(OrderSide::Buy), "0", "0", 0)]
+    #[case::clear_price(BookAction::Clear, None, "1", "0", 0)]
+    #[case::clear_size(BookAction::Clear, None, "0", "1", 0)]
+    #[case::clear_order_id(BookAction::Clear, None, "0", "0", 1)]
+    fn parquet_promotion_rejects_noncanonical_zero_precision_orders(
+        #[case] action: BookAction,
+        #[case] side: Option<OrderSide>,
+        #[case] price: &str,
+        #[case] size: &str,
+        #[case] order_id: u64,
+        #[values(false, true)] automatic: bool,
+    ) {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("backtest").join("run-clear-invalid");
+        let mut config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promote_on_close = automatic;
+        let mut sink =
+            parquet_writer_factory(&config, WriterClock::Test(Arc::new(AtomicU64::new(0))))
+                .unwrap();
+        let id = InstrumentId::from("AUD/USD.SIM");
+        let deltas = vec![
+            OrderBookDelta::clear(id, 41, 99.into(), 100.into()),
+            OrderBookDelta::new(
+                id,
+                action,
+                BookOrder {
+                    side,
+                    price: Price::from(price),
+                    size: Quantity::from(size),
+                    order_id,
+                },
+                0,
+                41,
+                99.into(),
+                100.into(),
+            ),
+            OrderBookDelta::new(
+                id,
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from("1.23"),
+                    Quantity::from("4.500"),
+                    72,
+                ),
+                RecordFlag::F_LAST as u8,
+                41,
+                99.into(),
+                100.into(),
+            ),
+        ];
+        sink.write_batch(deltas.into_iter().map(Data::from).collect())
+            .unwrap();
+        let mut catalog = ParquetDataCatalog::from_uri(
+            directory.path().to_str().unwrap(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let error = if automatic {
+            sink.close().unwrap_err()
+        } else {
+            sink.close().unwrap();
+            catalog
+                .convert_stream_to_data(
+                    "run-clear-invalid",
+                    &NautilusDataType::OrderBookDelta.into(),
+                    Environment::Backtest,
+                    None,
+                    false,
+                )
+                .unwrap_err()
+        };
+
+        assert!(error.to_string().contains(
+            "cannot relabel precision metadata for a promotion group that contains decimal values"
+        ));
+        assert!(
+            catalog
+                .query_files(&NautilusDataType::OrderBookDelta.into(), None, None, None)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[rstest]
