@@ -32,8 +32,8 @@ fn test_register_default_client_twice_panics(
         true,
         true,
         Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            Rc::clone(&cache),
             client_id,
             Some(Venue::test_default()),
         )),
@@ -74,8 +74,8 @@ fn test_register_client_duplicate_id_panics(
         true,
         true,
         Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            Rc::clone(&cache),
             client_id,
             Some(Venue::test_default()),
         )),
@@ -115,8 +115,8 @@ fn test_register_and_deregister_client(
         true,
         true,
         Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            Rc::clone(&cache),
             client_id1,
             Some(venue1),
         )),
@@ -197,7 +197,7 @@ fn test_register_venue_routing_routes_exchange_venue_to_client(
         cache,
         broker_client_id,
         None,
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(broker_client_id, None, true, true, Box::new(client));
     data_engine.register_client(adapter, None);
@@ -239,7 +239,7 @@ fn test_default_and_venue_routing_apply_independently_for_venue_less_client(
         cache,
         broker_client_id,
         None,
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(broker_client_id, None, true, true, Box::new(client));
     data_engine.register_client(adapter, None);
@@ -298,8 +298,8 @@ fn test_backtest_client_overrides_subscribe_routing(
 
     let venue_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         venue_client_id,
         venue,
         None,
@@ -355,8 +355,8 @@ fn test_backtest_client_overrides_when_registered_as_default(
 
     let venue_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         venue_client_id,
         venue,
         None,
@@ -372,7 +372,7 @@ fn test_backtest_client_overrides_when_registered_as_default(
         cache,
         backtest_client_id,
         None,
-        Some(backtest_recorder.clone()),
+        Some(Rc::clone(&backtest_recorder)),
     );
     let backtest_adapter =
         DataClientAdapter::new(backtest_client_id, None, true, true, Box::new(backtest));

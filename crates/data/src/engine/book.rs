@@ -330,7 +330,7 @@ impl DataEngine {
                 .entry(*target_id)
                 .or_default()
                 .owners
-                .push(subscription.clone());
+                .push(Rc::clone(&subscription));
         }
 
         self.book_subscription_owners
@@ -392,7 +392,8 @@ impl DataEngine {
                 continue;
             };
 
-            let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(updater.clone());
+            let deltas_handler: TypedHandler<OrderBookDeltas> =
+                TypedHandler::new(Rc::clone(&updater));
             let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
             msgbus::unsubscribe_book_deltas(
                 switchboard::get_book_deltas_topic(target_id).into(),
@@ -516,12 +517,12 @@ impl DataEngine {
 
         let snapshot_infos = if let Some(snapshot_infos) = self.book_intervals.get(&cmd.interval_ms)
         {
-            snapshot_infos.clone()
+            Rc::clone(snapshot_infos)
         } else {
             let snapshot_infos = Rc::new(RefCell::new(IndexMap::new()));
             self.book_intervals
-                .insert(cmd.interval_ms, snapshot_infos.clone());
-            self.schedule_book_snapshotter(cmd.interval_ms, snapshot_infos.clone());
+                .insert(cmd.interval_ms, Rc::clone(&snapshot_infos));
+            self.schedule_book_snapshotter(cmd.interval_ms, Rc::clone(&snapshot_infos));
             snapshot_infos
         };
 
@@ -600,10 +601,10 @@ impl DataEngine {
         let snapshotter = Rc::new(BookSnapshotter::new(
             interval_ms,
             snapshot_infos,
-            self.cache.clone(),
+            Rc::clone(&self.cache),
         ));
         let timer_name = snapshotter.timer_name;
-        let snapshotter_callback = snapshotter.clone();
+        let snapshotter_callback = Rc::clone(&snapshotter);
         let callback_fn: Rc<dyn Fn(TimeEvent)> =
             Rc::new(move |event| snapshotter_callback.snapshot(event));
         let callback = TimeEventCallback::from(callback_fn);
@@ -719,17 +720,13 @@ impl DataEngine {
         }
 
         for target_id in target_ids {
-            let updater = self
-                .book_updaters
-                .entry(*target_id)
-                .or_insert_with(|| {
-                    Rc::new(BookUpdater::new(
-                        target_id,
-                        self.cache.clone(),
-                        self.config.emit_quotes_from_book,
-                    ))
-                })
-                .clone();
+            let updater = Rc::clone(self.book_updaters.entry(*target_id).or_insert_with(|| {
+                Rc::new(BookUpdater::new(
+                    target_id,
+                    Rc::clone(&self.cache),
+                    self.config.emit_quotes_from_book,
+                ))
+            }));
 
             if depth {
                 msgbus::subscribe_book_depth(
@@ -1177,8 +1174,8 @@ mod tests {
         let received = Rc::new(RefCell::new(Vec::new()));
         let handler = CacheWritingBookHandler {
             id: Ustr::from("CacheWritingBookHandler"),
-            cache: cache.clone(),
-            received: received.clone(),
+            cache: Rc::clone(&cache),
+            received: Rc::clone(&received),
         };
         msgbus::subscribe_book_snapshots(topic.into(), TypedHandler::new(handler), None);
 
@@ -1225,8 +1222,8 @@ mod tests {
         let received = Rc::new(RefCell::new(Vec::new()));
         let handler = CacheWritingBookHandler {
             id: Ustr::from("CacheWritingBookHandler-NoUpdates"),
-            cache: cache.clone(),
-            received: received.clone(),
+            cache: Rc::clone(&cache),
+            received: Rc::clone(&received),
         };
         msgbus::subscribe_book_snapshots(topic.into(), TypedHandler::new(handler), None);
 

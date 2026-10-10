@@ -22,11 +22,11 @@ fn test_subscribe_spread_quotes_default_interval_publishes_on_timer(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
+        Rc::clone(&clock),
         cache,
         client_id,
         venue,
@@ -217,7 +217,7 @@ fn test_subscribe_spread_quotes_without_exchange_endpoint_publishes_spread_quote
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
@@ -259,7 +259,7 @@ fn test_subscribe_spread_quotes_without_exchange_endpoint_publishes_spread_quote
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
 
     let tap = Rc::new(RecordingSendTap::default());
-    msgbus::set_bus_tap(tap.clone());
+    msgbus::set_bus_tap(Rc::clone(&tap) as Rc<dyn BusTap>);
 
     let quote_a = QuoteTick::new(
         leg_a,

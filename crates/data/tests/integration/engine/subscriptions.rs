@@ -151,7 +151,7 @@ fn test_execute_subscribe_routes_to_default_client_when_no_client_id(
         cache,
         broker_client_id,
         Some(broker_venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
 
     let adapter = DataClientAdapter::new(
@@ -331,13 +331,13 @@ fn test_subscribe_book_deltas_composite_creates_books_per_underlying(
             .unwrap();
     }
 
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -392,13 +392,13 @@ fn test_reset_unsubscribes_composite_book_deltas(
         .add_instrument(InstrumentAny::FuturesContract(esz1))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -464,13 +464,13 @@ fn test_unsubscribe_composite_keeps_overlapping_exact_alive(
             .unwrap();
     }
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -557,12 +557,12 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth_alive(
         .add_instrument(InstrumentAny::FuturesContract(esz1))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -657,12 +657,12 @@ fn test_unsubscribe_composite_deltas_keeps_exact_depth_handler_alive(
             .unwrap();
     }
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -747,13 +747,13 @@ fn test_subscribe_book_deltas_composite_with_no_underlyings_is_noop(
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let venue = Venue::new("XCME");
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -799,12 +799,12 @@ fn test_parent_subscribe_with_unparsable_id_returns_error(
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let venue = Venue::new("BETFAIR");
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -872,7 +872,7 @@ fn test_snapshots_parent_subscribe_with_unparsable_id_returns_error(
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let venue = Venue::new("BETFAIR");
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
@@ -957,12 +957,12 @@ fn test_concrete_subscribe_does_not_register_parent_expansion(
             .unwrap();
     }
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -1567,7 +1567,7 @@ fn test_external_client_internal_bar_subscription_skips_local_aggregator(
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
@@ -1727,7 +1727,7 @@ fn test_regular_client_subscribe_does_not_register_streaming_payload_type(
 ) {
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
@@ -1812,7 +1812,7 @@ fn test_bar_aggregator_quote_subscription_priority_is_between_4_and_6(
 
     let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
 
-    let order_high = dispatch_order.clone();
+    let order_high = Rc::clone(&dispatch_order);
 
     let handler_high = TypedHandler::from_with_id("prio-6", move |_q: &QuoteTick| {
         order_high.borrow_mut().push("high");
@@ -1820,7 +1820,7 @@ fn test_bar_aggregator_quote_subscription_priority_is_between_4_and_6(
 
     msgbus::subscribe_quotes(quote_topic.into(), handler_high, Some(6));
 
-    let order_low = dispatch_order.clone();
+    let order_low = Rc::clone(&dispatch_order);
 
     let handler_low = TypedHandler::from_with_id("prio-4", move |_q: &QuoteTick| {
         order_low.borrow_mut().push("low");
@@ -1828,7 +1828,7 @@ fn test_bar_aggregator_quote_subscription_priority_is_between_4_and_6(
 
     msgbus::subscribe_quotes(quote_topic.into(), handler_low, Some(4));
 
-    let order_bar = dispatch_order.clone();
+    let order_bar = Rc::clone(&dispatch_order);
 
     let handler_bar = TypedHandler::from_with_id("bar-observer", move |_b: &Bar| {
         order_bar.borrow_mut().push("bar");
@@ -1891,7 +1891,7 @@ fn test_bar_aggregator_trade_subscription_priority_is_between_4_and_6(
 
     let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
 
-    let order_high = dispatch_order.clone();
+    let order_high = Rc::clone(&dispatch_order);
 
     let handler_high = TypedHandler::from_with_id("prio-6", move |_t: &TradeTick| {
         order_high.borrow_mut().push("high");
@@ -1899,7 +1899,7 @@ fn test_bar_aggregator_trade_subscription_priority_is_between_4_and_6(
 
     msgbus::subscribe_trades(trades_topic.into(), handler_high, Some(6));
 
-    let order_low = dispatch_order.clone();
+    let order_low = Rc::clone(&dispatch_order);
 
     let handler_low = TypedHandler::from_with_id("prio-4", move |_t: &TradeTick| {
         order_low.borrow_mut().push("low");
@@ -1907,7 +1907,7 @@ fn test_bar_aggregator_trade_subscription_priority_is_between_4_and_6(
 
     msgbus::subscribe_trades(trades_topic.into(), handler_low, Some(4));
 
-    let order_bar = dispatch_order.clone();
+    let order_bar = Rc::clone(&dispatch_order);
 
     let handler_bar = TypedHandler::from_with_id("bar-observer", move |_b: &Bar| {
         order_bar.borrow_mut().push("bar");
@@ -1972,7 +1972,7 @@ fn test_composite_bar_aggregator_source_bar_subscription_uses_default_priority(
 
     let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
 
-    let order_high = dispatch_order.clone();
+    let order_high = Rc::clone(&dispatch_order);
 
     let handler_high = TypedHandler::from_with_id("prio-1", move |_b: &Bar| {
         order_high.borrow_mut().push("high");
@@ -1980,7 +1980,7 @@ fn test_composite_bar_aggregator_source_bar_subscription_uses_default_priority(
 
     msgbus::subscribe_bars(source_topic.into(), handler_high, Some(1));
 
-    let order_bar = dispatch_order.clone();
+    let order_bar = Rc::clone(&dispatch_order);
 
     let handler_bar = TypedHandler::from_with_id("target-bar-observer", move |_b: &Bar| {
         order_bar.borrow_mut().push("bar");
@@ -2677,7 +2677,7 @@ fn test_synthetic_quote_subscription_publishes_from_component_quotes(
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let (synthetic, component_a, component_b) = synthetic_index();
     let synthetic_id = synthetic.id;
@@ -2745,7 +2745,7 @@ fn test_synthetic_trade_subscription_publishes_from_component_trades(
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let (synthetic, component_a, component_b) = synthetic_index();
     let synthetic_id = synthetic.id;
@@ -2813,7 +2813,7 @@ fn test_duplicate_synthetic_quote_subscription_publishes_once(
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let (synthetic, component_a, component_b) = synthetic_index();
     let synthetic_id = synthetic.id;
@@ -2844,7 +2844,7 @@ fn test_duplicate_synthetic_trade_subscription_publishes_once(
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let (synthetic, component_a, component_b) = synthetic_index();
     let synthetic_id = synthetic.id;
@@ -2875,7 +2875,7 @@ fn test_synthetic_quote_subscription_waits_for_all_component_quotes(
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let (synthetic, component_a, _) = synthetic_index();
     let synthetic_id = synthetic.id;
@@ -2904,7 +2904,7 @@ fn test_synthetic_trade_subscription_waits_for_all_component_trades(
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let (synthetic, component_a, _) = synthetic_index();
     let synthetic_id = synthetic.id;
@@ -2956,7 +2956,7 @@ fn test_unsubscribe_synthetic_quote_keeps_shared_component_feed(
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let component_common = InstrumentId::from("BTC-USD.SIM");
     let component_a = InstrumentId::from("ETH-USD.SIM");
@@ -3019,7 +3019,7 @@ fn test_unsubscribe_synthetic_trade_keeps_shared_component_feed(
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let component_common = InstrumentId::from("BTC-USD.SIM");
     let component_a = InstrumentId::from("ETH-USD.SIM");
@@ -3080,7 +3080,7 @@ fn test_reset_clears_synthetic_subscriptions(stub_msgbus: Rc<RefCell<MessageBus>
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let (synthetic, component_a, component_b) = synthetic_index();
     let synthetic_id = synthetic.id;
@@ -3121,7 +3121,7 @@ fn test_synthetic_quotes_release_after_final_owner(stub_msgbus: Rc<RefCell<Messa
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let (synthetic, _, _) = synthetic_index();
     let synthetic_id = synthetic.id;
     cache.borrow_mut().add_synthetic(synthetic).unwrap();
@@ -3150,7 +3150,7 @@ fn test_synthetic_trades_release_after_final_owner(stub_msgbus: Rc<RefCell<Messa
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let (synthetic, _, _) = synthetic_index();
     let synthetic_id = synthetic.id;
     cache.borrow_mut().add_synthetic(synthetic).unwrap();
@@ -3576,11 +3576,11 @@ fn test_subscribed_book_snapshots_preserve_subscription_order(
     // Pin IndexMap iteration on DataEngine.book_snapshot_counts: the per-tick
     // BookSnapshotter publishes in iteration order, and the public
     // subscribed_book_snapshots() Vec must reflect subscription order across runs.
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -3613,11 +3613,11 @@ fn test_duplicate_book_snapshot_subscriptions_require_matching_unsubscribes(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -3675,11 +3675,11 @@ fn test_unsubscribe_book_snapshots_during_publish_does_not_panic(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -3694,8 +3694,8 @@ fn test_unsubscribe_book_snapshots_during_publish_does_not_panic(
     let interval_ms = NonZeroUsize::new(100).unwrap();
     let topic = switchboard::get_book_snapshots_topic(audusd_sim.id, interval_ms);
     let snapshot_count = Rc::new(RefCell::new(0usize));
-    let snapshot_count_clone = snapshot_count.clone();
-    let data_engine_clone = data_engine.clone();
+    let snapshot_count_clone = Rc::clone(&snapshot_count);
+    let data_engine_clone = Rc::clone(&data_engine);
 
     let unsubscribe_handler = TypedHandler::from(move |_book: &OrderBook| {
         *snapshot_count_clone.borrow_mut() += 1;
@@ -3737,11 +3737,11 @@ fn test_unsubscribe_book_deltas_keeps_snapshot_subscriptions_active(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -3819,11 +3819,11 @@ fn test_duplicate_book_deltas_unsubscribe_keeps_remaining_subscription_active(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -3888,11 +3888,11 @@ fn test_distinct_book_deltas_keys_share_physical_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -4067,8 +4067,8 @@ fn test_quote_routes_release_independently_with_shared_topic(
     let first_recorder = Rc::new(RefCell::new(Vec::new()));
     let second_recorder = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         first_client_id,
         venue,
         None,

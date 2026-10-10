@@ -58,7 +58,7 @@ fn test_process_pipeline_quote_writes_cache_by_default(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let instrument_id = audusd_sim.id;
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let quote = quote_tick(instrument_id, "1.00000", "1.00010", 1);
     data_engine.process_pipeline(Data::Quote(quote));
@@ -81,7 +81,7 @@ fn test_process_pipeline_skips_cache_when_disabled(
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
     let pipeline_topic_str =
         pipeline_topic_of(switchboard::get_quotes_topic(instrument_id).as_ref());
@@ -111,7 +111,7 @@ fn test_process_pipeline_bar_publishes_on_pipeline_topic(stub_msgbus: Rc<RefCell
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let bar = Bar::default();
     let live_topic = switchboard::get_bars_topic(bar.bar_type);
@@ -173,7 +173,7 @@ fn test_process_pipeline_trade_publishes_on_pipeline_topic_only(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let instrument_id = audusd_sim.id;
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let live_topic = switchboard::get_trades_topic(instrument_id);
     let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
@@ -212,7 +212,7 @@ fn test_process_pipeline_mark_price_publishes_on_pipeline_topic_only(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let instrument_id = audusd_sim.id;
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let live_topic = switchboard::get_mark_price_topic(instrument_id);
     let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
@@ -257,7 +257,7 @@ fn test_process_pipeline_index_price_publishes_on_pipeline_topic_only(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let instrument_id = audusd_sim.id;
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let live_topic = switchboard::get_index_price_topic(instrument_id);
     let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
@@ -303,7 +303,7 @@ fn test_process_pipeline_funding_rate_publishes_on_pipeline_topic_only(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let instrument_id = audusd_sim.id;
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let live_topic = switchboard::get_funding_rate_topic(instrument_id);
     let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
@@ -351,7 +351,7 @@ fn test_process_pipeline_instrument_status_publishes_on_pipeline_topic_only(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let instrument_id = audusd_sim.id;
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let live_topic = switchboard::get_instrument_status_topic(instrument_id);
     let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
@@ -585,7 +585,7 @@ fn test_process_pipeline_bar_drops_out_of_sequence(stub_msgbus: Rc<RefCell<Messa
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
     let template = Bar::default();
     let bar_type = template.bar_type;
@@ -621,7 +621,7 @@ fn test_process_pipeline_skips_synthetic_quote_republish(stub_msgbus: Rc<RefCell
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let (synthetic, component_a, component_b) = synthetic_index();
     let synthetic_id = synthetic.id;
@@ -662,7 +662,7 @@ fn test_process_pipeline_skips_synthetic_trade_republish(stub_msgbus: Rc<RefCell
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let (synthetic, component_a, component_b) = synthetic_index();
     let synthetic_id = synthetic.id;
@@ -700,7 +700,7 @@ fn test_process_pipeline_depth_skips_derived_quote_emission(stub_msgbus: Rc<RefC
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
     let depth = stub_depth10();
     let instrument_id = depth.instrument_id;
@@ -734,7 +734,7 @@ fn test_time_range_pipeline_issues_one_child_at_a_time(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
 
     let parent_id = UUID4::new();
@@ -804,7 +804,7 @@ fn test_time_range_pipeline_uses_data_count_feedback(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
 
     let params: Params = serde_json::from_value(json!({
@@ -876,7 +876,7 @@ fn test_time_range_pipeline_point_data_uses_single_point_windows(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
 
     let parent_id = UUID4::new();
@@ -1006,9 +1006,9 @@ fn test_time_range_pipeline_updates_parent_request_bar_aggregation(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder =
-        register_time_range_recorder(&mut data_engine, clock, cache.clone(), client_id, venue);
+        register_time_range_recorder(&mut data_engine, clock, Rc::clone(&cache), client_id, venue);
 
     let bar_type = BarType::from(format!("{instrument_id}-1-SECOND-LAST-INTERNAL").as_str());
     let parent_id = UUID4::new();
@@ -1107,7 +1107,7 @@ fn test_time_range_pipeline_emits_empty_parent_response(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
 
     let parent_id = UUID4::new();
@@ -1164,7 +1164,7 @@ fn test_reset_clears_time_range_pipeline_state(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
 
     let parent_id = UUID4::new();
@@ -1228,7 +1228,7 @@ fn test_time_range_pipeline_request_join_runs_end_to_end(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let leg_a = UUID4::new();
     let leg_b = UUID4::new();
@@ -1373,9 +1373,9 @@ fn test_time_range_pipeline_supports_bars_variant(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder =
-        register_time_range_recorder(&mut data_engine, clock, cache.clone(), client_id, venue);
+        register_time_range_recorder(&mut data_engine, clock, Rc::clone(&cache), client_id, venue);
 
     let parent_id = UUID4::new();
     let (handler, saver) =
@@ -1427,7 +1427,7 @@ fn test_time_range_pipeline_supports_book_deltas_variant(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
 
     let parent_id = UUID4::new();
@@ -1497,7 +1497,7 @@ fn test_time_range_pipeline_supports_book_depth_variant(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
 
     let parent_id = UUID4::new();
@@ -1568,9 +1568,9 @@ fn test_time_range_pipeline_supports_funding_rates_variant(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
     let recorder =
-        register_time_range_recorder(&mut data_engine, clock, cache.clone(), client_id, venue);
+        register_time_range_recorder(&mut data_engine, clock, Rc::clone(&cache), client_id, venue);
 
     let parent_id = UUID4::new();
     let (handler, saver) = get_any_saving_handler::<FundingRatesResponse>(Some(Ustr::from(
@@ -1855,7 +1855,7 @@ fn test_request_join_two_phase_emits_parent_response(
         .downcast_mut::<VirtualClock>()
         .unwrap()
         .advance_time(UnixNanos::from(10_000_000_000_u64), true);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let leg_a = UUID4::new();
     let leg_b = UUID4::new();
@@ -1983,7 +1983,7 @@ fn test_request_join_trims_to_parent_window(
         .downcast_mut::<VirtualClock>()
         .unwrap()
         .advance_time(UnixNanos::from(10_000_000_000_u64), true);
-    let mut data_engine = DataEngine::new(clock.clone(), cache, None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), cache, None);
 
     let leg_a = UUID4::new();
     let leg_b = UUID4::new();

@@ -1614,19 +1614,19 @@ impl TimeBarAggregator {
         let aggregator_weak = if let Some(rc) = aggregator_rc {
             // Store weak reference for future use (e.g., in build_bar for month/year)
             let weak = Rc::downgrade(&rc);
-            self.aggregator_weak = Some(weak.clone());
+            self.aggregator_weak = Some(Weak::clone(&weak));
             weak
         } else {
             // Use existing weak reference (for historical mode where it was set earlier)
             self.aggregator_weak
                 .as_ref()
+                .map(Weak::clone)
                 .expect("Aggregator weak reference must be set before calling start_timer()")
-                .clone()
         };
 
         self.timer_active.set(false);
         self.timer_active = Rc::new(Cell::new(true));
-        let active = self.timer_active.clone();
+        let active = Rc::clone(&self.timer_active);
         let callback = TimeEventCallback::RustLocal(Rc::new(move |event: TimeEvent| {
             if !active.get() {
                 return;
@@ -2747,7 +2747,7 @@ mod tests {
             bar_type,
             equity_aapl.price_precision,
             equity_aapl.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true,
             false,
@@ -2762,7 +2762,7 @@ mod tests {
             .as_any_mut()
             .downcast_mut::<TimeBarAggregator>()
             .unwrap()
-            .start_timer_internal(Some(rc.clone()));
+            .start_timer_internal(Some(Rc::clone(&rc)));
         rc.borrow_mut()
             .update(Price::from("103.25"), Quantity::from(2), now);
         let events = clock.borrow_mut().advance_time(now, true);
@@ -2812,7 +2812,7 @@ mod tests {
             bar_type,
             equity_aapl.price_precision,
             equity_aapl.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             |_bar: Bar| {},
             true,
             true,
@@ -2824,7 +2824,7 @@ mod tests {
         );
         let rc: Rc<RefCell<Box<dyn BarAggregator>>> = Rc::new(RefCell::new(Box::new(aggregator)));
         let timer_name = format!("TIME_BAR_{bar_type}");
-        rc.borrow_mut().start_timer(Some(rc.clone()));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
         assert_eq!(clock.borrow().next_time_ns(&timer_name), Some(first));
         let events = clock.borrow_mut().advance_time(first, true);
         let callbacks = clock.borrow().match_handlers(events);
@@ -2838,7 +2838,7 @@ mod tests {
         assert_eq!(clock.borrow().next_time_ns(&timer_name), None);
 
         clock.borrow_mut().set_time(first + DurationNanos::new(1));
-        rc.borrow_mut().start_timer(Some(rc.clone()));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
         assert_eq!(clock.borrow().timer_count(), 1);
         assert_eq!(clock.borrow().next_time_ns(&timer_name), Some(following));
     }
@@ -2899,7 +2899,7 @@ mod tests {
             bar_type,
             equity_aapl.price_precision,
             equity_aapl.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true,
             false,
@@ -2911,7 +2911,7 @@ mod tests {
         );
         let rc: Rc<RefCell<Box<dyn BarAggregator>>> = Rc::new(RefCell::new(Box::new(aggregator)));
         let timer_name = format!("TIME_BAR_{bar_type}");
-        rc.borrow_mut().start_timer(Some(rc.clone()));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
         assert_eq!(clock.borrow().next_time_ns(&timer_name), Some(first));
         let events = clock.borrow_mut().advance_time(first, true);
         let callbacks = clock.borrow().match_handlers(events);
@@ -2923,7 +2923,7 @@ mod tests {
         clock
             .borrow_mut()
             .set_time(following + DurationNanos::new(1));
-        rc.borrow_mut().start_timer(Some(rc.clone()));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
         assert_eq!(
             clock.borrow().next_time_ns(&timer_name),
             Some(after_restart)
@@ -5206,7 +5206,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true,  // build_with_no_updates
             false, // timestamp_on_close
@@ -5253,7 +5253,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             |_bar: Bar| {},
             true,
             false,
@@ -5290,7 +5290,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             |_bar: Bar| {},
             true,
             false,
@@ -5323,7 +5323,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true, // build_with_no_updates
             true, // timestamp_on_close - changed to true to verify left-open behavior
@@ -5380,7 +5380,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true, // build_with_no_updates
             true, // timestamp_on_close
@@ -5440,7 +5440,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             false, // build_with_no_updates disabled
             true,  // timestamp_on_close
@@ -5467,7 +5467,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true, // build_with_no_updates enabled
             true, // timestamp_on_close
@@ -5516,7 +5516,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true, // build_with_no_updates
             true, // timestamp_on_close
@@ -7121,7 +7121,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true,
             true,
@@ -7386,7 +7386,7 @@ mod tests {
             instrument.price_precision(),
             0,
             Box::new(record),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             false,
             Some(1),
             0,
@@ -7462,7 +7462,7 @@ mod tests {
             0,
             Box::new(record),
             // need clock for set_clock after
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             true,
             Some(1),
             0,
@@ -7535,7 +7535,7 @@ mod tests {
             0,
             Box::new(record),
             // need clock for set_clock after
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             true,
             Some(1),
             0,
@@ -7665,7 +7665,7 @@ mod tests {
             instrument.price_precision(),
             0,
             Box::new(record),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             false,
             None,
             0,
@@ -7734,7 +7734,7 @@ mod tests {
             instrument.price_precision(),
             0,
             Box::new(record),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             false,
             None,
             0,
@@ -8288,7 +8288,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true,
             true,
@@ -8469,7 +8469,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             |_: Bar| {},
             false,
             true,
@@ -8590,7 +8590,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
             record,
             true, // build_with_no_updates
             true, // timestamp_on_close
@@ -8681,7 +8681,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
-            clock.clone(),
+            Rc::clone(clock) as Rc<RefCell<dyn Clock>>,
             record,
             build_with_no_updates,
             false, // timestamp_on_close

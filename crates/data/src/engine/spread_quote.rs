@@ -75,7 +75,7 @@ impl DataEngine {
             return;
         }
 
-        let cache = self.cache.clone();
+        let cache = Rc::clone(&self.cache);
 
         let handler = Box::new(move |quote: QuoteTick| {
             let exchange_endpoint = format!(
@@ -105,7 +105,7 @@ impl DataEngine {
             instrument.price_precision(),
             instrument.size_precision(),
             handler,
-            self.clock.clone(),
+            Rc::clone(&self.clock),
             false,
             spread_quote_update_interval_seconds(cmd.params.as_ref()),
             cmd.params
@@ -139,7 +139,7 @@ impl DataEngine {
 
         aggregator
             .borrow_mut()
-            .start_timer(Some(aggregator.clone()));
+            .start_timer(Some(Rc::clone(&aggregator)));
         aggregator.borrow_mut().set_running(true);
 
         let source_commands = legs

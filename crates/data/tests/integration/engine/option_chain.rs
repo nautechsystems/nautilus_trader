@@ -24,12 +24,12 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
     venue: Venue,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let sim_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -42,7 +42,7 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
     let deribit_recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         deribit_client_id,
         deribit_venue,
         Some(deribit_venue),
@@ -358,7 +358,7 @@ fn test_option_chain_update_skips_invalid_deserialized_underlying(
     #[case] underlying: &str,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock, cache.clone());
+    let data_engine = make_option_chain_engine(clock, Rc::clone(&cache));
     let option = nautilus_model::instruments::stubs::option_contract_appl();
     let mut value = serde_json::to_value(option).unwrap();
     value["underlying"] = json!(underlying);
@@ -383,7 +383,7 @@ fn test_subscribe_option_chain_fixed_range_creates_manager(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -391,7 +391,7 @@ fn test_subscribe_option_chain_fixed_range_creates_manager(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -442,13 +442,13 @@ fn test_subscribe_option_chain_rejects_zero_snapshot_interval(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -491,13 +491,13 @@ fn test_subscribe_option_chain_rejects_explicit_reference(
     #[case] subscribed_derived: bool,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -573,7 +573,7 @@ fn test_subscribe_option_chain_filters_by_underlying(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -581,7 +581,7 @@ fn test_subscribe_option_chain_filters_by_underlying(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -629,15 +629,15 @@ fn test_option_chain_new_instrument_uses_subscription_client(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let explicit_client_id = ClientId::new("DERIBIT-EXPLICIT");
     let routed_client_id = ClientId::new("DERIBIT-ROUTED");
     let venue = Venue::new("DERIBIT");
     let explicit_recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     let routed_recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         explicit_client_id,
         venue,
         None,
@@ -646,7 +646,7 @@ fn test_option_chain_new_instrument_uses_subscription_client(
     );
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         routed_client_id,
         venue,
         Some(venue),
@@ -733,13 +733,13 @@ fn test_option_chain_out_of_range_listing_is_not_subscribed(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -791,7 +791,7 @@ fn test_unsubscribe_option_chain_tears_down(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -799,7 +799,7 @@ fn test_unsubscribe_option_chain_tears_down(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -857,13 +857,13 @@ fn test_option_chain_manager_survives_partial_retirement(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -938,13 +938,13 @@ fn test_option_chain_settles_rebalance_before_retirement(
     #[case] edit: bool,
 ) {
     let _ = msgbus::get_message_bus();
-    let engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -1069,13 +1069,13 @@ fn test_pending_option_chain_survives_partial_retirement(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -1145,15 +1145,15 @@ fn test_option_chain_client_edit_releases_old_and_active_routes(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let venue = Venue::new("DERIBIT");
     let first_client_id = ClientId::new("DERIBIT-FIRST");
     let second_client_id = ClientId::new("DERIBIT-SECOND");
     let first_recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     let second_recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         first_client_id,
         venue,
         None,
@@ -1162,7 +1162,7 @@ fn test_option_chain_client_edit_releases_old_and_active_routes(
     );
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         second_client_id,
         venue,
         None,
@@ -1240,7 +1240,7 @@ fn test_subscribe_option_chain_resubscribe_replaces_manager(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -1248,7 +1248,7 @@ fn test_subscribe_option_chain_resubscribe_replaces_manager(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -1319,7 +1319,7 @@ fn test_process_instrument_status_expires_option_chain_instrument(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -1327,7 +1327,7 @@ fn test_process_instrument_status_expires_option_chain_instrument(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -1408,7 +1408,7 @@ fn test_option_chain_market_data_at_expiry_expires_instrument(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -1416,7 +1416,7 @@ fn test_option_chain_market_data_at_expiry_expires_instrument(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -1517,7 +1517,7 @@ fn test_subscribe_option_chain_atm_relative_requests_reference_price(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -1525,7 +1525,7 @@ fn test_subscribe_option_chain_atm_relative_requests_reference_price(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -1626,13 +1626,13 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -1697,12 +1697,12 @@ fn test_option_chain_without_sample_bootstraps_from_live_data(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
-        clock.clone(),
+        Rc::clone(&clock),
         cache,
         client_id,
         venue,
@@ -1728,13 +1728,13 @@ fn test_unsubscribe_option_chain_cancels_pending_reference_price_request(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -1803,13 +1803,13 @@ fn test_option_chain_reference_price_timeout_bootstraps_from_live_data(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -1860,7 +1860,7 @@ fn test_option_chain_reference_price_request_error_subscribes_bootstrap_greeks(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock, cache.clone());
+    let data_engine = make_option_chain_engine(clock, Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let failing_client =
@@ -1901,13 +1901,13 @@ fn test_option_chain_reference_price_timeout_tracks_concurrent_requests(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -2003,13 +2003,13 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -2113,13 +2113,13 @@ fn test_option_chain_greeks_bootstrap_holds_subscription_ownership(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -2204,13 +2204,13 @@ fn test_unsubscribe_option_chain_preserves_user_owned_bootstrap_greeks(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -2283,7 +2283,7 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -2291,7 +2291,7 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -2453,13 +2453,13 @@ fn test_option_chain_unsubscribe_releases_active_bootstrap_sample(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),
@@ -2570,7 +2570,7 @@ fn test_process_pipeline_instrument_status_skips_option_chain_expiry(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -2578,7 +2578,7 @@ fn test_process_pipeline_instrument_status_skips_option_chain_expiry(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),

@@ -154,7 +154,7 @@ impl DataEngine {
             return;
         };
 
-        let clock = self.clock.clone();
+        let clock = Rc::clone(&self.clock);
         let client_id = manager_rc.borrow().client_id();
         let client = self.get_command_client(client_id.as_ref(), Some(&venue));
 
@@ -496,10 +496,10 @@ impl DataEngine {
         initial_atm_price: Option<Price>,
     ) -> Rc<RefCell<OptionChainManager>> {
         let series_id = cmd.series_id;
-        let cache = self.cache.clone();
-        let clock = self.clock.clone();
+        let cache = Rc::clone(&self.cache);
+        let clock = Rc::clone(&self.clock);
         let priority = self.msgbus_priority;
-        let deferred_cmd_queue = self.deferred_cmd_queue.clone();
+        let deferred_cmd_queue = Rc::clone(&self.deferred_cmd_queue);
 
         let manager_rc = {
             let client = self.get_command_client(cmd.client_id.as_ref(), Some(&series_id.venue));
@@ -521,7 +521,7 @@ impl DataEngine {
         }
 
         self.option_chain_managers
-            .insert(series_id, manager_rc.clone());
+            .insert(series_id, Rc::clone(&manager_rc));
         manager_rc
     }
 

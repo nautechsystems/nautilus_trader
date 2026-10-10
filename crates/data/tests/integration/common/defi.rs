@@ -39,7 +39,7 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -47,7 +47,7 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -55,8 +55,8 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
