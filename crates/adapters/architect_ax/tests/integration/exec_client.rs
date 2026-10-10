@@ -250,6 +250,102 @@ async fn test_exec_client_connect_aborts_when_fee_lookup_fails() {
 
 #[rstest]
 #[tokio::test]
+async fn test_exec_client_refreshes_fees_on_reconnect() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.connect().await.unwrap();
+    client.disconnect().await.unwrap();
+    state
+        .whoami_fail
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let error = client.connect().await.unwrap_err();
+
+    assert_eq!(error.to_string(), "failed to resolve AX account fee rates");
+    assert!(!client.is_connected());
+}
+
+#[rstest]
+#[case::maker(false, false, "1000.00 USD")]
+#[case::taker(true, false, "12500.00 USD")]
+#[case::maker_reconnected(false, true, "3000.00 USD")]
+#[case::taker_reconnected(true, true, "6500.00 USD")]
+#[tokio::test]
+async fn test_exec_client_stream_fill_uses_account_fee_rates(
+    #[case] agg: bool,
+    #[case] reconnect: bool,
+    #[case] expected: &str,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    let mut fill = load_test_data("ws_order_filled.json");
+    fill["o"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
+    fill["xs"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
+    fill["xs"]["agg"] = serde_json::json!(agg);
+    *state.order_fill_payload.lock().await = Some(fill);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    if reconnect {
+        client.disconnect().await.unwrap();
+        let mut whoami = load_test_data("http_get_whoami.json");
+        whoami["accounts"][0]["maker_fee"] = serde_json::json!("0.0006");
+        whoami["accounts"][0]["taker_fee"] = serde_json::json!("0.0013");
+        *state.whoami_payload.lock().await = Some(whoami);
+        client.connect().await.unwrap();
+    }
+
+    drain_rx(&mut rx);
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    let client_order_id = ClientOrderId::from("O-COMMISSION");
+    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    builder
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("50000.0000"))
+        .time_in_force(TimeInForce::Gtc);
+    let order = builder.build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
+        .unwrap();
+
+    client.submit_order(make_submit_order_cmd(&order)).unwrap();
+
+    let fill = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(ExecutionEvent::Order(OrderEventAny::Filled(fill))) = rx.recv().await {
+                break fill;
+            }
+        }
+    })
+    .await
+    .expect("stream fill should arrive");
+
+    client.disconnect().await.unwrap();
+
+    assert_eq!(fill.commission, Some(Money::from(expected)));
+    assert_eq!(
+        state
+            .whoami_count
+            .load(std::sync::atomic::Ordering::Relaxed),
+        if reconnect { 2 } else { 1 }
+    );
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.instrument_id, instrument_id);
+    assert_eq!(fill.account_id, AccountId::from("AX-001"));
+    assert_eq!(fill.last_qty.as_decimal(), dec!(100));
+    assert_eq!(fill.last_px.as_decimal(), dec!(50000));
+    assert_eq!(fill.trade_id.as_str(), "T-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_exec_client_emits_account_state_on_connect() {
     let (addr, _state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);

@@ -26,8 +26,8 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
-use arc_swap::ArcSwapOption;
 use http::Method;
 use jiff::{Timestamp, civil::Date};
 use nautilus_core::{
@@ -38,6 +38,7 @@ use nautilus_model::{
     data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
     enums::{BookType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
+    fees::MakerTakerFeeRates,
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     orderbook::OrderBook,
@@ -1139,9 +1140,9 @@ impl AxRawHttpClient {
 pub struct AxHttpClient {
     pub(crate) inner: Arc<AxRawHttpClient>,
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    pub(crate) account_fee_rates: Arc<AtomicMap<Option<Ustr>, MakerTakerFeeRates>>,
     clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
-    account_fees: Arc<ArcSwapOption<(Decimal, Decimal)>>,
 }
 
 impl Clone for AxHttpClient {
@@ -1149,9 +1150,9 @@ impl Clone for AxHttpClient {
         Self {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
-            cache_initialized: self.cache_initialized.clone(),
+            account_fee_rates: self.account_fee_rates.clone(),
             clock: self.clock,
-            account_fees: self.account_fees.clone(),
+            cache_initialized: self.cache_initialized.clone(),
         }
     }
 }
@@ -1189,9 +1190,9 @@ impl AxHttpClient {
                 proxy_url,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
-            cache_initialized: Arc::new(AtomicBool::new(false)),
+            account_fee_rates: Arc::new(AtomicMap::new()),
             clock: get_atomic_clock_realtime(),
-            account_fees: Arc::new(ArcSwapOption::empty()),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -1225,9 +1226,9 @@ impl AxHttpClient {
                 proxy_url,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
-            cache_initialized: Arc::new(AtomicBool::new(false)),
+            account_fee_rates: Arc::new(AtomicMap::new()),
             clock: get_atomic_clock_realtime(),
-            account_fees: Arc::new(ArcSwapOption::empty()),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -1360,8 +1361,10 @@ impl AxHttpClient {
     /// Resolves the maker and taker fee rates for the account behind the current credentials.
     ///
     /// AX reports fee rates per account rather than per user, and returns the accounts the
-    /// credentials can act on. The first entry is used, which is the account AX resolves when a
-    /// request carries no explicit selector. Instruments do not carry these rates.
+    /// credentials can act on. The first entry's rates are returned and serve as the default
+    /// for fill payloads without an account identifier. Each successful call replaces the
+    /// cached rates for every listed account that supplies both maker and taker rates.
+    /// Instruments do not carry these rates.
     ///
     /// Requires an authenticated client.
     ///
@@ -1384,7 +1387,7 @@ impl AxHttpClient {
 
         if whoami.accounts.len() > 1 {
             log::warn!(
-                "AX credentials cover {} accounts, using fee rates from {}",
+                "AX credentials cover {} accounts, using {} as the fallback for fills without an account ID",
                 whoami.accounts.len(),
                 account.id,
             );
@@ -1395,7 +1398,16 @@ impl AxHttpClient {
         };
 
         let fees = (maker_fee, taker_fee);
-        self.account_fees.store(Some(Arc::new(fees)));
+        let mut rates = AHashMap::new();
+        rates.insert(None, MakerTakerFeeRates::new(maker_fee, taker_fee));
+
+        for account in &whoami.accounts {
+            if let (Some(maker), Some(taker)) = (account.maker_fee, account.taker_fee) {
+                rates.insert(Some(account.id), MakerTakerFeeRates::new(maker, taker));
+            }
+        }
+
+        self.account_fee_rates.store(rates);
 
         Ok(fees)
     }
@@ -2395,6 +2407,82 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_account_fees_caches_accounts_and_replaces_rates() {
+        let mut whoami: AxWhoAmI =
+            serde_json::from_str(include_str!("../../test_data/http_get_whoami.json")).unwrap();
+        let mut secondary = whoami.accounts[0].clone();
+        secondary.id = Ustr::from("secondary");
+        secondary.maker_fee = Some(Decimal::new(-1, 4));
+        secondary.taker_fee = Some(Decimal::new(8, 4));
+        whoami.accounts.push(secondary);
+        let mut incomplete = whoami.accounts[0].clone();
+        incomplete.id = Ustr::from("incomplete");
+        incomplete.taker_fee = None;
+        whoami.accounts.push(incomplete);
+        let response = Arc::new(tokio::sync::Mutex::new(whoami));
+        let state = response.clone();
+        let app = axum::Router::new().route(
+            "/whoami",
+            axum::routing::get(move || {
+                let state = state.clone();
+                async move { axum::Json(state.lock().await.clone()) }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client =
+            AxHttpClient::new(Some(format!("http://{addr}")), None, 3, 0, 1, 1, None).unwrap();
+        client.set_session_token("test_session_token".into());
+        let cloned = client.clone();
+
+        let original = client.request_account_fees().await.unwrap();
+        let original_rates = cloned.account_fee_rates.load();
+        let default_id = response.lock().await.accounts[0].id;
+        let expected = AHashMap::from_iter([
+            (
+                None,
+                MakerTakerFeeRates::new(Decimal::new(2, 4), Decimal::new(25, 4)),
+            ),
+            (
+                Some(default_id),
+                MakerTakerFeeRates::new(Decimal::new(2, 4), Decimal::new(25, 4)),
+            ),
+            (
+                Some(Ustr::from("secondary")),
+                MakerTakerFeeRates::new(Decimal::new(-1, 4), Decimal::new(8, 4)),
+            ),
+        ]);
+        {
+            let mut response = response.lock().await;
+            response.accounts.truncate(1);
+            response.accounts[0].maker_fee = Some(Decimal::ZERO);
+            response.accounts[0].taker_fee = Some(Decimal::new(3, 3));
+        }
+
+        let refreshed = cloned.request_account_fees().await.unwrap();
+        let refreshed_rates = client.account_fee_rates.load();
+        let expected_refreshed = AHashMap::from_iter([
+            (
+                None,
+                MakerTakerFeeRates::new(Decimal::ZERO, Decimal::new(3, 3)),
+            ),
+            (
+                Some(default_id),
+                MakerTakerFeeRates::new(Decimal::ZERO, Decimal::new(3, 3)),
+            ),
+        ]);
+
+        assert_eq!(original, (Decimal::new(2, 4), Decimal::new(25, 4)));
+        assert_eq!(**original_rates, expected);
+        assert_eq!(refreshed, (Decimal::ZERO, Decimal::new(3, 3)));
+        assert_eq!(**refreshed_rates, expected_refreshed);
+        server.abort();
+    }
 
     #[rstest]
     #[case::credentials(true)]

@@ -609,17 +609,26 @@ credentials are valid and have trading permissions.
   weekends and holidays, and emits the latest rate only when it differs from the last one emitted.
 - **Cancel on disconnect**: Set `cancel_on_disconnect=True` in the execution client config
   to have the exchange cancel all open orders if the orders WebSocket disconnects.
-- **Instrument fee rates**: Instruments do not carry maker or taker fee rates. An
-  authenticated client still resolves account rates from `GET /whoami` and fails to
-  connect if that lookup fails. Those rates are not copied onto instruments.
+- **Account fee rates**: Instruments do not carry maker or taker fee rates. An
+  authenticated client resolves account rates from `GET /whoami` and fails to connect
+  if that lookup fails. The execution client caches rates per AX account, apart from
+  instruments, and refreshes them each time it connects. Automatic WebSocket reconnects
+  keep the cached rates.
 - **Fill commissions**: Real-time fill events from the WebSocket do not include fee data.
-  A tracked streaming fill leaves `commission` unset. An untracked fill falls back to a
-  fill report with zero commission. Reconciliation does not replace the commission on a
-  fill that was already applied. The REST `/fills` endpoint supplies the fee for a fill
-  that was not already applied from the stream. The adapter converts that fee with
-  `Money::from_decimal` into USD, whose precision is 2, so a sub-cent fee such as
-  `0.012188` is stored as `0.01`. A fee that cannot be represented fails the fill-report
-  request and mass status. During startup, that error prevents the node from starting.
+  The adapter estimates commission for both tracked fill events and untracked fill reports
+  using the fill quantity, absolute fill price, contract multiplier, and account's maker or
+  taker rate. It uses the trade's account ID, then the order's account ID if absent, or
+  the first `/whoami` account if neither ID is present. It keeps the calculation in decimal
+  arithmetic and rounds only the final fee into USD `Money`, whose precision is 2. A fill
+  whose instrument or complete account fee schedule is not cached, or whose commission
+  cannot be represented, is logged and skipped; tracked order metadata remains available
+  for reconciliation. Recovery depends on configured reconciliation checks or an explicit order query;
+  skipped fills do not trigger an immediate REST request. Reconciliation does not replace an applied
+  commission, so a streamed estimate remains even when the venue-reported `/fills` fee differs.
+  That endpoint supplies the fee for a fill that was not already applied from the stream. The adapter
+  converts it with `Money::from_decimal` into USD, so a sub-cent fee such as `0.012188` is stored as `0.01`.
+  An unrepresentable REST fee fails the fill-report request and mass status. During startup,
+  that error prevents the node from starting.
 - **Fill reconciliation window**: The `/fills` endpoint requires a bounded time range and
   caps the span at seven days. Reconciliation requests the most recent seven days of fills;
   fills older than that are not reconciled.
