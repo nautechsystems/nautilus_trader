@@ -274,6 +274,57 @@ fn apply_client_order_id_floor(
 }
 
 #[rstest]
+#[case::foreign_next_id_without_used_ids(770_000_006, None, 760_000_006)]
+#[case::foreign_next_id_below_used_ids(770_000_006, Some(760_000_017), 760_000_018)]
+#[case::own_next_id_above_used_ids(760_000_020, Some(760_000_017), 760_000_020)]
+fn initial_order_id_clears_used_order_ids(
+    #[case] next_id: i32,
+    #[case] highest_used_order_id: Option<i32>,
+    #[case] expected: i32,
+) {
+    assert_eq!(
+        InteractiveBrokersExecutionClient::initial_order_id(next_id, 7760, highest_used_order_id),
+        expected
+    );
+}
+
+fn create_test_completed_order(order_id: i32, client_id: i32) -> IBOrderData {
+    let mut data = create_test_open_order(-1, "Cancelled", "");
+    data.order.order_id = order_id;
+    data.order.client_id = client_id;
+    data
+}
+
+#[rstest]
+#[case::own_partition(vec![(760_000_015, 7760), (760_000_017, 7760)], Some(760_000_017))]
+#[case::other_client_in_partition(vec![(760_000_015, 7760), (760_000_030, 1760)], Some(760_000_015))]
+#[case::other_partition(vec![(770_000_005, 7770)], None)]
+#[case::unset_order_id(vec![(0, 7760)], None)]
+#[tokio::test]
+async fn highest_completed_order_id_reads_client_partition(
+    #[case] orders: Vec<(i32, i32)>,
+    #[case] expected: Option<i32>,
+) {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    for (order_id, client_id) in orders {
+        sender
+            .send(Ok(Orders::OrderData(create_test_completed_order(
+                order_id, client_id,
+            ))))
+            .unwrap();
+    }
+    drop(sender);
+
+    let highest = InteractiveBrokersExecutionClient::highest_completed_order_id(
+        ChannelSubscription::new(receiver),
+        7760,
+    )
+    .await;
+
+    assert_eq!(highest, expected);
+}
+
+#[rstest]
 fn stop_cancels_execution_lifecycle_and_aborts_tracked_tasks() {
     let (mut client, _receiver, _cache) = create_test_execution_client();
     client.is_connected.store(true, Ordering::Relaxed);

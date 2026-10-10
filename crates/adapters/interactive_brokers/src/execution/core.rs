@@ -668,6 +668,16 @@ impl InteractiveBrokersExecutionClient {
         order_id > order_id_floor && order_id < order_id_floor + ORDER_ID_PARTITION_SIZE
     }
 
+    // IB refuses an order ID at or below one the same client already used (error 103). Its next
+    // valid ID can belong to another client's partition and then says nothing about this
+    // client's IDs, so the start also clears the highest ID this client has in orders IB lists
+    fn initial_order_id(next_id: i32, client_id: i32, highest_used_order_id: Option<i32>) -> i32 {
+        let client_scoped_next_id = Self::apply_client_order_id_floor(next_id, client_id);
+        highest_used_order_id.map_or(client_scoped_next_id, |order_id| {
+            client_scoped_next_id.max(order_id.saturating_add(1))
+        })
+    }
+
     /// Gets the next valid order ID from IB.
     ///
     /// # Errors
@@ -779,6 +789,49 @@ impl InteractiveBrokersExecutionClient {
         }
 
         Ok(highest_order_id)
+    }
+
+    async fn get_highest_completed_order_id(&self, client: &Client) -> anyhow::Result<Option<i32>> {
+        let timeout_dur = Duration::from_secs(self.config.request_timeout);
+        let subscription = tokio::time::timeout(timeout_dur, client.completed_orders(false))
+            .await
+            .context("Timeout requesting completed orders for next order ID initialization")??;
+
+        Ok(Self::highest_completed_order_id(subscription, self.config.client_id).await)
+    }
+
+    // IB lists completed orders for a limited period only. A completed order's API order ID is on
+    // the order itself because its top-level order ID is unset
+    pub(super) async fn highest_completed_order_id<S>(
+        subscription: S,
+        client_id: i32,
+    ) -> Option<i32>
+    where
+        S: futures_util::Stream<Item = Result<SubscriptionItem<Orders>, ibapi::Error>> + Unpin,
+    {
+        let mut subscription = subscription.filter_data();
+        let mut highest_order_id = None;
+
+        while let Some(order_result) = subscription.next().await {
+            match order_result {
+                Ok(Orders::OrderData(data)) => {
+                    let order_id = data.order.order_id;
+                    if data.order.client_id == client_id
+                        && Self::is_order_id_in_client_partition(order_id, client_id)
+                    {
+                        highest_order_id = highest_order_id.max(Some(order_id));
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::debug!(
+                        "Ignoring completed-order event while initializing next order ID: {e}"
+                    );
+                }
+            }
+        }
+
+        highest_order_id
     }
 
     fn begin_task_shutdown(&self) {
@@ -1028,12 +1081,15 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let next_id = self.get_next_order_id().await?;
         log::debug!("Requesting highest open IB order ID");
         let highest_open_order_id = self.get_highest_open_order_id(client.as_ref()).await?;
-        let client_scoped_next_id =
-            Self::apply_client_order_id_floor(next_id, self.config.client_id);
+        log::debug!("Requesting highest completed IB order ID");
+        let highest_completed_order_id =
+            self.get_highest_completed_order_id(client.as_ref()).await?;
 
-        let starting_order_id = highest_open_order_id.map_or(client_scoped_next_id, |order_id| {
-            client_scoped_next_id.max(order_id.saturating_add(1))
-        });
+        let starting_order_id = Self::initial_order_id(
+            next_id,
+            self.config.client_id,
+            highest_open_order_id.max(highest_completed_order_id),
+        );
 
         if starting_order_id == next_id {
             tracing::debug!(
@@ -1042,7 +1098,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             );
         } else {
             tracing::debug!(
-                "Adjusted next Interactive Brokers order ID from {} to {} based on client ID/open orders",
+                "Adjusted next Interactive Brokers order ID from {} to {} based on client ID/open and completed orders",
                 next_id,
                 starting_order_id
             );
