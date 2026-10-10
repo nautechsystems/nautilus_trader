@@ -16,7 +16,7 @@
 //! Kraken Futures execution client implementation.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -45,7 +45,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderStatus, OrderType},
+    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
     },
@@ -1121,6 +1121,82 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .http
             .request_position_status_reports(account_id, None)
             .await?;
+
+        // An instrument the venue reports flat must not open a position in reconciliation. The
+        // position read returns open positions only, so an instrument with no position report is
+        // flat at the venue. With no lookback declared the engine applies every kept fill to
+        // positions, and the fills read is a single page, so a round trip whose opening fill is
+        // older than that page would leave its closing side alone and open a position opposite to
+        // the one the venue closed. Terminal history orders on a flat instrument therefore stay
+        // only when their fills net to zero; otherwise they are withheld with their fills and the
+        // set is marked incomplete. With a bounded lookback the engine projects such orders onto
+        // order state only, so this applies to the unbounded read alone. Cached orders are left
+        // out, since their fills reconcile against the cached order and its position.
+        let orders_complete = if lookback_start.is_none() {
+            let held: HashSet<InstrumentId> = position_reports
+                .iter()
+                .map(|report| report.instrument_id)
+                .collect();
+            let candidates: HashSet<VenueOrderId> = {
+                let cache = self.core.cache();
+                order_reports
+                    .iter()
+                    .filter(|report| {
+                        from_venue_read.contains(&report.venue_order_id)
+                            && !held.contains(&report.instrument_id)
+                            && matches!(
+                                report.order_status,
+                                OrderStatus::Filled
+                                    | OrderStatus::Canceled
+                                    | OrderStatus::Expired
+                                    | OrderStatus::Voided
+                            )
+                            && cached_order_for_report(&cache, report).is_none()
+                    })
+                    .map(|report| report.venue_order_id)
+                    .collect()
+            };
+
+            let mut net: HashMap<InstrumentId, Decimal> = HashMap::new();
+
+            for fill in fill_reports
+                .iter()
+                .filter(|fill| candidates.contains(&fill.venue_order_id))
+            {
+                let qty = fill.last_qty.as_decimal();
+                let signed = match fill.order_side {
+                    OrderSide::Buy => qty,
+                    OrderSide::Sell => -qty,
+                };
+                *net.entry(fill.instrument_id).or_default() += signed;
+            }
+            net.retain(|_, net| !net.is_zero());
+
+            if net.is_empty() {
+                orders_complete
+            } else {
+                for (instrument_id, net) in &net {
+                    log::warn!(
+                        "Withholding terminal orders on {instrument_id} from mass status: the venue \
+                         reports it flat but their fills net to {net}, so reconciliation would open \
+                         a position; marking the set incomplete",
+                    );
+                }
+                let withheld_flat: HashSet<VenueOrderId> = order_reports
+                    .iter()
+                    .filter(|report| {
+                        candidates.contains(&report.venue_order_id)
+                            && net.contains_key(&report.instrument_id)
+                    })
+                    .map(|report| report.venue_order_id)
+                    .collect();
+                order_reports.retain(|report| !withheld_flat.contains(&report.venue_order_id));
+                fill_reports.retain(|fill| !withheld_flat.contains(&fill.venue_order_id));
+                false
+            }
+        } else {
+            orders_complete
+        };
 
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,

@@ -2440,6 +2440,175 @@ async fn test_futures_mass_status_keeps_cached_order_fills_when_its_report_is_wi
     assert!(!snapshot.reports_complete());
 }
 
+/// A history page holding a filled round trip on `PI_XBTUSD`: a 1,000-contract buy opened a long
+/// and a 1,000-contract sell closed it.
+fn flat_round_trip_history_json() -> String {
+    futures_order_history_json(&[
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e2",
+            "F-FLAT-CLOSE",
+            "PI_XBTUSD",
+            "Sell",
+            "1000",
+            "1000",
+            1680879600000,
+        ),
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e1",
+            "F-FLAT-OPEN",
+            "PI_XBTUSD",
+            "Buy",
+            "1000",
+            "1000",
+            1680876000000,
+        ),
+    ])
+}
+
+/// On an instrument the venue reports flat, an unbounded read keeps no terminal order whose fills
+/// would open a position: with the opening fill off the fills page, neither side of the round
+/// trip nor its fills reach reconciliation, and the set is incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_a_closing_order_on_a_flat_instrument_when_the_open_is_off_page()
+ {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(flat_round_trip_history_json());
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-close",
+        "F-FLAT-CLOSE",
+        "sell",
+        "1000",
+        "50000.0",
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot.order_reports().is_empty(),
+        "neither side of the round trip may reach reconciliation: {:?}",
+        snapshot.order_reports().keys().collect::<Vec<_>>()
+    );
+    assert!(snapshot.fill_reports().values().all(Vec::is_empty));
+    assert!(!snapshot.reports_complete());
+}
+
+/// A round trip whose fills are all on the page nets to zero on the flat instrument and is kept.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_a_flat_round_trip_whose_fills_net_to_zero() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(flat_round_trip_history_json());
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-flat-open", "F-FLAT-OPEN", "buy", "1000", "49000.0"),
+        ("f-flat-close", "F-FLAT-CLOSE", "sell", "1000", "50000.0"),
+    ]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert_eq!(
+        snapshot.order_reports().len(),
+        2,
+        "{:?}",
+        snapshot.order_reports()
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 2);
+    assert!(snapshot.reports_complete());
+}
+
+/// An instrument with a position report is left to that report, so the flat rule keeps the
+/// closing order there.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_leaves_a_held_instrument_to_its_position_report() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(flat_round_trip_history_json());
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-close",
+        "F-FLAT-CLOSE",
+        "sell",
+        "1000",
+        "50000.0",
+    )]));
+    *state.futures_open_positions_json.lock().await =
+        Some(futures_open_positions_json("PI_XBTUSD"));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-FLAT-CLOSE")),
+        "the position report governs a held instrument"
+    );
+    assert!(
+        !snapshot.reports_complete(),
+        "the opening order is still withheld for coverage"
+    );
+}
+
+/// A cached order is left out of the flat rule, since its fills reconcile against the cached order
+/// and its position: its terminal report and fills stay on an instrument the venue reports flat.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_leaves_a_cached_order_on_a_flat_instrument_to_the_engine() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    cache_order_with_fills(&cache, "F-CACHED", &[]);
+    *state.futures_order_history_json.lock().await = Some(executed_history_json("F-CACHED"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-cached", "F-CACHED", "buy", "1000", "49000.0",
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-CACHED")),
+        "a cached order is not withheld by the flat rule"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 1);
+    assert!(snapshot.reports_complete());
+}
+
+/// With a bounded lookback the engine projects such orders onto order state only, so the flat
+/// rule does not apply and the closing order is kept.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_the_closing_order_under_a_bounded_lookback() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(flat_round_trip_history_json());
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-close",
+        "F-FLAT-CLOSE",
+        "sell",
+        "1000",
+        "50000.0",
+    )]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-FLAT-CLOSE")),
+        "a bounded read leaves the order-only projection to the engine"
+    );
+}
+
 /// A failed history read degrades the mass status to the open-only read rather than failing it:
 /// the open orders are reported, nothing from the history is, and the set is incomplete.
 #[rstest]

@@ -769,6 +769,15 @@ every holding it covers and an absent report is genuine evidence of flat.
   back on a later read. A withheld order's page fills stay when the cache holds the order, since the
   engine reconciles them against it without a report; an uncached order's fills are withheld with
   it, since on their own they would materialize an order at the partial quantity.
+- Flat instruments: the position read returns open positions only, so an instrument with no
+  position report is flat at the venue. The fills read is a single page, so a round trip whose
+  opening fill is older than that page would leave its closing side alone, and with no
+  `reconciliation_lookback_mins` the engine applies every kept fill to positions, opening a
+  position the venue does not hold. To compensate, on an unbounded startup read the terminal
+  history orders the cache does not hold stay on a flat instrument only when their fills net to
+  zero; otherwise they are withheld with their fills, with a warning, and the set is marked
+  incomplete. A held instrument is left to its position report, and a bounded lookback leaves such
+  orders to the engine, which projects them onto order state only.
 
 **Fill reports:**
 
