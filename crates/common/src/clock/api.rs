@@ -18,10 +18,11 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
     fmt::Debug,
+    sync::Arc,
     time::Duration,
 };
 
-use jiff::Timestamp;
+use jiff::{Span, Timestamp, Zoned};
 use nautilus_core::{
     DurationNanos, UnixNanos,
     datetime::{NANOSECONDS_IN_SECOND, try_datetime_to_unix_nanos},
@@ -29,7 +30,11 @@ use nautilus_core::{
 use ustr::Ustr;
 
 use super::{Clock, duration_to_nanos};
-use crate::{component::ComponentAccessError, timer::TimeEventCallback};
+use crate::{
+    calendar::CalendarSchedule,
+    component::ComponentAccessError,
+    timer::{TimeEventCallback, TimerSchedule},
+};
 
 /// Provides a user-facing facade over clock operations.
 ///
@@ -319,6 +324,75 @@ impl<'a> ClockApi<'a> {
                 fire_immediately,
             ),
         }
+    }
+
+    /// Registers a source of absolute UTC deadlines.
+    ///
+    /// See [`Clock::set_timer_schedule`] for timer lifecycle, flag, and callback semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns:
+    /// - An error if the backing clock rejects the schedule, or operation handlers back this API.
+    /// - [`ComponentAccessError`] if the native clock is already borrowed.
+    pub fn set_timer_schedule(
+        &self,
+        name: &str,
+        schedule: Arc<dyn TimerSchedule>,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock_mut(clock, "set_timer_schedule")?
+                .set_timer_schedule(
+                    name,
+                    schedule,
+                    stop_time_ns,
+                    callback,
+                    allow_past,
+                    fire_immediately,
+                ),
+            ClockApiBacking::Handlers(_) => {
+                anyhow::bail!("Timer '{name}' needs a native clock for a deadline schedule")
+            }
+        }
+    }
+
+    /// Sets a calendar timer stepped in the timezone of `start_time`.
+    ///
+    /// Each occurrence is calculated from the original start. Days, weeks, months, and years
+    /// preserve local wall-clock time across DST changes; time-only spans use elapsed time.
+    /// Event timestamps remain UTC. See [`Clock::set_timer_ns`] for flags and callback selection.
+    ///
+    /// # Errors
+    ///
+    /// Returns:
+    /// - An error if the interval is not positive, or start or stop timestamps are outside
+    ///   the [`UnixNanos`] range.
+    /// - An error if the backing clock rejects the schedule, or operation handlers back this API.
+    /// - [`ComponentAccessError`] if the native clock is already borrowed.
+    #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
+    pub fn set_timer_zoned(
+        &self,
+        name: &str,
+        interval: Span,
+        start_time: &Zoned,
+        stop_time: Option<Timestamp>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        let schedule = CalendarSchedule::new(start_time, interval)?;
+        self.set_timer_schedule(
+            name,
+            Arc::new(schedule),
+            stop_time.map(try_datetime_to_unix_nanos).transpose()?,
+            callback,
+            allow_past,
+            fire_immediately,
+        )
     }
 
     /// Returns the names of active timers.

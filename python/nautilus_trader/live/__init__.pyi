@@ -599,6 +599,8 @@ class InstrumentProviderConfig:
 @typing.final
 class LiveDataEngineConfig:
     @property
+    def time_bars_time_zone(self) -> str | None: ...
+    @property
     def time_bars_build_with_no_updates(self) -> bool: ...
     @property
     def time_bars_timestamp_on_close(self) -> bool: ...
@@ -636,6 +638,7 @@ class LiveDataEngineConfig:
         emit_quotes_from_book_depths: bool | None = None,
         external_clients: typing.Sequence[model.ClientId] | None = None,
         debug: bool | None = None,
+        time_bars_time_zone: str | None = None,
     ) -> LiveDataEngineConfig: ...
 
 @typing.final

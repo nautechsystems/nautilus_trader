@@ -669,6 +669,16 @@ class Clock:
         allow_past: bool | None = None,
         fire_immediately: bool | None = None,
     ) -> None: ...
+    def set_timer_zoned(
+        self,
+        name: str,
+        interval: str,
+        start_time: datetime.datetime,
+        stop_time: datetime.datetime | None = None,
+        callback: typing.Any | None = None,
+        allow_past: bool | None = None,
+        fire_immediately: bool | None = None,
+    ) -> None: ...
     def next_time_ns(self, name: str) -> int | None: ...
     def cancel_timer(self, name: str) -> None: ...
     def cancel_timers(self) -> None: ...

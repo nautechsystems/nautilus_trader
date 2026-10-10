@@ -16,8 +16,9 @@
 use std::{cmp, str::FromStr};
 
 use anyhow::Context;
+use jiff::tz::TimeZone;
 use nautilus_common::messages::data::{DataResponse, RequestBars, RequestCommand, SubscribeBars};
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos, datetime::get_timezone};
 use nautilus_model::{
     data::BarType,
     enums::{AggregationSource, ContinuousFutureAdjustmentType, PriceType},
@@ -42,6 +43,7 @@ pub(super) struct RequestBarAggregation {
     pub(super) update_subscriptions: bool,
     pub(super) disable_build_with_no_updates: bool,
     pub(super) skip_first_non_full_bar: Option<bool>,
+    pub(super) time_zone: Option<TimeZone>,
 }
 
 impl RequestBarAggregation {
@@ -317,7 +319,21 @@ pub(super) fn request_bar_aggregation_from_params(
         update_subscriptions,
         disable_build_with_no_updates: false,
         skip_first_non_full_bar,
+        time_zone: time_zone_from_params(Some(params))?,
     }))
+}
+
+pub(super) fn time_zone_from_params(params: Option<&Params>) -> anyhow::Result<Option<TimeZone>> {
+    let Some(value) = params.and_then(|params| params.get("time_zone")) else {
+        return Ok(None);
+    };
+
+    let name = value
+        .as_str()
+        .context("`time_zone` parameter must be a string")?;
+    Ok(Some(get_timezone(name).with_context(|| {
+        format!("invalid `time_zone` parameter {name:?}")
+    })?))
 }
 
 pub(super) fn remove_request_bar_aggregation_params(params: &mut Params) {
@@ -433,6 +449,7 @@ fn parse_continuous_future(
             // Roll gaps and weekends must not emit synthetic last-close bars (v1 parity)
             disable_build_with_no_updates: true,
             skip_first_non_full_bar: None,
+            time_zone: time_zone_from_params(Some(params))?,
         },
         transitions,
         adjustment_mode,

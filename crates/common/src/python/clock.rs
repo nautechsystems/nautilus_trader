@@ -17,14 +17,14 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use jiff::{SignedDuration, Timestamp};
+use jiff::{SignedDuration, Span, Timestamp, Zoned};
 use nautilus_core::{
     DurationNanos, UnixNanos, datetime::try_datetime_to_unix_nanos, python::to_pyvalue_err,
 };
 use pyo3::prelude::*;
 
 use crate::{
-    clock::{Clock, VirtualClock},
+    clock::{Clock, ClockApi, VirtualClock},
     live::clock::LiveClock,
     timer::TimeEventCallback,
 };
@@ -245,6 +245,85 @@ impl PyClock {
                 DurationNanos::new(interval_ns),
                 start_time_ns.map(UnixNanos::from),
                 stop_time_ns.map(UnixNanos::from),
+                callback.map(TimeEventCallback::from),
+                allow_past,
+                fire_immediately,
+            )
+            .map_err(to_pyvalue_err)
+    }
+
+    /// Sets a recurring timer anchored to a timezone-aware start datetime.
+    ///
+    /// Days, weeks, months, and years follow the local calendar; hour and shorter units measure
+    /// elapsed time. At 09:30 in New York, ``"1d"`` events are 23 hours apart when DST starts
+    /// and 25 when it ends; ``"24h"`` always spans 24 hours. ``zoneinfo.ZoneInfo`` follows DST,
+    /// while fixed offsets stay constant.
+    ///
+    /// Recurrence uses the original start, so month-end clamping and DST adjustments do not
+    /// shift later deadlines. Later gaps shift forward by the gap; folds use the first occurrence.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    ///     The timer name. Replaces any existing timer with the same name on this clock.
+    /// interval : str
+    ///     A positive span string, such as ``"1d"``, ``"24h"``, or ``"P1M"``.
+    /// start_time : datetime.datetime
+    ///     Timezone-aware start at an existing local time. DST gaps at the start are not validated;
+    ///     ``fold`` selects an ambiguous start's occurrence.
+    /// stop_time : datetime.datetime, optional
+    ///     Inclusive, timezone-aware stop after the start, and after now if ``allow_past=False``.
+    ///     If omitted, runs until cancellation or no further deadline is representable.
+    /// callback : Callable[[TimeEvent], None], optional
+    ///     The event handler. If omitted, uses the clock's named or default handler.
+    /// allow_past : bool, optional
+    ///     Whether the first event may be in the past. Defaults to ``True``.
+    /// fire_immediately : bool, optional
+    ///     Include the start as the first event. Defaults to ``False``: one interval after it.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the name, span, or timestamps are invalid, no callback is available, or a first
+    ///     event or stop time violates ``allow_past=False``.
+    ///
+    /// Notes
+    /// -----
+    /// Live clocks fire the next pending occurrence immediately if overdue, using its scheduled
+    /// timestamp, then resume at the first deadline after now, skipping intervening missed
+    /// occurrences. Virtual clocks emit every due occurrence during advancement.
+    /// Event timestamps remain UTC UNIX nanoseconds.
+    #[expect(
+        clippy::doc_markdown,
+        reason = "Python API docstrings use NumPy parameter and exception sections"
+    )]
+    #[expect(
+        clippy::too_many_arguments,
+        clippy::needless_pass_by_value,
+        reason = "PyO3 extracts the aware datetime as an owned Zoned"
+    )]
+    #[pyo3(
+        name = "set_timer_zoned",
+        signature = (name, interval, start_time, stop_time=None, callback=None, allow_past=None, fire_immediately=None)
+    )]
+    fn py_set_timer_zoned(
+        &mut self,
+        name: &str,
+        interval: &str,
+        start_time: Zoned,
+        stop_time: Option<Timestamp>,
+        callback: Option<Py<PyAny>>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> PyResult<()> {
+        let interval = interval.parse::<Span>().map_err(to_pyvalue_err)?;
+
+        ClockApi::new(self.0.as_ref())
+            .set_timer_zoned(
+                name,
+                interval,
+                &start_time,
+                stop_time,
                 callback.map(TimeEventCallback::from),
                 allow_past,
                 fire_immediately,

@@ -158,6 +158,9 @@ def _on_alert(self, event: TimeEvent) -> None:
 Pass a `callback` to direct `TimeEvent` objects to your own method. Without one, the actor runtime
 connects the clock's registered default handler to `on_time_event()`.
 
+Use `set_timer_zoned()` to schedule a recurring local time, such as 09:30 in New York across DST changes.
+See the [calendar timer example](strategies.md#calendar-timers) for setup and delivery behavior.
+
 When components share a clock:
 
 - Use **explicit callbacks** to route events to the intended component.

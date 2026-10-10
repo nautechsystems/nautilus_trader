@@ -25,11 +25,14 @@ use std::{
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use jiff::{SignedDuration, Timestamp, civil::Date, tz::Offset};
+use jiff::{
+    SignedDuration, Span, Timestamp,
+    civil::Date,
+    tz::{Offset, TimeZone},
+};
 use nautilus_core::{
     DurationNanos, UnixNanos,
     correctness::{FAILED, check_predicate_true},
-    datetime::{add_n_months, subtract_n_months},
     serialization::Serializable,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -216,113 +219,166 @@ pub fn get_time_bar_start(
     bar_type: &BarType,
     time_bars_origin: Option<SignedDuration>,
 ) -> Timestamp {
+    get_time_bar_bounds(now, bar_type, time_bars_origin, &TimeZone::UTC, None).1
+}
+
+/// Returns the previous, current, and next time bar boundaries in UTC.
+///
+/// Days and longer periods follow local calendar boundaries in `time_zone`. The origin offset
+/// shifts the nominal civil boundary before resolving DST gaps and folds. Shorter periods retain
+/// UTC alignment. Gaps shift forward; folds use the first occurrence.
+/// `calendar_origin` keeps the recurrence grid anchored to a timer's starting local date;
+/// `None` uses the current local date.
+///
+/// # Panics
+///
+/// Panics if the aggregation is unsupported or calendar arithmetic exceeds the supported range.
+#[must_use]
+pub fn get_time_bar_bounds(
+    now: Timestamp,
+    bar_type: &BarType,
+    time_bars_origin: Option<SignedDuration>,
+    time_zone: &TimeZone,
+    calendar_origin: Option<Date>,
+) -> (Timestamp, Timestamp, Timestamp) {
     let spec = bar_type.spec();
     let step = step_to_i64(spec.step);
-    let origin_offset = time_bars_origin.unwrap_or(SignedDuration::ZERO);
+    let origin = time_bars_origin.unwrap_or(SignedDuration::ZERO);
+    let local_date = time_zone.to_datetime(now).date();
+    let reference_date = calendar_origin.unwrap_or(local_date);
+
+    let start = |date: Date| {
+        let civil = date
+            .at(0, 0, 0, 0)
+            .checked_add(origin)
+            .expect("valid bar origin");
+        time_zone
+            .to_timestamp(civil)
+            .expect("valid time bar boundary")
+    };
 
     match spec.aggregation {
-        BarAggregation::Millisecond => {
-            find_closest_smaller_time(now, origin_offset, SignedDuration::from_millis(step))
-        }
-        BarAggregation::Second => {
-            find_closest_smaller_time(now, origin_offset, SignedDuration::from_secs(step))
-        }
-        BarAggregation::Minute => {
-            find_closest_smaller_time(now, origin_offset, SignedDuration::from_mins(step))
-        }
-        BarAggregation::Hour => {
-            find_closest_smaller_time(now, origin_offset, SignedDuration::from_hours(step))
-        }
-        BarAggregation::Day => find_closest_smaller_time(now, origin_offset, duration_days(step)),
-        BarAggregation::Week => {
-            let now_civil = Offset::UTC.to_datetime(now);
-            let days_from_monday = i64::from(now_civil.weekday().to_monday_zero_offset());
-            let week_start_date = now_civil
-                .date()
-                .checked_sub(jiff::Span::new().days(days_from_monday))
-                .expect("valid week start");
-            let mut start_time = Offset::UTC
-                .to_timestamp(week_start_date.at(0, 0, 0, 0))
-                .expect("valid UTC week start");
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time -=
-                    duration_days(step.checked_mul(7).expect("`step` overflows i64 days"));
-            }
-
-            start_time
-        }
-        BarAggregation::Month => {
-            // Set to the first day of the year
-            let now_civil = Offset::UTC.to_datetime(now);
-            let mut start_time = Offset::UTC
-                .to_timestamp(
-                    Date::new(now_civil.year(), 1, 1)
-                        .expect("valid year start date")
-                        .at(0, 0, 0, 0),
+        BarAggregation::Day | BarAggregation::Week => {
+            let (span, days_per_period) = if spec.aggregation == BarAggregation::Day {
+                (Span::new().try_days(step).expect("valid day step"), step)
+            } else {
+                (
+                    Span::new().try_weeks(step).expect("valid week step"),
+                    step * 7,
                 )
-                .expect("valid UTC year start");
-            start_time += origin_offset;
-
-            if now < start_time {
-                start_time =
-                    subtract_n_months(start_time, 12).expect("Failed to subtract 12 months");
-            }
-
-            let months_step =
-                u32::try_from(step).expect("`step` exceeds u32 range for month arithmetic");
-
-            while start_time <= now {
-                start_time =
-                    add_n_months(start_time, months_step).expect("Failed to add months in loop");
-            }
-
-            start_time =
-                subtract_n_months(start_time, months_step).expect("Failed to subtract months_step");
-            start_time
-        }
-        BarAggregation::Year => {
-            let step_i32 =
-                i32::try_from(step).expect("`step` exceeds i32 range for year arithmetic");
-
-            // Reconstruct from Jan 1 + origin each time to avoid leap-day drift
-            let year_start = |year: i32| {
-                let year = i16::try_from(year).expect("year exceeds Jiff supported range");
-                Offset::UTC
-                    .to_timestamp(
-                        Date::new(year, 1, 1)
-                            .expect("valid year start date")
-                            .at(0, 0, 0, 0),
-                    )
-                    .expect("valid UTC year start")
-                    + origin_offset
             };
 
-            let mut year = i32::from(Offset::UTC.to_datetime(now).year());
-            if year_start(year) > now {
-                year = year
-                    .checked_sub(step_i32)
-                    .expect("year arithmetic underflow");
-            }
+            let date = if spec.aggregation == BarAggregation::Week {
+                reference_date
+                    .checked_sub(
+                        Span::new()
+                            .days(i64::from(reference_date.weekday().to_monday_zero_offset())),
+                    )
+                    .expect("valid week start")
+            } else {
+                reference_date
+            };
 
-            loop {
-                let next_year = year
-                    .checked_add(step_i32)
-                    .expect("year arithmetic overflow");
-
-                if year_start(next_year) > now {
-                    break;
-                }
-                year = next_year;
-            }
-
-            year_start(year)
+            let days = date
+                .until(local_date)
+                .expect("valid date difference")
+                .get_days();
+            let index = i64::from(days).div_euclid(days_per_period);
+            find_calendar_bounds(now, index, 1, |index| {
+                start(
+                    date.checked_add(span.checked_mul(index).expect("valid day offset"))
+                        .expect("valid bar date"),
+                )
+            })
         }
-        _ => panic!(
-            "Aggregation type {} not supported for time bars",
-            spec.aggregation
-        ),
+        BarAggregation::Month => {
+            let step = i64::from(
+                u32::try_from(step).expect("`step` exceeds u32 range for month arithmetic"),
+            );
+            let origin_year = reference_date.year();
+            let base = Date::new(origin_year, 1, 1)
+                .expect("valid year start")
+                .at(0, 0, 0, 0)
+                .checked_add(origin)
+                .expect("valid month origin");
+
+            let boundary = |months: i64| {
+                let civil = base
+                    .checked_add(Span::new().try_months(months).expect("valid month step"))
+                    .expect("valid month boundary");
+                time_zone.to_timestamp(civil).expect("valid month boundary")
+            };
+
+            let index = (i64::from(local_date.year()) - i64::from(origin_year)) * 12;
+            find_calendar_bounds(now, index, step, boundary)
+        }
+        BarAggregation::Year => {
+            let step = i32::try_from(step).expect("`step` exceeds i32 range for year arithmetic");
+
+            let boundary = |year: i64| {
+                start(
+                    Date::new(
+                        i16::try_from(year).expect("year exceeds Jiff supported range"),
+                        1,
+                        1,
+                    )
+                    .expect("valid year start date"),
+                )
+            };
+
+            let step = i64::from(step);
+            let origin_year = i64::from(reference_date.year());
+            let years = i64::from(local_date.year()) - origin_year;
+            let index = origin_year + years.div_euclid(step) * step;
+            find_calendar_bounds(now, index, step, boundary)
+        }
+        _ => {
+            let origin_offset = origin;
+
+            let start = match spec.aggregation {
+                BarAggregation::Millisecond => {
+                    find_closest_smaller_time(now, origin_offset, SignedDuration::from_millis(step))
+                }
+                BarAggregation::Second => {
+                    find_closest_smaller_time(now, origin_offset, SignedDuration::from_secs(step))
+                }
+                BarAggregation::Minute => {
+                    find_closest_smaller_time(now, origin_offset, SignedDuration::from_mins(step))
+                }
+                BarAggregation::Hour => {
+                    find_closest_smaller_time(now, origin_offset, SignedDuration::from_hours(step))
+                }
+                _ => panic!(
+                    "Aggregation type {} not supported for time bars",
+                    spec.aggregation
+                ),
+            };
+
+            let interval = get_bar_interval(bar_type);
+            (start - interval, start, start + interval)
+        }
+    }
+}
+
+fn find_calendar_bounds(
+    now: Timestamp,
+    mut index: i64,
+    step: i64,
+    boundary: impl Fn(i64) -> Timestamp,
+) -> (Timestamp, Timestamp, Timestamp) {
+    while boundary(index) > now {
+        index = index.checked_sub(step).expect("calendar index underflow");
+    }
+
+    loop {
+        let next = index.checked_add(step).expect("calendar index overflow");
+        let close = boundary(next);
+        if close > now {
+            let previous = index.checked_sub(step).expect("calendar index underflow");
+            return (boundary(previous), boundary(index), close);
+        }
+
+        index = next;
     }
 }
 
@@ -1263,6 +1319,98 @@ mod tests {
 
     fn timestamp(value: &str) -> Timestamp {
         value.parse().unwrap()
+    }
+
+    #[rstest]
+    #[case::spring_gap(
+        BarAggregation::Day,
+        "America/New_York",
+        "2026-03-08T12:00:00Z",
+        9_000,
+        "2026-03-07T07:30:00Z",
+        "2026-03-08T07:30:00Z",
+        "2026-03-09T06:30:00Z"
+    )]
+    #[case::fall_fold(
+        BarAggregation::Day,
+        "America/New_York",
+        "2026-11-01T12:00:00Z",
+        5_400,
+        "2026-10-31T05:30:00Z",
+        "2026-11-01T05:30:00Z",
+        "2026-11-02T06:30:00Z"
+    )]
+    #[case::clamped_month(
+        BarAggregation::Month,
+        "America/New_York",
+        "2026-03-01T12:00:00Z",
+        2_592_000,
+        "2026-01-31T05:00:00Z",
+        "2026-02-28T05:00:00Z",
+        "2026-03-31T04:00:00Z"
+    )]
+    #[case::leap_origin(
+        BarAggregation::Year,
+        "America/New_York",
+        "2024-07-01T12:00:00Z",
+        5_097_600,
+        "2023-03-01T05:00:00Z",
+        "2024-02-29T05:00:00Z",
+        "2025-03-01T05:00:00Z"
+    )]
+    #[case::week(
+        BarAggregation::Week,
+        "America/New_York",
+        "2026-11-01T12:00:00Z",
+        0,
+        "2026-10-19T04:00:00Z",
+        "2026-10-26T04:00:00Z",
+        "2026-11-02T05:00:00Z"
+    )]
+    #[case::month(
+        BarAggregation::Month,
+        "America/New_York",
+        "2026-11-15T12:00:00Z",
+        0,
+        "2026-10-01T04:00:00Z",
+        "2026-11-01T04:00:00Z",
+        "2026-12-01T05:00:00Z"
+    )]
+    #[case::year(
+        BarAggregation::Year,
+        "Australia/Sydney",
+        "2026-06-01T12:00:00Z",
+        0,
+        "2024-12-31T13:00:00Z",
+        "2025-12-31T13:00:00Z",
+        "2026-12-31T13:00:00Z"
+    )]
+    fn test_time_bar_bounds_preserve_local_calendar_origin(
+        #[case] aggregation: BarAggregation,
+        #[case] zone: &str,
+        #[case] now: &str,
+        #[case] origin_secs: i64,
+        #[case] previous: &str,
+        #[case] open: &str,
+        #[case] close: &str,
+    ) {
+        let bar_type = BarType::from(&format!("AAPL.XNAS-1-{aggregation}-LAST-INTERNAL"));
+        let zone = nautilus_core::datetime::get_timezone(zone).unwrap();
+        let bounds = get_time_bar_bounds(
+            now.parse().unwrap(),
+            &bar_type,
+            Some(SignedDuration::from_secs(origin_secs)),
+            &zone,
+            None,
+        );
+        assert_eq!(
+            bounds,
+            (
+                previous.parse::<Timestamp>().unwrap(),
+                open.parse::<Timestamp>().unwrap(),
+                close.parse::<Timestamp>().unwrap()
+            )
+        );
     }
 
     #[rstest]

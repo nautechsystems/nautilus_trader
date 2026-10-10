@@ -30,7 +30,10 @@ use nautilus_common::{
     msgbus::MessageBusConfig,
     throttler::RateLimit,
 };
-use nautilus_core::{DurationNanos, UUID4, datetime::secs_to_nanos};
+use nautilus_core::{
+    DurationNanos, UUID4,
+    datetime::{get_timezone, secs_to_nanos},
+};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig, order_emulator::config::OrderEmulatorConfig,
@@ -106,6 +109,8 @@ pub struct LiveDataEngineConfig {
     /// Keys are `BarAggregation` variant names, values are offset durations in nanoseconds.
     #[builder(default)]
     pub time_bars_origin_offset: HashMap<String, u64>,
+    /// The IANA time zone for day and longer bars, defaulting to UTC.
+    pub time_bars_time_zone: Option<String>,
     /// If data timestamp sequencing should be validated and handled.
     #[builder(default)]
     pub validate_data_sequence: bool,
@@ -158,6 +163,7 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
             time_bars_interval_type: config.time_bars_interval_type,
             time_bars_build_delay: config.time_bars_build_delay,
             time_bars_origin_offset,
+            time_bars_time_zone: config.time_bars_time_zone,
             validate_data_sequence: config.validate_data_sequence,
             buffer_deltas: config.buffer_deltas,
             emit_quotes_from_book: config.emit_quotes_from_book,
@@ -922,6 +928,15 @@ impl PluginConfig {
 impl LiveDataEngineConfig {
     fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
+        if let Some(name) = &self.time_bars_time_zone
+            && let Err(e) = get_timezone(name)
+        {
+            collector.push(ConfigError::invalid_reference(
+                "LiveDataEngineConfig.time_bars_time_zone",
+                "IANA time zone",
+                e.to_string(),
+            ));
+        }
 
         for agg_str in self.time_bars_origin_offset.keys() {
             if let Err(e) = BarAggregation::from_str(agg_str) {
@@ -1177,6 +1192,33 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some("America/New_York"))]
+    #[case(Some("UTC"))]
+    fn test_calendar_time_zone_config_reaches_data_engine(#[case] name: Option<&str>) {
+        let config = LiveDataEngineConfig::builder()
+            .maybe_time_bars_time_zone(name.map(str::to_owned))
+            .build();
+        assert_eq!(config.validate_runtime_support(), Ok(()));
+        let converted: DataEngineConfig = config.into();
+        assert_eq!(converted.time_bars_time_zone, name.map(str::to_owned));
+    }
+
+    #[rstest]
+    fn test_calendar_time_zone_config_rejects_unknown_zone() {
+        let config = LiveDataEngineConfig::builder()
+            .time_bars_time_zone("Not/A_Zone".to_owned())
+            .build();
+        let error = config.validate_runtime_support().unwrap_err();
+        let expected = ConfigError::invalid_reference(
+            "LiveDataEngineConfig.time_bars_time_zone",
+            "IANA time zone",
+            get_timezone("Not/A_Zone").unwrap_err().to_string(),
+        );
+        assert_eq!(error, expected);
+    }
 
     #[rstest]
     fn test_trading_node_config_default() {

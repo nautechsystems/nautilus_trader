@@ -7,6 +7,8 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `Clock.set_timer_zoned` and Rust `CalendarSchedule` for local calendar recurrence, thanks @faysou
+- Added `time_bars_time_zone` and `time_zone` overrides for local calendar bars, thanks @faysou
 - Added Rust candidate option IDs for supported CME Globex and OSI equity/index contracts, thanks @faysou
 - Added reference instruments to `OptionSeriesId` with compatible derived-reference serialization, thanks @faysou
 - Added `OptionSideFilter` and Rust `StrikeSearchProfile` model types for option selection, thanks @faysou
@@ -23,6 +25,11 @@ Released on TBD (UTC).
 - Removed Interactive Brokers connection wrappers; use `ibapi::Client` (#5041), thanks @faysou
 - Removed Interactive Brokers `ErrorCategory` and `InteractiveBrokersErrorKind` exports (#5041), thanks @faysou
 - Replaced Interactive Brokers Rust symbology functions with `Symbology` methods (#5041), thanks @faysou
+- Changed Rust `VirtualTimer` and `LiveTimer` to store `interval: TimerInterval` instead of `interval_ns`;
+  match `TimerInterval::Fixed` to read fixed intervals
+- Changed Rust `DataEngineConfig` and `LiveDataEngineConfig` struct literals to require `time_bars_time_zone`;
+  use `None` in existing struct literals to retain UTC alignment
+- Changed Rust `TimeBarAggregator::new` to require `jiff::tz::TimeZone`; pass `TimeZone::UTC` for UTC bars
 - Changed Rust `OptionSeriesId::new` to require a reference instrument; use `new_derived` to derive it
 - Changed Rust `OptionSeriesId::from_expiry` and `from_expiry_ns`; pass `None` as the final argument to derive a reference
 - Changed Rust `OptionSeriesId::from_crypto_option` and struct literals to require `underlying_instrument_id`
@@ -47,6 +54,8 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed released emulated orders sending stale order initialization (#5169), thanks @jrile018
+- Fixed monthly time bars drifting after a clamped month-end origin offset
+- Fixed queued time-bar callbacks affecting aggregation after a stop or restart
 - Fixed `RiskEngine` notional limits for negative prices
 - Fixed maker/taker commission sign at negative prices
 - Fixed cache open-order queries retaining submitted orders after cancel or modify rejections

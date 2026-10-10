@@ -132,6 +132,7 @@
 
 pub mod actor;
 pub mod cache;
+pub mod calendar;
 pub mod clients;
 pub mod clock;
 pub mod component;

@@ -15,11 +15,13 @@
 
 use std::fmt::Debug;
 
+use anyhow::Context;
+use jiff::tz::TimeZone;
 use nautilus_common::{
     messages::data::{SubscribeBars, SubscribeCommand},
     msgbus::{self, MStr, Topic, TypedHandler},
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, datetime::get_timezone};
 use nautilus_model::data::{Bar, BarType, QuoteTick, TradeTick};
 
 use super::{
@@ -31,7 +33,8 @@ use super::{
     UnsubscribeCommand, UnsubscribeQuotes, UnsubscribeTrades, ValueBarAggregator,
     ValueImbalanceBarAggregator, ValueRunsBarAggregator, VolumeBarAggregator,
     VolumeImbalanceBarAggregator, VolumeRunsBarAggregator, log_error_on_cache_insert,
-    process_engine_bar, request_bar_aggregation_from_params, request_params, switchboard,
+    process_engine_bar, request_bar_aggregation_from_params, request_params,
+    requests::time_zone_from_params, switchboard,
 };
 
 impl DataEngine {
@@ -96,6 +99,7 @@ impl DataEngine {
                 *bar_type,
                 aggregator_request_id,
                 state.skip_first_non_full_bar,
+                state.time_zone.clone(),
             )?;
             self.setup_bar_aggregator(*bar_type, true, aggregator_request_id)?;
 
@@ -395,6 +399,7 @@ impl DataEngine {
         instrument: &InstrumentAny,
         bar_type: BarType,
         skip_first_non_full_bar: Option<bool>,
+        time_zone: TimeZone,
     ) -> Box<dyn BarAggregator> {
         let cache = self.cache.clone();
         let validate_sequence = self.config.validate_data_sequence;
@@ -425,6 +430,7 @@ impl DataEngine {
                 config.time_bars_timestamp_on_close,
                 config.time_bars_interval_type,
                 time_bars_origin_offset,
+                time_zone,
                 config.time_bars_build_delay,
                 skip_first_non_full_bar.unwrap_or(config.time_bars_skip_first_non_full_bar),
             ))
@@ -503,9 +509,25 @@ impl DataEngine {
         bar_type: BarType,
         request_id: Option<UUID4>,
         skip_first_non_full_bar: Option<bool>,
+        time_zone: Option<TimeZone>,
     ) -> anyhow::Result<()> {
         let key = bar_aggregator_key(bar_type, request_id);
-        if self.bar_aggregators.contains_key(&key) {
+
+        let time_zone = match time_zone {
+            Some(zone) => zone,
+            None => get_timezone(self.config.time_bars_time_zone.as_deref().unwrap_or("UTC"))
+                .context("invalid `time_bars_time_zone` configuration")?,
+        };
+
+        if let Some(aggregator) = self.bar_aggregators.get(&key) {
+            let aggregator = aggregator.borrow();
+            if let Some(aggregator) = aggregator.as_any().downcast_ref::<TimeBarAggregator>() {
+                anyhow::ensure!(
+                    aggregator.time_zone() == &time_zone,
+                    "Cannot reuse bar aggregator {bar_type} with a different time zone"
+                );
+            }
+
             return Ok(());
         }
 
@@ -522,7 +544,8 @@ impl DataEngine {
                 .clone()
         };
 
-        let aggregator = self.create_bar_aggregator(&instrument, bar_type, skip_first_non_full_bar);
+        let aggregator =
+            self.create_bar_aggregator(&instrument, bar_type, skip_first_non_full_bar, time_zone);
         debug_assert_eq!(
             aggregator.bar_type(),
             key.0,
@@ -535,6 +558,17 @@ impl DataEngine {
     }
 
     fn start_bar_aggregation(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let time_zone = time_zone_from_params(cmd.params.as_ref())?;
+        let skip_first_non_full_bar = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("skip_first_non_full_bar"));
+        self.create_bar_aggregator_for_key(
+            cmd.bar_type,
+            None,
+            skip_first_non_full_bar,
+            time_zone.clone(),
+        )?;
         let key = bar_aggregator_key(cmd.bar_type, None);
 
         if self
@@ -558,11 +592,7 @@ impl DataEngine {
             return Ok(());
         }
 
-        let skip_first_non_full_bar = cmd
-            .params
-            .as_ref()
-            .and_then(|params| params.get_bool("skip_first_non_full_bar"));
-        self.start_bar_aggregator(cmd.bar_type, None, skip_first_non_full_bar)?;
+        self.start_bar_aggregator(cmd.bar_type, None, skip_first_non_full_bar, time_zone)?;
         let source = self.subscribe_bar_aggregator(cmd);
         self.subscriptions_bar_aggregation.insert(
             cmd.bar_type.standard(),
@@ -580,11 +610,17 @@ impl DataEngine {
         bar_type: BarType,
         request_id: Option<UUID4>,
         skip_first_non_full_bar: Option<bool>,
+        time_zone: Option<TimeZone>,
     ) -> anyhow::Result<()> {
         let key = bar_aggregator_key(bar_type, request_id);
         let bar_type_std = bar_type.standard();
 
-        self.create_bar_aggregator_for_key(bar_type, request_id, skip_first_non_full_bar)?;
+        self.create_bar_aggregator_for_key(
+            bar_type,
+            request_id,
+            skip_first_non_full_bar,
+            time_zone,
+        )?;
         let aggregator = self
             .bar_aggregators
             .get(&key)
@@ -899,5 +935,208 @@ impl Debug for BarAggregatorSubscription {
                 .field("handler_id", &handler.id())
                 .finish(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use jiff::Timestamp;
+    use nautilus_common::{
+        cache::Cache,
+        clock::{Clock, VirtualClock},
+        messages::data::SubscribeBars,
+        msgbus::MessageBus,
+    };
+    use nautilus_core::{UUID4, UnixNanos, datetime::get_timezone};
+    use nautilus_model::{
+        data::{Bar, BarType},
+        identifiers::TraderId,
+        instruments::{InstrumentAny, stubs::audusd_sim},
+        types::{Price, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::{bar_aggregator_key, request_bar_aggregation_from_params, time_zone_from_params};
+    use crate::engine::{DataEngine, config::DataEngineConfig};
+
+    #[rstest]
+    #[case::utc_default(None, None, "2026-11-02T00:00:00Z")]
+    #[case::config(Some("America/New_York"), None, "2026-11-02T05:00:00Z")]
+    #[case::utc_override(Some("America/New_York"), Some("UTC"), "2026-11-02T00:00:00Z")]
+    fn test_calendar_zone_precedence_and_reuse(
+        #[case] config_zone: Option<&str>,
+        #[case] override_zone: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let _msgbus = MessageBus::new(TraderId::new("TESTER-001"), UUID4::new(), None, None)
+            .register_message_bus();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(
+            "2026-11-01T12:00:00Z".parse::<Timestamp>().unwrap(),
+        ));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CurrencyPair(audusd_sim()))
+            .unwrap();
+        let config = DataEngineConfig::builder()
+            .maybe_time_bars_time_zone(config_zone.map(str::to_owned))
+            .time_bars_skip_first_non_full_bar(true)
+            .build();
+        let mut engine = DataEngine::new(clock.clone(), cache.clone(), Some(config));
+        let bar_type = BarType::from("AUD/USD.SIM-1-DAY-LAST-INTERNAL");
+        let mut params = nautilus_core::Params::default();
+        params.insert(
+            "skip_first_non_full_bar".to_owned(),
+            serde_json::json!(false),
+        );
+
+        if let Some(zone) = override_zone {
+            params.insert("time_zone".to_owned(), serde_json::json!(zone));
+        }
+
+        let mut cmd = SubscribeBars::new(
+            bar_type,
+            None,
+            Some(bar_type.instrument_id().venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(params),
+        );
+        engine.subscribe_bars(&cmd).unwrap();
+        engine.subscribe_bars(&cmd).unwrap();
+        cmd.params
+            .as_mut()
+            .unwrap()
+            .insert("time_zone".to_owned(), serde_json::json!("Asia/Tokyo"));
+        let e = engine.subscribe_bars(&cmd).unwrap_err();
+
+        // Request-local instances can use another zone without replacing the live instance
+        engine
+            .create_bar_aggregator_for_key(
+                bar_type,
+                Some(UUID4::new()),
+                None,
+                Some(get_timezone("Asia/Tokyo").unwrap()),
+            )
+            .unwrap();
+        assert_eq!(
+            e.to_string(),
+            format!("Cannot reuse bar aggregator {bar_type} with a different time zone")
+        );
+        assert_eq!(
+            clock.borrow().next_time_ns(&format!("TIME_BAR_{bar_type}")),
+            Some(UnixNanos::from(expected.parse::<Timestamp>().unwrap()))
+        );
+        let now = clock.borrow().timestamp_ns();
+        engine
+            .bar_aggregators
+            .get(&bar_aggregator_key(bar_type, None))
+            .unwrap()
+            .borrow_mut()
+            .update(Price::from("0.65000"), Quantity::from(2), now);
+        let close = UnixNanos::from(expected.parse::<Timestamp>().unwrap());
+        let events = clock.borrow_mut().advance_time(close, true);
+        let handlers = clock.borrow().match_handlers(events);
+        for handler in handlers {
+            handler.callback.call(handler.event);
+        }
+
+        assert_eq!(
+            cache.borrow().bar(&bar_type).copied(),
+            Some(Bar::new(
+                bar_type,
+                Price::from("0.65000"),
+                Price::from("0.65000"),
+                Price::from("0.65000"),
+                Price::from("0.65000"),
+                Quantity::from(2),
+                close,
+                close
+            ))
+        );
+    }
+
+    #[rstest]
+    #[case::wrong_type(serde_json::json!(17), "`time_zone` parameter must be a string")]
+    #[case::unknown_zone(serde_json::json!("Not/A_Zone"), "invalid `time_zone` parameter \"Not/A_Zone\"")]
+    fn test_calendar_zone_parameter_rejects_invalid_value(
+        #[case] value: serde_json::Value,
+        #[case] expected: &str,
+    ) {
+        let mut params = nautilus_core::Params::default();
+        params.insert("time_zone".to_owned(), value);
+        assert_eq!(
+            time_zone_from_params(Some(&params))
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_calendar_request_zone_checks_shared_instance() {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CurrencyPair(audusd_sim()))
+            .unwrap();
+        let mut engine = DataEngine::new(clock, cache, None);
+        let bar_type = BarType::from("AUD/USD.SIM-1-MONTH-LAST-INTERNAL");
+        engine
+            .create_bar_aggregator_for_key(bar_type, None, None, None)
+            .unwrap();
+        let mut params: nautilus_core::Params = serde_json::from_value(serde_json::json!({
+            "bar_types": [bar_type.to_string()], "update_subscriptions": true,
+            "time_zone": "America/New_York"
+        }))
+        .unwrap();
+        let state = request_bar_aggregation_from_params(Some(&params))
+            .unwrap()
+            .unwrap();
+        let id = UUID4::new();
+        let error = engine
+            .prepare_request_bar_aggregators_from_state(id, &state)
+            .unwrap_err();
+        params.insert("update_subscriptions".to_owned(), serde_json::json!(false));
+        let state = request_bar_aggregation_from_params(Some(&params))
+            .unwrap()
+            .unwrap();
+        engine
+            .prepare_request_bar_aggregators_from_state(id, &state)
+            .unwrap();
+        let instance = engine
+            .bar_aggregators
+            .get(&bar_aggregator_key(bar_type, Some(id)))
+            .unwrap()
+            .borrow();
+        let request_zone = instance
+            .as_any()
+            .downcast_ref::<crate::aggregation::TimeBarAggregator>()
+            .unwrap()
+            .time_zone()
+            .clone();
+        let live = engine
+            .bar_aggregators
+            .get(&bar_aggregator_key(bar_type, None))
+            .unwrap()
+            .borrow();
+        let live_zone = live
+            .as_any()
+            .downcast_ref::<crate::aggregation::TimeBarAggregator>()
+            .unwrap()
+            .time_zone()
+            .clone();
+        assert_eq!(
+            error.to_string(),
+            format!("Cannot reuse bar aggregator {bar_type} with a different time zone")
+        );
+        assert_eq!(request_zone, get_timezone("America/New_York").unwrap());
+        assert_eq!(live_zone, jiff::tz::TimeZone::UTC);
+        assert_eq!(engine.bar_aggregators.len(), 2);
     }
 }

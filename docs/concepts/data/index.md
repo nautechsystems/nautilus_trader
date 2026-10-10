@@ -396,6 +396,7 @@ apply to all time-based aggregation from milliseconds through years:
 | `time_bars_build_with_no_updates`   | `bool`                      | `True`      | When `True`, bars are emitted even if no market updates arrived during the interval.                                                                         |
 | `time_bars_origin_offset`           | `dict[BarAggregation, int]` | `{}`        | Maps aggregation types to nanosecond offsets that shift bar alignment.                                                                                       |
 | `time_bars_build_delay`             | `int`                       | `0`         | Delay in microseconds before building a bar. Useful in backtests to ensure data at bar boundary timestamps is processed before the timer fires.              |
+| `time_bars_time_zone`               | `str` or `None`             | `None`      | IANA time zone for daily and longer calendar boundaries; defaults to UTC.                                                                                    |
 
 For example, an offset of `34_200_000_000_000` nanoseconds for `BarAggregation.DAY` aligns daily
 bar boundaries to 09:30 UTC.
@@ -409,6 +410,32 @@ config = DataEngineConfig(
     time_bars_skip_first_non_full_bar=True,
 )
 ```
+
+Set `time_bars_time_zone` to align daily, weekly, monthly, and yearly bars to a local calendar.
+For example, this configuration closes daily bars at 09:30 in New York across DST changes:
+
+```python
+from nautilus_trader.config import DataEngineConfig
+from nautilus_trader.model import BarAggregation
+
+config = DataEngineConfig(
+    time_bars_time_zone="America/New_York",
+    time_bars_origin_offset={BarAggregation.DAY: 34_200_000_000_000},
+)
+```
+
+For internally aggregated bars, pass `params={"time_zone": "UTC"}` on a subscription to override the
+engine's configured zone. On a historical aggregation request, include `"time_zone"` alongside the
+`"bar_types"` request parameter. An explicit `"UTC"` overrides a non-UTC configuration.
+Subscriptions sharing a live bar type must use the same zone. Historical requests with
+`"update_subscriptions": True` also share that instance; a different zone is rejected. Independent
+request aggregators can use another zone.
+
+Origin offsets apply to nominal local boundaries before DST resolution. A boundary in a DST gap shifts
+forward by the gap; a repeated boundary uses its first occurrence. Month-end clamping affects only that
+boundary, so later months retain the nominal origin. Build delay adds elapsed microseconds after each
+resolved boundary. Bar timestamps remain UTC UNIX nanoseconds, and periods shorter than a day retain
+UTC alignment. These calendar boundaries do not include exchange sessions, holidays, or early closes.
 
 ## Timestamps
 

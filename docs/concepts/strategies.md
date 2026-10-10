@@ -339,9 +339,57 @@ self.clock.set_timer(
 )
 ```
 
+Live fixed-duration timers move an overdue first event to the current time, except at an inclusive
+stop boundary, then catch up ticks delayed by the runtime.
+
 Pass a `callback` to route `TimeEvent` objects to your own method rather than `on_time_event`. Timer
 names share the clock namespace, so use names unique to the component. See
 [Actors: timers and alerts](actors.md#timers-and-alerts).
+
+#### Calendar timers
+
+Use `set_timer_zoned()` for recurring local times. Pass a positive span string, such as `"1d"` or
+`"P1M"`, and a timezone-aware start datetime. `zoneinfo.ZoneInfo` follows DST changes;
+`datetime.timezone` keeps a fixed offset. This example fires at 09:30 in New York, starting tomorrow:
+
+```python
+from datetime import timedelta
+from zoneinfo import ZoneInfo
+
+start = self.clock.utc_now().astimezone(ZoneInfo("America/New_York"))
+start = start.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=1)
+
+self.clock.set_timer_zoned(
+    name="NewYorkMorning",
+    interval="1d",
+    start_time=start,
+    allow_past=False,
+    fire_immediately=True,
+)
+```
+
+The first event defaults to one interval after `start_time`; `fire_immediately=True` includes the start.
+With `allow_past=False`, the first event must not be in the past. Stop times are inclusive; cancellation
+stops subsequent events.
+
+Days, weeks, months, and years follow the local calendar; hour and shorter units measure elapsed time.
+At 09:30 in New York, `"1d"` events are 23 hours apart when DST starts and 25 hours apart when it ends.
+With `"24h"`, events stay 24 hours apart and their local time changes by an hour.
+
+Choose an existing local start; DST gaps at the start are not validated. For an ambiguous start, `fold`
+selects the occurrence. Recurrence stays anchored to that start, so month-end clamping and DST
+adjustments do not shift later deadlines. Later gaps shift forward by the gap; folds use the first occurrence.
+
+In live trading, `set_timer_zoned()` fires the next pending occurrence immediately if overdue, using
+its scheduled timestamp, then resumes at the first deadline after now. Virtual clocks emit every due
+occurrence during advancement.
+Event timestamps remain UTC UNIX nanoseconds.
+
+:::info Rust implementation
+Use `ClockApi::set_timer_zoned()` in Rust strategies. With a raw `Clock`, pass
+`Arc::new(CalendarSchedule::new(&start_time, span)?)` to `set_timer_schedule()`. The schedule implements
+`TimerSchedule` and supplies UTC deadlines; clocks and timers own delivery and cancellation.
+:::
 
 ### Cache access
 
