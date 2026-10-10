@@ -353,7 +353,7 @@ impl DataEngine {
         msgbus::register_data_command_endpoint(
             MessagingSwitchboard::data_engine_queue_execute(),
             TypedIntoHandler::from(move |cmd: DataCommand| {
-                get_data_cmd_sender().clone().execute(cmd);
+                get_data_cmd_sender().execute(cmd);
             }),
         );
 
@@ -466,7 +466,7 @@ impl DataEngine {
             if is_subscription && aggregator.borrow().bar_type().spec().is_time_aggregated() {
                 aggregator
                     .borrow_mut()
-                    .start_timer(Some(aggregator.clone()));
+                    .start_timer(Some(Rc::clone(aggregator)));
             }
         }
 
@@ -474,7 +474,7 @@ impl DataEngine {
             state
                 .aggregator
                 .borrow_mut()
-                .start_timer(Some(state.aggregator.clone()));
+                .start_timer(Some(Rc::clone(&state.aggregator)));
         }
     }
 
@@ -554,7 +554,8 @@ impl DataEngine {
         for (instrument_id, updater) in book_updaters {
             let deltas_topic = switchboard::get_book_deltas_topic(instrument_id);
             let depth_topic = switchboard::get_book_depth_topic(instrument_id);
-            let deltas_handler: TypedHandler<OrderBookDeltas> = TypedHandler::new(updater.clone());
+            let deltas_handler: TypedHandler<OrderBookDeltas> =
+                TypedHandler::new(Rc::clone(&updater));
             let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
             msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
             msgbus::unsubscribe_book_depth(depth_topic.into(), &depth_handler);

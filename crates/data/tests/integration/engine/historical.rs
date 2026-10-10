@@ -167,7 +167,7 @@ fn test_response_trims_before_cache_write(
         .borrow_mut()
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     // Send a bounded response with out-of-window leading and trailing rows.
     // Only the row at ts_init=2_000 should reach the cache.
@@ -203,9 +203,9 @@ fn test_book_response_skips_cache_write_when_subscription_active(
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
-    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let mock_client = MockDataClient::new(clock, Rc::clone(&cache), client_id, Some(venue));
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
 
@@ -265,7 +265,7 @@ fn test_book_response_writes_to_cache_when_no_active_subscription(
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     assert!(cache.borrow().order_book(&instrument_id).is_none());
 
@@ -294,9 +294,9 @@ fn test_book_response_writes_to_cache_with_unmanaged_subscription(
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
-    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let mock_client = MockDataClient::new(clock, Rc::clone(&cache), client_id, Some(venue));
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
 
@@ -344,7 +344,7 @@ fn test_book_response_always_delivers_to_requester(
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let mock_client = MockDataClient::new(clock, cache, client_id, Some(venue));
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
@@ -397,9 +397,9 @@ fn test_book_deltas_response_skips_cache_write_when_subscription_active(
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
-    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let mock_client = MockDataClient::new(clock, Rc::clone(&cache), client_id, Some(venue));
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
 
@@ -561,7 +561,7 @@ fn test_book_deltas_response_applies_to_cache_when_no_subscription_but_book_exis
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     cache
         .borrow_mut()
@@ -610,7 +610,7 @@ fn test_book_deltas_request_replays_day_start_snapshot(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     cache
         .borrow_mut()
@@ -687,7 +687,7 @@ fn test_book_deltas_request_skips_replay_without_snapshot_flag(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     cache
         .borrow_mut()
@@ -749,7 +749,7 @@ fn test_book_deltas_request_skips_replay_when_snapshot_not_on_day_boundary(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     cache
         .borrow_mut()
@@ -812,7 +812,7 @@ fn test_book_deltas_request_skips_replay_when_start_at_day_boundary(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     cache
         .borrow_mut()
@@ -874,7 +874,7 @@ fn test_book_deltas_request_replays_end_snapshot_when_exhausted(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     cache
         .borrow_mut()
@@ -935,7 +935,7 @@ fn test_book_deltas_request_from_day_start_false_skips_floor(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     cache
         .borrow_mut()
@@ -996,7 +996,7 @@ fn test_book_deltas_replay_writes_assembled_snapshot_to_cache(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     cache
         .borrow_mut()
@@ -1064,14 +1064,14 @@ fn test_book_deltas_replay_respects_cache_ownership(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     cache
         .borrow_mut()
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mock_client = MockDataClient::new(clock, cache.clone(), client_id, Some(venue));
+    let mock_client = MockDataClient::new(clock, Rc::clone(&cache), client_id, Some(venue));
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
 

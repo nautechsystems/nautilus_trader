@@ -185,7 +185,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
     let depth = stub_depth10();
     let instrument_id = depth.instrument_id;
@@ -244,7 +244,7 @@ fn test_emit_quotes_from_book_depths_skips_no_order_side_padding(
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let padded_bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
@@ -303,13 +303,13 @@ fn test_composite_book_deltas_route_to_per_underlying_book(
             .unwrap();
     }
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -378,13 +378,13 @@ fn test_composite_book_deltas_route_each_underlying_independently(
             .unwrap();
     }
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -452,13 +452,13 @@ fn test_composite_and_exact_book_deltas_apply_once_per_publish(
             .unwrap();
     }
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -530,12 +530,12 @@ fn test_snapshot_after_deltas_keeps_delta_handler_alive(
         .add_instrument(InstrumentAny::FuturesContract(esz1))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -636,12 +636,12 @@ fn test_parent_book_deltas_filters_by_instrument_class(
             .unwrap();
     }
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -705,10 +705,10 @@ fn test_parent_book_snapshots_filter_by_instrument_class(client_id: ClientId) {
             .unwrap();
     }
 
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
+        Rc::clone(&clock),
         cache,
         client_id,
         venue,
@@ -782,12 +782,12 @@ fn test_depth_parent_subscribe_with_unparsable_id_returns_error(
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     let venue = Venue::new("BETFAIR");
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -857,7 +857,7 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
     let deltas = stub_deltas();
     let instrument_id = deltas.instrument_id;
@@ -921,7 +921,7 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), Some(config));
 
     let depth = stub_depth10();
     let instrument_id = depth.instrument_id;
@@ -1606,12 +1606,12 @@ fn test_process_book_snapshot_publish(
 
     // Create data engine
     let data_engine = Rc::new(RefCell::new(DataEngine::new(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
         None,
     )));
 
-    let data_engine_clone = data_engine.clone();
+    let data_engine_clone = Rc::clone(&data_engine);
 
     let handler = TypedIntoHandler::from(move |cmd: DataCommand| {
         data_engine_clone.borrow_mut().execute(cmd);
@@ -1623,8 +1623,8 @@ fn test_process_book_snapshot_publish(
     // Register mock client
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -1696,11 +1696,11 @@ fn test_process_book_snapshot_publish_for_multiple_instruments_same_interval(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -1744,11 +1744,11 @@ fn test_process_book_snapshot_publish_for_multiple_intervals_same_instrument(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -2093,7 +2093,7 @@ fn test_parent_book_owner_keeps_original_targets(
     client_id: ClientId,
 ) {
     let mut engine = managed_book_engine.borrow_mut();
-    let cache = engine.cache().clone();
+    let cache = Rc::clone(engine.cache());
     let first = make_es_future("ESZ1.XCME", "ESZ1");
     let second = make_es_future("ESH2.XCME", "ESH2");
     let first_id = first.id();

@@ -19,7 +19,7 @@ use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     cache::Cache,
     clients::DataClient,
-    clock::VirtualClock,
+    clock::{Clock, VirtualClock},
     component::Component,
     messages::data::{DataCommand, SubscribeCustomData, UnsubscribeCustomData},
     msgbus::{self, MessageBus, TypedIntoHandler, switchboard::MessagingSwitchboard},
@@ -210,11 +210,11 @@ impl SubscriptionFixture {
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let engine = Rc::new(RefCell::new(DataEngine::new(
-            clock.clone(),
-            cache.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            Rc::clone(&cache),
             None,
         )));
-        let target = engine.clone();
+        let target = Rc::clone(&engine);
         msgbus::register_data_command_endpoint(
             MessagingSwitchboard::data_engine_queue_execute(),
             TypedIntoHandler::from(move |command: DataCommand| {
@@ -231,7 +231,7 @@ impl SubscriptionFixture {
                 false,
                 Box::new(SubscriptionClient {
                     client_id,
-                    state: client.clone(),
+                    state: Rc::clone(&client),
                 }),
             ),
             None,
@@ -245,7 +245,11 @@ impl SubscriptionFixture {
                     }),
                 };
                 actor
-                    .register(trader_id, clock.clone(), cache.clone())
+                    .register(
+                        trader_id,
+                        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+                        Rc::clone(&cache),
+                    )
                     .unwrap();
                 actor
             })

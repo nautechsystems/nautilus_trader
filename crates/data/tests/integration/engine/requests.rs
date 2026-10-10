@@ -32,12 +32,12 @@ fn test_request_scoped_bar_aggregator_runs_alongside_live_subscription(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -144,12 +144,12 @@ fn test_request_scoped_quote_bar_aggregators_handle_multiple_bar_types(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -228,12 +228,12 @@ fn test_request_scoped_bar_aggregation_deduplicates_bar_types(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -342,12 +342,12 @@ fn test_request_scoped_bar_aggregation_does_not_publish_to_live_topic(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -423,12 +423,12 @@ fn test_request_scoped_time_bar_aggregation_handles_trade_response(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -510,12 +510,12 @@ fn test_request_scoped_composite_bar_aggregator_handles_bar_response(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -593,12 +593,12 @@ fn test_update_subscriptions_request_aggregator_can_be_started_live_after_respon
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -694,12 +694,12 @@ fn test_update_subscriptions_request_aggregator_can_subscribe_before_response(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -800,7 +800,7 @@ fn test_request_bar_aggregation_rejects_running_update_subscription_aggregator(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
@@ -866,7 +866,7 @@ fn test_request_bar_aggregation_rejects_external_bar_type(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
@@ -924,7 +924,7 @@ fn test_request_bar_aggregation_cleans_up_after_dispatch_failure(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let bar_type = BarType::from(format!("{instrument_id}-1-TICK-LAST-INTERNAL").as_str());
     let request_id = UUID4::new();
     let params: Params = serde_json::from_value(json!({
@@ -953,7 +953,7 @@ fn test_request_bar_aggregation_cleans_up_after_dispatch_failure(
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -1008,12 +1008,12 @@ fn test_request_bar_aggregation_reset_clears_pending_aggregators(
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -1532,8 +1532,8 @@ fn test_pool_snapshot_request_routing_by_client_id(
     let venue_1 = Venue::from("VENUE1");
     let recorder_1: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id_1,
         venue_1,
         None,
@@ -1583,11 +1583,11 @@ fn test_unsubscribe_book_snapshots_removes_only_requested_interval(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let data_engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        Rc::clone(&clock),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -1682,7 +1682,7 @@ fn test_request_trades_with_bar_types_param_sets_up_aggregation_through_streamin
         .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
         .unwrap();
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
 
     let _catalog_dir = register_trade_catalog_with_trades(
         &mut data_engine,

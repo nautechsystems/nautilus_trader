@@ -21,7 +21,7 @@ use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     cache::Cache,
     clients::DataClient,
-    clock::VirtualClock,
+    clock::{Clock, VirtualClock},
     component::Component,
     messages::{
         data::DataCommand,
@@ -350,11 +350,11 @@ impl DefiFixture {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let engine = Rc::new(RefCell::new(DataEngine::new(
-            clock.clone(),
-            cache.clone(),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            Rc::clone(&cache),
             None,
         )));
-        let target = engine.clone();
+        let target = Rc::clone(&engine);
         msgbus::register_data_command_endpoint(
             MessagingSwitchboard::data_engine_queue_execute(),
             TypedIntoHandler::from(move |command: DataCommand| {
@@ -369,11 +369,11 @@ impl DefiFixture {
             .map(|client_id| {
                 let recorder = Rc::new(RefCell::new(Vec::new()));
                 let client = MockDataClient::new_with_recorder(
-                    clock.clone(),
-                    cache.clone(),
+                    Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+                    Rc::clone(&cache),
                     *client_id,
                     None,
-                    Some(recorder.clone()),
+                    Some(Rc::clone(&recorder)),
                 );
                 engine.borrow_mut().register_client(
                     DataClientAdapter::new(*client_id, None, false, false, Box::new(client)),
@@ -393,7 +393,11 @@ impl DefiFixture {
                 };
 
                 actor
-                    .register(trader_id, clock.clone(), cache.clone())
+                    .register(
+                        trader_id,
+                        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+                        Rc::clone(&cache),
+                    )
                     .unwrap();
                 actor
             })

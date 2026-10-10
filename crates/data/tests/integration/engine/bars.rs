@@ -36,7 +36,7 @@ fn test_validate_data_sequence_drops_out_of_order_bar(
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
     let bar_template = Bar::default();
     let bar_type = bar_template.bar_type;
@@ -88,13 +88,13 @@ fn test_aggregator_emitted_bar_drops_out_of_sequence(
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), Some(config));
 
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -175,12 +175,12 @@ fn test_request_scoped_bar_aggregator_older_history_inserted_before_newer_live_b
         ..DataEngineConfig::default()
     };
 
-    let mut data_engine = DataEngine::new(clock, cache.clone(), Some(config));
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,

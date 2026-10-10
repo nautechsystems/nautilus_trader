@@ -29,12 +29,12 @@ fn test_continuous_future_request_adjusts_external_bars_across_transitions(
     let esu = add_es_contract(&cache, "ESU24.GLBX", "ESU24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -205,7 +205,7 @@ fn test_continuous_future_request_ignores_time_range_generator_for_segments(
     let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
@@ -278,12 +278,12 @@ fn test_continuous_future_request_inserts_history_behind_newer_live_bar(
     let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -401,12 +401,12 @@ fn test_continuous_future_request_applies_ratio_to_external_bars(
     let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -517,12 +517,12 @@ fn test_continuous_future_request_preserves_bar_type_chain(
     let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -634,12 +634,12 @@ fn test_continuous_future_request_uses_quote_tick_source(
     let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -734,7 +734,7 @@ fn test_continuous_future_request_start_after_end_emits_empty_parent_response(
     let post_instrument_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
@@ -818,12 +818,12 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
         .unwrap();
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -982,7 +982,7 @@ fn test_continuous_future_request_cleans_up_after_first_dispatch_error(
     let post_instrument_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let failing_client =
         FailingRequestDataClient::new(client_id, Some(venue), "request dispatch failed");
     let adapter =
@@ -1178,7 +1178,7 @@ fn test_subscribe_continuous_future_bars_dispatches_child_trade_subscription(
     let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let (data_engine, test_clock, recorder) =
-        register_continuous_future_subscription_engine(cache.clone(), 0);
+        register_continuous_future_subscription_engine(Rc::clone(&cache), 0);
 
     let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
     let parent_id = UUID4::new();
@@ -1293,7 +1293,7 @@ fn test_continuous_future_subscription_transition_swaps_source(
     let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let (data_engine, test_clock, recorder) =
-        register_continuous_future_subscription_engine(cache.clone(), 0);
+        register_continuous_future_subscription_engine(Rc::clone(&cache), 0);
 
     let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
     let transition_ns = 10u64;
@@ -1733,12 +1733,12 @@ fn test_continuous_future_subscription_rejected_when_roller_missing(
     let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
-    let engine_clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
-    let mut data_engine = DataEngine::new(engine_clock, cache.clone(), None);
+    let engine_clock = Rc::clone(&test_clock) as Rc<RefCell<dyn Clock>>;
+    let mut data_engine = DataEngine::new(engine_clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let venue = Venue::from("GLBX");
     register_mock_client(
-        test_clock.clone(),
+        Rc::clone(&test_clock),
         cache,
         client_id,
         venue,
@@ -1839,11 +1839,11 @@ fn register_continuous_future_subscription_engine(
     test_clock
         .borrow_mut()
         .advance_time(UnixNanos::from(initial_ns), true);
-    let engine_clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+    let engine_clock = Rc::clone(&test_clock) as Rc<RefCell<dyn Clock>>;
 
     let data_engine = Rc::new(RefCell::new(DataEngine::new(
         engine_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         None,
     )));
     DataEngine::register_msgbus_handlers(&data_engine);
@@ -1852,11 +1852,11 @@ fn register_continuous_future_subscription_engine(
     let client_id = ClientId::test_default();
     let venue = Venue::from("GLBX");
     let client = MockDataClient::new_with_recorder(
-        test_clock.clone(),
+        Rc::clone(&test_clock) as Rc<RefCell<dyn Clock>>,
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.borrow_mut().register_client(adapter, None);

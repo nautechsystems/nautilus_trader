@@ -488,9 +488,9 @@ impl DataEngine {
 
         // Create updater and subscribe to topics
         self.pool_snapshot_pending.remove(&instrument_id);
-        let updater = Rc::new(PoolUpdater::new(&instrument_id, self.cache().clone()));
+        let updater = Rc::new(PoolUpdater::new(&instrument_id, Rc::clone(self.cache())));
 
-        self.subscribe_pool_updater_topics(instrument_id, updater.clone());
+        self.subscribe_pool_updater_topics(instrument_id, Rc::clone(&updater));
         self.pool_updaters.insert(instrument_id, updater);
 
         log::info!("Pool profiler setup completed for {instrument_id}, now processing live events");
@@ -507,17 +507,17 @@ impl DataEngine {
 
         // Subscribe swap handler
         let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
-        let swap_handler = TypedHandler(Rc::new(PoolSwapHandler::new(updater.clone())));
+        let swap_handler = TypedHandler(Rc::new(PoolSwapHandler::new(Rc::clone(&updater))));
         msgbus::subscribe_defi_swaps(swap_topic.into(), swap_handler, priority);
 
         // Subscribe liquidity handler
         let liq_topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
-        let liq_handler = TypedHandler(Rc::new(PoolLiquidityHandler::new(updater.clone())));
+        let liq_handler = TypedHandler(Rc::new(PoolLiquidityHandler::new(Rc::clone(&updater))));
         msgbus::subscribe_defi_liquidity(liq_topic.into(), liq_handler, priority);
 
         // Subscribe collect handler
         let collect_topic = defi::switchboard::get_defi_collect_topic(instrument_id);
-        let collect_handler = TypedHandler(Rc::new(PoolCollectHandler::new(updater.clone())));
+        let collect_handler = TypedHandler(Rc::new(PoolCollectHandler::new(Rc::clone(&updater))));
         msgbus::subscribe_defi_collects(collect_topic.into(), collect_handler, priority);
 
         // Subscribe flash handler
@@ -583,7 +583,7 @@ impl DataEngine {
             } else if let Some(pool) = cache.pool(instrument_id) {
                 // Pool exists but no profiler, create profiler from pool
                 let pool = Arc::new(pool.clone());
-                let mut pool_profiler = PoolProfiler::new(pool.clone());
+                let mut pool_profiler = PoolProfiler::new(Arc::clone(&pool));
 
                 if let Some(initial_sqrt_price_x96) = pool.initial_sqrt_price_x96 {
                     if let Err(e) = pool_profiler.initialize(initial_sqrt_price_x96) {
@@ -633,9 +633,9 @@ impl DataEngine {
         }
 
         // Profiler exists, create updater and subscribe to topics
-        let updater = Rc::new(PoolUpdater::new(instrument_id, self.cache().clone()));
+        let updater = Rc::new(PoolUpdater::new(instrument_id, Rc::clone(self.cache())));
 
-        self.subscribe_pool_updater_topics(*instrument_id, updater.clone());
+        self.subscribe_pool_updater_topics(*instrument_id, Rc::clone(&updater));
         self.pool_updaters.insert(*instrument_id, updater);
 
         log::debug!("Created PoolUpdater for instrument ID {instrument_id}");
@@ -666,15 +666,15 @@ impl DataEngine {
 
     fn unsubscribe_pool_updater_topics(instrument_id: InstrumentId, updater: Rc<PoolUpdater>) {
         let swap_topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
-        let swap_handler = TypedHandler(Rc::new(PoolSwapHandler::new(updater.clone())));
+        let swap_handler = TypedHandler(Rc::new(PoolSwapHandler::new(Rc::clone(&updater))));
         msgbus::unsubscribe_defi_swaps(swap_topic.into(), &swap_handler);
 
         let liq_topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
-        let liq_handler = TypedHandler(Rc::new(PoolLiquidityHandler::new(updater.clone())));
+        let liq_handler = TypedHandler(Rc::new(PoolLiquidityHandler::new(Rc::clone(&updater))));
         msgbus::unsubscribe_defi_liquidity(liq_topic.into(), &liq_handler);
 
         let collect_topic = defi::switchboard::get_defi_collect_topic(instrument_id);
-        let collect_handler = TypedHandler(Rc::new(PoolCollectHandler::new(updater.clone())));
+        let collect_handler = TypedHandler(Rc::new(PoolCollectHandler::new(Rc::clone(&updater))));
         msgbus::unsubscribe_defi_collects(collect_topic.into(), &collect_handler);
 
         let flash_topic = defi::switchboard::get_defi_flash_topic(instrument_id);
@@ -973,16 +973,16 @@ mod tests {
         let events = vec![
             DefiData::PoolSwap(create_test_swap(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 0,
                 0,
             )),
             DefiData::PoolSwap(create_test_swap(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 0,
                 1,
@@ -1012,16 +1012,16 @@ mod tests {
         let events = vec![
             DefiData::PoolSwap(create_test_swap(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 2,
                 5,
             )),
             DefiData::PoolSwap(create_test_swap(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 1,
                 3,
@@ -1051,16 +1051,16 @@ mod tests {
         let events = vec![
             DefiData::PoolSwap(create_test_swap(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 102,
                 0,
                 0,
             )),
             DefiData::PoolSwap(create_test_swap(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 5,
                 2,
@@ -1090,32 +1090,32 @@ mod tests {
         let events = vec![
             DefiData::PoolSwap(create_test_swap(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 2,
                 0,
             )),
             DefiData::PoolLiquidityUpdate(create_test_liquidity_update(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 0,
                 0,
             )),
             DefiData::PoolFeeCollect(create_test_fee_collect(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 1,
                 0,
             )),
             DefiData::PoolFlash(create_test_flash(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 3,
                 0,
@@ -1148,16 +1148,16 @@ mod tests {
         let events = vec![
             DefiData::PoolSwap(create_test_swap(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 5,
                 10,
             )),
             DefiData::PoolSwap(create_test_swap(
                 test_instrument_id,
-                test_chain.clone(),
-                test_dex.clone(),
+                Arc::clone(&test_chain),
+                Arc::clone(&test_dex),
                 100,
                 5,
                 5,

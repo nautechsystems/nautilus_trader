@@ -145,7 +145,7 @@ impl DataEngine {
                 })
                 .collect();
 
-            let cache = self.cache.clone();
+            let cache = Rc::clone(&self.cache);
 
             let handler: Box<dyn FnMut(Bar)> = Box::new(move |bar: Bar| {
                 // Request-generated bars are delivered only through the cache.
@@ -401,14 +401,14 @@ impl DataEngine {
         skip_first_non_full_bar: Option<bool>,
         time_zone: TimeZone,
     ) -> Box<dyn BarAggregator> {
-        let cache = self.cache.clone();
+        let cache = Rc::clone(&self.cache);
         let validate_sequence = self.config.validate_data_sequence;
 
         let handler = move |bar: Bar| {
             process_engine_bar(&cache, validate_sequence, true, bar);
         };
 
-        let clock = self.clock.clone();
+        let clock = Rc::clone(&self.clock);
         let config = self.config.clone();
 
         let price_precision = instrument.price_precision();
@@ -624,8 +624,8 @@ impl DataEngine {
         let aggregator = self
             .bar_aggregators
             .get(&key)
-            .ok_or_else(|| anyhow::anyhow!("Cannot start bar aggregation for {bar_type}"))?
-            .clone();
+            .map(Rc::clone)
+            .ok_or_else(|| anyhow::anyhow!("Cannot start bar aggregation for {bar_type}"))?;
         let defer_subscription_activation = request_id.is_none()
             && aggregator.borrow().is_running()
             && !self.bar_aggregator_handlers.contains_key(&key);
@@ -763,7 +763,7 @@ impl DataEngine {
         })?;
 
         // Set historical mode and handler
-        let cache = self.cache.clone();
+        let cache = Rc::clone(&self.cache);
         let validate_sequence = self.config.validate_data_sequence;
         let publish = !historical;
 
@@ -788,10 +788,10 @@ impl DataEngine {
                 let aggregator_weak = Rc::downgrade(aggregator);
                 aggregator.borrow_mut().set_aggregator_weak(aggregator_weak);
             } else {
-                aggregator.borrow_mut().set_clock(self.clock.clone());
+                aggregator.borrow_mut().set_clock(Rc::clone(&self.clock));
                 aggregator
                     .borrow_mut()
-                    .start_timer(Some(aggregator.clone()));
+                    .start_timer(Some(Rc::clone(aggregator)));
             }
         }
 
@@ -985,7 +985,11 @@ mod tests {
             .maybe_time_bars_time_zone(config_zone.map(str::to_owned))
             .time_bars_skip_first_non_full_bar(true)
             .build();
-        let mut engine = DataEngine::new(clock.clone(), cache.clone(), Some(config));
+        let mut engine = DataEngine::new(
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            Rc::clone(&cache),
+            Some(config),
+        );
         let bar_type = BarType::from("AUD/USD.SIM-1-DAY-LAST-INTERNAL");
         let mut params = nautilus_core::Params::default();
         params.insert(

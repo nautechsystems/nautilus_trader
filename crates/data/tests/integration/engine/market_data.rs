@@ -106,12 +106,12 @@ fn test_synthetic_quote_and_trade_commands_do_not_forward_to_client(
     let _ = stub_msgbus;
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let engine_clock: Rc<RefCell<dyn Clock>> = clock.clone();
-    let mut data_engine = DataEngine::new(engine_clock, cache.clone(), None);
+    let engine_clock = Rc::clone(&clock) as Rc<RefCell<dyn Clock>>;
+    let mut data_engine = DataEngine::new(engine_clock, Rc::clone(&cache), None);
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
