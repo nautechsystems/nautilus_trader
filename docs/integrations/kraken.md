@@ -760,15 +760,16 @@ every holding it covers and an absent report is genuine evidence of flat.
   page; when nothing covers it, the single-order query fails and the bulk read leaves the order out,
   so reconciliation defers it rather than infer the executions at the limit price.
 - Startup mass status reads one page of the order history alongside open orders, so an order that
-  reached a terminal state while the node was down is reconciled. When that read fails for any
-  reason, such as a refused `/history` page, the mass status logs a warning, falls back to the open
-  orders alone and marks the set incomplete; it fails only when the open-order read fails too.
-- Startup pricing safeguard: the mass status prices a terminal history order from its fills with
-  the same exact coverage. An order nothing covers is withheld with a warning naming it, and the set
-  is marked incomplete; the fills page only moves forward, so the missing execution does not come
-  back on a later read. A withheld order's page fills stay when the cache holds the order, since the
-  engine reconciles them against it without a report; an uncached order's fills are withheld with
-  it, since on their own they would materialize an order at the partial quantity.
+  reached a terminal state while the node was down is reconciled when that page holds it. When that
+  read fails for any reason, such as a refused `/history` page, the mass status logs a warning,
+  falls back to the open orders alone and marks the set incomplete; it fails only when the
+  open-order read fails too.
+- Startup pricing safeguard: the mass status prices each terminal history order with an executed
+  quantity from its fills, with the same exact coverage. An order its fills do not cover exactly is
+  withheld with a warning naming it, and the set is marked incomplete; the adapter reads only the
+  latest fills page, so the missing execution does not come back on a later read. A withheld
+  order's page fills stay when the cache holds the order, since the engine reconciles them against
+  it without a report; an uncached order's fills are withheld with it.
 - Flat instruments: the position read returns open positions only, so an instrument with no
   position report is flat at the venue. The fills read is a single page, so a round trip whose
   opening fill is older than that page would leave its closing side alone, and with no
