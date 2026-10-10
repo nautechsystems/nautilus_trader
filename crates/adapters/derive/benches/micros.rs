@@ -69,25 +69,31 @@ fn trades_frame() -> String {
 
 fn orderbook_msg() -> DeriveOrderbookMsg {
     let frame = orderbook_frame();
+
     let DeriveWsFrame::Subscription(payload) = DeriveWsFrame::parse(&frame).unwrap() else {
         unreachable!()
     };
+
     parse_orderbook_msg(&payload).unwrap()
 }
 
 fn trades_msg() -> DeriveTradesMsg {
     let frame = trades_frame();
+
     let DeriveWsFrame::Subscription(payload) = DeriveWsFrame::parse(&frame).unwrap() else {
         unreachable!()
     };
+
     parse_trades_msg(&payload).unwrap()
 }
 
 fn ticker_msg() -> DeriveTickerMsg {
     let frame = ticker_frame();
+
     let DeriveWsFrame::Subscription(payload) = DeriveWsFrame::parse(&frame).unwrap() else {
         unreachable!()
     };
+
     parse_ticker_msg(&payload).unwrap()
 }
 
@@ -103,10 +109,12 @@ fn bench_decode_orderbook(c: &mut Criterion) {
             else {
                 unreachable!()
             };
+
             let msg = parse_orderbook_msg(&payload).unwrap();
             black_box(msg);
         });
     });
+
     group.finish();
 }
 
@@ -120,10 +128,12 @@ fn bench_decode_ticker(c: &mut Criterion) {
             else {
                 unreachable!()
             };
+
             let msg = parse_ticker_msg(&payload).unwrap();
             black_box(msg);
         });
     });
+
     group.finish();
 }
 
@@ -144,6 +154,7 @@ fn bench_parse_orderbook_deltas(c: &mut Criterion) {
             black_box(deltas);
         });
     });
+
     group.finish();
 }
 
@@ -162,6 +173,7 @@ fn bench_parse_trade(c: &mut Criterion) {
             black_box(tick);
         });
     });
+
     group.finish();
 }
 
@@ -180,6 +192,7 @@ fn bench_parse_ticker_quote(c: &mut Criterion) {
             black_box(quote);
         });
     });
+
     group.finish();
 }
 
@@ -195,6 +208,7 @@ fn bench_parse_order_report(c: &mut Criterion) {
             black_box(report);
         });
     });
+
     group.finish();
 }
 
@@ -215,6 +229,7 @@ fn bench_parse_fill_report(c: &mut Criterion) {
             black_box(report);
         });
     });
+
     group.finish();
 }
 
@@ -286,7 +301,7 @@ fn bench_state_construct(c: &mut Criterion) {
     let voi = VenueOrderId::from("order-abc");
     c.bench_function("atom/state_construct_primed", |b| {
         b.iter(|| {
-            let state = WsDispatchState::new();
+            let state = WsDispatchState::new(42);
             state.register_identity(cid, ident());
             state.record_venue_order_id(cid, voi);
             state.mark_accepted(cid);
@@ -301,7 +316,7 @@ fn bench_state_drop(c: &mut Criterion) {
     c.bench_function("atom/state_drop_primed", |b| {
         b.iter_with_setup(
             || {
-                let state = WsDispatchState::new();
+                let state = WsDispatchState::new(42);
                 state.register_identity(cid, ident());
                 state.record_venue_order_id(cid, voi);
                 state.mark_accepted(cid);
@@ -318,7 +333,7 @@ fn bench_state_drop(c: &mut Criterion) {
 // measured iteration takes the already-seen early return.
 fn bench_dedup_trade_hit(c: &mut Criterion) {
     let trade_id = TradeId::new("trade-xyz");
-    let state = WsDispatchState::new();
+    let state = WsDispatchState::new(42);
     state.check_and_insert_trade(trade_id);
     c.bench_function("atom/dedup_trade_hit", |b| {
         b.iter(|| {

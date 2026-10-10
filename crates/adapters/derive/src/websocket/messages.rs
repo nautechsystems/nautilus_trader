@@ -27,7 +27,7 @@ use std::{
 
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
-use nautilus_core::{serialization::deserialize_decimal, string::secret::SecretString};
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::InstrumentId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ use crate::{
         enums::{
             DeriveInstrumentType, DeriveOrderbookDepth, DeriveOrderbookGroup, DeriveTickerInterval,
         },
-        parse::{format_instrument_id, salvage_elements},
+        parse::{deserialize_decimal, format_instrument_id, salvage_rows},
     },
     http::models::{
         DeriveAggregateTradingStats, DeriveOptionPricing, DeriveOrder, DerivePublicTrade,
@@ -55,11 +55,11 @@ pub(crate) const DEFAULT_TICKER_INTERVAL: &str = "1000";
 /// Params payload for `public/login`.
 ///
 /// The wallet/timestamp/signature triple comes from
-/// [`crate::signing::auth::build_ws_login`]; the venue verifies the signature
-/// recovers `wallet` over the millisecond timestamp string.
+/// [`crate::signing::auth::build_ws_login`]; the signature recovers the owner
+/// or a registered, unexpired session key for `wallet` over the millisecond timestamp string.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize)]
 pub struct WsLoginParams {
-    /// Derive Chain smart-contract wallet address (`0x`-prefixed hex).
+    /// Owner's EOA or multisig address (`0x`-prefixed hex).
     pub wallet: String,
     /// Millisecond UNIX timestamp string (matches the bytes that were signed).
     pub timestamp: String,
@@ -132,9 +132,11 @@ impl DeriveWsChannel {
     pub fn ticker_slim(instrument_name: impl AsRef<str>, interval: impl AsRef<str>) -> Self {
         let instrument_name = instrument_name.as_ref();
         let interval = interval.as_ref();
+
         let Ok(interval) = DeriveTickerInterval::from_str(interval) else {
             return Self::Raw(ticker_channel(instrument_name, interval));
         };
+
         Self::TickerSlim {
             instrument_name: Ustr::from(instrument_name),
             interval,
@@ -151,12 +153,15 @@ impl DeriveWsChannel {
         let instrument_name = instrument_name.as_ref();
         let group = group.as_ref();
         let depth = depth.as_ref();
+
         let Ok(group) = DeriveOrderbookGroup::from_str(group) else {
             return Self::Raw(orderbook_channel(instrument_name, group, depth));
         };
+
         let Ok(depth) = DeriveOrderbookDepth::from_str(depth) else {
             return Self::Raw(orderbook_channel(instrument_name, group.as_ref(), depth));
         };
+
         Self::Orderbook {
             instrument_name: Ustr::from(instrument_name),
             group,
@@ -169,9 +174,11 @@ impl DeriveWsChannel {
     pub fn trades(instrument_type: impl AsRef<str>, currency: impl AsRef<str>) -> Self {
         let instrument_type = instrument_type.as_ref();
         let currency = currency.as_ref();
+
         let Ok(instrument_type) = DeriveInstrumentType::from_str(instrument_type) else {
             return Self::Raw(trades_channel(instrument_type, currency));
         };
+
         Self::Trades {
             instrument_type,
             currency: Ustr::from(currency),
@@ -332,46 +339,26 @@ impl From<WsUnsubscribeParams> for WsRequestParams {
     }
 }
 
-/// Result payload returned by `public/login`.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(untagged)]
-pub enum WsLoginResult {
-    /// Mock and gateway acknowledgement shape.
-    Success {
-        /// Whether the venue accepted the login.
-        #[serde(default)]
-        success: bool,
-    },
-    /// Venue acknowledgement listing the authorized subaccount IDs.
-    AuthorizedSubaccounts(Vec<u64>),
-}
-
-impl Default for WsLoginResult {
-    fn default() -> Self {
-        Self::Success { success: false }
-    }
-}
+/// Authorized subaccount IDs returned by `public/login`.
+pub type WsLoginResult = Vec<u64>;
 
 /// Result payload returned by `subscribe`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct WsSubscribeResult {
     /// Current subscriptions reported by the venue.
-    #[serde(default, alias = "current_subscriptions")]
+    #[serde(rename = "current_subscriptions")]
     pub channels: Vec<DeriveWsChannel>,
     /// Per-channel subscription status reported by the venue.
-    #[serde(default)]
     pub status: HashMap<DeriveWsChannel, Ustr>,
 }
 
 /// Result payload returned by `unsubscribe`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct WsUnsubscribeResult {
-    /// Whether the venue accepted the unsubscribe request.
-    #[serde(default)]
-    pub success: bool,
-    /// Channels removed by the venue, when it echoes them.
-    #[serde(default)]
-    pub channels: Vec<DeriveWsChannel>,
+    /// Channels that remain subscribed after the operation.
+    pub remaining_subscriptions: Vec<DeriveWsChannel>,
+    /// Per-channel unsubscribe status reported by the venue.
+    pub status: HashMap<DeriveWsChannel, Ustr>,
 }
 
 /// Inbound notification frame pushed by the venue on a subscribed channel.
@@ -443,8 +430,11 @@ pub struct DeriveOrderbookData {
 
 impl DeriveOrderbookData {
     /// Returns the Nautilus instrument ID for this Derive symbol.
-    #[must_use]
-    pub fn instrument_id(&self) -> InstrumentId {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the venue symbol is empty or contains only whitespace.
+    pub fn instrument_id(&self) -> anyhow::Result<InstrumentId> {
         format_instrument_id(self.instrument_name)
     }
 }
@@ -510,17 +500,19 @@ where
     D: serde::Deserializer<'de>,
     T: serde::de::DeserializeOwned,
 {
-    match Value::deserialize(deserializer)? {
-        Value::Array(values) => Ok(salvage_elements(values)),
-        value => Ok(vec![
-            serde_json::from_value::<T>(value).map_err(serde::de::Error::custom)?,
-        ]),
+    let raw = Box::<RawValue>::deserialize(deserializer)?;
+    if raw.get().starts_with('[') {
+        let rows = serde_json::from_str(raw.get()).map_err(serde::de::Error::custom)?;
+        Ok(salvage_rows(rows))
+    } else {
+        serde_json::from_str(raw.get())
+            .map(|row| vec![row])
+            .map_err(serde::de::Error::custom)
     }
 }
 
 /// Ticker payload shape pushed by the Derive ticker channels.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum DeriveTickerData {
     /// Full ticker shape with a feed timestamp and nested ticker snapshot.
     Envelope {
@@ -538,6 +530,34 @@ pub enum DeriveTickerData {
     },
     /// Legacy shape where `params.data` is the ticker object itself.
     Ticker(DeriveTicker),
+}
+
+impl<'de> Deserialize<'de> for DeriveTickerData {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Envelope<T> {
+            timestamp: i64,
+            instrument_ticker: T,
+        }
+        let raw = Box::<RawValue>::deserialize(deserializer)?;
+        if let Ok(envelope) = serde_json::from_str::<Envelope<DeriveTicker>>(raw.get()) {
+            return Ok(Self::Envelope {
+                timestamp: envelope.timestamp,
+                instrument_ticker: envelope.instrument_ticker,
+            });
+        }
+
+        if let Ok(envelope) = serde_json::from_str::<Envelope<DeriveTickerSnapshot>>(raw.get()) {
+            return Ok(Self::SlimEnvelope {
+                timestamp: envelope.timestamp,
+                instrument_ticker: envelope.instrument_ticker,
+            });
+        }
+
+        serde_json::from_str(raw.get())
+            .map(Self::Ticker)
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 impl DeriveTickerData {
@@ -719,8 +739,11 @@ impl DeriveTickerData {
     }
 
     /// Returns the Nautilus instrument ID for this Derive symbol.
-    #[must_use]
-    pub fn instrument_id(&self) -> InstrumentId {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the venue symbol is empty or contains only whitespace.
+    pub fn instrument_id(&self) -> anyhow::Result<InstrumentId> {
         format_instrument_id(self.instrument_name())
     }
 }
@@ -767,22 +790,34 @@ pub enum DeriveWsFrame {
     Unknown(Value),
 }
 
+#[derive(Debug)]
+pub(super) enum ParsedFrame<R> {
+    Response {
+        id: u64,
+        result: Option<R>,
+        error: Option<JsonRpcError>,
+    },
+    Subscription(WsSubscriptionPayload),
+    UncorrelatedError(JsonRpcError),
+    Unknown(Value),
+}
+
 /// Single-pass deserialize target for an inbound frame.
 ///
 /// `params` is captured as a raw [`RawValue`] span rather than eagerly decoded:
 /// it is only parsed into a [`WsSubscriptionPayload`] once the method check
 /// confirms a subscription, so a non-subscription notification carrying an
 /// unrelated `params` object still classifies as `Unknown` instead of failing
-/// the frame parse. `result` stays a `Value` because the lower-frequency
-/// request/response path consumes it as one.
+/// the frame parse. Financial responses retain raw JSON tokens until typed decoding.
 #[derive(Debug, Deserialize)]
-struct InboundFrame {
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
+struct InboundFrame<R> {
     #[serde(default)]
     id: Option<u64>,
     #[serde(default)]
     method: Option<Ustr>,
     #[serde(default)]
-    result: Option<Value>,
+    result: Option<R>,
     #[serde(default)]
     error: Option<JsonRpcError>,
     #[serde(default)]
@@ -799,35 +834,50 @@ impl DeriveWsFrame {
     ///
     /// Returns [`serde_json::Error`] when `text` is not valid JSON.
     pub fn parse(text: &str) -> serde_json::Result<Self> {
-        let frame: InboundFrame = serde_json::from_str(text)?;
-
-        if let Some(id) = frame.id {
-            return Ok(Self::Response {
-                id,
-                result: frame.result,
-                error: frame.error,
-            });
+        match parse_frame(text)? {
+            ParsedFrame::Response { id, result, error } => Ok(Self::Response { id, result, error }),
+            ParsedFrame::Subscription(payload) => Ok(Self::Subscription(payload)),
+            ParsedFrame::UncorrelatedError(error) => Ok(Self::UncorrelatedError(error)),
+            ParsedFrame::Unknown(value) => Ok(Self::Unknown(value)),
         }
-
-        if frame
-            .method
-            .as_ref()
-            .is_some_and(|method| method.as_str() == "subscription")
-            && let Some(params) = frame.params
-        {
-            let payload: WsSubscriptionPayload = serde_json::from_str(params.get())?;
-            return Ok(Self::Subscription(payload));
-        }
-
-        if let Some(error) = frame.error {
-            return Ok(Self::UncorrelatedError(error));
-        }
-
-        // Unrecognized frame: re-parse into a `Value` for diagnostic logging.
-        // The live feed only sends responses and subscription notifications, so
-        // this second parse never runs on a hot path.
-        Ok(Self::Unknown(serde_json::from_str(text)?))
     }
+}
+
+impl ParsedFrame<Box<RawValue>> {
+    pub(super) fn parse(text: &str) -> serde_json::Result<Self> {
+        parse_frame(text)
+    }
+}
+
+fn parse_frame<R: serde::de::DeserializeOwned>(text: &str) -> serde_json::Result<ParsedFrame<R>> {
+    let frame: InboundFrame<R> = serde_json::from_str(text)?;
+
+    if let Some(id) = frame.id {
+        return Ok(ParsedFrame::Response {
+            id,
+            result: frame.result,
+            error: frame.error,
+        });
+    }
+
+    if frame
+        .method
+        .as_ref()
+        .is_some_and(|method| method.as_str() == "subscription")
+        && let Some(params) = frame.params
+    {
+        let payload: WsSubscriptionPayload = serde_json::from_str(params.get())?;
+        return Ok(ParsedFrame::Subscription(payload));
+    }
+
+    if let Some(error) = frame.error {
+        return Ok(ParsedFrame::UncorrelatedError(error));
+    }
+
+    // Unrecognized frame: re-parse into a `Value` for diagnostic logging.
+    // The live feed only sends responses and subscription notifications, so
+    // this second parse never runs on a hot path.
+    Ok(ParsedFrame::Unknown(serde_json::from_str(text)?))
 }
 
 /// Formats the topic for the public `ticker_slim.{instrument_name}.{interval}` channel.
@@ -896,7 +946,7 @@ pub mod methods {
     pub const PRIVATE_ORDER: &str = "private/order";
     /// Submit a signed trigger order. Params:
     /// [`crate::http::query::DeriveTriggerOrderParams`].
-    pub const PRIVATE_TRIGGER_ORDER: &str = "private/trigger_order";
+    pub const PRIVATE_TRIGGER_ORDER: &str = PRIVATE_ORDER;
     /// Cancel a single order. Params: [`crate::http::query::DeriveCancelParams`].
     pub const PRIVATE_CANCEL: &str = "private/cancel";
     /// Cancel every open order for one instrument. Params:
@@ -1070,6 +1120,7 @@ mod tests {
                 channels: vec![DeriveWsChannel::ticker_slim("ETH-PERP", "1000")],
             },
         );
+
         let wire = serde_json::to_value(&req).unwrap();
         assert_eq!(wire["jsonrpc"], "2.0");
         assert_eq!(wire["id"], 1);
@@ -1088,6 +1139,7 @@ mod tests {
                 signature: SecretString::from("0xSIG"),
             }),
         );
+
         let subscribe = JsonRpcRequest::new(
             2,
             methods::PUBLIC_SUBSCRIBE,
@@ -1095,6 +1147,7 @@ mod tests {
                 channels: vec![DeriveWsChannel::ticker_slim("ETH-PERP", "1000")],
             }),
         );
+
         let unsubscribe = JsonRpcRequest::new(
             3,
             methods::PUBLIC_UNSUBSCRIBE,
@@ -1128,25 +1181,27 @@ mod tests {
 
     #[rstest]
     fn test_ws_response_results_decode_known_shapes() {
-        let login_object: WsLoginResult = serde_json::from_value(json!({"success": true})).unwrap();
-        let login_array: WsLoginResult = serde_json::from_value(json!([30769])).unwrap();
+        let login: WsLoginResult = serde_json::from_value(json!([30769, 42])).unwrap();
         let subscribe: WsSubscribeResult = serde_json::from_value(json!({
-            "channels": ["ticker_slim.ETH-PERP.1000"],
+            "current_subscriptions": ["ticker_slim.ETH-PERP.1000"],
+            "status": {"ticker_slim.ETH-PERP.1000": "ok"},
         }))
         .unwrap();
-        let unsubscribe: WsUnsubscribeResult =
-            serde_json::from_value(json!({"success": true})).unwrap();
+        let unsubscribe: WsUnsubscribeResult = serde_json::from_value(
+            json!({"status": {"ticker_slim.ETH-PERP.1000": "ok"}, "remaining_subscriptions": []}),
+        )
+        .unwrap();
 
-        assert_eq!(login_object, WsLoginResult::Success { success: true });
-        assert_eq!(
-            login_array,
-            WsLoginResult::AuthorizedSubaccounts(vec![30769]),
-        );
+        assert_eq!(login, vec![30769, 42]);
         assert_eq!(
             subscribe.channels,
             vec![DeriveWsChannel::ticker_slim("ETH-PERP", "1000")],
         );
-        assert!(unsubscribe.success);
+        assert_eq!(
+            unsubscribe.status[&DeriveWsChannel::ticker_slim("ETH-PERP", "1000")],
+            "ok"
+        );
+        assert!(unsubscribe.remaining_subscriptions.is_empty());
     }
 
     #[rstest]
@@ -1178,6 +1233,7 @@ mod tests {
             timestamp: "1700000000000".to_string(),
             signature: SecretString::from("0xDEAD"),
         };
+
         let debug = format!("{params:?}");
         let wire = serde_json::to_value(&params).unwrap();
 
@@ -1336,6 +1392,7 @@ mod tests {
                 DeriveWsChannel::ticker_slim("BTC-PERP", "100"),
             ],
         };
+
         let wire = serde_json::to_value(&params).unwrap();
         assert_eq!(wire["channels"][0], "ticker_slim.ETH-PERP.1000");
         assert_eq!(wire["channels"][1], "ticker_slim.BTC-PERP.100");

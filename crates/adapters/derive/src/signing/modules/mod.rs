@@ -15,9 +15,9 @@
 
 //! Per-action `module_data` ABI encoders.
 //!
-//! Each Derive self-custodial action targets a dedicated module contract on
-//! the Derive Chain. The ABI-encoded module data is keccak-hashed and folded
-//! into the EIP-712 action hash assembled in [`super::eip712`].
+//! Each Derive self-custodial action targets a dedicated module contract. Its
+//! ABI-encoded module data is keccak-hashed and folded into the EIP-712 action
+//! hash assembled in [`super::eip712`].
 //!
 //! Initial scope: trade-module signing only. Withdraw / transfer / deposit /
 //! RFQ encoders land here as scope expands.

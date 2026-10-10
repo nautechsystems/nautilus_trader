@@ -46,6 +46,13 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
+simulation = [
+  "dep:madsim",
+  "nautilus-common/simulation",
+  "nautilus-core/simulation",
+  "nautilus-live/simulation",
+  "nautilus-network/simulation",
+]
 
 [package.metadata]
 cargo-fuzz = true
@@ -87,10 +94,12 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-execution = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }

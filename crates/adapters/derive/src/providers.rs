@@ -15,7 +15,10 @@
 
 //! Instrument provider for the Derive adapter.
 
-use std::{collections::HashMap, fmt::Debug};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+};
 
 use async_trait::async_trait;
 use nautilus_common::providers::{InstrumentProvider, InstrumentStore};
@@ -36,9 +39,8 @@ const INSTRUMENT_NOT_FOUND_CODE: i64 = 12001;
 
 /// Provides Derive instruments via the REST API.
 ///
-/// The Derive `public/get_instruments` endpoint is scoped by underlying
-/// currency, so callers configure the currency set up front or pass a
-/// `currency`/`currencies` filter to `load_all()`.
+/// The provider filters `public/get_all_instruments` by underlying currency.
+/// Callers configure currencies up front or pass a `currency`/`currencies` filter to `load_all()`.
 pub struct DeriveInstrumentProvider {
     store: InstrumentStore,
     http_client: DeriveHttpClient,
@@ -167,7 +169,6 @@ impl InstrumentProvider for DeriveInstrumentProvider {
             .collect();
         currencies.sort();
         currencies.dedup();
-
         if !currencies.is_empty() {
             let instruments = self.fetch_instruments(&currencies, expired).await?;
             self.add_instruments(instruments);
@@ -238,26 +239,46 @@ pub(crate) async fn fetch_instrument_definitions(
     currency: &str,
     expired: bool,
 ) -> anyhow::Result<Vec<DeriveInstrument>> {
-    let (mut definitions, options, erc20s) = Box::pin(async {
-        tokio::try_join!(
-            fetch_instruments_if_listed(http_client, currency, DeriveInstrumentType::Perp, expired),
-            fetch_instruments_if_listed(
-                http_client,
-                currency,
-                DeriveInstrumentType::Option,
-                expired,
-            ),
-            fetch_instruments_if_listed(
-                http_client,
-                currency,
-                DeriveInstrumentType::Erc20,
-                expired,
-            ),
-        )
-    })
-    .await?;
+    let (mut definitions, options, erc20s) =
+        Box::pin(async {
+            tokio::try_join!(
+                fetch_instruments_if_listed(
+                    http_client,
+                    currency,
+                    DeriveInstrumentType::Perp,
+                    false,
+                ),
+                fetch_instruments_if_listed(
+                    http_client,
+                    currency,
+                    DeriveInstrumentType::Option,
+                    false,
+                ),
+                fetch_instruments_if_listed(
+                    http_client,
+                    currency,
+                    DeriveInstrumentType::Erc20,
+                    false,
+                ),
+            )
+        })
+        .await?;
+
     definitions.extend(options);
     definitions.extend(erc20s);
+
+    if expired {
+        // Fetch after live listings so options moving to expired remain discoverable.
+        let expired_options =
+            fetch_instruments_if_listed(http_client, currency, DeriveInstrumentType::Option, true)
+                .await?;
+        let mut names: HashSet<_> = definitions.iter().map(|row| row.instrument_name).collect();
+        definitions.extend(
+            expired_options
+                .into_iter()
+                .filter(|row| names.insert(row.instrument_name)),
+        );
+    }
 
     Ok(definitions)
 }

@@ -861,6 +861,7 @@ impl ExecutionManager {
 
         let order_reports = &adjusted_order_reports;
         let mut orders_skipped_filtered = 0usize;
+        let mut orders_projected: IndexMap<ClientOrderId, OrderAny> = IndexMap::new();
 
         for report in order_reports.values() {
             if self.should_skip_order_report(report) {
@@ -868,9 +869,31 @@ impl ExecutionManager {
                 continue;
             }
 
+            let order = report
+                .client_order_id
+                .and_then(|id| {
+                    orders_projected
+                        .get(&id)
+                        .cloned()
+                        .or_else(|| self.get_order(id))
+                })
+                .or_else(|| {
+                    self.get_order_by_venue_order_id(report.venue_order_id)
+                        .map(|order| {
+                            orders_projected
+                                .get(&order.client_order_id())
+                                .cloned()
+                                .unwrap_or(order)
+                        })
+                });
+            let order_client = order
+                .as_ref()
+                .filter(|order| Some(order.client_order_id()) == report.client_order_id);
+            let events_start = events.len();
+
             if let Some(client_order_id) = &report.client_order_id {
-                if let Some(cached_order) = self.get_order(*client_order_id)
-                    && is_exact_order_match(&cached_order, report)
+                if let Some(cached_order) = order_client
+                    && is_exact_order_match(cached_order, report)
                 {
                     log::debug!("Skipping order {client_order_id}: already in sync with venue");
                     orders_skipped_duplicate += 1;
@@ -888,7 +911,7 @@ impl ExecutionManager {
                 }
 
                 // Skip closed reconciliation orders to prevent duplicate inferred fills on restart
-                if let Some(cached_order) = self.get_order(*client_order_id)
+                if let Some(cached_order) = order_client
                     && cached_order.is_closed()
                     && cached_order
                         .tags()
@@ -902,7 +925,7 @@ impl ExecutionManager {
                     continue;
                 }
 
-                if let Some(order) = self.get_order(*client_order_id) {
+                if let Some(order) = order_client {
                     let instrument = self.get_instrument(&report.instrument_id);
                     log::info!(
                         color = LogColor::Blue as u8;
@@ -923,7 +946,7 @@ impl ExecutionManager {
 
                     let order_events = self.reconcile_order_with_fills(
                         true,
-                        &order,
+                        order,
                         report,
                         &order_fills,
                         instrument.as_ref(),
@@ -933,14 +956,12 @@ impl ExecutionManager {
 
                     drop(engine_ref);
 
-                    if !order_events.is_empty() {
-                        orders_reconciled += 1;
-                        fills_applied += order_events
-                            .iter()
-                            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
-                            .count();
-                        events.extend(order_events);
-                    }
+                    orders_reconciled += usize::from(!order_events.is_empty());
+                    fills_applied += order_events
+                        .iter()
+                        .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+                        .count();
+                    events.extend(order_events);
 
                     // Always ensure venue_order_id is indexed after reconciliation
                     if let Err(e) = self
@@ -950,8 +971,7 @@ impl ExecutionManager {
                     {
                         log::warn!("Failed to index venue order ID: {e}");
                     }
-                } else if let Some(order) = self.get_order_by_venue_order_id(report.venue_order_id)
-                {
+                } else if let Some(order) = order.as_ref() {
                     // Fallback: match by venue_order_id
                     let instrument = self.get_instrument(&report.instrument_id);
 
@@ -974,7 +994,7 @@ impl ExecutionManager {
 
                     let order_events = self.reconcile_order_with_fills(
                         true,
-                        &order,
+                        order,
                         report,
                         &order_fills,
                         instrument.as_ref(),
@@ -984,14 +1004,12 @@ impl ExecutionManager {
 
                     drop(engine_ref);
 
-                    if !order_events.is_empty() {
-                        orders_reconciled += 1;
-                        fills_applied += order_events
-                            .iter()
-                            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
-                            .count();
-                        events.extend(order_events);
-                    }
+                    orders_reconciled += usize::from(!order_events.is_empty());
+                    fills_applied += order_events
+                        .iter()
+                        .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+                        .count();
+                    events.extend(order_events);
 
                     if let Err(e) = self
                         .cache
@@ -1040,7 +1058,7 @@ impl ExecutionManager {
                 } else {
                     orders_skipped_no_instrument += 1;
                 }
-            } else if let Some(order) = self.get_order_by_venue_order_id(report.venue_order_id) {
+            } else if let Some(order) = order.as_ref() {
                 // Fallback: match by venue_order_id
                 let instrument = self.get_instrument(&report.instrument_id);
                 log::info!(
@@ -1062,7 +1080,7 @@ impl ExecutionManager {
 
                 let order_events = self.reconcile_order_with_fills(
                     true,
-                    &order,
+                    order,
                     report,
                     &order_fills,
                     instrument.as_ref(),
@@ -1072,14 +1090,12 @@ impl ExecutionManager {
 
                 drop(engine_ref);
 
-                if !order_events.is_empty() {
-                    orders_reconciled += 1;
-                    fills_applied += order_events
-                        .iter()
-                        .filter(|e| matches!(e, OrderEventAny::Filled(_)))
-                        .count();
-                    events.extend(order_events);
-                }
+                orders_reconciled += usize::from(!order_events.is_empty());
+                fills_applied += order_events
+                    .iter()
+                    .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+                    .count();
+                events.extend(order_events);
 
                 if let Err(e) = self
                     .cache
@@ -1130,6 +1146,19 @@ impl ExecutionManager {
                 }
             } else {
                 orders_skipped_no_instrument += 1;
+            }
+
+            if events.len() > events_start
+                && let Some(mut order) = order
+            {
+                for event in &events[events_start..] {
+                    if event.client_order_id() == order.client_order_id()
+                        && let Err(e) = order.apply(event.clone())
+                    {
+                        log::warn!("Cannot project queued reconciliation event: {e}");
+                    }
+                }
+                orders_projected.insert(order.client_order_id(), order);
             }
         }
 

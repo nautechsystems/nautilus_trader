@@ -16,12 +16,15 @@
   "collaterals_initial_margin": "1000",
   "collaterals_maintenance_margin": "1000",
   "collaterals_value": "1000",
-  "currency": "USDC",
-  "initial_margin": "960",
+  "currency": [
+    "ETH",
+    "BTC"
+  ],
+  "initial_margin": "1000",
   "is_under_liquidation": false,
   "label": null,
   "maintenance_margin": "1000",
-  "margin_type": "PM",
+  "margin_type": "PM2",
   "open_orders": [
     {
       "amount": "2.0",
@@ -37,7 +40,7 @@
       "limit_price": "3450",
       "max_fee": "1",
       "mmp": false,
-      "nonce": 1751600000000001,
+      "nonce": "1751600000000001",
       "order_fee": "0",
       "order_id": "6a1f2b3c-0001-4d5e-8f90-a1b2c3d4e5f6",
       "order_status": "open",
@@ -55,11 +58,17 @@
       "trigger_type": null
     }
   ],
-  "open_orders_margin": "40",
+  "open_orders_margin": "-40",
   "positions": [],
   "positions_initial_margin": "0",
   "positions_maintenance_margin": "0",
   "positions_value": "0",
   "subaccount_id": 42,
-  "subaccount_value": "1000"
+  "subaccount_value": "1000",
+  "manager_id": 12,
+  "risk_universe_id": 1,
+  "failed_to_fetch": false,
+  "mm_credits": "0",
+  "projected_margin_change": "0",
+  "vault_deposit_holds": []
 }

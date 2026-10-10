@@ -16,53 +16,55 @@
 """
 Independent signing oracle for Derive self-custodial trade actions.
 
-Runs the official Derive action-signing SDK against fixed inputs and writes a
-JSON fixture consumed by the `signing` module tests in this crate. Every
-locally supported signed action (`private/order`, `private/trigger_order`, and
-`private/replace`) signs `TradeModuleData` through the same EIP-712 pipeline,
-so one vector set for the trade module covers the full signing surface.
+Runs derive-py 0.1.4 at the pinned revision against fixed v3 inputs. Order,
+trigger-order, and replace requests share the TradeModuleData signing pipeline.
 
-The SDK signs with RFC 6979 deterministic nonces, so identical inputs produce
-identical signatures across runs and across independent implementations, which
-makes byte equality against this fixture a valid oracle.
+Regenerate independently of the Rust implementation:
 
-Regenerating the fixture:
+    git clone https://github.com/derivexyz/derive-py
+    cd derive-py
+    git checkout fad785e6c328746b5f8a8219e14009670bc97a35
+    uv venv /tmp/derive-oracle-env
+    uv pip install --python /tmp/derive-oracle-env/bin/python . \
+        web3==7.16.0 eth-abi==6.0.0 eth-account==0.14.0
+    /tmp/derive-oracle-env/bin/python <nautilus_trader>/scripts/oracle-py/derive/generate_oracle.py
 
-    git clone https://github.com/derivexyz/v2-action-signing-python
-    cd v2-action-signing-python
-    git checkout <upstream_revision>  # UPSTREAM_REVISION in this script
-    python3 -m venv .venv
-    .venv/bin/pip install .
-    .venv/bin/python <nautilus_trader repository root>/scripts/oracle-py/derive/
-        generate_oracle.py
+Replace <nautilus_trader> with the absolute path to the NautilusTrader checkout.
 
-The generator resolves its default output path from its own location, so it
-writes the fixture into the crate's `test_data/common/` directory regardless
-of the working directory.
-
-The upstream revision below is the pin recorded in the fixture metadata. Moving
-to a new revision (for example a future V3 signer) is a re-pin plus a
-regeneration of this fixture, not a change to the Rust test structure.
+The generator checks the installed SDK source hashes and version before writing
+fixtures. It also derives the domain and Action typehash from the published v3
+formulas, independently of the SDK constants. RFC 6979 makes signatures exact
+byte-equality targets. Negative vectors prove signed-int256 encoding only;
+the venue rejects negative order prices and amounts. No credentials or live
+requests are needed.
 
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import inspect
 import json
 import sys
 from decimal import Decimal
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
-from derive_action_signing import SignedAction
-from derive_action_signing import TradeModuleData
+from derive_py._web3.action_signing import SignedAction
+from derive_py._web3.action_signing import TradeModuleData
+from derive_py._web3.action_signing import utils
+from derive_py.config import contracts
+from derive_py.config.contracts import CONFIGS
+from derive_py.data_types import Chain
+from eth_abi import encode
 from web3 import Web3
 
 
-UPSTREAM_VERSION = "0.0.13"
-UPSTREAM_REVISION = "d1914d61985e33559244da242892c7255b6fd0ca"
-UPSTREAM_SOURCE = "github.com/derivexyz/v2-action-signing-python"
+UPSTREAM_VERSION = "0.1.4"
+UPSTREAM_REVISION = "fad785e6c328746b5f8a8219e14009670bc97a35"
+UPSTREAM_SOURCE = "https://github.com/derivexyz/derive-py"
 
 DEFAULT_OUT = (
     Path(__file__).resolve().parents[3]
@@ -74,29 +76,31 @@ DEFAULT_OUT = (
     / "signing_trade_action_vectors.json"
 )
 
-# Session key published in the upstream SDK's own test suite and reused by this
-# crate's signing tests. It controls no funds.
+# Published test inputs retained from derivexyz/v2-action-signing-python at
+# d1914d61985e33559244da242892c7255b6fd0ca, the session key controls no funds
 SESSION_KEY = "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd"
-# Smart-contract wallet published alongside it in the upstream test suite.
+# Legacy smart-contract wallet used as a distinct test owner
 OWNER = "0x8772185a1516f0d61fC1c2524926BfC69F95d698"
 
 SUBACCOUNT_ID = 30769
-# Matches the upstream test convention (MAX_INT_32) and keeps the Rust side's
-# minimum-TTL validation satisfiable until 2038 without a clock dependency.
+# Fixed expiry keeps minimum-TTL validation satisfiable until 2038 without a
+# clock dependency
 SIGNATURE_EXPIRY_SEC = 2147483647
-BASE_NONCE = 1695836058725001
+BASE_NONCE = 1695836058725001000
+DECIMAL_PRECISION = 12
 
-# Protocol constants from https://docs.derive.xyz/reference/protocol-constants,
-# matching `src/common/consts.rs`.
-DOMAINS = {
-    "mainnet": "0xd96e5f90797da7ec8dc4e276260c7f3f87fedf68775fbe1ef116e996fc60441b",
-    "testnet": "0x9bcf4dc06df5d8bf23af818d5716491b995020f377d3b7b64c29ed14e3dd1105",
+# SDK configuration is independent of the Rust constants.
+CHAINS = {"mainnet": Chain.ETHEREUM, "testnet": Chain.SEPOLIA}
+CHAIN_IDS = {"mainnet": 1, "testnet": 11155111}
+DOMAINS = {name: CONFIGS[chain].DOMAIN_SEPARATOR for name, chain in CHAINS.items()}
+TRADE_MODULES = {name: CONFIGS[chain].contracts.TRADE_MODULE for name, chain in CHAINS.items()}
+ACTION_TYPEHASH = CONFIGS[Chain.ETHEREUM].ACTION_TYPEHASH
+SDK_SOURCE_HASHES = {
+    "contracts": "c3de85d9797daa21540a960cfd3ac48205b2d1f31ed089deaa9ac8f7d922a7e5",
+    "SignedAction": "11705789160cc46ac7cf942b883e5cfcfe785400d7d20d54e4c0990574985880",
+    "TradeModuleData": "d62e7dbcdc869e0c5e6b2a98df1efec48a10c19cb134f05588c6be05f61b0885",
+    "utils": "cb7d752de48b1bd2541c010afd28abd1ff08f01a351341fecc1d29e13545448a",
 }
-TRADE_MODULES = {
-    "mainnet": "0xB8D20c2B7a1Ad2EE33Bc50eF10876eD3035b5e7b",
-    "testnet": "0x87F2863866D85E3192a35A73b388BD625D83f2be",
-}
-ACTION_TYPEHASH = "0x4d7a9f27c403ff9c0f19bce61d76d82f9aa29f8d6d4b0c5474607d9770d1af17"
 
 # One vector per behavioral branch of the trade encoder and the action-hash
 # composition: both environments, both sides, fractional and negative decimal
@@ -157,6 +161,28 @@ CASES = [
         "recipient_id": SUBACCOUNT_ID,
         "is_bid": True,
     },
+    {
+        "case": "precision_boundary_mainnet",
+        "environment": "mainnet",
+        "asset_address": "0x000000000000000000000000000000000000beef",
+        "sub_id": 19,
+        "limit_price": "123.123456789012",
+        "amount": "0.000000000001",
+        "max_fee": "0.987654321098",
+        "recipient_id": SUBACCOUNT_ID,
+        "is_bid": True,
+    },
+    {
+        "case": "precision_boundary_negative_testnet",
+        "environment": "testnet",
+        "asset_address": "0x000000000000000000000000000000000000c0de",
+        "sub_id": 23,
+        "limit_price": "-123.123456789012",
+        "amount": "-0.000000000001",
+        "max_fee": "0.987654321098",
+        "recipient_id": SUBACCOUNT_ID,
+        "is_bid": False,
+    },
 ]
 
 
@@ -191,6 +217,18 @@ def build_vector(index: int, case: dict[str, Any], signer_address: str) -> dict[
         DOMAIN_SEPARATOR=DOMAINS[environment],
         ACTION_TYPEHASH=ACTION_TYPEHASH,
     )
+    for field in ("limit_price", "amount", "max_fee"):
+        value = Decimal(case[field])
+        if value.as_tuple().exponent < -DECIMAL_PRECISION:
+            raise ValueError(
+                f"case {case['case']}: {field} exceeds {DECIMAL_PRECISION} fractional digits",
+            )
+    wire = action.to_json()
+    for field in ("limit_price", "amount", "max_fee"):
+        if Decimal(wire[field]) != Decimal(case[field]):
+            raise RuntimeError(f"case {case['case']}: {field} wire value differs")
+    if wire["nonce"] != str(BASE_NONCE + index):
+        raise RuntimeError(f"case {case['case']}: nonce wire value differs")
     signature = prefixed(action.sign(SESSION_KEY))
     action.validate_signature()
 
@@ -217,7 +255,7 @@ def build_vector(index: int, case: dict[str, Any], signer_address: str) -> dict[
         "action_typehash": ACTION_TYPEHASH,
         "module_address": TRADE_MODULES[environment],
         "subaccount_id": SUBACCOUNT_ID,
-        "nonce": BASE_NONCE + index,
+        "nonce": str(BASE_NONCE + index),
         "signature_expiry_sec": SIGNATURE_EXPIRY_SEC,
         "owner": OWNER,
         "session_key": SESSION_KEY,
@@ -252,19 +290,55 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if version("derive-py") != UPSTREAM_VERSION:
+        raise RuntimeError("installed derive-py version differs from the pinned oracle")
+    for name, source in [
+        ("SignedAction", SignedAction),
+        ("TradeModuleData", TradeModuleData),
+        ("utils", utils),
+        ("contracts", contracts),
+    ]:
+        actual = hashlib.sha256(Path(inspect.getfile(source)).read_bytes()).hexdigest()
+        if actual != SDK_SOURCE_HASHES[name]:
+            raise RuntimeError(f"installed SDK source differs for {name}")
+    action_type = (
+        "Action(uint256 subaccountId,uint256 nonce,address module,bytes data,"
+        "uint256 expiry,address owner,address signer)"
+    )
+    if prefixed(Web3.keccak(text=action_type).hex()) != ACTION_TYPEHASH:
+        raise RuntimeError("SDK Action typehash differs from the v3 formula")
+    for environment, chain_id in CHAIN_IDS.items():
+        domain = Web3.keccak(
+            encode(
+                ["bytes32", "bytes32", "bytes32", "uint256", "address"],
+                [
+                    Web3.keccak(
+                        text="EIP712Domain(string name,string version,"
+                        "uint256 chainId,address verifyingContract)",
+                    ),
+                    Web3.keccak(text="Matching"),
+                    Web3.keccak(text="1.0"),
+                    chain_id,
+                    "0xeB8d770ec18DB98Db922E9D83260A585b9F0DeAD",
+                ],
+            ),
+        )
+        if prefixed(domain.hex()) != DOMAINS[environment]:
+            raise RuntimeError(f"SDK {environment} domain differs from the v3 formula")
+
     signer_address = Web3().eth.account.from_key(SESSION_KEY).address
     vectors = [build_vector(index, case, signer_address) for index, case in enumerate(CASES)]
 
     payload = {
         "metadata": {
-            "license": (
-                "MIT (declared via the pyproject classifier; the upstream "
-                "repository carries no LICENSE file at the pinned revision)"
-            ),
+            "license": "MIT, Copyright (c) 2026 derive-py contributors",
             "primitive": "derive_trade_action",
             "source": UPSTREAM_SOURCE,
             "upstream_version": UPSTREAM_VERSION,
             "upstream_revision": UPSTREAM_REVISION,
+            "source_sha256": SDK_SOURCE_HASHES,
+            "dependencies": {name: version(name) for name in ["web3", "eth-abi", "eth-account"]},
+            "specification": "https://docs.derive.xyz/authentication/action-signing",
             "generated_by": "scripts/oracle-py/derive/generate_oracle.py",
             "procedure": (
                 "Clone and install the upstream SDK at "

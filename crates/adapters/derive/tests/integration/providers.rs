@@ -26,11 +26,14 @@ use axum::{
 };
 use nautilus_common::{providers::InstrumentProvider, testing::wait_until_async};
 use nautilus_core::UnixNanos;
-use nautilus_derive::{http::DeriveHttpClient, providers::DeriveInstrumentProvider};
+use nautilus_derive::{
+    common::enums::DeriveInstrumentType, http::DeriveHttpClient,
+    providers::DeriveInstrumentProvider,
+};
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
-    types::Currency,
+    types::{Currency, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -48,6 +51,11 @@ struct TestServerState {
     response_body: Arc<tokio::sync::Mutex<Value>>,
     responses_by_currency: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     responses_by_type: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
+    #[allow(
+        clippy::type_complexity,
+        reason = "Responses are keyed by product, expiry listing, and page"
+    )]
+    responses_by_listing: Arc<tokio::sync::Mutex<HashMap<(String, bool, i64), Value>>>,
 }
 
 impl TestServerState {
@@ -64,6 +72,7 @@ impl TestServerState {
         for (currency, response) in responses {
             response_map.insert(currency.to_string(), response);
         }
+
         drop(response_map);
         state
     }
@@ -73,6 +82,7 @@ impl TestServerState {
         for (instrument_type, response) in overrides {
             map.insert(instrument_type.to_string(), response);
         }
+
         drop(map);
         self
     }
@@ -87,7 +97,7 @@ async fn handle_get_instruments(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    handle("/public/get_instruments", state, headers, body).await
+    handle("/public/get_all_instruments", state, headers, body).await
 }
 
 async fn handle(
@@ -112,7 +122,21 @@ async fn handle(
         None
     };
 
-    let body = if let Some(by_type) = by_type {
+    let listing = (
+        parsed_body["instrument_type"].as_str().unwrap().to_string(),
+        parsed_body["expired"].as_bool().unwrap(),
+        parsed_body["page"].as_i64().unwrap(),
+    );
+    let by_listing = state
+        .responses_by_listing
+        .lock()
+        .await
+        .get(&listing)
+        .cloned();
+
+    let body = if let Some(by_listing) = by_listing {
+        by_listing
+    } else if let Some(by_type) = by_type {
         by_type
     } else if let Some(currency) = parsed_body.get("currency").and_then(Value::as_str) {
         let response = state
@@ -130,6 +154,14 @@ async fn handle(
         state.response_body.lock().await.clone()
     };
 
+    let mut body = body;
+    if let Some(rows) = body["result"].as_array() {
+        body["result"] = json!({
+            "instruments": rows.iter().filter(|row| row["instrument_type"] == parsed_body["instrument_type"]).collect::<Vec<_>>(),
+            "pagination": {"count": rows.len(), "num_pages": 1},
+        });
+    }
+
     (StatusCode::OK, Json(body)).into_response()
 }
 
@@ -142,7 +174,7 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
     let addr = listener.local_addr().unwrap();
 
     let router = Router::new()
-        .route("/public/get_instruments", post(handle_get_instruments))
+        .route("/public/get_all_instruments", post(handle_get_instruments))
         .route("/health", axum::routing::get(handle_health))
         .with_state(state);
 
@@ -184,15 +216,22 @@ fn instrument_request(currency: &str, instrument_type: &str, expired: bool) -> V
         "currency": currency,
         "instrument_type": instrument_type,
         "expired": expired,
+        "page": 1,
+        "page_size": 1000,
     })
 }
 
 fn eth_instrument_requests(expired: bool) -> Vec<Value> {
     let mut requests = vec![
-        instrument_request("ETH", "perp", expired),
-        instrument_request("ETH", "option", expired),
-        instrument_request("ETH", "erc20", expired),
+        instrument_request("ETH", "perp", false),
+        instrument_request("ETH", "option", false),
+        instrument_request("ETH", "erc20", false),
     ];
+
+    if expired {
+        requests.push(instrument_request("ETH", "option", true));
+    }
+
     sort_by_instrument_type(&mut requests);
     requests
 }
@@ -214,7 +253,10 @@ fn sort_by_instrument_type(bodies: &mut [Value]) {
                 .unwrap_or("")
                 .to_string()
         };
-        key(a).cmp(&key(b))
+
+        key(a)
+            .cmp(&key(b))
+            .then_with(|| a.to_string().cmp(&b.to_string()))
     });
 }
 
@@ -305,9 +347,18 @@ async fn test_load_all_tolerates_instrument_not_found(#[case] instrument_type: &
 
     let perp_id = InstrumentId::from("ETH-PERP.DERIVE");
     let option_id = InstrumentId::from("ETH-20260627-3500-C.DERIVE");
-    assert!(provider.store().contains(&perp_id));
-    assert!(provider.store().contains(&option_id));
-    assert_eq!(provider.store().count(), 2);
+    assert_eq!(
+        provider.store().contains(&perp_id),
+        instrument_type != "perp"
+    );
+    assert_eq!(
+        provider.store().contains(&option_id),
+        instrument_type != "option"
+    );
+    assert_eq!(
+        provider.store().count(),
+        if instrument_type == "erc20" { 2 } else { 1 }
+    );
 }
 
 #[rstest]
@@ -365,7 +416,7 @@ async fn test_load_all_fetches_parses_and_caches_instruments() {
     assert!(
         requests
             .iter()
-            .all(|request| request.path == "/public/get_instruments")
+            .all(|request| request.path == "/public/get_all_instruments")
     );
     assert_eq!(request_bodies(requests), eth_instrument_requests(false));
     assert!(provider.store().is_initialized());
@@ -529,4 +580,285 @@ async fn test_load_all_rejects_invalid_expired_filter_before_request() {
 
     assert!(err.to_string().contains("invalid Derive `expired` filter"));
     assert!(state.captured_requests().await.is_empty());
+}
+
+#[rstest]
+#[case("perp", "perps/instrument_eth.json", false)]
+#[case("option", "common/http_get_instruments_eth_all.json", false)]
+#[case("erc20", "spot/http_get_instruments_eth.json", false)]
+#[case("option", "common/http_get_instruments_eth_all.json", true)]
+#[tokio::test]
+async fn test_load_all_fetches_every_page_and_preserves_metadata(
+    #[case] instrument_type: &str,
+    #[case] fixture: &str,
+    #[case] expired: bool,
+) {
+    let state = empty_listing_state();
+    let mut row = load_json(fixture);
+    if row["result"].is_array() {
+        row = row["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["instrument_type"] == instrument_type)
+            .unwrap()
+            .clone();
+    }
+
+    if instrument_type == "perp" {
+        row["perp_details"]
+            .as_object_mut()
+            .unwrap()
+            .remove("static_interest_rate");
+    }
+
+    row["amount_step"] = json!("0.005");
+    row["tick_size"] = json!("0.02");
+    row["maximum_amount"] = json!("123.456");
+    row["pro_rata_fraction"] = json!("0.375");
+    row["fifo_min_allocation"] = json!("0.127");
+    row["pro_rata_amount_step"] = json!("0.003");
+    let mut second = row.clone();
+    second["instrument_name"] = json!(format!(
+        "SECOND-{}",
+        row["instrument_name"].as_str().unwrap()
+    ));
+    second["base_asset_sub_id"] = json!("73");
+    let mut third = row.clone();
+    third["instrument_name"] = json!(format!(
+        "THIRD-{}",
+        row["instrument_name"].as_str().unwrap()
+    ));
+    third["base_asset_sub_id"] = json!("91");
+    for (page, row) in [(1, row.clone()), (2, second.clone()), (3, third.clone())] {
+        state.responses_by_listing.lock().await.insert(
+            (instrument_type.to_string(), expired, page),
+            listing_response(&[row], 3, 3),
+        );
+    }
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, None).unwrap();
+    let mut provider =
+        DeriveInstrumentProvider::with_expired(client, vec!["ETH".to_string()], expired);
+
+    provider.load_all(None).await.unwrap();
+
+    assert_eq!(provider.store().count(), 3);
+
+    for expected in [row, second, third] {
+        let id = InstrumentId::from(format!(
+            "{}.DERIVE",
+            expected["instrument_name"].as_str().unwrap()
+        ));
+        let instrument = provider.store().find(&id).unwrap();
+        assert_eq!(instrument.price_increment(), Price::from("0.02"));
+        assert_eq!(instrument.size_increment(), Quantity::from("0.005"));
+        assert_eq!(instrument.max_quantity(), Some(Quantity::from("123.456")));
+        assert_eq!(
+            serde_json::to_value(instrument.info().unwrap()).unwrap(),
+            expected
+        );
+    }
+
+    let mut pages: Vec<_> = state
+        .captured_requests()
+        .await
+        .into_iter()
+        .filter(|request| {
+            request.body["instrument_type"] == instrument_type && request.body["expired"] == expired
+        })
+        .map(|request| request.body)
+        .collect();
+
+    pages.sort_by_key(|body| body["page"].as_i64().unwrap());
+
+    let expected: Vec<_> = (1..=3)
+        .map(|page| {
+            let mut body = instrument_request("ETH", instrument_type, expired);
+            body["page"] = json!(page);
+            body
+        })
+        .collect();
+
+    assert_eq!(pages, expected);
+}
+
+#[rstest]
+#[case(false, false)]
+#[case(true, false)]
+#[case(false, true)]
+#[case(true, true)]
+#[tokio::test]
+async fn test_include_expired_merges_options_and_tolerates_each_empty_listing(
+    #[case] live_empty: bool,
+    #[case] expired_empty: bool,
+) {
+    let state = empty_listing_state();
+    let live = load_json("common/http_get_instruments_eth_all.json")["result"][1].clone();
+    let mut overlap = live.clone();
+    overlap["maker_fee_rate"] = json!("0.42");
+    let mut expired = live.clone();
+    expired["instrument_name"] = json!("ETH-20260529-3200-P");
+    expired["base_asset_sub_id"] = json!("12345678901234567890");
+    expired["is_active"] = json!(false);
+    expired["option_details"]["option_type"] = json!("P");
+    expired["option_details"]["strike"] = json!("3200");
+    expired["option_details"]["settlement_price"] = json!("3127.125");
+
+    if !live_empty {
+        state.responses_by_listing.lock().await.insert(
+            ("option".to_string(), false, 1),
+            listing_response(std::slice::from_ref(&live), 1, 1),
+        );
+    }
+
+    if !expired_empty {
+        state.responses_by_listing.lock().await.insert(
+            ("option".to_string(), true, 1),
+            listing_response(&[overlap.clone(), expired.clone()], 2, 1),
+        );
+    }
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, None).unwrap();
+    let mut provider =
+        DeriveInstrumentProvider::with_expired(client, vec!["ETH".to_string()], true);
+
+    provider.load_all(None).await.unwrap();
+
+    let expected = match (live_empty, expired_empty) {
+        (false, false) => vec![live, expired],
+        (true, false) => vec![overlap, expired],
+        (false, true) => vec![live],
+        (true, true) => vec![],
+    };
+
+    assert_eq!(provider.store().count(), expected.len());
+
+    for row in expected {
+        let id = InstrumentId::from(format!(
+            "{}.DERIVE",
+            row["instrument_name"].as_str().unwrap()
+        ));
+        assert_eq!(
+            serde_json::to_value(provider.store().find(&id).unwrap().info().unwrap()).unwrap(),
+            row
+        );
+    }
+
+    assert_eq!(
+        request_bodies(state.captured_requests().await),
+        eth_instrument_requests(true)
+    );
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_refresh_replaces_old_listing_and_preserves_store_on_page_error() {
+    let state = empty_listing_state();
+    let row = load_json("perps/instrument_eth.json");
+    state.responses_by_listing.lock().await.insert(
+        ("perp".to_string(), false, 1),
+        listing_response(std::slice::from_ref(&row), 1, 1),
+    );
+    let addr = start_mock_server(state.clone()).await;
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, None).unwrap();
+    let mut provider = DeriveInstrumentProvider::new(client, vec!["ETH".to_string()]);
+    provider.load_all(None).await.unwrap();
+    let id = InstrumentId::from("ETH-PERP.DERIVE");
+    let original = provider.store().find(&id).unwrap().clone();
+    state.responses_by_listing.lock().await.insert(
+        ("perp".to_string(), false, 1),
+        listing_response(&[row], 2, 2),
+    );
+    state.responses_by_listing.lock().await.insert(
+        ("perp".to_string(), false, 2),
+        json!({"error": {"code": 5000, "message": "Internal error"}}),
+    );
+
+    let e = provider.load_all(None).await.unwrap_err();
+    assert!(e.to_string().contains("5000"));
+    assert_eq!(provider.store().find(&id), Some(&original));
+    state.responses_by_listing.lock().await.clear();
+    provider.load_all(None).await.unwrap();
+    assert_eq!(provider.store().count(), 0);
+    assert!(provider.store().is_initialized());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_include_expired_propagates_listing_error() {
+    let state = empty_listing_state();
+    state.responses_by_listing.lock().await.insert(
+        ("option".to_string(), true, 1),
+        json!({"error": {"code": 5000, "message": "Internal error"}}),
+    );
+    let addr = start_mock_server(state).await;
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, None).unwrap();
+    let mut provider =
+        DeriveInstrumentProvider::with_expired(client, vec!["ETH".to_string()], true);
+
+    let e = provider.load_all(None).await.unwrap_err();
+
+    assert_eq!(e.to_string(), "JSON-RPC error 5000: Internal error");
+    assert!(!provider.store().is_initialized());
+    assert_eq!(provider.store().count(), 0);
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test]
+async fn test_get_instruments_deduplicates_clamped_last_page(#[case] expired: bool) {
+    let state = empty_listing_state();
+    let row = load_json("common/http_get_instruments_eth_all.json")["result"][1].clone();
+    let mut repeated = row.clone();
+    repeated["maker_fee_rate"] = json!("0.42");
+    state.responses_by_listing.lock().await.insert(
+        ("option".to_string(), expired, 1),
+        listing_response(std::slice::from_ref(&row), 1001, 2),
+    );
+    state.responses_by_listing.lock().await.insert(
+        ("option".to_string(), expired, 2),
+        listing_response(&[repeated], 1000, 1),
+    );
+    let addr = start_mock_server(state.clone()).await;
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, None).unwrap();
+
+    let instruments = client
+        .get_instruments("ETH", DeriveInstrumentType::Option, expired)
+        .await
+        .unwrap();
+
+    assert_eq!(instruments.len(), 1);
+    assert_eq!(
+        serde_json::to_value(instruments[0].raw.as_ref().unwrap()).unwrap(),
+        row
+    );
+    let mut expected_page_two = instrument_request("ETH", "option", expired);
+    expected_page_two["page"] = json!(2);
+    assert_eq!(
+        request_bodies(state.captured_requests().await),
+        vec![
+            instrument_request("ETH", "option", expired),
+            expected_page_two
+        ]
+    );
+}
+
+fn listing_response(instruments: &[Value], count: usize, num_pages: usize) -> Value {
+    json!({"result": {
+        "instruments": instruments,
+        "pagination": {"count": count, "num_pages": num_pages},
+    }})
+}
+
+fn empty_listing_state() -> TestServerState {
+    let state = TestServerState::default();
+    *state.response_body.try_lock().unwrap() = json!({
+        "error": {"code": 12001, "message": "Instrument not found"},
+    });
+    state
 }

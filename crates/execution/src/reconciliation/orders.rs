@@ -108,7 +108,7 @@ fn generate_reconciliation_order_events_inner(
     allow_fill_decrease: bool,
     commission: Option<Money>,
 ) -> Vec<OrderEventAny> {
-    if is_superseded_cancel_report(order, report) {
+    if is_superseded_terminal_report(order, report) {
         let _ = reconcile_order_report(order, report, instrument, ts_now);
         return Vec::new();
     }
@@ -247,7 +247,7 @@ pub fn generate_reconciliation_order_pre_fill_events(
     report: &OrderStatusReport,
     ts_now: UnixNanos,
 ) -> Vec<OrderEventAny> {
-    if is_superseded_cancel_report(order, report) {
+    if is_superseded_terminal_report(order, report) {
         return Vec::new();
     }
 
@@ -317,9 +317,9 @@ fn prepare_reconciliation_order(
 /// regardless of local state, since an unconfirmed amend or cancel must not
 /// drive any local mutation until the venue surfaces a confirmed status.
 ///
-/// Returns `None` for a `Canceled` report that references a previously-promoted
-/// `venue_order_id` whose successor is still live in the cache (the cancel-half
-/// of a cancel-replace modify).
+/// Returns `None` for a `Canceled`, `Expired`, or `Filled` report on a known superseded
+/// `venue_order_id`. Its native terminal state does not change the logical order's current
+/// state or cumulative quantities; its companion fills reconcile separately.
 #[must_use]
 pub fn reconcile_order_report(
     order: &OrderAny,
@@ -359,11 +359,12 @@ pub fn reconcile_order_report_with_commission(
         return None;
     }
 
-    if is_superseded_cancel_report(order, report) {
+    if is_superseded_terminal_report(order, report) {
         let cached_venue_order_id = order.venue_order_id().unwrap_or(report.venue_order_id);
         log::info!(
-            "Suppressing Canceled for {} on previously-promoted venue_order_id {}: \
+            "Suppressing {:?} for {} on previously-promoted venue_order_id {}: \
              current venue_order_id is {}",
+            report.order_status,
             order.client_order_id(),
             report.venue_order_id,
             cached_venue_order_id,
@@ -809,7 +810,13 @@ pub fn reconcile_fill_report(
     }
 
     let account_id = report.account_id;
-    let venue_order_id = order.venue_order_id().unwrap_or(report.venue_order_id);
+    let venue_order_id = if order.venue_order_id() == Some(report.venue_order_id)
+        || order.venue_order_ids().contains(&&report.venue_order_id)
+    {
+        report.venue_order_id
+    } else {
+        order.venue_order_id().unwrap_or(report.venue_order_id)
+    };
 
     log::info!(
         color = LogColor::Blue as u8;
@@ -1352,8 +1359,11 @@ fn report_is_working(report: &OrderStatusReport) -> bool {
     )
 }
 
-pub(crate) fn is_superseded_cancel_report(order: &OrderAny, report: &OrderStatusReport) -> bool {
-    if report.order_status != OrderStatus::Canceled {
+pub(crate) fn is_superseded_terminal_report(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    if !matches!(
+        report.order_status,
+        OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Filled
+    ) {
         return false;
     }
 

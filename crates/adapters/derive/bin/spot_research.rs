@@ -79,10 +79,12 @@ async fn main() -> anyhow::Result<()> {
     nautilus_common::logging::ensure_logging_initialized();
 
     let environment = parse_environment_from_args()?;
+
     let out_dir = match environment {
         DeriveEnvironment::Mainnet => "/tmp/derive_spot_probe_mainnet",
         DeriveEnvironment::Testnet => "/tmp/derive_spot_probe",
     };
+
     fs::create_dir_all(out_dir)?;
 
     let (wallet_var, session_var, subaccount_var) = credential_env_vars(environment);
@@ -347,6 +349,7 @@ fn round_down_to_tick(value: Decimal, tick: Decimal) -> Decimal {
     if tick <= Decimal::ZERO {
         return value;
     }
+
     (value / tick).floor() * tick
 }
 
@@ -404,6 +407,7 @@ async fn submit_signed_spot_order(
         owner,
         signer: signer_address,
     };
+
     let mut action = SignedAction::new(ctx, &trade, domain_separator, action_typehash);
     action
         .sign(signer)
@@ -426,6 +430,7 @@ async fn submit_signed_spot_order(
         trigger_price_type: None,
         trigger_type: None,
     };
+
     fs::write(
         format!("{out_dir}/{label}_request.json"),
         serde_json::to_vec_pretty(&payload)?,

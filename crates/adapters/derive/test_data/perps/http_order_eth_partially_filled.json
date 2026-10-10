@@ -12,7 +12,7 @@
   "limit_price": "3501.0",
   "max_fee": "10",
   "mmp": false,
-  "nonce": 1700000000000001,
+  "nonce": "1700000000000001",
   "order_fee": "0.05",
   "order_id": "abc-123",
   "order_status": "filled",

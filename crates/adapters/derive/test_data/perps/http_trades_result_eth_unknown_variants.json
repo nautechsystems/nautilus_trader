@@ -18,7 +18,7 @@
       "trade_id": "t-1",
       "trade_price": "3499",
       "tx_hash": "0xhash",
-      "tx_status": "settled",
+      "batch_status": "Settled",
       "wallet": "0xwallet"
     },
     {
@@ -39,7 +39,7 @@
       "trade_id": "t-2",
       "trade_price": "3501.5",
       "tx_hash": null,
-      "tx_status": "pending",
+      "batch_status": null,
       "wallet": "0xwallet"
     },
     {
@@ -60,7 +60,7 @@
       "trade_id": "t-3",
       "trade_price": "3502.5",
       "tx_hash": "0xhash3",
-      "tx_status": "settled",
+      "batch_status": "Settled",
       "wallet": "0xwallet"
     }
   ],

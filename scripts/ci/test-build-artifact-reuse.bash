@@ -180,8 +180,8 @@ grep -Fq \
   'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
   "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
 grep -Fq \
-  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-okx --test integration --no-default-features --features simulation' \
-  "$CARGO_LOG" || fail "OKX DST tests did not use a standard-precision simulation build"
+  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-okx -p nautilus-derive --lib --test integration --no-default-features --features simulation' \
+  "$CARGO_LOG" || fail "Adapter DST tests did not use a standard-precision simulation build"
 grep -Fq \
   'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
   "$CARGO_LOG" || fail "High-precision DST tests did not share one feature-coherent build"
@@ -202,8 +202,8 @@ grep -Fq \
   'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation --profile nextest -- -D warnings' \
   "$CARGO_LOG" || fail "Standard-precision DST clippy did not lint the full package scope together"
 grep -Fq \
-  'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-okx --lib --tests --no-default-features --features simulation --profile nextest -- -D warnings' \
-  "$CARGO_LOG" || fail "OKX DST clippy did not use a standard-precision simulation build"
+  'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-okx -p nautilus-derive --lib --tests --no-default-features --features simulation --profile nextest -- -D warnings' \
+  "$CARGO_LOG" || fail "Adapter DST clippy did not use a standard-precision simulation build"
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \

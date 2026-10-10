@@ -21,7 +21,7 @@
 //! [`crate::common::error::DeriveError`] reuses them for `is_retryable` /
 //! `is_fatal`.
 
-use nautilus_network::retry::RetryConfig;
+use nautilus_network::retry::{RetryConfig, RetryError};
 
 use crate::{http::DeriveHttpError, websocket::DeriveWsError};
 
@@ -51,27 +51,33 @@ pub fn http_retry_config(
     }
 }
 
-/// Returns `true` for HTTP errors that can safely be retried with backoff.
+/// Returns `true` for transient HTTP errors eligible for read retries with backoff.
+///
+/// This classifier does not establish the outcome of a state-changing request.
 ///
 /// Retryable categories:
 ///
 /// - Transport failures (connection reset, timeout, DNS).
 /// - HTTP 5xx and 408 / 429.
 /// - JSON-RPC `Server error` codes in the `-32099..=-32000` range.
+/// - JSON-RPC internal error (`-32603`).
+/// - Read-backend unavailability (`9002`).
 ///
 /// Everything else (validation, signed-fee-too-low, insufficient-margin,
-/// auth failure) is terminal and must not be retried.
+/// auth failure) is non-retryable under this policy.
 #[must_use]
 pub fn should_retry_http_error(error: &DeriveHttpError) -> bool {
     match error {
         DeriveHttpError::Transport(_) => true,
+        DeriveHttpError::Retry(RetryError::OperationTimeout { .. }) => true,
         DeriveHttpError::Http { status, .. } => is_retryable_status(*status),
         DeriveHttpError::JsonRpc { code, .. } => is_retryable_jsonrpc_code(*code),
         DeriveHttpError::MissingResult { .. }
         | DeriveHttpError::Decode(_)
         | DeriveHttpError::Serde(_)
         | DeriveHttpError::Auth(_)
-        | DeriveHttpError::MissingCredentials { .. } => false,
+        | DeriveHttpError::MissingCredentials { .. }
+        | DeriveHttpError::Retry(_) => false,
     }
 }
 
@@ -91,13 +97,16 @@ pub fn is_fatal_http_error(error: &DeriveHttpError) -> bool {
     }
 }
 
-/// Returns `true` for WebSocket errors that can safely be retried.
+/// Returns `true` for transient WebSocket errors eligible for recovery retries.
+///
+/// A timeout or transport error does not authorize replaying an order write.
 #[must_use]
 pub fn should_retry_ws_error(error: &DeriveWsError) -> bool {
     match error {
         DeriveWsError::Transport(_)
         | DeriveWsError::RequestCancelled { .. }
-        | DeriveWsError::Timeout { .. } => true,
+        | DeriveWsError::Timeout { .. }
+        | DeriveWsError::RateLimited { .. } => true,
         DeriveWsError::JsonRpc { code, .. } => is_retryable_jsonrpc_code(*code),
         DeriveWsError::NotConnected
         | DeriveWsError::Serde(_)
@@ -128,21 +137,16 @@ fn is_retryable_status(status: u16) -> bool {
 
 /// Classifies a JSON-RPC error code.
 ///
-/// Derive does not publish a stable retry classification for its venue codes,
-/// so the policy is conservative: only generic transient categories retry
-/// (the JSON-RPC `Server error` range, plus internal error `-32603` which the
-/// venue uses for transient backend faults). Signed-action rejections such as
-/// `signed_max_fee_too_low` and `insufficient_margin` arrive as standard
-/// invalid-params errors and are intentionally not retried; the caller has to
-/// reprice or refund collateral before resubmission.
+/// Read retries cover backend unavailability and generic transient failures.
+/// Confirmation timeouts do not authorize replaying a state-changing command.
 #[must_use]
 pub(crate) fn is_retryable_jsonrpc_code(code: i64) -> bool {
-    code == -32603 || (-32099..=-32000).contains(&code)
+    matches!(code, -32603 | 9002) || (-32099..=-32000).contains(&code)
 }
 
 /// Returns `true` only for JSON-RPC codes where the *outcome of a state-changing
-/// write* is genuinely ambiguous: the venue may have processed the request and
-/// merely failed to respond. Strictly narrower than [`is_retryable_jsonrpc_code`].
+/// write* is ambiguous: the venue may have processed the request and merely
+/// failed to respond. Retry eligibility does not establish a write's outcome.
 ///
 /// The retry classifier covers transient transport-style failures, including
 /// venue-defined codes like `-32000 Rate limit exceeded`. Rate-limit (and most
@@ -151,34 +155,18 @@ pub(crate) fn is_retryable_jsonrpc_code(code: i64) -> bool {
 /// ambiguous leaves the order hanging in `Submitted` forever because no WS
 /// frame will come for an order that was never placed.
 ///
-/// The current entry is `-32603` (generic JSON-RPC internal error): the only
-/// code where the venue's own process is known to have run for some unknown
-/// distance before failing. Extend this list only with evidence that a code
-/// genuinely leaves outcome unknown.
+/// Internal error `-32603` and confirmation timeouts `9000` / `9001` leave
+/// acceptance unresolved. The venue requires querying those orders before
+/// resubmission.
 #[must_use]
 pub(crate) fn is_write_outcome_ambiguous_jsonrpc(code: i64) -> bool {
-    code == -32603
-}
-
-/// Returns `true` for non-JSON-RPC HTTP statuses where a state-changing
-/// write failed before the matching engine could accept it.
-///
-/// HTTP 4xx responses come from gateway, auth, throttling, or request-shape
-/// rejection paths. They are definitive for submit/cancel/modify outcomes,
-/// even when an idempotent read would retry some of them. HTTP 5xx and
-/// transport failures remain ambiguous for writes.
-///
-/// Retained for the HTTP order-write path (the execution client now writes over
-/// the WebSocket and classifies outcomes via `is_write_outcome_ambiguous_ws`).
-#[must_use]
-pub fn is_write_outcome_definitive_http_status(status: u16) -> bool {
-    (400..500).contains(&status)
+    matches!(code, -32603 | 9000 | 9001)
 }
 
 /// Returns `true` when a WebSocket write's outcome is unknown (sent, but no
 /// clear venue verdict), so the caller emits no terminal event and lets
 /// reconciliation settle the order. `JsonRpc` defers to the shared code policy
-/// in [`is_write_outcome_ambiguous_jsonrpc`] (only `-32603`).
+/// in [`is_write_outcome_ambiguous_jsonrpc`].
 ///
 /// Two non-obvious calls: `Serde` is ambiguous because it is a failure to decode
 /// the *response* (the request cannot fail to serialize), so the action may have
@@ -196,16 +184,29 @@ pub(crate) fn is_write_outcome_ambiguous_ws(error: &DeriveWsError) -> bool {
         | DeriveWsError::Auth(_)
         | DeriveWsError::Authentication { .. }
         | DeriveWsError::Subscription { .. }
+        | DeriveWsError::RateLimited { .. }
         | DeriveWsError::MissingCredentials { .. } => false,
     }
 }
 
-/// Classifies a JSON-RPC error code as fatal. Derive currently does not
-/// expose a dedicated session-killed code, so this only flags the standard
-/// invalid-request shape used for unrecoverable framing problems.
+/// Classifies unrecoverable framing and account, signer, or session failures.
 #[must_use]
 fn is_fatal_jsonrpc_code(code: i64) -> bool {
-    matches!(code, -32600 | -32700)
+    matches!(
+        code,
+        -32600
+            | -32700
+            | 14000
+            | 14001
+            | 14013
+            | 14014
+            | 14020
+            | 14021
+            | 14023
+            | 14026
+            | 14030
+            | 14031
+    )
 }
 
 #[cfg(test)]
@@ -214,6 +215,44 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
+
+    #[rstest]
+    #[case(14000, true, false)]
+    #[case(14001, true, false)]
+    #[case(14013, true, false)]
+    #[case(14014, true, false)]
+    #[case(14020, true, false)]
+    #[case(14021, true, false)]
+    #[case(14023, true, false)]
+    #[case(14026, true, false)]
+    #[case(14030, true, false)]
+    #[case(14031, true, false)]
+    #[case(9002, false, true)]
+    #[case(9000, false, false)]
+    #[case(12001, false, false)]
+    fn test_venue_session_error_classification(
+        #[case] code: i64,
+        #[case] fatal: bool,
+        #[case] retry: bool,
+    ) {
+        let http = DeriveHttpError::JsonRpc {
+            code,
+            message: "opaque".to_string(),
+            data: None,
+            retry_after: None,
+        };
+
+        let ws = DeriveWsError::JsonRpc {
+            code,
+            message: "opaque".to_string(),
+            data: None,
+        };
+
+        assert_eq!(is_fatal_http_error(&http), fatal);
+        assert_eq!(is_fatal_ws_error(&ws), fatal);
+        assert_eq!(should_retry_http_error(&http), retry);
+        assert_eq!(should_retry_ws_error(&ws), retry);
+    }
 
     #[rstest]
     fn test_transport_error_retryable() {
@@ -256,7 +295,9 @@ mod tests {
             code: -32602,
             message: "signed_max_fee_too_low".into(),
             data: None,
+            retry_after: None,
         };
+
         assert!(!should_retry_http_error(&err));
         assert!(!is_fatal_http_error(&err));
     }
@@ -267,7 +308,9 @@ mod tests {
             code: -32050,
             message: "Server busy".into(),
             data: None,
+            retry_after: None,
         };
+
         assert!(should_retry_http_error(&err));
     }
 
@@ -277,23 +320,10 @@ mod tests {
             code: -32603,
             message: "Internal error".into(),
             data: None,
+            retry_after: None,
         };
-        assert!(should_retry_http_error(&err));
-    }
 
-    #[rstest]
-    #[case(400, true)]
-    #[case(401, true)]
-    #[case(403, true)]
-    #[case(408, true)]
-    #[case(429, true)]
-    #[case(500, false)]
-    #[case(503, false)]
-    fn test_http_status_write_outcome_classification(
-        #[case] status: u16,
-        #[case] definitive: bool,
-    ) {
-        assert_eq!(is_write_outcome_definitive_http_status(status), definitive);
+        assert!(should_retry_http_error(&err));
     }
 
     #[rstest]
@@ -302,7 +332,9 @@ mod tests {
             code: -32600,
             message: "Invalid request".into(),
             data: Some(Value::Null),
+            retry_after: None,
         };
+
         assert!(is_fatal_http_error(&err));
         assert!(!should_retry_http_error(&err));
     }
@@ -312,6 +344,7 @@ mod tests {
         let err = DeriveHttpError::MissingCredentials {
             method: "private/order".into(),
         };
+
         assert!(!should_retry_http_error(&err));
         assert!(is_fatal_http_error(&err));
     }
@@ -336,6 +369,7 @@ mod tests {
         let err = DeriveWsError::RequestCancelled {
             method: "subscribe".into(),
         };
+
         assert!(should_retry_ws_error(&err));
     }
 
@@ -344,6 +378,7 @@ mod tests {
         let err = DeriveWsError::Timeout {
             method: "private/order".into(),
         };
+
         assert!(should_retry_ws_error(&err));
         assert!(!is_fatal_ws_error(&err));
     }
@@ -354,6 +389,7 @@ mod tests {
             operation: "private/order".into(),
             reason: "session recovery failed".into(),
         };
+
         let subscription = DeriveWsError::Subscription {
             details: "30769.trades: unauthorized".into(),
         };
@@ -385,6 +421,7 @@ mod tests {
                 data: None,
             },
         ];
+
         let definitive = [
             DeriveWsError::NotConnected,
             DeriveWsError::JsonRpc {

@@ -25,7 +25,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
-use serde_json::Value;
+use serde_json::{Value, value::RawValue};
 use ustr::Ustr;
 
 use crate::{
@@ -45,9 +45,14 @@ const DERIVE_POST_ONLY_CROSS_MARKET_MESSAGE: &str = "post only order cannot cros
 pub const DERIVE_POST_ONLY_CROSS_MARKET_ERROR_CODE: i64 = 11008;
 
 /// Converts a Derive venue symbol to a Nautilus instrument ID.
-#[must_use]
-pub fn format_instrument_id(venue_symbol: impl AsRef<str>) -> InstrumentId {
-    InstrumentId::new(Symbol::new(venue_symbol.as_ref()), *DERIVE_VENUE)
+///
+/// # Errors
+///
+/// Returns an error when the venue symbol is empty or contains only whitespace.
+pub fn format_instrument_id(venue_symbol: impl AsRef<str>) -> anyhow::Result<InstrumentId> {
+    let symbol =
+        Symbol::new_checked(venue_symbol.as_ref()).context("invalid Derive instrument_name")?;
+    Ok(InstrumentId::new(symbol, *DERIVE_VENUE))
 }
 
 /// Converts a Nautilus Derive instrument ID back to the venue symbol.
@@ -75,7 +80,9 @@ where
     D: Deserializer<'de>,
     T: DeserializeOwned,
 {
-    Ok(salvage_elements(Vec::<Value>::deserialize(deserializer)?))
+    Ok(salvage_rows(Vec::<Box<RawValue>>::deserialize(
+        deserializer,
+    )?))
 }
 
 /// Decodes each element of a JSON array into `T`, logging and skipping
@@ -90,18 +97,38 @@ where
 /// failing field and value); private rows hold signatures and wallet
 /// addresses, so the raw payload stays out of the logs.
 pub fn salvage_elements<T: DeserializeOwned>(values: Vec<Value>) -> Vec<T> {
+    salvage_decoded(values.into_iter().map(serde_json::from_value))
+}
+
+pub(crate) fn salvage_rows<T: DeserializeOwned>(values: Vec<Box<RawValue>>) -> Vec<T> {
+    salvage_decoded(
+        values
+            .into_iter()
+            .map(|value| serde_json::from_str(value.get())),
+    )
+}
+
+fn salvage_decoded<T>(values: impl Iterator<Item = serde_json::Result<T>>) -> Vec<T> {
     let context = std::any::type_name::<T>()
         .rsplit("::")
         .next()
         .unwrap_or("element");
-    let mut elements = Vec::with_capacity(values.len());
+    let mut elements = Vec::with_capacity(values.size_hint().0);
     for value in values {
-        match T::deserialize(&value) {
+        match value {
             Ok(element) => elements.push(element),
             Err(e) => log::warn!("Skipping undecodable {context} element: {e}"),
         }
     }
+
     elements
+}
+
+pub(crate) fn deserialize_decimal<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Decimal, D::Error> {
+    nautilus_core::serialization::deserialize_optional_decimal_token(deserializer)
+        .map(|value| value.unwrap_or(Decimal::ZERO))
 }
 
 /// Maps a Nautilus order side to the Derive direction string.
@@ -210,74 +237,81 @@ pub fn derive_order_side_to_nautilus(side: DeriveOrderSide) -> OrderSide {
 
 /// Maps a Derive order type back to Nautilus.
 ///
-/// Unmodeled venue order types decode as [`DeriveOrderType::Unknown`] and map
-/// to [`OrderType::Limit`] so the order stays visible to reconciliation.
-#[must_use]
-pub fn derive_order_type_to_nautilus(order_type: DeriveOrderType) -> OrderType {
+/// # Errors
+///
+/// Returns an error for an unmodeled order type.
+pub fn derive_order_type_to_nautilus(order_type: DeriveOrderType) -> anyhow::Result<OrderType> {
     match order_type {
-        DeriveOrderType::Limit | DeriveOrderType::Unknown => OrderType::Limit,
-        DeriveOrderType::Market => OrderType::Market,
+        DeriveOrderType::Limit => Ok(OrderType::Limit),
+        DeriveOrderType::Market => Ok(OrderType::Market),
+        DeriveOrderType::Unknown => anyhow::bail!("unmodeled Derive order type"),
     }
 }
 
 /// Maps a Derive trigger order record back to the Nautilus order type.
 ///
-/// An unmodeled trigger type degrades to the plain order type; the trigger
-/// price still rides on the report.
-#[must_use]
+/// # Errors
+///
+/// Returns an error for an unmodeled order or trigger type.
 pub fn derive_order_type_to_nautilus_for_order(
     order_type: DeriveOrderType,
     trigger_type: Option<DeriveTriggerType>,
-) -> OrderType {
+) -> anyhow::Result<OrderType> {
     match (order_type, trigger_type) {
-        (DeriveOrderType::Market, Some(DeriveTriggerType::Stoploss)) => OrderType::StopMarket,
-        (DeriveOrderType::Limit, Some(DeriveTriggerType::Stoploss)) => OrderType::StopLimit,
+        (DeriveOrderType::Market, Some(DeriveTriggerType::Stoploss)) => Ok(OrderType::StopMarket),
+        (DeriveOrderType::Limit, Some(DeriveTriggerType::Stoploss)) => Ok(OrderType::StopLimit),
         (DeriveOrderType::Market, Some(DeriveTriggerType::Takeprofit)) => {
-            OrderType::MarketIfTouched
+            Ok(OrderType::MarketIfTouched)
         }
-        (DeriveOrderType::Limit, Some(DeriveTriggerType::Takeprofit)) => OrderType::LimitIfTouched,
+        (DeriveOrderType::Limit, Some(DeriveTriggerType::Takeprofit)) => {
+            Ok(OrderType::LimitIfTouched)
+        }
+        (_, Some(DeriveTriggerType::Unknown)) => anyhow::bail!("unmodeled Derive trigger type"),
         (order_type, _) => derive_order_type_to_nautilus(order_type),
     }
 }
 
 /// Maps a Derive trigger price source back to Nautilus.
 ///
-/// Unmodeled trigger price sources map to [`TriggerType::Default`].
-#[must_use]
-pub const fn derive_trigger_price_type_to_nautilus(
+/// # Errors
+///
+/// Returns an error for an unmodeled trigger price source.
+pub fn derive_trigger_price_type_to_nautilus(
     trigger_price_type: DeriveTriggerPriceType,
-) -> TriggerType {
+) -> anyhow::Result<TriggerType> {
     match trigger_price_type {
-        DeriveTriggerPriceType::Mark => TriggerType::MarkPrice,
-        DeriveTriggerPriceType::Index => TriggerType::IndexPrice,
-        DeriveTriggerPriceType::Unknown => TriggerType::Default,
+        DeriveTriggerPriceType::Mark => Ok(TriggerType::MarkPrice),
+        DeriveTriggerPriceType::Index => Ok(TriggerType::IndexPrice),
+        DeriveTriggerPriceType::Unknown => anyhow::bail!("unmodeled Derive trigger price type"),
     }
 }
 
 /// Maps a Derive TIF back to Nautilus.
 ///
-/// Unmodeled time-in-force flags map to [`TimeInForce::Gtc`] so the order
-/// stays visible to reconciliation.
-#[must_use]
-pub fn derive_tif_to_nautilus(tif: DeriveTimeInForce) -> TimeInForce {
+/// # Errors
+///
+/// Returns an error for an unmodeled time-in-force flag.
+pub fn derive_tif_to_nautilus(tif: DeriveTimeInForce) -> anyhow::Result<TimeInForce> {
     match tif {
-        DeriveTimeInForce::Gtc | DeriveTimeInForce::PostOnly | DeriveTimeInForce::Unknown => {
-            TimeInForce::Gtc
-        }
-        DeriveTimeInForce::Ioc => TimeInForce::Ioc,
-        DeriveTimeInForce::Fok => TimeInForce::Fok,
+        DeriveTimeInForce::Gtc | DeriveTimeInForce::PostOnly => Ok(TimeInForce::Gtc),
+        DeriveTimeInForce::Ioc => Ok(TimeInForce::Ioc),
+        DeriveTimeInForce::Fok => Ok(TimeInForce::Fok),
+        DeriveTimeInForce::Unknown => anyhow::bail!("unmodeled Derive time in force"),
     }
 }
 
 /// Maps a Derive order status to the Nautilus equivalent, given the current
 /// filled quantity.
-#[must_use]
+///
+/// # Errors
+///
+/// Returns an error for an unmodeled order status.
 pub fn derive_status_to_nautilus(
     status: DeriveOrderStatus,
     filled_qty: Decimal,
     quantity: Decimal,
-) -> OrderStatus {
-    match status {
+) -> anyhow::Result<OrderStatus> {
+    let status = match status {
         DeriveOrderStatus::Open => {
             if filled_qty > Decimal::ZERO && filled_qty < quantity {
                 OrderStatus::PartiallyFilled
@@ -290,7 +324,10 @@ pub fn derive_status_to_nautilus(
         DeriveOrderStatus::Cancelled => OrderStatus::Canceled,
         DeriveOrderStatus::Expired => OrderStatus::Expired,
         DeriveOrderStatus::Untriggered | DeriveOrderStatus::AlgoActive => OrderStatus::Accepted,
-    }
+        DeriveOrderStatus::Unknown => anyhow::bail!("unmodeled Derive order status"),
+    };
+
+    Ok(status)
 }
 
 /// Returns whether a Derive rejection means a post-only order crossed the market.
@@ -346,8 +383,8 @@ fn parse_perp_instrument(
         .as_ref()
         .context("missing perp_details for Derive perp instrument")?;
 
-    let instrument_id = format_instrument_id(instrument.instrument_name);
-    let raw_symbol = Symbol::new(instrument.instrument_name);
+    let instrument_id = format_instrument_id(instrument.instrument_name)?;
+    let raw_symbol = instrument_id.symbol;
     let base_currency = Currency::get_or_create_crypto(instrument.base_currency);
     // Wire says "USD" but Derive settles everything in USDC
     let quote_currency = Currency::USDC();
@@ -389,8 +426,8 @@ fn parse_option_instrument(
         .as_ref()
         .context("missing option_details for Derive option instrument")?;
 
-    let instrument_id = format_instrument_id(instrument.instrument_name);
-    let raw_symbol = Symbol::new(instrument.instrument_name);
+    let instrument_id = format_instrument_id(instrument.instrument_name)?;
+    let raw_symbol = instrument_id.symbol;
     let underlying = Currency::get_or_create_crypto(instrument.base_currency);
     let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
     let settlement_currency = quote_currency;
@@ -435,8 +472,8 @@ fn parse_spot_instrument(
     instrument: &DeriveInstrument,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let instrument_id = format_instrument_id(instrument.instrument_name);
-    let raw_symbol = Symbol::new(instrument.instrument_name);
+    let instrument_id = format_instrument_id(instrument.instrument_name)?;
+    let raw_symbol = instrument_id.symbol;
     let base_currency = Currency::get_or_create_crypto(instrument.base_currency);
     let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
     let price_increment = price_from_decimal(instrument.tick_size, "tick_size")?;
@@ -507,11 +544,48 @@ fn timestamp_to_nanos(value: i64, multiplier: u64, field: &str) -> anyhow::Resul
     Ok(UnixNanos::from(nanos))
 }
 
+pub(crate) const STRATEGY_REASON_MAX_CHARS: usize = 256;
+
+pub(crate) fn strategy_rejection_reason(message: &str) -> String {
+    let mut output = String::new();
+    let mut markup = false;
+    let mut length = 0;
+
+    for character in message.chars() {
+        let previous_size = output.len();
+
+        match character {
+            '<' => markup = true,
+            '>' => markup = false,
+            _ if markup => {}
+            _ if character.is_whitespace() => {
+                if !output.is_empty() && !output.ends_with(' ') {
+                    output.push(' ');
+                }
+            }
+            _ if character.is_control() => {}
+            _ => output.push(character),
+        }
+
+        length += usize::from(output.len() != previous_size);
+        if length >= STRATEGY_REASON_MAX_CHARS {
+            break;
+        }
+    }
+
+    let output = output.trim_end();
+    if output.is_empty() {
+        "Order command rejected".to_string()
+    } else {
+        output.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, serialization::ToMsgPack};
     use nautilus_model::{
         enums::{OptionKind, OrderStatus, OrderType, TriggerType},
         identifiers::InstrumentId,
@@ -520,9 +594,31 @@ mod tests {
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use serde::Serialize;
     use serde_json::{Value, json};
 
     use super::*;
+
+    #[rstest]
+    fn test_json_numeric_params_keep_messagepack_scalar_encoding() {
+        #[derive(Serialize)]
+        #[serde(transparent)]
+        struct NumericParams(Params);
+        impl ToMsgPack for NumericParams {}
+
+        let mut params = Params::new();
+        params.insert("integer".to_owned(), json!(42));
+        params.insert("fraction".to_owned(), json!(0.125));
+        let encoded = NumericParams(params).to_msgpack_bytes().unwrap();
+
+        assert_eq!(
+            encoded.as_ref(),
+            &[
+                0x82, 0xa7, b'i', b'n', b't', b'e', b'g', b'e', b'r', 42, 0xa8, b'f', b'r', b'a',
+                b'c', b't', b'i', b'o', b'n', 0xcb, 0x3f, 0xc0, 0, 0, 0, 0, 0, 0,
+            ],
+        );
+    }
 
     fn data_path() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -629,42 +725,30 @@ mod tests {
         OrderType::LimitIfTouched
     )]
     #[case(DeriveOrderType::Limit, None, OrderType::Limit)]
-    #[case(
-        DeriveOrderType::Limit,
-        Some(DeriveTriggerType::Unknown),
-        OrderType::Limit
-    )]
-    #[case(
-        DeriveOrderType::Market,
-        Some(DeriveTriggerType::Unknown),
-        OrderType::Market
-    )]
-    #[case(DeriveOrderType::Unknown, None, OrderType::Limit)]
     fn test_derive_order_type_to_nautilus_for_order(
         #[case] order_type: DeriveOrderType,
         #[case] trigger_type: Option<DeriveTriggerType>,
         #[case] expected: OrderType,
     ) {
         assert_eq!(
-            derive_order_type_to_nautilus_for_order(order_type, trigger_type),
+            derive_order_type_to_nautilus_for_order(order_type, trigger_type).unwrap(),
             expected,
         );
     }
 
     #[rstest]
-    fn test_unknown_wire_variants_map_to_safe_defaults() {
-        assert_eq!(
-            derive_order_type_to_nautilus(DeriveOrderType::Unknown),
-            OrderType::Limit,
+    fn test_unknown_wire_variants_reject_domain_conversion() {
+        assert!(derive_order_type_to_nautilus(DeriveOrderType::Unknown).is_err());
+        assert!(
+            derive_order_type_to_nautilus_for_order(
+                DeriveOrderType::Limit,
+                Some(DeriveTriggerType::Unknown)
+            )
+            .is_err()
         );
-        assert_eq!(
-            derive_tif_to_nautilus(DeriveTimeInForce::Unknown),
-            TimeInForce::Gtc,
-        );
-        assert_eq!(
-            derive_trigger_price_type_to_nautilus(DeriveTriggerPriceType::Unknown),
-            TriggerType::Default,
-        );
+        assert!(derive_tif_to_nautilus(DeriveTimeInForce::Unknown).is_err());
+        assert!(derive_trigger_price_type_to_nautilus(DeriveTriggerPriceType::Unknown).is_err());
+        assert!(derive_status_to_nautilus(DeriveOrderStatus::Unknown, dec!(0), dec!(1)).is_err());
     }
 
     #[rstest]
@@ -679,7 +763,7 @@ mod tests {
     #[rstest]
     fn test_derive_status_to_nautilus_maps_untriggered_to_accepted() {
         assert_eq!(
-            derive_status_to_nautilus(DeriveOrderStatus::Untriggered, dec!(0), dec!(1)),
+            derive_status_to_nautilus(DeriveOrderStatus::Untriggered, dec!(0), dec!(1)).unwrap(),
             OrderStatus::Accepted,
         );
     }
@@ -704,6 +788,24 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(derive_rejection_due_post_only(code, reason), expected);
+    }
+
+    #[rstest]
+    #[case("perps/instrument_eth.json")]
+    #[case("options/instrument_eth.json")]
+    #[case("spot/instrument_eth.json")]
+    fn test_instrument_parser_rejects_blank_symbol_without_panic(
+        #[case] filename: &str,
+        #[values("", " ", "\t\n")] symbol: &str,
+    ) {
+        let mut instrument: DeriveInstrument = serde_json::from_value(load_json(filename)).unwrap();
+        instrument.instrument_name = symbol.into();
+        let result = std::panic::catch_unwind(|| {
+            parse_derive_instrument_any(&instrument, UnixNanos::from(17))
+        });
+
+        assert!(result.is_ok(), "untrusted symbols must not panic");
+        assert!(result.unwrap().is_err());
     }
 
     #[rstest]
@@ -771,6 +873,7 @@ mod tests {
         let parsed = parse_derive_instrument_any(&instrument, UnixNanos::from(123))
             .unwrap()
             .unwrap();
+
         let InstrumentAny::CryptoPerpetual(perp) = parsed else {
             panic!("expected CryptoPerpetual");
         };
@@ -829,7 +932,7 @@ mod tests {
 
     #[rstest]
     fn test_symbol_instrument_id_mapping() {
-        let instrument_id = format_instrument_id("ETH-20260627-3500-C");
+        let instrument_id = format_instrument_id("ETH-20260627-3500-C").unwrap();
         let venue_symbol = format_venue_symbol(&instrument_id).unwrap();
 
         assert_eq!(
@@ -917,6 +1020,7 @@ mod tests {
                 details.insert("additional_data".to_string(), json!({"value": 42}));
             }
         }
+
         let instrument: DeriveInstrument = serde_json::from_value(response.clone()).unwrap();
 
         let parsed = parse_derive_instrument_any(&instrument, UnixNanos::from(123))
@@ -974,6 +1078,7 @@ mod tests {
             DeriveInstrumentType::Erc20 => spot_fixture(),
             DeriveInstrumentType::Unknown => unreachable!(),
         };
+
         instrument.tick_size = Decimal::ZERO;
 
         let err = parse_derive_instrument_any(&instrument, UnixNanos::from(123))

@@ -1453,6 +1453,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "jiff",
  "log",
  "nautilus-core",
  "nautilus-cryptography",

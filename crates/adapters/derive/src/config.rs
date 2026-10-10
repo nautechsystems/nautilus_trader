@@ -127,7 +127,7 @@ pub struct DeriveExecutionClientConfig {
     /// Account identifier for the execution client.
     #[builder(default = AccountId::from("DERIVE-001"))]
     pub account_id: AccountId,
-    /// Derive Chain smart-contract wallet address (`X-LYRAWALLET`). Falls back
+    /// Owner's EOA or multisig address (`X-DeriveWallet`). Falls back
     /// to `DERIVE_WALLET_ADDRESS` (or `DERIVE_TESTNET_WALLET_ADDRESS` on
     /// testnet) when unset.
     pub wallet_address: Option<String>,
@@ -168,9 +168,8 @@ pub struct DeriveExecutionClientConfig {
     /// WebSocket transport backend (defaults to `Sockudo` when that feature is enabled).
     #[builder(default)]
     pub transport_backend: TransportBackend,
-    /// Override for the EIP-712 domain separator. Falls back to the constant
-    /// for the configured environment when unset. The shipped constants are
-    /// placeholders that must be replaced or overridden before signing.
+    /// Override for the EIP-712 domain separator. Falls back to the shipped
+    /// v3 constant for the configured environment when unset.
     pub domain_separator: Option<String>,
     /// Override for the EIP-712 action typehash. Falls back to the shipped
     /// [`crate::common::consts::ACTION_TYPEHASH`] when unset.
@@ -180,7 +179,7 @@ pub struct DeriveExecutionClientConfig {
     pub trade_module_address: Option<String>,
     /// Signature expiry TTL in seconds for normal orders and replaces (added
     /// to the wall clock before signing). Must be greater than the venue
-    /// minimum ([`crate::common::consts::MIN_SIGNATURE_TTL`], 300s).
+    /// minimum ([`crate::common::consts::MIN_SIGNATURE_TTL`], 10s) and at most 120 days.
     #[builder(default = 600)]
     pub signature_expiry_secs: u64,
     /// Slippage bound applied to market orders when deriving a worst-acceptable
@@ -188,17 +187,18 @@ pub struct DeriveExecutionClientConfig {
     /// (1 bp = 0.01%). Defaults to 50 bp = 0.5%.
     #[builder(default = 50)]
     pub market_order_slippage_bps: u32,
-    /// Maximum matching-engine requests per second for order writes sent over
-    /// the WebSocket (create/cancel/replace). Defaults to the Trader-tier limit
-    /// of 1 when unset; raise it for Market Maker accounts with higher
-    /// negotiated limits. See <https://docs.derive.xyz/reference/rate-limits>.
+    /// Maximum wallet matching requests per second across HTTP, WebSocket,
+    /// session keys, and subaccounts on the same API host. Defaults to 1 when
+    /// unset. The first explicit setting for a wallet is shared by all clients;
+    /// the limiter ignores conflicting later settings. Verify deployed budgets with
+    /// `public/getRateLimits`. See <https://docs.derive.xyz/rate-limits>.
     pub max_matching_requests_per_second: Option<u32>,
-    /// Maximum per-instrument matching requests per second for instrument-
-    /// scoped order writes sent over the WebSocket. Defaults to the Trader-tier
-    /// limit of 1 when unset; raise it for Market Maker accounts with higher
-    /// negotiated per-instrument limits. This allowance is independent of
-    /// `max_matching_requests_per_second`, which never inflates it. See
-    /// <https://docs.derive.xyz/reference/rate-limits>.
+    /// Per-wallet/instrument token refill rate for perpetuals, spot, and options.
+    /// Defaults to 1 token per second; capacity is five times the configured rate.
+    /// Clients for the same wallet on the same API host share the first explicit
+    /// setting, independently of the wallet matching allowance. Instrument budgets
+    /// are absent from `public/getRateLimits`.
+    /// See <https://docs.derive.xyz/rate-limits>.
     pub max_per_instrument_matching_requests_per_second: Option<u32>,
 }
 
@@ -216,6 +216,7 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecutionClientConfig {
     retry_delay_max_ms: u64,
     ws_timeout_secs: Option<u64>,
     max_fee_per_contract: Option<Decimal>,
+    transport_backend: TransportBackend,
     domain_separator: Option<String>,
     action_typehash: Option<String>,
     trade_module_address: Option<String>,
@@ -223,7 +224,6 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecutionClientConfig {
     market_order_slippage_bps: u32,
     max_matching_requests_per_second: Option<u32>,
     max_per_instrument_matching_requests_per_second: Option<u32>,
-    transport_backend: TransportBackend,
 });
 
 impl Default for DeriveExecutionClientConfig {
@@ -270,6 +270,7 @@ impl DeriveExecutionClientConfig {
         if max_fee_per_contract <= Decimal::ZERO {
             anyhow::bail!("max_fee_per_contract must be greater than zero");
         }
+
         Ok(())
     }
 
@@ -311,8 +312,8 @@ mod tests {
     #[rstest]
     fn test_data_config_urls_mainnet() {
         let config = DeriveDataClientConfig::default();
-        assert!(config.rest_url().contains("api.lyra.finance"));
-        assert!(config.ws_url().contains("api.lyra.finance"));
+        assert_eq!(config.rest_url(), "https://api.derive.xyz/v3");
+        assert_eq!(config.ws_url(), "wss://api.derive.xyz/v3/ws");
     }
 
     #[rstest]
@@ -321,8 +322,61 @@ mod tests {
             environment: DeriveEnvironment::Testnet,
             ..DeriveDataClientConfig::default()
         };
-        assert!(config.rest_url().contains("demo"));
-        assert!(config.ws_url().contains("demo"));
+
+        assert_eq!(config.rest_url(), "https://testnet.api.derive.xyz/v3");
+        assert_eq!(config.ws_url(), "wss://testnet.api.derive.xyz/v3/ws");
+    }
+
+    #[rstest]
+    #[case(
+        DeriveEnvironment::Mainnet,
+        "https://api.derive.xyz/v3",
+        "wss://api.derive.xyz/v3/ws"
+    )]
+    #[case(
+        DeriveEnvironment::Testnet,
+        "https://testnet.api.derive.xyz/v3",
+        "wss://testnet.api.derive.xyz/v3/ws"
+    )]
+    fn test_exec_config_urls(
+        #[case] environment: DeriveEnvironment,
+        #[case] rest: &str,
+        #[case] ws: &str,
+    ) {
+        let config = DeriveExecutionClientConfig {
+            environment,
+            ..DeriveExecutionClientConfig::default()
+        };
+
+        assert_eq!(config.rest_url(), rest);
+        assert_eq!(config.ws_url(), ws);
+    }
+
+    #[rstest]
+    #[case(DeriveEnvironment::Mainnet)]
+    #[case(DeriveEnvironment::Testnet)]
+    fn test_config_url_overrides(#[case] environment: DeriveEnvironment) {
+        let rest = "https://dedicated.example.com";
+        let ws = "wss://dedicated.example.com/ws";
+
+        let data = DeriveDataClientConfig {
+            environment,
+            base_url_rest: Some(rest.to_string()),
+            base_url_ws: Some(ws.to_string()),
+            ..DeriveDataClientConfig::default()
+        };
+
+        let execution = DeriveExecutionClientConfig {
+            environment,
+            base_url_rest: Some(rest.to_string()),
+            base_url_ws: Some(ws.to_string()),
+            ..DeriveExecutionClientConfig::default()
+        };
+
+        assert_eq!(data.rest_url(), rest);
+        assert_eq!(data.ws_url(), ws);
+        assert_eq!(execution.rest_url(), rest);
+        assert_eq!(execution.ws_url(), ws);
     }
 
     #[rstest]
@@ -346,6 +400,7 @@ mod tests {
             wallet_address: Some("0x1234".to_string()),
             ..DeriveExecutionClientConfig::default()
         };
+
         assert!(!config.has_credentials());
 
         config.session_key = Some("0xabcd".into());
@@ -363,6 +418,7 @@ mod tests {
             subaccount_id: Some(1),
             ..DeriveExecutionClientConfig::default()
         };
+
         assert!(!config.has_credentials());
     }
 
@@ -373,12 +429,14 @@ mod tests {
         // scanner on a synthetic test value. The redaction logic is
         // string-content-agnostic.
         let session_key = "FAKE_SESSION_KEY_SENTINEL";
+
         let config = DeriveExecutionClientConfig {
             wallet_address: Some("0xWALLET".to_string()),
             session_key: Some(session_key.into()),
             subaccount_id: Some(42),
             ..DeriveExecutionClientConfig::default()
         };
+
         let debug = format!("{config:?}");
         assert!(debug.contains("redacted"));
         assert!(!debug.contains(session_key));

@@ -14,8 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 mod data_client;
+mod dst;
 mod exec_client;
 mod http;
 mod providers;
+mod public_testnet;
 mod python;
 mod websocket;

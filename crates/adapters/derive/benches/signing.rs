@@ -49,7 +49,7 @@ use rust_decimal_macros::dec;
 const SESSION_KEY: &str = "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd";
 const WALLET: &str = "0x000000000000000000000000000000000000aaaa";
 const SUBACCOUNT_ID: u64 = 30769;
-const NONCE: u64 = 1_700_000_000_000_000;
+const NONCE: u64 = 1_700_000_000_000_000_000;
 const EXPIRY_SEC: i64 = 1_900_000_000; // far-future so the EIP-712 expiry guard passes
 const NOW_MS: u64 = 1_700_000_000_000;
 
@@ -148,13 +148,13 @@ fn bench_rest_auth_headers(c: &mut Criterion) {
 
 fn bench_nonce_next(c: &mut Criterion) {
     let manager = NonceManager::new();
-    let now_ms = AtomicU64::new(NOW_MS);
+    let now_ns = AtomicU64::new(NONCE);
 
     c.bench_function("nonce_next", |b| {
         b.iter(|| {
-            let now_ms = now_ms.fetch_add(1, Ordering::Relaxed);
+            let now_ns = now_ns.fetch_add(1, Ordering::Relaxed);
             let nonce = manager
-                .next_nonce_at(black_box(WALLET), SUBACCOUNT_ID, now_ms)
+                .next_nonce_at(black_box(WALLET), SUBACCOUNT_ID, now_ns)
                 .unwrap();
             black_box(nonce);
         });

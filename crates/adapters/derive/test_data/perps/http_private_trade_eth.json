@@ -16,6 +16,6 @@
   "trade_id": "trade-xyz",
   "trade_price": "3499.0",
   "tx_hash": "0xhash",
-  "tx_status": "settled",
+  "batch_status": "Settled",
   "wallet": "0xwallet"
 }

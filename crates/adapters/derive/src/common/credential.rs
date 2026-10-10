@@ -18,10 +18,8 @@
 //! Derive identifies a trading account through a three-part tuple rather than a
 //! single API key:
 //!
-//! 1. `wallet_address`: the Derive Chain smart-contract wallet (NOT the user's
-//!    EOA). This is the value placed in the `X-LYRAWALLET` header and the
-//!    `owner` slot of every signed action. Visible in the Derive web app under
-//!    Home -> Developers -> "Derive Wallet".
+//! 1. `wallet_address`: the owner's EOA or multisig address, sent in the
+//!    `X-DeriveWallet` header and the `owner` slot of every signed action.
 //! 2. `session_key`: a secp256k1 private key registered to the wallet. Signs
 //!    REST/WS auth headers and EIP-712 typed-data actions. May be the owner
 //!    EOA's key but is more commonly a scoped session key.
@@ -45,7 +43,7 @@ use nautilus_core::{
     env::{get_or_env_var, get_or_env_var_opt},
     string::secret::REDACTED,
 };
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::common::enums::DeriveEnvironment;
 
@@ -69,7 +67,7 @@ pub fn credential_env_vars(
     }
 }
 
-/// Derive Chain smart-contract wallet + session-key + subaccount triple.
+/// Owner wallet + session-key + subaccount triple.
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct DeriveCredential {
     wallet_address: String,
@@ -89,7 +87,7 @@ impl DeriveCredential {
         }
     }
 
-    /// Returns the Derive Chain smart-contract wallet address (`X-LYRAWALLET`).
+    /// Returns the owner's EOA or multisig address (`X-DeriveWallet`).
     #[must_use]
     pub fn wallet_address(&self) -> &str {
         &self.wallet_address
@@ -124,13 +122,19 @@ impl DeriveCredential {
         subaccount_id: Option<u64>,
         environment: DeriveEnvironment,
     ) -> anyhow::Result<Self> {
+        let session_key = session_key.map(Zeroizing::new);
         let (wallet_var, key_var, subaccount_var) = credential_env_vars(environment);
 
         let wallet_address = get_or_env_var(wallet_address, wallet_var).with_context(|| {
             format!("Derive wallet address missing (set {wallet_var} or config)")
         })?;
-        let session_key = get_or_env_var(session_key, key_var)
-            .with_context(|| format!("Derive session key missing (set {key_var} or config)"))?;
+
+        let mut session_key = match session_key {
+            Some(key) => key,
+            None => Zeroizing::new(get_or_env_var(None, key_var).with_context(|| {
+                format!("Derive session key missing (set {key_var} or config)")
+            })?),
+        };
 
         let subaccount_id = match subaccount_id {
             Some(id) => id,
@@ -142,7 +146,11 @@ impl DeriveCredential {
                 .with_context(|| format!("failed to parse {subaccount_var} as u64"))?,
         };
 
-        Ok(Self::new(wallet_address, session_key, subaccount_id))
+        Ok(Self::new(
+            wallet_address,
+            std::mem::take(&mut *session_key),
+            subaccount_id,
+        ))
     }
 }
 
@@ -168,6 +176,8 @@ impl Display for DeriveCredential {
 
 #[cfg(test)]
 mod tests {
+    use std::{env, process::Command};
+
     use rstest::rstest;
 
     use super::*;
@@ -243,5 +253,143 @@ mod tests {
         assert_eq!(cred.wallet_address(), TEST_WALLET);
         assert_eq!(cred.session_key(), TEST_SESSION_KEY);
         assert_eq!(cred.subaccount_id(), TEST_SUBACCOUNT);
+    }
+
+    #[rstest]
+    fn test_resolve_environment_and_incomplete_credentials() {
+        const CASE_VAR: &str = "NAUTILUS_DERIVE_CREDENTIAL_TEST_CASE";
+        let environments = [DeriveEnvironment::Mainnet, DeriveEnvironment::Testnet];
+        let cases = [
+            "fallback",
+            "explicit",
+            "mixed",
+            "wallet",
+            "key",
+            "subaccount",
+            "invalid",
+        ];
+
+        let Ok(case) = env::var(CASE_VAR) else {
+            for (index, environment) in environments.into_iter().enumerate() {
+                for case in cases {
+                    let mut command = Command::new(env::current_exe().unwrap());
+                    command.args([
+                        "--exact",
+                        "common::credential::tests::test_resolve_environment_and_incomplete_credentials",
+                        "--nocapture",
+                    ]);
+
+                    for (other_index, other) in environments.into_iter().enumerate() {
+                        let (wallet, key, subaccount) = credential_env_vars(other);
+                        command
+                            .env(wallet, format!("wallet-{other_index}"))
+                            .env(key, format!("key-{other_index}"))
+                            .env(subaccount, (41 + other_index).to_string());
+                    }
+
+                    let (wallet, key, subaccount) = credential_env_vars(environment);
+
+                    match case {
+                        "wallet" => {
+                            command.env_remove(wallet);
+                        }
+                        "key" => {
+                            command.env_remove(key);
+                        }
+                        "subaccount" => {
+                            command.env_remove(subaccount);
+                        }
+                        "invalid" => {
+                            command.env(subaccount, "invalid-subaccount");
+                        }
+                        _ => {}
+                    }
+
+                    let output = command
+                        .env(CASE_VAR, format!("{index}:{case}"))
+                        .output()
+                        .unwrap();
+
+                    assert!(
+                        output.status.success(),
+                        "credential case {index}:{case} failed: {}{}",
+                        String::from_utf8_lossy(&output.stdout),
+                        String::from_utf8_lossy(&output.stderr),
+                    );
+                }
+            }
+
+            return;
+        };
+
+        let (index, case) = case.split_once(':').unwrap();
+        let index: usize = index.parse().unwrap();
+        let environment = environments[index];
+        let explicit = case == "explicit";
+        let result = DeriveCredential::resolve(
+            (explicit || case == "mixed").then(|| TEST_WALLET.to_string()),
+            explicit.then(|| TEST_SESSION_KEY.to_string()),
+            explicit.then_some(TEST_SUBACCOUNT),
+            environment,
+        );
+
+        if matches!(case, "fallback" | "explicit" | "mixed") {
+            let credential = result.unwrap();
+            assert_eq!(
+                credential.wallet_address(),
+                if explicit || case == "mixed" {
+                    TEST_WALLET.to_string()
+                } else {
+                    format!("wallet-{index}")
+                }
+            );
+            assert_eq!(
+                credential.session_key(),
+                if explicit {
+                    TEST_SESSION_KEY.to_string()
+                } else {
+                    format!("key-{index}")
+                }
+            );
+            assert_eq!(
+                credential.subaccount_id(),
+                if explicit {
+                    TEST_SUBACCOUNT
+                } else {
+                    41 + index as u64
+                }
+            );
+        } else {
+            let (wallet, key, subaccount) = credential_env_vars(environment);
+
+            let expected = match case {
+                "wallet" => format!("Derive wallet address missing (set {wallet} or config)"),
+                "key" => format!("Derive session key missing (set {key} or config)"),
+                "subaccount" => {
+                    format!("Derive subaccount id missing (set {subaccount} or config)")
+                }
+                "invalid" => format!("failed to parse {subaccount} as u64"),
+                _ => unreachable!(),
+            };
+
+            assert_eq!(result.unwrap_err().to_string(), expected);
+        }
+    }
+
+    #[rstest]
+    fn test_credential_zeroizes_secret_fields() {
+        fn requires_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+        requires_zeroize_on_drop::<DeriveCredential>();
+
+        let mut credential = DeriveCredential::new(
+            TEST_WALLET.to_string(),
+            TEST_SESSION_KEY.to_string(),
+            TEST_SUBACCOUNT,
+        );
+        credential.zeroize();
+
+        assert_eq!(credential.wallet_address(), "");
+        assert_eq!(credential.session_key(), "");
+        assert_eq!(credential.subaccount_id(), TEST_SUBACCOUNT);
     }
 }

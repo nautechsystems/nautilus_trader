@@ -16,12 +16,15 @@
   "collaterals_initial_margin": "1000",
   "collaterals_maintenance_margin": "1000",
   "collaterals_value": "1000",
-  "currency": "USDC",
-  "initial_margin": "650",
+  "currency": [
+    "ETH",
+    "BTC"
+  ],
+  "initial_margin": "655",
   "is_under_liquidation": false,
   "label": null,
-  "maintenance_margin": "825",
-  "margin_type": "PM",
+  "maintenance_margin": "830",
+  "margin_type": "PM2",
   "open_orders": [],
   "open_orders_margin": "0",
   "positions": [
@@ -33,14 +36,14 @@
       "delta": "0.75",
       "gamma": "0",
       "index_price": "3505",
-      "initial_margin": "350",
+      "initial_margin": "-345",
       "instrument_name": "ETH-PERP",
       "instrument_type": "perp",
       "leverage": "5",
       "liquidation_price": "4200",
-      "maintenance_margin": "175",
+      "maintenance_margin": "-170",
       "mark_price": "3504",
-      "mark_value": "2628",
+      "mark_value": "5",
       "net_settlements": "0",
       "open_orders_margin": "0",
       "pending_funding": "0.1",
@@ -50,9 +53,15 @@
       "vega": "0"
     }
   ],
-  "positions_initial_margin": "350",
-  "positions_maintenance_margin": "175",
-  "positions_value": "2628",
+  "positions_initial_margin": "-345",
+  "positions_maintenance_margin": "-170",
+  "positions_value": "5",
   "subaccount_id": 42,
-  "subaccount_value": "1000"
+  "subaccount_value": "1005",
+  "manager_id": 12,
+  "risk_universe_id": 1,
+  "failed_to_fetch": false,
+  "mm_credits": "0",
+  "projected_margin_change": "0",
+  "vault_deposit_holds": []
 }

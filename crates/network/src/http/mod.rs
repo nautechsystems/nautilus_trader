@@ -90,10 +90,13 @@ mod tests;
 // Re-exports
 pub use client::{HttpClient, HttpRedirectPolicy, InnerHttpClient};
 pub use error::HttpClientError;
-pub use http::{Method, StatusCode, header::USER_AGENT};
+pub use http::{
+    Method, StatusCode,
+    header::{RETRY_AFTER, USER_AGENT},
+};
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
 pub use stream::HttpResponseStream;
-pub use types::{HttpMethod, HttpResponse, HttpStatus};
+pub use types::{HttpMethod, HttpResponse, HttpStatus, parse_retry_after};
 pub use url::Url;
 
 /// Returns the standard headers every NautilusTrader HTTP and WebSocket client sends.

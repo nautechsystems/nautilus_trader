@@ -21,8 +21,10 @@
 //! [`derivexyz/cockpit`](https://github.com/derivexyz/cockpit/tree/master/orderbook-types/src/generated),
 //! adapted to project conventions:
 //!
-//! - `bigdecimal::BigDecimal` -> [`rust_decimal::Decimal`] via the project's
-//!   `deserialize_decimal` / `deserialize_optional_decimal` functions.
+//! - `bigdecimal::BigDecimal` -> [`rust_decimal::Decimal`]. Required account and order
+//!   financial fields, private fill amount/price/fee, and public trade amount/price
+//!   use strict raw-token decimal decoding;
+//!   other fields retain `deserialize_decimal` / `deserialize_optional_decimal`.
 //! - Hot-path string identifiers (`instrument_name`, `currency`) -> [`Ustr`]
 //!   for interning across decoded messages.
 //! - `uuid::Uuid` fields kept as [`String`] to avoid a fresh dep when only a
@@ -34,22 +36,25 @@ use std::collections::HashMap;
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::{
     Params,
-    serialization::{deserialize_decimal, deserialize_optional_decimal},
+    serialization::{
+        deserialize_decimal_token,
+        deserialize_optional_decimal_token as deserialize_optional_decimal,
+        serialize_decimal_as_str,
+    },
     string::secret::SecretString,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, value::RawValue};
 use ustr::Ustr;
 
 use crate::common::{
     enums::{
-        DeriveAssetType, DeriveInstrumentType, DeriveLiquidityRole, DeriveMarginType,
-        DeriveOptionKind, DeriveOrderCancelReason, DeriveOrderSide, DeriveOrderStatus,
-        DeriveOrderType, DeriveTimeInForce, DeriveTriggerPriceType, DeriveTriggerType,
-        DeriveTxStatus,
+        DeriveAssetType, DeriveInstrumentType, DeriveLiquidityRole, DeriveOptionKind,
+        DeriveOrderCancelReason, DeriveOrderSide, DeriveOrderStatus, DeriveOrderType,
+        DeriveTimeInForce, DeriveTriggerPriceType, DeriveTriggerType,
     },
-    parse::deserialize_salvaged_vec,
+    parse::{deserialize_decimal, deserialize_salvaged_vec, salvage_rows},
 };
 
 /// Outbound JSON-RPC request frame. Used as-is by the WebSocket transport; the
@@ -61,7 +66,7 @@ pub struct JsonRpcRequest<P> {
     pub jsonrpc: &'static str,
     /// Correlator chosen by the client.
     pub id: u64,
-    /// Method name (e.g. `public/get_instruments`).
+    /// Method name (e.g. `public/get_all_instruments`).
     pub method: &'static str,
     /// Method-specific params payload.
     pub params: P,
@@ -135,7 +140,7 @@ pub struct JsonRpcError {
     pub data: Option<Value>,
 }
 
-/// Option-specific fields appearing on `public/get_instruments` and legacy
+/// Option-specific fields appearing on `public/get_all_instruments` and legacy
 /// full ticker payloads when the instrument is an option.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeriveOptionPublicDetails {
@@ -153,7 +158,7 @@ pub struct DeriveOptionPublicDetails {
     pub strike: Decimal,
 }
 
-/// Perp-specific fields appearing on `public/get_instruments` and legacy full
+/// Perp-specific fields appearing on `public/get_all_instruments` and legacy full
 /// ticker payloads when the instrument is a perpetual.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DerivePerpPublicDetails {
@@ -171,12 +176,12 @@ pub struct DerivePerpPublicDetails {
     /// Minimum allowable funding rate per hour.
     #[serde(deserialize_with = "deserialize_decimal")]
     pub min_rate_per_hour: Decimal,
-    /// Static interest-rate component of the funding curve.
-    #[serde(deserialize_with = "deserialize_decimal")]
-    pub static_interest_rate: Decimal,
+    /// Legacy static interest-rate component, absent from API v3 definitions.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
+    pub static_interest_rate: Option<Decimal>,
 }
 
-/// Instrument definition returned by `public/get_instruments`.
+/// Instrument definition returned by `public/get_all_instruments`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(remote = "Self")]
 pub struct DeriveInstrument {
@@ -236,11 +241,12 @@ pub struct DeriveInstrument {
 
 impl<'de> Deserialize<'de> for DeriveInstrument {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = Value::deserialize(deserializer)?;
+        let raw = Box::<RawValue>::deserialize(deserializer)?;
+        let mut typed = serde_json::Deserializer::from_str(raw.get());
 
         // The remote derive decodes the typed fields without calling this implementation
-        let mut instrument = Self::deserialize(&value).map_err(serde::de::Error::custom)?;
-        instrument.raw = Some(serde_json::from_value(value).map_err(serde::de::Error::custom)?);
+        let mut instrument = Self::deserialize(&mut typed).map_err(serde::de::Error::custom)?;
+        instrument.raw = Some(serde_json::from_str(raw.get()).map_err(serde::de::Error::custom)?);
         Ok(instrument)
     }
 }
@@ -272,7 +278,7 @@ pub struct DeriveAggregateTradingStats {
     /// 24-hour percentage price change.
     #[serde(alias = "p", deserialize_with = "deserialize_decimal")]
     pub percent_change: Decimal,
-    /// 24-hour USD price change.
+    /// 24-hour premium volume in USD (legacy field name).
     #[serde(alias = "pr", deserialize_with = "deserialize_decimal")]
     pub usd_change: Decimal,
 }
@@ -486,45 +492,51 @@ pub struct DeriveTicker {
     pub timestamp: i64,
 }
 
-/// Order record returned by `private/order`, `private/get_orders`,
+/// Order record returned by `private/order`, `private/get_open_orders`,
 /// `private/get_order_history`, and the `{subaccount_id}.orders` WS channel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeriveOrder {
     /// Order amount in base units.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub amount: Decimal,
     /// Average fill price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub average_price: Decimal,
     /// Cancel reason; [`DeriveOrderCancelReason::Empty`] when not cancelled.
+    #[serde(default = "cancel_reason_empty")]
     pub cancel_reason: DeriveOrderCancelReason,
     /// Creation timestamp (UNIX ms).
     pub creation_timestamp: i64,
     /// Order side.
     pub direction: DeriveOrderSide,
     /// Cumulative filled amount.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub filled_amount: Decimal,
     /// Instrument identifier.
     pub instrument_name: Ustr,
     /// Whether this order was generated via `private/transfer_position`.
     pub is_transfer: bool,
     /// Free-form user label.
+    #[serde(default)]
     pub label: Ustr,
     /// Last update timestamp (UNIX ms).
     pub last_update_timestamp: i64,
     /// Limit price in quote currency.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub limit_price: Decimal,
     /// Max fee in quote currency signed into the order.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub max_fee: Decimal,
     /// Whether MMP tags this order.
     pub mmp: bool,
-    /// Order nonce.
-    pub nonce: i64,
+    /// Order UNIX nanosecond nonce, encoded as a decimal string.
+    #[serde(
+        serialize_with = "crate::signing::nonce::serialize_nonce",
+        deserialize_with = "crate::signing::nonce::deserialize_nonce"
+    )]
+    pub nonce: u64,
     /// Total fees paid against this order.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub order_fee: Decimal,
     /// Venue-assigned order ID (UUID-shaped).
     pub order_id: String,
@@ -611,6 +623,8 @@ impl DeriveReplaceResult {
         self,
         expected_cancel_order_id: &str,
         expected_replacement_label: &str,
+        expected_subaccount_id: u64,
+        expected_instrument: &str,
     ) -> Result<DeriveReplaceOutcome, String> {
         let validate_cancelled_order = |order: &DeriveOrder| {
             if order.order_id != expected_cancel_order_id {
@@ -626,7 +640,13 @@ impl DeriveReplaceResult {
                     order.order_status,
                 ));
             }
-            Ok(())
+
+            validate_replace_order_scope(
+                order,
+                expected_replacement_label,
+                expected_subaccount_id,
+                expected_instrument,
+            )
         };
 
         match (self.order, self.cancelled_order, self.create_order_error) {
@@ -647,16 +667,17 @@ impl DeriveReplaceResult {
                     ));
                 }
 
-                if order.label != expected_replacement_label {
-                    return Err(format!(
-                        "private/replace replacement {} had label {}, expected {expected_replacement_label}",
-                        order.order_id, order.label,
-                    ));
-                }
+                validate_replace_order_scope(
+                    &order,
+                    expected_replacement_label,
+                    expected_subaccount_id,
+                    expected_instrument,
+                )?;
 
                 if let Some(cancelled_order) = cancelled_order.as_ref() {
                     validate_cancelled_order(cancelled_order)?;
                 }
+
                 Ok(DeriveReplaceOutcome::Replaced(order))
             }
             (None, Some(cancelled_order), Some(create_order_error)) => {
@@ -671,10 +692,35 @@ impl DeriveReplaceResult {
     }
 }
 
+fn validate_replace_order_scope(
+    order: &DeriveOrder,
+    expected_replacement_label: &str,
+    expected_subaccount_id: u64,
+    expected_instrument: &str,
+) -> Result<(), String> {
+    if u64::try_from(order.subaccount_id).ok() != Some(expected_subaccount_id)
+        || order.instrument_name != expected_instrument
+    {
+        return Err(format!(
+            "private/replace order {} did not match requested account and instrument",
+            order.order_id
+        ));
+    }
+
+    if order.label != expected_replacement_label {
+        return Err(format!(
+            "private/replace order {} had label {}, expected {expected_replacement_label}",
+            order.order_id, order.label
+        ));
+    }
+
+    Ok(())
+}
+
 /// Result returned by `private/cancel_by_label`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeriveCancelByLabelResult {
-    /// Number of open orders cancelled by the venue.
+    /// Confirmed count, or -1 for an unscoped acknowledgement requiring state confirmation.
     pub cancelled_orders: i64,
 }
 
@@ -705,27 +751,27 @@ impl<'de> Deserialize<'de> for DeriveEmptyResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DerivePosition {
     /// Signed position amount; positive = long, negative = short.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub amount: Decimal,
     /// Average entry price over the lifetime of the position.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub average_price: Decimal,
     /// Position opening timestamp (UNIX ms).
     pub creation_timestamp: i64,
     /// Cumulative funding accrued by this position (perps only).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub cumulative_funding: Decimal,
     /// Position delta (with respect to forward for options).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub delta: Decimal,
     /// Position gamma (zero for non-options).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub gamma: Decimal,
     /// Current oracle index price for the underlying.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub index_price: Decimal,
-    /// USD initial margin requirement for this position.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    /// Signed USD initial-health contribution, including mark-to-market value.
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub initial_margin: Decimal,
     /// Instrument identifier (same as the base asset name).
     pub instrument_name: Ustr,
@@ -737,35 +783,35 @@ pub struct DerivePosition {
     /// Index price at which the position would liquidate.
     #[serde(default, deserialize_with = "deserialize_optional_decimal")]
     pub liquidation_price: Option<Decimal>,
-    /// USD maintenance margin requirement.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    /// Signed USD maintenance-health contribution, including mark-to-market value.
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub maintenance_margin: Decimal,
     /// Current mark price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub mark_price: Decimal,
     /// USD mark-to-market value of the position.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub mark_value: Decimal,
     /// Net USD settled from this position.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub net_settlements: Decimal,
-    /// USD margin held against open orders touching this asset.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    /// USD open-order margin contribution for this asset.
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub open_orders_margin: Decimal,
     /// Funding not yet settled into cash balance (perps only).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub pending_funding: Decimal,
     /// Realized PnL booked on this position.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub realized_pnl: Decimal,
     /// Position theta (zero for non-options).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub theta: Decimal,
     /// Unrealized PnL.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub unrealized_pnl: Decimal,
     /// Position vega (zero for non-options).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub vega: Decimal,
 }
 
@@ -773,31 +819,52 @@ pub struct DerivePosition {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeriveCollateral {
     /// Collateral amount.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(
+        deserialize_with = "deserialize_decimal_token",
+        serialize_with = "serialize_decimal_as_str"
+    )]
     pub amount: Decimal,
     /// Asset name (e.g. `"ETH"`, `"USDC"`).
     pub asset_name: Ustr,
     /// Asset category.
     pub asset_type: DeriveAssetType,
     /// Cumulative interest earned or paid.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(
+        deserialize_with = "deserialize_decimal_token",
+        serialize_with = "serialize_decimal_as_str"
+    )]
     pub cumulative_interest: Decimal,
     /// Underlying currency.
     pub currency: Ustr,
     /// USD initial margin credit from this collateral.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(
+        deserialize_with = "deserialize_decimal_token",
+        serialize_with = "serialize_decimal_as_str"
+    )]
     pub initial_margin: Decimal,
     /// USD maintenance margin credit.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(
+        deserialize_with = "deserialize_decimal_token",
+        serialize_with = "serialize_decimal_as_str"
+    )]
     pub maintenance_margin: Decimal,
     /// Current mark price of the asset.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(
+        deserialize_with = "deserialize_decimal_token",
+        serialize_with = "serialize_decimal_as_str"
+    )]
     pub mark_price: Decimal,
     /// USD value (`amount * mark_price`).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(
+        deserialize_with = "deserialize_decimal_token",
+        serialize_with = "serialize_decimal_as_str"
+    )]
     pub mark_value: Decimal,
     /// Interest not yet settled on-chain.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(
+        deserialize_with = "deserialize_decimal_token",
+        serialize_with = "serialize_decimal_as_str"
+    )]
     pub pending_interest: Decimal,
 }
 
@@ -807,18 +874,21 @@ pub struct DeriveSubaccount {
     /// Collateral rows contributing to margin.
     pub collaterals: Vec<DeriveCollateral>,
     /// Total initial margin credit from collaterals.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub collaterals_initial_margin: Decimal,
     /// Total maintenance margin credit from collaterals.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub collaterals_maintenance_margin: Decimal,
     /// Mark-to-market value of all collaterals.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub collaterals_value: Decimal,
-    /// Subaccount currency (e.g. `"USDC"`).
-    pub currency: Ustr,
-    /// Signed net initial margin health; negative blocks risk-increasing trades.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    /// Currencies covered by the subaccount manager.
+    pub currency: Vec<Ustr>,
+    /// Whether the venue failed to load the portfolio.
+    pub failed_to_fetch: bool,
+    /// Signed net initial margin health, excluding open-order reservations.
+    /// Negative health blocks risk-increasing trades.
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub initial_margin: Decimal,
     /// Whether the subaccount is mid-liquidation.
     pub is_under_liquidation: bool,
@@ -826,33 +896,60 @@ pub struct DeriveSubaccount {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// Signed net maintenance margin health; negative permits liquidation.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub maintenance_margin: Decimal,
-    /// Margining mode (standard, portfolio, or PMRM v2).
-    pub margin_type: DeriveMarginType,
+    /// Venue manager identity.
+    pub manager_id: u32,
+    /// Open-ended venue margin model (for example `"SM"` or `"PM2"`).
+    pub margin_type: String,
+    /// Maintenance-margin credit from risk-universe loss socialization.
+    #[serde(deserialize_with = "deserialize_decimal_token")]
+    pub mm_credits: Decimal,
     /// Open orders held by the subaccount.
-    #[serde(deserialize_with = "deserialize_salvaged_vec")]
     pub open_orders: Vec<DeriveOrder>,
-    /// USD margin held against open orders.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    /// Signed USD open-order reservation, excluded from `initial_margin`.
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub open_orders_margin: Decimal,
     /// Open positions held by the subaccount.
-    #[serde(deserialize_with = "deserialize_salvaged_vec")]
     pub positions: Vec<DerivePosition>,
-    /// USD initial margin requirement attributable to positions.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    /// Signed USD initial-health contribution from positions, including mark-to-market value.
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub positions_initial_margin: Decimal,
-    /// USD maintenance margin requirement attributable to positions.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    /// Signed USD maintenance-health contribution from positions, including mark-to-market value.
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub positions_maintenance_margin: Decimal,
     /// Mark-to-market value of positions.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub positions_value: Decimal,
+    /// Maintenance-margin change after the next option expiry.
+    #[serde(deserialize_with = "deserialize_decimal_token")]
+    pub projected_margin_change: Decimal,
+    /// Risk universe containing the manager.
+    pub risk_universe_id: u32,
     /// Subaccount identifier.
     pub subaccount_id: i64,
     /// Total subaccount value (collateral + positions).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub subaccount_value: Decimal,
+    /// Pending vault-deposit reservations on the source subaccount.
+    pub vault_deposit_holds: Vec<DeriveVaultDepositHold>,
+}
+
+/// Pending vault-deposit reservation returned with a subaccount.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeriveVaultDepositHold {
+    /// Reserved amount in native asset units.
+    #[serde(
+        deserialize_with = "deserialize_decimal_token",
+        serialize_with = "serialize_decimal_as_str"
+    )]
+    pub amount: Decimal,
+    /// Reserved asset.
+    pub asset_name: Ustr,
+    /// Asset currency.
+    pub currency: Ustr,
+    /// Target vault identifier.
+    pub vault_id: u64,
 }
 
 /// Private trade record returned by `private/get_trade_history` and the
@@ -869,6 +966,7 @@ pub struct DeriveTrade {
     /// Whether this trade was generated via `private/transfer_position`.
     pub is_transfer: bool,
     /// Free-form user label inherited from the order.
+    #[serde(default)]
     pub label: Ustr,
     /// Maker / taker role of the user.
     pub liquidity_role: DeriveLiquidityRole,
@@ -888,21 +986,25 @@ pub struct DeriveTrade {
     /// Trade timestamp (UNIX ms).
     pub timestamp: i64,
     /// Filled amount on this trade.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub trade_amount: Decimal,
     /// Fee charged for this trade.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub trade_fee: Decimal,
     /// Trade identifier.
     pub trade_id: String,
     /// Trade execution price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub trade_price: Decimal,
-    /// On-chain settlement tx hash, absent until settlement starts.
+    /// Ethereum L1 batch transaction hash, absent before settlement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tx_hash: Option<String>,
-    /// On-chain settlement status.
-    pub tx_status: DeriveTxStatus,
+    /// Settlement batch stage when reported, independent of trade execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_status: Option<String>,
+    /// Settlement operation identity, independent of the trade and order IDs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op_uuid: Option<String>,
     /// Owning wallet address, absent in pending order responses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wallet: Option<Ustr>,
@@ -911,11 +1013,8 @@ pub struct DeriveTrade {
 /// Public trade record returned by `public/get_trade_history` and the
 /// `trades.{instrument_type}.{currency}` WS channel.
 ///
-/// The public WS feed strips private fields (subaccount, wallet, settlement
-/// metadata, role, fee, PnL) and only carries values visible to every market
-/// participant. Those fields are modeled as `Option` so the same struct can
-/// deserialize both the HTTP shape (richer, when the caller has account
-/// context) and the WS shape (slim).
+/// Public REST and WS rows carry participant roles and account detail. Optional
+/// fields also accept sparse frames; settlement metadata does not gate trades.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DerivePublicTrade {
     /// Trade side.
@@ -927,7 +1026,7 @@ pub struct DerivePublicTrade {
     pub instrument_name: Ustr,
     /// Role of this row's participant in the trade. The REST history endpoint
     /// returns one maker row and one taker row per trade under the same
-    /// `trade_id`; absent on the public WS feed.
+    /// `trade_id`. Public WS rows also carry participant roles.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub liquidity_role: Option<DeriveLiquidityRole>,
     /// Mark price at the time of the trade.
@@ -939,32 +1038,35 @@ pub struct DerivePublicTrade {
     /// RFQ session ID when the trade originated from a request-for-quote.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rfq_id: Option<String>,
-    /// Realized PnL attributed to the caller. Absent on the public WS feed.
+    /// Realized PnL attributed to this participant, when supplied.
     #[serde(default, deserialize_with = "deserialize_optional_decimal")]
     pub realized_pnl: Option<Decimal>,
-    /// Aggressor subaccount. Absent on the public WS feed.
+    /// Participant subaccount, when supplied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subaccount_id: Option<i64>,
     /// Trade timestamp (UNIX ms).
     pub timestamp: i64,
     /// Filled amount.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub trade_amount: Decimal,
-    /// Fee charged to the caller. Absent on the public WS feed.
+    /// Fee charged to this participant, when supplied.
     #[serde(default, deserialize_with = "deserialize_optional_decimal")]
     pub trade_fee: Option<Decimal>,
     /// Trade identifier.
     pub trade_id: String,
     /// Execution price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub trade_price: Decimal,
-    /// On-chain settlement tx hash. Absent on the public WS feed.
+    /// Ethereum L1 batch transaction hash from historical rows, when supplied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tx_hash: Option<String>,
-    /// On-chain settlement status. Absent on the public WS feed.
+    /// Settlement batch stage from historical rows, when supplied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tx_status: Option<DeriveTxStatus>,
-    /// Aggressor wallet address. Absent on the public WS feed.
+    pub batch_status: Option<String>,
+    /// Settlement operation identity accepted when supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op_uuid: Option<String>,
+    /// Participant wallet address, when supplied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wallet: Option<Ustr>,
 }
@@ -976,6 +1078,12 @@ pub struct DerivePaginationInfo {
     pub count: i64,
     /// Number of pages available.
     pub num_pages: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct DeriveInstrumentsResult {
+    pub(crate) instruments: Vec<DeriveInstrument>,
+    pub(crate) pagination: DerivePaginationInfo,
 }
 
 /// Paginated `private/get_orders` result envelope.
@@ -1001,15 +1109,52 @@ pub struct DeriveOpenOrdersResult {
 }
 
 /// Paginated `private/get_trade_history` result envelope.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct DeriveTradesResult {
     /// Trades on the current page.
-    #[serde(deserialize_with = "deserialize_salvaged_vec")]
     pub trades: Vec<DeriveTrade>,
     /// Pagination metadata.
     pub pagination: DerivePaginationInfo,
     /// Owning subaccount.
     pub subaccount_id: i64,
+    #[serde(skip)]
+    pub(crate) records_complete: bool,
+}
+
+impl<'de> Deserialize<'de> for DeriveTradesResult {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct TradePage {
+            trades: Vec<Box<RawValue>>,
+            pagination: DerivePaginationInfo,
+            subaccount_id: i64,
+        }
+        #[derive(Deserialize)]
+        struct TradeFee {
+            #[serde(rename = "trade_fee", deserialize_with = "deserialize_decimal_token")]
+            _trade_fee: Decimal,
+        }
+        let page = TradePage::deserialize(deserializer)?;
+        for trade in &page.trades {
+            if !trade.get().starts_with('{') {
+                return Err(serde::de::Error::custom(
+                    "private trade row must be an object",
+                ));
+            }
+
+            let _: TradeFee =
+                serde_json::from_str(trade.get()).map_err(serde::de::Error::custom)?;
+        }
+
+        let count = page.trades.len();
+        let trades: Vec<DeriveTrade> = salvage_rows(page.trades);
+        Ok(Self {
+            records_complete: trades.len() == count,
+            trades,
+            pagination: page.pagination,
+            subaccount_id: page.subaccount_id,
+        })
+    }
 }
 
 /// Paginated `public/get_trade_history` result envelope.
@@ -1082,10 +1227,16 @@ pub struct DerivePositionsResult {
     pub subaccount_id: i64,
 }
 
+fn cancel_reason_empty() -> DeriveOrderCancelReason {
+    DeriveOrderCancelReason::Empty
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
+    use nautilus_core::UnixNanos;
+    use nautilus_model::identifiers::AccountId;
     use rstest::rstest;
     use serde_json::{Value, json};
 
@@ -1197,6 +1348,61 @@ mod tests {
     }
 
     #[rstest]
+    #[case(1_695_836_058_725_001_000)]
+    #[case(u64::MAX)]
+    fn test_order_nonce_string_round_trip(#[case] nonce: u64) {
+        let mut body = load_json("perps/http_order_eth_partially_filled.json");
+        body["nonce"] = json!(nonce.to_string());
+        let order: DeriveOrder = serde_json::from_value(body).unwrap();
+        let encoded = serde_json::to_value(&order).unwrap();
+        let decoded: DeriveOrder = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(order.nonce, nonce);
+        assert_eq!(encoded["nonce"], nonce.to_string());
+        assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
+    }
+
+    #[rstest]
+    #[case(json!(""))]
+    #[case(json!("-1"))]
+    #[case(json!("18446744073709551616"))]
+    #[case(json!(1_695_836_058_725_001_000_u64))]
+    fn test_order_nonce_rejects_invalid_wire_values(#[case] nonce: Value) {
+        let mut body = load_json("perps/http_order_eth_partially_filled.json");
+        body["nonce"] = nonce;
+        assert!(serde_json::from_value::<DeriveOrder>(body).is_err());
+    }
+
+    #[rstest]
+    #[case(true, false)]
+    #[case(false, true)]
+    #[case(true, true)]
+    fn test_order_defaults_optional_label_and_cancel_reason(
+        #[case] omit_label: bool,
+        #[case] omit_reason: bool,
+    ) {
+        let mut body = load_json("perps/http_order_eth_partially_filled.json");
+        if omit_label {
+            body["label"] = json!("");
+        }
+
+        let expected: DeriveOrder = serde_json::from_value(body.clone()).unwrap();
+        let fields = body.as_object_mut().unwrap();
+        if omit_label {
+            fields.remove("label");
+        }
+
+        if omit_reason {
+            fields.remove("cancel_reason");
+        }
+
+        let order: DeriveOrder = serde_json::from_value(body).unwrap();
+        assert_eq!(
+            serde_json::to_value(order).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
+
+    #[rstest]
     fn test_order_decodes_partially_filled_market_order() {
         // Distinct `amount` and `filled_amount` so a struct-field swap is
         // detectable. Every Ustr-typed field has a unique value so a serde
@@ -1231,6 +1437,7 @@ mod tests {
         let mut cancelled_order = load_json("perps/http_order_eth_partially_filled.json");
         cancelled_order["order_id"] = json!("old-order");
         cancelled_order["order_status"] = json!("cancelled");
+        cancelled_order["label"] = json!("replacement-label");
         let result: DeriveReplaceResult = serde_json::from_value(json!({
             "order": null,
             "cancelled_order": cancelled_order,
@@ -1242,8 +1449,9 @@ mod tests {
         .unwrap();
 
         let outcome = result
-            .into_outcome("old-order", "replacement-label")
+            .into_outcome("old-order", "replacement-label", 42, "ETH-PERP")
             .unwrap();
+
         let DeriveReplaceOutcome::Canceled {
             cancelled_order,
             create_order_error,
@@ -1251,6 +1459,7 @@ mod tests {
         else {
             panic!("expected canceled outcome");
         };
+
         assert_eq!(cancelled_order.order_id, "old-order");
         assert_eq!(cancelled_order.order_status, DeriveOrderStatus::Cancelled);
         assert_eq!(create_order_error.code, 10001);
@@ -1274,7 +1483,7 @@ mod tests {
         .unwrap();
 
         let error = result
-            .into_outcome("old-order", "replacement-label")
+            .into_outcome("old-order", "replacement-label", 42, "ETH-PERP")
             .unwrap_err();
         assert!(error.contains("had status open"));
     }
@@ -1293,7 +1502,7 @@ mod tests {
         .unwrap();
 
         let error = result
-            .into_outcome("old-order", "expected-label")
+            .into_outcome("old-order", "expected-label", 42, "ETH-PERP")
             .unwrap_err();
         assert!(error.contains("had label wrong-label, expected expected-label"));
     }
@@ -1327,10 +1536,77 @@ mod tests {
         let body = load_json("common/http_subaccount_usdc.json");
         let subaccount: DeriveSubaccount = serde_json::from_value(body).unwrap();
         assert_eq!(subaccount.subaccount_id, 42);
-        assert_eq!(subaccount.margin_type, DeriveMarginType::Pm);
+        assert_eq!(subaccount.margin_type, "SM");
         assert_eq!(subaccount.collaterals.len(), 1);
         assert_eq!(subaccount.collaterals[0].asset_type, DeriveAssetType::Erc20);
         assert!(!subaccount.is_under_liquidation);
+    }
+
+    #[rstest]
+    #[case("currency")]
+    #[case("manager_id")]
+    #[case("risk_universe_id")]
+    #[case("failed_to_fetch")]
+    #[case("margin_type")]
+    #[case("mm_credits")]
+    #[case("projected_margin_change")]
+    #[case("vault_deposit_holds")]
+    #[case("positions_value")]
+    #[case("positions")]
+    #[case("open_orders")]
+    fn test_subaccount_requires_complete_v3_envelope(#[case] field: &str) {
+        let mut body = load_json("common/http_subaccount_pm2.json");
+        body.as_object_mut().unwrap().remove(field);
+
+        assert!(serde_json::from_value::<DeriveSubaccount>(body).is_err());
+    }
+
+    #[rstest]
+    #[case(serde_json::Value::Null)]
+    #[case(json!(""))]
+    fn test_subaccount_rejects_null_or_empty_required_decimals(#[case] invalid: Value) {
+        for field in [
+            "initial_margin",
+            "maintenance_margin",
+            "positions_initial_margin",
+            "positions_maintenance_margin",
+            "positions_value",
+            "open_orders_margin",
+            "mm_credits",
+            "projected_margin_change",
+        ] {
+            let mut body = load_json("common/http_subaccount_pm2.json");
+            body[field] = invalid.clone();
+            assert!(
+                serde_json::from_value::<DeriveSubaccount>(body).is_err(),
+                "{field}"
+            );
+        }
+
+        let mut body = load_json("common/http_subaccount_pm2.json");
+        body["collaterals"][0]["amount"] = invalid;
+        assert!(serde_json::from_value::<DeriveSubaccount>(body).is_err());
+    }
+
+    #[rstest]
+    #[case("amount")]
+    #[case("average_price")]
+    #[case("filled_amount")]
+    #[case("limit_price")]
+    #[case("max_fee")]
+    #[case("order_fee")]
+    fn test_subaccount_rejects_empty_or_null_order_decimal(#[case] field: &str) {
+        for invalid in [Value::Null, json!("")] {
+            let mut body = load_json("common/http_subaccount_pm2.json");
+            let mut order = load_json("perps/http_order_eth_partially_filled.json");
+            order[field] = invalid;
+            body["open_orders"] = json!([order]);
+
+            assert!(
+                serde_json::from_value::<DeriveSubaccount>(body).is_err(),
+                "{field}"
+            );
+        }
     }
 
     #[rstest]
@@ -1373,22 +1649,42 @@ mod tests {
     }
 
     #[rstest]
-    fn test_subaccount_salvages_unknown_variant_rows() {
+    fn test_subaccount_retains_unknown_order_status_for_account_conversion() {
         let body = load_json("common/http_subaccount_unknown_variants.json");
         let subaccount: DeriveSubaccount = serde_json::from_value(body).unwrap();
-
-        // The `queued`-status open order is skipped; snapshot and siblings survive.
-        assert_eq!(subaccount.margin_type, DeriveMarginType::Unknown);
+        assert_eq!(subaccount.open_orders.len(), 2);
         assert_eq!(
-            subaccount.collaterals[0].asset_type,
-            DeriveAssetType::Unknown
+            subaccount.open_orders[1].order_status,
+            DeriveOrderStatus::Unknown
         );
-        assert_eq!(subaccount.open_orders.len(), 1);
-        assert_eq!(subaccount.open_orders[0].label, "alpha-strategy");
-        assert_eq!(subaccount.positions.len(), 1);
+        let mut modeled = subaccount.clone();
+        modeled.open_orders[1].order_status = DeriveOrderStatus::Open;
+        let expected = crate::http::parse::parse_derive_subaccount_to_balances(&modeled).unwrap();
+        let actual = crate::http::parse::parse_derive_subaccount_to_balances(&subaccount).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_subaccount_decodes_populated_vault_deposit_hold() {
+        let mut body = load_json("common/http_subaccount_pm2.json");
+        let hold = json!({
+            "amount": "0.000000000123456789",
+            "asset_name": "ETH",
+            "currency": "ETH",
+            "vault_id": 123,
+        });
+        body["vault_deposit_holds"] = json!([hold]);
+
+        let subaccount: DeriveSubaccount = serde_json::from_value(body).unwrap();
+
         assert_eq!(
-            subaccount.positions[0].instrument_type,
-            DeriveInstrumentType::Unknown,
+            serde_json::to_value(&subaccount.vault_deposit_holds).unwrap(),
+            json!([hold])
+        );
+        assert_eq!(
+            subaccount.vault_deposit_holds[0].amount.to_string(),
+            "0.000000000123456789"
         );
     }
 
@@ -1397,7 +1693,7 @@ mod tests {
         let body = load_json("perps/http_public_trade_eth_sell.json");
         let trade: DerivePublicTrade = serde_json::from_value(body).unwrap();
         assert_eq!(trade.direction, DeriveOrderSide::Sell);
-        assert_eq!(trade.tx_status, Some(DeriveTxStatus::Settled));
+        assert_eq!(trade.batch_status.as_deref(), Some("Settled"));
         let reserialized = serde_json::to_value(&trade).unwrap();
         assert_eq!(reserialized["instrument_name"], "ETH-PERP");
         assert_eq!(reserialized["liquidity_role"], "taker");
@@ -1436,12 +1732,19 @@ mod tests {
     }
 
     #[rstest]
-    fn test_orders_result_fails_on_unknown_order_status() {
-        // Pins the deliberate strictness documented on the struct.
+    fn test_orders_result_retains_unknown_status_and_rejects_report_conversion() {
         let mut body = load_json("perps/http_orders_result_eth_unknown_variants.json");
         body["orders"][0]["order_status"] = json!("queued");
-
-        assert!(serde_json::from_value::<DeriveOrdersResult>(body).is_err());
+        let result: DeriveOrdersResult = serde_json::from_value(body).unwrap();
+        assert_eq!(result.orders.len(), 2);
+        assert_eq!(result.orders[0].order_status, DeriveOrderStatus::Unknown);
+        let error = crate::http::parse::parse_derive_order_to_report(
+            &result.orders[0],
+            AccountId::from("DERIVE-001"),
+            UnixNanos::from(17),
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "unmodeled Derive order status");
     }
 
     #[rstest]
@@ -1508,7 +1811,7 @@ mod tests {
         let trade: DeriveTrade = serde_json::from_value(body).unwrap();
         assert_eq!(trade.direction, DeriveOrderSide::Buy);
         assert_eq!(trade.liquidity_role, DeriveLiquidityRole::Maker);
-        assert_eq!(trade.tx_status, DeriveTxStatus::Settled);
+        assert_eq!(trade.batch_status.as_deref(), Some("Settled"));
         assert_eq!(trade.instrument_name, "ETH-PERP");
         assert_eq!(trade.label, "alpha-strategy");
         assert_eq!(trade.wallet.as_ref().map(Ustr::as_str), Some("0xwallet"));
@@ -1521,6 +1824,196 @@ mod tests {
         assert!(!trade.is_transfer);
         assert!(trade.quote_id.is_none());
         assert_eq!(trade.tx_hash.as_deref(), Some("0xhash"));
+    }
+
+    #[rstest]
+    #[case("trade_amount", "0.5")]
+    #[case("trade_price", "3499.0")]
+    #[case("trade_fee", "0.02")]
+    fn test_native_trade_numeric_tokens_preserve_exact_value(
+        #[case] field: &str,
+        #[case] original: &str,
+        #[values(
+            ("1234567.123456789012", rust_decimal_macros::dec!(1234567.123456789012)),
+            ("1.234567890123456789e-10", rust_decimal_macros::dec!(0.0000000001234567890123456789))
+        )]
+        (token, expected): (&str, Decimal),
+    ) {
+        let fixture = include_str!("../../test_data/perps/http_private_trade_eth.json");
+        let row = fixture.replace(
+            &format!("\"{field}\": \"{original}\""),
+            &format!("\"{field}\": {token}"),
+        );
+        assert_ne!(row, fixture);
+        let direct: DeriveTrade = serde_json::from_str(&row).unwrap();
+        let page = serde_json::to_string(&serde_json::json!({
+            "pagination": {"count": 1, "num_pages": 1},
+            "subaccount_id": 42,
+        }))
+        .unwrap();
+        let page = format!("{},\"trades\":[{row}]}}", page.trim_end_matches('}'));
+        let page: DeriveTradesResult = serde_json::from_str(&page).unwrap();
+        let subscription: crate::websocket::DeriveTradesSubscriptionData =
+            serde_json::from_str(&format!("[{row}]")).unwrap();
+
+        assert_eq!(page.trades.len(), 1);
+        assert_eq!(subscription.trades.len(), 1);
+        assert!(page.records_complete);
+
+        for trade in [&direct, &page.trades[0], &subscription.trades[0]] {
+            assert_eq!(
+                trade.trade_amount,
+                if field == "trade_amount" {
+                    expected
+                } else {
+                    rust_decimal_macros::dec!(0.5)
+                }
+            );
+            assert_eq!(
+                trade.trade_price,
+                if field == "trade_price" {
+                    expected
+                } else {
+                    rust_decimal_macros::dec!(3499.0)
+                }
+            );
+            assert_eq!(
+                trade.trade_fee,
+                if field == "trade_fee" {
+                    expected
+                } else {
+                    rust_decimal_macros::dec!(0.02)
+                }
+            );
+            assert_eq!(
+                serde_json::to_value(trade).unwrap(),
+                serde_json::to_value(&direct).unwrap()
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_v3_trade_rest_and_private_subscription_schema_parity() {
+        let native: Vec<Value> = serde_json::from_str(include_str!(
+            "../../test_data/perps/http_trades_v3_native.json"
+        ))
+        .unwrap();
+        let stages: Vec<Value> = serde_json::from_str(include_str!(
+            "../../test_data/common/trade_batch_stages.json"
+        ))
+        .unwrap();
+
+        for stage in stages {
+            let mut row = native[0].clone();
+            row["batch_status"] = stage.clone();
+            row["op_uuid"] = Value::Null;
+            row["tx_hash"] = Value::Null;
+            let result: DeriveTradesResult = serde_json::from_value(json!({
+                "trades": [row.clone()], "pagination": {"count": 1, "num_pages": 1},
+                "subaccount_id": 42,
+            }))
+            .unwrap();
+            let subscription: crate::websocket::DeriveTradesSubscriptionData =
+                serde_json::from_value(json!([row])).unwrap();
+            assert_eq!(result.trades.len(), 1);
+            assert_eq!(subscription.trades.len(), 1);
+            let rest = &result.trades[0];
+            let ws = &subscription.trades[0];
+            assert_eq!(
+                serde_json::to_value(rest).unwrap(),
+                serde_json::to_value(ws).unwrap()
+            );
+            assert_eq!(rest.batch_status.as_deref(), stage.as_str());
+            assert_eq!(rest.op_uuid, None);
+            assert_eq!(rest.tx_hash, None);
+            assert_eq!(rest.trade_fee, rust_decimal_macros::dec!(0.087052478068));
+            assert_eq!(rest.trade_id, "pm2-held-fixture-trade-close");
+            assert_eq!(rest.order_id, "pm2-held-fixture-order-close");
+        }
+
+        let mut row = native[1].clone();
+        row.as_object_mut().unwrap().remove("batch_status");
+        row.as_object_mut().unwrap().remove("op_uuid");
+        row.as_object_mut().unwrap().remove("tx_hash");
+        row.as_object_mut().unwrap().remove("label");
+        let early: DeriveTrade = serde_json::from_value(row).unwrap();
+        assert_eq!(early.batch_status, None);
+        assert_eq!(early.op_uuid, None);
+        assert_eq!(early.tx_hash, None);
+        assert_eq!(early.label, Ustr::from(""));
+    }
+
+    #[rstest]
+    #[case("trade_amount")]
+    #[case("trade_price")]
+    #[case("trade_fee")]
+    fn test_v3_required_execution_decimals_reject_invalid_values(
+        #[case] field: &str,
+        #[values("null", "empty", "missing")] invalid: &str,
+    ) {
+        let mut row = load_json("perps/http_private_trade_eth.json");
+        match invalid {
+            "null" => row[field] = Value::Null,
+            "empty" => row[field] = json!(""),
+            "missing" => {
+                row.as_object_mut().unwrap().remove(field);
+            }
+            _ => unreachable!(),
+        }
+
+        assert!(serde_json::from_value::<DeriveTrade>(row.clone()).is_err());
+        let rest = serde_json::from_value::<DeriveTradesResult>(json!({
+            "trades": [row.clone()], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": 42,
+        }));
+        let ws: crate::websocket::DeriveTradesSubscriptionData =
+            serde_json::from_value(json!([row.clone()])).unwrap();
+        let mut order = load_json("spot/http_submit_order_response_mainnet.json")["result"].clone();
+        order["trades"] = json!([row.clone()]);
+        let order_result: DeriveOrderResult = serde_json::from_value(order).unwrap();
+
+        if field == "trade_fee" {
+            assert!(rest.is_err());
+        } else {
+            let rest = rest.unwrap();
+            assert_eq!(rest.trades.len(), 0);
+            assert!(!rest.records_complete);
+        }
+
+        assert_eq!(ws.trades.len(), 0);
+        assert_eq!(order_result.trades.len(), 0);
+        assert!(
+            serde_json::from_value::<crate::websocket::DeriveTradesSubscriptionData>(row.clone())
+                .is_err()
+        );
+
+        if field != "trade_fee" {
+            assert!(serde_json::from_value::<DerivePublicTrade>(row.clone()).is_err());
+            let valid = load_json("perps/http_public_trade_eth_sell.json");
+            assert!(
+                serde_json::from_value::<DerivePublicTradesResult>(json!({
+                    "trades": [valid, row.clone()],
+                    "pagination": {"count": 2, "num_pages": 1},
+                }))
+                .is_err()
+            );
+            let payload: crate::websocket::WsSubscriptionPayload = serde_json::from_str(
+                &json!({"channel": "trades.perp.ETH", "data": [valid, row]}).to_string(),
+            )
+            .unwrap();
+            assert!(crate::websocket::parse_public_ws_data(&payload).is_err());
+        }
+    }
+
+    #[rstest]
+    #[case(json!("0"))]
+    #[case(json!(0))]
+    fn test_v3_execution_fee_accepts_explicit_zero(#[case] fee: Value) {
+        let mut row = load_json("perps/http_private_trade_eth.json");
+        row["trade_fee"] = fee;
+        let trade: DeriveTrade = serde_json::from_value(row).unwrap();
+        assert_eq!(trade.trade_fee, Decimal::ZERO);
+        assert_eq!(trade.trade_amount, rust_decimal_macros::dec!(0.5));
+        assert_eq!(trade.trade_price, rust_decimal_macros::dec!(3499));
     }
 
     #[rstest]
@@ -1546,7 +2039,7 @@ mod tests {
         let mut body = load_json("spot/http_submit_order_response_mainnet.json");
         let mut trade = load_json("perps/http_private_trade_eth.json");
         trade["tx_hash"] = Value::Null;
-        trade["tx_status"] = json!("requested");
+        trade["batch_status"] = Value::Null;
         trade.as_object_mut().unwrap().remove("wallet");
         body["result"]["trades"] = json!([trade]);
 
@@ -1555,7 +2048,7 @@ mod tests {
 
         assert_eq!(result.trades.len(), 1);
         assert!(result.trades[0].tx_hash.is_none());
-        assert_eq!(result.trades[0].tx_status, DeriveTxStatus::Requested);
+        assert_eq!(result.trades[0].batch_status, None);
         assert!(result.trades[0].wallet.is_none());
     }
 
@@ -1585,6 +2078,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_result_preserves_trades_with_unknown_status() {
+        let mut order = load_json("perps/http_order_eth_partially_filled.json");
+        order["order_status"] = serde_json::json!("future-status");
+        let trade = load_json("perps/http_private_trade_eth.json");
+        let result: DeriveOrderResult = serde_json::from_value(serde_json::json!({
+            "order": order, "trades": [trade],
+        }))
+        .unwrap();
+        assert_eq!(result.trades.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&result.trades[0]).unwrap(),
+            serde_json::to_value(serde_json::from_value::<DeriveTrade>(trade).unwrap()).unwrap()
+        );
+    }
+
+    #[rstest]
     fn test_trades_result_envelope_decodes() {
         let body = load_json("perps/http_trades_result_eth.json");
         let result: DeriveTradesResult = serde_json::from_value(body).unwrap();
@@ -1593,6 +2102,7 @@ mod tests {
         assert_eq!(result.pagination.count, 1);
         assert_eq!(result.pagination.num_pages, 1);
         assert_eq!(result.trades[0].trade_id, "t-1");
+        assert!(result.records_complete);
     }
 
     #[rstest]
@@ -1606,17 +2116,51 @@ mod tests {
         let unknowns = &result.trades[1];
         assert_eq!(unknowns.trade_id, "t-2");
         assert_eq!(unknowns.liquidity_role, DeriveLiquidityRole::Unknown);
+        assert!(!result.records_complete);
     }
 
     #[rstest]
-    fn test_trades_result_drops_unknown_tx_status_rows() {
-        // An unknown settlement status must salvage away the row, never emit a fill.
+    #[case(json!("invalid-fee"))]
+    #[case(json!(""))]
+    #[case(Value::Null)]
+    fn test_trades_result_rejects_undecodable_fee(#[case] fee: Value) {
         let mut body = load_json("perps/http_trades_result_eth.json");
-        body["trades"][0]["tx_status"] = json!("bridging");
+        let mut bad = body["trades"][0].clone();
+        bad["trade_id"] = json!("bad-fee-row");
+        bad["trade_fee"] = fee;
+        body["trades"].as_array_mut().unwrap().push(bad);
+        assert!(serde_json::from_value::<DeriveTradesResult>(body).is_err());
+    }
+
+    #[rstest]
+    #[case(serde_json::json!(["0.1"]))]
+    #[case(serde_json::json!(0.1))]
+    #[case(serde_json::Value::Null)]
+    fn test_trades_result_rejects_non_object_fee_rows(#[case] row: Value) {
+        let result = serde_json::from_value::<DeriveTradesResult>(json!({
+            "trades": [row],
+            "pagination": {"count": 1, "num_pages": 1},
+            "subaccount_id": 42,
+        }));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "private trade row must be an object"
+        );
+    }
+
+    #[rstest]
+    fn test_trades_result_preserves_unknown_batch_metadata() {
+        let mut body = load_json("perps/http_trades_result_eth.json");
+        body["trades"][0]["batch_status"] = json!("FutureStage");
 
         let result: DeriveTradesResult = serde_json::from_value(body).unwrap();
 
-        assert!(result.trades.is_empty());
+        assert_eq!(result.trades.len(), 1);
+        assert_eq!(
+            result.trades[0].batch_status.as_deref(),
+            Some("FutureStage")
+        );
     }
 
     #[rstest]

@@ -47,7 +47,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
-use jiff::{Timestamp, fmt::rfc2822::DateTimeParser};
+use jiff::Timestamp;
 use nautilus_common::{cache::InstrumentLookupError, live::dst::time};
 use nautilus_core::{
     AtomicMap, AtomicTime, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var,
@@ -70,7 +70,10 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpRedirectPolicy, Method, StatusCode, create_standard_nautilus_headers},
+    http::{
+        HttpClient, HttpRedirectPolicy, Method, StatusCode, create_standard_nautilus_headers,
+        parse_retry_after,
+    },
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
@@ -283,20 +286,6 @@ fn classify_response_decode_error(error: &serde_json::Error) -> OKXHttpError {
         OKXHttpError::ResponseDecoding(error.to_string())
     } else {
         OKXHttpError::MalformedResponse(error.to_string())
-    }
-}
-
-fn parse_retry_after(value: &str, now: Timestamp) -> Option<Duration> {
-    if let Ok(seconds) = value.parse::<u64>() {
-        return Some(Duration::from_secs(seconds));
-    }
-
-    let retry_at = DateTimeParser::new().parse_timestamp(value).ok()?;
-    let delay = retry_at.duration_since(now);
-    if delay.is_negative() {
-        Some(Duration::ZERO)
-    } else {
-        Some(delay.unsigned_abs())
     }
 }
 

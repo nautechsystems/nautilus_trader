@@ -32,7 +32,7 @@ use std::{
 
 use alloy::signers::local::PrivateKeySigner;
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
+use nautilus_common::live::dst::time;
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
@@ -48,11 +48,12 @@ use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::clock::MonotonicClock,
     websocket::{
-        AuthTracker, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
-use serde::{Serialize, de::DeserializeOwned};
-use serde_json::Value;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::value::RawValue;
 use ustr::Ustr;
 use zeroize::Zeroizing;
 
@@ -76,17 +77,16 @@ use crate::{
             WS_REQUEST_TIMEOUT,
         },
         enums::DeriveEnvironment,
-        rate_limit::{
-            DeriveRateLimiter, FixedWindowLimiter, FixedWindowLimits, RateClass,
-            rate_class_for_method,
-        },
+        parse::salvage_rows,
+        rate_limit::{DeriveRateLimiter, RateClass, RateReservation, rate_class_for_method},
+        retry::should_retry_ws_error,
         urls,
     },
     http::{
         models::{
             DeriveCancelByInstrumentResult, DeriveCancelByLabelResult, DeriveEmptyResult,
             DeriveOpenOrdersResult, DeriveOrder, DeriveOrderResult, DeriveReplaceOutcome,
-            DeriveReplaceResult,
+            DeriveReplaceResult, DeriveTrade,
         },
         query::{
             DeriveCancelAllParams, DeriveCancelByInstrumentParams, DeriveCancelByLabelParams,
@@ -101,7 +101,7 @@ use crate::{
 /// client; only the wallet address is exposed via [`Debug`].
 #[derive(Clone)]
 pub struct DeriveWsCredentials {
-    /// Derive Chain smart-contract wallet address (`0x`-prefixed, 42 chars).
+    /// Owner's EOA or multisig address (`0x`-prefixed, 42 chars).
     pub wallet_address: String,
     /// secp256k1 session-key signer.
     pub signer: PrivateKeySigner,
@@ -133,7 +133,7 @@ impl Debug for DeriveWsCredentials {
     }
 }
 
-// Fixed-window rate limiter shared with the command handles so each frame is
+// Wallet limiter shared with the command handles so each frame is
 // paced in the caller's task before it is enqueued for the feed handler.
 type WsRateLimiter = DeriveRateLimiter;
 
@@ -161,10 +161,11 @@ pub struct DeriveWebSocketClient {
     next_id: Arc<AtomicU64>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>>,
-    subscriptions: Arc<DashMap<String, ()>>,
+    subscriptions: Arc<SubscriptionState>,
     subscription_lock: Arc<tokio::sync::Mutex<()>>,
     task_handle: TaskSlot<()>,
     send_task: Arc<SharedTaskSlot<()>>,
+    recovery_task: Arc<SharedTaskSlot<()>>,
     shutdown_errors: Vec<String>,
     request_timeout: Duration,
     conn_id: Arc<ArcSwap<String>>,
@@ -172,48 +173,11 @@ pub struct DeriveWebSocketClient {
     socket_control: Option<SocketControl>,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct DeriveWebSocketShutdownHandle {
-    signal: Arc<AtomicBool>,
-}
-
-impl DeriveWebSocketShutdownHandle {
-    pub(crate) fn begin_shutdown(&self) {
-        self.signal.store(true, Ordering::Release);
-    }
-}
-
-struct DeriveWebSocketSetupGuard {
-    shutdown: DeriveWebSocketShutdownHandle,
-    armed: bool,
-}
-
-impl DeriveWebSocketSetupGuard {
-    fn new(shutdown: DeriveWebSocketShutdownHandle) -> Self {
-        Self {
-            shutdown,
-            armed: true,
-        }
-    }
-
-    fn disarm(mut self) {
-        self.armed = false;
-    }
-}
-
-impl Drop for DeriveWebSocketSetupGuard {
-    fn drop(&mut self) {
-        if self.armed {
-            self.shutdown.begin_shutdown();
-        }
-    }
-}
-
 /// Cloneable command handle for Derive public market data subscriptions.
 #[derive(Debug, Clone)]
 pub struct DeriveWebSocketSubscriptionHandle {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
-    subscriptions: Arc<DashMap<String, ()>>,
+    subscriptions: Arc<SubscriptionState>,
     subscription_lock: Arc<tokio::sync::Mutex<()>>,
     request_timeout: Duration,
     rate_limiter: Arc<WsRateLimiter>,
@@ -239,8 +203,7 @@ pub struct DeriveWsExecutionHandle {
 #[derive(Debug)]
 pub(crate) struct MatchingRateLimitReservation {
     method: &'static str,
-    instrument_name: Ustr,
-    window: u32,
+    quota: RateReservation<MonotonicClock>,
 }
 
 impl DeriveWebSocketClient {
@@ -254,22 +217,19 @@ impl DeriveWebSocketClient {
         proxy_url: Option<String>,
     ) -> Self {
         let url = url.unwrap_or_else(|| urls::ws_url(environment).to_string());
-        Self::build(
-            url,
-            transport_backend,
-            proxy_url,
-            None,
-            FixedWindowLimits::websocket(None, None),
-        )
+        Self::build(url, transport_backend, proxy_url, None, None, None)
     }
 
     /// Builds a client that will issue `public/login` on connect and replay
     /// it after each reconnect.
     ///
-    /// `max_matching_requests_per_second` sets the account-wide matching
-    /// allowance for order writes and `max_per_instrument_matching_requests_per_second`
-    /// the independent per-instrument allowance; `None` applies the Trader-tier
-    /// default of each. See [`crate::common::rate_limit`].
+    /// `max_matching_requests_per_second` sets the shared wallet matching
+    /// allowance. `max_per_instrument_matching_requests_per_second` sets the
+    /// independent token refill rate for perpetuals, spot, and options.
+    /// Unset values preserve existing shared settings or use reference defaults.
+    /// Clients for the same wallet on the same API host share the first explicit
+    /// settings.
+    /// See [`crate::common::rate_limit`].
     #[must_use]
     pub fn with_credentials(
         url: Option<String>,
@@ -281,11 +241,14 @@ impl DeriveWebSocketClient {
         max_per_instrument_matching_requests_per_second: Option<u32>,
     ) -> Self {
         let url = url.unwrap_or_else(|| urls::ws_url(environment).to_string());
-        let limits = FixedWindowLimits::websocket(
+        Self::build(
+            url,
+            transport_backend,
+            proxy_url,
+            Some(credentials),
             max_matching_requests_per_second,
             max_per_instrument_matching_requests_per_second,
-        );
-        Self::build(url, transport_backend, proxy_url, Some(credentials), limits)
+        )
     }
 
     fn build(
@@ -293,7 +256,8 @@ impl DeriveWebSocketClient {
         transport_backend: TransportBackend,
         proxy_url: Option<String>,
         credentials: Option<DeriveWsCredentials>,
-        limits: FixedWindowLimits,
+        matching_tps: Option<u32>,
+        instrument_tps: Option<u32>,
     ) -> Self {
         let connection_mode = Arc::new(ArcSwap::new(Arc::new(AtomicU8::new(
             ConnectionMode::Closed as u8,
@@ -303,12 +267,15 @@ impl DeriveWebSocketClient {
         // Placeholder channel; replaced by connect() before commands are issued.
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
 
-        // Matching writes draw on the account-wide and per-instrument
-        // allowances; custom cancellation methods have their own windows and
-        // login, subscription, and reads use the non-matching allowance.
-        // Handles pace each frame in the caller's task before enqueueing, so
-        // the feed handler never sleeps.
-        let rate_limiter = Arc::new(FixedWindowLimiter::new(limits, MonotonicClock {}));
+        let rate_limiter = Arc::new(DeriveRateLimiter::shared(
+            &url,
+            credentials
+                .as_ref()
+                .map(|credentials| credentials.wallet_address.as_str()),
+            matching_tps,
+            instrument_tps,
+        ));
+
         Self {
             url,
             transport_backend,
@@ -322,10 +289,11 @@ impl DeriveWebSocketClient {
             next_id: Arc::new(AtomicU64::new(1)),
             cmd_tx: Arc::new(tokio::sync::RwLock::new(placeholder_tx)),
             out_rx: None,
-            subscriptions: Arc::new(DashMap::new()),
+            subscriptions: Arc::new(SubscriptionState::new('.')),
             subscription_lock: Arc::new(tokio::sync::Mutex::new(())),
             task_handle: TaskSlot::new(),
             send_task: Arc::new(SharedTaskSlot::new()),
+            recovery_task: Arc::new(SharedTaskSlot::new()),
             shutdown_errors: Vec::new(),
             request_timeout: WS_REQUEST_TIMEOUT,
             conn_id: Arc::new(ArcSwap::from_pointee(UUID4::new().to_string())),
@@ -390,7 +358,10 @@ impl DeriveWebSocketClient {
         }
 
         // Tear down stale state so we don't orphan the old handler task on rebuild.
-        if self.task_handle.is_some() || !self.send_task.is_empty() {
+        if self.task_handle.is_some()
+            || !self.send_task.is_empty()
+            || !self.recovery_task.is_empty()
+        {
             log::debug!("Tearing down stale Derive WebSocket state before connect");
             self.teardown().await?;
         }
@@ -426,6 +397,7 @@ impl DeriveWebSocketClient {
             max_message_size_bytes: None,
             max_frame_size_bytes: None,
         };
+
         // Rate limiting runs caller-side via `self.rate_limiter` before frames
         // are enqueued, so the network client's own limiter is left unconfigured
         // and never sleeps inside the single feed-handler task.
@@ -462,132 +434,34 @@ impl DeriveWebSocketClient {
             )));
         }
 
-        let signal = Arc::clone(&self.signal);
-        let auth_tracker = self.auth_tracker.clone();
-        let authenticated_epoch = Arc::clone(&self.authenticated_epoch);
-        let next_id = Arc::clone(&self.next_id);
-        let credentials = self.credentials.clone();
-        let subscriptions = Arc::clone(&self.subscriptions);
-        let subscription_lock = Arc::clone(&self.subscription_lock);
-        let conn_id = Arc::clone(&self.conn_id);
-        let cmd_tx_for_loop = cmd_tx.clone();
-        let rate_limiter = Arc::clone(&self.rate_limiter);
-        let request_timeout = self.request_timeout;
-        let recovery_connection_mode = Arc::clone(&connection_mode);
-        let recovery_connection_epoch = Arc::clone(&connection_epoch);
-        let send_task = Arc::clone(&self.send_task);
+        let recovery = SessionRecovery {
+            subscription: self.subscription_handle(),
+            cmd_tx: cmd_tx.clone(),
+            auth_tracker: self.auth_tracker.clone(),
+            authenticated_epoch: Arc::clone(&self.authenticated_epoch),
+            connection_mode: Arc::clone(&connection_mode),
+            connection_epoch: Arc::clone(&connection_epoch),
+            credentials: self.credentials.clone(),
+            signal: Arc::clone(&self.signal),
+        };
 
-        if let Err(e) = self.task_handle.spawn(async move {
-            let (recovery_tx, mut recovery_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
-            let recovery_out_tx = out_tx.clone();
-            let recovery_cmd_tx = cmd_tx_for_loop.clone();
-            let recovery_auth_tracker = auth_tracker.clone();
-            let recovery_authenticated_epoch = Arc::clone(&authenticated_epoch);
-            let recovery_subscriptions = Arc::clone(&subscriptions);
-            let recovery_subscription_lock = Arc::clone(&subscription_lock);
-            let recovery_rate_limiter = Arc::clone(&rate_limiter);
-            let recovery_credentials = credentials.clone();
-            let recovery_mode = Arc::clone(&recovery_connection_mode);
-            let recovery_epoch = Arc::clone(&recovery_connection_epoch);
-            let mut recovery_tasks = tokio::task::JoinSet::new();
+        let handler = FeedHandler::new_with_send_task(
+            Arc::clone(&self.signal),
+            cmd_rx,
+            raw_rx,
+            Arc::clone(&self.next_id),
+            self.auth_tracker.clone(),
+            Arc::clone(&self.authenticated_epoch),
+            Arc::clone(&self.send_task),
+        );
 
-            recovery_tasks.spawn(async move {
-                while let Some(mut requested_epoch) = recovery_rx.recv().await {
-                    while let Ok(epoch) = recovery_rx.try_recv() {
-                        requested_epoch = requested_epoch.max(epoch);
-                    }
-
-                    loop {
-                        match recover_session(
-                            &recovery_rate_limiter,
-                            &recovery_cmd_tx,
-                            &recovery_auth_tracker,
-                            &recovery_authenticated_epoch,
-                            &recovery_mode,
-                            &recovery_epoch,
-                            recovery_credentials.as_ref(),
-                            &recovery_subscriptions,
-                            &recovery_subscription_lock,
-                            request_timeout,
-                        )
-                        .await
-                        {
-                            Ok(recovered_epoch) => {
-                                while let Ok(epoch) = recovery_rx.try_recv() {
-                                    requested_epoch = requested_epoch.max(epoch);
-                                }
-
-                                if requested_epoch > recovered_epoch
-                                    || !session_connection_is_active(
-                                        &recovery_mode,
-                                        &recovery_epoch,
-                                        recovered_epoch,
-                                    )
-                                {
-                                    continue;
-                                }
-
-                                if recovery_out_tx.send(DeriveWsMessage::Reconnected).is_err() {
-                                    log::debug!("Derive outer receiver dropped during recovery");
-                                }
-                                break;
-                            }
-                            Err(e) => {
-                                let mut retry = false;
-
-                                while let Ok(epoch) = recovery_rx.try_recv() {
-                                    requested_epoch = requested_epoch.max(epoch);
-                                    retry = true;
-                                }
-
-                                if retry {
-                                    continue;
-                                }
-                                log::error!("Derive WebSocket session recovery failed: {e}");
-                                let _ = recovery_out_tx
-                                    .send(DeriveWsMessage::SessionRecoveryFailed(e.to_string()));
-                                let _ = recovery_cmd_tx.send(HandlerCommand::Disconnect);
-                                return;
-                            }
-                        }
-                    }
-                }
-            });
-
-            let mut handler = FeedHandler::new_with_send_task(
-                signal,
-                cmd_rx,
-                raw_rx,
-                next_id,
-                auth_tracker.clone(),
-                Arc::clone(&authenticated_epoch),
-                send_task,
-            );
-
-            loop {
-                match handler.next().await {
-                    Some(DeriveWsMessage::Reconnected) => {
-                        log::info!("Derive WebSocket re-establishing session after reconnect");
-                        conn_id.store(Arc::new(UUID4::new().to_string()));
-                        let epoch = recovery_connection_epoch.load(Ordering::Acquire);
-                        if recovery_tx.send(epoch).is_err() {
-                            log::error!("Derive WebSocket recovery task stopped unexpectedly");
-                            let _ = cmd_tx_for_loop.send(HandlerCommand::Disconnect);
-                        }
-                    }
-                    Some(msg) => {
-                        if out_tx.send(msg).is_err() {
-                            log::debug!("Derive outer receiver dropped, exiting stream loop");
-                            break;
-                        }
-                    }
-                    None => {
-                        log::debug!("Derive handler task ended");
-                        break;
-                    }
-                }
-            }
-        }) {
+        if let Err(e) = self.task_handle.spawn(run_session_handler(
+            handler,
+            recovery,
+            out_tx,
+            Arc::clone(&self.recovery_task),
+            Arc::clone(&self.conn_id),
+        )) {
             let shutdown_result = self.teardown().await;
             return Err(DeriveWsError::transport(match shutdown_result {
                 Ok(()) => format!("failed to start WebSocket handler task: {e}"),
@@ -627,12 +501,13 @@ impl DeriveWebSocketClient {
     }
 
     pub(crate) fn begin_shutdown(&self) {
-        self.signal.store(true, Ordering::Release);
+        self.shutdown_handle().begin_shutdown();
     }
 
     pub(crate) fn shutdown_handle(&self) -> DeriveWebSocketShutdownHandle {
         DeriveWebSocketShutdownHandle {
             signal: Arc::clone(&self.signal),
+            recovery_task: Arc::clone(&self.recovery_task),
         }
     }
 
@@ -668,28 +543,34 @@ impl DeriveWebSocketClient {
             if let Some(control) = &self.socket_control {
                 control.deregister();
             }
+
             return self.take_shutdown_result();
         }
 
-        match self
-            .send_task
-            .finish(Duration::from_secs(1), Duration::from_secs(2))
-            .await
-        {
-            None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => {}
-            Some(TaskJoinOutcome::Failed(error)) => self
-                .shutdown_errors
-                .push(format!("WebSocket send worker failed: {error}")),
-            Some(TaskJoinOutcome::Incomplete) => self
-                .shutdown_errors
-                .push("WebSocket send worker did not stop after abort".to_string()),
-        }
-
-        if !self.send_task.is_empty() {
-            if let Some(control) = &self.socket_control {
-                control.deregister();
+        for (name, slot) in [
+            ("recovery", Arc::clone(&self.recovery_task)),
+            ("send", Arc::clone(&self.send_task)),
+        ] {
+            match slot
+                .finish(Duration::from_secs(1), Duration::from_secs(2))
+                .await
+            {
+                None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => {}
+                Some(TaskJoinOutcome::Failed(error)) => self
+                    .shutdown_errors
+                    .push(format!("WebSocket {name} worker failed: {error}")),
+                Some(TaskJoinOutcome::Incomplete) => self
+                    .shutdown_errors
+                    .push(format!("WebSocket {name} worker did not stop after abort")),
             }
-            return self.take_shutdown_result();
+
+            if !slot.is_empty() {
+                if let Some(control) = &self.socket_control {
+                    control.deregister();
+                }
+
+                return self.take_shutdown_result();
+            }
         }
 
         // Subscriptions are also dropped: the venue session ended with the
@@ -911,7 +792,7 @@ impl DeriveWebSocketClient {
 
 impl Drop for DeriveWebSocketClient {
     fn drop(&mut self) {
-        self.signal.store(true, Ordering::Relaxed);
+        self.begin_shutdown();
 
         if let Some(handle) = self.task_handle.as_ref() {
             handle.abort();
@@ -923,17 +804,203 @@ impl Drop for DeriveWebSocketClient {
     }
 }
 
+struct SessionRecovery {
+    subscription: DeriveWebSocketSubscriptionHandle,
+    cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    auth_tracker: AuthTracker,
+    authenticated_epoch: Arc<AtomicU64>,
+    connection_mode: Arc<AtomicU8>,
+    connection_epoch: Arc<AtomicU64>,
+    credentials: Option<DeriveWsCredentials>,
+    signal: Arc<AtomicBool>,
+}
+
+async fn run_session_handler(
+    mut handler: FeedHandler,
+    recovery: SessionRecovery,
+    out_tx: tokio::sync::mpsc::UnboundedSender<DeriveWsMessage>,
+    recovery_task: Arc<SharedTaskSlot<()>>,
+    conn_id: Arc<ArcSwap<String>>,
+) {
+    let (recovery_tx, recovery_rx) = tokio::sync::mpsc::unbounded_channel();
+    let cmd_tx = recovery.cmd_tx.clone();
+    let connection_epoch = Arc::clone(&recovery.connection_epoch);
+    if let Err(e) = recovery_task.spawn(recovery.run(recovery_rx, out_tx.clone())) {
+        let _ = out_tx.send(DeriveWsMessage::SessionRecoveryFailed(format!(
+            "failed to start recovery worker: {e}"
+        )));
+        let _ = cmd_tx.send(HandlerCommand::Disconnect);
+        return;
+    }
+
+    loop {
+        match handler.next().await {
+            Some(DeriveWsMessage::Reconnected) => {
+                log::info!("Derive WebSocket re-establishing session after reconnect");
+                conn_id.store(Arc::new(UUID4::new().to_string()));
+                let epoch = connection_epoch.load(Ordering::Acquire);
+                if recovery_tx.send(epoch).is_err() {
+                    log::error!("Derive WebSocket recovery task stopped unexpectedly");
+                    let _ = cmd_tx.send(HandlerCommand::Disconnect);
+                }
+            }
+            Some(msg) => {
+                if out_tx.send(msg).is_err() {
+                    log::debug!("Derive outer receiver dropped, exiting stream loop");
+                    break;
+                }
+            }
+            None => {
+                log::debug!("Derive handler task ended");
+                break;
+            }
+        }
+    }
+
+    recovery_task.abort();
+}
+
+impl SessionRecovery {
+    async fn run(
+        self,
+        mut rx: tokio::sync::mpsc::UnboundedReceiver<u64>,
+        out_tx: tokio::sync::mpsc::UnboundedSender<DeriveWsMessage>,
+    ) {
+        if self.signal.load(Ordering::Acquire) {
+            return;
+        }
+
+        while let Some(mut requested_epoch) = rx.recv().await {
+            take_latest_epoch(&mut rx, &mut requested_epoch);
+            match self.recover_until_current(&mut rx, requested_epoch).await {
+                Ok(()) => {
+                    if out_tx.send(DeriveWsMessage::Reconnected).is_err() {
+                        log::debug!("Derive outer receiver dropped during recovery");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Derive WebSocket session recovery failed: {e}");
+                    let _ = out_tx.send(DeriveWsMessage::SessionRecoveryFailed(e.to_string()));
+                    let _ = self.cmd_tx.send(HandlerCommand::Disconnect);
+                    return;
+                }
+            }
+        }
+    }
+
+    async fn recover_until_current(
+        &self,
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<u64>,
+        mut requested_epoch: u64,
+    ) -> Result<()> {
+        loop {
+            match recover_session(
+                &self.subscription.rate_limiter,
+                &self.cmd_tx,
+                &self.auth_tracker,
+                &self.authenticated_epoch,
+                &self.connection_mode,
+                &self.connection_epoch,
+                self.credentials.as_ref(),
+                &self.subscription.subscriptions,
+                &self.subscription.subscription_lock,
+                self.subscription.request_timeout,
+            )
+            .await
+            {
+                Ok(recovered_epoch) => {
+                    take_latest_epoch(rx, &mut requested_epoch);
+                    if requested_epoch > recovered_epoch
+                        || !session_connection_is_active(
+                            &self.connection_mode,
+                            &self.connection_epoch,
+                            recovered_epoch,
+                        )
+                    {
+                        continue;
+                    }
+
+                    return Ok(());
+                }
+                Err(e) => {
+                    if take_latest_epoch(rx, &mut requested_epoch) {
+                        continue;
+                    }
+
+                    return Err(e);
+                }
+            }
+        }
+    }
+}
+
+fn take_latest_epoch(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<u64>,
+    requested_epoch: &mut u64,
+) -> bool {
+    let mut received = false;
+
+    while let Ok(epoch) = rx.try_recv() {
+        *requested_epoch = (*requested_epoch).max(epoch);
+        received = true;
+    }
+
+    received
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DeriveWebSocketShutdownHandle {
+    signal: Arc<AtomicBool>,
+    recovery_task: Arc<SharedTaskSlot<()>>,
+}
+
+impl DeriveWebSocketShutdownHandle {
+    pub(crate) fn begin_shutdown(&self) {
+        self.signal.store(true, Ordering::Release);
+        self.recovery_task.abort();
+    }
+}
+
+struct DeriveWebSocketSetupGuard {
+    shutdown: DeriveWebSocketShutdownHandle,
+    armed: bool,
+}
+
+impl DeriveWebSocketSetupGuard {
+    fn new(shutdown: DeriveWebSocketShutdownHandle) -> Self {
+        Self {
+            shutdown,
+            armed: true,
+        }
+    }
+
+    fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for DeriveWebSocketSetupGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            self.shutdown.begin_shutdown();
+        }
+    }
+}
+
 impl DeriveWebSocketSubscriptionHandle {
     pub(crate) fn has_subscription(&self, channel: &str) -> bool {
-        self.subscriptions.contains_key(channel)
+        let (name, symbol) = channel.split_once('.').unwrap_or((channel, ""));
+        self.subscriptions
+            .is_subscribed(&Ustr::from(name), &Ustr::from(symbol))
     }
 
     pub(crate) fn forget_subscription(&self, channel: &str) {
-        self.subscriptions.remove(channel);
+        self.subscriptions.mark_unsubscribe(channel);
+        self.subscriptions.confirm_unsubscribe(channel);
     }
 
     pub(crate) fn remember_subscription(&self, channel: &str) {
-        self.subscriptions.insert(channel.to_string(), ());
+        self.subscriptions.mark_subscribe(channel);
     }
 
     /// Subscribes to `ticker_slim.{instrument_name}.{interval}`.
@@ -943,9 +1010,8 @@ impl DeriveWebSocketSubscriptionHandle {
     /// Propagates JSON-RPC errors raised by the venue and transport-level
     /// failures.
     pub async fn subscribe_ticker(&self, instrument_name: &str, interval: &str) -> Result<()> {
-        let channel = ticker_channel(instrument_name, interval);
         let params = ticker_subscribe_params(instrument_name, interval);
-        self.send_subscribe(channel, &params).await
+        self.subscribe_channels(params.channels).await
     }
 
     /// Unsubscribes from `ticker_slim.{instrument_name}.{interval}`.
@@ -971,9 +1037,8 @@ impl DeriveWebSocketSubscriptionHandle {
         group: &str,
         depth: &str,
     ) -> Result<()> {
-        let channel = orderbook_channel(instrument_name, group, depth);
         let params = orderbook_subscribe_params(instrument_name, group, depth);
-        self.send_subscribe(channel, &params).await
+        self.subscribe_channels(params.channels).await
     }
 
     /// Unsubscribes from `orderbook.{instrument_name}.{group}.{depth}`.
@@ -999,9 +1064,8 @@ impl DeriveWebSocketSubscriptionHandle {
     /// Propagates JSON-RPC errors raised by the venue and transport-level
     /// failures.
     pub async fn subscribe_trades(&self, instrument_type: &str, currency: &str) -> Result<()> {
-        let channel = trades_channel(instrument_type, currency);
         let params = trades_subscribe_params(instrument_type, currency);
-        self.send_subscribe(channel, &params).await
+        self.subscribe_channels(params.channels).await
     }
 
     /// Unsubscribes from `trades.{instrument_type}.{currency}`.
@@ -1029,8 +1093,13 @@ impl DeriveWebSocketSubscriptionHandle {
         if channels.is_empty() {
             return Ok(());
         }
+
         let _guard = self.subscription_lock.lock().await;
         let params = WsSubscribeParams { channels };
+        for topic in channel_topics(&params.channels) {
+            self.subscriptions.mark_subscribe(&topic);
+        }
+
         let cmd_tx = self.cmd_tx.read().await.clone();
         let result: WsSubscribeResult = send_request(
             &self.rate_limiter,
@@ -1041,13 +1110,12 @@ impl DeriveWebSocketSubscriptionHandle {
         )
         .await?;
 
-        let (confirmed, failure) =
-            subscription_outcome(&params.channels, &result, SUBSCRIPTION_ACCEPTED_STATUSES);
-
-        for channel in confirmed {
-            self.subscriptions.insert(channel, ());
-        }
-        failure.map_or(Ok(()), Err)
+        subscription_outcome(
+            &params.channels,
+            &result,
+            SUBSCRIPTION_ACCEPTED_STATUSES,
+            &self.subscriptions,
+        )
     }
 
     /// Unsubscribes from multiple channel topics in a single
@@ -1065,11 +1133,16 @@ impl DeriveWebSocketSubscriptionHandle {
         if channels.is_empty() {
             return Ok(());
         }
+
         let _guard = self.subscription_lock.lock().await;
-        let topics = channel_topics(&channels);
+
+        for topic in channel_topics(&channels) {
+            self.subscriptions.mark_unsubscribe(&topic);
+        }
+
         let params = WsUnsubscribeParams { channels };
         let cmd_tx = self.cmd_tx.read().await.clone();
-        let _: WsUnsubscribeResult = send_request(
+        let result: WsUnsubscribeResult = send_request(
             &self.rate_limiter,
             &cmd_tx,
             methods::PUBLIC_UNSUBSCRIBE,
@@ -1078,52 +1151,12 @@ impl DeriveWebSocketSubscriptionHandle {
         )
         .await?;
 
-        for channel in topics {
-            self.subscriptions.remove(&channel);
-        }
-
-        Ok(())
-    }
-
-    async fn send_subscribe(&self, channel: String, params: &WsSubscribeParams) -> Result<()> {
-        let _guard = self.subscription_lock.lock().await;
-        let cmd_tx = self.cmd_tx.read().await.clone();
-        let result: WsSubscribeResult = send_request(
-            &self.rate_limiter,
-            &cmd_tx,
-            methods::PUBLIC_SUBSCRIBE,
-            params,
-            self.request_timeout,
-        )
-        .await?;
-
-        let (confirmed, failure) =
-            subscription_outcome(&params.channels, &result, SUBSCRIPTION_ACCEPTED_STATUSES);
-
-        if confirmed.iter().any(|topic| topic == &channel) {
-            self.subscriptions.insert(channel, ());
-        }
-        failure.map_or(Ok(()), Err)
+        unsubscribe_outcome(&params.channels, &result, &self.subscriptions)
     }
 
     async fn send_unsubscribe(&self, channel: String) -> Result<()> {
-        let _guard = self.subscription_lock.lock().await;
-        let params = WsUnsubscribeParams {
-            channels: vec![DeriveWsChannel::from(channel.clone())],
-        };
-        let cmd_tx = self.cmd_tx.read().await.clone();
-        let _: WsUnsubscribeResult = send_request(
-            &self.rate_limiter,
-            &cmd_tx,
-            methods::PUBLIC_UNSUBSCRIBE,
-            &params,
-            self.request_timeout,
-        )
-        .await?;
-
-        self.subscriptions.remove(&channel);
-
-        Ok(())
+        self.unsubscribe_channels(vec![DeriveWsChannel::from(channel)])
+            .await
     }
 }
 
@@ -1142,7 +1175,8 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections or local
+    /// throttling before dispatch, and
     /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
     /// outcome is ambiguous.
     pub async fn submit_order(&self, params: &DeriveOrderParams) -> Result<DeriveOrder> {
@@ -1151,17 +1185,19 @@ impl DeriveWsExecutionHandle {
             .await?;
         self.submit_order_after_rate_limit(params, reservation)
             .await
+            .map(|result| result.order)
     }
 
     pub(crate) async fn submit_order_after_rate_limit(
         &self,
         params: &DeriveOrderParams,
         reservation: MatchingRateLimitReservation,
-    ) -> Result<DeriveOrder> {
+    ) -> Result<DeriveOrderResult> {
         self.ensure_authenticated(methods::PRIVATE_ORDER)?;
         debug_assert_eq!(reservation.method, methods::PRIVATE_ORDER);
-        self.refresh_matching_reservation(&reservation).await;
         let cmd_tx = self.cmd_tx.read().await.clone();
+        self.ensure_authenticated(reservation.method)?;
+        self.commit_matching_reservation(reservation)?;
         let result: DeriveOrderResult = send_request_typed_after_rate_limit(
             &self.rate_limiter,
             &cmd_tx,
@@ -1170,14 +1206,15 @@ impl DeriveWsExecutionHandle {
             self.request_timeout,
         )
         .await?;
-        Ok(result.order)
+        Ok(result)
     }
 
-    /// Submits a signed trigger order via `private/trigger_order`.
+    /// Submits a signed trigger order via `private/order`.
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections or local
+    /// throttling before dispatch, and
     /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
     /// outcome is ambiguous.
     pub async fn submit_trigger_order(
@@ -1192,26 +1229,16 @@ impl DeriveWsExecutionHandle {
             .await?;
         self.submit_trigger_order_after_rate_limit(params, reservation)
             .await
+            .map(|result| result.order)
     }
 
     pub(crate) async fn submit_trigger_order_after_rate_limit(
         &self,
         params: &DeriveTriggerOrderParams,
         reservation: MatchingRateLimitReservation,
-    ) -> Result<DeriveOrder> {
-        self.ensure_authenticated(methods::PRIVATE_TRIGGER_ORDER)?;
-        debug_assert_eq!(reservation.method, methods::PRIVATE_TRIGGER_ORDER);
-        self.refresh_matching_reservation(&reservation).await;
-        let cmd_tx = self.cmd_tx.read().await.clone();
-        let result: DeriveOrderResult = send_request_typed_after_rate_limit(
-            &self.rate_limiter,
-            &cmd_tx,
-            methods::PRIVATE_TRIGGER_ORDER,
-            params,
-            self.request_timeout,
-        )
-        .await?;
-        Ok(result.order)
+    ) -> Result<DeriveOrderResult> {
+        self.submit_order_after_rate_limit(&params.order, reservation)
+            .await
     }
 
     /// Modifies a working order by cancelling it and submitting a replacement
@@ -1219,7 +1246,8 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections or local
+    /// throttling before dispatch, and
     /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
     /// outcome is ambiguous.
     pub async fn modify_order(&self, params: &DeriveReplaceParams) -> Result<DeriveReplaceOutcome> {
@@ -1228,18 +1256,36 @@ impl DeriveWsExecutionHandle {
             .await?;
         self.modify_order_after_rate_limit(params, reservation)
             .await
+            .and_then(|response| {
+                response
+                    .result
+                    .and_then(|result| {
+                        result.into_outcome(
+                            &params.order_id_to_cancel,
+                            &params.order.label,
+                            params.order.envelope.subaccount_id,
+                            params.order.instrument_name.as_str(),
+                        )
+                    })
+                    .map_err(|message| {
+                        DeriveWsError::Serde(<serde_json::Error as serde::de::Error>::custom(
+                            message,
+                        ))
+                    })
+            })
     }
 
     pub(crate) async fn modify_order_after_rate_limit(
         &self,
         params: &DeriveReplaceParams,
         reservation: MatchingRateLimitReservation,
-    ) -> Result<DeriveReplaceOutcome> {
+    ) -> Result<DeriveReplaceResponse> {
         self.ensure_authenticated(methods::PRIVATE_REPLACE)?;
         debug_assert_eq!(reservation.method, methods::PRIVATE_REPLACE);
-        self.refresh_matching_reservation(&reservation).await;
         let cmd_tx = self.cmd_tx.read().await.clone();
-        let result: DeriveReplaceResult = send_request_typed_after_rate_limit(
+        self.ensure_authenticated(reservation.method)?;
+        self.commit_matching_reservation(reservation)?;
+        let response = send_raw_after_rate_limit(
             &self.rate_limiter,
             &cmd_tx,
             methods::PRIVATE_REPLACE,
@@ -1247,11 +1293,7 @@ impl DeriveWsExecutionHandle {
             self.request_timeout,
         )
         .await?;
-        result
-            .into_outcome(&params.order_id_to_cancel, &params.order.label)
-            .map_err(|message| {
-                DeriveWsError::Serde(<serde_json::Error as serde::de::Error>::custom(message))
-            })
+        Ok(DeriveReplaceResponse::from_raw(&response))
     }
 
     /// Cancels a single order via `private/cancel`.
@@ -1323,6 +1365,35 @@ impl DeriveWsExecutionHandle {
             self.request_timeout,
         )
         .await
+    }
+
+    pub(crate) async fn cancel_trigger_order_current(
+        &self,
+        trigger: &DeriveCancelTriggerOrderParams,
+        regular: &DeriveCancelParams,
+        is_active: impl Fn() -> bool,
+    ) -> Result<Option<DeriveOrder>> {
+        self.require_authenticated(methods::PRIVATE_CANCEL_TRIGGER_ORDER)
+            .await?;
+        self.rate_limiter
+            .await_class_ready(RateClass::NonMatching, None)
+            .await;
+        let cmd_tx = self.cmd_tx.read().await.clone();
+
+        if is_active() {
+            return self.cancel_order(regular).await.map(|()| None);
+        }
+
+        self.ensure_authenticated(methods::PRIVATE_CANCEL_TRIGGER_ORDER)?;
+        send_request_typed_after_rate_limit(
+            &self.rate_limiter,
+            &cmd_tx,
+            methods::PRIVATE_CANCEL_TRIGGER_ORDER,
+            trigger,
+            self.request_timeout,
+        )
+        .await
+        .map(Some)
     }
 
     /// Cancels every open order with the given label via
@@ -1405,29 +1476,22 @@ impl DeriveWsExecutionHandle {
     ) -> Result<MatchingRateLimitReservation> {
         self.require_authenticated(operation).await?;
         debug_assert_eq!(rate_class_for_method(operation), RateClass::Matching);
-        let window = self
+        let quota = self
             .rate_limiter
-            .await_class_ready(RateClass::Matching, Some(instrument_name))
+            .reserve_matching_ready(instrument_name)
             .await;
         self.ensure_authenticated(operation)?;
         Ok(MatchingRateLimitReservation {
             method: operation,
-            instrument_name: *instrument_name,
-            window,
+            quota,
         })
     }
 
-    // Signing between the reservation and the reserved send can cross a
-    // window boundary; a rolled window re-acquires so the departure draws on
-    // its own window's cells.
-    async fn refresh_matching_reservation(&self, reservation: &MatchingRateLimitReservation) {
-        self.rate_limiter
-            .ensure_window_current(
-                RateClass::Matching,
-                Some(&reservation.instrument_name),
-                reservation.window,
-            )
-            .await;
+    fn commit_matching_reservation(&self, reservation: MatchingRateLimitReservation) -> Result<()> {
+        reservation
+            .quota
+            .commit()
+            .map_err(|retry_after| DeriveWsError::RateLimited { retry_after })
     }
 
     fn ensure_authenticated(&self, operation: &'static str) -> Result<()> {
@@ -1476,7 +1540,7 @@ async fn send_raw<P>(
     method: &'static str,
     params: &P,
     timeout: Duration,
-) -> Result<Value>
+) -> Result<Box<RawValue>>
 where
     P: Serialize + ?Sized,
 {
@@ -1501,7 +1565,7 @@ async fn send_raw_for_instrument<P>(
     params: &P,
     timeout: Duration,
     instrument_name: Ustr,
-) -> Result<Value>
+) -> Result<Box<RawValue>>
 where
     P: Serialize + ?Sized,
 {
@@ -1523,7 +1587,7 @@ async fn send_raw_after_rate_limit<P>(
     method: &'static str,
     params: &P,
     timeout: Duration,
-) -> Result<Value>
+) -> Result<Box<RawValue>>
 where
     P: Serialize + ?Sized,
 {
@@ -1547,7 +1611,7 @@ async fn send_raw_with_rate_limit<P>(
     timeout: Duration,
     rate_limit: RequestRateLimit,
     connection_epoch: Option<u64>,
-) -> Result<Value>
+) -> Result<Box<RawValue>>
 where
     P: Serialize + ?Sized,
 {
@@ -1567,12 +1631,12 @@ where
             connection_epoch,
             response_tx,
         })
-        .map_err(|e| DeriveWsError::transport(format!("failed to enqueue `{method}`: {e}")))?;
+        .map_err(|_| DeriveWsError::NotConnected)?;
 
     // On timeout the handler's `pending` entry leaks until the next reconnect's
     // `fail_pending` drains it; the later send to the dropped receiver is a
     // no-op logged at debug.
-    match tokio::time::timeout(timeout, response_rx).await {
+    match time::timeout(timeout, response_rx).await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(_)) => Err(DeriveWsError::RequestCancelled {
             method: method.to_owned(),
@@ -1584,7 +1648,7 @@ where
 }
 
 // Decodes the result, treating a null/absent `result` as `R::default()` (for
-// login/subscribe/unsubscribe and the cancel family's `DeriveEmptyResult`).
+// subscribe/unsubscribe and the cancel family's `DeriveEmptyResult`).
 async fn send_request<P, R>(
     rate_limiter: &WsRateLimiter,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
@@ -1597,7 +1661,7 @@ where
     R: Default + DeserializeOwned,
 {
     let value = send_raw(rate_limiter, cmd_tx, method, params, timeout).await?;
-    decode_default_result(value)
+    decode_default_result(&value)
 }
 
 // Same as `send_request` for a matching write that carries an instrument, so
@@ -1623,7 +1687,7 @@ where
         instrument_name,
     )
     .await?;
-    decode_default_result(value)
+    decode_default_result(&value)
 }
 
 // Keep strict result decoding while reserving both matching buckets
@@ -1648,17 +1712,17 @@ where
         instrument_name,
     )
     .await?;
-    Ok(serde_json::from_value(value)?)
+    Ok(serde_json::from_str(value.get())?)
 }
 
-fn decode_default_result<R>(value: Value) -> Result<R>
+fn decode_default_result<R>(value: &RawValue) -> Result<R>
 where
     R: Default + DeserializeOwned,
 {
-    if value.is_null() {
+    if value.get() == "null" {
         Ok(R::default())
     } else {
-        Ok(serde_json::from_value(value)?)
+        Ok(serde_json::from_str(value.get())?)
     }
 }
 
@@ -1685,7 +1749,7 @@ where
     )
     .await?;
 
-    decode_default_result(value)
+    decode_default_result(&value)
 }
 
 // Decodes the result with no `Default` fallback, for `private/order` and
@@ -1702,7 +1766,7 @@ where
     R: DeserializeOwned,
 {
     let value = send_raw(rate_limiter, cmd_tx, method, params, timeout).await?;
-    Ok(serde_json::from_value(value)?)
+    Ok(serde_json::from_str(value.get())?)
 }
 
 async fn send_request_typed_after_rate_limit<P, R>(
@@ -1717,7 +1781,7 @@ where
     R: DeserializeOwned,
 {
     let value = send_raw_after_rate_limit(rate_limiter, cmd_tx, method, params, timeout).await?;
-    Ok(serde_json::from_value(value)?)
+    Ok(serde_json::from_str(value.get())?)
 }
 
 fn channel_topics(channels: &[DeriveWsChannel]) -> Vec<String> {
@@ -1778,28 +1842,31 @@ async fn send_login_request(
     timeout: Duration,
     connection_epoch: u64,
 ) -> Result<()> {
+    rate_limiter.await_public_ready().await;
     let login = build_ws_login(&creds.wallet_address, &creds.signer)?;
+
     let params = Zeroizing::new(WsLoginParams {
         wallet: login.wallet,
         timestamp: login.timestamp,
         signature: login.signature,
     });
-    let result = send_request_on_connection::<_, WsLoginResult>(
+
+    let value = send_raw_with_rate_limit(
         rate_limiter,
         cmd_tx,
         methods::PUBLIC_LOGIN,
         &*params,
         timeout,
-        connection_epoch,
+        RequestRateLimit::Reserved,
+        Some(connection_epoch),
     )
     .await?;
 
-    if matches!(result, WsLoginResult::Success { success: false }) {
-        return Err(DeriveWsError::Authentication {
+    let _: WsLoginResult =
+        serde_json::from_str(value.get()).map_err(|e| DeriveWsError::Authentication {
             operation: methods::PUBLIC_LOGIN.to_string(),
-            reason: "venue returned an unsuccessful login result".to_string(),
-        });
-    }
+            reason: format!("invalid login result: {e}"),
+        })?;
 
     Ok(())
 }
@@ -1816,40 +1883,29 @@ async fn recover_session(
     connection_mode: &AtomicU8,
     connection_epoch: &AtomicU64,
     creds: Option<&DeriveWsCredentials>,
-    subscriptions: &DashMap<String, ()>,
+    subscriptions: &SubscriptionState,
     subscription_lock: &tokio::sync::Mutex<()>,
     timeout: Duration,
 ) -> Result<u64> {
     let _guard = subscription_lock.lock().await;
+    let mut channels = subscriptions.reset_after_reconnect();
+    channels.sort();
     let _receiver = creds.map(|_| auth_tracker.begin());
 
     for attempt in 1..=MAX_SESSION_RECOVERY_ATTEMPTS {
         let expected_epoch = wait_for_session_connection(connection_mode, connection_epoch).await?;
 
-        let result = async {
-            if !session_connection_is_active(connection_mode, connection_epoch, expected_epoch) {
-                return Err(DeriveWsError::transport(
-                    "connection changed before WebSocket session recovery",
-                ));
-            }
-
-            if let Some(creds) = creds {
-                send_login_request(rate_limiter, cmd_tx, creds, timeout, expected_epoch).await?;
-            }
-            let channels: Vec<String> = subscriptions
-                .iter()
-                .map(|entry| entry.key().clone())
-                .collect();
-            subscribe_via_handler(rate_limiter, cmd_tx, channels, timeout, expected_epoch).await?;
-
-            if !session_connection_is_active(connection_mode, connection_epoch, expected_epoch) {
-                return Err(DeriveWsError::transport(
-                    "connection changed during WebSocket session recovery",
-                ));
-            }
-
-            Ok(())
-        }
+        let result = recover_session_attempt(
+            rate_limiter,
+            cmd_tx,
+            connection_mode,
+            connection_epoch,
+            creds,
+            subscriptions,
+            channels.clone(),
+            timeout,
+            expected_epoch,
+        )
         .await;
 
         match result {
@@ -1872,7 +1928,7 @@ async fn recover_session(
 
                 return Ok(expected_epoch);
             }
-            Err(e) if attempt < MAX_SESSION_RECOVERY_ATTEMPTS => {
+            Err(e) if attempt < MAX_SESSION_RECOVERY_ATTEMPTS && should_retry_ws_error(&e) => {
                 let multiplier = 1_u32 << (attempt - 1);
                 let delay = RECONNECT_BASE_BACKOFF
                     .saturating_mul(multiplier)
@@ -1880,7 +1936,7 @@ async fn recover_session(
                 log::warn!(
                     "Derive WebSocket session recovery attempt {attempt}/{MAX_SESSION_RECOVERY_ATTEMPTS} failed: {e}; retrying in {delay:?}",
                 );
-                tokio::time::sleep(delay).await;
+                time::sleep(delay).await;
             }
             Err(e) => {
                 authenticated_epoch.store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
@@ -1888,6 +1944,7 @@ async fn recover_session(
                 if creds.is_some() {
                     auth_tracker.fail(e.to_string());
                 }
+
                 return Err(e);
             }
         }
@@ -1899,7 +1956,52 @@ async fn recover_session(
     if creds.is_some() {
         auth_tracker.fail(e.to_string());
     }
+
     Err(e)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a session attempt retains its fixed connection epoch and native replay context"
+)]
+async fn recover_session_attempt(
+    rate_limiter: &WsRateLimiter,
+    cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    connection_mode: &AtomicU8,
+    connection_epoch: &AtomicU64,
+    creds: Option<&DeriveWsCredentials>,
+    subscriptions: &SubscriptionState,
+    channels: Vec<String>,
+    timeout: Duration,
+    expected_epoch: u64,
+) -> Result<()> {
+    if !session_connection_is_active(connection_mode, connection_epoch, expected_epoch) {
+        return Err(DeriveWsError::transport(
+            "connection changed before WebSocket session recovery",
+        ));
+    }
+
+    if let Some(creds) = creds {
+        send_login_request(rate_limiter, cmd_tx, creds, timeout, expected_epoch).await?;
+    }
+
+    subscribe_via_handler(
+        rate_limiter,
+        cmd_tx,
+        channels,
+        timeout,
+        expected_epoch,
+        subscriptions,
+    )
+    .await?;
+
+    if !session_connection_is_active(connection_mode, connection_epoch, expected_epoch) {
+        return Err(DeriveWsError::transport(
+            "connection changed during WebSocket session recovery",
+        ));
+    }
+
+    Ok(())
 }
 
 async fn wait_for_session_connection(
@@ -1909,7 +2011,7 @@ async fn wait_for_session_connection(
     loop {
         match ConnectionMode::from_atomic(connection_mode) {
             ConnectionMode::Active => return Ok(connection_epoch.load(Ordering::Acquire)),
-            ConnectionMode::Reconnect => tokio::time::sleep(RECONNECT_BASE_BACKOFF).await,
+            ConnectionMode::Reconnect => time::sleep(RECONNECT_BASE_BACKOFF).await,
             ConnectionMode::Disconnect | ConnectionMode::Closed => {
                 return Err(DeriveWsError::transport(
                     "WebSocket closed during session recovery",
@@ -1957,6 +2059,7 @@ async fn subscribe_via_handler(
     channels: Vec<String>,
     timeout: Duration,
     connection_epoch: u64,
+    subscriptions: &SubscriptionState,
 ) -> Result<()> {
     if channels.is_empty() {
         return Ok(());
@@ -1965,6 +2068,7 @@ async fn subscribe_via_handler(
     let params = WsSubscribeParams {
         channels: channels.into_iter().map(DeriveWsChannel::from).collect(),
     };
+
     let result: WsSubscribeResult = send_request_on_connection(
         rate_limiter,
         cmd_tx,
@@ -1975,44 +2079,505 @@ async fn subscribe_via_handler(
     )
     .await?;
 
-    let (_, failure) = subscription_outcome(
+    subscription_outcome(
         &params.channels,
         &result,
         SUBSCRIPTION_REPLAY_ACCEPTED_STATUSES,
-    );
-    failure.map_or(Ok(()), Err)
+        subscriptions,
+    )
 }
 
 fn subscription_outcome(
     requested: &[DeriveWsChannel],
     result: &WsSubscribeResult,
     accepted_statuses: &[&str],
-) -> (Vec<String>, Option<DeriveWsError>) {
-    let mut confirmed = Vec::with_capacity(requested.len());
+    subscriptions: &SubscriptionState,
+) -> Result<()> {
     let mut failures = Vec::new();
 
     for channel in requested {
         let topic = channel.to_string();
         match result.status.get(channel) {
-            Some(status) if accepted_statuses.contains(&status.as_str()) => confirmed.push(topic),
+            Some(status)
+                if accepted_statuses.contains(&status.as_str())
+                    && result.channels.contains(channel) =>
+            {
+                subscriptions.confirm_subscribe(&topic);
+            }
+            Some(status) if accepted_statuses.contains(&status.as_str()) => {
+                subscriptions.mark_failure(&topic);
+                failures.push(format!("{topic}: not subscribed"));
+            }
+            other => {
+                subscriptions.mark_failure(&topic);
+                let reason = other.map_or("missing channel status", |status| status.as_str());
+                failures.push(format!("{topic}: {reason}"));
+            }
+        }
+    }
+
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(DeriveWsError::Subscription {
+            details: failures.join(", "),
+        })
+    }
+}
+
+fn unsubscribe_outcome(
+    requested: &[DeriveWsChannel],
+    result: &WsUnsubscribeResult,
+    subscriptions: &SubscriptionState,
+) -> Result<()> {
+    let mut failures = Vec::new();
+
+    for channel in requested {
+        let topic = channel.to_string();
+        match result.status.get(channel) {
+            Some(status) if status == "ok" && !result.remaining_subscriptions.contains(channel) => {
+                subscriptions.confirm_unsubscribe(&topic);
+            }
+            Some(status) if status == "ok" => failures.push(format!("{topic}: still subscribed")),
             Some(status) => failures.push(format!("{topic}: {status}")),
-            None if result.channels.contains(channel) => confirmed.push(topic),
             None => failures.push(format!("{topic}: missing channel status")),
         }
     }
 
-    let failure = (!failures.is_empty()).then(|| DeriveWsError::Subscription {
-        details: failures.join(", "),
-    });
-    (confirmed, failure)
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(DeriveWsError::Subscription {
+            details: failures.join(", "),
+        })
+    }
+}
+
+pub(crate) struct DeriveReplaceResponse {
+    pub result: std::result::Result<DeriveReplaceResult, String>,
+    pub trades: Vec<DeriveTrade>,
+}
+
+impl DeriveReplaceResponse {
+    fn from_raw(response: &RawValue) -> Self {
+        #[derive(Deserialize)]
+        struct Trades {
+            #[serde(default)]
+            trades: Vec<Box<RawValue>>,
+        }
+        let trades = serde_json::from_str::<Trades>(response.get())
+            .map(|response| salvage_rows(response.trades))
+            .unwrap_or_default();
+        let result = serde_json::from_str(response.get()).map_err(|e| e.to_string());
+        Self { result, trades }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{env, time::SystemTime};
+
+    use axum::{Json, Router, routing::post};
     use rstest::rstest;
+    use serde_json::Value;
 
     use super::*;
-    use crate::common::rate_limit::RateBucket;
+    use crate::{
+        common::{
+            consts::REST_URL_TESTNET,
+            rate_limit::{DERIVE_RATE_WINDOW_SECS, RateLimits, RequestLimiter},
+            retry::{is_fatal_ws_error, is_write_outcome_ambiguous_ws},
+        },
+        http::{DeriveHttpClient, client::DeriveCredentials},
+    };
+
+    #[tokio::test]
+    async fn test_expired_matching_reservation_has_local_failure_evidence() {
+        let client = DeriveWebSocketClient::new(
+            None,
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+        );
+        let handle = client.execution_handle();
+        let quota = handle
+            .rate_limiter
+            .reserve_matching_ready(&Ustr::from("ETH-PERP"))
+            .await;
+        time::sleep(Duration::from_secs(DERIVE_RATE_WINDOW_SECS)).await;
+        for _ in 0..DERIVE_RATE_WINDOW_SECS {
+            handle
+                .rate_limiter
+                .await_class_ready(RateClass::Matching, None)
+                .await;
+        }
+
+        let reservation = MatchingRateLimitReservation {
+            method: methods::PRIVATE_ORDER,
+            quota,
+        };
+
+        let error = handle.commit_matching_reservation(reservation).unwrap_err();
+
+        assert!(matches!(error, DeriveWsError::RateLimited { .. }));
+        assert!(should_retry_ws_error(&error));
+        assert!(!is_fatal_ws_error(&error));
+        assert!(!is_write_outcome_ambiguous_ws(&error));
+    }
+
+    #[rstest]
+    fn test_replace_response_preserves_order_with_undecodable_trade() {
+        let order: Value = serde_json::from_str(include_str!(
+            "../../test_data/perps/http_order_eth_partially_filled.json"
+        ))
+        .unwrap();
+        let trade: Value = serde_json::from_str(include_str!(
+            "../../test_data/perps/http_private_trade_eth.json"
+        ))
+        .unwrap();
+        let response = DeriveReplaceResponse::from_raw(
+            &serde_json::value::to_raw_value(&serde_json::json!({
+                "order": order,
+                "trades": [{"trade_id": "bad-row"}, trade],
+            }))
+            .unwrap(),
+        );
+        let outcome = response
+            .result
+            .unwrap()
+            .into_outcome("old-order", "alpha-strategy", 42, "ETH-PERP")
+            .unwrap();
+
+        let DeriveReplaceOutcome::Replaced(order) = outcome else {
+            panic!("expected replaced outcome");
+        };
+
+        let trades = response.trades;
+        assert_eq!(order.order_id, "abc-123");
+        assert_eq!(order.label, "alpha-strategy");
+        assert_eq!(trades.len(), 1);
+        assert_eq!(trades[0].trade_id, "trade-xyz");
+        assert_eq!(trades[0].order_id, "order-abc");
+    }
+
+    const SESSION_KEY_HEX: &str =
+        "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd";
+
+    #[rstest]
+    #[case(Value::Null)]
+    #[case(serde_json::json!("bad-nonce"))]
+    #[case(serde_json::json!("18446744073709551616"))]
+    fn test_replace_response_preserves_financial_rows_with_invalid_order_nonce(
+        #[case] nonce: Value,
+    ) {
+        let mut order: Value = serde_json::from_str(include_str!(
+            "../../test_data/perps/http_order_eth_partially_filled.json"
+        ))
+        .unwrap();
+        let trade: DeriveTrade = serde_json::from_str(include_str!(
+            "../../test_data/perps/http_private_trade_eth.json"
+        ))
+        .unwrap();
+        order["nonce"] = nonce;
+        let response = DeriveReplaceResponse::from_raw(
+            &serde_json::value::to_raw_value(
+                &serde_json::json!({"order": order, "trades": [trade]}),
+            )
+            .unwrap(),
+        );
+        assert!(response.result.is_err());
+        assert_eq!(
+            serde_json::to_value(response.trades).unwrap(),
+            serde_json::to_value(vec![trade]).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_http_and_websocket_share_matching_consumption() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                Router::new().route(
+                    "/private/cancel",
+                    post(|| async { Json(serde_json::json!({"result": true})) }),
+                ),
+            )
+            .await
+            .unwrap();
+        });
+
+        let wallet = "0x000000000000000000000000000000000000ab01";
+        let http = DeriveHttpClient::with_credentials(
+            format!("http://{address}"),
+            DeriveCredentials::new(wallet, SESSION_KEY_HEX).unwrap(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let ws = DeriveWebSocketClient::with_credentials(
+            Some(format!("ws://{address}/ws")),
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+            DeriveWsCredentials::new(wallet.to_ascii_uppercase(), SESSION_KEY_HEX).unwrap(),
+            None,
+            None,
+        );
+
+        for _ in 0..5 {
+            let result: bool = http
+                .send_private_once("private/cancel", &serde_json::json!({}))
+                .await
+                .unwrap();
+            assert!(result);
+        }
+
+        server.abort();
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let params = serde_json::json!({});
+        let request = send_raw(
+            &ws.rate_limiter,
+            &cmd_tx,
+            methods::PRIVATE_CANCEL,
+            &params,
+            Duration::from_secs(1),
+        );
+        tokio::pin!(request);
+        assert!(futures_util::poll!(&mut request).is_pending());
+        assert!(matches!(
+            cmd_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_login_builds_auth_timestamp_after_public_quota_wait() {
+        let rate_limiter = RequestLimiter::new(RateLimits::new(None, None), MonotonicClock);
+        for _ in 0..25 {
+            rate_limiter.await_public_ready().await;
+        }
+
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let captured = tokio::spawn(async move {
+            let Some(HandlerCommand::Request {
+                method,
+                params,
+                response_tx,
+                ..
+            }) = cmd_rx.recv().await
+            else {
+                panic!("login request must enqueue");
+            };
+
+            assert_eq!(method, methods::PUBLIC_LOGIN);
+            let params: Value = serde_json::from_str(params.expose_secret()).unwrap();
+            let timestamp: u64 = params["timestamp"].as_str().unwrap().parse().unwrap();
+            let now = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
+            response_tx
+                .send(Ok(serde_json::value::to_raw_value(&serde_json::json!([
+                    77
+                ]))
+                .unwrap()))
+                .unwrap();
+            now.saturating_sub(u128::from(timestamp))
+        });
+
+        let started = tokio::time::Instant::now();
+        send_login_request(
+            &rate_limiter,
+            &cmd_tx,
+            &DeriveWsCredentials::new(
+                "0x000000000000000000000000000000000000ab02",
+                SESSION_KEY_HEX,
+            )
+            .unwrap(),
+            Duration::from_secs(1),
+            0,
+        )
+        .await
+        .unwrap();
+        assert!(started.elapsed() >= Duration::from_secs(4));
+        assert!(
+            captured.await.unwrap() < 1_000,
+            "login timestamp must remain fresh after the pacing wait"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Derive public testnet network access"]
+    async fn test_live_testnet_unsubscribe_acknowledgement() {
+        let mut ws = DeriveWebSocketClient::new(
+            None,
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+        );
+        ws.connect().await.unwrap();
+        let cmd_tx = ws.cmd_tx.read().await.clone();
+        let params = serde_json::json!({"channels": ["ticker_slim.ETH-PERP.1000"]});
+        let subscribe = send_raw(
+            &ws.rate_limiter,
+            &cmd_tx,
+            methods::PUBLIC_SUBSCRIBE,
+            &params,
+            Duration::from_secs(15),
+        )
+        .await;
+        let unsubscribe = send_raw(
+            &ws.rate_limiter,
+            &cmd_tx,
+            methods::PUBLIC_UNSUBSCRIBE,
+            &params,
+            Duration::from_secs(15),
+        )
+        .await;
+        ws.disconnect().await.unwrap();
+        let subscribe: Value = serde_json::from_str(subscribe.unwrap().get()).unwrap();
+        let unsubscribe: Value = serde_json::from_str(unsubscribe.unwrap().get()).unwrap();
+        println!("Public testnet subscribe acknowledgement: {subscribe}");
+        println!("Public testnet unsubscribe acknowledgement: {unsubscribe}");
+        assert_eq!(subscribe["status"]["ticker_slim.ETH-PERP.1000"], "ok");
+        assert_eq!(unsubscribe["status"]["ticker_slim.ETH-PERP.1000"], "ok");
+        assert_eq!(
+            unsubscribe["remaining_subscriptions"],
+            serde_json::json!([])
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Derive testnet credentials and network access"]
+    async fn test_live_testnet_request_budget_scopes() {
+        let wallet = env::var("DERIVE_TESTNET_WALLET_ADDRESS").expect("testnet wallet configured");
+        let key = env::var("DERIVE_TESTNET_SESSION_PRIVATE_KEY").expect("testnet key configured");
+        let subaccount: u64 = env::var("DERIVE_TESTNET_SUBACCOUNT_ID")
+            .expect("testnet subaccount configured")
+            .parse()
+            .unwrap();
+        let http = DeriveHttpClient::with_credentials(
+            REST_URL_TESTNET,
+            DeriveCredentials::new(&wallet, &key).unwrap(),
+            Some(15),
+            None,
+            None,
+        )
+        .unwrap();
+        let mut ws = DeriveWebSocketClient::with_credentials(
+            None,
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+            DeriveWsCredentials::new(&wallet, &key).unwrap(),
+            None,
+            None,
+        );
+        ws.connect()
+            .await
+            .expect("testnet WebSocket login succeeds");
+        let cmd_tx = ws.cmd_tx.read().await.clone();
+        let before: Value = http
+            .send_private("public/getRateLimits", &serde_json::json!({}))
+            .await
+            .expect("authenticated HTTP budget query succeeds");
+        let ws_limits = send_raw(
+            &ws.rate_limiter,
+            &cmd_tx,
+            "public/getRateLimits",
+            &serde_json::json!({}),
+            Duration::from_secs(15),
+        )
+        .await
+        .expect("authenticated WebSocket budget query succeeds");
+        println!("Testnet authenticated HTTP budgets: {before}");
+        println!(
+            "Testnet authenticated WebSocket budgets: {}",
+            ws_limits.get()
+        );
+        let label = format!("nautilus-pacing-{}", UUID4::new());
+
+        for scoped in [true, false] {
+            let mut params = serde_json::json!({"subaccount_id": subaccount, "label": label});
+            if scoped {
+                params["instrument_name"] = serde_json::json!("ETH-PERP");
+            }
+
+            let result: Value = http
+                .send_private_once("private/cancel_by_label", &params)
+                .await
+                .expect("testnet cancellation of unique empty label succeeds");
+            let budgets: Value = http
+                .send_private("public/getRateLimits", &serde_json::json!({}))
+                .await
+                .unwrap();
+            println!("Testnet cancel-by-label scoped={scoped}: {result}; budgets={budgets}");
+            let ws_budgets = send_raw(
+                &ws.rate_limiter,
+                &cmd_tx,
+                "public/getRateLimits",
+                &serde_json::json!({}),
+                Duration::from_secs(15),
+            )
+            .await
+            .unwrap();
+            println!(
+                "Testnet wallet budgets after HTTP scoped={scoped}: {}",
+                ws_budgets.get()
+            );
+        }
+
+        let started = tokio::time::Instant::now();
+        let name = Ustr::from("ETH-PERP");
+        let params = serde_json::json!({"subaccount_id": subaccount, "label": label, "instrument_name": name});
+
+        for _ in 0..6 {
+            let result = send_raw_for_instrument(
+                &ws.rate_limiter,
+                &cmd_tx,
+                methods::PRIVATE_CANCEL_BY_LABEL,
+                &params,
+                Duration::from_secs(15),
+                name,
+            )
+            .await
+            .expect("paced testnet WebSocket scoped cancellation succeeds");
+            let result: Value = serde_json::from_str(result.get()).unwrap();
+            assert_eq!(result["cancelled_orders"], 0);
+        }
+
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= Duration::from_secs(1),
+            "six same-instrument cancels must exceed the local five-token burst"
+        );
+        println!(
+            "Testnet six scoped WebSocket cancellations pass with local pacing in {elapsed:?}"
+        );
+        let after = send_raw(
+            &ws.rate_limiter,
+            &cmd_tx,
+            "public/getRateLimits",
+            &serde_json::json!({}),
+            Duration::from_secs(15),
+        )
+        .await
+        .unwrap();
+        println!(
+            "Testnet wallet budgets after paced WebSocket requests: {}",
+            after.get()
+        );
+        ws.disconnect().await.unwrap();
+        ws.connect()
+            .await
+            .expect("testnet reconnect authenticates with preserved pacing state");
+        ws.disconnect().await.unwrap();
+    }
 
     #[rstest]
     fn test_public_client_defaults_to_environment_url() {
@@ -2022,8 +2587,7 @@ mod tests {
             TransportBackend::default(),
             None,
         );
-        assert!(client.url().starts_with("wss://"));
-        assert!(client.url().contains("api.lyra.finance"));
+        assert_eq!(client.url(), "wss://api.derive.xyz/v3/ws");
         assert!(!client.is_authenticated());
         assert!(!client.is_active());
         assert_eq!(client.subscription_count(), 0);
@@ -2112,14 +2676,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_testnet_client_routes_to_demo_url() {
+    fn test_testnet_client_routes_to_v3_url() {
         let client = DeriveWebSocketClient::new(
             None,
             DeriveEnvironment::Testnet,
             TransportBackend::default(),
             None,
         );
-        assert!(client.url().contains("demo"));
+        assert_eq!(client.url(), "wss://testnet.api.derive.xyz/v3/ws");
     }
 
     #[rstest]
@@ -2139,7 +2703,7 @@ mod tests {
             None,
             None,
         );
-        assert!(client.url().contains("demo"));
+        assert_eq!(client.url(), "wss://testnet.api.derive.xyz/v3/ws");
         assert!(!client.is_authenticated());
     }
 
@@ -2164,12 +2728,32 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn test_send_raw_closed_command_queue_is_definitive() {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        drop(cmd_rx);
+        let rate_limiter: WsRateLimiter =
+            RequestLimiter::new(RateLimits::new(None, None), MonotonicClock);
+        let error = send_raw(
+            &rate_limiter,
+            &cmd_tx,
+            methods::PRIVATE_REPLACE,
+            &serde_json::json!({}),
+            Duration::from_millis(50),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, DeriveWsError::NotConnected));
+        assert!(!crate::common::retry::is_write_outcome_ambiguous_ws(&error));
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn test_send_raw_times_out_when_no_response_arrives() {
         // Keep the receiver alive so the request enqueues, but never reply: the
         // bounded await must surface a Timeout rather than hang forever.
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let rate_limiter: WsRateLimiter =
-            FixedWindowLimiter::new(FixedWindowLimits::websocket(None, None), MonotonicClock {});
+            RequestLimiter::new(RateLimits::new(None, None), MonotonicClock);
         let err = send_raw(
             &rate_limiter,
             &cmd_tx,
@@ -2195,11 +2779,12 @@ mod tests {
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         tokio::spawn(async move {
             if let Some(HandlerCommand::Request { response_tx, .. }) = cmd_rx.recv().await {
-                let _ = response_tx.send(Ok(Value::Null));
+                let _ = response_tx.send(Ok(RawValue::NULL.to_owned()));
             }
         });
+
         let rate_limiter: WsRateLimiter =
-            FixedWindowLimiter::new(FixedWindowLimits::websocket(None, None), MonotonicClock {});
+            RequestLimiter::new(RateLimits::new(None, None), MonotonicClock);
         let result: Result<DeriveOrderResult> = send_request_typed(
             &rate_limiter,
             &cmd_tx,
@@ -2212,20 +2797,120 @@ mod tests {
     }
 
     #[rstest]
+    #[case::pending(false)]
+    #[case::fired_during_pacing(true)]
+    #[tokio::test]
+    async fn test_trigger_cancel_selects_endpoint_after_pacing(#[case] fires: bool) {
+        let client = DeriveWebSocketClient::new(
+            None,
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+        );
+        let mut handle = client.execution_handle();
+        handle.auth_tracker.succeed();
+
+        handle.rate_limiter = Arc::new(RequestLimiter::new(
+            RateLimits::new(None, None),
+            MonotonicClock,
+        ));
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *handle.cmd_tx.write().await = cmd_tx;
+        for _ in 0..crate::common::rate_limit::DERIVE_WEBSOCKET_NON_MATCHING_TPS
+            * crate::common::rate_limit::DERIVE_RATE_BURST_MULTIPLIER
+        {
+            handle
+                .rate_limiter
+                .try_class_ready(RateClass::NonMatching, None)
+                .unwrap();
+        }
+
+        assert!(
+            handle
+                .rate_limiter
+                .try_class_ready(RateClass::NonMatching, None)
+                .is_err()
+        );
+        let active = AtomicBool::new(false);
+        let trigger = DeriveCancelTriggerOrderParams::new(42, "paced-trigger");
+        let regular = DeriveCancelParams::new(42, "ETH-PERP", "paced-trigger");
+        let cancel = handle
+            .cancel_trigger_order_current(&trigger, &regular, || active.load(Ordering::Acquire));
+        tokio::pin!(cancel);
+        assert!(futures_util::poll!(cancel.as_mut()).is_pending());
+        assert!(cmd_rx.try_recv().is_err());
+        active.store(fires, Ordering::Release);
+        let mut canceled: DeriveOrder = serde_json::from_str(include_str!(
+            "../../test_data/perps/http_order_eth_partially_filled.json"
+        ))
+        .unwrap();
+        canceled.order_id = "paced-trigger".into();
+        canceled.order_status = crate::common::enums::DeriveOrderStatus::Cancelled;
+        canceled.filled_amount = rust_decimal::Decimal::ZERO;
+        canceled.average_price = rust_decimal::Decimal::ZERO;
+        let expected = (!fires).then_some(canceled);
+
+        let response = async {
+            let HandlerCommand::Request {
+                method,
+                params,
+                response_tx,
+                ..
+            } = cmd_rx.recv().await.unwrap()
+            else {
+                panic!("expected one cancel request")
+            };
+
+            let params: Value = serde_json::from_str(params.expose_secret()).unwrap();
+
+            let expected_method = if fires {
+                methods::PRIVATE_CANCEL
+            } else {
+                methods::PRIVATE_CANCEL_TRIGGER_ORDER
+            };
+
+            assert_eq!(method, expected_method);
+            assert_eq!(params["subaccount_id"], serde_json::json!(42));
+            assert_eq!(params["order_id"], serde_json::json!("paced-trigger"));
+            assert_eq!(
+                params.get("instrument_name"),
+                fires
+                    .then_some(&regular.instrument_name)
+                    .map(|name| serde_json::json!(name))
+                    .as_ref()
+            );
+            response_tx
+                .send(Ok(serde_json::value::to_raw_value(&expected).unwrap()))
+                .unwrap();
+        };
+
+        let (result, ()) = tokio::join!(cancel, response);
+        assert_eq!(
+            serde_json::to_value(result.unwrap()).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        assert!(cmd_rx.try_recv().is_err());
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn test_reserved_send_does_not_wait_for_or_consume_second_quota_cell() {
         let rate_limiter: WsRateLimiter =
-            FixedWindowLimiter::new(FixedWindowLimits::websocket(None, None), MonotonicClock {});
+            RequestLimiter::new(RateLimits::new(None, None), MonotonicClock);
 
         for _ in 0..5 {
             rate_limiter
-                .check_bucket(RateBucket::Matching)
+                .try_class_ready(RateClass::Matching, None)
                 .expect("reservation consumes the matching window");
         }
+
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         tokio::spawn(async move {
             if let Some(HandlerCommand::Request { response_tx, .. }) = cmd_rx.recv().await {
-                let _ = response_tx.send(Ok(serde_json::json!({"accepted": true})));
+                let _ = response_tx.send(Ok(serde_json::value::to_raw_value(
+                    &serde_json::json!({"accepted": true}),
+                )
+                .unwrap()));
             }
         });
 
@@ -2243,9 +2928,14 @@ mod tests {
         .expect("reserved send must not wait for quota")
         .expect("reserved send succeeds");
 
-        assert_eq!(response, serde_json::json!({"accepted": true}));
+        assert_eq!(
+            serde_json::from_str::<Value>(response.get()).unwrap(),
+            serde_json::json!({"accepted": true}),
+        );
         assert!(
-            rate_limiter.check_bucket(RateBucket::Matching).is_err(),
+            rate_limiter
+                .try_class_ready(RateClass::Matching, None)
+                .is_err(),
             "reserved send must not consume a second cell",
         );
     }

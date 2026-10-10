@@ -15,7 +15,7 @@
       "trade_id": "pub-pair-1",
       "trade_price": "3500",
       "tx_hash": "0xhash",
-      "tx_status": "settled",
+      "batch_status": "Settled",
       "wallet": "0xwallet"
     },
     {
@@ -33,7 +33,7 @@
       "trade_id": "pub-pair-1",
       "trade_price": "3500",
       "tx_hash": "0xhash",
-      "tx_status": "settled",
+      "batch_status": "Settled",
       "wallet": "0xwallet2"
     }
   ],

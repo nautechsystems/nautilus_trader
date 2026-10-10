@@ -15,9 +15,9 @@
 
 //! Static constants for the Derive adapter.
 //!
-//! Protocol constants (`DOMAIN_SEPARATOR`, `ACTION_TYPEHASH`, per-action module
-//! addresses) are sourced from the "Protocol Constants" reference at
-//! <https://docs.derive.xyz/reference/protocol-constants>. Both mainnet and
+//! EIP-712 domain separators, the Action typehash, and Trade module addresses
+//! are sourced from the v3 action-signing reference at
+//! <https://docs.derive.xyz/authentication/action-signing>. Both mainnet and
 //! testnet values are populated; per-instance overrides on
 //! [`crate::config::DeriveExecutionClientConfig`] take precedence.
 
@@ -42,25 +42,24 @@ pub static DERIVE_CLIENT_ID: LazyLock<ClientId> =
 /// see <https://docs.derive.xyz/reference/api-broker> for further details.
 pub const DERIVE_NAUTILUS_REFERRAL_CODE: &str = "nautilus";
 
-pub const REST_URL_MAINNET: &str = "https://api.lyra.finance";
-pub const REST_URL_TESTNET: &str = "https://api-demo.lyra.finance";
-pub const WS_URL_MAINNET: &str = "wss://api.lyra.finance/ws";
-pub const WS_URL_TESTNET: &str = "wss://api-demo.lyra.finance/ws";
+pub const REST_URL_MAINNET: &str = "https://api.derive.xyz/v3";
+pub const REST_URL_TESTNET: &str = "https://testnet.api.derive.xyz/v3";
+pub const WS_URL_MAINNET: &str = "wss://api.derive.xyz/v3/ws";
+pub const WS_URL_TESTNET: &str = "wss://testnet.api.derive.xyz/v3/ws";
 
 pub const DERIVE_TRADES_PAGE_SIZE: u32 = 1000;
 pub const DERIVE_CANDLES_DEFAULT_LIMIT: usize = 1000;
 pub const DERIVE_CANDLES_MAX_PAGES: usize = 100;
 
-/// EIP-712 domain separator (mainnet).
+/// EIP-712 domain separator (Ethereum chain 1).
 pub const DOMAIN_SEPARATOR_MAINNET: &str =
-    "0xd96e5f90797da7ec8dc4e276260c7f3f87fedf68775fbe1ef116e996fc60441b";
+    "0xda616dfabb88681b08e1592820a41d55ddc62d68de110e327ae99d734506fe19";
 
-/// EIP-712 domain separator (testnet).
+/// EIP-712 domain separator (Sepolia chain 11155111).
 pub const DOMAIN_SEPARATOR_TESTNET: &str =
-    "0x9bcf4dc06df5d8bf23af818d5716491b995020f377d3b7b64c29ed14e3dd1105";
+    "0x24d674cd5f2b9d564691c51e9d88f649b99246a2244dd74ce27b96578d773e85";
 
-/// EIP-712 action typehash. Identical across networks per Derive's published
-/// Protocol Constants.
+/// EIP-712 action typehash, identical across networks in the v3 action-signing reference.
 pub const ACTION_TYPEHASH: &str =
     "0x4d7a9f27c403ff9c0f19bce61d76d82f9aa29f8d6d4b0c5474607d9770d1af17";
 
@@ -68,7 +67,7 @@ pub const ACTION_TYPEHASH: &str =
 pub const TRADE_MODULE_ADDRESS_MAINNET: &str = "0xB8D20c2B7a1Ad2EE33Bc50eF10876eD3035b5e7b";
 
 /// Trade module contract address (testnet).
-pub const TRADE_MODULE_ADDRESS_TESTNET: &str = "0x87F2863866D85E3192a35A73b388BD625D83f2be";
+pub const TRADE_MODULE_ADDRESS_TESTNET: &str = TRADE_MODULE_ADDRESS_MAINNET;
 
 /// Withdrawal module contract address (mainnet).
 pub const WITHDRAW_MODULE_ADDRESS_MAINNET: &str = "0x9d0E8f5b25384C7310CB8C6aE32C8fbeb645d083";
@@ -106,30 +105,30 @@ pub const fn trade_module_address_for(environment: DeriveEnvironment) -> &'stati
     }
 }
 
-/// REST authentication header carrying the Derive Chain smart-contract wallet.
-pub const HEADER_LYRA_WALLET: &str = "X-LYRAWALLET";
+/// REST authentication header carrying the owner's EOA or multisig address.
+pub const HEADER_DERIVE_WALLET: &str = "X-DeriveWallet";
 
 /// REST authentication header carrying the signed timestamp.
-pub const HEADER_LYRA_TIMESTAMP: &str = "X-LYRATIMESTAMP";
+pub const HEADER_DERIVE_TIMESTAMP: &str = "X-DeriveTimestamp";
 
 /// REST authentication header carrying the session-key signature.
-pub const HEADER_LYRA_SIGNATURE: &str = "X-LYRASIGNATURE";
+pub const HEADER_DERIVE_SIGNATURE: &str = "X-DeriveSignature";
 
-/// Minimum signature TTL the venue accepts for self-custodial actions.
+/// Minimum signature TTL the adapter uses for self-custodial orders.
 ///
-/// Per the v2 onboarding docs, `signature_expiry_sec` must be at least five
-/// minutes in the future of `now`.
-pub const MIN_SIGNATURE_TTL: Duration = Duration::from_secs(5 * 60);
+/// The v3 minimum order signature lifetime is ten seconds.
+pub const MIN_SIGNATURE_TTL: Duration = Duration::from_secs(10);
 
 /// Signature TTL used for Derive trigger orders.
 ///
-/// Mainnet rejects trigger orders unless `signature_expiry_sec` is 30 to 90
-/// days from venue time. The one-day buffer avoids edge failures from local
-/// clock drift and request latency.
+/// The 31-day lifetime stays below the v3 120-day maximum for non-MMP orders.
 pub const TRIGGER_ORDER_SIGNATURE_TTL: Duration = Duration::from_secs(31 * 24 * 60 * 60);
 
 /// Fixed-point scale used by all on-chain decimal fields (1e18).
 pub const DECIMAL_SCALE: u128 = 1_000_000_000_000_000_000;
+
+/// Maximum fractional precision accepted for v3 financial inputs.
+pub const DECIMAL_PRECISION: u32 = 12;
 
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -178,8 +177,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_min_signature_ttl_is_five_minutes() {
-        assert_eq!(MIN_SIGNATURE_TTL, Duration::from_secs(300));
+    fn test_min_signature_ttl_is_ten_seconds() {
+        assert_eq!(MIN_SIGNATURE_TTL, Duration::from_secs(10));
     }
 
     #[rstest]

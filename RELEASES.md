@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added `BacktestDataConfig.batch_deltas` for batched book delta replay (#5215), thanks for reporting @nicezic
 - Added Bybit public liquidation custom data for linear and inverse contracts (#5152), thanks @Martingale42
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
+- Added Derive adapter support for API v3
 - Added Interactive Brokers subscription idle events (#5041), thanks @faysou
 
 ### Breaking Changes
@@ -65,6 +66,7 @@ Released on TBD (UTC).
 - Fixed `BacktestNode` streaming runs leaving the engine running after a data load failure
 - Fixed Python indicator constructors aborting the process on invalid periods or oversized capacities
 - Fixed reconciliation rejecting fills on a pending order when a `Filled` report exceeds its quantity
+- Fixed replacement reconciliation losing native fill IDs and duplicating inferred fills
 - Fixed calculated margin equity omitting option value (#5252), thanks for reporting @abhijeetvichare76
 - Fixed streaming Parquet promotion failing on `OrderBookDelta.clear()` snapshots (#5268), thanks for reporting @hellow-star
 - Fixed simulated bracket exits rejected as reduce-only before entry fills reached the cache (#5248), thanks @awss1i
@@ -138,6 +140,7 @@ Released on TBD (UTC).
 
 - Clarified `Portfolio` equity rules for calculated and reported margin accounts
 - Fixed Binance and Hyperliquid custom data examples to unwrap `CustomData` (#5246), thanks @Martingale42
+- Updated Derive integration guide for API v3 setup, margin models, and recovery limits
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
 
 ### Deprecations

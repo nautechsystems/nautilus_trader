@@ -15,6 +15,8 @@
 
 //! Error types for the Derive WebSocket client.
 
+use std::time::Duration;
+
 use serde_json::Value;
 use thiserror::Error;
 
@@ -43,6 +45,13 @@ pub enum DeriveWsError {
         message: String,
         /// Optional structured diagnostic payload.
         data: Option<Value>,
+    },
+
+    /// Local pacing rejects a reservation before the request is transmitted.
+    #[error("pacing reservation expired before dispatch, retry after {retry_after:?}")]
+    RateLimited {
+        /// Remaining wait until local capacity becomes available.
+        retry_after: Duration,
     },
 
     /// Awaited request response was not delivered (handler dropped the sender).
@@ -120,6 +129,7 @@ mod tests {
             message: "Method not found".to_string(),
             data: Some(json!({"method": "public/foo"})),
         };
+
         let rendered = err.to_string();
         assert!(rendered.contains("-32601"));
         assert!(rendered.contains("Method not found"));
@@ -130,6 +140,7 @@ mod tests {
         let err = DeriveWsError::MissingCredentials {
             operation: "public/login".to_string(),
         };
+
         assert!(err.to_string().contains("public/login"));
     }
 

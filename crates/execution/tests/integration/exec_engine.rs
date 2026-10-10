@@ -19226,6 +19226,168 @@ fn test_reconcile_execution_mass_status_applies_real_fill_before_terminal_order_
 }
 
 #[rstest]
+#[case::partial(OrderStatus::PartiallyFilled, 20, 50, dec!(1.4))]
+#[case::filled(OrderStatus::Filled, 120, 150, dec!(1.8))]
+fn test_reconcile_mass_status_applies_replacement_alias_fills_before_inference(
+    mut execution_engine: ExecutionEngine,
+    #[case] status: OrderStatus,
+    #[case] child_quantity: u64,
+    #[case] cumulative_quantity: u64,
+    #[case] average: Decimal,
+    #[values(false, true)] parent_label: bool,
+    #[values(false, true)] duplicate_parent: bool,
+) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-REPLACEMENT-MASS");
+    let parent_id = VenueOrderId::from("V-REPLACEMENT-PARENT");
+    let current_id = VenueOrderId::from("V-REPLACEMENT-CURRENT");
+    let parent_trade = TradeId::from("T-REPLACEMENT-PARENT");
+    let child_trade = TradeId::from("T-REPLACEMENT-CURRENT");
+    let account_id = AccountId::test_default();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(cash_account_for(account_id).into())
+        .unwrap();
+    let mut restored = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    restored
+        .apply(TestOrderEventStubs::submitted(&restored, account_id))
+        .unwrap();
+    restored
+        .apply(TestOrderEventStubs::accepted(
+            &restored, account_id, parent_id,
+        ))
+        .unwrap();
+    restored
+        .apply(OrderEventAny::Updated(build_order_updated(
+            restored.trader_id(),
+            restored.strategy_id(),
+            instrument.id(),
+            client_order_id,
+            Quantity::from(150),
+            Some(current_id),
+            Some(account_id),
+            Some(Price::from("2.00000")),
+            None,
+            None,
+            false,
+        )))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(restored, None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    let mut report = create_order_status_report(
+        Some(client_order_id),
+        current_id,
+        instrument.id(),
+        status,
+        Quantity::from(150),
+        Quantity::from(cumulative_quantity),
+    );
+    report.price = Some(Price::from("2.00000"));
+    report.avg_px = Some(average);
+    let mut parent_fill = create_fill_report(
+        instrument.id(),
+        parent_label.then_some(client_order_id),
+        parent_id,
+        parent_trade,
+        Quantity::from(30),
+        Price::from("1.00000"),
+    );
+    parent_fill.commission = Money::from("0.03 USD");
+    let mut child_fill = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        current_id,
+        child_trade,
+        Quantity::from(child_quantity),
+        Price::from("2.00000"),
+    );
+    child_fill.commission = Money::from("0.05 USD");
+    child_fill.ts_event = UnixNanos::from(2_000_000);
+    child_fill.ts_init = UnixNanos::from(2_000_000);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("SIM"),
+        account_id,
+        Venue::from("SIM"),
+        UnixNanos::from(10_000_000),
+        None,
+    );
+    let mut parent_report = create_order_status_report(
+        Some(client_order_id),
+        parent_id,
+        instrument.id(),
+        OrderStatus::Canceled,
+        Quantity::from(100),
+        Quantity::from(30),
+    );
+    parent_report.price = Some(Price::from("1.00000"));
+    parent_report.avg_px = Some(dec!(1));
+    mass_status.add_order_reports(vec![parent_report, report]);
+    mass_status.add_fill_reports(if duplicate_parent {
+        vec![child_fill, parent_fill.clone(), parent_fill]
+    } else {
+        vec![child_fill, parent_fill]
+    });
+
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.quantity(), Quantity::from(150));
+    assert_eq!(order.filled_qty(), Quantity::from(cumulative_quantity));
+    assert_eq!(order.status(), status);
+    assert_eq!(order.venue_order_id(), Some(current_id));
+    assert_eq!(order.avg_px(), Some(average));
+    assert_eq!(order.trade_ids().len(), 2);
+    assert!(order.trade_ids().contains(&&parent_trade));
+    assert!(order.trade_ids().contains(&&child_trade));
+    assert_eq!(
+        order.commissions().get(&Currency::USD()),
+        Some(&Money::from("0.08 USD"))
+    );
+
+    let fills: Vec<_> = order
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].venue_order_id, parent_id);
+    assert_eq!(fills[0].trade_id, parent_trade);
+    assert_eq!(fills[0].last_qty, Quantity::from(30));
+    assert_eq!(fills[0].last_px, Price::from("1.00000"));
+    assert_eq!(fills[0].commission, Some(Money::from("0.03 USD")));
+    assert_eq!(fills[1].venue_order_id, current_id);
+    assert_eq!(fills[1].trade_id, child_trade);
+    assert_eq!(fills[1].last_qty, Quantity::from(child_quantity));
+    assert_eq!(fills[1].last_px, Price::from("2.00000"));
+    assert_eq!(fills[1].commission, Some(Money::from("0.05 USD")));
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(cumulative_quantity));
+    assert_eq!(positions[0].commissions(), vec![Money::from("0.08 USD")]);
+}
+
+#[rstest]
 fn test_reconcile_execution_mass_status_accepts_submitted_order_before_real_fill(
     mut execution_engine: ExecutionEngine,
 ) {

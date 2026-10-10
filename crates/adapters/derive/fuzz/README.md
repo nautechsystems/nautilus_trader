@@ -24,13 +24,13 @@ integration.
 
 ## Targets
 
-| Target                     | What it stresses                                                        |
-| -------------------------- | ----------------------------------------------------------------------- |
-| `fuzz-ws-decode`           | `DeriveWsFrame::parse` plus public/private subscription payload decode. |
-| `fuzz-decimal-decode`      | Derive decimal normalization across strings, numbers, and nulls.        |
-| `fuzz-trade-module-encode` | Trade module 1e18 scaling and seven-word ABI encoding.                  |
-| `fuzz-action-hash`         | EIP-712 action hash and typed-data hash assembly.                       |
-| `fuzz-nonce-sequence`      | Shared wallet/subaccount nonce uniqueness, ordering, and exhaustion.    |
+| Target                     | What it stresses                                                           |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `fuzz-ws-decode`           | `DeriveWsFrame::parse` plus public/private subscription payload decode.    |
+| `fuzz-decimal-decode`      | Derive decimal normalization across strings, numbers, and nulls.           |
+| `fuzz-trade-module-encode` | 12-digit input precision, exact 1e18 scaling, and seven-word ABI encoding. |
+| `fuzz-action-hash`         | EIP-712 action hash and typed-data hash assembly.                          |
+| `fuzz-nonce-sequence`      | Nanosecond nonce uniqueness, ordering, rollback windows, and overflow.     |
 
 ## Running
 

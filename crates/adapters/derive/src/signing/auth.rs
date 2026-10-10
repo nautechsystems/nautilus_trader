@@ -16,17 +16,17 @@
 //! Derive REST/WebSocket session authentication.
 //!
 //! Authenticated sessions are built from an EIP-191 `personal_sign` over the
-//! current millisecond timestamp string, plus the smart-contract wallet
+//! current millisecond timestamp string, plus the owner wallet
 //! address. The signature is produced by the session key.
 //!
-//! Pipeline (matching `derive_action_signing/utils.py::sign_rest_auth_header`):
+//! See <https://docs.derive.xyz/authentication/session-login>.
 //!
 //! 1. Render `timestamp = utc_now_ms().to_string()`.
 //! 2. Sign the bytes with EIP-191 `personal_sign(timestamp_bytes,
 //!    session_key)`. Alloy's [`SignerSync::sign_message_sync`] applies the
 //!    `\x19Ethereum Signed Message:\n<len>` prefix automatically.
-//! 3. Send headers `X-LYRAWALLET = wallet`, `X-LYRATIMESTAMP = timestamp`,
-//!    `X-LYRASIGNATURE = 0x-prefixed_signature_hex`.
+//! 3. Send headers `X-DeriveWallet = wallet`, `X-DeriveTimestamp = timestamp`,
+//!    `X-DeriveSignature = 0x-prefixed_signature_hex`.
 //!
 //! WebSocket login mirrors this with a JSON body of `{wallet, timestamp,
 //! signature}` instead of headers.
@@ -56,18 +56,18 @@ pub enum AuthError {
 /// Headers sent with REST requests authenticated against a session key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthHeaders {
-    /// Smart-contract wallet address (`X-LYRAWALLET`).
+    /// Owner's EOA or multisig address (`X-DeriveWallet`).
     pub wallet: String,
-    /// Millisecond UNIX timestamp string (`X-LYRATIMESTAMP`).
+    /// Millisecond UNIX timestamp string (`X-DeriveTimestamp`).
     pub timestamp: String,
-    /// 0x-prefixed signature hex (`X-LYRASIGNATURE`).
+    /// 0x-prefixed signature hex (`X-DeriveSignature`).
     pub signature: SecretString,
 }
 
 /// Body sent on the WebSocket `public/login` request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WsLogin {
-    /// Smart-contract wallet address.
+    /// Owner's EOA or multisig address.
     pub wallet: String,
     /// Millisecond UNIX timestamp string.
     pub timestamp: String,
@@ -148,6 +148,7 @@ fn sign_message(message: &str, signer: &PrivateKeySigner) -> Result<SecretString
             .map_err(|e| AuthError::SigningFailed {
                 message: e.to_string(),
             })?;
+
     Ok(SecretString::from(format!(
         "0x{}",
         alloy_primitives::hex::encode(signature.as_bytes())

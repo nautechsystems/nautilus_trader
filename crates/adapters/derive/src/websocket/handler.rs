@@ -32,19 +32,21 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_core::string::secret::SecretString;
+use nautilus_common::live::dst::task;
+use nautilus_core::string::secret::{SecretString, zeroize_json_value};
 use nautilus_live::task::{SharedTaskSlot, TaskJoinOutcome};
 use nautilus_network::{
     RECONNECTED,
+    error::SendError,
     websocket::{AuthTracker, WebSocketClient},
 };
-use serde_json::Value;
+use serde_json::{Value, value::RawValue};
 use tokio_tungstenite::tungstenite::Message;
 
 use super::{
     client::UNAUTHENTICATED_CONNECTION_EPOCH,
     error::DeriveWsError,
-    messages::{DeriveWsChannel, DeriveWsFrame, WsSubscribeParams, WsSubscriptionPayload},
+    messages::{DeriveWsChannel, ParsedFrame, WsSubscribeParams, WsSubscriptionPayload},
 };
 use crate::http::models::JsonRpcRequest;
 
@@ -60,7 +62,7 @@ pub(super) enum HandlerCommand {
         method: &'static str,
         params: SecretString,
         connection_epoch: Option<u64>,
-        response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
+        response_tx: tokio::sync::oneshot::Sender<Result<Box<RawValue>, DeriveWsError>>,
     },
     /// Gracefully tear down the WebSocket connection.
     Disconnect,
@@ -93,13 +95,13 @@ struct SendCommand {
 struct SendFailure {
     id: u64,
     token: u64,
-    reason: String,
+    error: SendError,
 }
 
 #[derive(Debug)]
 struct PendingRequest {
     token: u64,
-    response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
+    response_tx: tokio::sync::oneshot::Sender<Result<Box<RawValue>, DeriveWsError>>,
 }
 
 /// Inner I/O loop. Lives in a Tokio task spawned by
@@ -132,6 +134,7 @@ impl FeedHandler {
         send_task: Arc<SharedTaskSlot<()>>,
     ) -> Self {
         let (_, send_failure_rx) = tokio::sync::mpsc::unbounded_channel();
+
         Self {
             signal,
             client: None,
@@ -154,9 +157,17 @@ impl FeedHandler {
     /// returns the resulting outbound message (if any). Returns `None` when
     /// the handler is shutting down or both channels closed.
     pub(super) async fn next(&mut self) -> Option<DeriveWsMessage> {
+        let mut command_ready = true;
+
         loop {
             tokio::select! {
-                cmd = self.cmd_rx.recv(), if !self.cmd_closed => {
+                biased;
+                Some(failure) = self.send_failure_rx.recv() => {
+                    self.handle_send_failure(&failure);
+                }
+                cmd = self.cmd_rx.recv(), if !self.cmd_closed && command_ready => {
+                    command_ready = false;
+
                     match cmd {
                         None => {
                             self.cmd_closed = true;
@@ -201,6 +212,8 @@ impl FeedHandler {
                 }
 
                 raw = self.raw_rx.recv(), if !self.raw_closed => {
+                    command_ready = true;
+
                     match raw {
                         None => {
                             self.raw_closed = true;
@@ -228,8 +241,8 @@ impl FeedHandler {
                                 return Some(DeriveWsMessage::Reconnected);
                             }
 
-                            match DeriveWsFrame::parse(&text) {
-                                Ok(DeriveWsFrame::Response { id, result, error }) => {
+                            match ParsedFrame::parse(&text) {
+                                Ok(ParsedFrame::Response { id, result, error }) => {
                                     if let Some(pending) = self.pending.remove(&id) {
                                         let outcome = match (result, error) {
                                             (_, Some(err)) => Err(DeriveWsError::JsonRpc {
@@ -238,7 +251,7 @@ impl FeedHandler {
                                                 data: err.data,
                                             }),
                                             (Some(value), None) => Ok(value),
-                                            (None, None) => Ok(Value::Null),
+                                            (None, None) => Ok(RawValue::NULL.to_owned()),
                                         };
                                         let _ = pending.response_tx.send(outcome);
                                     } else {
@@ -247,18 +260,22 @@ impl FeedHandler {
                                         );
                                     }
                                 }
-                                Ok(DeriveWsFrame::Subscription(payload)) => {
+                                Ok(ParsedFrame::Subscription(payload)) => {
                                     return Some(DeriveWsMessage::Subscription(payload));
                                 }
-                                Ok(DeriveWsFrame::UncorrelatedError(error)) => {
+                                Ok(ParsedFrame::UncorrelatedError(error)) => {
                                     self.fail_uncorrelated_error(error);
                                 }
-                                Ok(DeriveWsFrame::Unknown(value)) => {
-                                    log::debug!("Derive WebSocket unknown frame: {value}");
+                                Ok(ParsedFrame::Unknown(_)) => {
+                                    log::debug!("Derive WebSocket unknown frame, bytes={}", text.len());
                                 }
                                 Err(e) => {
                                     log::error!(
-                                        "Derive WebSocket frame parse error: {e}, text: {text}",
+                                        "Derive WebSocket frame parse error: {:?}, line={}, column={}, bytes={}",
+                                        e.classify(),
+                                        e.line(),
+                                        e.column(),
+                                        text.len(),
                                     );
                                 }
                             }
@@ -281,9 +298,7 @@ impl FeedHandler {
                     }
                 }
 
-                Some(failure) = self.send_failure_rx.recv() => {
-                    self.handle_send_failure(failure);
-                }
+                () = task::yield_now(), if !command_ready => command_ready = true,
 
                 else => {
                     log::debug!("Derive handler shutting down: channels closed");
@@ -302,13 +317,15 @@ impl FeedHandler {
         method: &'static str,
         params: SecretString,
         connection_epoch: Option<u64>,
-        response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
+        response_tx: tokio::sync::oneshot::Sender<Result<Box<RawValue>, DeriveWsError>>,
     ) {
         let Some(client) = self.client.as_ref() else {
             let _ = response_tx.send(Err(DeriveWsError::NotConnected));
             return;
         };
+
         let current_epoch = client.connection_epoch();
+
         let connection_epoch = if method.starts_with("private/") {
             let authenticated_epoch = self.authenticated_epoch.load(Ordering::Acquire);
             if !client.connection_mode().is_active() || authenticated_epoch != current_epoch {
@@ -316,17 +333,17 @@ impl FeedHandler {
                     operation: method.to_string(),
                     reason: "WebSocket session is not authenticated".to_string(),
                 }));
+
                 return;
             }
+
             authenticated_epoch
         } else {
             connection_epoch.unwrap_or(current_epoch)
         };
 
         if !client.connection_mode().is_active() || connection_epoch != current_epoch {
-            let _ = response_tx.send(Err(DeriveWsError::transport(format!(
-                "connection changed before `{method}` was sent",
-            ))));
+            let _ = response_tx.send(Err(DeriveWsError::NotConnected));
             return;
         }
 
@@ -338,15 +355,17 @@ impl FeedHandler {
         method: &'static str,
         params_json: SecretString,
         connection_epoch: u64,
-        response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
+        response_tx: tokio::sync::oneshot::Sender<Result<Box<RawValue>, DeriveWsError>>,
     ) {
         let Some(send_tx) = self.send_tx.clone() else {
             let _ = response_tx.send(Err(DeriveWsError::NotConnected));
             return;
         };
+
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let token = self.next_send_token;
         self.next_send_token = self.next_send_token.wrapping_add(1);
+
         let params: Value = match serde_json::from_str(params_json.expose_secret()) {
             Ok(params) => params,
             Err(e) => {
@@ -354,34 +373,39 @@ impl FeedHandler {
                 return;
             }
         };
+
         drop(params_json);
-        let request = JsonRpcRequest::new(id, method, params);
-        let payload = match serde_json::to_string(&request) {
+        let mut request = JsonRpcRequest::new(id, method, params);
+        let serialized = serde_json::to_string(&request);
+        zeroize_json_value(&mut request.params);
+
+        let payload = match serialized {
             Ok(payload) => SecretString::from(payload),
             Err(e) => {
                 let _ = response_tx.send(Err(DeriveWsError::Serde(e)));
                 return;
             }
         };
+
         self.pending
             .insert(id, PendingRequest { token, response_tx });
         log::debug!("Derive WebSocket sending `{method}` id={id}");
-        if let Err(e) = send_tx.send(SendCommand {
-            id,
-            token,
-            connection_epoch,
-            payload,
-        }) && self
-            .pending
-            .get(&id)
-            .is_some_and(|pending| pending.token == token)
+
+        if send_tx
+            .send(SendCommand {
+                id,
+                token,
+                connection_epoch,
+                payload,
+            })
+            .is_err()
+            && self
+                .pending
+                .get(&id)
+                .is_some_and(|pending| pending.token == token)
             && let Some(pending) = self.pending.remove(&id)
         {
-            let _ = pending
-                .response_tx
-                .send(Err(DeriveWsError::transport(format!(
-                    "failed to queue WebSocket request: {e}",
-                ))));
+            let _ = pending.response_tx.send(Err(DeriveWsError::NotConnected));
         }
     }
 
@@ -439,7 +463,7 @@ impl FeedHandler {
         self.fail_pending(reason);
     }
 
-    fn handle_send_failure(&mut self, failure: SendFailure) {
+    fn handle_send_failure(&mut self, failure: &SendFailure) {
         if !self
             .pending
             .get(&failure.id)
@@ -451,7 +475,7 @@ impl FeedHandler {
         if let Some(pending) = self.pending.remove(&failure.id) {
             let _ = pending
                 .response_tx
-                .send(Err(DeriveWsError::transport(failure.reason)));
+                .send(Err(send_error_to_derive(&failure.error)));
         }
     }
 
@@ -479,6 +503,7 @@ impl FeedHandler {
         if self.pending.is_empty() {
             return;
         }
+
         log::debug!(
             "Failing {} pending Derive WebSocket request(s): {reason}",
             self.pending.len(),
@@ -516,7 +541,7 @@ async fn run_send_worker(
                 .send(SendFailure {
                     id: command.id,
                     token: command.token,
-                    reason: e.to_string(),
+                    error: e,
                 })
                 .is_err()
         {
@@ -530,6 +555,22 @@ async fn run_send_worker(
 pub(super) fn subscribe_params(channel: DeriveWsChannel) -> WsSubscribeParams {
     WsSubscribeParams {
         channels: vec![channel],
+    }
+}
+
+fn send_error_to_derive(error: &SendError) -> DeriveWsError {
+    match error {
+        SendError::InvalidInput(_)
+        | SendError::BufferFull
+        | SendError::Closed
+        | SendError::Timeout
+        | SendError::ConnectionChanged => {
+            log::warn!("Derive WebSocket request was not sent: {error}");
+            DeriveWsError::NotConnected
+        }
+        SendError::BrokenPipe(_) | SendError::WriteTimeout => {
+            DeriveWsError::transport(error.to_string())
+        }
     }
 }
 
@@ -560,7 +601,6 @@ pub(super) fn trades_subscribe_params(instrument_type: &str, currency: &str) -> 
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::string::secret::zeroize_json_value;
     use rstest::rstest;
     use serde_json::json;
 
@@ -577,15 +617,47 @@ mod tests {
     }
 
     #[rstest]
+    #[case(SendError::InvalidInput("invalid".to_string()), false)]
+    #[case(SendError::BufferFull, false)]
+    #[case(SendError::Closed, false)]
+    #[case(SendError::Timeout, false)]
+    #[case(SendError::ConnectionChanged, false)]
+    #[case(SendError::BrokenPipe("lost connection".to_string()), true)]
+    #[case(SendError::WriteTimeout, true)]
+    fn test_send_error_preserves_write_ambiguity(
+        #[case] error: SendError,
+        #[case] ambiguous: bool,
+    ) {
+        let reason = error.to_string();
+        let error = send_error_to_derive(&error);
+        assert_eq!(
+            crate::common::retry::is_write_outcome_ambiguous_ws(&error),
+            ambiguous
+        );
+
+        if ambiguous {
+            let DeriveWsError::Transport(message) = error else {
+                panic!("expected ambiguous transport error: {error:?}");
+            };
+
+            assert_eq!(message, reason);
+        } else {
+            assert!(matches!(error, DeriveWsError::NotConnected));
+        }
+    }
+
+    #[rstest]
     fn test_queued_request_debug_redacts_payload() {
         let secret = "signature-secret";
         let (response_tx, _response_rx) = tokio::sync::oneshot::channel();
+
         let command = HandlerCommand::Request {
             method: "public/login",
             params: SecretString::from(format!(r#"{{"signature":"{secret}"}}"#)),
             connection_epoch: None,
             response_tx,
         };
+
         let send = SendCommand {
             id: 1,
             token: 1,
@@ -596,6 +668,77 @@ mod tests {
         let debug = format!("{command:?} {send:?}");
 
         assert!(!debug.contains(secret));
+    }
+
+    mod dst {
+        use super::*;
+
+        #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+        #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+        async fn commands_and_frames_progress_when_both_queues_are_ready() {
+            let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+            let mut handler = feed_handler(
+                Arc::new(AtomicBool::new(false)),
+                cmd_rx,
+                raw_rx,
+                Arc::new(AtomicU64::new(1)),
+                AuthTracker::new(),
+                unauthenticated_epoch(),
+            );
+            let mut responses = Vec::new();
+
+            for _ in 0..2 {
+                let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+                cmd_tx
+                    .send(HandlerCommand::Request {
+                        method: "subscribe",
+                        params: secret_json(json!({"channels": ["trades.perp.ETH"]})),
+                        connection_epoch: None,
+                        response_tx,
+                    })
+                    .unwrap();
+
+                responses.push(response_rx);
+            }
+
+            raw_tx
+                .send(Message::text(
+                    r#"{"method":"subscription","params":{"channel":"trades.perp.ETH","data":[]}}"#,
+                ))
+                .unwrap();
+            let event =
+                nautilus_common::live::dst::time::timeout(Duration::from_secs(1), handler.next())
+                    .await
+                    .unwrap()
+                    .unwrap();
+
+            let DeriveWsMessage::Subscription(payload) = event else {
+                panic!("expected subscription frame");
+            };
+
+            assert_eq!(payload.channel.as_str(), "trades.perp.ETH");
+            assert_eq!(payload.data.get(), "[]");
+            assert!(matches!(
+                responses[0].try_recv().unwrap(),
+                Err(DeriveWsError::NotConnected)
+            ));
+            assert_eq!(
+                responses[1].try_recv().unwrap_err(),
+                tokio::sync::oneshot::error::TryRecvError::Empty
+            );
+            cmd_tx.send(HandlerCommand::Disconnect).unwrap();
+            assert!(
+                nautilus_common::live::dst::time::timeout(Duration::from_secs(1), handler.next())
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(matches!(
+                responses[1].try_recv().unwrap(),
+                Err(DeriveWsError::NotConnected)
+            ));
+        }
     }
 
     fn feed_handler(
@@ -743,17 +886,20 @@ mod tests {
         handler.enqueue_request("first", secret_json(json!({})), 0, old_tx);
         let old_send = send_rx.recv().await.expect("old queued send");
         let old_pending = handler.pending.remove(&old_send.id).unwrap();
-        old_pending.response_tx.send(Ok(Value::Null)).unwrap();
+        old_pending
+            .response_tx
+            .send(Ok(RawValue::NULL.to_owned()))
+            .unwrap();
         old_rx.await.unwrap().unwrap();
 
         next_id.store(old_send.id, Ordering::Relaxed);
         let (new_tx, new_rx) = tokio::sync::oneshot::channel();
         handler.enqueue_request("second", secret_json(json!({})), 0, new_tx);
         let new_send = send_rx.recv().await.expect("new queued send");
-        handler.handle_send_failure(SendFailure {
+        handler.handle_send_failure(&SendFailure {
             id: old_send.id,
             token: old_send.token,
-            reason: "late failure".to_string(),
+            error: SendError::BrokenPipe("late failure".to_string()),
         });
 
         assert_eq!(old_send.id, new_send.id);
@@ -763,17 +909,19 @@ mod tests {
             new_send.token,
         );
 
-        handler.handle_send_failure(SendFailure {
+        handler.handle_send_failure(&SendFailure {
             id: new_send.id,
             token: new_send.token,
-            reason: "current failure".to_string(),
+            error: SendError::BrokenPipe("current failure".to_string()),
         });
+
         let error = new_rx.await.unwrap().expect_err("current request failed");
         assert!(error.to_string().contains("current failure"));
     }
 
     #[rstest]
-    #[tokio::test]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
     async fn test_shutdown_aborts_send_worker_and_drains_pending_requests() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -791,7 +939,7 @@ mod tests {
         let (send_tx, _send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
 
-        let task = tokio::spawn(std::future::pending::<()>());
+        let task = task::spawn(std::future::pending::<()>());
         let abort_handle = task.abort_handle();
         handler.send_task.insert(task);
 
@@ -800,7 +948,7 @@ mod tests {
         handler.enqueue_request("first", secret_json(json!({})), 0, first_tx);
         handler.enqueue_request("second", secret_json(json!({})), 0, second_tx);
         handler.shutdown_send_path("disconnect requested").await;
-        tokio::task::yield_now().await;
+        task::yield_now().await;
 
         let first_error = first_rx.await.unwrap().expect_err("first request failed");
         let second_error = second_rx.await.unwrap().expect_err("second request failed");
@@ -866,6 +1014,7 @@ mod tests {
             message: "Parse error".to_string(),
             data: Some(json!("invalid JSON")),
         });
+
         let error = response_rx.await.unwrap().expect_err("request failed");
 
         match error {
@@ -880,6 +1029,7 @@ mod tests {
             }
             other => panic!("expected JsonRpc, was {other:?}"),
         }
+
         assert!(handler.pending.is_empty());
     }
 

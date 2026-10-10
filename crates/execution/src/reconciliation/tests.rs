@@ -3867,7 +3867,10 @@ fn test_reconcile_canceled_suppressed_for_previously_promoted_venue_order_id(
 }
 
 #[rstest]
-fn test_reconcile_terminal_replaced_leg_ignores_price_drift(instrument: InstrumentAny) {
+fn test_reconcile_terminal_replaced_leg_ignores_price_drift(
+    instrument: InstrumentAny,
+    #[values(OrderStatus::Canceled, OrderStatus::Expired, OrderStatus::Filled)] status: OrderStatus,
+) {
     let client_order_id = ClientOrderId::from("O-001");
     let old_venue_order_id = VenueOrderId::from("V-001");
     let new_venue_order_id = VenueOrderId::from("V-002");
@@ -3886,7 +3889,7 @@ fn test_reconcile_terminal_replaced_leg_ignores_price_drift(instrument: Instrume
         old_venue_order_id,
         instrument.id(),
         OrderType::Limit,
-        OrderStatus::Canceled,
+        status,
         Quantity::from(100),
         Quantity::from(0),
     );
@@ -8156,4 +8159,43 @@ fn test_pending_filled_price_drift_without_covering_quantity_does_not_pre_update
     assert_eq!(unchanged.status(), pending_status);
     assert_eq!(unchanged.quantity(), order.quantity());
     assert_eq!(unchanged.price(), Some(Price::from("0.58000")));
+}
+
+#[rstest]
+#[case::known_parent("V-001", "V-001")]
+#[case::current("V-002", "V-002")]
+#[case::unknown("V-UNKNOWN", "V-002")]
+fn test_reconcile_fill_preserves_known_native_venue_id(
+    instrument: InstrumentAny,
+    #[case] report_id: &str,
+    #[case] expected_id: &str,
+) {
+    let order = build_order_promoted_to_new_leg(
+        &instrument,
+        ClientOrderId::from("O-NATIVE-FILL"),
+        VenueOrderId::from("V-001"),
+        VenueOrderId::from("V-002"),
+        AccountId::from("SIM-001"),
+    );
+    let report = create_test_fill_report(
+        instrument.id(),
+        VenueOrderId::from(report_id),
+        TradeId::from("T-NATIVE-FILL"),
+        Quantity::from(30),
+        Price::from("1.00000"),
+    );
+    let event =
+        reconcile_fill_report(&order, &report, &instrument, UnixNanos::default(), false).unwrap();
+
+    let OrderEventAny::Filled(fill) = event else {
+        panic!("Expected fill");
+    };
+
+    assert_eq!(fill.venue_order_id, VenueOrderId::from(expected_id));
+    assert_eq!(fill.client_order_id, order.client_order_id());
+    assert_eq!(fill.trade_id, report.trade_id);
+    assert_eq!(fill.last_qty, report.last_qty);
+    assert_eq!(fill.last_px, report.last_px);
+    assert_eq!(fill.commission, Some(report.commission));
+    assert_eq!(order.venue_order_id(), Some(VenueOrderId::from("V-002")));
 }

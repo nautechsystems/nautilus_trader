@@ -42,6 +42,18 @@ create_case() {
     websocket/messages.rs websocket/parse.rs websocket/subscription.rs; do
     : > "$case_dir/crates/adapters/okx/src/$adapter_path"
   done
+
+  for adapter_path in \
+    common/parse.rs common/rate_limit.rs \
+    config.rs data.rs execution.rs \
+    http/client.rs http/models.rs http/query.rs http/parse.rs \
+    signing/encoding.rs signing/nonce.rs signing/auth.rs signing/eip712.rs \
+    signing/modules/trade.rs providers.rs \
+    websocket/client.rs websocket/dispatch.rs websocket/handler.rs \
+    websocket/messages.rs websocket/parse.rs; do
+    mkdir -p "$(dirname "$case_dir/crates/adapters/derive/src/$adapter_path")"
+    : > "$case_dir/crates/adapters/derive/src/$adapter_path"
+  done
 }
 
 run_hook() {
@@ -211,6 +223,8 @@ printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   > "$adapter_case/crates/adapters/okx/src/http/query.rs"
 printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
   > "$adapter_case/crates/adapters/okx/src/websocket/subscription.rs"
+printf '%s\n' 'pub async fn run() { tokio::time::sleep(delay).await; }' \
+  > "$adapter_case/crates/adapters/derive/src/data.rs"
 run_hook "$adapter_case"
 if [ "$RUN_STATUS" -ne 1 ]; then
   echo "Expected the audited OKX path to reject a raw Tokio timer"
@@ -226,6 +240,7 @@ rg -Fq "Error (rule7): crates/adapters/okx/src/common/task.rs:1" "$adapter_case/
 rg -Fq "Error (rule7): crates/adapters/okx/src/config.rs:1" "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/okx/src/http/query.rs:1" "$adapter_case/plain.txt"
 rg -Fq "Error (rule7): crates/adapters/okx/src/websocket/subscription.rs:1" "$adapter_case/plain.txt"
+rg -Fq "Error (rule7): crates/adapters/derive/src/data.rs:1" "$adapter_case/plain.txt"
 
 # A missing audited file must fail loudly; split book files must stay gated
 missing_case="$CASE_ROOT/missing-adapter"
@@ -242,5 +257,18 @@ fi
 strip_color "$missing_case/output.txt" > "$missing_case/plain.txt"
 rg -Fq "Error (coverage): crates/adapters/okx/src/book/sync.rs:0" "$missing_case/plain.txt"
 rg -Fq "Error (rule1): crates/adapters/okx/src/book/recovery.rs:1" "$missing_case/plain.txt"
+
+missing_derive_case="$CASE_ROOT/missing-derive"
+create_case "$missing_derive_case"
+rm "$missing_derive_case/crates/adapters/derive/src/signing/modules/trade.rs"
+run_hook "$missing_derive_case"
+if [ "$RUN_STATUS" -ne 1 ]; then
+  echo "Expected DST convention hook to reject a missing audited Derive file"
+  cat "$missing_derive_case/output.txt"
+  exit 1
+fi
+strip_color "$missing_derive_case/output.txt" > "$missing_derive_case/plain.txt"
+rg -Fq "Error (coverage): crates/adapters/derive/src/signing/modules/trade.rs:0" "$missing_derive_case/plain.txt"
+rg -Fq "Found 1 DST convention violation(s)" "$missing_derive_case/plain.txt"
 
 echo "DST convention hook tests passed"

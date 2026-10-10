@@ -42,8 +42,8 @@ use crate::{
 /// Errors raised while building or signing an EIP-712 action.
 #[derive(Debug, Error)]
 pub enum TypedDataError {
-    /// `signature_expiry_sec` is at or before `now`, or shorter than the
-    /// venue-required minimum TTL ([`MIN_SIGNATURE_TTL`]).
+    /// `signature_expiry_sec` is shorter than the adapter's minimum TTL
+    /// ([`MIN_SIGNATURE_TTL`]).
     #[error(
         "signature expiry {expiry} must be at least {min_ttl_secs}s in the future of now {now}"
     )]
@@ -78,13 +78,13 @@ pub enum TypedDataError {
 pub struct ActionContext {
     /// Subaccount identifier used in both the signing payload and the request.
     pub subaccount_id: u64,
-    /// Per-action nonce (see [`crate::signing::nonce`]).
+    /// Per-action UNIX nanosecond nonce (see [`crate::signing::nonce`]).
     pub nonce: u64,
     /// Per-action module contract address.
     pub module_address: Address,
     /// Signature expiry in UNIX seconds.
     pub signature_expiry_sec: i64,
-    /// Smart-contract wallet address (`owner` slot in the EIP-712 payload).
+    /// Owner's EOA or multisig address (`owner` slot in the EIP-712 payload).
     pub owner: Address,
     /// Session-key wallet address (`signer` slot in the EIP-712 payload).
     pub signer: Address,
@@ -189,8 +189,7 @@ impl<'a, M: ModuleData> SignedAction<'a, M> {
     /// Signs the action using the supplied secp256k1 session-key signer.
     ///
     /// Validates `signature_expiry_sec` against [`MIN_SIGNATURE_TTL`] before
-    /// hashing; the venue rejects expiries less than five minutes in the
-    /// future.
+    /// hashing; the adapter conservatively requires five minutes in the future.
     ///
     /// # Errors
     ///
@@ -209,6 +208,7 @@ impl<'a, M: ModuleData> SignedAction<'a, M> {
                 .map_err(|e| TypedDataError::ModuleEncoding {
                     message: e.to_string(),
                 })?;
+
         let module_data_hash = keccak256(module_data_bytes);
         let action_hash = compute_action_hash(&self.ctx, module_data_hash, self.action_typehash);
         let typed_data_hash = compute_typed_data_hash(self.domain_separator, action_hash);
@@ -219,6 +219,7 @@ impl<'a, M: ModuleData> SignedAction<'a, M> {
                 .map_err(|e| TypedDataError::SigningFailed {
                     message: e.to_string(),
                 })?;
+
         let bytes = signature.as_bytes();
         self.signature = Some(bytes);
         Ok(bytes)
@@ -271,6 +272,7 @@ impl<'a, M: ModuleData> SignedAction<'a, M> {
                 min_ttl_secs,
             });
         }
+
         Ok(())
     }
 }
@@ -371,12 +373,13 @@ mod tests {
         // Lock the 8-field ABI tuple shape against drift. The order
         // (typehash, subaccount, nonce, module, module_data_hash, expiry,
         // owner, signer) is the load-bearing protocol contract for
-        // byte-equivalence with the upstream derive_action_signing SDK; a
+        // byte-equivalence with the upstream derive-py SDK; a
         // swap, drop, or reorder would slip past relative-change tests.
         let module_hash: B256 =
             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                 .parse()
                 .unwrap();
+
         let ctx = ActionContext {
             subaccount_id: 30769,
             nonce: 1_695_836_058_725_001,
@@ -387,6 +390,7 @@ mod tests {
                 .parse()
                 .unwrap(),
         };
+
         let hash = compute_action_hash(&ctx, module_hash, fixed_typehash());
         let expected = "0x509b526a0413577f827d7ebaf5b3fed1eb24bb480612b4e705e1001126f04a1b";
         assert_eq!(format!("{hash:?}"), expected, "action-hash layout drift");
@@ -436,7 +440,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64
-            + 60; // only 1 minute, well under 5-minute MIN_SIGNATURE_TTL
+            + MIN_SIGNATURE_TTL.as_secs() as i64
+            - 1;
         let ctx = sample_ctx(signer.address(), near_expiry);
         let trade = sample_trade();
         let mut action = SignedAction::new(ctx, &trade, fixed_domain(), fixed_typehash());
@@ -539,6 +544,7 @@ mod tests {
         action_typehash: String,
         module_address: String,
         subaccount_id: u64,
+        #[serde(deserialize_with = "crate::signing::nonce::deserialize_nonce")]
         nonce: u64,
         signature_expiry_sec: i64,
         owner: String,
@@ -569,23 +575,17 @@ mod tests {
 
     #[rstest]
     fn test_oracle_fixture_records_upstream_provenance() {
-        // The values stay unpinned here so re-generating the fixture against a
-        // new upstream revision (e.g. a future V3 signer) never requires test
-        // changes; only the presence of provenance is enforced.
         let oracle = parse_oracle();
         let metadata = &oracle.metadata;
-        assert!(!metadata.source.is_empty(), "oracle source missing");
-        assert!(
-            !metadata.upstream_version.is_empty(),
-            "oracle upstream version missing",
+        assert_eq!(metadata.source, "https://github.com/derivexyz/derive-py");
+        assert_eq!(metadata.upstream_version, "0.1.4");
+        assert_eq!(
+            metadata.upstream_revision,
+            "fad785e6c328746b5f8a8219e14009670bc97a35"
         );
-        assert!(
-            !metadata.upstream_revision.is_empty(),
-            "oracle upstream revision missing",
-        );
-        assert!(
-            !metadata.generated_by.is_empty(),
-            "oracle generator path missing",
+        assert_eq!(
+            metadata.generated_by,
+            "scripts/oracle-py/derive/generate_oracle.py"
         );
         assert!(!oracle.vectors.is_empty(), "oracle fixture has no vectors");
     }
@@ -604,6 +604,7 @@ mod tests {
                 "testnet" => DeriveEnvironment::Testnet,
                 other => panic!("vector {i}: unknown environment `{other}`"),
             };
+
             assert_eq!(
                 v.domain_separator,
                 domain_separator_for(environment),
@@ -625,8 +626,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_signing_matches_upstream_sdk_oracle_vectors() {
-        // Byte-equivalence oracle against the official Python SDK: every
+    fn test_signing_matches_v3_sdk_oracle_vectors() {
+        // Byte-equivalence oracle against the official v3 Python SDK: every
         // encoded module payload, module-data hash, action hash, typed-data
         // hash, and signature must match the upstream fixture exactly. The
         // upstream signer uses RFC 6979 deterministic nonces, so signature
@@ -676,6 +677,7 @@ mod tests {
                 owner: v.owner.parse().unwrap(),
                 signer: v.signer.parse().unwrap(),
             };
+
             let action_typehash: B256 = v.action_typehash.parse().unwrap();
             let action_hash = compute_action_hash(&ctx, module_data_hash, action_typehash);
             assert_eq!(

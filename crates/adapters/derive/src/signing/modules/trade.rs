@@ -15,11 +15,12 @@
 
 //! Trade module ABI encoder.
 //!
-//! Mirrors `derive_action_signing/module_data/trade.py::TradeModuleData`. The
-//! ABI tuple is `(address, uint256, int256, int256, uint256, uint256, bool)`
+//! Implements the v3 Trade module contract.
+//! The ABI tuple is `(address, uint256, int256, int256, uint256, uint256, bool)`
 //! corresponding to `(asset_address, sub_id, limit_price, amount, max_fee,
 //! recipient_id, is_bid)`. Decimals are scaled to 1e18 fixed-point integers
-//! before encoding (see [`crate::common::consts::DECIMAL_SCALE`]).
+//! before encoding (see [`crate::common::consts::DECIMAL_SCALE`]). Inputs must fit
+//! 12 fractional digits (see [`crate::common::consts::DECIMAL_PRECISION`]).
 //!
 //! Note that `limit_price` and `amount` are signed at the ABI level even
 //! though prices are conventionally non-negative; this matches the venue
@@ -73,8 +74,8 @@ impl TradeModuleData {
     ///
     /// # Errors
     ///
-    /// Returns [`TradeEncodeError::DecimalOverflow`] when any decimal scales
-    /// outside the signed/unsigned 256-bit range.
+    /// Returns [`TradeEncodeError::DecimalOverflow`] when any input exceeds
+    /// 12 fractional digits or scales outside the signed/unsigned 256-bit range.
     pub fn encode(&self) -> Result<Vec<u8>, TradeEncodeError> {
         let limit_price = decimal_to_scaled_i256(self.limit_price).map_err(|reason| {
             TradeEncodeError::DecimalOverflow {
@@ -82,12 +83,14 @@ impl TradeModuleData {
                 reason,
             }
         })?;
+
         let amount = decimal_to_scaled_i256(self.amount).map_err(|reason| {
             TradeEncodeError::DecimalOverflow {
                 field: "amount",
                 reason,
             }
         })?;
+
         let max_fee = decimal_to_scaled_u256(self.max_fee).map_err(|reason| {
             TradeEncodeError::DecimalOverflow {
                 field: "max_fee",
@@ -228,7 +231,10 @@ mod tests {
         // two's-complement of (1e18); the high bytes will all be 0xff with
         // the low 64 bits encoding -1e18.
         let word = &bytes[96..128];
-        assert_eq!(word[0], 0xff, "negative int256 must sign-extend high byte");
+        let expected = (U256::MAX - U256::from(crate::common::consts::DECIMAL_SCALE)
+            + U256::from(1))
+        .to_be_bytes::<32>();
+        assert_eq!(word, expected);
     }
 
     #[rstest]
@@ -242,6 +248,28 @@ mod tests {
                 field: "max_fee",
                 reason: "unsigned scaled decimal must be non-negative",
             }
+        );
+    }
+
+    #[rstest]
+    #[case("limit_price")]
+    #[case("amount")]
+    #[case("max_fee")]
+    fn test_encode_rejects_excess_precision(#[case] field: &'static str) {
+        let mut data = sample();
+        match field {
+            "limit_price" => data.limit_price = dec!(100.0000000000001),
+            "amount" => data.amount = dec!(1.0000000000001),
+            "max_fee" => data.max_fee = dec!(1000.0000000000001),
+            _ => unreachable!(),
+        }
+
+        assert_eq!(
+            data.encode(),
+            Err(TradeEncodeError::DecimalOverflow {
+                field,
+                reason: "financial input exceeds 12 fractional digits",
+            })
         );
     }
 

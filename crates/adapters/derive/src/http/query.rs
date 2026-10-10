@@ -15,6 +15,8 @@
 
 //! Typed JSON-RPC params for Derive private execution endpoints.
 
+use std::collections::HashSet;
+
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{Address, B256, U256};
 use anyhow::Context;
@@ -26,7 +28,10 @@ use nautilus_core::{
     },
     string::secret::SecretString,
 };
-use nautilus_model::orders::{Order, OrderAny};
+use nautilus_model::{
+    events::OrderDeniedReason,
+    orders::{Order, OrderAny},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -43,10 +48,14 @@ use crate::{
             trigger_order_type_to_derive, trigger_price_type_to_derive, trigger_type_to_derive,
         },
     },
-    http::models::DeriveInstrument,
+    http::{
+        error::{DeriveHttpError, Result as HttpResult},
+        models::{DeriveInstrument, DerivePaginationInfo},
+    },
     signing::{
         eip712::{ActionContext, SignedAction},
         modules::{ModuleData, trade::TradeModuleData},
+        nonce::{deserialize_nonce, serialize_nonce},
     },
 };
 
@@ -55,7 +64,11 @@ use crate::{
 pub struct DeriveSignedEnvelope {
     /// Owning subaccount identifier.
     pub subaccount_id: u64,
-    /// Per-action nonce.
+    /// Per-action UNIX nanosecond nonce, encoded as a decimal string.
+    #[serde(
+        serialize_with = "serialize_nonce",
+        deserialize_with = "deserialize_nonce"
+    )]
     pub nonce: u64,
     /// Session-key signer address.
     pub signer: String,
@@ -120,7 +133,7 @@ pub struct DeriveOrderParams {
     /// MMP flag, omitted unless set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
-    /// Trigger price for `private/trigger_order`; omitted for normal orders.
+    /// Trigger price for `private/order`; omitted for normal orders.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -128,23 +141,25 @@ pub struct DeriveOrderParams {
         deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
     )]
     pub trigger_price: Option<Decimal>,
-    /// Trigger price source for `private/trigger_order`; omitted for normal orders.
+    /// Trigger price source for `private/order`; omitted for normal orders.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger_price_type: Option<DeriveTriggerPriceType>,
-    /// Trigger side for `private/trigger_order`; omitted for normal orders.
+    /// Trigger side for `private/order`; omitted for normal orders.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger_type: Option<DeriveTriggerType>,
 }
 
-/// Params for `private/trigger_order`.
+/// Trigger order params for `private/order`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 pub struct DeriveTriggerOrderParams {
     /// New signed trigger order body.
     #[serde(flatten)]
     pub order: DeriveOrderParams,
-    /// WebSocket connection id supplied by the client.
+    /// Legacy connection id; omitted from v3 requests.
+    #[serde(skip)]
     pub conn_id: String,
-    /// Client-supplied Derive trigger order id.
+    /// Legacy client-supplied venue id; omitted from v3 requests.
+    #[serde(skip)]
     pub order_id: String,
 }
 
@@ -156,6 +171,15 @@ pub struct DeriveReplaceParams {
     pub order: DeriveOrderParams,
     /// Venue order id to atomically cancel.
     pub order_id_to_cancel: String,
+    /// Exact current-leg fill ceiling; Derive rejects the replace if fills exceed it.
+    /// See <https://docs.derive.xyz/trading/order-types#replace-atomic-cancel-+-replace>.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_optional_decimal_as_str",
+        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
+    )]
+    pub expected_filled_amount: Option<Decimal>,
 }
 
 /// Params for `private/cancel_trigger_order`.
@@ -499,11 +523,10 @@ pub fn order_to_derive_payload(
     )
 }
 
-/// Builds typed params for a signed `private/trigger_order` request.
+/// Builds typed params for a signed trigger `private/order` request.
 ///
-/// Derive stores trigger orders off-book until the venue trigger worker
-/// submits the signed child order. `conn_id` and `order_id` are client-supplied
-/// fields required by the WebSocket-only endpoint.
+/// Derive assigns the order id and stores the order off-book until triggered.
+/// The legacy `conn_id` and `order_id` arguments are omitted from the wire.
 ///
 /// # Errors
 ///
@@ -532,17 +555,20 @@ pub fn trigger_order_to_derive_payload(
     let amount = order.quantity().as_decimal();
     let order_type = trigger_order_type_to_derive(order.order_type())?;
     let time_in_force = time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
+
     let trigger_price = order.trigger_price().ok_or_else(|| {
         anyhow::anyhow!(
             "missing trigger price for Derive trigger order {}",
             order.client_order_id()
         )
     })?;
+
     let trigger_fields = DeriveTriggerFields {
         trigger_price: trigger_price.as_decimal(),
         trigger_price_type: trigger_price_type_to_derive(order.trigger_type())?,
         trigger_type: trigger_type_to_derive(order.order_type())?,
     };
+
     let order = build_signed_order_params(
         order,
         instrument,
@@ -625,19 +651,64 @@ pub fn order_replace_to_derive_payload(
     Ok(DeriveReplaceParams {
         order,
         order_id_to_cancel: order_id_to_cancel.to_string(),
+        expected_filled_amount: None,
     })
 }
 
-pub(crate) fn validate_order_support(order: &OrderAny) -> anyhow::Result<()> {
-    order_type_to_derive(order.order_type())?;
-    time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
+pub(crate) fn validate_order_support(order: &OrderAny) -> Result<(), OrderDeniedReason> {
+    let order_type = order_type_to_derive(order.order_type()).map_err(|_| {
+        OrderDeniedReason::UnsupportedOrderType {
+            order_type: order.order_type(),
+        }
+    })?;
+
+    validate_order_flags(order, order_type)
+}
+
+pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> Result<(), OrderDeniedReason> {
+    let order_type = trigger_order_type_to_derive(order.order_type()).map_err(|_| {
+        OrderDeniedReason::UnsupportedOrderType {
+            order_type: order.order_type(),
+        }
+    })?;
+
+    validate_order_flags(order, order_type)?;
+    let trigger_type = order
+        .trigger_type()
+        .ok_or(OrderDeniedReason::MissingTriggerType)?;
+    trigger_price_type_to_derive(Some(trigger_type)).map_err(|e| {
+        OrderDeniedReason::ValidationFailed {
+            detail: e.to_string(),
+        }
+    })?;
+
     Ok(())
 }
 
-pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> anyhow::Result<()> {
-    trigger_order_type_to_derive(order.order_type())?;
-    time_in_force_to_derive(order.time_in_force(), order.is_post_only())?;
-    trigger_price_type_to_derive(order.trigger_type())?;
+fn validate_order_flags(
+    order: &OrderAny,
+    order_type: DeriveOrderType,
+) -> Result<(), OrderDeniedReason> {
+    let time_in_force = time_in_force_to_derive(order.time_in_force(), order.is_post_only())
+        .map_err(|_| OrderDeniedReason::UnsupportedTimeInForce(order.time_in_force()))?;
+    if order_type == DeriveOrderType::Market && order.is_post_only() {
+        return Err(OrderDeniedReason::ValidationFailed {
+            detail: "post-only is not supported for Derive market orders".to_string(),
+        });
+    }
+
+    if order.is_reduce_only()
+        && order_type == DeriveOrderType::Limit
+        && !matches!(
+            time_in_force,
+            DeriveTimeInForce::Ioc | DeriveTimeInForce::Fok
+        )
+    {
+        return Err(OrderDeniedReason::ValidationFailed {
+            detail: "reduce-only Derive limit orders require IOC or FOK time-in-force".to_string(),
+        });
+    }
+
     Ok(())
 }
 
@@ -691,6 +762,7 @@ fn build_signed_order_params(
             instrument.base_asset_address.as_str(),
         )
     })?;
+
     let sub_id =
         U256::from_str_radix(instrument.base_asset_sub_id.as_str(), 10).with_context(|| {
             format!(
@@ -742,6 +814,126 @@ fn build_signed_order_params(
     })
 }
 
+const DERIVE_COLLECTION_MAX_PAGES: u32 = 1_000;
+const DERIVE_COLLECTION_MAX_RESTARTS: u32 = 2;
+
+pub(crate) struct PaginationCursor {
+    page: u32,
+    total: Option<(u32, i64)>,
+    ids: HashSet<String>,
+    snapshot_required: bool,
+    restarts: u32,
+}
+
+impl PaginationCursor {
+    pub(crate) fn new() -> Self {
+        Self {
+            page: 1,
+            total: None,
+            ids: HashSet::new(),
+            snapshot_required: true,
+            restarts: 0,
+        }
+    }
+
+    pub(crate) fn new_public() -> Self {
+        Self {
+            snapshot_required: false,
+            ..Self::new()
+        }
+    }
+
+    pub(crate) const fn page(&self) -> u32 {
+        self.page
+    }
+
+    pub(crate) fn is_complete(&self) -> bool {
+        self.total
+            .is_some_and(|(_, count)| usize::try_from(count) == Ok(self.ids.len()))
+    }
+
+    pub(crate) fn advance<'a>(
+        &mut self,
+        pagination: &DerivePaginationInfo,
+        ids: impl Iterator<Item = &'a str>,
+    ) -> HttpResult<bool> {
+        let total = self.validated_total(pagination)?;
+        let (pages, _) = total;
+        if self.total_changed(total) {
+            return Err(DeriveHttpError::Decode(
+                "Derive page count changed during collection".to_string(),
+            ));
+        }
+
+        let (horizon, _) = *self.total.get_or_insert(total);
+        let mut progress = false;
+        for id in ids {
+            progress |= self.ids.insert(id.to_owned());
+        }
+
+        if !progress && (pages > 1 || pagination.count > 0) {
+            if self.snapshot_required {
+                return Err(DeriveHttpError::Decode(
+                    "Derive pagination made no progress".to_string(),
+                ));
+            }
+
+            return Ok(false);
+        }
+
+        if self.page >= horizon.min(pages) {
+            return Ok(false);
+        }
+
+        self.page += 1;
+        Ok(true)
+    }
+
+    pub(crate) fn restart_if_changed(
+        &mut self,
+        pagination: &DerivePaginationInfo,
+    ) -> HttpResult<bool> {
+        let total = self.validated_total(pagination)?;
+        if !self.total_changed(total) || self.restarts >= DERIVE_COLLECTION_MAX_RESTARTS {
+            return Ok(false);
+        }
+
+        let restarts = self.restarts + 1;
+
+        *self = Self {
+            restarts,
+            ..Self::new()
+        };
+
+        Ok(true)
+    }
+
+    fn total_changed(&self, total: (u32, i64)) -> bool {
+        self.snapshot_required && self.total.is_some_and(|previous| previous != total)
+    }
+
+    fn validated_total(&self, pagination: &DerivePaginationInfo) -> HttpResult<(u32, i64)> {
+        let pages = u32::try_from(pagination.num_pages)
+            .map_err(|_| DeriveHttpError::Decode("Invalid Derive page count".to_string()))?;
+
+        if pagination.count < 0 || (pages == 0 && pagination.count != 0) {
+            return Err(DeriveHttpError::Decode(
+                "Invalid Derive record count".to_string(),
+            ));
+        }
+
+        if (self.snapshot_required && pages > DERIVE_COLLECTION_MAX_PAGES)
+            || (self.page >= DERIVE_COLLECTION_MAX_PAGES && self.page < pages)
+        {
+            return Err(DeriveHttpError::Decode(
+                "Derive page count exceeds collection limit".to_string(),
+            ));
+        }
+
+        Ok((pages, pagination.count))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -759,6 +951,70 @@ mod tests {
 
     use super::*;
     use crate::common::{consts::DERIVE_VENUE, enums::DeriveInstrumentType};
+
+    #[rstest]
+    #[case::empty(0, 0, None, false, 1)]
+    #[case::single(1, 1, Some("native-only"), false, 1)]
+    #[case::multiple(2, 2, Some("native-first"), true, 2)]
+    fn test_pagination_initial_page_boundary(
+        #[case] count: i64,
+        #[case] num_pages: i64,
+        #[case] id: Option<&str>,
+        #[case] more: bool,
+        #[case] next_page: u32,
+    ) {
+        let mut cursor = PaginationCursor::new();
+        let result = cursor
+            .advance(&DerivePaginationInfo { count, num_pages }, id.into_iter())
+            .unwrap();
+        assert_eq!(result, more);
+        assert_eq!(cursor.page(), next_page);
+    }
+
+    #[rstest]
+    fn test_public_pagination_accepts_long_history_with_bounded_progress() {
+        let mut cursor = PaginationCursor::new_public();
+
+        let result = cursor
+            .advance(
+                &DerivePaginationInfo {
+                    count: 2_000,
+                    num_pages: 2_000,
+                },
+                ["native-first"].into_iter(),
+            )
+            .unwrap();
+
+        assert!(result);
+        assert_eq!(cursor.page(), 2);
+    }
+
+    #[rstest]
+    #[case::public(false)]
+    #[case::private(true)]
+    fn test_pagination_bounds_collection_work(#[case] snapshot_required: bool) {
+        let mut cursor = if snapshot_required {
+            PaginationCursor::new()
+        } else {
+            PaginationCursor::new_public()
+        };
+
+        cursor.page = DERIVE_COLLECTION_MAX_PAGES;
+
+        let result = cursor.advance(
+            &DerivePaginationInfo {
+                count: 2_000,
+                num_pages: 2_000,
+            },
+            ["native-next"].into_iter(),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "decode error: Derive page count exceeds collection limit",
+        );
+        assert_eq!(cursor.page(), DERIVE_COLLECTION_MAX_PAGES);
+    }
 
     fn canonical_wire<T: Serialize>(params: &T) -> String {
         let mut value = serde_json::to_value(params).unwrap();
@@ -781,6 +1037,223 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0)]
+    #[case(1_695_836_058_725_001_000)]
+    #[case(u64::MAX)]
+    fn test_nonce_string_round_trip(#[case] nonce: u64) {
+        let mut envelope = fixed_envelope(123_456, "0xabc");
+        envelope.nonce = nonce;
+        let wire = serde_json::to_value(&envelope).unwrap();
+        let decoded: DeriveSignedEnvelope = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(wire["nonce"], nonce.to_string());
+        assert_eq!(decoded, envelope);
+    }
+
+    #[rstest]
+    #[case(Value::String(String::new()))]
+    #[case(Value::String("-1".to_string()))]
+    #[case(Value::String("18446744073709551616".to_string()))]
+    #[case(Value::from(1_695_836_058_725_001_000_u64))]
+    fn test_nonce_rejects_invalid_wire_values(#[case] nonce: Value) {
+        let mut wire = serde_json::to_value(fixed_envelope(123_456, "0xabc")).unwrap();
+        wire["nonce"] = nonce;
+        assert!(serde_json::from_value::<DeriveSignedEnvelope>(wire).is_err());
+    }
+
+    #[rstest]
+    #[case("limit_buy_round_mainnet", false)]
+    #[case("limit_buy_round_mainnet", true)]
+    #[cfg_attr(feature = "high-precision", case("precision_boundary_mainnet", false))]
+    #[cfg_attr(feature = "high-precision", case("precision_boundary_mainnet", true))]
+    #[case("limit_sell_fractional_testnet", false)]
+    #[case("limit_sell_fractional_testnet", true)]
+    fn test_order_and_replace_wire_match_v3_oracle(#[case] case: &str, #[case] replace: bool) {
+        let oracle: Value = serde_json::from_str(include_str!(
+            "../../test_data/common/signing_trade_action_vectors.json"
+        ))
+        .unwrap();
+        let vector = oracle["vectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["case"] == case)
+            .unwrap();
+        let trade = &vector["trade"];
+        let price: Decimal = trade["limit_price"].as_str().unwrap().parse().unwrap();
+        let amount: Decimal = trade["amount"].as_str().unwrap().parse().unwrap();
+        let fee: Decimal = trade["max_fee"].as_str().unwrap().parse().unwrap();
+
+        let side = if trade["is_bid"].as_bool().unwrap() {
+            OrderSide::Buy
+        } else {
+            OrderSide::Sell
+        };
+
+        let order = build_test_limit_order(side, price, amount, false, false);
+        let mut instrument = sample_perp_instrument();
+        instrument.base_asset_address = trade["asset_address"].as_str().unwrap().into();
+        instrument.base_asset_sub_id = trade["sub_id"].as_str().unwrap().into();
+        let signer: PrivateKeySigner = vector["session_key"].as_str().unwrap().parse().unwrap();
+        let wallet = vector["owner"].as_str().unwrap().parse().unwrap();
+        let nonce = vector["nonce"].as_str().unwrap().parse().unwrap();
+        let expiry = vector["signature_expiry_sec"].as_i64().unwrap();
+        let module = vector["module_address"].as_str().unwrap().parse().unwrap();
+        let domain = vector["domain_separator"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let typehash = vector["action_typehash"].as_str().unwrap().parse().unwrap();
+        let subaccount = vector["subaccount_id"].as_u64().unwrap();
+
+        let wire = if replace {
+            serde_json::to_value(
+                order_replace_to_derive_payload(
+                    &order,
+                    &instrument,
+                    subaccount,
+                    wallet,
+                    &signer,
+                    nonce,
+                    expiry,
+                    module,
+                    domain,
+                    typehash,
+                    fee,
+                    Some(amount),
+                    Some(price),
+                    "old-order",
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        } else {
+            serde_json::to_value(
+                order_to_derive_payload(
+                    &order,
+                    &instrument,
+                    subaccount,
+                    wallet,
+                    &signer,
+                    nonce,
+                    expiry,
+                    module,
+                    domain,
+                    typehash,
+                    fee,
+                    None,
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+
+        let transmitted = TradeModuleData {
+            asset_address: instrument.base_asset_address.as_str().parse().unwrap(),
+            sub_id: U256::from_str_radix(instrument.base_asset_sub_id.as_str(), 10).unwrap(),
+            limit_price: wire["limit_price"].as_str().unwrap().parse().unwrap(),
+            amount: wire["amount"].as_str().unwrap().parse().unwrap(),
+            max_fee: wire["max_fee"].as_str().unwrap().parse().unwrap(),
+            recipient_id: wire["subaccount_id"].as_u64().unwrap(),
+            is_bid: wire["direction"] == "buy",
+        };
+
+        assert_ne!(wallet, signer.address());
+        assert_eq!(
+            format!(
+                "0x{}",
+                alloy_primitives::hex::encode(transmitted.encode().unwrap())
+            ),
+            vector["module_data"]
+        );
+        assert_eq!(wire["nonce"], vector["nonce"]);
+        assert_eq!(
+            wire["signer"].as_str().unwrap().to_ascii_lowercase(),
+            vector["signer"].as_str().unwrap().to_ascii_lowercase()
+        );
+        assert_eq!(wire["signature_expiry_sec"], vector["signature_expiry_sec"]);
+        assert_eq!(wire["signature"], vector["signature"]);
+    }
+
+    #[rstest]
+    #[case("limit_price", false)]
+    #[case("amount", false)]
+    #[case("max_fee", false)]
+    #[case("limit_price", true)]
+    #[case("amount", true)]
+    #[case("max_fee", true)]
+    fn test_order_and_replace_reject_excess_precision(#[case] field: &str, #[case] replace: bool) {
+        let order = build_test_limit_order(OrderSide::Buy, dec!(3500), dec!(1), false, false);
+        let instrument = sample_perp_instrument();
+        let signer = sample_signer();
+
+        let price = if field == "limit_price" {
+            dec!(3500.0000000000001)
+        } else {
+            dec!(3500)
+        };
+
+        let amount = if field == "amount" {
+            dec!(1.0000000000001)
+        } else {
+            dec!(1)
+        };
+
+        let fee = if field == "max_fee" {
+            dec!(0.5000000000001)
+        } else {
+            dec!(0.5)
+        };
+
+        let error = if replace {
+            order_replace_to_derive_payload(
+                &order,
+                &instrument,
+                30769,
+                sample_wallet(),
+                &signer,
+                1_700_000_000_000_000_000,
+                fresh_expiry_secs(),
+                sample_module(),
+                sample_domain(),
+                sample_typehash(),
+                fee,
+                Some(amount),
+                Some(price),
+                "old-order",
+            )
+            .unwrap_err()
+        } else {
+            build_signed_order_params(
+                &order,
+                &instrument,
+                30769,
+                sample_wallet(),
+                &signer,
+                1_700_000_000_000_000_000,
+                fresh_expiry_secs(),
+                sample_module(),
+                sample_domain(),
+                sample_typehash(),
+                fee,
+                price,
+                amount,
+                DeriveOrderType::Limit,
+                DeriveTimeInForce::Gtc,
+                None,
+            )
+            .unwrap_err()
+        };
+
+        let message = format!("{error:#}");
+        assert!(message.contains(field), "{message}");
+        assert!(
+            message.contains("financial input exceeds 12 fractional digits"),
+            "{message}"
+        );
+    }
+
+    #[rstest]
     fn test_order_params_wire_round_trip_omits_unset_optionals() {
         let params = DeriveOrderParams {
             envelope: fixed_envelope(123_456, "0xabc"),
@@ -799,6 +1272,7 @@ mod tests {
             trigger_price_type: None,
             trigger_type: None,
         };
+
         let debug = format!("{params:?}");
 
         let wire = canonical_wire(&params);
@@ -833,6 +1307,7 @@ mod tests {
                 trigger_type: None,
             },
             order_id_to_cancel: "ord-stale-1".to_string(),
+            expected_filled_amount: None,
         };
 
         let wire = canonical_wire(&params);
@@ -890,7 +1365,9 @@ mod tests {
         let round_trip: DeriveTriggerOrderParams = serde_json::from_str(&wire).unwrap();
 
         assert_eq!(wire, expected);
-        assert_eq!(round_trip, params);
+        assert_eq!(round_trip.order, params.order);
+        assert_eq!(round_trip.conn_id, "");
+        assert_eq!(round_trip.order_id, "");
     }
 
     fn sample_perp_instrument() -> DeriveInstrument {
@@ -1100,7 +1577,7 @@ mod tests {
         assert_eq!(payload["amount"], "1");
         assert_eq!(payload["max_fee"], "1");
         assert_eq!(payload["subaccount_id"], 30769);
-        assert_eq!(payload["nonce"], 17_000_000_000_001_u64);
+        assert_eq!(payload["nonce"], "17000000000001");
         assert!(payload["signature_expiry_sec"].as_i64().unwrap() > 0);
         let signature = payload["signature"].as_str().unwrap();
         assert!(signature.starts_with("0x"));
@@ -1180,8 +1657,24 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_to_derive_payload_emits_reduce_only_and_mmp_flags_when_set() {
-        let order = build_test_limit_order(OrderSide::Sell, dec!(3500), dec!(1), true, true);
+    #[case(TimeInForce::Ioc, false, true, "ioc", Some(true), None)]
+    #[case(TimeInForce::Gtc, true, false, "post_only", None, Some(false))]
+    fn test_order_to_derive_payload_emits_supported_reduce_only_and_mmp_flags(
+        #[case] time_in_force: TimeInForce,
+        #[case] post_only: bool,
+        #[case] reduce_only: bool,
+        #[case] expected_tif: &str,
+        #[case] expected_reduce_only: Option<bool>,
+        #[case] expected_mmp: Option<bool>,
+    ) {
+        let order = build_test_limit_order_with_time_in_force(
+            OrderSide::Sell,
+            dec!(3500),
+            dec!(1),
+            time_in_force,
+            post_only,
+            reduce_only,
+        );
         let instrument = sample_perp_instrument();
         let signer = sample_signer();
         let payload = order_to_derive_payload(
@@ -1202,9 +1695,12 @@ mod tests {
         .expect("payload built");
 
         assert_eq!(payload["direction"], "sell");
-        assert_eq!(payload["time_in_force"], "post_only");
-        assert_eq!(payload["reduce_only"], true);
-        assert_eq!(payload["mmp"], false);
+        assert_eq!(payload["time_in_force"], expected_tif);
+        assert_eq!(
+            payload["reduce_only"],
+            serde_json::to_value(expected_reduce_only).unwrap()
+        );
+        assert_eq!(payload["mmp"], serde_json::to_value(expected_mmp).unwrap());
     }
 
     #[rstest]
@@ -1261,10 +1757,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(TimeInForce::Day, false, "unsupported time in force")]
-    #[case(TimeInForce::Day, true, "unsupported time in force")]
-    #[case(TimeInForce::Ioc, true, "post-only Derive orders only support GTC")]
-    #[case(TimeInForce::Fok, true, "post-only Derive orders only support GTC")]
+    #[case(TimeInForce::Day, false, "UNSUPPORTED_TIME_IN_FORCE")]
+    #[case(TimeInForce::Day, true, "UNSUPPORTED_TIME_IN_FORCE")]
+    #[case(TimeInForce::Ioc, true, "UNSUPPORTED_TIME_IN_FORCE")]
+    #[case(TimeInForce::Fok, true, "UNSUPPORTED_TIME_IN_FORCE")]
     fn test_order_to_derive_payload_rejects_unsupported_tif(
         #[case] time_in_force: TimeInForce,
         #[case] post_only: bool,
@@ -1324,7 +1820,7 @@ mod tests {
         .expect_err("unsupported order type must error");
 
         assert!(
-            err.to_string().contains("unsupported order type"),
+            err.to_string().contains("UNSUPPORTED_ORDER_TYPE"),
             "unexpected error: {err}",
         );
         assert!(
@@ -1362,8 +1858,8 @@ mod tests {
         .map(to_value)
         .expect("trigger payload built");
 
-        assert_eq!(payload["conn_id"], "conn-1");
-        assert_eq!(payload["order_id"], "trigger-1");
+        assert_eq!(payload.get("conn_id"), None);
+        assert_eq!(payload.get("order_id"), None);
         assert_eq!(payload["direction"], "sell");
         assert_eq!(payload["order_type"], "market");
         assert_eq!(payload["limit_price"], "3400");
@@ -1427,11 +1923,13 @@ mod tests {
         } else {
             None
         };
+
         let explicit_price = if price.is_none() {
             Some(dec!(3705))
         } else {
             None
         };
+
         let order =
             build_test_trigger_order(order_type, OrderSide::Buy, price, TriggerType::MarkPrice);
         let instrument = sample_perp_instrument();
@@ -1559,7 +2057,7 @@ mod tests {
         assert_eq!(payload["time_in_force"], "gtc");
         assert_eq!(payload["label"], "STRAT-PAYLOAD-1");
         assert_eq!(payload["subaccount_id"], 30769);
-        assert_eq!(payload["nonce"], 17_000_000_000_010_u64);
+        assert_eq!(payload["nonce"], "17000000000010");
         let signature = payload["signature"].as_str().unwrap();
         assert!(signature.starts_with("0x"));
         assert_eq!(signature.len(), 2 + 130);
@@ -1648,7 +2146,7 @@ mod tests {
         .expect_err("unsupported order type must error");
 
         assert!(
-            err.to_string().contains("unsupported order type"),
+            err.to_string().contains("UNSUPPORTED_ORDER_TYPE"),
             "unexpected error: {err}",
         );
         assert!(

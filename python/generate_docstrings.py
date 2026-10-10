@@ -69,6 +69,7 @@ ANNOTATED_ADAPTER_CRATES = [
     "bybit",
     "databento",
     "deribit",
+    "derive",
     "dydx",
     "hyperliquid",
     "kraken",

@@ -29,7 +29,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeriveDataClientConfig {
-    /// Configuration for the Derive live data client.
+    /// Configuration for the Derive data client.
     #[new]
     #[pyo3(signature = (
         base_url_rest = None,
@@ -59,6 +59,7 @@ impl DeriveDataClientConfig {
         transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
+
         Self {
             base_url_rest,
             base_url_ws,
@@ -89,7 +90,7 @@ impl DeriveDataClientConfig {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DeriveExecutionClientConfig {
-    /// Configuration for the Derive live execution client.
+    /// Configuration for the Derive execution client.
     #[new]
     #[pyo3(signature = (
         account_id = None,
@@ -141,6 +142,7 @@ impl DeriveExecutionClientConfig {
         transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
+
         Self {
             account_id: account_id.unwrap_or(defaults.account_id),
             wallet_address,

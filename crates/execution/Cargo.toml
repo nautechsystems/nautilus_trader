@@ -92,3 +92,8 @@ harness = false
 name = "position_replay"
 path = "benches/position_replay.rs"
 harness = false
+
+[[bench]]
+name = "reconciliation"
+path = "benches/reconciliation.rs"
+harness = false

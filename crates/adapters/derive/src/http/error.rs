@@ -15,7 +15,9 @@
 
 //! Error types for the Derive HTTP client.
 
-use nautilus_network::http::HttpClientError;
+use std::time::Duration;
+
+use nautilus_network::{http::HttpClientError, retry::RetryError};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -39,6 +41,8 @@ pub enum DeriveHttpError {
         status: u16,
         /// Truncated body text or status reason.
         message: String,
+        /// Minimum delay supplied by the response's `Retry-After` header.
+        retry_after: Option<Duration>,
     },
 
     /// JSON-RPC error envelope returned by the venue.
@@ -50,6 +54,8 @@ pub enum DeriveHttpError {
         message: String,
         /// Optional structured diagnostic payload.
         data: Option<Value>,
+        /// Minimum delay supplied by the response's `Retry-After` header.
+        retry_after: Option<Duration>,
     },
 
     /// Successful envelope was missing the `result` field.
@@ -66,6 +72,10 @@ pub enum DeriveHttpError {
     /// JSON (de)serialization failed for a request or response payload.
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
+
+    /// Retry cancellation, timeout, budget, or configuration failure.
+    #[error("retry error: {0}")]
+    Retry(#[from] RetryError),
 
     /// Auth header construction failed (e.g. clock skew, signer error).
     #[error("auth error: {0}")]
@@ -92,6 +102,7 @@ impl DeriveHttpError {
         Self::Http {
             status,
             message: message.into(),
+            retry_after: None,
         }
     }
 
@@ -101,9 +112,18 @@ impl DeriveHttpError {
         Self::Decode(msg.into())
     }
 
-    /// Returns `true` for errors that did not reach the venue (transport,
-    /// timeout). Callers reconciling order state should treat these as
-    /// "unknown" rather than "rejected".
+    /// Returns the response's minimum retry delay, when present.
+    #[must_use]
+    pub const fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::Http { retry_after, .. } | Self::JsonRpc { retry_after, .. } => *retry_after,
+            _ => None,
+        }
+    }
+
+    /// Returns `true` for transport errors, including timeouts.
+    /// This does not prove a request was unsent; callers reconciling order state
+    /// should treat the outcome as unknown rather than rejected.
     #[must_use]
     pub fn is_transport_error(&self) -> bool {
         matches!(self, Self::Transport(_))
@@ -139,7 +159,9 @@ mod tests {
             code: -32602,
             message: "Invalid params".to_string(),
             data: Some(json!({"field": "currency"})),
+            retry_after: None,
         };
+
         let text = err.to_string();
         assert!(text.contains("-32602"));
         assert!(text.contains("Invalid params"));
@@ -151,6 +173,7 @@ mod tests {
         let err = DeriveHttpError::MissingCredentials {
             method: "private/order".to_string(),
         };
+
         assert!(err.to_string().contains("private/order"));
     }
 

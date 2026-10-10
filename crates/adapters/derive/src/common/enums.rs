@@ -57,7 +57,7 @@ impl DeriveEnvironment {
     }
 }
 
-/// Wire-level instrument type returned by `public/get_instruments` and used as
+/// Wire-level instrument type returned by `public/get_all_instruments` and used as
 /// the `instrument_type` filter on listing endpoints and WS channel names like
 /// `trades.{instrument_type}.{currency}`.
 #[derive(
@@ -120,7 +120,7 @@ pub enum DeriveOrderSide {
     Sell,
 }
 
-/// Order type accepted by `private/order` and `private/trigger_order`.
+/// Order type accepted by `private/order`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
 )]
@@ -134,7 +134,7 @@ pub enum DeriveOrderType {
     Unknown,
 }
 
-/// Trigger side accepted by `private/trigger_order`.
+/// Trigger side accepted by `private/order`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
 )]
@@ -150,7 +150,7 @@ pub enum DeriveTriggerType {
     Unknown,
 }
 
-/// Trigger price source accepted by `private/trigger_order`.
+/// Trigger price source accepted by `private/order`.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
 )]
@@ -188,6 +188,9 @@ pub enum DeriveOrderStatus {
     Untriggered,
     /// Algorithmic parent order active on the venue.
     AlgoActive,
+    /// Unmodeled response status; domain conversion rejects it.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Time-in-force flag accepted by `private/order`.
@@ -362,34 +365,8 @@ pub enum DeriveLiquidityRole {
     Unknown,
 }
 
-/// Blockchain transaction lifecycle status (`tx_status` field on trades,
-/// deposits, withdrawals, transfers, and liquidation history).
-///
-/// Deliberately strict (no `Unknown` fallback): settlement status gates fill
-/// emission, and a new reverted-class status decoded as a catch-all would
-/// emit a fill for a trade that never settled. An unknown status fails the
-/// row, which trade-history salvage degrades to a logged skip.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
-)]
-#[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
-pub enum DeriveTxStatus {
-    /// Transaction queued, not yet broadcast.
-    Requested,
-    /// Broadcast on-chain, awaiting confirmation.
-    Pending,
-    /// Confirmed and applied.
-    Settled,
-    /// Reverted on-chain.
-    Reverted,
-    /// Superseded or dropped without being applied.
-    Ignored,
-}
-
-/// Subaccount margining mode. Returned by `private/get_subaccount`. Subaccount
-/// creation accepts only [`Sm`](Self::Sm) and [`Pm`](Self::Pm); `Pm2` appears
-/// only as a read value when an account has migrated to PMRM v2.
+/// Known Derive margin model labels. Subaccount snapshots preserve the
+/// returned margin type as an open string.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
 )]
@@ -402,7 +379,7 @@ pub enum DeriveMarginType {
     #[serde(rename = "PM")]
     #[strum(serialize = "PM")]
     Pm,
-    /// Portfolio Margin v2 (PMRM_2); read-only on `private/get_subaccount`.
+    /// Portfolio Margin v2 (PMRM_2).
     #[serde(rename = "PM2")]
     #[strum(serialize = "PM2")]
     Pm2,
@@ -804,9 +781,6 @@ mod tests {
             serde_json::from_str::<DeriveMarginType>("\"PM3\"").unwrap(),
             DeriveMarginType::Unknown,
         );
-
-        // Pins the deliberate strictness documented on DeriveTxStatus.
-        assert!(serde_json::from_str::<DeriveTxStatus>("\"bridging\"").is_err());
     }
 
     #[rstest]
@@ -827,17 +801,6 @@ mod tests {
     ) {
         assert_eq!(variant.to_string(), expected);
         assert_eq!(DeriveLiquidityRole::from_str(expected).unwrap(), variant);
-    }
-
-    #[rstest]
-    #[case(DeriveTxStatus::Requested, "requested")]
-    #[case(DeriveTxStatus::Pending, "pending")]
-    #[case(DeriveTxStatus::Settled, "settled")]
-    #[case(DeriveTxStatus::Reverted, "reverted")]
-    #[case(DeriveTxStatus::Ignored, "ignored")]
-    fn test_tx_status_wire_strings(#[case] variant: DeriveTxStatus, #[case] expected: &str) {
-        assert_eq!(variant.to_string(), expected);
-        assert_eq!(DeriveTxStatus::from_str(expected).unwrap(), variant);
     }
 
     #[rstest]

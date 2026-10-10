@@ -1527,6 +1527,172 @@ async fn test_cached_order_canceled_with_fills() {
     assert_eq!(cached_order.filled_qty(), Quantity::from("1.0"));
 }
 
+#[rstest]
+#[case::partial(OrderStatus::PartiallyFilled, "0.2", "0.5", dec!(3002))]
+#[case::filled(OrderStatus::Filled, "1.2", "1.5", dec!(3004))]
+#[tokio::test]
+async fn test_mass_reconciliation_applies_replacement_alias_fills_before_inference(
+    #[case] status: OrderStatus,
+    #[case] child_quantity: &str,
+    #[case] cumulative_quantity: &str,
+    #[case] average: Decimal,
+    #[values(false, true)] parent_label: bool,
+    #[values(false, true)] duplicate_parent: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-REPLACE-MASS");
+    let parent_id = VenueOrderId::from("V-REPLACE-PARENT");
+    let current_id = VenueOrderId::from("V-REPLACE-CURRENT");
+    let parent_trade = TradeId::from("T-REPLACE-PARENT");
+    let child_trade = TradeId::from("T-REPLACE-CURRENT");
+    ctx.add_instrument(test_instrument());
+    let mut order = create_submitted_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    );
+    order
+        .apply(TestOrderEventStubs::accepted(
+            &order,
+            test_account_id(),
+            parent_id,
+        ))
+        .unwrap();
+    order
+        .apply(OrderEventAny::Updated(
+            OrderUpdatedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(instrument_id)
+                .client_order_id(client_order_id)
+                .account_id(test_account_id())
+                .venue_order_id(current_id)
+                .quantity(Quantity::from("1.5"))
+                .price(Price::from("3005.00"))
+                .build(),
+        ))
+        .unwrap();
+    ctx.add_order(order);
+    let report = create_order_report(
+        Some(client_order_id),
+        current_id,
+        instrument_id,
+        status,
+        Quantity::from("1.5"),
+        Quantity::from(cumulative_quantity),
+    )
+    .with_price(Price::from("3005.00"))
+    .with_avg_px(average);
+
+    let parent_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        parent_id,
+        parent_trade,
+        OrderSide::Buy,
+        Quantity::from("0.3"),
+        Price::from("3000.00"),
+        Money::from("0.03 USDT"),
+        LiquiditySide::Maker,
+        parent_label.then_some(client_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+
+    let child_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        current_id,
+        child_trade,
+        OrderSide::Buy,
+        Quantity::from(child_quantity),
+        Price::from("3005.00"),
+        Money::from("0.05 USDT"),
+        LiquiditySide::Taker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(10_000_000),
+        None,
+    );
+    let parent_report = create_order_report(
+        Some(client_order_id),
+        parent_id,
+        instrument_id,
+        OrderStatus::Canceled,
+        Quantity::from("1.0"),
+        Quantity::from("0.3"),
+    )
+    .with_price(Price::from("3000.00"))
+    .with_avg_px(dec!(3000));
+    mass_status.add_order_reports(vec![parent_report, report]);
+    mass_status.add_fill_reports(if duplicate_parent {
+        vec![child_fill, parent_fill.clone(), parent_fill]
+    } else {
+        vec![child_fill, parent_fill]
+    });
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let repeated = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let order = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(order.quantity(), Quantity::from("1.5"));
+    assert_eq!(order.filled_qty(), Quantity::from(cumulative_quantity));
+    assert_eq!(order.avg_px(), Some(average));
+    assert_eq!(order.venue_order_id(), Some(current_id));
+    assert_eq!(order.status(), status);
+    assert_eq!(order.trade_ids().len(), 2);
+    assert!(order.trade_ids().contains(&&parent_trade));
+    assert!(order.trade_ids().contains(&&child_trade));
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&Money::from("0.08 USDT"))
+    );
+
+    let fills: Vec<_> = result
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].venue_order_id, parent_id);
+    assert_eq!(fills[0].trade_id, parent_trade);
+    assert_eq!(fills[0].last_qty, Quantity::from("0.3"));
+    assert_eq!(fills[0].last_px, Price::from("3000.00"));
+    assert_eq!(fills[0].commission, Some(Money::from("0.03 USDT")));
+    assert_eq!(fills[1].venue_order_id, current_id);
+    assert_eq!(fills[1].trade_id, child_trade);
+    assert_eq!(fills[1].last_qty, Quantity::from(child_quantity));
+    assert_eq!(fills[1].last_px, Price::from("3005.00"));
+    assert_eq!(fills[1].commission, Some(Money::from("0.05 USDT")));
+    assert!(repeated.events.is_empty());
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(cumulative_quantity));
+    assert_eq!(positions[0].commissions(), vec![Money::from("0.08 USDT")]);
+}
+
 #[tokio::test]
 async fn test_triggered_event_generated_before_canceled() {
     // Test that Triggered event is generated before Canceled when ts_triggered is set

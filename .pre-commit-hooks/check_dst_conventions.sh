@@ -44,7 +44,7 @@ IN_SCOPE_CRATES=(
   "risk" "serialization" "system" "trading"
 )
 
-# Audited OKX DST-path production files. Static coverage alone does not
+# Audited adapter DST-path production files. Static coverage alone does not
 # establish runtime eligibility for every capability those files serve.
 #
 # A file is gated when it carries DST-path runtime logic that could grow a
@@ -52,6 +52,13 @@ IN_SCOPE_CRATES=(
 # Files under src/python/ are skipped separately by the /python/ path rule,
 # per the repo-wide Python/FFI policy.
 #
+# Derive additionally gates signing clocks, credentials derived from those clocks,
+# native parsing, rate limits, and instrument collection. Its remaining module
+# declarations, constants, enums, errors, URLs, factories, retry classifiers,
+# configuration/credential/signing-context resolvers, and WebSocket context
+# container carry no async/time/RNG boundary. Python bindings stay excluded.
+#
+# The following exclusions apply to OKX:
 # - Module declarations: lib.rs and the common/http/websocket mod.rs files.
 # - Pure venue types: common/enums.rs, websocket/enums.rs, both error.rs
 #   files, common/models.rs.
@@ -63,6 +70,27 @@ IN_SCOPE_CRATES=(
 # - Test-only or placeholder: common/testing.rs, http/parse.rs.
 
 ADAPTER_PATHS=(
+  "crates/adapters/derive/src/common/parse.rs"
+  "crates/adapters/derive/src/common/rate_limit.rs"
+  "crates/adapters/derive/src/config.rs"
+  "crates/adapters/derive/src/data.rs"
+  "crates/adapters/derive/src/execution.rs"
+  "crates/adapters/derive/src/http/client.rs"
+  "crates/adapters/derive/src/http/models.rs"
+  "crates/adapters/derive/src/http/query.rs"
+  "crates/adapters/derive/src/http/parse.rs"
+  "crates/adapters/derive/src/signing/encoding.rs"
+  "crates/adapters/derive/src/signing/nonce.rs"
+  "crates/adapters/derive/src/signing/auth.rs"
+  "crates/adapters/derive/src/signing/eip712.rs"
+  "crates/adapters/derive/src/signing/modules/trade.rs"
+  "crates/adapters/derive/src/providers.rs"
+  "crates/adapters/derive/src/websocket/client.rs"
+  "crates/adapters/derive/src/websocket/dispatch.rs"
+  "crates/adapters/derive/src/websocket/handler.rs"
+  "crates/adapters/derive/src/websocket/messages.rs"
+  "crates/adapters/derive/src/websocket/parse.rs"
+
   "crates/adapters/okx/src/book/mod.rs"
   "crates/adapters/okx/src/book/recovery.rs"
   "crates/adapters/okx/src/book/sync.rs"

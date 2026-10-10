@@ -15,13 +15,13 @@
 
 //! Shared signing utilities.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 use alloy_primitives::{Address, B256, I256, U256};
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-use crate::common::consts::DECIMAL_SCALE;
+use crate::common::consts::{DECIMAL_PRECISION, DECIMAL_SCALE};
 
 /// Errors raised by [`parse_address_const`] / [`parse_b256_const`].
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -53,30 +53,31 @@ pub enum HexConstError {
 /// Returns [`SystemTimeError`](std::time::SystemTimeError) if the system clock
 /// is before the UNIX epoch.
 pub fn utc_now_ms() -> Result<u64, std::time::SystemTimeError> {
-    SystemTime::now()
+    nautilus_core::time::wall_clock_now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
 }
 
 /// Scales a [`Decimal`] amount to a 1e18 fixed-point [`I256`].
 ///
-/// Mirrors `derive_action_signing/utils.py::decimal_to_big_int`. Negative
-/// amounts are supported because the venue uses signed integers for fields
+/// Rejects inputs beyond 12 fractional digits. Negative amounts are supported
+/// because the venue uses signed integers for fields
 /// like `limit_price` and `amount` (sells are encoded as positive amounts but
 /// other action variants use signed magnitudes).
 ///
 /// # Errors
 ///
-/// Returns [`HexConstError`] is not actually used here; we return a plain
-/// `&'static str` describing overflow when the scaled value exceeds the
-/// signed-256-bit range.
+/// Returns an error if the input exceeds the accepted precision or the
+/// scaled value exceeds the signed 256-bit range.
 pub fn decimal_to_scaled_i256(value: Decimal) -> Result<I256, &'static str> {
-    let scaled = value
-        .checked_mul(Decimal::from(DECIMAL_SCALE))
-        .ok_or("decimal scaling overflow before truncation")?;
-    let truncated = scaled.trunc();
-    let mantissa_str = truncated.to_string();
-    I256::from_dec_str(&mantissa_str).map_err(|_| "scaled decimal exceeds signed 256-bit range")
+    let magnitude = decimal_to_scaled_u256(value.abs())?;
+    let signed =
+        I256::try_from(magnitude).map_err(|_| "scaled decimal exceeds signed 256-bit range")?;
+    Ok(if value.is_sign_negative() {
+        -signed
+    } else {
+        signed
+    })
 }
 
 /// Scales a [`Decimal`] amount to a 1e18 fixed-point [`U256`].
@@ -86,19 +87,22 @@ pub fn decimal_to_scaled_i256(value: Decimal) -> Result<I256, &'static str> {
 ///
 /// # Errors
 ///
-/// Returns an error string if the value is negative or exceeds the unsigned
-/// 256-bit range after scaling.
+/// Returns an error if the value is negative, exceeds the accepted precision,
+/// or exceeds the unsigned 256-bit range after scaling.
 pub fn decimal_to_scaled_u256(value: Decimal) -> Result<U256, &'static str> {
     if value.is_sign_negative() {
         return Err("unsigned scaled decimal must be non-negative");
     }
-    let scaled = value
-        .checked_mul(Decimal::from(DECIMAL_SCALE))
-        .ok_or("decimal scaling overflow before truncation")?;
-    let truncated = scaled.trunc();
-    let mantissa_str = truncated.to_string();
-    U256::from_str_radix(&mantissa_str, 10)
-        .map_err(|_| "scaled decimal exceeds unsigned 256-bit range")
+
+    if value.scale() > DECIMAL_PRECISION {
+        return Err("financial input exceeds 12 fractional digits");
+    }
+
+    let mantissa = U256::from(value.mantissa().unsigned_abs());
+    let factor = U256::from(DECIMAL_SCALE / 10_u128.pow(value.scale()));
+    mantissa
+        .checked_mul(factor)
+        .ok_or("scaled decimal exceeds unsigned 256-bit range")
 }
 
 /// Parses a `0x`-prefixed 20-byte address constant, surfacing a clear error
@@ -113,6 +117,7 @@ pub fn parse_address_const(value: &str, name: &'static str) -> Result<Address, H
     if value.contains("<paste_") {
         return Err(HexConstError::Placeholder { name });
     }
+
     value
         .parse::<Address>()
         .map_err(|e| HexConstError::InvalidHex {
@@ -134,6 +139,7 @@ pub fn parse_b256_const(value: &str, name: &'static str) -> Result<B256, HexCons
     if value.contains("<paste_") {
         return Err(HexConstError::Placeholder { name });
     }
+
     value
         .parse::<B256>()
         .map_err(|e| HexConstError::InvalidHex {
@@ -180,6 +186,47 @@ mod tests {
     fn test_decimal_to_scaled_u256_rejects_negative() {
         let err = decimal_to_scaled_u256(dec!(-1)).expect_err("must reject negative");
         assert!(err.contains("non-negative"));
+    }
+
+    #[rstest]
+    #[case(dec!(0.000000000001), 1_000_000_i128)]
+    #[case(dec!(-0.000000000001), -1_000_000_i128)]
+    #[case(dec!(1.123456789012), 1_123_456_789_012_000_000_i128)]
+    #[case(dec!(1.123456789000), 1_123_456_789_000_000_000_i128)]
+    fn test_decimal_precision_boundary(#[case] value: Decimal, #[case] expected: i128) {
+        assert_eq!(
+            decimal_to_scaled_i256(value),
+            Ok(I256::try_from(expected).unwrap())
+        );
+    }
+
+    #[rstest]
+    #[case(dec!(0.0000000000001))]
+    #[case(dec!(-0.0000000000001))]
+    #[case(dec!(1.1234567890123))]
+    #[case(dec!(1.1234567890120000))]
+    #[case(dec!(0.0000000000000))]
+    #[case(dec!(0.0000000000000000000000000001))]
+    fn test_decimal_rejects_excess_precision(#[case] value: Decimal) {
+        assert_eq!(
+            decimal_to_scaled_i256(value),
+            Err("financial input exceeds 12 fractional digits")
+        );
+        assert_eq!(
+            decimal_to_scaled_u256(value.abs()),
+            Err("financial input exceeds 12 fractional digits")
+        );
+    }
+
+    #[rstest]
+    fn test_decimal_max_scales_without_intermediate_decimal_overflow() {
+        let expected =
+            U256::from_str_radix("79228162514264337593543950335000000000000000000", 10).unwrap();
+        assert_eq!(decimal_to_scaled_u256(Decimal::MAX), Ok(expected));
+        assert_eq!(
+            decimal_to_scaled_i256(Decimal::MIN),
+            Ok(-I256::try_from(expected).unwrap())
+        );
     }
 
     #[rstest]

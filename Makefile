@@ -204,7 +204,7 @@ CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEAT
 STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-default-features --lib --tests --features "ffi,python"
 SIM_PACKAGES := -p nautilus-common -p nautilus-core -p nautilus-event-store \
 	-p nautilus-network -p nautilus-execution -p nautilus-live
-SIM_ADAPTER_PACKAGES := -p nautilus-okx
+SIM_ADAPTER_PACKAGES := -p nautilus-okx -p nautilus-derive
 SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
 	package(nautilus-network) + \
 	package(nautilus-execution) + \
@@ -1066,7 +1066,7 @@ endif
 # before applying its filter, so the standard-precision run is also the compile
 # gate without a separate build. Feature-coherent runs execute every test that
 # is sim-compatible today: all of nautilus-common, nautilus-event-store,
-# nautilus-network, and nautilus-execution, plus nautilus-okx integration dst
+# nautilus-network, and nautilus-execution, plus the audited adapters' integration dst
 # tests without the crate's default high-precision feature. Transport-bound and
 # thread-blocking tests are gated out at the source. The lane also runs the
 # LiveNode startup reconciliation timeout regression and the cross-crate seam
@@ -1082,8 +1082,8 @@ cargo-test-sim: check-cargo-cooldown check-nextest-installed
 cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation feature)
 	$(info $(M) Running in-scope DST tests under simulation...)
 	cargo nextest run --locked $(SIM_PACKAGES) --lib --tests --features simulation -E '$(SIM_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
-	$(info $(M) Running OKX DST integration tests under simulation...)
-	cargo nextest run --locked $(SIM_ADAPTER_PACKAGES) --test integration --no-default-features --features simulation -E 'test(dst::)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
+	$(info $(M) Running adapter DST integration tests under simulation...)
+	cargo nextest run --locked $(SIM_ADAPTER_PACKAGES) --lib --test integration --no-default-features --features simulation -E 'test(dst::)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 	$(info $(M) Running precision-sensitive DST tests under simulation + high-precision...)
 	cargo nextest run --locked $(SIM_HIGH_PRECISION_PACKAGES) --lib --tests --features "simulation,high-precision" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 

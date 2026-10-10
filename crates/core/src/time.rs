@@ -105,7 +105,7 @@ pub fn duration_since_unix_epoch() -> Duration {
 /// `tokio::time::Instant` which is monotonic and carries no epoch).
 #[inline(always)]
 #[must_use]
-fn wall_clock_now() -> SystemTime {
+pub fn wall_clock_now() -> SystemTime {
     #[cfg(not(all(feature = "simulation", madsim)))]
     {
         SystemTime::now()
