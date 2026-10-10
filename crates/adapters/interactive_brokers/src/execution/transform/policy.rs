@@ -23,7 +23,9 @@ use nautilus_model::{
 };
 
 use super::{convert_price, format_ib_datetime, trigger_type_to_ib_trigger_method};
-use crate::providers::instruments::InteractiveBrokersInstrumentProvider;
+use crate::{
+    common::enums::IbOrderType, providers::instruments::InteractiveBrokersInstrumentProvider,
+};
 
 pub(super) fn apply_expire_time_policy(ib_order: &mut IBOrder, order: &OrderAny) {
     if matches!(ib_order.tif, TimeInForce::GoodTillDate)
@@ -38,22 +40,45 @@ pub(super) fn apply_quantity_policy(
     order: &OrderAny,
     instrument_provider: &InteractiveBrokersInstrumentProvider,
 ) -> anyhow::Result<()> {
-    if let Some(instrument) = instrument_provider.find(&order.instrument_id())
-        && instrument.is_inverse()
-        && order.is_quote_quantity()
-    {
-        // IBKR accepts a cash quantity (`cash_qty`) only for BUY orders on these instruments
-        // (e.g. PAXOS crypto); a SELL must use the base/coin quantity (`total_quantity`).
-        if order.order_side() != OrderSide::Buy {
-            anyhow::bail!(
-                "Interactive Brokers only accepts a quote quantity (`cash_qty`) for BUY orders; \
-                 a SELL must use the base quantity"
-            );
-        }
-
-        ib_order.cash_qty = Some(order.quantity().as_f64());
-        ib_order.total_quantity = 0.0;
+    if !order.is_quote_quantity() {
+        return Ok(());
     }
+
+    let instrument_id = order.instrument_id();
+    let is_inverse = instrument_provider
+        .find(&instrument_id)
+        .is_some_and(|instrument| instrument.is_inverse());
+
+    if !is_inverse && !instrument_provider.is_crypto_instrument(&instrument_id) {
+        anyhow::bail!(
+            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse \
+             instruments and crypto contracts; {instrument_id} must use the base quantity"
+        );
+    }
+
+    // IBKR accepts a cash quantity (`cash_qty`) only for BUY orders on these instruments
+    // (e.g. PAXOS crypto); a SELL must use the base/coin quantity (`total_quantity`).
+    if order.order_side() != OrderSide::Buy {
+        anyhow::bail!(
+            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for BUY orders; \
+             a SELL must use the base quantity"
+        );
+    }
+
+    // IBKR rejects a cash quantity on any order type other than MKT with error 10244
+    // ("Cash Quantity cannot be used for this order"), so deny it before submission. The final
+    // IB type decides: a MARKET order with AT_THE_CLOSE is sent as MOC.
+    if ib_order.order_type != IbOrderType::Market.as_str() {
+        anyhow::bail!(
+            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for MARKET orders \
+             (IB error 10244 for {} sent as {}); use the base quantity",
+            order.order_type(),
+            ib_order.order_type,
+        );
+    }
+
+    ib_order.cash_qty = Some(order.quantity().as_f64());
+    ib_order.total_quantity = 0.0;
 
     Ok(())
 }

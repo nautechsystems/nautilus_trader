@@ -29,7 +29,7 @@ use nautilus_common::{
 use nautilus_core::Params;
 use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
-    enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType},
+    enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType, PositionSide},
     events::OrderInitialized,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
@@ -37,6 +37,7 @@ use nautilus_model::{
     },
     instruments::{InstrumentAny, OptionSpread, stubs::equity_aapl},
     orders::{OrderList, builder::OrderTestBuilder},
+    reports::PositionStatusReport,
     types::{Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -1952,6 +1953,47 @@ fn list_submit_failure_denies_every_unsubmitted_tail_order() {
         }
     }
 
+    assert!(exec_receiver.try_recv().is_err());
+}
+
+#[rstest]
+fn unpreparable_order_is_denied_with_coded_reason() {
+    let client_order_id = ClientOrderId::from("O-UNPREPARABLE-001");
+    let order = create_test_limit_order(client_order_id);
+    let trader_id = TraderId::from("TRADER-001");
+    let cmd = SubmitOrder::from_order(
+        &order,
+        trader_id,
+        Some(*IB_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let error = anyhow::anyhow!("contract not found");
+
+    let result = InteractiveBrokersExecutionClient::deny_unpreparable_order(
+        &cmd,
+        &error,
+        &exec_sender.clone().into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+    );
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "ORDER_INVALID: contract not found"
+    );
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Denied(event)) => {
+            assert_eq!(event.trader_id, trader_id);
+            assert_eq!(event.strategy_id, cmd.strategy_id);
+            assert_eq!(event.instrument_id, cmd.instrument_id);
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.reason.as_str(), "ORDER_INVALID: contract not found");
+        }
+        event => panic!("Expected denied order event, was {event:?}"),
+    }
     assert!(exec_receiver.try_recv().is_err());
 }
 
@@ -5019,4 +5061,84 @@ async fn test_inline_reports_report_not_connected_while_disconnected() {
     let error = client.generate_fill_reports(fills_cmd).await.unwrap_err();
 
     assert_eq!(error.to_string(), "IB client not connected");
+}
+
+// -------------------------------------------------------------------------------------------------
+// Position reports
+// -------------------------------------------------------------------------------------------------
+
+fn create_test_position_report(
+    instrument_id: InstrumentId,
+    side: PositionSide,
+    quantity: &str,
+    avg_px_open: Decimal,
+    ts: u64,
+) -> PositionStatusReport {
+    PositionStatusReport::new(
+        AccountId::from("IB-DUR151935"),
+        instrument_id,
+        side,
+        Quantity::from(quantity),
+        UnixNanos::new(ts),
+        UnixNanos::new(ts),
+        None,
+        None,
+        Some(avg_px_open),
+    )
+}
+
+#[rstest]
+fn test_upsert_position_report_replaces_duplicate_for_same_instrument() {
+    // IB resends the position set after a [2100] account-data notice while the positions
+    // subscription is still open; the later report supersedes, it must not double the quantity
+    let mnq = InstrumentId::new(Symbol::from("MNQZ6"), Venue::from("CME"));
+    let btc = InstrumentId::new(Symbol::from("BTC/USD"), Venue::from("PAXOS"));
+    let mut reports = Vec::new();
+
+    let first =
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 1);
+    let btc_report =
+        create_test_position_report(btc, PositionSide::Long, "0.01", Decimal::new(8750000, 2), 2);
+    let resent =
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 3);
+
+    assert!(!IbReportClient::upsert_position_report(&mut reports, first));
+    assert!(!IbReportClient::upsert_position_report(
+        &mut reports,
+        btc_report
+    ));
+    assert!(IbReportClient::upsert_position_report(
+        &mut reports,
+        resent.clone()
+    ));
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].instrument_id, mnq);
+    assert_eq!(reports[0].ts_last, UnixNanos::new(3));
+    assert_eq!(reports[0].signed_decimal_qty, resent.signed_decimal_qty);
+    assert_eq!(reports[1].instrument_id, btc);
+
+    let venue_total: Decimal = reports
+        .iter()
+        .filter(|report| report.instrument_id == mnq)
+        .map(|report| report.signed_decimal_qty)
+        .sum();
+    assert_eq!(venue_total, Decimal::NEGATIVE_ONE);
+}
+
+#[rstest]
+fn test_upsert_position_report_keeps_latest_quantity_for_changed_position() {
+    let mnq = InstrumentId::new(Symbol::from("MNQZ6"), Venue::from("CME"));
+    let mut reports = Vec::new();
+
+    let stale =
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 1);
+    let flat = create_test_position_report(mnq, PositionSide::Flat, "0", Decimal::ZERO, 2);
+
+    IbReportClient::upsert_position_report(&mut reports, stale);
+    assert!(IbReportClient::upsert_position_report(&mut reports, flat));
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].position_side, PositionSide::Flat);
+    assert_eq!(reports[0].signed_decimal_qty, Decimal::ZERO);
 }

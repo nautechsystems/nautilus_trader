@@ -43,13 +43,11 @@ impl InteractiveBrokersExecutionClient {
             anyhow::bail!(reason);
         }
 
-        let is_inverse = instrument_provider
-            .find(&cmd.instrument_id)
-            .is_some_and(|instrument| instrument.is_inverse());
-
-        if cmd.order_init.quote_quantity && !is_inverse {
+        if cmd.order_init.quote_quantity
+            && !Self::accepts_quote_quantity(instrument_provider, &cmd.instrument_id)
+        {
             let ts_event = clock.get_time_ns();
-            let detail = "Quote quantity requires an inverse instrument";
+            let detail = "Quote quantity requires an inverse instrument or an IB crypto contract";
             let reason = coded_denial_reason(DENIAL_QUOTE_QUANTITY_UNSUPPORTED, detail);
             Self::send_order_denied_to(
                 cmd.order_init.trader_id,
@@ -80,18 +78,33 @@ impl InteractiveBrokersExecutionClient {
             anyhow::bail!("{reason}");
         }
 
+        // An order that cannot be prepared for IB never leaves the client, so it is denied
+        // like an unpreparable order list rather than left INITIALIZED with only a log line
         let contract =
-            Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)?;
-        let contract = Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())?;
+            match Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)
+                .and_then(|contract| {
+                    Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())
+                }) {
+                Ok(contract) => contract,
+                Err(e) => return Self::deny_unpreparable_order(cmd, &e, exec_sender, clock),
+            };
 
         let order_any = OrderAny::try_from(cmd.order_init.clone())
             .context("Failed to construct order from `OrderInitialized`")?;
         let order_ref = cmd.order_init.client_order_id.to_string();
         let _submit_guard = order_submit_lock.lock().await;
         let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
-        let mut ib_order =
-            nautilus_order_to_ib_order(&order_any, instrument_provider, ib_order_id, &order_ref)
-                .context("Failed to transform order")?;
+        let mut ib_order = match nautilus_order_to_ib_order(
+            &order_any,
+            instrument_provider,
+            ib_order_id,
+            &order_ref,
+        )
+        .context("Failed to transform order")
+        {
+            Ok(ib_order) => ib_order,
+            Err(e) => return Self::deny_unpreparable_order(cmd, &e, exec_sender, clock),
+        };
         Self::assign_ib_account(&mut ib_order, ib_account);
 
         Self::cache_order_tracking(
@@ -723,6 +736,42 @@ impl InteractiveBrokersExecutionClient {
         }
 
         Ok(())
+    }
+
+    /// Returns whether IB accepts a quote quantity (`cashQty`) for the instrument.
+    ///
+    /// IB supports a cash quantity on inverse instruments and on `CRYPTO` contracts, where a
+    /// MARKET BUY must be sized in quote currency.
+    pub(super) fn accepts_quote_quantity(
+        instrument_provider: &InteractiveBrokersInstrumentProvider,
+        instrument_id: &InstrumentId,
+    ) -> bool {
+        instrument_provider
+            .find(instrument_id)
+            .is_some_and(|instrument| instrument.is_inverse())
+            || instrument_provider.is_crypto_instrument(instrument_id)
+    }
+
+    /// Denies a single order the client cannot resolve or transform for IB.
+    ///
+    /// Always returns the denial as an error so the submit path stops.
+    pub(super) fn deny_unpreparable_order(
+        cmd: &SubmitOrder,
+        error: &anyhow::Error,
+        exec_sender: &EventSender<ExecutionEvent>,
+        clock: &'static AtomicTime,
+    ) -> anyhow::Result<()> {
+        let reason = coded_denial_reason(DENIAL_ORDER_INVALID, &format!("{error:#}"));
+        Self::send_order_denied_to(
+            cmd.order_init.trader_id,
+            cmd.strategy_id,
+            cmd.instrument_id,
+            cmd.order_init.client_order_id,
+            &reason,
+            exec_sender,
+            clock.get_time_ns(),
+        )?;
+        anyhow::bail!(reason)
     }
 
     pub(super) fn deny_unsubmitted_order_list(
