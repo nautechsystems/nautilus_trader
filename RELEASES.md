@@ -74,6 +74,7 @@ Released on TBD (UTC).
 - Fixed duplicate account states and incorrect locked margins during funding settlements (#5249), thanks @XBeg9
 - Fixed `GreeksCalculator` underlying resolution across venues (#5234), thanks @awss1i
 - Fixed cancel rejection delivery for active orders while preserving their state (#5270), thanks @riven314
+- Fixed late modify rejection delivery for submitted orders without reverting amended terms
 - Fixed Parquet catalog row order for equal `ts_init` timestamps (#5267), thanks @ragen1337
 - Fixed Bybit stale WebSocket subscriptions blocking subscriptions after reconnect (#5250), thanks @Martingale42
 - Fixed Bybit failed quote subscriptions retaining shared order book references (#5258), thanks @Martingale42

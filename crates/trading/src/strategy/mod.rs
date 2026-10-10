@@ -2528,6 +2528,7 @@ mod tests {
         timer::{TimeEvent, TimeEventCallback},
     };
     use nautilus_core::{DurationNanos, UnixNanos};
+    use nautilus_execution::engine::ExecutionEngine;
     use nautilus_model::{
         enums::{
             ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
@@ -2537,7 +2538,8 @@ mod tests {
             OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
             order::spec::{
                 OrderAcceptedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderEmulatedSpec,
-                OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderRejectedSpec,
+                OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderModifyRejectedSpec,
+                OrderRejectedSpec, OrderUpdatedSpec,
             },
         },
         identifiers::{
@@ -2575,6 +2577,12 @@ mod tests {
     }
 
     #[derive(Debug)]
+    struct ModifyRejectionStrategy {
+        core: StrategyCore,
+        rejections: Vec<(OrderModifyRejected, OrderAny)>,
+    }
+
+    #[derive(Debug)]
     struct CoreFreeStrategy {
         started: bool,
     }
@@ -2591,6 +2599,15 @@ mod tests {
         gtd_expiries: usize,
         market_exit_checks: usize,
     }
+
+    impl DataActor for ModifyRejectionStrategy {}
+
+    nautilus_strategy!(ModifyRejectionStrategy, {
+        fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
+            let order = self.cache().order(&event.client_order_id).unwrap();
+            self.rejections.push((event, order));
+        }
+    });
 
     impl DataActor for CoreFreeStrategy {
         fn on_start(&mut self) -> anyhow::Result<()> {
@@ -4771,6 +4788,170 @@ mod tests {
             event_messages.first(),
             Some(OrderEventAny::PendingUpdate(_))
         ));
+    }
+
+    #[rstest]
+    fn test_late_modify_rejection_reaches_running_strategy_before_acceptance() {
+        let mut strategy = ModifyRejectionStrategy {
+            core: StrategyCore::new(StrategyConfig {
+                strategy_id: Some(StrategyId::from("TEST-001")),
+                ..Default::default()
+            }),
+            rejections: Vec::new(),
+        };
+
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            clock.clone(),
+            cache.clone(),
+            None,
+        )));
+        strategy
+            .core
+            .register(
+                TraderId::from("TRADER-001"),
+                clock.clone(),
+                cache.clone(),
+                portfolio,
+            )
+            .unwrap();
+        strategy.initialize().unwrap();
+        strategy.start().unwrap();
+        let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-LATE-MODIFY-001"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(10))
+            .price(Price::from("50000.00"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        let account_id = AccountId::from("ACC-001");
+        engine.process(&TestOrderEventStubs::submitted(&order, account_id));
+        assert_eq!(
+            cache
+                .borrow()
+                .order(&order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Submitted
+        );
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        for (quantity, price) in [(30, "52000.00"), (20, "51000.00")] {
+            strategy
+                .modify_order(
+                    order.client_order_id(),
+                    Some(Quantity::from(quantity)),
+                    Some(Price::from(price)),
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+        }
+
+        let commands = risk_messages.get_messages();
+        assert_eq!(commands.len(), 2);
+
+        for (command, quantity, price) in [
+            (&commands[0], 30, "52000.00"),
+            (&commands[1], 20, "51000.00"),
+        ] {
+            let TradingCommand::ModifyOrder(command) = command else {
+                panic!("Expected ModifyOrder command");
+            };
+
+            assert_eq!(command.client_order_id, order.client_order_id());
+            assert_eq!(command.venue_order_id, None);
+            assert_eq!(command.quantity, Some(Quantity::from(quantity)));
+            assert_eq!(command.price, Some(Price::from(price)));
+        }
+
+        assert_eq!(
+            cache
+                .borrow()
+                .order(&order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::PendingUpdate
+        );
+        let strategy = Rc::new(RefCell::new(strategy));
+
+        let handler = TypedHandler::from({
+            let strategy = strategy.clone();
+            move |event: &OrderEventAny| strategy.borrow_mut().handle_order_event(event.clone())
+        });
+
+        let topic = msgbus::switchboard::get_event_order_topic(order.strategy_id());
+        msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+        engine.process(&OrderEventAny::Updated(
+            OrderUpdatedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .venue_order_id(VenueOrderId::from("V-AMENDED-001"))
+                .account_id(account_id)
+                .quantity(Quantity::from(20))
+                .price(Price::from("51000.00"))
+                .build(),
+        ));
+        assert_eq!(
+            cache
+                .borrow()
+                .order(&order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Submitted
+        );
+        let rejection = OrderModifyRejectedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .account_id(account_id)
+            .reason(Ustr::from("First amend rejected"))
+            .event_id(UUID4::new())
+            .ts_event(UnixNanos::from(123))
+            .ts_init(UnixNanos::from(456))
+            .build();
+        engine.process(&OrderEventAny::ModifyRejected(rejection));
+        msgbus::unsubscribe_order_events(topic.into(), &handler);
+
+        let strategy = strategy.borrow();
+        assert_eq!(strategy.state(), ComponentState::Running);
+        assert_eq!(strategy.rejections.len(), 1);
+        let (received, cached) = &strategy.rejections[0];
+        assert_eq!(*received, rejection);
+        assert_eq!(cached.status(), OrderStatus::Submitted);
+        assert_eq!(cached.previous_status(), Some(OrderStatus::Submitted));
+        assert_eq!(cached.quantity(), Quantity::from(20));
+        assert_eq!(cached.price(), Some(Price::from("51000.00")));
+        assert_eq!(cached.filled_qty(), Quantity::from(0));
+        assert_eq!(cached.leaves_qty(), Quantity::from(20));
+        assert_eq!(
+            cached.venue_order_id(),
+            Some(VenueOrderId::from("V-AMENDED-001"))
+        );
+        assert_eq!(cached.events().len(), 5);
+        assert_eq!(
+            cached.last_event(),
+            &OrderEventAny::ModifyRejected(rejection)
+        );
     }
 
     #[rstest]

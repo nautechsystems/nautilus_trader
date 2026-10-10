@@ -7,6 +7,10 @@ simulated matching engine, or local risk control can reject the request.
 Typical transition: `PENDING_UPDATE` -> previous status (for example `ACCEPTED`). Handler:
 `on_order_modify_rejected`.
 
+In `SUBMITTED`, `ACCEPTED`, `TRIGGERED`, and `PARTIALLY_FILLED`, a rejection preserves the order's
+status and terms, including any amendments already applied by `OrderUpdated`. In `PENDING_CANCEL`,
+it preserves the pending cancellation.
+
 ## Fields
 
 Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
