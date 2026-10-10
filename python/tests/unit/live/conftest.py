@@ -16,6 +16,8 @@
 Capture adapter diagnostics independently of process-wide logger initialization.
 """
 
+import asyncio
+from collections.abc import Callable
 from unittest.mock import Mock
 
 import pytest
@@ -35,3 +37,16 @@ def native_log(monkeypatch) -> Mock:
     monkeypatch.setattr(common, "Logger", constructor)
     monkeypatch.setattr(providers, "Logger", constructor)
     return logger
+
+
+@pytest.fixture
+def eager_task_factory() -> Callable[..., asyncio.Task]:
+    """
+    Start tasks eagerly even when the loop forwards eager_start=None.
+    """
+
+    def factory(loop, coroutine, **kwargs: object):
+        kwargs["eager_start"] = True
+        return asyncio.Task(coroutine, loop=loop, **kwargs)
+
+    return factory
