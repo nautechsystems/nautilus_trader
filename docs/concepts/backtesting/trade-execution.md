@@ -66,6 +66,9 @@ their total cannot exceed the unconsumed trade size. Each L1 trade has a fresh b
 successive trades with the same price and size. Once that budget is exhausted, L1 fills do not
 fall back to book liquidity.
 
+The L1 budget applies to limit fills on both sides and remains in effect across subsequent matching
+and settlement passes until fresh market data replaces it.
+
 For example, with L2 or L3 data, a `SELL` trade at 100.00 can fill a BUY LIMIT at 100.05. If no book
 level represents that fill, the engine uses 100.05 rather than granting the better trade price.
 

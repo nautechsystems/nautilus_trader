@@ -133,6 +133,7 @@ pub struct OrderMatchingEngine {
     canceled_oto_order_ids: IndexSet<ClientOrderId>,
     ids_generator: IdsGenerator,
     last_trade_size: Option<Quantity>,
+    l1_trade_size: Option<QuantityRaw>,
     trade_consumption: QuantityRaw,
     bid_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
     ask_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
@@ -232,6 +233,7 @@ impl OrderMatchingEngine {
             canceled_oto_order_ids: IndexSet::new(),
             ids_generator,
             last_trade_size: None,
+            l1_trade_size: None,
             trade_consumption: 0,
             bid_consumption: IndexMap::new(),
             ask_consumption: IndexMap::new(),
@@ -307,6 +309,7 @@ impl OrderMatchingEngine {
         self.target_ask = None;
         self.target_last = None;
         self.last_trade_size = None;
+        self.l1_trade_size = None;
         self.trade_consumption = 0;
         self.bid_consumption.clear();
         self.ask_consumption.clear();
@@ -347,6 +350,7 @@ impl OrderMatchingEngine {
         order_side: OrderSide,
         leaves_qty: Quantity,
         book_prices: Option<&[Price]>,
+        trade_size: Option<QuantityRaw>,
         mut journal: Option<&mut ConsumptionJournal>,
     ) -> Vec<(Price, Quantity)> {
         if !self.config.liquidity_consumption {
@@ -359,7 +363,11 @@ impl OrderMatchingEngine {
         };
 
         let mut adjusted_len = 0;
-        let mut remaining_qty = leaves_qty.raw();
+        let mut remaining_qty = trade_size.map_or(leaves_qty.raw(), |trade_size| {
+            leaves_qty
+                .raw()
+                .min(trade_size.saturating_sub(self.trade_consumption))
+        });
 
         for fill_idx in 0..fills.len() {
             if remaining_qty == 0 {
@@ -407,6 +415,10 @@ impl OrderMatchingEngine {
 
             *consumed += adjusted_qty_raw;
             remaining_qty -= adjusted_qty_raw;
+
+            if trade_size.is_some() {
+                self.trade_consumption += adjusted_qty_raw;
+            }
 
             let adjusted_qty = Quantity::from_raw(adjusted_qty_raw, qty.precision);
             fills[adjusted_len] = (price, adjusted_qty);
@@ -1417,6 +1429,7 @@ impl OrderMatchingEngine {
             self.core
                 .update_price_increment(instrument.price_increment());
             self.book.reset();
+            self.l1_trade_size = None;
             self.trade_consumption = 0;
             self.bid_consumption.clear();
             self.ask_consumption.clear();
@@ -1744,6 +1757,7 @@ impl OrderMatchingEngine {
                 depth.ts_init,
             );
             self.book.update_quote_tick(&quote)?;
+            self.reset_trade_liquidity(quote.ts_event);
             self.last_quote_bid = top_bid.map(|order| order.price);
             self.last_quote_ask = top_ask.map(|order| order.price);
         } else {
@@ -2276,6 +2290,8 @@ impl OrderMatchingEngine {
             return true;
         }
 
+        self.reset_trade_liquidity(quote.ts_event);
+
         self.iterate(quote.ts_init, AggressorSide::NoAggressor);
         true
     }
@@ -2441,8 +2457,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        self.last_trade_size = Some(trade.size);
-        self.trade_consumption = 0;
+        self.start_trade_iteration(trade.size);
 
         if self.config.liquidity_consumption && self.book_type != BookType::L1_MBP {
             self.seed_trade_consumption(
@@ -2458,8 +2473,7 @@ impl OrderMatchingEngine {
 
         self.iterate(trade.ts_init, aggressor_side);
 
-        self.last_trade_size = None;
-        self.trade_consumption = 0;
+        self.finish_trade_iteration();
 
         // Restore the non-aggressor side after temporary trade price override.
         // For L2/L3 books the book has independent depth so restore from originals.
@@ -2501,6 +2515,30 @@ impl OrderMatchingEngine {
         }
     }
 
+    fn start_trade_iteration(&mut self, size: Quantity) {
+        self.last_trade_size = Some(size);
+        self.trade_consumption = 0;
+        self.l1_trade_size = (self.book_type == BookType::L1_MBP
+            && self.config.liquidity_consumption)
+            .then_some(size.raw());
+    }
+
+    fn finish_trade_iteration(&mut self) {
+        self.last_trade_size = None;
+
+        // L1 limit settlement shares this trade's budget until fresh market data replaces it
+        if self.l1_trade_size.is_none() {
+            self.trade_consumption = 0;
+        }
+    }
+
+    fn reset_trade_liquidity(&mut self, timestamp: UnixNanos) {
+        if timestamp >= self.book.ts_last {
+            self.l1_trade_size = None;
+            self.trade_consumption = 0;
+        }
+    }
+
     fn update_quote_tick_or_skip(&mut self, quote: &QuoteTick, context: &str) -> bool {
         if let Err(e) = self.book.update_quote_tick(quote) {
             log::warn!(
@@ -2509,6 +2547,8 @@ impl OrderMatchingEngine {
             );
             return false;
         }
+
+        self.reset_trade_liquidity(quote.ts_event);
         true
     }
 
@@ -2520,6 +2560,8 @@ impl OrderMatchingEngine {
             );
             return false;
         }
+
+        self.reset_trade_liquidity(trade.ts_event);
         true
     }
 
@@ -4631,6 +4673,7 @@ impl OrderMatchingEngine {
                     order.order_side(),
                     order.leaves_qty(),
                     book_prices_ref,
+                    self.l1_trade_size,
                     journal,
                 )
             }
@@ -4836,6 +4879,7 @@ impl OrderMatchingEngine {
                 fills,
                 order.order_side(),
                 order.leaves_qty(),
+                None,
                 None,
                 journal.as_mut(),
             );

@@ -60,8 +60,8 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, ContingencyType, InstrumentCloseType, OmsType, OptionKind, OrderSide,
-        OrderStatus, PositionAdjustmentType, PriceType, TimeInForce, TrailingOffsetType,
+        BookType, ContingencyType, InstrumentCloseType, LiquiditySide, OmsType, OptionKind,
+        OrderSide, OrderStatus, PositionAdjustmentType, PriceType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
     events::{
@@ -7885,5 +7885,281 @@ mod serial_tests {
         assert_eq!(first_iterations, 3);
         assert_eq!(second_iterations, 3);
         assert!(!engine.kernel().is_shutdown_requested());
+    }
+}
+
+#[rstest]
+#[case::buy_through(OrderSide::Buy, "49500.00", "49995.00", "49400.00")]
+#[case::buy_touch(OrderSide::Buy, "49500.00", "49995.00", "49500.00")]
+#[case::sell_through(OrderSide::Sell, "50500.00", "50005.00", "50600.00")]
+#[case::sell_touch(OrderSide::Sell, "50500.00", "50005.00", "50500.00")]
+fn test_trade_budget_survives_callback_settlement(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] side: OrderSide,
+    #[case] entry_price: &str,
+    #[case] child_price: &str,
+    #[case] final_price: &str,
+    #[values(0, 50_000_000)] latency: u64,
+    #[values(false, true)] use_message_queue: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(instrument_id.venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .bar_execution(false)
+                .trade_execution(true)
+                .liquidity_consumption(true)
+                .use_message_queue(use_message_queue)
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                    DurationNanos::new(latency),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                )))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    engine.add_instrument(&instrument).unwrap();
+    let fills = Rc::new(RefCell::new(Vec::new()));
+    engine
+        .add_strategy(TradeFillChain::new(
+            instrument_id,
+            side,
+            Price::from(entry_price),
+            Price::from(child_price),
+            Rc::clone(&fills),
+        ))
+        .unwrap();
+    let aggressor = if side == OrderSide::Buy {
+        AggressorSide::Sell
+    } else {
+        AggressorSide::Buy
+    };
+    let opposite = if side == OrderSide::Buy {
+        AggressorSide::Buy
+    } else {
+        AggressorSide::Sell
+    };
+    let first_ts = 1_000_000_000_u64;
+    let data = [
+        ("50000.00", "1.000", opposite),
+        (entry_price, "0.010", aggressor),
+        ("50000.00", "0.010", opposite),
+        (final_price, "0.010", aggressor),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, (price, size, aggressor))| {
+        let ts = UnixNanos::from(first_ts + i as u64 * (latency + 1));
+        Data::Trade(TradeTick::new(
+            instrument_id,
+            Price::from(price),
+            Quantity::from(size),
+            aggressor,
+            TradeId::new(format!("T-{i}")),
+            ts,
+            ts,
+        ))
+    })
+    .collect();
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let fills = fills.borrow();
+    let actual: Vec<_> = fills
+        .iter()
+        .map(|fill| {
+            (
+                fill.client_order_id,
+                fill.order_side,
+                fill.last_qty,
+                fill.last_px,
+                fill.liquidity_side,
+                fill.ts_event,
+            )
+        })
+        .collect();
+    let child_side = if side == OrderSide::Buy {
+        OrderSide::Sell
+    } else {
+        OrderSide::Buy
+    };
+    let expected_child_price = if latency == 0 || !use_message_queue {
+        child_price
+    } else {
+        "50000.00"
+    };
+    let expected_child_liquidity = if latency == 0 || !use_message_queue {
+        LiquiditySide::Maker
+    } else {
+        LiquiditySide::Taker
+    };
+    assert_eq!(
+        actual,
+        vec![
+            (
+                ClientOrderId::from("O-ENTRY"),
+                side,
+                Quantity::from("0.010"),
+                Price::from(entry_price),
+                expected_child_liquidity,
+                UnixNanos::from(first_ts + latency + 1)
+            ),
+            (
+                ClientOrderId::from("O-CHAIN-1"),
+                child_side,
+                Quantity::from("0.010"),
+                Price::from(expected_child_price),
+                expected_child_liquidity,
+                UnixNanos::from(first_ts + 2 * (latency + 1))
+            ),
+            (
+                ClientOrderId::from("O-ENTRY"),
+                side,
+                Quantity::from("0.010"),
+                Price::from(entry_price),
+                LiquiditySide::Maker,
+                UnixNanos::from(first_ts + 3 * (latency + 1))
+            ),
+        ]
+    );
+    let cache = engine.kernel().cache();
+    let cache = cache.borrow();
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from("O-ENTRY"))
+            .unwrap()
+            .leaves_qty(),
+        Quantity::from("0.000")
+    );
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from("O-CHAIN-1"))
+            .unwrap()
+            .leaves_qty(),
+        Quantity::from("0.000")
+    );
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from("O-CHAIN-2"))
+            .unwrap()
+            .leaves_qty(),
+        Quantity::from("0.010")
+    );
+}
+
+struct TradeFillChain {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    entry_price: Price,
+    child_price: Price,
+    submitted: bool,
+    fills: Rc<RefCell<Vec<OrderFilled>>>,
+}
+
+impl TradeFillChain {
+    fn new(
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        entry_price: Price,
+        child_price: Price,
+        fills: Rc<RefCell<Vec<OrderFilled>>>,
+    ) -> Self {
+        Self {
+            core: StrategyCore::new(StrategyConfig {
+                strategy_id: Some(StrategyId::from("TRADE-CHAIN-001")),
+                order_id_tag: Some("001".to_string()),
+                ..Default::default()
+            }),
+            instrument_id,
+            side,
+            entry_price,
+            child_price,
+            submitted: false,
+            fills,
+        }
+    }
+
+    fn submit_limit(
+        &mut self,
+        side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        id: ClientOrderId,
+    ) -> anyhow::Result<()> {
+        let order = self.order().limit(
+            self.instrument_id,
+            side,
+            quantity,
+            price,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(id),
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
+nautilus_strategy!(TradeFillChain, {
+    fn on_order_filled(&mut self, event: &OrderFilled) {
+        self.fills.borrow_mut().push(event.clone());
+        let side = if event.order_side == OrderSide::Buy {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        };
+        let price = if side == self.side {
+            self.entry_price
+        } else {
+            self.child_price
+        };
+        let id = ClientOrderId::new(format!("O-CHAIN-{}", self.fills.borrow().len()));
+        self.submit_limit(side, Quantity::from("0.010"), price, id)
+            .unwrap();
+    }
+});
+
+impl Debug for TradeFillChain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TradeFillChain)).finish()
+    }
+}
+
+impl DataActor for TradeFillChain {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_trades(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_trade(&mut self, _tick: &TradeTick) -> anyhow::Result<()> {
+        if !self.submitted {
+            self.submitted = true;
+            self.submit_limit(
+                self.side,
+                Quantity::from("0.020"),
+                self.entry_price,
+                ClientOrderId::from("O-ENTRY"),
+            )?;
+        }
+        Ok(())
     }
 }
