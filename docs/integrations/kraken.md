@@ -265,6 +265,48 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 | `OrderBook` (snapshot) | ✓    | ✓       | Via HTTP depth endpoint.               |
 | `FundingRateUpdate`    | -    | ✓       | Client-side start/end/limit filtering. |
 
+### L2 book checksum validation
+
+Kraken sends a CRC32 checksum with each Spot `book` snapshot and update, computed over the top ten
+levels of each side at the venue's wire scales. By default the adapter validates it against its
+shadow book, rendering prices at `pair_decimals` and quantities at `lot_decimals` from `AssetPairs`;
+for a handful of pairs the price scale is one digit finer than the tick size, so the instrument
+carries it when it is finer (a coarser scale would truncate the price digits). On mismatch the
+adapter emits a `Clear` delta, drops the shadow book, unsubscribes and resubscribes the symbol at
+its depth with a snapshot, and ignores further updates until that snapshot arrives; every `book`
+unsubscribe names the depth, since the venue keys the subscription by symbol and depth and takes an
+unsubscribe without one as depth 10. The recovery is serialized with the user's own subscription
+changes, so a replacement subscription is never canceled by a stale recovery. A stream is identified
+by the `book` subscribe that opened it: frames are accepted only from the stream of the symbol's
+latest subscribe once the venue has confirmed that request, so frames of a replaced subscription or
+a superseded recovery are dropped, and a snapshot changes the book only once it has parsed and
+applied. A recovery issued before a snapshot is accepted or before a reconnect sends nothing. If the
+snapshot does not arrive within 10 seconds the data client requests it again, doubling the wait each
+time up to five requests, then logs an error and leaves the book cleared until the next subscription
+change or reconnect; this watchdog is the only retry for a `book` recovery, and a replacement
+subscription starts its own wait rather than inheriting its predecessor's. The watchdog runs whether
+or not checksum validation is enabled, since it recovers a stream whose snapshot never arrived
+rather than a checksum mismatch. A `book` subscribe the venue rejects, when it is the symbol's
+latest request, clears any book still held and is logged at error with the venue's reason and when
+the next request is due: the rejection counts as one failed request, so the watchdog asks again
+after 20 seconds and keeps doubling, and a pair the venue will not serve is given up after four more
+rejections, about five minutes, while a transient rejection recovers within 20 seconds; a rejection
+of a superseded request is ignored. A reconnect retires the subscribes on record and replays each
+`book` subscribe under its original request id, so a replay's answer is matched to no request; a
+replay the venue rejects is noticed by the watchdog within its base wait of 10 seconds. A shadow
+book dropped off the frame path, by a reconnect, by the confirmation of a new stream, by a rejection
+of the latest request, or by the watchdog finding the latest subscribe unconfirmed, is cleared
+downstream with a `Clear` delta. Three mismatches on one instrument with no valid update between
+them switch validation off for that instrument with an error log and keep its book as received, so a
+book the venue hashes differently cannot loop on resubscription; a snapshot that validates does not
+reset the count. Kraken Futures `book` messages carry no checksum. To disable validation:
+
+```python
+config = KrakenDataClientConfig(
+    validate_l2_checksum=False,
+)
+```
+
 ## L3 order book (market-by-order)
 
 Kraken exposes Spot per-order book data via the WebSocket v2 `level3` channel at
@@ -921,23 +963,24 @@ The product type for each client is specified via the `product_type` option.
 
 ### Data client configuration options
 
-| Option                    | Default   | Description                                                    |
-| ------------------------- | --------- | -------------------------------------------------------------- |
-| `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).            |
-| `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures. |
-| `api_key`                 | `None`    | API key for Spot L3 data.                                      |
-| `api_secret`              | `None`    | API secret for Spot L3 data.                                   |
-| `base_url`                | `None`    | Override for the Kraken REST base URL.                         |
-| `ws_public_url`           | `None`    | Override for the public WebSocket URL.                         |
-| `ws_private_url`          | `None`    | Override for the private WebSocket URL.                        |
-| `ws_l3_url`               | `None`    | Override for the Spot L3 WebSocket URL.                        |
-| `validate_l3_checksum`    | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.      |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.          |
-| `timeout_secs`            | `30`      | HTTP request timeout in seconds.                               |
-| `heartbeat_interval_secs` | `30`      | WebSocket heartbeat interval in seconds.                       |
-| `ws_idle_timeout_ms`      | `10,000`  | Data-silence timeout for the Spot v2 WebSocket; `0` disables.  |
-| `max_requests_per_second` | `None`    | Per-client request throttle; default is 5 req/s.               |
-| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                   |
+| Option                    | Default   | Description                                                      |
+| ------------------------- | --------- | ---------------------------------------------------------------- |
+| `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).              |
+| `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.   |
+| `api_key`                 | `None`    | API key for Spot L3 data.                                        |
+| `api_secret`              | `None`    | API secret for Spot L3 data.                                     |
+| `base_url`                | `None`    | Override for the Kraken REST base URL.                           |
+| `ws_public_url`           | `None`    | Override for the public WebSocket URL.                           |
+| `ws_private_url`          | `None`    | Override for the private WebSocket URL.                          |
+| `ws_l3_url`               | `None`    | Override for the Spot L3 WebSocket URL.                          |
+| `validate_l3_checksum`    | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.        |
+| `validate_l2_checksum`    | `True`    | Validate Kraken Spot L2 `book` checksums and resync on mismatch. |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.            |
+| `timeout_secs`            | `30`      | HTTP request timeout in seconds.                                 |
+| `heartbeat_interval_secs` | `30`      | WebSocket heartbeat interval in seconds.                         |
+| `ws_idle_timeout_ms`      | `10,000`  | Data-silence timeout for the Spot v2 WebSocket; `0` disables.    |
+| `max_requests_per_second` | `None`    | Per-client request throttle; default is 5 req/s.                 |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                     |
 
 ### Execution client configuration options
 

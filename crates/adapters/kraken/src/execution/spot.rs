@@ -173,6 +173,7 @@ impl KrakenSpotExecutionClient {
             ws_private_url: Some(config.ws_url()),
             ws_l3_url: None,
             validate_l3_checksum: true,
+            validate_l2_checksum: true,
             proxy_url: config.proxy_url.clone(),
             timeout_secs: config.timeout_secs,
             heartbeat_interval_secs: config.heartbeat_interval_secs,
@@ -818,7 +819,8 @@ impl KrakenSpotExecutionClient {
             | KrakenSpotWsMessage::Book { .. }
             | KrakenSpotWsMessage::Ohlc(_)
             | KrakenSpotWsMessage::L3Snapshot(_)
-            | KrakenSpotWsMessage::L3Update(_) => {}
+            | KrakenSpotWsMessage::L3Update(_)
+            | KrakenSpotWsMessage::SubscriptionAck { .. } => {}
         }
     }
 

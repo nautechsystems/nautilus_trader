@@ -50,6 +50,16 @@ pub enum KrakenSpotWsMessage {
     OrderResponse(KrakenWsOrderResponse),
     L3Snapshot(KrakenL3Snapshot),
     L3Update(KrakenL3UpdateData),
+    /// The venue's answer to a `subscribe` request, confirmation or rejection.
+    ///
+    /// `req_id` matches the request the client sent; `symbol` is the pair a rejection names at
+    /// the top level and `error` the venue's reason.
+    SubscriptionAck {
+        req_id: Option<u64>,
+        symbol: Option<Ustr>,
+        success: bool,
+        error: Option<String>,
+    },
     Reconnected,
 }
 
@@ -377,6 +387,9 @@ pub struct KrakenWsSubscribeResponse {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub req_id: Option<u64>,
+    /// The pair a rejection names at the top level; a confirmation carries it in `result`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<Ustr>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<KrakenWsSubscriptionResult>,
 }
@@ -388,6 +401,9 @@ pub struct KrakenWsUnsubscribeResponse {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub req_id: Option<u64>,
+    /// The pair a rejection names at the top level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<Ustr>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -678,6 +694,26 @@ mod tests {
         }
     }
 
+    /// A rejected subscribe names the pair at the top level, next to the error and the request id.
+    #[rstest]
+    fn test_parse_subscribe_rejection_names_the_symbol() {
+        let data = r#"{"error":"Currency pair not supported BOGUS/NOPE","method":"subscribe","req_id":7,"success":false,"symbol":"BOGUS/NOPE","time_in":"2024-01-01T00:00:00.000000Z","time_out":"2024-01-01T00:00:00.000100Z"}"#;
+        let response: KrakenWsResponse =
+            serde_json::from_str(data).expect("Failed to parse subscribe rejection");
+
+        let KrakenWsResponse::Subscribe(sub) = response else {
+            panic!("Expected Subscribe response");
+        };
+        assert!(!sub.success);
+        assert_eq!(sub.req_id, Some(7));
+        assert_eq!(sub.symbol, Some(Ustr::from("BOGUS/NOPE")));
+        assert_eq!(
+            sub.error.as_deref(),
+            Some("Currency pair not supported BOGUS/NOPE")
+        );
+        assert!(sub.result.is_none());
+    }
+
     #[rstest]
     fn test_parse_pong() {
         let data = load_test_data("ws_pong.json");
@@ -777,9 +813,9 @@ mod tests {
         assert_eq!(book.timestamp.as_nanosecond(), 1_696_613_755_440_295_000);
 
         let bids = book.bids.unwrap();
-        assert_eq!(bids.len(), 3);
-        assert_eq!(bids[0].price, dec!(105944.20));
-        assert_eq!(bids[0].qty, dec!(0.136));
+        assert_eq!(bids.len(), 10);
+        assert_eq!(bids[0].price, dec!(45283.5));
+        assert_eq!(bids[0].qty, dec!(0.10000000));
     }
 
     #[rstest]

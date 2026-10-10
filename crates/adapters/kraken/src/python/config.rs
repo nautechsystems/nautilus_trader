@@ -46,6 +46,7 @@ impl KrakenDataClientConfig {
         ws_idle_timeout_ms = None,
         max_requests_per_second = None,
         transport_backend = None,
+        validate_l2_checksum = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -64,6 +65,9 @@ impl KrakenDataClientConfig {
         ws_idle_timeout_ms: Option<u64>,
         max_requests_per_second: Option<u32>,
         transport_backend: Option<TransportBackend>,
+        // Stays the last positional parameter: Python callers bind `proxy_url` and the arguments
+        // after it by position.
+        validate_l2_checksum: Option<bool>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -76,6 +80,7 @@ impl KrakenDataClientConfig {
             ws_private_url,
             ws_l3_url,
             validate_l3_checksum: validate_l3_checksum.unwrap_or(defaults.validate_l3_checksum),
+            validate_l2_checksum: validate_l2_checksum.unwrap_or(defaults.validate_l2_checksum),
             proxy_url: proxy_url.map(SecretString::from),
             timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
             heartbeat_interval_secs: heartbeat_interval_secs
@@ -215,5 +220,52 @@ impl KrakenExecutionClientConfig {
 
     fn __repr__(&self) -> String {
         stringify!(KrakenExecutionClientConfig).to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{
+        Python,
+        types::{PyAnyMethods, PyTypeMethods},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    /// The checksum option is the last positional parameter, so a positional call binds the proxy
+    /// URL to `proxy_url`.
+    #[rstest]
+    fn data_config_keeps_the_proxy_url_position() {
+        Python::initialize();
+        Python::attach(|py| {
+            let cls = py.get_type::<KrakenDataClientConfig>();
+            let none = py.None();
+            let args = (
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                true,
+                "http://proxy.example:8080",
+            );
+
+            let config = cls
+                .call1(args)
+                .unwrap_or_else(|e| panic!("construct {}: {e}", cls.name().unwrap()))
+                .extract::<KrakenDataClientConfig>()
+                .expect("extract KrakenDataClientConfig");
+
+            assert!(config.has_proxy_url());
+            assert!(config.validate_l3_checksum);
+            assert_eq!(
+                config.validate_l2_checksum,
+                KrakenDataClientConfig::default().validate_l2_checksum
+            );
+        });
     }
 }
