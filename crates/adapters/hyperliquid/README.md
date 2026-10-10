@@ -11,10 +11,12 @@
 The `nautilus-hyperliquid` crate provides client bindings (HTTP & WebSocket) and data
 models for the official **Hyperliquid API**.
 
-Exchange signing, public market-data subscriptions, and candle/book decoding use
-[hypersdk](https://github.com/infinitefield/hypersdk). NautilusTrader manages connections,
-rate limits, domain conversion, and reconciliation. Negative isolated-margin deltas retain
-signed wire encoding because hypersdk 0.2.18 models the delta as unsigned.
+Exchange actions, order requests, standard subscriptions, and candle/book data use
+[hypersdk](https://github.com/infinitefield/hypersdk) types directly. This keeps protocol
+definitions and signing in one SDK. NautilusTrader manages connections, rate limits, domain
+conversion, and reconciliation. Adapter models cover metadata and reconciliation fields
+the SDK does not expose. Negative isolated-margin deltas use the raw action API because
+hypersdk 0.2.18 models the delta as unsigned.
 
 ## NautilusTrader
 

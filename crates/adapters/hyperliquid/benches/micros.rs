@@ -31,13 +31,14 @@ use std::{hint::black_box, str::FromStr};
 
 use common::{btc_perp, fixtures};
 use criterion::{Criterion, criterion_group, criterion_main};
+use hypersdk::hypercore::{L2Book, Trade};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_hyperliquid::{
     common::HyperliquidDataConverter,
     http::models::Cloid,
     websocket::{
         dispatch::WsDispatchState,
-        messages::{HyperliquidWsMessage, WsBookData, WsTradeData},
+        messages::HyperliquidWsMessage,
         parse::{parse_ws_order_book_deltas, parse_ws_trade_tick},
     },
 };
@@ -82,7 +83,7 @@ fn bench_decode_book(c: &mut Criterion) {
 fn bench_parse_trade(c: &mut Criterion) {
     let instrument = btc_perp();
     let msg: HyperliquidWsMessage = serde_json::from_str(fixtures::TRADE).unwrap();
-    let trade: WsTradeData = match msg {
+    let trade: Trade = match msg {
         HyperliquidWsMessage::Trades { data } => data.into_iter().next().unwrap(),
         _ => unreachable!(),
     };
@@ -101,7 +102,7 @@ fn bench_parse_trade(c: &mut Criterion) {
 fn bench_parse_book_deltas(c: &mut Criterion) {
     let instrument = btc_perp();
     let msg: HyperliquidWsMessage = serde_json::from_str(fixtures::BOOK_L2).unwrap();
-    let book: WsBookData = match msg {
+    let book: L2Book = match msg {
         HyperliquidWsMessage::L2Book { data } => data,
         _ => unreachable!(),
     };
@@ -194,7 +195,7 @@ fn bench_data_converter_ws_snapshot(c: &mut Criterion) {
     let converter = HyperliquidDataConverter::new();
     let instrument_id = btc_perp().id();
     let msg: HyperliquidWsMessage = serde_json::from_str(fixtures::BOOK_L2).unwrap();
-    let book: WsBookData = match msg {
+    let book: L2Book = match msg {
         HyperliquidWsMessage::L2Book { data } => data,
         _ => unreachable!(),
     };

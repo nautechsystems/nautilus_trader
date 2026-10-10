@@ -22,8 +22,8 @@ use std::{
 };
 
 use ahash::AHashMap;
-use derive_builder::Builder;
 use futures_util::future::BoxFuture;
+use hypersdk::hypercore::{BatchOrder, OrderTypePlacement, TimeInForce, api::Action};
 use nautilus_common::live::get_runtime;
 use nautilus_live::task::TaskGroup;
 use tokio::{
@@ -38,10 +38,7 @@ use crate::{
         error::{Error, Result},
         models::{HyperliquidFills, HyperliquidL2Book, HyperliquidOrderStatus},
     },
-    websocket::messages::{
-        ActionRequest, CancelByCloidRequest, CancelRequest, HyperliquidWsRequest, ModifyRequest,
-        OrderRequest, OrderTypeRequest, PostRequest, PostResponse, TimeInForceRequest, TpSlRequest,
-    },
+    websocket::messages::{HyperliquidWsRequest, PostRequest, PostResponse},
 };
 
 #[derive(Debug)]
@@ -327,17 +324,17 @@ impl PostBatcher {
 }
 
 // Classifies an action into its submission lane
-pub fn lane_for_action(action: &ActionRequest) -> PostLane {
+pub fn lane_for_action(action: &Action) -> PostLane {
     match action {
-        ActionRequest::Order { orders, .. } => {
+        Action::Order(BatchOrder { orders, .. }) => {
             if orders.is_empty() {
                 return PostLane::Normal;
             }
             let all_alo = orders.iter().all(|o| {
                 matches!(
-                    o.t,
-                    OrderTypeRequest::Limit {
-                        tif: TimeInForceRequest::Alo
+                    o.order_type,
+                    OrderTypePlacement::Limit {
+                        tif: TimeInForce::Alo
                     }
                 )
             });
@@ -349,231 +346,6 @@ pub fn lane_for_action(action: &ActionRequest) -> PostLane {
             }
         }
         _ => PostLane::Normal,
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub enum Grouping {
-    #[default]
-    Na,
-    NormalTpsl,
-    PositionTpsl,
-}
-impl Grouping {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Na => "na",
-            Self::NormalTpsl => "normalTpsl",
-            Self::PositionTpsl => "positionTpsl",
-        }
-    }
-}
-
-/// Parameters for creating a limit order.
-#[derive(Debug, Clone, Builder)]
-pub struct LimitOrderParams {
-    pub asset: u32,
-    pub is_buy: bool,
-    pub px: String,
-    pub sz: String,
-    pub reduce_only: bool,
-    pub tif: TimeInForceRequest,
-    pub cloid: Option<String>,
-}
-
-/// Parameters for creating a trigger order.
-#[derive(Debug, Clone, Builder)]
-pub struct TriggerOrderParams {
-    pub asset: u32,
-    pub is_buy: bool,
-    pub px: String,
-    pub sz: String,
-    pub reduce_only: bool,
-    pub is_market: bool,
-    pub trigger_px: String,
-    pub tpsl: TpSlRequest,
-    pub cloid: Option<String>,
-}
-
-// ORDER builder (single or many)
-#[derive(Debug, Default)]
-pub struct OrderBuilder {
-    orders: Vec<OrderRequest>,
-    grouping: Grouping,
-}
-
-impl OrderBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    #[must_use]
-    pub fn grouping(mut self, g: Grouping) -> Self {
-        self.grouping = g;
-        self
-    }
-
-    /// Create a limit order with individual parameters (legacy method)
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn push_limit(
-        self,
-        asset: u32,
-        is_buy: bool,
-        px: &(impl ToString + ?Sized),
-        sz: &(impl ToString + ?Sized),
-        reduce_only: bool,
-        tif: TimeInForceRequest,
-        cloid: Option<String>,
-    ) -> Self {
-        let params = LimitOrderParams {
-            asset,
-            is_buy,
-            px: px.to_string(),
-            sz: sz.to_string(),
-            reduce_only,
-            tif,
-            cloid,
-        };
-        self.push_limit_order(params)
-    }
-
-    /// Create a limit order using parameters struct
-    #[must_use]
-    pub fn push_limit_order(mut self, params: LimitOrderParams) -> Self {
-        self.orders.push(OrderRequest {
-            a: params.asset,
-            b: params.is_buy,
-            p: params.px,
-            s: params.sz,
-            r: params.reduce_only,
-            t: OrderTypeRequest::Limit { tif: params.tif },
-            c: params.cloid,
-        });
-        self
-    }
-
-    /// Create a trigger order with individual parameters (legacy method)
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn push_trigger(
-        self,
-        asset: u32,
-        is_buy: bool,
-        px: &(impl ToString + ?Sized),
-        sz: &(impl ToString + ?Sized),
-        reduce_only: bool,
-        is_market: bool,
-        trigger_px: &(impl ToString + ?Sized),
-        tpsl: TpSlRequest,
-        cloid: Option<String>,
-    ) -> Self {
-        let params = TriggerOrderParams {
-            asset,
-            is_buy,
-            px: px.to_string(),
-            sz: sz.to_string(),
-            reduce_only,
-            is_market,
-            trigger_px: trigger_px.to_string(),
-            tpsl,
-            cloid,
-        };
-        self.push_trigger_order(params)
-    }
-
-    /// Create a trigger order using parameters struct
-    #[must_use]
-    pub fn push_trigger_order(mut self, params: TriggerOrderParams) -> Self {
-        self.orders.push(OrderRequest {
-            a: params.asset,
-            b: params.is_buy,
-            p: params.px,
-            s: params.sz,
-            r: params.reduce_only,
-            t: OrderTypeRequest::Trigger {
-                is_market: params.is_market,
-                trigger_px: params.trigger_px,
-                tpsl: params.tpsl,
-            },
-            c: params.cloid,
-        });
-        self
-    }
-    pub fn build(self) -> ActionRequest {
-        ActionRequest::Order {
-            orders: self.orders,
-            grouping: self.grouping.as_str().to_string(),
-        }
-    }
-
-    /// Create a single limit order action directly (convenience method)
-    ///
-    /// # Example
-    /// ```ignore
-    /// let action = OrderBuilder::single_limit_order(
-    ///     LimitOrderParamsBuilder::default()
-    ///         .asset(0)
-    ///         .is_buy(true)
-    ///         .px("40000.0")
-    ///         .sz("0.01")
-    ///         .reduce_only(false)
-    ///         .tif(TimeInForceRequest::Gtc)
-    ///         .build()
-    ///         .unwrap()
-    /// );
-    /// ```
-    pub fn single_limit_order(params: LimitOrderParams) -> ActionRequest {
-        Self::new().push_limit_order(params).build()
-    }
-
-    /// Create a single trigger order action directly (convenience method)
-    ///
-    /// # Example
-    /// ```ignore
-    /// let action = OrderBuilder::single_trigger_order(
-    ///     TriggerOrderParamsBuilder::default()
-    ///         .asset(0)
-    ///         .is_buy(false)
-    ///         .px("39000.0")
-    ///         .sz("0.01")
-    ///         .reduce_only(false)
-    ///         .is_market(true)
-    ///         .trigger_px("39500.0")
-    ///         .tpsl(TpSlRequest::Sl)
-    ///         .build()
-    ///         .unwrap()
-    /// );
-    /// ```
-    pub fn single_trigger_order(params: TriggerOrderParams) -> ActionRequest {
-        Self::new().push_trigger_order(params).build()
-    }
-}
-
-pub fn cancel_many(cancels: Vec<(u32, u64)>) -> ActionRequest {
-    ActionRequest::Cancel {
-        cancels: cancels
-            .into_iter()
-            .map(|(a, o)| CancelRequest { a, o })
-            .collect(),
-        fast: None,
-    }
-}
-pub fn cancel_by_cloid(asset: u32, cloid: impl Into<String>) -> ActionRequest {
-    ActionRequest::CancelByCloid {
-        cancels: vec![CancelByCloidRequest {
-            asset,
-            cloid: cloid.into(),
-        }],
-        fast: None,
-    }
-}
-pub fn modify(oid: u64, new_order: OrderRequest) -> ActionRequest {
-    ActionRequest::Modify {
-        modifies: vec![ModifyRequest {
-            oid,
-            order: new_order,
-        }],
     }
 }
 
@@ -711,20 +483,19 @@ impl WsSender {
 mod tests {
     use std::sync::atomic::AtomicUsize;
 
+    use hypersdk::hypercore::{Cloid, OrderGrouping, OrderRequest};
     use nautilus_common::{live::get_runtime, testing::wait_until_async};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use tokio::{
-        sync::oneshot,
+        sync::{Mutex as AsyncMutex, oneshot},
         time::{Duration, timeout},
     };
 
     use super::*;
     use crate::{
         common::consts::HYPERLIQUID_WS_POST_INFLIGHT_MAX,
-        websocket::messages::{
-            ActionRequest, CancelByCloidRequest, CancelRequest, HyperliquidWsRequest, OrderRequest,
-            OrderRequestBuilder, OrderTypeRequest, PostResponsePayload, TimeInForceRequest,
-        },
+        websocket::messages::{HyperliquidWsRequest, PostResponsePayload},
     };
 
     struct DropCounter(Arc<AtomicUsize>);
@@ -735,36 +506,29 @@ mod tests {
         }
     }
 
-    fn mk_limit_alo(asset: u32) -> OrderRequest {
+    fn mk_limit_alo(asset: usize) -> OrderRequest {
         OrderRequest {
-            a: asset,
-            b: true,
-            p: "1".to_string(),
-            s: "1".to_string(),
-            r: false,
-            t: OrderTypeRequest::Limit {
-                tif: TimeInForceRequest::Alo,
+            asset,
+            is_buy: true,
+            limit_px: dec!(1),
+            sz: dec!(1),
+            reduce_only: false,
+            order_type: OrderTypePlacement::Limit {
+                tif: TimeInForce::Alo,
             },
-            c: None,
+            cloid: Cloid::ZERO,
         }
     }
 
-    fn mk_limit_gtc(asset: u32) -> OrderRequest {
+    fn mk_limit_gtc(asset: usize) -> OrderRequest {
         OrderRequest {
-            a: asset,
-            b: true,
-            p: "1".to_string(),
-            s: "1".to_string(),
-            r: false,
-            t: OrderTypeRequest::Limit {
-                // any non-ALO TIF keeps it in the Normal lane
-                tif: TimeInForceRequest::Gtc,
+            order_type: OrderTypePlacement::Limit {
+                tif: TimeInForce::Gtc,
             },
-            c: None,
+            ..mk_limit_alo(asset)
         }
     }
 
-    #[rstest]
     #[tokio::test]
     async fn test_ws_sender_forwards_and_reports_closed_channel() {
         let (tx, mut rx) = mpsc::channel(1);
@@ -855,6 +619,52 @@ mod tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
+    async fn batcher_sends_on_tick() {
+        // Capture sent ids to prove dispatch happened.
+        let sent: Arc<AsyncMutex<Vec<u64>>> = Arc::new(AsyncMutex::new(Vec::new()));
+        let sent_closure = sent.clone();
+
+        let send_fn = move |req: HyperliquidWsRequest| -> BoxFuture<'static, Result<()>> {
+            let sent_inner = sent_closure.clone();
+            Box::pin(async move {
+                if let HyperliquidWsRequest::Post { id, .. } = req {
+                    sent_inner.lock().await.push(id);
+                }
+                Ok(())
+            })
+        };
+
+        let batcher = PostBatcher::new(send_fn);
+
+        // Enqueue a handful of posts into the NORMAL lane; tick is ~50ms.
+        for id in 1..=5u64 {
+            batcher
+                .enqueue(ScheduledPost {
+                    id,
+                    request: info_all_mids(),
+                    lane: PostLane::Normal,
+                })
+                .await
+                .unwrap();
+        }
+
+        // Wait for all 5 posts to be sent
+        let sent_check = sent.clone();
+        wait_until_async(
+            || {
+                let sent_inner = sent_check.clone();
+                async move { sent_inner.lock().await.len() == 5 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let actual = sent.lock().await.clone();
+        assert_eq!(actual, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
     async fn inflight_cap_blocks_then_unblocks() {
         let router = PostRouter::new();
 
@@ -907,254 +717,14 @@ mod tests {
         case::empty(vec![], PostLane::Normal),
     )]
     fn lane_classifier_cases(orders: Vec<OrderRequest>, expected: PostLane) {
-        let action = ActionRequest::Order {
+        let action = Action::Order(BatchOrder {
             orders,
-            grouping: "na".to_string(),
-        };
+            grouping: OrderGrouping::Na,
+            builder: None,
+        });
         assert_eq!(lane_for_action(&action), expected);
     }
 
-    #[rstest]
-    fn test_order_request_builder() {
-        // Test OrderRequestBuilder derived from #[derive(Builder)]
-        let order = OrderRequestBuilder::default()
-            .a(0)
-            .b(true)
-            .p("40000.0".to_string())
-            .s("0.01".to_string())
-            .r(false)
-            .t(OrderTypeRequest::Limit {
-                tif: TimeInForceRequest::Gtc,
-            })
-            .c(Some("test-order-1".to_string()))
-            .build()
-            .expect("should build order");
-
-        assert_eq!(order.a, 0);
-        assert!(order.b);
-        assert_eq!(order.p, "40000.0");
-        assert_eq!(order.s, "0.01");
-        assert!(!order.r);
-        assert_eq!(order.c, Some("test-order-1".to_string()));
-    }
-
-    #[rstest]
-    fn test_limit_order_params_builder() {
-        // Test LimitOrderParamsBuilder
-        let params = LimitOrderParamsBuilder::default()
-            .asset(0)
-            .is_buy(true)
-            .px("40000.0".to_string())
-            .sz("0.01".to_string())
-            .reduce_only(false)
-            .tif(TimeInForceRequest::Alo)
-            .cloid(Some("test-limit-1".to_string()))
-            .build()
-            .expect("should build limit params");
-
-        assert_eq!(params.asset, 0);
-        assert!(params.is_buy);
-        assert_eq!(params.px, "40000.0");
-        assert_eq!(params.sz, "0.01");
-        assert!(!params.reduce_only);
-        assert_eq!(params.cloid, Some("test-limit-1".to_string()));
-    }
-
-    #[rstest]
-    fn test_trigger_order_params_builder() {
-        // Test TriggerOrderParamsBuilder
-        let params = TriggerOrderParamsBuilder::default()
-            .asset(1)
-            .is_buy(false)
-            .px("39000.0".to_string())
-            .sz("0.02".to_string())
-            .reduce_only(false)
-            .is_market(true)
-            .trigger_px("39500.0".to_string())
-            .tpsl(TpSlRequest::Sl)
-            .cloid(Some("test-trigger-1".to_string()))
-            .build()
-            .expect("should build trigger params");
-
-        assert_eq!(params.asset, 1);
-        assert!(!params.is_buy);
-        assert_eq!(params.px, "39000.0");
-        assert!(params.is_market);
-        assert_eq!(params.trigger_px, "39500.0");
-    }
-
-    #[rstest]
-    fn test_order_builder_single_limit_convenience() {
-        // Test OrderBuilder::single_limit_order convenience method
-        let params = LimitOrderParamsBuilder::default()
-            .asset(0)
-            .is_buy(true)
-            .px("40000.0".to_string())
-            .sz("0.01".to_string())
-            .reduce_only(false)
-            .tif(TimeInForceRequest::Gtc)
-            .cloid(None)
-            .build()
-            .unwrap();
-
-        let action = OrderBuilder::single_limit_order(params);
-
-        match action {
-            ActionRequest::Order { orders, grouping } => {
-                assert_eq!(orders.len(), 1);
-                assert_eq!(orders[0].a, 0);
-                assert!(orders[0].b);
-                assert_eq!(grouping, "na");
-            }
-            _ => panic!("Expected ActionRequest::Order variant"),
-        }
-    }
-
-    #[rstest]
-    fn test_order_builder_single_trigger_convenience() {
-        // Test OrderBuilder::single_trigger_order convenience method
-        let params = TriggerOrderParamsBuilder::default()
-            .asset(1)
-            .is_buy(false)
-            .px("39000.0".to_string())
-            .sz("0.02".to_string())
-            .reduce_only(false)
-            .is_market(true)
-            .trigger_px("39500.0".to_string())
-            .tpsl(TpSlRequest::Sl)
-            .cloid(Some("sl-order".to_string()))
-            .build()
-            .unwrap();
-
-        let action = OrderBuilder::single_trigger_order(params);
-
-        match action {
-            ActionRequest::Order { orders, grouping } => {
-                assert_eq!(orders.len(), 1);
-                assert_eq!(orders[0].a, 1);
-                assert_eq!(orders[0].c, Some("sl-order".to_string()));
-                assert_eq!(grouping, "na");
-            }
-            _ => panic!("Expected ActionRequest::Order variant"),
-        }
-    }
-
-    #[rstest]
-    fn test_order_builder_batch_orders() {
-        // Test existing batch order functionality still works
-        let params1 = LimitOrderParams {
-            asset: 0,
-            is_buy: true,
-            px: "40000.0".to_string(),
-            sz: "0.01".to_string(),
-            reduce_only: false,
-            tif: TimeInForceRequest::Gtc,
-            cloid: Some("order-1".to_string()),
-        };
-
-        let params2 = LimitOrderParams {
-            asset: 1,
-            is_buy: false,
-            px: "2000.0".to_string(),
-            sz: "0.5".to_string(),
-            reduce_only: false,
-            tif: TimeInForceRequest::Ioc,
-            cloid: Some("order-2".to_string()),
-        };
-
-        let action = OrderBuilder::new()
-            .grouping(Grouping::NormalTpsl)
-            .push_limit_order(params1)
-            .push_limit_order(params2)
-            .build();
-
-        match action {
-            ActionRequest::Order { orders, grouping } => {
-                assert_eq!(orders.len(), 2);
-                assert_eq!(orders[0].c, Some("order-1".to_string()));
-                assert_eq!(orders[1].c, Some("order-2".to_string()));
-                assert_eq!(grouping, "normalTpsl");
-            }
-            _ => panic!("Expected ActionRequest::Order variant"),
-        }
-    }
-
-    #[rstest]
-    fn test_action_request_constructors() {
-        // Test ActionRequest::order() constructor
-        let order1 = mk_limit_gtc(0);
-        let order2 = mk_limit_gtc(1);
-        let action = ActionRequest::order(vec![order1, order2], "na");
-
-        match action {
-            ActionRequest::Order { orders, grouping } => {
-                assert_eq!(orders.len(), 2);
-                assert_eq!(grouping, "na");
-            }
-            _ => panic!("Expected ActionRequest::Order variant"),
-        }
-
-        // Test ActionRequest::cancel() constructor
-        let cancels = vec![CancelRequest { a: 0, o: 12345 }];
-        let action = ActionRequest::cancel(cancels);
-        assert!(matches!(action, ActionRequest::Cancel { .. }));
-
-        // Test ActionRequest::cancel_by_cloid() constructor
-        let cancels = vec![CancelByCloidRequest {
-            asset: 0,
-            cloid: "order-1".to_string(),
-        }];
-        let action = ActionRequest::cancel_by_cloid(cancels);
-        assert!(matches!(action, ActionRequest::CancelByCloid { .. }));
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "multi_thread")]
-    async fn batcher_sends_on_tick() {
-        // Capture sent ids to prove dispatch happened.
-        let sent: Arc<tokio::sync::Mutex<Vec<u64>>> = Arc::new(tokio::sync::Mutex::new(Vec::new()));
-        let sent_closure = sent.clone();
-
-        let send_fn = move |req: HyperliquidWsRequest| -> BoxFuture<'static, Result<()>> {
-            let sent_inner = sent_closure.clone();
-            Box::pin(async move {
-                if let HyperliquidWsRequest::Post { id, .. } = req {
-                    sent_inner.lock().await.push(id);
-                }
-                Ok(())
-            })
-        };
-
-        let batcher = PostBatcher::new(send_fn);
-
-        // Enqueue a handful of posts into the NORMAL lane; tick is ~50ms.
-        for id in 1..=5u64 {
-            batcher
-                .enqueue(ScheduledPost {
-                    id,
-                    request: info_all_mids(),
-                    lane: PostLane::Normal,
-                })
-                .await
-                .unwrap();
-        }
-
-        // Wait for all 5 posts to be sent
-        let sent_check = sent.clone();
-        wait_until_async(
-            || {
-                let sent_inner = sent_check.clone();
-                async move { sent_inner.lock().await.len() == 5 }
-            },
-            Duration::from_secs(2),
-        )
-        .await;
-
-        let actual = sent.lock().await.clone();
-        assert_eq!(actual, vec![1, 2, 3, 4, 5]);
-    }
-
-    #[rstest]
     #[tokio::test]
     async fn test_batcher_drop_aborts_lane_tasks() {
         let started = Arc::new(AtomicUsize::new(0));

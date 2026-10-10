@@ -28,15 +28,15 @@ use std::hint::black_box;
 
 use common::{btc_perp, trader_id};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
+use hypersdk::hypercore::{
+    BatchCancelCloid, BatchOrder, CancelByCloid, OidOrCloid, OrderGrouping, OrderRequest,
+    OrderTypePlacement, TimeInForce as SdkTimeInForce,
+    api::{Action, ModifyAction},
+};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_hyperliquid::{
     common::{credential::EvmPrivateKey, parse::order_to_hyperliquid_request_with_asset},
-    http::models::{
-        Cloid, HyperliquidExchangeAction, HyperliquidExchangeCancelByCloidRequest,
-        HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
-        HyperliquidExchangeModifyOrderRequest, HyperliquidExchangeOrderKind,
-        HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
-    },
+    http::models::Cloid,
     signing::{HyperliquidActionType, HyperliquidEip712Signer, SignRequest, TimeNonce},
     websocket::dispatch::{WsDispatchState, dispatch_order_event, dispatch_order_fill},
 };
@@ -151,10 +151,10 @@ fn stop_market_order(side: OrderSide) -> OrderAny {
     ))
 }
 
-// Builds a signed L1 request body from a HyperliquidExchangeAction, exactly as the
+// Builds a signed L1 request body from a Action, exactly as the
 // HTTP client does it on the order-submit path (skip the to_value step that
 // the perf patch removed).
-fn sign_action(signer: &HyperliquidEip712Signer, action: &HyperliquidExchangeAction) -> Vec<u8> {
+fn sign_action(signer: &HyperliquidEip712Signer, action: &Action) -> Vec<u8> {
     let action_bytes = rmp_serde::to_vec_named(action).unwrap();
     let sign_request = SignRequest {
         action: None,
@@ -185,11 +185,11 @@ fn bench_submit_market(c: &mut Criterion) {
                 50,
             )
             .unwrap();
-            let action = HyperliquidExchangeAction::Order {
+            let action = Action::Order(BatchOrder {
                 orders: vec![req],
-                grouping: HyperliquidExchangeGrouping::Na,
+                grouping: OrderGrouping::Na,
                 builder: None,
-            };
+            });
             let bytes = sign_action(&signer, &action);
             black_box(bytes);
         });
@@ -213,11 +213,11 @@ fn bench_submit_limit(c: &mut Criterion) {
                 50,
             )
             .unwrap();
-            let action = HyperliquidExchangeAction::Order {
+            let action = Action::Order(BatchOrder {
                 orders: vec![req],
-                grouping: HyperliquidExchangeGrouping::Na,
+                grouping: OrderGrouping::Na,
                 builder: None,
-            };
+            });
             let bytes = sign_action(&signer, &action);
             black_box(bytes);
         });
@@ -241,11 +241,11 @@ fn bench_submit_stop_market(c: &mut Criterion) {
                 50,
             )
             .unwrap();
-            let action = HyperliquidExchangeAction::Order {
+            let action = Action::Order(BatchOrder {
                 orders: vec![req],
-                grouping: HyperliquidExchangeGrouping::Na,
+                grouping: OrderGrouping::Na,
                 builder: None,
-            };
+            });
             let bytes = sign_action(&signer, &action);
             black_box(bytes);
         });
@@ -261,13 +261,13 @@ fn bench_cancel(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("cancel", |b| {
         b.iter(|| {
-            let action = HyperliquidExchangeAction::CancelByCloid {
-                cancels: vec![HyperliquidExchangeCancelByCloidRequest {
+            let action = Action::CancelByCloid(BatchCancelCloid {
+                cancels: vec![CancelByCloid {
                     asset: BTC_ASSET_INDEX,
-                    cloid,
+                    cloid: cloid.0.into(),
                 }],
-                fast: Some(true),
-            };
+                fast: true,
+            });
             let bytes = sign_action(&signer, black_box(&action));
             black_box(bytes);
         });
@@ -278,30 +278,27 @@ fn bench_cancel(c: &mut Criterion) {
 fn bench_modify(c: &mut Criterion) {
     let signer = signer();
     let cloid = Cloid::from_client_order_id(client_order_id("MOD"));
-    let replacement = HyperliquidExchangePlaceOrderRequest {
-        asset: BTC_ASSET_INDEX,
+    let replacement = OrderRequest {
+        asset: BTC_ASSET_INDEX as usize,
         is_buy: true,
-        price: Decimal::from(92573),
-        size: Decimal::new(1, 3),
+        limit_px: Decimal::from(92573),
+        sz: Decimal::new(1, 3),
         reduce_only: false,
-        kind: HyperliquidExchangeOrderKind::Limit {
-            limit: HyperliquidExchangeLimitParams {
-                tif: HyperliquidExchangeTif::Gtc,
-            },
+        order_type: OrderTypePlacement::Limit {
+            tif: SdkTimeInForce::Gtc,
         },
-        cloid: Some(cloid),
+        cloid: cloid.0.into(),
     };
 
     let mut group = c.benchmark_group("exec_pipeline");
     group.throughput(Throughput::Elements(1));
     group.bench_function("modify", |b| {
         b.iter(|| {
-            let action = HyperliquidExchangeAction::Modify {
-                modify: HyperliquidExchangeModifyOrderRequest {
-                    oid: 430_481_837_807.into(),
-                    order: replacement.clone(),
-                },
-            };
+            let action = Action::Modify(ModifyAction {
+                oid: OidOrCloid::Left(430_481_837_807),
+                order: replacement.clone(),
+                always_place: false,
+            });
             let bytes = sign_action(&signer, black_box(&action));
             black_box(bytes);
         });

@@ -16,82 +16,15 @@
 use hypersdk::hypercore::CandleSnapshotRequest;
 use serde::{Serialize, Serializer};
 
-use crate::{
-    common::enums::{HyperliquidBarInterval, HyperliquidInfoRequestType},
-    http::models::{
-        HyperliquidExchangeBuilderFee, HyperliquidExchangeCancelByCloidRequest,
-        HyperliquidExchangeGrouping, HyperliquidExchangeModifyOrderRequest,
-        HyperliquidExchangePlaceOrderRequest, is_fast_cancel_disabled,
-    },
-};
-
-/// Exchange action types for Hyperliquid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ExchangeActionType {
-    /// Place orders
-    Order,
-    /// Cancel orders by order ID
-    Cancel,
-    /// Cancel orders by client order ID
-    CancelByCloid,
-    /// Modify an existing order
-    Modify,
-    /// Update leverage for an asset
-    UpdateLeverage,
-    /// Update isolated margin for an asset
-    UpdateIsolatedMargin,
-}
-
-impl AsRef<str> for ExchangeActionType {
-    fn as_ref(&self) -> &str {
-        match self {
-            Self::Order => "order",
-            Self::Cancel => "cancel",
-            Self::CancelByCloid => "cancelByCloid",
-            Self::Modify => "modify",
-            Self::UpdateLeverage => "updateLeverage",
-            Self::UpdateIsolatedMargin => "updateIsolatedMargin",
-        }
-    }
-}
-
-/// Parameters for placing orders.
-#[derive(Debug, Clone, Serialize)]
-pub struct OrderParams {
-    pub orders: Vec<HyperliquidExchangePlaceOrderRequest>,
-    pub grouping: HyperliquidExchangeGrouping,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub builder: Option<HyperliquidExchangeBuilderFee>,
-}
-
-/// Parameters for canceling orders.
-#[derive(Debug, Clone, Serialize)]
-pub struct CancelParams {
-    pub cancels: Vec<HyperliquidExchangeCancelByCloidRequest>,
-    #[serde(rename = "f", skip_serializing_if = "is_fast_cancel_disabled")]
-    pub fast: Option<bool>,
-}
-
-/// Parameters for modifying an order.
-#[derive(Debug, Clone, Serialize)]
-pub struct ModifyParams {
-    #[serde(flatten)]
-    pub request: HyperliquidExchangeModifyOrderRequest,
-}
-
-/// Parameters for updating leverage.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateLeverageParams {
-    pub asset: u32,
-    pub is_cross: bool,
-    pub leverage: u32,
-}
+use crate::common::enums::{HyperliquidBarInterval, HyperliquidInfoRequestType};
 
 /// Parameters for updating isolated margin.
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename = "updateIsolatedMargin",
+    rename_all = "camelCase"
+)]
 pub struct UpdateIsolatedMarginParams {
     pub asset: u32,
     pub is_buy: bool,
@@ -435,118 +368,18 @@ impl InfoRequest {
     }
 }
 
-/// Exchange action parameters.
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-pub enum ExchangeActionParams {
-    Order(OrderParams),
-    Cancel(CancelParams),
-    Modify(ModifyParams),
-    UpdateLeverage(UpdateLeverageParams),
-    UpdateIsolatedMargin(UpdateIsolatedMarginParams),
-}
-
-/// Represents an exchange action wrapper for `POST /exchange`.
-#[derive(Debug, Clone, Serialize)]
-pub struct ExchangeAction {
-    #[serde(rename = "type", serialize_with = "serialize_action_type")]
-    pub action_type: ExchangeActionType,
-    #[serde(flatten)]
-    pub params: ExchangeActionParams,
-}
-
-fn serialize_action_type<S>(
-    action_type: &ExchangeActionType,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_str(action_type.as_ref())
-}
-
-impl ExchangeAction {
-    /// Creates an action to place orders with builder attribution.
-    pub fn order(
-        orders: Vec<HyperliquidExchangePlaceOrderRequest>,
-        builder: Option<HyperliquidExchangeBuilderFee>,
-    ) -> Self {
-        Self {
-            action_type: ExchangeActionType::Order,
-            params: ExchangeActionParams::Order(OrderParams {
-                orders,
-                grouping: HyperliquidExchangeGrouping::Na,
-                builder,
-            }),
-        }
-    }
-
-    /// Creates an action to cancel orders.
-    pub fn cancel(cancels: Vec<HyperliquidExchangeCancelByCloidRequest>) -> Self {
-        Self {
-            action_type: ExchangeActionType::Cancel,
-            params: ExchangeActionParams::Cancel(CancelParams {
-                cancels,
-                fast: None,
-            }),
-        }
-    }
-
-    /// Creates an action to cancel orders by client order ID.
-    pub fn cancel_by_cloid(cancels: Vec<HyperliquidExchangeCancelByCloidRequest>) -> Self {
-        Self {
-            action_type: ExchangeActionType::CancelByCloid,
-            params: ExchangeActionParams::Cancel(CancelParams {
-                cancels,
-                fast: None,
-            }),
-        }
-    }
-
-    /// Creates an action to modify an order.
-    pub fn modify(request: HyperliquidExchangeModifyOrderRequest) -> Self {
-        Self {
-            action_type: ExchangeActionType::Modify,
-            params: ExchangeActionParams::Modify(ModifyParams { request }),
-        }
-    }
-
-    /// Creates an action to update leverage for an asset.
-    pub fn update_leverage(asset: u32, is_cross: bool, leverage: u32) -> Self {
-        Self {
-            action_type: ExchangeActionType::UpdateLeverage,
-            params: ExchangeActionParams::UpdateLeverage(UpdateLeverageParams {
-                asset,
-                is_cross,
-                leverage,
-            }),
-        }
-    }
-
-    /// Creates an action to update isolated margin for an asset.
-    pub fn update_isolated_margin(asset: u32, is_buy: bool, ntli: i64) -> Self {
-        Self {
-            action_type: ExchangeActionType::UpdateIsolatedMargin,
-            params: ExchangeActionParams::UpdateIsolatedMargin(UpdateIsolatedMarginParams {
-                asset,
-                is_buy,
-                ntli,
-            }),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use hypersdk::hypercore::{
+        BatchCancel, BatchCancelCloid, BatchOrder, Cancel, CancelByCloid, Modify, OidOrCloid,
+        OrderGrouping, OrderRequest, OrderTypePlacement, TimeInForce as SdkTimeInForce,
+        api::{Action, ModifyAction, UpdateLeverage},
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::*;
-    use crate::http::models::{
-        Cloid, HyperliquidExchangeCancelByCloidRequest, HyperliquidExchangeLimitParams,
-        HyperliquidExchangeModifyOrderRequest, HyperliquidExchangeOrderKind,
-        HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
-    };
+    use crate::http::models::Cloid;
 
     #[rstest]
     fn test_info_request_meta() {
@@ -722,83 +555,112 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_order() {
-        let order = HyperliquidExchangePlaceOrderRequest {
+        let order = OrderRequest {
             asset: 0,
             is_buy: true,
-            price: Decimal::new(50000, 0),
-            size: Decimal::new(1, 0),
+            limit_px: Decimal::new(50000, 0),
+            sz: Decimal::new(1, 0),
             reduce_only: false,
-            kind: HyperliquidExchangeOrderKind::Limit {
-                limit: HyperliquidExchangeLimitParams {
-                    tif: HyperliquidExchangeTif::Gtc,
-                },
+            order_type: OrderTypePlacement::Limit {
+                tif: SdkTimeInForce::Gtc,
             },
-            cloid: None,
+            cloid: Default::default(),
         };
 
-        let action = ExchangeAction::order(vec![order], None);
+        let action = Action::Order(BatchOrder {
+            orders: vec![order],
+            grouping: OrderGrouping::Na,
+            builder: None,
+        });
 
-        assert_eq!(action.action_type, ExchangeActionType::Order);
+        assert!(matches!(action, Action::Order(_)));
         let json = serde_json::to_string(&action).unwrap();
         assert!(json.contains("\"orders\""));
     }
 
     #[rstest]
     fn test_exchange_action_cancel() {
-        let cancel = HyperliquidExchangeCancelByCloidRequest {
-            asset: 0,
-            cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
-        };
-
-        let action = ExchangeAction::cancel(vec![cancel]);
-
-        assert_eq!(action.action_type, ExchangeActionType::Cancel);
+        let action = Action::Cancel(BatchCancel {
+            cancels: vec![Cancel { asset: 0, oid: 0 }],
+            fast: false,
+        });
+        assert_eq!(serde_json::to_value(&action).unwrap()["type"], "cancel");
     }
 
     #[rstest]
     fn test_exchange_action_serialization() {
-        let order = HyperliquidExchangePlaceOrderRequest {
+        let order = OrderRequest {
             asset: 0,
             is_buy: true,
-            price: Decimal::new(50000, 0),
-            size: Decimal::new(1, 0),
+            limit_px: Decimal::new(50000, 0),
+            sz: Decimal::new(1, 0),
             reduce_only: false,
-            kind: HyperliquidExchangeOrderKind::Limit {
-                limit: HyperliquidExchangeLimitParams {
-                    tif: HyperliquidExchangeTif::Gtc,
-                },
+            order_type: OrderTypePlacement::Limit {
+                tif: SdkTimeInForce::Gtc,
             },
-            cloid: None,
+            cloid: Default::default(),
         };
 
-        let action = ExchangeAction::order(vec![order], None);
+        let action = Action::Order(BatchOrder {
+            orders: vec![order],
+            grouping: OrderGrouping::Na,
+            builder: None,
+        });
 
         let json = serde_json::to_string(&action).unwrap();
-        // Verify that action_type is serialized as "type" with the correct string value
+        // Verify the serialized action type and order fields
         assert!(json.contains(r#""type":"order""#));
         assert!(json.contains(r#""orders""#));
         assert!(json.contains(r#""grouping":"na""#));
     }
 
     #[rstest]
-    fn test_exchange_action_type_as_ref() {
-        assert_eq!(ExchangeActionType::Order.as_ref(), "order");
-        assert_eq!(ExchangeActionType::Cancel.as_ref(), "cancel");
-        assert_eq!(ExchangeActionType::CancelByCloid.as_ref(), "cancelByCloid");
-        assert_eq!(ExchangeActionType::Modify.as_ref(), "modify");
-        assert_eq!(
-            ExchangeActionType::UpdateLeverage.as_ref(),
-            "updateLeverage"
-        );
-        assert_eq!(
-            ExchangeActionType::UpdateIsolatedMargin.as_ref(),
-            "updateIsolatedMargin"
-        );
+    fn test_exchange_action_type_serialization() {
+        let actions = [
+            (
+                Action::Order(BatchOrder {
+                    orders: vec![],
+                    grouping: OrderGrouping::Na,
+                    builder: None,
+                }),
+                "order",
+            ),
+            (
+                Action::Cancel(BatchCancel {
+                    cancels: vec![],
+                    fast: false,
+                }),
+                "cancel",
+            ),
+            (
+                Action::CancelByCloid(BatchCancelCloid {
+                    cancels: vec![],
+                    fast: false,
+                }),
+                "cancelByCloid",
+            ),
+            (
+                Action::UpdateLeverage(UpdateLeverage {
+                    asset: 1,
+                    is_cross: true,
+                    leverage: 10,
+                }),
+                "updateLeverage",
+            ),
+        ];
+
+        for (action, expected) in actions {
+            assert_eq!(serde_json::to_value(action).unwrap()["type"], expected);
+        }
     }
 
     #[rstest]
     fn test_update_leverage_serialization() {
-        let action = ExchangeAction::update_leverage(1, true, 10);
+        let action = Action::UpdateLeverage(UpdateLeverage {
+            asset: 1,
+            is_cross: true,
+            leverage: 10,
+        });
         let json = serde_json::to_string(&action).unwrap();
 
         assert!(json.contains(r#""type":"updateLeverage""#));
@@ -809,7 +671,11 @@ mod tests {
 
     #[rstest]
     fn test_update_isolated_margin_serialization() {
-        let action = ExchangeAction::update_isolated_margin(2, false, 1000);
+        let action = UpdateIsolatedMarginParams {
+            asset: 2,
+            is_buy: false,
+            ntli: 1000,
+        };
         let json = serde_json::to_string(&action).unwrap();
 
         assert!(json.contains(r#""type":"updateIsolatedMargin""#));
@@ -820,11 +686,17 @@ mod tests {
 
     #[rstest]
     fn test_cancel_by_cloid_serialization() {
-        let cancel_request = HyperliquidExchangeCancelByCloidRequest {
+        let cancel_request = CancelByCloid {
             asset: 0,
-            cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
+            cloid: Cloid::from_hex("0x00000000000000000000000000000000")
+                .unwrap()
+                .0
+                .into(),
         };
-        let action = ExchangeAction::cancel_by_cloid(vec![cancel_request]);
+        let action = Action::CancelByCloid(BatchCancelCloid {
+            cancels: vec![cancel_request],
+            fast: false,
+        });
         let json = serde_json::to_string(&action).unwrap();
 
         assert!(json.contains(r#""type":"cancelByCloid""#));
@@ -833,23 +705,25 @@ mod tests {
 
     #[rstest]
     fn test_modify_serialization() {
-        let modify_request = HyperliquidExchangeModifyOrderRequest {
-            oid: 12345.into(),
-            order: HyperliquidExchangePlaceOrderRequest {
+        let modify_request = Modify {
+            oid: OidOrCloid::Left(12345),
+            order: OrderRequest {
                 asset: 0,
                 is_buy: true,
-                price: Decimal::new(51000, 0),
-                size: Decimal::new(2, 0),
+                limit_px: Decimal::new(51000, 0),
+                sz: Decimal::new(2, 0),
                 reduce_only: false,
-                kind: HyperliquidExchangeOrderKind::Limit {
-                    limit: HyperliquidExchangeLimitParams {
-                        tif: HyperliquidExchangeTif::Gtc,
-                    },
+                order_type: OrderTypePlacement::Limit {
+                    tif: SdkTimeInForce::Gtc,
                 },
-                cloid: None,
+                cloid: Default::default(),
             },
         };
-        let action = ExchangeAction::modify(modify_request);
+        let action = Action::Modify(ModifyAction {
+            oid: modify_request.oid,
+            order: modify_request.order,
+            always_place: false,
+        });
         let json = serde_json::to_string(&action).unwrap();
 
         assert!(json.contains(r#""type":"modify""#));

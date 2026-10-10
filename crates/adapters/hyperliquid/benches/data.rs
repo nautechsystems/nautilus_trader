@@ -34,6 +34,7 @@ use nautilus_hyperliquid::websocket::{
     },
 };
 use nautilus_model::data::BarType;
+use ustr::Ustr;
 
 fn bench_trades(c: &mut Criterion) {
     let instruments = instrument_cache();
@@ -49,7 +50,7 @@ fn bench_trades(c: &mut Criterion) {
                 unreachable!()
             };
             let trade = &data[0];
-            let instrument = instruments.get(&trade.coin).unwrap();
+            let instrument = instruments.get(&Ustr::from(trade.coin.as_str())).unwrap();
             let tick = parse_ws_trade_tick(trade, instrument, ts_init).unwrap();
             black_box(tick);
         });
@@ -70,7 +71,7 @@ fn bench_book_deltas(c: &mut Criterion) {
             let HyperliquidWsMessage::L2Book { data } = msg else {
                 unreachable!()
             };
-            let instrument = instruments.get(&data.coin).unwrap();
+            let instrument = instruments.get(&Ustr::from(data.coin.as_str())).unwrap();
             let deltas = parse_ws_order_book_deltas(&data, instrument, ts_init).unwrap();
             black_box(deltas);
         });
@@ -91,7 +92,7 @@ fn bench_book_depth(c: &mut Criterion) {
             let HyperliquidWsMessage::L2Book { data } = msg else {
                 unreachable!()
             };
-            let instrument = instruments.get(&data.coin).unwrap();
+            let instrument = instruments.get(&Ustr::from(data.coin.as_str())).unwrap();
             let depth = parse_ws_order_book_depth(&data, instrument, ts_init).unwrap();
             black_box(depth);
         });
@@ -111,7 +112,7 @@ fn bench_quotes(c: &mut Criterion) {
             let HyperliquidWsMessage::Bbo { data } = msg else {
                 unreachable!()
             };
-            let instrument = instruments.get(&data.coin).unwrap();
+            let instrument = instruments.get(&Ustr::from(data.coin.as_str())).unwrap();
             let quote = parse_ws_quote_tick(&data, instrument, ts_init).unwrap();
             black_box(quote);
         });

@@ -29,7 +29,11 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use hypersdk::hypercore::Chain;
+use hypersdk::hypercore::{
+    BatchCancel, BatchCancelCloid, BatchOrder, Builder, Cancel, CancelByCloid, Chain, OidOrCloid,
+    OrderGrouping, OrderRequest, OrderTypePlacement, TimeInForce as SdkTimeInForce, TpSl, Trade,
+    api::{Action, ModifyAction, UserOutcomeAction},
+};
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, UUID4, UnixNanos,
@@ -88,21 +92,12 @@ use crate::{
     http::{
         error::{Error, Result},
         models::{
-            ClearinghouseState, Cloid, HyperliquidCandleSnapshot, HyperliquidExchangeAction,
-            HyperliquidExchangeBuilderFee, HyperliquidExchangeCancelByCloidRequest,
-            HyperliquidExchangeCancelOrderRequest, HyperliquidExchangeGrouping,
-            HyperliquidExchangeLimitParams, HyperliquidExchangeMergeOutcomeParams,
-            HyperliquidExchangeMergeQuestionParams, HyperliquidExchangeModifyOrderRequest,
-            HyperliquidExchangeModifyTarget, HyperliquidExchangeNegateOutcomeParams,
-            HyperliquidExchangeOrderKind, HyperliquidExchangeOrderResponseData,
-            HyperliquidExchangeOrderStatus, HyperliquidExchangePlaceOrderRequest,
-            HyperliquidExchangeRequest, HyperliquidExchangeResponse,
-            HyperliquidExchangeSplitOutcomeParams, HyperliquidExchangeTif, HyperliquidExchangeTpSl,
-            HyperliquidExchangeTriggerParams, HyperliquidExchangeUserOutcomeOp, HyperliquidFills,
+            ClearinghouseState, Cloid, HyperliquidCandleSnapshot,
+            HyperliquidExchangeOrderResponseData, HyperliquidExchangeOrderStatus,
+            HyperliquidExchangeRequest, HyperliquidExchangeResponse, HyperliquidFills,
             HyperliquidFundingHistoryEntry, HyperliquidL2Book, HyperliquidMeta,
-            HyperliquidOrderStatus, HyperliquidOrderStatusEntry, HyperliquidRecentTrade,
-            OutcomeMeta, PerpDex, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK,
-            SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
+            HyperliquidOrderStatus, HyperliquidOrderStatusEntry, OutcomeMeta, PerpDex, PerpMeta,
+            PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
             DEFAULT_OUTCOME_QUOTE_CURRENCY, HyperliquidInstrumentDef, create_instrument_from_def,
@@ -112,10 +107,10 @@ use crate::{
             parse_recent_public_trade, parse_spot_instruments, parse_spot_position_status_report,
             parse_unlisted_outcome_instrument, resolve_perp_settlement_currency,
         },
-        query::{ExchangeAction, InfoRequest},
+        query::{InfoRequest, UpdateIsolatedMarginParams},
         rate_limits::{
-            RateLimitSnapshot, WeightedLimiter, backoff_full_jitter, exchange_weight,
-            exec_action_weight, info_base_weight, info_extra_weight, shared_rest_limiter,
+            RateLimitSnapshot, WeightedLimiter, backoff_full_jitter, exec_action_weight,
+            info_base_weight, info_extra_weight, shared_rest_limiter,
         },
     },
     signing::{
@@ -523,10 +518,10 @@ impl HyperliquidRawHttpClient {
     ///
     /// Returns a recent snapshot (newest first) with no time range. Depends on the
     /// Hyperliquid indexer: self-hosted `/info` nodes return HTTP 422.
-    pub async fn info_recent_trades(&self, coin: &str) -> Result<Vec<HyperliquidRecentTrade>> {
+    pub async fn info_recent_trades(&self, coin: &str) -> Result<Vec<Trade>> {
         let request = InfoRequest::recent_trades(coin);
         let response = self.send_info_request(&request).await?;
-        serde_json::from_value(response).map_err(Error::Serde)
+        crate::websocket::messages::deserialize_trades(response).map_err(Error::Serde)
     }
 
     /// Get user fills (trading history).
@@ -737,12 +732,12 @@ impl HyperliquidRawHttpClient {
             .map_err(Error::from_http_client)
     }
 
-    /// Send a signed action to the exchange.
+    /// Sends an isolated-margin update with the signed delta missing from the SDK model.
     pub async fn post_action(
         &self,
-        action: &ExchangeAction,
+        action: &UpdateIsolatedMarginParams,
     ) -> Result<HyperliquidExchangeResponse> {
-        let w = exchange_weight(action);
+        let w = 1;
         self.exchange_limiter.acquire(w).await;
 
         let signer = self
@@ -829,13 +824,34 @@ impl HyperliquidRawHttpClient {
         }
     }
 
-    /// Build a signed exchange request using the typed HyperliquidExchangeAction enum.
+    /// Build a signed exchange request using the SDK action type.
     pub fn sign_action_exec_request(
         &self,
-        action: &HyperliquidExchangeAction,
+        action: &Action,
         expires_after: Option<u64>,
-    ) -> Result<HyperliquidExchangeRequest<HyperliquidExchangeAction>> {
-        if matches!(action, HyperliquidExchangeAction::UsdClassTransfer { .. })
+    ) -> Result<HyperliquidExchangeRequest<Action>> {
+        if !matches!(
+            action,
+            Action::Order(_)
+                | Action::Cancel(_)
+                | Action::CancelByCloid(_)
+                | Action::Modify(_)
+                | Action::BatchModify(_)
+                | Action::ScheduleCancel(_)
+                | Action::UserOutcome(_)
+                | Action::Noop
+                | Action::UpdateLeverage(_)
+                | Action::TwapCancel { .. }
+                | Action::TwapOrder { .. }
+                | Action::UpdateIsolatedMargin(_)
+                | Action::UsdClassTransfer(_)
+        ) {
+            return Err(Error::bad_request(
+                "SDK action is not supported by this execution endpoint",
+            ));
+        }
+
+        if matches!(action, Action::UsdClassTransfer(_))
             && (self.vault_address.is_some() || expires_after.is_some())
         {
             return Err(Error::bad_request(
@@ -858,24 +874,15 @@ impl HyperliquidRawHttpClient {
 
         let mut action = action.clone();
 
-        if let HyperliquidExchangeAction::UsdClassTransfer {
-            hyperliquid_chain,
-            signature_chain_id,
-            nonce,
-            ..
-        } = &mut action
-        {
+        if let Action::UsdClassTransfer(transfer) = &mut action {
             let chain = if self.is_testnet() {
                 Chain::Testnet
             } else {
                 Chain::Mainnet
             };
-            *hyperliquid_chain = chain;
-            *signature_chain_id =
-                u64::from_str_radix(chain.arbitrum_id().trim_start_matches("0x"), 16).map_err(
-                    |e| Error::bad_request(format!("Invalid SDK signing chain ID: {e}")),
-                )?;
-            *nonce = time_nonce.as_millis() as u64;
+            transfer.hyperliquid_chain = chain;
+            transfer.signature_chain_id = chain.arbitrum_id().to_string();
+            transfer.nonce = time_nonce.as_millis() as u64;
         }
 
         let sig = signer.sign_exchange_action(
@@ -905,14 +912,11 @@ impl HyperliquidRawHttpClient {
         Ok(request)
     }
 
-    /// Send a signed action to the exchange using the typed HyperliquidExchangeAction enum.
+    /// Send a signed action to the exchange using the SDK action type.
     ///
     /// This is the preferred method for placing orders as it uses properly typed
     /// structures that match Hyperliquid's API expectations exactly.
-    pub async fn post_action_exec(
-        &self,
-        action: &HyperliquidExchangeAction,
-    ) -> Result<HyperliquidExchangeResponse> {
+    pub async fn post_action_exec(&self, action: &Action) -> Result<HyperliquidExchangeResponse> {
         let w = exec_action_weight(action);
         self.exchange_limiter.acquire(w).await;
 
@@ -1350,13 +1354,13 @@ impl HyperliquidHttpClient {
     /// Returns `None` when attribution is disabled, or when Hyperliquid does
     /// not support it for the current request context (vault orders and testnet).
     #[must_use]
-    pub fn builder_attribution(&self) -> Option<HyperliquidExchangeBuilderFee> {
+    pub fn builder_attribution(&self) -> Option<Builder> {
         if !self.include_builder_attribution || self.has_vault_address() || self.is_testnet() {
             None
         } else {
-            Some(HyperliquidExchangeBuilderFee {
-                address: NAUTILUS_BUILDER_ADDRESS.to_string(),
-                fee_tenths_bp: 0,
+            Some(Builder {
+                builder_address: NAUTILUS_BUILDER_ADDRESS,
+                fee: 0,
             })
         }
     }
@@ -1905,7 +1909,7 @@ impl HyperliquidHttpClient {
     }
 
     /// Get recent public trades for a coin.
-    pub async fn info_recent_trades(&self, coin: &str) -> Result<Vec<HyperliquidRecentTrade>> {
+    pub async fn info_recent_trades(&self, coin: &str) -> Result<Vec<Trade>> {
         self.inner.info_recent_trades(coin).await
     }
 
@@ -2033,25 +2037,22 @@ impl HyperliquidHttpClient {
     /// Post an action to the exchange endpoint (low-level delegation).
     pub async fn post_action(
         &self,
-        action: &ExchangeAction,
+        action: &UpdateIsolatedMarginParams,
     ) -> Result<HyperliquidExchangeResponse> {
         self.inner.post_action(action).await
     }
 
     /// Post an execution action (low-level delegation).
-    pub async fn post_action_exec(
-        &self,
-        action: &HyperliquidExchangeAction,
-    ) -> Result<HyperliquidExchangeResponse> {
+    pub async fn post_action_exec(&self, action: &Action) -> Result<HyperliquidExchangeResponse> {
         self.inner.post_action_exec(action).await
     }
 
     /// Build the signed exchange request used by both HTTP and WebSocket post transports.
     pub fn sign_action_exec_request(
         &self,
-        action: &HyperliquidExchangeAction,
+        action: &Action,
         expires_after: Option<u64>,
-    ) -> Result<HyperliquidExchangeRequest<HyperliquidExchangeAction>> {
+    ) -> Result<HyperliquidExchangeRequest<Action>> {
         self.inner.sign_action_exec_request(action, expires_after)
     }
 
@@ -2085,47 +2086,47 @@ impl HyperliquidHttpClient {
 
         let action = if let Some(client_order_id) = client_order_id {
             if let Some(cloid) = self.cached_client_order_id_cloid(&client_order_id) {
-                HyperliquidExchangeAction::CancelByCloid {
-                    cancels: vec![HyperliquidExchangeCancelByCloidRequest {
+                Action::CancelByCloid(BatchCancelCloid {
+                    cancels: vec![CancelByCloid {
                         asset: asset_id,
-                        cloid,
+                        cloid: cloid.0.into(),
                     }],
-                    fast: None,
-                }
+                    fast: false,
+                })
             } else if let Some(oid) = venue_order_id {
                 let oid_u64 = oid
                     .as_str()
                     .parse::<u64>()
                     .map_err(|_| Error::bad_request("Invalid venue order ID format"))?;
-                HyperliquidExchangeAction::Cancel {
-                    cancels: vec![HyperliquidExchangeCancelOrderRequest {
-                        asset: asset_id,
+                Action::Cancel(BatchCancel {
+                    cancels: vec![Cancel {
+                        asset: asset_id as usize,
                         oid: oid_u64,
                     }],
-                    fast: None,
-                }
+                    fast: false,
+                })
             } else {
                 let cloid = self.get_or_generate_client_order_id_cloid(client_order_id);
-                HyperliquidExchangeAction::CancelByCloid {
-                    cancels: vec![HyperliquidExchangeCancelByCloidRequest {
+                Action::CancelByCloid(BatchCancelCloid {
+                    cancels: vec![CancelByCloid {
                         asset: asset_id,
-                        cloid,
+                        cloid: cloid.0.into(),
                     }],
-                    fast: None,
-                }
+                    fast: false,
+                })
             }
         } else if let Some(oid) = venue_order_id {
             let oid_u64 = oid
                 .as_str()
                 .parse::<u64>()
                 .map_err(|_| Error::bad_request("Invalid venue order ID format"))?;
-            HyperliquidExchangeAction::Cancel {
-                cancels: vec![HyperliquidExchangeCancelOrderRequest {
-                    asset: asset_id,
+            Action::Cancel(BatchCancel {
+                cancels: vec![Cancel {
+                    asset: asset_id as usize,
                     oid: oid_u64,
                 }],
-                fast: None,
-            }
+                fast: false,
+            })
         } else {
             return Err(Error::bad_request(
                 "Either client_order_id or venue_order_id must be provided",
@@ -2185,14 +2186,17 @@ impl HyperliquidHttpClient {
             .as_ref()
             .and_then(|id| self.unique_cached_client_order_id_cloid(id))
         {
-            Some(cloid) => HyperliquidExchangeModifyTarget::Cloid(cloid),
+            Some(cloid) => OidOrCloid::Right(cloid.0.into()),
             None => {
                 let Some(venue_order_id) = venue_order_id.as_ref() else {
                     return Err(Error::bad_request(
                         "venue_order_id or unique cached CLOID is required for modify",
                     ));
                 };
-                HyperliquidExchangeModifyTarget::from_venue_order_id(venue_order_id)
+                venue_order_id
+                    .as_str()
+                    .parse::<u64>()
+                    .map(OidOrCloid::Left)
                     .map_err(|_| Error::bad_request("Invalid venue order ID format"))?
             }
         };
@@ -2211,17 +2215,13 @@ impl HyperliquidHttpClient {
         let size = quantity.as_decimal().normalize();
 
         let kind = match order_type {
-            OrderType::Market => HyperliquidExchangeOrderKind::Limit {
-                limit: HyperliquidExchangeLimitParams {
-                    tif: HyperliquidExchangeTif::Ioc,
-                },
+            OrderType::Market => OrderTypePlacement::Limit {
+                tif: SdkTimeInForce::Ioc,
             },
             OrderType::Limit => {
                 let tif = time_in_force_to_hyperliquid_tif(time_in_force, post_only)
                     .map_err(|e| Error::bad_request(format!("{e}")))?;
-                HyperliquidExchangeOrderKind::Limit {
-                    limit: HyperliquidExchangeLimitParams { tif },
-                }
+                OrderTypePlacement::Limit { tif }
             }
             OrderType::StopMarket
             | OrderType::StopLimit
@@ -2236,19 +2236,17 @@ impl HyperliquidHttpClient {
                     )
                     .map_err(|e| Error::bad_request(format!("{e}")))?;
                     let tpsl = match order_type {
-                        OrderType::StopMarket | OrderType::StopLimit => HyperliquidExchangeTpSl::Sl,
-                        _ => HyperliquidExchangeTpSl::Tp,
+                        OrderType::StopMarket | OrderType::StopLimit => TpSl::Sl,
+                        _ => TpSl::Tp,
                     };
                     let is_market = matches!(
                         order_type,
                         OrderType::StopMarket | OrderType::MarketIfTouched
                     );
-                    HyperliquidExchangeOrderKind::Trigger {
-                        trigger: HyperliquidExchangeTriggerParams {
-                            is_market,
-                            trigger_px: trigger_price_decimal,
-                            tpsl,
-                        },
+                    OrderTypePlacement::Trigger {
+                        is_market,
+                        trigger_px: trigger_price_decimal,
+                        tpsl,
                     }
                 } else {
                     return Err(Error::bad_request("Trigger orders require a trigger price"));
@@ -2262,19 +2260,21 @@ impl HyperliquidHttpClient {
         };
         let cloid = client_order_id.map(|id| self.get_or_generate_client_order_id_cloid(id));
 
-        let order = HyperliquidExchangePlaceOrderRequest {
-            asset: asset_id,
+        let order = OrderRequest {
+            asset: asset_id as usize,
             is_buy,
-            price: normalized_price,
-            size,
+            limit_px: normalized_price,
+            sz: size,
             reduce_only,
-            kind,
-            cloid,
+            order_type: kind,
+            cloid: cloid.map(|value| value.0.into()).unwrap_or_default(),
         };
 
-        let action = HyperliquidExchangeAction::Modify {
-            modify: HyperliquidExchangeModifyOrderRequest { oid, order },
-        };
+        let action = Action::Modify(ModifyAction {
+            oid,
+            order,
+            always_place: false,
+        });
 
         let response = self.inner.post_action_exec(&action).await?;
 
@@ -2318,11 +2318,7 @@ impl HyperliquidHttpClient {
         outcome: u32,
         amount: Decimal,
     ) -> Result<HyperliquidExchangeResponse> {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::SplitOutcome(
-                HyperliquidExchangeSplitOutcomeParams { outcome, amount },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::split(outcome, amount));
         self.inner.post_action_exec(&action).await
     }
 
@@ -2341,11 +2337,7 @@ impl HyperliquidHttpClient {
         outcome: u32,
         amount: Option<Decimal>,
     ) -> Result<HyperliquidExchangeResponse> {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::MergeOutcome(
-                HyperliquidExchangeMergeOutcomeParams { outcome, amount },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::merge(outcome, amount));
         self.inner.post_action_exec(&action).await
     }
 
@@ -2363,11 +2355,7 @@ impl HyperliquidHttpClient {
         question: u32,
         amount: Option<Decimal>,
     ) -> Result<HyperliquidExchangeResponse> {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::MergeQuestion(
-                HyperliquidExchangeMergeQuestionParams { question, amount },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::merge_question(question, amount));
         self.inner.post_action_exec(&action).await
     }
 
@@ -2386,15 +2374,7 @@ impl HyperliquidHttpClient {
         outcome: u32,
         amount: Decimal,
     ) -> Result<HyperliquidExchangeResponse> {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::NegateOutcome(
-                HyperliquidExchangeNegateOutcomeParams {
-                    question,
-                    outcome,
-                    amount,
-                },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::negate(question, outcome, amount));
         self.inner.post_action_exec(&action).await
     }
 
@@ -3443,18 +3423,16 @@ impl HyperliquidHttpClient {
         let size_decimal = quantity.as_decimal().normalize();
 
         let kind = match order_type {
-            OrderType::Market => HyperliquidExchangeOrderKind::Limit {
-                limit: HyperliquidExchangeLimitParams {
-                    tif: HyperliquidExchangeTif::Ioc,
-                },
+            OrderType::Market => OrderTypePlacement::Limit {
+                tif: SdkTimeInForce::Ioc,
             },
             OrderType::Limit => {
                 let tif = if post_only {
-                    HyperliquidExchangeTif::Alo
+                    SdkTimeInForce::Alo
                 } else {
                     match time_in_force {
-                        TimeInForce::Gtc => HyperliquidExchangeTif::Gtc,
-                        TimeInForce::Ioc => HyperliquidExchangeTif::Ioc,
+                        TimeInForce::Gtc => SdkTimeInForce::Gtc,
+                        TimeInForce::Ioc => SdkTimeInForce::Ioc,
                         TimeInForce::Fok
                         | TimeInForce::Day
                         | TimeInForce::Gtd
@@ -3466,9 +3444,7 @@ impl HyperliquidHttpClient {
                         }
                     }
                 };
-                HyperliquidExchangeOrderKind::Limit {
-                    limit: HyperliquidExchangeLimitParams { tif },
-                }
+                OrderTypePlacement::Limit { tif }
             }
             OrderType::StopMarket
             | OrderType::StopLimit
@@ -3487,10 +3463,8 @@ impl HyperliquidHttpClient {
                     // StopMarket/StopLimit are always Sl (protective stops)
                     // MarketIfTouched/LimitIfTouched are always Tp (profit-taking/entry)
                     let tpsl = match order_type {
-                        OrderType::StopMarket | OrderType::StopLimit => HyperliquidExchangeTpSl::Sl,
-                        OrderType::MarketIfTouched | OrderType::LimitIfTouched => {
-                            HyperliquidExchangeTpSl::Tp
-                        }
+                        OrderType::StopMarket | OrderType::StopLimit => TpSl::Sl,
+                        OrderType::MarketIfTouched | OrderType::LimitIfTouched => TpSl::Tp,
                         _ => unreachable!(),
                     };
 
@@ -3499,12 +3473,10 @@ impl HyperliquidHttpClient {
                         OrderType::StopMarket | OrderType::MarketIfTouched
                     );
 
-                    HyperliquidExchangeOrderKind::Trigger {
-                        trigger: HyperliquidExchangeTriggerParams {
-                            is_market,
-                            trigger_px: trigger_price_decimal,
-                            tpsl,
-                        },
+                    OrderTypePlacement::Trigger {
+                        is_market,
+                        trigger_px: trigger_price_decimal,
+                        tpsl,
                     }
                 } else {
                     return Err(Error::bad_request("Trigger orders require a trigger price"));
@@ -3518,23 +3490,23 @@ impl HyperliquidHttpClient {
         };
 
         let cloid = self.get_or_generate_client_order_id_cloid(client_order_id);
-        let hyperliquid_order = HyperliquidExchangePlaceOrderRequest {
-            asset,
+        let hyperliquid_order = OrderRequest {
+            asset: asset as usize,
             is_buy,
-            price: price_decimal,
-            size: size_decimal,
+            limit_px: price_decimal,
+            sz: size_decimal,
             reduce_only,
-            kind,
-            cloid: Some(cloid),
+            order_type: kind,
+            cloid: cloid.0.into(),
         };
 
         let builder = self.builder_attribution();
 
-        let action = HyperliquidExchangeAction::Order {
+        let action = Action::Order(BatchOrder {
             orders: vec![hyperliquid_order],
-            grouping: HyperliquidExchangeGrouping::Na,
+            grouping: OrderGrouping::Na,
             builder,
-        };
+        });
 
         let response = self.inner.post_action_exec(&action).await?;
 
@@ -3686,7 +3658,10 @@ impl HyperliquidHttpClient {
         }
 
         for (request, client_order_id) in hyperliquid_orders.iter_mut().zip(client_order_ids) {
-            request.cloid = Some(self.get_or_generate_client_order_id_cloid(client_order_id));
+            request.cloid = self
+                .get_or_generate_client_order_id_cloid(client_order_id)
+                .0
+                .into();
         }
 
         let builder = self.builder_attribution();
@@ -3694,16 +3669,16 @@ impl HyperliquidHttpClient {
         let grouping =
             determine_order_list_grouping(&orders.iter().copied().cloned().collect::<Vec<_>>());
 
-        let action = HyperliquidExchangeAction::Order {
+        let action = Action::Order(BatchOrder {
             orders: hyperliquid_orders,
-            grouping,
+            grouping: grouping.clone(),
             builder,
-        };
+        });
 
         // Submit to exchange using the typed exec endpoint
         let response = self.inner.post_action_exec(&action).await?;
 
-        self.build_submit_orders_reports(orders, grouping, response)
+        self.build_submit_orders_reports(orders, &grouping, response)
     }
 
     /// Parses a Hyperliquid exchange order response for a single-order submit
@@ -3777,7 +3752,7 @@ impl HyperliquidHttpClient {
     pub fn build_submit_orders_reports(
         &self,
         orders: &[&OrderAny],
-        grouping: HyperliquidExchangeGrouping,
+        grouping: &OrderGrouping,
         response: HyperliquidExchangeResponse,
     ) -> Result<Vec<OrderStatusReport>> {
         let order_response = parse_order_response(response)?;
@@ -3790,9 +3765,7 @@ impl HyperliquidHttpClient {
         // For grouped orders (NormalTpsl/PositionTpsl) the exchange returns a
         // single status for the whole group, so only enforce 1:1 matching for
         // ungrouped (Na) submissions.
-        if grouping == HyperliquidExchangeGrouping::Na
-            && order_response.statuses.len() != orders.len()
-        {
+        if matches!(grouping, OrderGrouping::Na) && order_response.statuses.len() != orders.len() {
             return Err(Error::bad_request(format!(
                 "Mismatch between submitted orders ({}) and response statuses ({})",
                 orders.len(),
@@ -4065,6 +4038,7 @@ fn perp_dex_asset_index_base(dex_index: usize) -> u32 {
 
 #[cfg(test)]
 mod tests {
+
     use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
     use axum::{
@@ -4468,8 +4442,11 @@ mod tests {
             .expect("mainnet client should include builder attribution by default");
 
         assert!(client.include_builder_attribution());
-        assert_eq!(builder.address, NAUTILUS_BUILDER_ADDRESS);
-        assert_eq!(builder.fee_tenths_bp, 0);
+        assert_eq!(
+            serde_json::to_value(&builder).unwrap()["b"],
+            format!("{NAUTILUS_BUILDER_ADDRESS:#x}")
+        );
+        assert_eq!(builder.fee, 0);
     }
 
     #[rstest]

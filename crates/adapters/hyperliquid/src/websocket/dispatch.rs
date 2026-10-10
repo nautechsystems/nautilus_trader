@@ -76,6 +76,7 @@ use std::{
 };
 
 use dashmap::{DashMap, DashSet};
+use hypersdk::hypercore::OrderRequest;
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{ExecutionEventEmitter, execution::context::OrderContext};
@@ -92,10 +93,7 @@ use nautilus_model::{
 use parking_lot::Mutex;
 use ustr::Ustr;
 
-use crate::{
-    common::consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH,
-    http::models::HyperliquidExchangePlaceOrderRequest,
-};
+use crate::common::consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH;
 
 pub const DEDUP_CAPACITY: usize = 10_000;
 
@@ -121,7 +119,7 @@ pub struct ModifyIntent {
     /// User-intended absolute total quantity for the replacement.
     pub target_qty: Quantity,
     /// Exact venue request sent, used to size a corrective reduce.
-    pub sent_request: Option<HyperliquidExchangePlaceOrderRequest>,
+    pub sent_request: Option<OrderRequest>,
 }
 
 /// A corrective reduce queued for the WebSocket consumer loop to post.
@@ -135,7 +133,7 @@ pub struct CorrectiveReduce {
     /// Generation of the modify intent the reduce registered.
     pub generation: u64,
     /// Reduced request to send.
-    pub request: HyperliquidExchangePlaceOrderRequest,
+    pub request: OrderRequest,
 }
 
 /// Bounded FIFO chain of in-flight modify intents for one order.
@@ -491,11 +489,7 @@ impl WsDispatchState {
 
     /// Stashes the exact venue request sent onto the most recently queued
     /// modify intent for the order.
-    pub fn stash_modify_request(
-        &self,
-        client_order_id: ClientOrderId,
-        request: HyperliquidExchangePlaceOrderRequest,
-    ) {
+    pub fn stash_modify_request(&self, client_order_id: ClientOrderId, request: OrderRequest) {
         if let Some(mut chain) = self.pending_modify_chains.get_mut(&client_order_id)
             && let Some(back) = chain.intents.back_mut()
         {
@@ -509,10 +503,7 @@ impl WsDispatchState {
 
     /// Returns a clone of the front intent's stashed modify request, if any.
     #[must_use]
-    pub fn modify_request(
-        &self,
-        client_order_id: &ClientOrderId,
-    ) -> Option<HyperliquidExchangePlaceOrderRequest> {
+    pub fn modify_request(&self, client_order_id: &ClientOrderId) -> Option<OrderRequest> {
         self.pending_modify_chains
             .get(client_order_id)
             .and_then(|chain| chain.intents.front().and_then(|i| i.sent_request.clone()))
@@ -830,7 +821,7 @@ pub fn dispatch_order_fill(
     };
 
     // Set when a fill promotes, so the corrective-reduce runs after the fill applies
-    let mut promoted_corrective: Option<(Quantity, HyperliquidExchangePlaceOrderRequest)> = None;
+    let mut promoted_corrective: Option<(Quantity, OrderRequest)> = None;
 
     // Promote the binding from the fill so a dropped replacement ACCEPTED cannot
     // strand it (see module docs).
@@ -846,7 +837,7 @@ pub fn dispatch_order_fill(
         let price = sent_request
             .as_ref()
             .zip(context.price)
-            .and_then(|(r, cached)| Price::from_decimal_dp(r.price, cached.precision).ok())
+            .and_then(|(r, cached)| Price::from_decimal_dp(r.limit_px, cached.precision).ok())
             .or(context.price);
         let Some(price) = price else {
             log::warn!(
@@ -1177,7 +1168,7 @@ fn maybe_queue_corrective_reduce(
     client_order_id: ClientOrderId,
     venue_order_id: VenueOrderId,
     target: Quantity,
-    sent_request: HyperliquidExchangePlaceOrderRequest,
+    sent_request: OrderRequest,
 ) {
     let Ok(new_oid) = venue_order_id.as_str().parse::<u64>() else {
         return;
@@ -1192,10 +1183,10 @@ fn maybe_queue_corrective_reduce(
 
     let remaining = (target - filled).as_decimal().normalize();
 
-    let sent_size = sent_request.size;
+    let sent_size = sent_request.sz;
     if sent_size > remaining {
         let mut corrective = sent_request;
-        corrective.size = remaining;
+        corrective.sz = remaining;
 
         let generation = state.mark_pending_modify(client_order_id, venue_order_id, target);
         state.stash_modify_request(client_order_id, corrective.clone());
@@ -1488,6 +1479,7 @@ pub(crate) fn venue_oid(venue_order_id: VenueOrderId) -> u64 {
 #[cfg(test)]
 mod tests {
     use futures_util::FutureExt;
+    use hypersdk::hypercore::{Cloid as B128, OrderTypePlacement, TimeInForce as SdkTimeInForce};
     use nautilus_common::messages::ExecutionEvent;
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_live::execution::context::OrderIdentity;
@@ -1499,9 +1491,6 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
-    use crate::http::models::{
-        HyperliquidExchangeLimitParams, HyperliquidExchangeOrderKind, HyperliquidExchangeTif,
-    };
 
     fn make_context(client_order_id: ClientOrderId) -> OrderContext {
         OrderContext {
@@ -1652,19 +1641,17 @@ mod tests {
         assert!(state.pending_modify(&cid).is_none());
     }
 
-    fn sample_request(size: Decimal) -> HyperliquidExchangePlaceOrderRequest {
-        HyperliquidExchangePlaceOrderRequest {
+    fn sample_request(size: Decimal) -> OrderRequest {
+        OrderRequest {
             asset: 0,
             is_buy: true,
-            price: "100".parse::<Decimal>().unwrap(),
-            size,
+            limit_px: "100".parse::<Decimal>().unwrap(),
+            sz: size,
             reduce_only: false,
-            kind: HyperliquidExchangeOrderKind::Limit {
-                limit: HyperliquidExchangeLimitParams {
-                    tif: HyperliquidExchangeTif::Gtc,
-                },
+            order_type: OrderTypePlacement::Limit {
+                tif: SdkTimeInForce::Gtc,
             },
-            cloid: None,
+            cloid: B128::ZERO,
         }
     }
 
@@ -1810,13 +1797,13 @@ mod tests {
 
         // Front intent keeps its own request
         assert_eq!(
-            state.modify_request(&cid).map(|r| r.size),
+            state.modify_request(&cid).map(|r| r.sz),
             Some(Decimal::from(1)),
         );
         // After claiming the front, the next intent's request surfaces
         state.claim_front_modify(&cid, VenueOrderId::new("v-1"));
         assert_eq!(
-            state.modify_request(&cid).map(|r| r.size),
+            state.modify_request(&cid).map(|r| r.sz),
             Some(Decimal::from(2)),
         );
     }

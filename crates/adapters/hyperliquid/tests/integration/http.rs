@@ -26,6 +26,7 @@ use std::{
     time::Duration,
 };
 
+use alloy_primitives::Address;
 use axum::{
     Router,
     extract::State,
@@ -33,7 +34,10 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::post,
 };
-use hypersdk::hypercore::{Chain, PrivateKeySigner, api::Action};
+use hypersdk::hypercore::{
+    Chain, PrivateKeySigner,
+    api::{Action, ApproveBuilderFee, UsdClassTransferAction},
+};
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_hyperliquid::{
     HyperliquidHttpClient,
@@ -42,8 +46,8 @@ use nautilus_hyperliquid::{
         client::HyperliquidRawHttpClient,
         error::Error,
         models::{
-            Cloid, HyperliquidExchangeAction, HyperliquidExchangeResponse, HyperliquidFills,
-            HyperliquidL2Book, OutcomeMeta, PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
+            Cloid, HyperliquidExchangeResponse, HyperliquidFills, HyperliquidL2Book, OutcomeMeta,
+            PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
         },
         query::{InfoRequest, InfoRequestParams},
     },
@@ -394,6 +398,34 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_sdk_user_action_without_preparation_is_rejected_before_dispatch() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut client = HyperliquidRawHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Testnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    let action = Action::ApproveBuilderFee(ApproveBuilderFee {
+        signature_chain_id: Chain::Testnet.arbitrum_id().to_string(),
+        hyperliquid_chain: Chain::Testnet,
+        max_fee_rate: "0.001%".to_string(),
+        builder: Address::repeat_byte(0x22),
+        nonce: 0,
+    });
+    let error = client.post_action_exec(&action).await.unwrap_err();
+    assert!(matches!(error, Error::BadRequest(_)));
+    assert!(error.to_string().contains("SDK action is not supported"));
+    assert!(state.last_request_body.lock().await.is_none());
+    assert_eq!(*state.request_count.lock().await, 0);
+}
+
+#[rstest]
 #[case::mainnet(HyperliquidEnvironment::Mainnet, Chain::Mainnet)]
 #[case::testnet(HyperliquidEnvironment::Testnet, Chain::Testnet)]
 #[tokio::test]
@@ -409,13 +441,13 @@ async fn test_sdk_usd_transfer_prepares_and_signs_sent_request(
         HyperliquidRawHttpClient::from_credentials(private_key, None, environment, 60, None)
             .unwrap();
     client.set_base_exchange_url(format!("http://{addr}/exchange"));
-    let action = HyperliquidExchangeAction::UsdClassTransfer {
+    let action = Action::UsdClassTransfer(UsdClassTransferAction {
         hyperliquid_chain: Chain::Mainnet,
-        signature_chain_id: 0,
+        signature_chain_id: "0x0".to_string(),
         nonce: 0,
-        amount: rust_decimal_macros::dec!(15.250000),
+        amount: rust_decimal_macros::dec!(15.250000).to_string(),
         to_perp,
-    };
+    });
     client.post_action_exec(&action).await.unwrap();
     let body = state.last_request_body.lock().await.clone().unwrap();
     let nonce = body["nonce"].as_u64().unwrap();
@@ -455,13 +487,13 @@ async fn test_sdk_usd_transfer_rejects_unsupported_context_before_dispatch(
     )
     .unwrap();
     client.set_base_exchange_url(format!("http://{addr}/exchange"));
-    let action = HyperliquidExchangeAction::UsdClassTransfer {
+    let action = Action::UsdClassTransfer(UsdClassTransferAction {
         hyperliquid_chain: Chain::Mainnet,
-        signature_chain_id: 0,
+        signature_chain_id: "0x0".to_string(),
         nonce: 0,
-        amount: rust_decimal_macros::dec!(1),
+        amount: rust_decimal_macros::dec!(1).to_string(),
         to_perp: true,
-    };
+    });
     let e = client
         .sign_action_exec_request(&action, expires_after)
         .unwrap_err();

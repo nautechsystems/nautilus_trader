@@ -20,11 +20,15 @@ use std::{
 };
 
 use ahash::AHashMap;
+use hypersdk::hypercore::Subscription as SdkSubscription;
 use nautilus_network::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 use parking_lot::Mutex;
 use ustr::Ustr;
 
-use super::{handler::subscription_to_key, messages::SubscriptionRequest};
+use super::{
+    handler::subscription_to_key,
+    messages::{SubscriptionExtension, SubscriptionRequest},
+};
 use crate::common::{
     consts::{
         HYPERLIQUID_WS_CONNECTIONS_MAX, HYPERLIQUID_WS_CONNECTIONS_PER_MINUTE,
@@ -111,7 +115,7 @@ impl WebSocketRateLimits {
         subscription: &SubscriptionRequest,
     ) -> Result<bool, String> {
         let key = subscription_to_key(subscription);
-        let user = subscription_user(subscription).map(str::to_lowercase);
+        let user = subscription_user(subscription);
         let mut counts = self.subscriptions.lock();
 
         if counts
@@ -221,26 +225,24 @@ pub(super) fn shared_websocket_limits(
     limits
 }
 
-fn subscription_user(subscription: &SubscriptionRequest) -> Option<&str> {
+fn subscription_user(subscription: &SubscriptionRequest) -> Option<String> {
     match subscription {
-        SubscriptionRequest::Notification { user }
-        | SubscriptionRequest::WebData2 { user }
-        | SubscriptionRequest::OrderUpdates { user }
-        | SubscriptionRequest::UserEvents { user }
-        | SubscriptionRequest::UserFills { user, .. }
-        | SubscriptionRequest::UserFundings { user }
-        | SubscriptionRequest::UserNonFundingLedgerUpdates { user }
-        | SubscriptionRequest::UserTwapSliceFills { user }
-        | SubscriptionRequest::UserTwapHistory { user }
-        | SubscriptionRequest::ActiveAssetData { user, .. } => Some(user),
-        SubscriptionRequest::AllMids { .. }
-        | SubscriptionRequest::AllDexsAssetCtxs
-        | SubscriptionRequest::Candle { .. }
-        | SubscriptionRequest::L2Book { .. }
-        | SubscriptionRequest::Trades { .. }
-        | SubscriptionRequest::ActiveAssetCtx { .. }
-        | SubscriptionRequest::ActiveSpotAssetCtx { .. }
-        | SubscriptionRequest::Bbo { .. } => None,
+        SubscriptionRequest::Sdk(
+            SdkSubscription::Notification { user }
+            | SdkSubscription::OrderUpdates { user }
+            | SdkSubscription::UserEvents { user }
+            | SdkSubscription::UserFills { user }
+            | SdkSubscription::UserFundings { user }
+            | SdkSubscription::UserNonFundingLedgerUpdates { user }
+            | SdkSubscription::UserTwapSliceFills { user }
+            | SdkSubscription::UserTwapHistory { user }
+            | SdkSubscription::ActiveAssetData { user, .. },
+        ) => Some(format!("{user:#x}")),
+        SubscriptionRequest::Extension(
+            SubscriptionExtension::WebData2 { user }
+            | SubscriptionExtension::UserFills { user, .. },
+        ) => Some(user.to_lowercase()),
+        _ => None,
     }
 }
 
@@ -265,15 +267,15 @@ mod tests {
     use super::*;
 
     fn trades_subscription(index: usize) -> SubscriptionRequest {
-        SubscriptionRequest::Trades {
-            coin: Ustr::from(&format!("COIN-{index}")),
-        }
+        SubscriptionRequest::Sdk(SdkSubscription::Trades {
+            coin: format!("COIN-{index}"),
+        })
     }
 
     fn user_subscription(index: usize) -> SubscriptionRequest {
-        SubscriptionRequest::UserEvents {
-            user: format!("0x{index:040x}"),
-        }
+        SubscriptionRequest::Sdk(SdkSubscription::UserEvents {
+            user: format!("0x{index:040x}").parse().unwrap(),
+        })
     }
 
     #[rstest]
@@ -369,12 +371,16 @@ mod tests {
     #[rstest]
     fn websocket_subscription_users_are_case_insensitive() {
         let limits = WebSocketRateLimits::new();
-        let lower = SubscriptionRequest::UserEvents {
-            user: "0xabcdef".to_string(),
-        };
-        let upper = SubscriptionRequest::OrderUpdates {
-            user: "0xABCDEF".to_string(),
-        };
+        let lower = SubscriptionRequest::Sdk(SdkSubscription::UserEvents {
+            user: "0x2222222222222222222222222222222222222222"
+                .parse()
+                .unwrap(),
+        });
+        let upper = SubscriptionRequest::Sdk(SdkSubscription::OrderUpdates {
+            user: "0x2222222222222222222222222222222222222222"
+                .parse()
+                .unwrap(),
+        });
 
         assert!(limits.reserve_subscription(1, &lower).unwrap());
         assert!(limits.reserve_subscription(1, &upper).unwrap());

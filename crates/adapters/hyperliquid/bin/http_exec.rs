@@ -15,16 +15,13 @@
 
 use std::env;
 
+use hypersdk::hypercore::{
+    BatchOrder, OrderGrouping, OrderRequest, OrderTypePlacement, TimeInForce as SdkTimeInForce,
+    api::Action,
+};
 use nautilus_hyperliquid::{
     common::{credential::Secrets, enums::HyperliquidEnvironment},
-    http::{
-        client::HyperliquidHttpClient,
-        models::{
-            Cloid, HyperliquidExchangeAction, HyperliquidExchangeGrouping,
-            HyperliquidExchangeLimitParams, HyperliquidExchangeOrderKind,
-            HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
-        },
-    },
+    http::{client::HyperliquidHttpClient, models::Cloid},
 };
 use nautilus_model::identifiers::ClientOrderId;
 use rust_decimal_macros::dec;
@@ -116,18 +113,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cloid_hex = cloid.to_hex();
     log::info!("Cloid: {cloid_hex}");
 
-    let order = HyperliquidExchangePlaceOrderRequest {
-        asset: btc_asset_id as u32,
+    let order = OrderRequest {
+        asset: btc_asset_id as usize,
         is_buy: true,
-        price: limit_price,
-        size: dec!(0.001),
+        limit_px: limit_price,
+        sz: dec!(0.001),
         reduce_only: false,
-        kind: HyperliquidExchangeOrderKind::Limit {
-            limit: HyperliquidExchangeLimitParams {
-                tif: HyperliquidExchangeTif::Gtc,
-            },
+        order_type: OrderTypePlacement::Limit {
+            tif: SdkTimeInForce::Gtc,
         },
-        cloid: Some(cloid),
+        cloid: cloid.0.into(),
     };
 
     log::info!("Order details:");
@@ -135,17 +130,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("  Side: BUY");
     log::info!("  Price: ${limit_price}");
     log::info!("  Size: 0.001 BTC");
-    let order_cloid = order.cloid.as_ref().unwrap().to_hex();
+    let order_cloid = Cloid(order.cloid.0).to_hex();
     log::info!("  Cloid: {order_cloid}");
 
     log::info!("Placing order...");
 
-    // Create the action using the typed HyperliquidExchangeAction enum
-    let action = HyperliquidExchangeAction::Order {
+    // Create the action using the typed Action enum
+    let action = Action::Order(BatchOrder {
         orders: vec![order],
-        grouping: HyperliquidExchangeGrouping::Na,
+        grouping: OrderGrouping::Na,
         builder: None,
-    };
+    });
 
     log::debug!("ExchangeAction: {action:?}");
 

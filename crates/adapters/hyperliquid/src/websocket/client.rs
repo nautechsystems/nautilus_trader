@@ -27,6 +27,12 @@ use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
+use hypersdk::hypercore::{
+    BatchCancel, BatchCancelCloid, BatchOrder, Cancel, CancelByCloid, Cloid as B128, OidOrCloid,
+    OrderGrouping, OrderRequest, OrderTypePlacement, Subscription as SdkSubscription,
+    TimeInForce as SdkTimeInForce, TpSl,
+    api::{Action, ModifyAction},
+};
 use nautilus_common::cache::{InstrumentLookupError, fifo::FifoCacheMap};
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
@@ -76,15 +82,7 @@ use crate::{
     http::{
         client::HyperliquidHttpClient,
         error::{Error as HyperliquidError, Result as HyperliquidResult},
-        models::{
-            HyperliquidExchangeAction, HyperliquidExchangeCancelByCloidRequest,
-            HyperliquidExchangeCancelOrderRequest, HyperliquidExchangeGrouping,
-            HyperliquidExchangeLimitParams, HyperliquidExchangeModifyOrderRequest,
-            HyperliquidExchangeModifyTarget, HyperliquidExchangeOrderKind,
-            HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeResponse,
-            HyperliquidExchangeTif, HyperliquidExchangeTpSl, HyperliquidExchangeTriggerParams,
-            RESPONSE_STATUS_OK,
-        },
+        models::{HyperliquidExchangeResponse, RESPONSE_STATUS_OK},
         rate_limits::exec_action_weight,
     },
     websocket::{
@@ -96,7 +94,8 @@ use crate::{
         error::HyperliquidWsError,
         handler::{FeedHandler, HandlerCommand},
         messages::{
-            NautilusWsMessage, PostRequest, PostResponse, PostResponsePayload, SubscriptionRequest,
+            NautilusWsMessage, PostRequest, PostResponse, PostResponsePayload,
+            SubscriptionExtension, SubscriptionRequest,
         },
         post::{PostIds, PostRouter},
         rate_limits::{WebSocketRateLimits, shared_websocket_limits},
@@ -442,15 +441,28 @@ impl HyperliquidWebSocketClient {
                         Ok(mut subscription) => {
                             // Topic text cannot carry l2Book precision options;
                             // replay the shape the stream was opened with
-                            if let SubscriptionRequest::L2Book {
+                            if let SubscriptionRequest::Sdk(SdkSubscription::L2Book {
                                 coin,
                                 n_sig_figs,
                                 mantissa,
-                            } = &mut subscription
-                                && let Some(options) = book_streams.options(coin)
+                                ..
+                            }) = &mut subscription
+                                && let Some(options) =
+                                    book_streams.options(&Ustr::from(coin.as_str()))
                             {
-                                *n_sig_figs = options.n_sig_figs;
-                                *mantissa = options.mantissa;
+                                let Ok(sig_figs) = options.n_sig_figs.map(u8::try_from).transpose()
+                                else {
+                                    log::error!("Invalid l2Book significant figures for {coin}");
+                                    continue;
+                                };
+                                let Ok(book_mantissa) =
+                                    options.mantissa.map(u8::try_from).transpose()
+                                else {
+                                    log::error!("Invalid l2Book mantissa for {coin}");
+                                    continue;
+                                };
+                                *n_sig_figs = sig_figs;
+                                *mantissa = book_mantissa;
                             }
 
                             if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
@@ -623,7 +635,7 @@ impl HyperliquidWebSocketClient {
     pub async fn post_action_exec(
         &self,
         signer: &HyperliquidHttpClient,
-        action: &HyperliquidExchangeAction,
+        action: &Action,
     ) -> HyperliquidResult<HyperliquidExchangeResponse> {
         self.post_action_exec_with_timeout(signer, action, self.post_timeout, None)
             .await
@@ -633,7 +645,7 @@ impl HyperliquidWebSocketClient {
     pub async fn post_action_exec_with_timeout(
         &self,
         signer: &HyperliquidHttpClient,
-        action: &HyperliquidExchangeAction,
+        action: &Action,
         timeout: Duration,
         expires_after: Option<u64>,
     ) -> HyperliquidResult<HyperliquidExchangeResponse> {
@@ -645,7 +657,7 @@ impl HyperliquidWebSocketClient {
     pub(crate) async fn post_action_command(
         &self,
         signer: &HyperliquidHttpClient,
-        action: &HyperliquidExchangeAction,
+        action: &Action,
     ) -> Result<HyperliquidExchangeResponse, PostRequestError> {
         self.post_action_result(signer, action, self.post_timeout, None)
             .await
@@ -654,7 +666,7 @@ impl HyperliquidWebSocketClient {
     async fn post_action_result(
         &self,
         signer: &HyperliquidHttpClient,
-        action: &HyperliquidExchangeAction,
+        action: &Action,
         timeout: Duration,
         expires_after: Option<u64>,
     ) -> Result<HyperliquidExchangeResponse, PostRequestError> {
@@ -663,7 +675,12 @@ impl HyperliquidWebSocketClient {
             .sign_action_exec_request(action, expires_after)
             .map_err(PostRequestError::BeforeDispatch)?;
         let response = self
-            .send_post_request_result(PostRequest::Action { payload }, timeout)
+            .send_post_request_result(
+                PostRequest::Action {
+                    payload: Box::new(payload),
+                },
+                timeout,
+            )
             .await?;
 
         match response.response {
@@ -792,24 +809,29 @@ impl HyperliquidWebSocketClient {
             price_precision,
         )?;
 
-        let order = HyperliquidExchangePlaceOrderRequest {
-            asset,
+        let order = OrderRequest {
+            asset: asset as usize,
             is_buy,
-            price: price_decimal,
-            size: size_decimal,
+            limit_px: price_decimal,
+            sz: size_decimal,
             reduce_only,
-            kind,
-            cloid: Some(signer.get_or_generate_client_order_id_cloid(client_order_id)),
+            order_type: kind,
+            cloid: B128::from(
+                signer
+                    .get_or_generate_client_order_id_cloid(client_order_id)
+                    .0,
+            ),
         };
 
-        if let Some(cloid) = order.cloid {
-            self.cache_cloid_mapping(Ustr::from(&cloid.to_hex()), client_order_id);
+        if order.cloid != B128::ZERO {
+            let cloid = order.cloid;
+            self.cache_cloid_mapping(Ustr::from(&format!("{cloid:#x}")), client_order_id);
         }
-        let action = HyperliquidExchangeAction::Order {
+        let action = Action::Order(BatchOrder {
             orders: vec![order],
-            grouping: HyperliquidExchangeGrouping::Na,
+            grouping: OrderGrouping::Na,
             builder: signer.builder_attribution(),
-        };
+        });
         let response = self.post_action_exec(signer, &action).await?;
 
         // Verdict first: a real rejection must still error
@@ -889,23 +911,23 @@ impl HyperliquidWebSocketClient {
 
         for (request, client_order_id) in hyperliquid_orders.iter_mut().zip(client_order_ids) {
             let cloid = signer.get_or_generate_client_order_id_cloid(client_order_id);
-            request.cloid = Some(cloid);
+            request.cloid = B128::from(cloid.0);
             self.cache_cloid_mapping(Ustr::from(&cloid.to_hex()), client_order_id);
         }
 
         let grouping =
             determine_order_list_grouping(&orders.iter().copied().cloned().collect::<Vec<_>>());
-        let action = HyperliquidExchangeAction::Order {
+        let action = Action::Order(BatchOrder {
             orders: hyperliquid_orders,
-            grouping,
+            grouping: grouping.clone(),
             builder: signer.builder_attribution(),
-        };
+        });
         let response = self.post_action_exec(signer, &action).await?;
 
         ensure_ws_action_accepted(&response, "Order list submission")?;
 
         // Past the verdict, a build failure is local; defer to WS, never reject
-        match signer.build_submit_orders_reports(orders, grouping, response) {
+        match signer.build_submit_orders_reports(orders, &grouping, response) {
             Ok(reports) => Ok(reports),
             Err(e) => {
                 log::warn!(
@@ -932,35 +954,47 @@ impl HyperliquidWebSocketClient {
         })?;
         let action = if let Some(client_order_id) = client_order_id {
             if let Some(cloid) = signer.cached_client_order_id_cloid(&client_order_id) {
-                HyperliquidExchangeAction::CancelByCloid {
-                    cancels: vec![HyperliquidExchangeCancelByCloidRequest { asset, cloid }],
-                    fast: None,
-                }
+                Action::CancelByCloid(BatchCancelCloid {
+                    cancels: vec![CancelByCloid {
+                        asset,
+                        cloid: B128::from(cloid.0),
+                    }],
+                    fast: false,
+                })
             } else if let Some(oid) = venue_order_id {
                 let oid = oid
                     .as_str()
                     .parse::<u64>()
                     .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?;
-                HyperliquidExchangeAction::Cancel {
-                    cancels: vec![HyperliquidExchangeCancelOrderRequest { asset, oid }],
-                    fast: None,
-                }
+                Action::Cancel(BatchCancel {
+                    cancels: vec![Cancel {
+                        asset: asset as usize,
+                        oid,
+                    }],
+                    fast: false,
+                })
             } else {
                 let cloid = signer.get_or_generate_client_order_id_cloid(client_order_id);
-                HyperliquidExchangeAction::CancelByCloid {
-                    cancels: vec![HyperliquidExchangeCancelByCloidRequest { asset, cloid }],
-                    fast: None,
-                }
+                Action::CancelByCloid(BatchCancelCloid {
+                    cancels: vec![CancelByCloid {
+                        asset,
+                        cloid: B128::from(cloid.0),
+                    }],
+                    fast: false,
+                })
             }
         } else if let Some(oid) = venue_order_id {
             let oid = oid
                 .as_str()
                 .parse::<u64>()
                 .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?;
-            HyperliquidExchangeAction::Cancel {
-                cancels: vec![HyperliquidExchangeCancelOrderRequest { asset, oid }],
-                fast: None,
-            }
+            Action::Cancel(BatchCancel {
+                cancels: vec![Cancel {
+                    asset: asset as usize,
+                    oid,
+                }],
+                fast: false,
+            })
         } else {
             return Err(HyperliquidError::bad_request(
                 "Either client_order_id or venue_order_id must be provided",
@@ -994,12 +1028,18 @@ impl HyperliquidWebSocketClient {
             };
 
             if let Some(cloid) = signer.cached_client_order_id_cloid(client_order_id) {
-                cloid_requests.push(HyperliquidExchangeCancelByCloidRequest { asset, cloid });
+                cloid_requests.push(CancelByCloid {
+                    asset,
+                    cloid: B128::from(cloid.0),
+                });
                 cloid_indices.push(index);
             } else if let Some(venue_order_id) = venue_order_id {
                 match venue_order_id.as_str().parse::<u64>() {
                     Ok(oid) => {
-                        oid_requests.push(HyperliquidExchangeCancelOrderRequest { asset, oid });
+                        oid_requests.push(Cancel {
+                            asset: asset as usize,
+                            oid,
+                        });
                         oid_indices.push(index);
                     }
                     Err(_) => {
@@ -1008,7 +1048,10 @@ impl HyperliquidWebSocketClient {
                 }
             } else {
                 let cloid = signer.get_or_generate_client_order_id_cloid(*client_order_id);
-                cloid_requests.push(HyperliquidExchangeCancelByCloidRequest { asset, cloid });
+                cloid_requests.push(CancelByCloid {
+                    asset,
+                    cloid: B128::from(cloid.0),
+                });
                 cloid_indices.push(index);
             }
         }
@@ -1018,10 +1061,10 @@ impl HyperliquidWebSocketClient {
         }
 
         if !cloid_requests.is_empty() {
-            let action = HyperliquidExchangeAction::CancelByCloid {
+            let action = Action::CancelByCloid(BatchCancelCloid {
                 cancels: cloid_requests,
-                fast: None,
-            };
+                fast: false,
+            });
             let errors = self
                 .post_cancel_action_errors(signer, &action, cloid_indices.len())
                 .await?;
@@ -1032,10 +1075,10 @@ impl HyperliquidWebSocketClient {
         }
 
         if !oid_requests.is_empty() {
-            let action = HyperliquidExchangeAction::Cancel {
+            let action = Action::Cancel(BatchCancel {
                 cancels: oid_requests,
-                fast: None,
-            };
+                fast: false,
+            });
             let errors = self
                 .post_cancel_action_errors(signer, &action, oid_indices.len())
                 .await?;
@@ -1051,7 +1094,7 @@ impl HyperliquidWebSocketClient {
     async fn post_cancel_action_errors(
         &self,
         signer: &HyperliquidHttpClient,
-        action: &HyperliquidExchangeAction,
+        action: &Action,
         request_count: usize,
     ) -> HyperliquidResult<Vec<Option<String>>> {
         match self.post_cancel_action(signer, action).await {
@@ -1075,13 +1118,18 @@ impl HyperliquidWebSocketClient {
     async fn post_cancel_action(
         &self,
         signer: &HyperliquidHttpClient,
-        action: &HyperliquidExchangeAction,
+        action: &Action,
     ) -> HyperliquidResult<HyperliquidExchangeResponse> {
         let weight = exec_action_weight(action);
 
         let payload = signer.sign_action_exec_request(action, None)?;
         let response = self
-            .send_post_request(PostRequest::Action { payload }, self.post_timeout)
+            .send_post_request(
+                PostRequest::Action {
+                    payload: Box::new(payload),
+                },
+                self.post_timeout,
+            )
             .await?;
 
         match response.response {
@@ -1121,21 +1169,23 @@ impl HyperliquidWebSocketClient {
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
         })?;
-        let oid = match client_order_id
-            .as_ref()
-            .and_then(|id| signer.unique_cached_client_order_id_cloid(id))
-        {
-            Some(cloid) => HyperliquidExchangeModifyTarget::Cloid(cloid),
-            None => {
-                let Some(venue_order_id) = venue_order_id.as_ref() else {
-                    return Err(HyperliquidError::bad_request(
-                        "venue_order_id or unique cached CLOID is required for modify",
-                    ));
-                };
-                HyperliquidExchangeModifyTarget::from_venue_order_id(venue_order_id)
-                    .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?
-            }
-        };
+        let oid =
+            match client_order_id
+                .as_ref()
+                .and_then(|id| signer.unique_cached_client_order_id_cloid(id))
+            {
+                Some(cloid) => OidOrCloid::Right(B128::from(cloid.0)),
+                None => {
+                    let Some(venue_order_id) = venue_order_id.as_ref() else {
+                        return Err(HyperliquidError::bad_request(
+                            "venue_order_id or unique cached CLOID is required for modify",
+                        ));
+                    };
+                    OidOrCloid::Left(venue_order_id.as_str().parse::<u64>().map_err(|_| {
+                        HyperliquidError::bad_request("Invalid venue order ID format")
+                    })?)
+                }
+            };
         let is_buy = matches!(order_side, OrderSide::Buy);
         let price_decimals = signer.get_price_precision_for_symbol(symbol);
         let price = normalize_or_validate_wire_price(
@@ -1155,22 +1205,24 @@ impl HyperliquidWebSocketClient {
         )?;
         let cloid =
             client_order_id.map(|id| (id, signer.get_or_generate_client_order_id_cloid(id)));
-        let order = HyperliquidExchangePlaceOrderRequest {
-            asset,
+        let order = OrderRequest {
+            asset: asset as usize,
             is_buy,
-            price,
-            size: quantity.as_decimal().normalize(),
+            limit_px: price,
+            sz: quantity.as_decimal().normalize(),
             reduce_only,
-            kind,
-            cloid: cloid.map(|(_, cloid)| cloid),
+            order_type: kind,
+            cloid: cloid.map_or(B128::ZERO, |(_, cloid)| B128::from(cloid.0)),
         };
 
         if let Some((client_order_id, cloid)) = cloid {
             self.cache_cloid_mapping(Ustr::from(&cloid.to_hex()), client_order_id);
         }
-        let action = HyperliquidExchangeAction::Modify {
-            modify: HyperliquidExchangeModifyOrderRequest { oid, order },
-        };
+        let action = Action::Modify(ModifyAction {
+            oid,
+            order,
+            always_place: false,
+        });
         let response = self.post_action_exec(signer, &action).await?;
 
         ensure_ws_action_accepted(&response, "Modify order")
@@ -1492,13 +1544,25 @@ impl HyperliquidWebSocketClient {
             .map_err(|e| HyperliquidWsError::ChannelSend(e.to_string()))?;
 
         let registration =
-            self.register_book_stream(coin, BookStreamUse::Deltas, n_sig_figs, mantissa);
+            self.register_book_stream(coin, BookStreamUse::Deltas, n_sig_figs, mantissa)?;
 
-        let subscription = SubscriptionRequest::L2Book {
-            coin,
-            mantissa: registration.options.mantissa,
-            n_sig_figs: registration.options.n_sig_figs,
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::L2Book {
+            coin: coin.to_string(),
+            mantissa: registration
+                .options
+                .mantissa
+                .map(u8::try_from)
+                .transpose()
+                .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+            n_sig_figs: registration
+                .options
+                .n_sig_figs
+                .map(u8::try_from)
+                .transpose()
+                .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+
+            fast: false,
+        });
 
         let replace = !registration.subscribe;
         let write_cancel = cancel.clone();
@@ -1617,7 +1681,9 @@ impl HyperliquidWebSocketClient {
             anyhow::bail!("Failed to send UpdateInstrument command: {e}");
         }
 
-        let subscription = SubscriptionRequest::Bbo { coin };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::Bbo {
+            coin: coin.to_string(),
+        });
 
         if let Err(e) = self.send_subscription(&cmd_tx, subscription) {
             self.quote_streams.remove(&coin);
@@ -1635,7 +1701,7 @@ impl HyperliquidWebSocketClient {
     pub async fn subscribe_all_dexs_asset_ctxs(&self) -> anyhow::Result<()> {
         self.send_subscription(
             &*self.cmd_tx.read().await,
-            SubscriptionRequest::AllDexsAssetCtxs,
+            SubscriptionRequest::Sdk(SdkSubscription::AllDexsAssetCtxs),
         )?;
         Ok(())
     }
@@ -1644,9 +1710,9 @@ impl HyperliquidWebSocketClient {
     pub async fn subscribe_all_mids_with_dex(&self, dex: Option<&str>) -> anyhow::Result<()> {
         let cmd_tx = self.cmd_tx.read().await;
 
-        let subscription = SubscriptionRequest::AllMids {
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::AllMids {
             dex: dex.map(ToString::to_string),
-        };
+        });
 
         self.send_subscription(&cmd_tx, subscription)?;
         Ok(())
@@ -1661,7 +1727,7 @@ impl HyperliquidWebSocketClient {
     pub async fn unsubscribe_all_dexs_asset_ctxs(&self) -> anyhow::Result<()> {
         self.send_unsubscription(
             &*self.cmd_tx.read().await,
-            SubscriptionRequest::AllDexsAssetCtxs,
+            SubscriptionRequest::Sdk(SdkSubscription::AllDexsAssetCtxs),
         )?;
         Ok(())
     }
@@ -1670,9 +1736,9 @@ impl HyperliquidWebSocketClient {
     pub async fn unsubscribe_all_mids_with_dex(&self, dex: Option<&str>) -> anyhow::Result<()> {
         let cmd_tx = self.cmd_tx.read().await;
 
-        let subscription = SubscriptionRequest::AllMids {
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::AllMids {
             dex: dex.map(ToString::to_string),
-        };
+        });
 
         self.send_unsubscription(&cmd_tx, subscription)?;
         Ok(())
@@ -1719,7 +1785,12 @@ impl HyperliquidWebSocketClient {
             .map_err(|e| anyhow::anyhow!("Failed to send UpdateTradeSubs command: {e}"))?;
 
         if registration.subscribe
-            && let Err(e) = self.send_subscription(&cmd_tx, SubscriptionRequest::Trades { coin })
+            && let Err(e) = self.send_subscription(
+                &cmd_tx,
+                SubscriptionRequest::Sdk(SdkSubscription::Trades {
+                    coin: coin.to_string(),
+                }),
+            )
         {
             let rollback = self.trade_streams.release(&coin, stream_use);
             let _ = cmd_tx.send(HandlerCommand::UpdateTradeSubs {
@@ -1751,7 +1822,10 @@ impl HyperliquidWebSocketClient {
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
         let interval = bar_type_to_interval(&bar_type)?;
-        let subscription = SubscriptionRequest::Candle { coin, interval };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::Candle {
+            coin: coin.to_string(),
+            interval: interval.as_str().to_string(),
+        });
 
         // Cache the bar type for parsing using canonical key
         let key = format!("candle:{coin}:{interval}");
@@ -1792,18 +1866,18 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to order updates for a specific user address.
     pub async fn subscribe_order_updates(&self, user: &str) -> anyhow::Result<()> {
-        let subscription = SubscriptionRequest::OrderUpdates {
-            user: user.to_string(),
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::OrderUpdates {
+            user: user.parse()?,
+        });
         self.send_subscription(&*self.cmd_tx.read().await, subscription)?;
         Ok(())
     }
 
     /// Subscribe to user events (fills, funding, liquidations) for a specific user address.
     pub async fn subscribe_user_events(&self, user: &str) -> anyhow::Result<()> {
-        let subscription = SubscriptionRequest::UserEvents {
-            user: user.to_string(),
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::UserEvents {
+            user: user.parse()?,
+        });
         self.send_subscription(&*self.cmd_tx.read().await, subscription)?;
         Ok(())
     }
@@ -1813,10 +1887,9 @@ impl HyperliquidWebSocketClient {
     /// Note: This channel is redundant with `userEvents` which already includes fills.
     /// Prefer using `subscribe_user_events` or `subscribe_all_user_channels` instead.
     pub async fn subscribe_user_fills(&self, user: &str) -> anyhow::Result<()> {
-        let subscription = SubscriptionRequest::UserFills {
-            user: user.to_string(),
-            aggregate_by_time: None,
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::UserFills {
+            user: user.parse()?,
+        });
         self.send_subscription(&*self.cmd_tx.read().await, subscription)?;
         Ok(())
     }
@@ -1838,18 +1911,18 @@ impl HyperliquidWebSocketClient {
     ///
     /// Opt-in custom data. The address need not be the adapter trading account.
     pub async fn subscribe_user_twap_history(&self, user: &str) -> anyhow::Result<()> {
-        let subscription = SubscriptionRequest::UserTwapHistory {
-            user: user.to_string(),
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::UserTwapHistory {
+            user: user.parse()?,
+        });
         self.send_subscription(&*self.cmd_tx.read().await, subscription)?;
         Ok(())
     }
 
     /// Unsubscribe from TWAP history for a user address.
     pub async fn unsubscribe_user_twap_history(&self, user: &str) -> anyhow::Result<()> {
-        let subscription = SubscriptionRequest::UserTwapHistory {
-            user: user.to_string(),
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::UserTwapHistory {
+            user: user.parse()?,
+        });
         self.send_unsubscription(&*self.cmd_tx.read().await, subscription)?;
         Ok(())
     }
@@ -1858,18 +1931,18 @@ impl HyperliquidWebSocketClient {
     ///
     /// Opt-in custom data. The address need not be the adapter trading account.
     pub async fn subscribe_user_twap_slice_fills(&self, user: &str) -> anyhow::Result<()> {
-        let subscription = SubscriptionRequest::UserTwapSliceFills {
-            user: user.to_string(),
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::UserTwapSliceFills {
+            user: user.parse()?,
+        });
         self.send_subscription(&*self.cmd_tx.read().await, subscription)?;
         Ok(())
     }
 
     /// Unsubscribe from TWAP slice fills for a user address.
     pub async fn unsubscribe_user_twap_slice_fills(&self, user: &str) -> anyhow::Result<()> {
-        let subscription = SubscriptionRequest::UserTwapSliceFills {
-            user: user.to_string(),
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::UserTwapSliceFills {
+            user: user.parse()?,
+        });
         self.send_unsubscription(&*self.cmd_tx.read().await, subscription)?;
         Ok(())
     }
@@ -1911,11 +1984,21 @@ impl HyperliquidWebSocketClient {
             return Ok(());
         };
 
-        let subscription = SubscriptionRequest::L2Book {
-            coin,
-            mantissa: options.mantissa,
-            n_sig_figs: options.n_sig_figs,
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::L2Book {
+            coin: coin.to_string(),
+            mantissa: options
+                .mantissa
+                .map(u8::try_from)
+                .transpose()
+                .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+            n_sig_figs: options
+                .n_sig_figs
+                .map(u8::try_from)
+                .transpose()
+                .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+
+            fast: false,
+        });
 
         self.send_stream_resubscribe(&cmd_tx, subscription)
     }
@@ -1954,11 +2037,21 @@ impl HyperliquidWebSocketClient {
             )));
         };
 
-        let subscription = SubscriptionRequest::L2Book {
-            coin,
-            mantissa: options.mantissa,
-            n_sig_figs: options.n_sig_figs,
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::L2Book {
+            coin: coin.to_string(),
+            mantissa: options
+                .mantissa
+                .map(u8::try_from)
+                .transpose()
+                .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+            n_sig_figs: options
+                .n_sig_figs
+                .map(u8::try_from)
+                .transpose()
+                .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+
+            fast: false,
+        });
 
         cmd_tx
             .send(HandlerCommand::WriteBook {
@@ -1985,14 +2078,26 @@ impl HyperliquidWebSocketClient {
         n_sig_figs: Option<u32>,
         mantissa: Option<u32>,
     ) -> anyhow::Result<()> {
-        let registration = self.register_book_stream(coin, stream_use, n_sig_figs, mantissa);
+        let registration = self.register_book_stream(coin, stream_use, n_sig_figs, mantissa)?;
 
         if registration.subscribe {
-            let subscription = SubscriptionRequest::L2Book {
-                coin,
-                mantissa: registration.options.mantissa,
-                n_sig_figs: registration.options.n_sig_figs,
-            };
+            let subscription = SubscriptionRequest::Sdk(SdkSubscription::L2Book {
+                coin: coin.to_string(),
+                mantissa: registration
+                    .options
+                    .mantissa
+                    .map(u8::try_from)
+                    .transpose()
+                    .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+                n_sig_figs: registration
+                    .options
+                    .n_sig_figs
+                    .map(u8::try_from)
+                    .transpose()
+                    .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+
+                fast: false,
+            });
 
             if let Err(e) = self.send_subscription(cmd_tx, subscription) {
                 self.book_streams.release(&coin, stream_use);
@@ -2009,7 +2114,7 @@ impl HyperliquidWebSocketClient {
         stream_use: BookStreamUse,
         n_sig_figs: Option<u32>,
         mantissa: Option<u32>,
-    ) -> BookStreamRegistration {
+    ) -> Result<BookStreamRegistration, HyperliquidWsError> {
         let registration = self.book_streams.register(
             coin,
             stream_use,
@@ -2019,6 +2124,18 @@ impl HyperliquidWebSocketClient {
             },
         );
 
+        for option in [
+            registration.options.n_sig_figs,
+            registration.options.mantissa,
+        ] {
+            if let Some(value) = option
+                && let Err(e) = u8::try_from(value)
+            {
+                self.book_streams.release(&coin, stream_use);
+                return Err(HyperliquidWsError::ClientError(e.to_string()));
+            }
+        }
+
         if registration.options_mismatch {
             log::warn!(
                 "Requested l2Book options for {coin} (n_sig_figs={n_sig_figs:?}, mantissa={mantissa:?}) \
@@ -2027,7 +2144,7 @@ impl HyperliquidWebSocketClient {
             );
         }
 
-        registration
+        Ok(registration)
     }
 
     fn send_book_stream_unsubscribe(
@@ -2038,11 +2155,21 @@ impl HyperliquidWebSocketClient {
     ) -> anyhow::Result<()> {
         match self.book_streams.release(&coin, stream_use) {
             BookStreamRelease::Unsubscribe(options) => {
-                let subscription = SubscriptionRequest::L2Book {
-                    coin,
-                    mantissa: options.mantissa,
-                    n_sig_figs: options.n_sig_figs,
-                };
+                let subscription = SubscriptionRequest::Sdk(SdkSubscription::L2Book {
+                    coin: coin.to_string(),
+                    mantissa: options
+                        .mantissa
+                        .map(u8::try_from)
+                        .transpose()
+                        .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+                    n_sig_figs: options
+                        .n_sig_figs
+                        .map(u8::try_from)
+                        .transpose()
+                        .map_err(|e| HyperliquidWsError::ClientError(e.to_string()))?,
+
+                    fast: false,
+                });
 
                 self.send_unsubscription(cmd_tx, subscription)?;
             }
@@ -2064,7 +2191,9 @@ impl HyperliquidWebSocketClient {
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
-        let subscription = SubscriptionRequest::Bbo { coin };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::Bbo {
+            coin: coin.to_string(),
+        });
         let cmd_tx = self.cmd_tx.read().await;
 
         self.quote_streams.remove(&coin);
@@ -2090,7 +2219,12 @@ impl HyperliquidWebSocketClient {
             return Ok(());
         }
 
-        self.send_stream_resubscribe(&cmd_tx, SubscriptionRequest::Bbo { coin })
+        self.send_stream_resubscribe(
+            &cmd_tx,
+            SubscriptionRequest::Sdk(SdkSubscription::Bbo {
+                coin: coin.to_string(),
+            }),
+        )
     }
 
     fn send_stream_resubscribe(
@@ -2141,7 +2275,12 @@ impl HyperliquidWebSocketClient {
             .map_err(|e| anyhow::anyhow!("Failed to send UpdateTradeSubs command: {e}"))?;
 
         if release.unsubscribe {
-            self.send_unsubscription(&cmd_tx, SubscriptionRequest::Trades { coin })?;
+            self.send_unsubscription(
+                &cmd_tx,
+                SubscriptionRequest::Sdk(SdkSubscription::Trades {
+                    coin: coin.to_string(),
+                }),
+            )?;
         }
         Ok(())
     }
@@ -2169,7 +2308,10 @@ impl HyperliquidWebSocketClient {
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
         let interval = bar_type_to_interval(&bar_type)?;
-        let subscription = SubscriptionRequest::Candle { coin, interval };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::Candle {
+            coin: coin.to_string(),
+            interval: interval.as_str().to_string(),
+        });
 
         let key = format!("candle:{coin}:{interval}");
         self.bar_types.remove(&key);
@@ -2253,7 +2395,9 @@ impl HyperliquidWebSocketClient {
             log::debug!(
                 "First asset context subscription for coin '{coin}', subscribing to ActiveAssetCtx"
             );
-            let subscription = SubscriptionRequest::ActiveAssetCtx { coin };
+            let subscription = SubscriptionRequest::Sdk(SdkSubscription::ActiveAssetCtx {
+                coin: coin.to_string(),
+            });
 
             cmd_tx
                 .send(HandlerCommand::UpdateInstrument(instrument.clone()))
@@ -2309,7 +2453,9 @@ impl HyperliquidWebSocketClient {
                 log::debug!(
                     "Last asset context subscription removed for coin '{coin}', unsubscribing from ActiveAssetCtx"
                 );
-                let subscription = SubscriptionRequest::ActiveAssetCtx { coin };
+                let subscription = SubscriptionRequest::Sdk(SdkSubscription::ActiveAssetCtx {
+                    coin: coin.to_string(),
+                });
 
                 cmd_tx
                     .send(HandlerCommand::UpdateAssetContextSubs {
@@ -2490,19 +2636,15 @@ fn hyperliquid_order_kind(
     trigger_price: Option<Price>,
     normalize_prices_enabled: bool,
     price_precision: Option<u8>,
-) -> HyperliquidResult<HyperliquidExchangeOrderKind> {
+) -> HyperliquidResult<OrderTypePlacement> {
     match order_type {
-        OrderType::Market => Ok(HyperliquidExchangeOrderKind::Limit {
-            limit: HyperliquidExchangeLimitParams {
-                tif: HyperliquidExchangeTif::Ioc,
-            },
+        OrderType::Market => Ok(OrderTypePlacement::Limit {
+            tif: SdkTimeInForce::Ioc,
         }),
         OrderType::Limit => {
             let tif = time_in_force_to_hyperliquid_tif(time_in_force, post_only)
                 .map_err(|e| HyperliquidError::bad_request(format!("{e}")))?;
-            Ok(HyperliquidExchangeOrderKind::Limit {
-                limit: HyperliquidExchangeLimitParams { tif },
-            })
+            Ok(OrderTypePlacement::Limit { tif })
         }
         OrderType::StopMarket
         | OrderType::StopLimit
@@ -2519,10 +2661,8 @@ fn hyperliquid_order_kind(
             )
             .map_err(|e| HyperliquidError::bad_request(format!("{e}")))?;
             let tpsl = match order_type {
-                OrderType::StopMarket | OrderType::StopLimit => HyperliquidExchangeTpSl::Sl,
-                OrderType::MarketIfTouched | OrderType::LimitIfTouched => {
-                    HyperliquidExchangeTpSl::Tp
-                }
+                OrderType::StopMarket | OrderType::StopLimit => TpSl::Sl,
+                OrderType::MarketIfTouched | OrderType::LimitIfTouched => TpSl::Tp,
                 _ => unreachable!(),
             };
             let is_market = matches!(
@@ -2530,12 +2670,10 @@ fn hyperliquid_order_kind(
                 OrderType::StopMarket | OrderType::MarketIfTouched
             );
 
-            Ok(HyperliquidExchangeOrderKind::Trigger {
-                trigger: HyperliquidExchangeTriggerParams {
-                    is_market,
-                    trigger_px,
-                    tpsl,
-                },
+            Ok(OrderTypePlacement::Trigger {
+                is_market,
+                trigger_px,
+                tpsl,
             })
         }
         _ => Err(HyperliquidError::bad_request(format!(
@@ -2609,76 +2747,99 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
         .ok_or_else(|| anyhow::anyhow!("Unknown subscription channel: {kind}"))?;
 
     match channel {
-        HyperliquidWsChannel::AllMids => Ok(SubscriptionRequest::AllMids {
+        HyperliquidWsChannel::AllMids => Ok(SubscriptionRequest::Sdk(SdkSubscription::AllMids {
             dex: rest.map(|s| s.to_string()),
-        }),
-        HyperliquidWsChannel::AllDexsAssetCtxs => Ok(SubscriptionRequest::AllDexsAssetCtxs),
-        HyperliquidWsChannel::Notification => Ok(SubscriptionRequest::Notification {
-            user: rest.context("Missing user")?.to_string(),
-        }),
-        HyperliquidWsChannel::WebData2 => Ok(SubscriptionRequest::WebData2 {
-            user: rest.context("Missing user")?.to_string(),
-        }),
+        })),
+        HyperliquidWsChannel::AllDexsAssetCtxs => {
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::AllDexsAssetCtxs))
+        }
+        HyperliquidWsChannel::Notification => {
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::Notification {
+                user: rest.context("Missing user")?.parse()?,
+            }))
+        }
+        HyperliquidWsChannel::WebData2 => Ok(SubscriptionRequest::Extension(
+            SubscriptionExtension::WebData2 {
+                user: rest.context("Missing user")?.to_string(),
+            },
+        )),
         HyperliquidWsChannel::Candle => {
             // Format: candle:{coin}:{interval} - interval is last segment
             let rest = rest.context("Missing candle params")?;
             let (coin, interval_str) = rest.rsplit_once(':').context("Missing interval")?;
             let interval = HyperliquidBarInterval::from_str(interval_str)?;
-            Ok(SubscriptionRequest::Candle {
-                coin: Ustr::from(coin),
-                interval,
-            })
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::Candle {
+                coin: coin.to_string(),
+                interval: interval.as_str().to_string(),
+            }))
         }
-        HyperliquidWsChannel::L2Book => Ok(SubscriptionRequest::L2Book {
-            coin: Ustr::from(rest.context("Missing coin")?),
+        HyperliquidWsChannel::L2Book => Ok(SubscriptionRequest::Sdk(SdkSubscription::L2Book {
+            coin: rest.context("Missing coin")?.to_string(),
             mantissa: None,
             n_sig_figs: None,
-        }),
-        HyperliquidWsChannel::Trades => Ok(SubscriptionRequest::Trades {
-            coin: Ustr::from(rest.context("Missing coin")?),
-        }),
-        HyperliquidWsChannel::OrderUpdates => Ok(SubscriptionRequest::OrderUpdates {
-            user: rest.context("Missing user")?.to_string(),
-        }),
-        HyperliquidWsChannel::UserEvents => Ok(SubscriptionRequest::UserEvents {
-            user: rest.context("Missing user")?.to_string(),
-        }),
-        HyperliquidWsChannel::UserFills => Ok(SubscriptionRequest::UserFills {
-            user: rest.context("Missing user")?.to_string(),
-            aggregate_by_time: None,
-        }),
-        HyperliquidWsChannel::UserFundings => Ok(SubscriptionRequest::UserFundings {
-            user: rest.context("Missing user")?.to_string(),
-        }),
-        HyperliquidWsChannel::UserNonFundingLedgerUpdates => {
-            Ok(SubscriptionRequest::UserNonFundingLedgerUpdates {
-                user: rest.context("Missing user")?.to_string(),
-            })
+
+            fast: false,
+        })),
+        HyperliquidWsChannel::Trades => Ok(SubscriptionRequest::Sdk(SdkSubscription::Trades {
+            coin: rest.context("Missing coin")?.to_string(),
+        })),
+        HyperliquidWsChannel::OrderUpdates => {
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::OrderUpdates {
+                user: rest.context("Missing user")?.parse()?,
+            }))
         }
-        HyperliquidWsChannel::ActiveAssetCtx => Ok(SubscriptionRequest::ActiveAssetCtx {
-            coin: Ustr::from(rest.context("Missing coin")?),
-        }),
-        HyperliquidWsChannel::ActiveSpotAssetCtx => Ok(SubscriptionRequest::ActiveSpotAssetCtx {
-            coin: Ustr::from(rest.context("Missing coin")?),
-        }),
+        HyperliquidWsChannel::UserEvents => {
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::UserEvents {
+                user: rest.context("Missing user")?.parse()?,
+            }))
+        }
+        HyperliquidWsChannel::UserFills => {
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::UserFills {
+                user: rest.context("Missing user")?.parse()?,
+            }))
+        }
+        HyperliquidWsChannel::UserFundings => {
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::UserFundings {
+                user: rest.context("Missing user")?.parse()?,
+            }))
+        }
+        HyperliquidWsChannel::UserNonFundingLedgerUpdates => Ok(SubscriptionRequest::Sdk(
+            SdkSubscription::UserNonFundingLedgerUpdates {
+                user: rest.context("Missing user")?.parse()?,
+            },
+        )),
+        HyperliquidWsChannel::ActiveAssetCtx => {
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::ActiveAssetCtx {
+                coin: rest.context("Missing coin")?.to_string(),
+            }))
+        }
+        HyperliquidWsChannel::ActiveSpotAssetCtx => Ok(SubscriptionRequest::Extension(
+            SubscriptionExtension::ActiveSpotAssetCtx {
+                coin: rest.context("Missing coin")?.to_string(),
+            },
+        )),
         HyperliquidWsChannel::ActiveAssetData => {
             // Format: activeAssetData:{user}:{coin} - user is eth addr (no colons)
             let rest = rest.context("Missing params")?;
             let (user, coin) = rest.split_once(':').context("Missing coin")?;
-            Ok(SubscriptionRequest::ActiveAssetData {
-                user: user.to_string(),
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::ActiveAssetData {
+                user: user.parse()?,
                 coin: coin.to_string(),
-            })
+            }))
         }
-        HyperliquidWsChannel::UserTwapSliceFills => Ok(SubscriptionRequest::UserTwapSliceFills {
-            user: rest.context("Missing user")?.to_string(),
-        }),
-        HyperliquidWsChannel::UserTwapHistory => Ok(SubscriptionRequest::UserTwapHistory {
-            user: rest.context("Missing user")?.to_string(),
-        }),
-        HyperliquidWsChannel::Bbo => Ok(SubscriptionRequest::Bbo {
-            coin: Ustr::from(rest.context("Missing coin")?),
-        }),
+        HyperliquidWsChannel::UserTwapSliceFills => Ok(SubscriptionRequest::Sdk(
+            SdkSubscription::UserTwapSliceFills {
+                user: rest.context("Missing user")?.parse()?,
+            },
+        )),
+        HyperliquidWsChannel::UserTwapHistory => {
+            Ok(SubscriptionRequest::Sdk(SdkSubscription::UserTwapHistory {
+                user: rest.context("Missing user")?.parse()?,
+            }))
+        }
+        HyperliquidWsChannel::Bbo => Ok(SubscriptionRequest::Sdk(SdkSubscription::Bbo {
+            coin: rest.context("Missing coin")?.to_string(),
+        })),
 
         // Response-only channels are not valid subscription topics
         HyperliquidWsChannel::SubscriptionResponse
@@ -2780,10 +2941,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(SubscriptionRequest::Trades { coin: "BTC".into() }, "trades:BTC")]
-    #[case(SubscriptionRequest::Bbo { coin: "BTC".into() }, "bbo:BTC")]
-    #[case(SubscriptionRequest::OrderUpdates { user: "0x123".to_string() }, "orderUpdates:0x123")]
-    #[case(SubscriptionRequest::UserEvents { user: "0xabc".to_string() }, "userEvents:0xabc")]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::Trades { coin: "BTC".into() }), "trades:BTC")]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::Bbo { coin: "BTC".into() }), "bbo:BTC")]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::OrderUpdates { user: "0x1111111111111111111111111111111111111111".parse().unwrap() }), "orderUpdates:0x1111111111111111111111111111111111111111")]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::UserEvents { user: "0x2222222222222222222222222222222222222222".parse().unwrap() }), "userEvents:0x2222222222222222222222222222222222222222")]
     fn test_subscription_topic_generation(
         #[case] subscription: SubscriptionRequest,
         #[case] expected_topic: &str,
@@ -2793,8 +2954,8 @@ mod tests {
 
     #[rstest]
     fn test_subscription_topics_unique() {
-        let sub1 = SubscriptionRequest::Trades { coin: "BTC".into() };
-        let sub2 = SubscriptionRequest::Bbo { coin: "BTC".into() };
+        let sub1 = SubscriptionRequest::Sdk(SdkSubscription::Trades { coin: "BTC".into() });
+        let sub2 = SubscriptionRequest::Sdk(SdkSubscription::Bbo { coin: "BTC".into() });
 
         let topic1 = subscription_topic(&sub1);
         let topic2 = subscription_topic(&sub2);
@@ -2803,13 +2964,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case(SubscriptionRequest::Trades { coin: "BTC".into() })]
-    #[case(SubscriptionRequest::Bbo { coin: "ETH".into() })]
-    #[case(SubscriptionRequest::Candle { coin: "SOL".into(), interval: HyperliquidBarInterval::OneHour })]
-    #[case(SubscriptionRequest::OrderUpdates { user: "0x123".to_string() })]
-    #[case(SubscriptionRequest::Trades { coin: "vntls:vCURSOR".into() })]
-    #[case(SubscriptionRequest::L2Book { coin: "vntls:vCURSOR".into(), mantissa: None, n_sig_figs: None })]
-    #[case(SubscriptionRequest::Candle { coin: "vntls:vCURSOR".into(), interval: HyperliquidBarInterval::OneHour })]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::Trades { coin: "BTC".into() }))]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::Bbo { coin: "ETH".into() }))]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::Candle { coin: "SOL".into(), interval: HyperliquidBarInterval::OneHour.as_str().to_string() }))]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::OrderUpdates { user: "0x1111111111111111111111111111111111111111".parse().unwrap() }))]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::Trades { coin: "vntls:vCURSOR".into() }))]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::L2Book { coin: "vntls:vCURSOR".into(), mantissa: None, n_sig_figs: None,
+fast: false,
+}))]
+    #[case(SubscriptionRequest::Sdk(SdkSubscription::Candle { coin: "vntls:vCURSOR".into(), interval: HyperliquidBarInterval::OneHour.as_str().to_string() }))]
     fn test_subscription_reconstruction(#[case] subscription: SubscriptionRequest) {
         let topic = subscription_topic(&subscription);
         let reconstructed = subscription_from_topic(&topic).expect("Failed to reconstruct");
@@ -2818,10 +2981,10 @@ mod tests {
 
     #[rstest]
     fn test_subscription_topic_candle() {
-        let sub = SubscriptionRequest::Candle {
+        let sub = SubscriptionRequest::Sdk(SdkSubscription::Candle {
             coin: "BTC".into(),
-            interval: HyperliquidBarInterval::OneHour,
-        };
+            interval: HyperliquidBarInterval::OneHour.as_str().to_string(),
+        });
 
         let topic = subscription_topic(&sub);
         assert_eq!(topic, "candle:BTC:1h");
@@ -2926,10 +3089,10 @@ mod tests {
             None,
         );
         let signer = HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 10, None).unwrap();
-        let action = HyperliquidExchangeAction::Cancel {
+        let action = Action::Cancel(BatchCancel {
             cancels: Vec::new(),
-            fast: None,
-        };
+            fast: false,
+        });
         let result = client.post_action_command(&signer, &action).await;
         let PostRequestError::BeforeDispatch(error) = result.unwrap_err() else {
             panic!("Expected failure before dispatch");
@@ -3156,9 +3319,9 @@ mod tests {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
         for index in 0..HYPERLIQUID_WS_SUBSCRIPTIONS_MAX {
-            let subscription = SubscriptionRequest::Trades {
-                coin: Ustr::from(&format!("COIN-{index}")),
-            };
+            let subscription = SubscriptionRequest::Sdk(SdkSubscription::Trades {
+                coin: format!("COIN-{index}"),
+            });
             let client = if index % 2 == 0 { &first } else { &second };
             client.send_subscription(&cmd_tx, subscription).unwrap();
         }
@@ -3166,14 +3329,39 @@ mod tests {
         let error = first
             .send_subscription(
                 &cmd_tx,
-                SubscriptionRequest::Trades {
-                    coin: Ustr::from("OVER-LIMIT"),
-                },
+                SubscriptionRequest::Sdk(SdkSubscription::Trades {
+                    coin: "OVER-LIMIT".to_string(),
+                }),
             )
             .expect_err("shared subscription limit should reject the next subscription");
 
         assert!(error.to_string().contains("at most 1000"));
         assert_eq!(cmd_rx.len(), HYPERLIQUID_WS_SUBSCRIPTIONS_MAX);
+    }
+
+    #[rstest]
+    fn invalid_book_options_release_registration() {
+        let client = HyperliquidWebSocketClient::new(
+            Some("wss://book-options.test/ws".to_string()),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let coin = Ustr::from("BTC");
+        assert!(
+            client
+                .register_book_stream(coin, BookStreamUse::Deltas, Some(256), None)
+                .is_err()
+        );
+        assert_eq!(client.book_streams.options(&coin), None);
+        client
+            .register_book_stream(coin, BookStreamUse::Deltas, None, None)
+            .unwrap();
+        let depth = client
+            .register_book_stream(coin, BookStreamUse::Depth, Some(256), None)
+            .unwrap();
+        assert_eq!(depth.options, BookStreamOptions::default());
     }
 
     #[rstest]
@@ -3193,9 +3381,9 @@ mod tests {
         *client.cmd_tx.write().await = cmd_tx.clone();
 
         for index in 0..HYPERLIQUID_WS_SUBSCRIPTIONS_MAX {
-            let subscription = SubscriptionRequest::Trades {
-                coin: Ustr::from(&format!("COIN-{index}")),
-            };
+            let subscription = SubscriptionRequest::Sdk(SdkSubscription::Trades {
+                coin: format!("COIN-{index}"),
+            });
 
             client.send_subscription(&cmd_tx, subscription).unwrap();
         }
@@ -3225,9 +3413,9 @@ mod tests {
             None,
         );
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        let subscription = SubscriptionRequest::Bbo {
-            coin: Ustr::from("BTC"),
-        };
+        let subscription = SubscriptionRequest::Sdk(SdkSubscription::Bbo {
+            coin: "BTC".to_string(),
+        });
 
         client
             .send_stream_resubscribe(&cmd_tx, subscription)

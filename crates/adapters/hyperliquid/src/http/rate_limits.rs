@@ -21,6 +21,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use hypersdk::hypercore::api::Action;
 use parking_lot::Mutex;
 use serde_json::Value;
 
@@ -30,10 +31,7 @@ use crate::{
         enums::{HyperliquidEnvironment, HyperliquidInfoRequestType},
         rate_limits::HyperliquidRouteScope,
     },
-    http::{
-        models::HyperliquidExchangeAction,
-        query::{ExchangeAction, ExchangeActionParams, InfoRequest},
-    },
+    http::query::InfoRequest,
 };
 
 type WeightedLimiterRegistry = Mutex<AHashMap<HyperliquidRouteScope, Weak<WeightedLimiter>>>;
@@ -210,65 +208,34 @@ pub(crate) const fn exchange_weight_for_batch(batch_size: usize) -> u32 {
     1 + (batch_size as u32 / 40)
 }
 
-/// Exchange: 1 + floor(batch_len / 40)
-pub fn exchange_weight(action: &ExchangeAction) -> u32 {
-    // Extract batch size from typed params
-    let batch_size = match &action.params {
-        ExchangeActionParams::Order(params) => params.orders.len(),
-        ExchangeActionParams::Cancel(params) => params.cancels.len(),
-        ExchangeActionParams::Modify(_) => {
-            // Modify is for a single order
-            1
-        }
-        ExchangeActionParams::UpdateLeverage(_) | ExchangeActionParams::UpdateIsolatedMargin(_) => {
-            0
-        }
-    };
-    exchange_weight_for_batch(batch_size)
-}
-
 /// Exchange weight for the canonical typed execution action model.
-pub fn exec_action_weight(action: &HyperliquidExchangeAction) -> u32 {
+pub fn exec_action_weight(action: &Action) -> u32 {
     let batch_size = match action {
-        HyperliquidExchangeAction::Order { orders, .. } => orders.len(),
-        HyperliquidExchangeAction::Cancel { cancels, .. } => cancels.len(),
-        HyperliquidExchangeAction::CancelByCloid { cancels, .. } => cancels.len(),
-        HyperliquidExchangeAction::Modify { .. } => 1,
-        HyperliquidExchangeAction::BatchModify { modifies } => modifies.len(),
-        HyperliquidExchangeAction::UpdateLeverage { .. }
-        | HyperliquidExchangeAction::UpdateIsolatedMargin { .. }
-        | HyperliquidExchangeAction::ScheduleCancel { .. }
-        | HyperliquidExchangeAction::UsdClassTransfer { .. }
-        | HyperliquidExchangeAction::UserOutcome { .. }
-        | HyperliquidExchangeAction::TwapPlace { .. }
-        | HyperliquidExchangeAction::TwapCancel { .. }
-        | HyperliquidExchangeAction::Noop => 0,
+        Action::Order(batch) => batch.orders.len(),
+        Action::Cancel(batch) => batch.cancels.len(),
+        Action::CancelByCloid(batch) => batch.cancels.len(),
+        Action::Modify(_) => 1,
+        Action::BatchModify(batch) => batch.modifies.len(),
+        _ => 0,
     };
     exchange_weight_for_batch(batch_size)
 }
 
 #[cfg(test)]
 mod tests {
+    use hypersdk::hypercore::{
+        BatchCancel, BatchCancelCloid, BatchModify, BatchOrder, Cancel, CancelByCloid, Cloid,
+        Modify, OidOrCloid, OrderGrouping, OrderRequest, OrderTypePlacement, TimeInForce,
+        api::{ModifyAction, UpdateLeverage},
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
     use strum::IntoEnumIterator;
 
-    use super::{
-        super::models::{
-            Cloid, HyperliquidExchangeAction, HyperliquidExchangeCancelByCloidRequest,
-            HyperliquidExchangeCancelOrderRequest, HyperliquidExchangeGrouping,
-            HyperliquidExchangeLimitParams, HyperliquidExchangeModifyOrderRequest,
-            HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest,
-            HyperliquidExchangeTif,
-        },
-        *,
-    };
+    use super::*;
     use crate::{
         common::enums::HyperliquidEnvironment,
-        http::query::{
-            CancelParams, ExchangeAction, ExchangeActionParams, ExchangeActionType, InfoRequest,
-            InfoRequestParams, OrderParams, UpdateLeverageParams,
-        },
+        http::query::{InfoRequest, InfoRequestParams},
     };
 
     fn info_request(request_type: HyperliquidInfoRequestType) -> InfoRequest {
@@ -378,33 +345,31 @@ mod tests {
         assert!(!Arc::ptr_eq(&info, &proxied));
     }
 
-    fn exec_order() -> HyperliquidExchangePlaceOrderRequest {
-        HyperliquidExchangePlaceOrderRequest {
+    fn exec_order() -> OrderRequest {
+        OrderRequest {
             asset: 0,
             is_buy: true,
-            price: Decimal::new(50000, 0),
-            size: Decimal::new(1, 0),
+            limit_px: Decimal::new(50000, 0),
+            sz: Decimal::new(1, 0),
             reduce_only: false,
-            kind: HyperliquidExchangeOrderKind::Limit {
-                limit: HyperliquidExchangeLimitParams {
-                    tif: HyperliquidExchangeTif::Gtc,
-                },
+            order_type: OrderTypePlacement::Limit {
+                tif: TimeInForce::Gtc,
             },
-            cloid: Some(Cloid::from_hex("0x00000000000000000000000000000000").unwrap()),
+            cloid: Cloid::ZERO,
         }
     }
 
-    fn exec_modify() -> HyperliquidExchangeModifyOrderRequest {
-        HyperliquidExchangeModifyOrderRequest {
-            oid: 12345.into(),
+    fn exec_modify() -> Modify {
+        Modify {
+            oid: OidOrCloid::Left(12345),
             order: exec_order(),
         }
     }
 
-    fn exec_cancel_by_cloid() -> HyperliquidExchangeCancelByCloidRequest {
-        HyperliquidExchangeCancelByCloidRequest {
+    fn exec_cancel_by_cloid() -> CancelByCloid {
+        CancelByCloid {
             asset: 0,
-            cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
+            cloid: Cloid::ZERO,
         }
     }
 
@@ -418,18 +383,14 @@ mod tests {
         #[case] array_len: usize,
         #[case] expected_weight: u32,
     ) {
-        let orders: Vec<HyperliquidExchangePlaceOrderRequest> =
-            (0..array_len).map(|_| exec_order()).collect();
+        let orders: Vec<OrderRequest> = (0..array_len).map(|_| exec_order()).collect();
 
-        let action = ExchangeAction {
-            action_type: ExchangeActionType::Order,
-            params: ExchangeActionParams::Order(OrderParams {
-                orders,
-                grouping: HyperliquidExchangeGrouping::Na,
-                builder: None,
-            }),
-        };
-        assert_eq!(exchange_weight(&action), expected_weight);
+        let action = Action::Order(BatchOrder {
+            orders,
+            grouping: OrderGrouping::Na,
+            builder: None,
+        });
+        assert_eq!(exec_action_weight(&action), expected_weight);
     }
 
     #[rstest]
@@ -442,11 +403,11 @@ mod tests {
         #[case] array_len: usize,
         #[case] expected_weight: u32,
     ) {
-        let action = HyperliquidExchangeAction::Order {
+        let action = Action::Order(BatchOrder {
             orders: (0..array_len).map(|_| exec_order()).collect(),
-            grouping: HyperliquidExchangeGrouping::Na,
+            grouping: OrderGrouping::Na,
             builder: None,
-        };
+        });
 
         assert_eq!(exec_action_weight(&action), expected_weight);
     }
@@ -461,15 +422,15 @@ mod tests {
         #[case] array_len: usize,
         #[case] expected_weight: u32,
     ) {
-        let action = HyperliquidExchangeAction::Cancel {
+        let action = Action::Cancel(BatchCancel {
             cancels: (0..array_len)
-                .map(|i| HyperliquidExchangeCancelOrderRequest {
+                .map(|i| Cancel {
                     asset: 0,
                     oid: i as u64,
                 })
                 .collect(),
-            fast: None,
-        };
+            fast: false,
+        });
 
         assert_eq!(exec_action_weight(&action), expected_weight);
     }
@@ -484,10 +445,10 @@ mod tests {
         #[case] array_len: usize,
         #[case] expected_weight: u32,
     ) {
-        let action = HyperliquidExchangeAction::CancelByCloid {
+        let action = Action::CancelByCloid(BatchCancelCloid {
             cancels: (0..array_len).map(|_| exec_cancel_by_cloid()).collect(),
-            fast: None,
-        };
+            fast: false,
+        });
 
         assert_eq!(exec_action_weight(&action), expected_weight);
     }
@@ -502,59 +463,55 @@ mod tests {
         #[case] array_len: usize,
         #[case] expected_weight: u32,
     ) {
-        let action = HyperliquidExchangeAction::BatchModify {
+        let action = Action::BatchModify(BatchModify {
             modifies: (0..array_len).map(|_| exec_modify()).collect(),
-        };
+            always_place: false,
+        });
 
         assert_eq!(exec_action_weight(&action), expected_weight);
     }
 
     #[rstest]
     fn test_exec_action_weight_modify() {
-        let action = HyperliquidExchangeAction::Modify {
-            modify: exec_modify(),
-        };
+        let action = Action::Modify(ModifyAction {
+            oid: OidOrCloid::Left(12345),
+            order: exec_order(),
+            always_place: false,
+        });
 
         assert_eq!(exec_action_weight(&action), 1);
     }
 
     #[rstest]
     fn test_exec_action_weight_non_batch_action() {
-        let action = HyperliquidExchangeAction::UpdateLeverage {
+        let action = Action::UpdateLeverage(UpdateLeverage {
             asset: 1,
             is_cross: true,
             leverage: 10,
-        };
+        });
 
         assert_eq!(exec_action_weight(&action), 1);
     }
 
     #[rstest]
     fn test_exchange_weight_cancel() {
-        let cancels: Vec<HyperliquidExchangeCancelByCloidRequest> =
-            (0..40).map(|_| exec_cancel_by_cloid()).collect();
+        let cancels: Vec<CancelByCloid> = (0..40).map(|_| exec_cancel_by_cloid()).collect();
 
-        let action = ExchangeAction {
-            action_type: ExchangeActionType::Cancel,
-            params: ExchangeActionParams::Cancel(CancelParams {
-                cancels,
-                fast: None,
-            }),
-        };
-        assert_eq!(exchange_weight(&action), 2);
+        let action = Action::CancelByCloid(BatchCancelCloid {
+            cancels,
+            fast: false,
+        });
+        assert_eq!(exec_action_weight(&action), 2);
     }
 
     #[rstest]
     fn test_exchange_weight_non_batch_action() {
-        let update_leverage = ExchangeAction {
-            action_type: ExchangeActionType::UpdateLeverage,
-            params: ExchangeActionParams::UpdateLeverage(UpdateLeverageParams {
-                asset: 1,
-                is_cross: true,
-                leverage: 10,
-            }),
-        };
-        assert_eq!(exchange_weight(&update_leverage), 1);
+        let update_leverage = Action::UpdateLeverage(UpdateLeverage {
+            asset: 1,
+            is_cross: true,
+            leverage: 10,
+        });
+        assert_eq!(exec_action_weight(&update_leverage), 1);
     }
 
     #[tokio::test(start_paused = true)]

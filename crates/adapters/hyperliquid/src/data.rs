@@ -2515,6 +2515,7 @@ async fn request_bars_from_http(
 
 #[cfg(test)]
 mod tests {
+    use hypersdk::hypercore::Trade;
     use nautilus_common::live::runner::set_data_event_sender;
     use nautilus_model::{
         data::{
@@ -3306,8 +3307,7 @@ mod tests {
 
     #[rstest]
     fn test_recent_trades_fixture_parses_and_sorts() {
-        let raw: Vec<crate::http::models::HyperliquidRecentTrade> =
-            load_test_data("http_recent_trades_btc.json");
+        let raw: Vec<Trade> = load_test_data("http_recent_trades_btc.json");
         assert_eq!(raw.len(), 3);
         // Fixture is newest-first as the venue returns it.
         assert_eq!(raw[0].tid, 300003);

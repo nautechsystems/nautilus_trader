@@ -1534,7 +1534,7 @@ async fn test_ws_trading_submit_order_sends_builder_and_cloid() {
             .get("builder")
             .and_then(|v| v.get("b"))
             .and_then(|v| v.as_str()),
-        Some(NAUTILUS_BUILDER_ADDRESS),
+        Some(format!("{NAUTILUS_BUILDER_ADDRESS:#x}").as_str()),
     );
     assert_eq!(
         action
@@ -4361,7 +4361,7 @@ async fn test_submit_order_ws_post_includes_builder_attribution() {
             .get("builder")
             .and_then(|v| v.get("b"))
             .and_then(|v| v.as_str()),
-        Some(NAUTILUS_BUILDER_ADDRESS),
+        Some(format!("{NAUTILUS_BUILDER_ADDRESS:#x}").as_str()),
     );
     assert_eq!(
         action

@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
+use hypersdk::hypercore::{Side, Trade};
 use jiff::Timestamp;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::unix_nanos_to_iso8601};
 use nautilus_model::{
@@ -33,8 +34,8 @@ use serde_json::{Value, json};
 use ustr::Ustr;
 
 use super::models::{
-    AssetPosition, HyperliquidFill, HyperliquidRecentTrade, OutcomeMarket, OutcomeMeta,
-    OutcomeQuestion, PerpMeta, SpotBalance, SpotMeta,
+    AssetPosition, HyperliquidFill, OutcomeMarket, OutcomeMeta, OutcomeQuestion, PerpMeta,
+    SpotBalance, SpotMeta,
 };
 use crate::{
     common::{
@@ -1112,17 +1113,17 @@ pub fn parse_order_status_report_from_basic(
 /// # Errors
 ///
 /// Returns an error if the price, size, trade identifier, or timestamp is invalid.
-pub fn parse_recent_trade(
-    trade: &HyperliquidRecentTrade,
-    instrument: &InstrumentAny,
-) -> anyhow::Result<TradeTick> {
+pub fn parse_recent_trade(trade: &Trade, instrument: &InstrumentAny) -> anyhow::Result<TradeTick> {
     let price = Price::from_decimal_dp(trade.px, instrument.price_precision())
         .with_context(|| format!("Failed to create price from '{}'", trade.px))?;
 
     let size = Quantity::from_decimal_dp(trade.sz.abs(), instrument.size_precision())
         .with_context(|| format!("Failed to create size from '{}'", trade.sz))?;
 
-    let aggressor = AggressorSide::from(trade.side);
+    let aggressor = match trade.side {
+        Side::Bid => AggressorSide::Buy,
+        Side::Ask => AggressorSide::Sell,
+    };
     let trade_id = TradeId::new_checked(trade.tid.to_string())
         .context("invalid trade identifier in Hyperliquid recent trade")?;
     let ts_event = millis_to_nanos(trade.time)?;
@@ -1141,7 +1142,7 @@ pub fn parse_recent_trade(
 
 /// Parses a `recentTrades` info entry into a complete public Hyperliquid trade.
 pub fn parse_recent_public_trade(
-    trade: &HyperliquidRecentTrade,
+    trade: &Trade,
     instrument: &InstrumentAny,
 ) -> anyhow::Result<HyperliquidPublicTrade> {
     let price = Price::from_decimal_dp(trade.px, instrument.price_precision())
@@ -1154,10 +1155,13 @@ pub fn parse_recent_public_trade(
         instrument.id(),
         price,
         size,
-        AggressorSide::from(trade.side),
+        match trade.side {
+            Side::Bid => AggressorSide::Buy,
+            Side::Ask => AggressorSide::Sell,
+        },
         trade.tid.to_string(),
-        trade.users[0].clone(),
-        trade.users[1].clone(),
+        format!("{:#x}", trade.users[0]),
+        format!("{:#x}", trade.users[1]),
         trade.hash.clone(),
         ts_event,
         ts_event,
@@ -1494,15 +1498,23 @@ mod tests {
         let defs = parse_perp_instruments(&meta, 0).unwrap();
         let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
 
-        let trade = HyperliquidRecentTrade {
-            coin: Ustr::from("BTC"),
-            side: HyperliquidSide::Sell,
+        let trade = Trade {
+            coin: "BTC".to_string(),
+            side: Side::Ask,
             px: dec!(50000.0),
             sz: dec!(0.5),
             hash: "0xhash".to_string(),
             time: 1_769_916_000_000,
             tid: 987_654_321,
-            users: ["0xbuyer".to_string(), "0xseller".to_string()],
+            users: [
+                "0x1111111111111111111111111111111111111111"
+                    .parse()
+                    .unwrap(),
+                "0x2222222222222222222222222222222222222222"
+                    .parse()
+                    .unwrap(),
+            ],
+            liquidation: None,
         };
 
         let tick = parse_recent_trade(&trade, &instrument).unwrap();
@@ -1526,7 +1538,7 @@ mod tests {
         // Price is now a Decimal field, so an invalid value is rejected at
         // deserialization rather than by parse_recent_trade.
         let json = r#"{"coin":"BTC","side":"B","px":"not-a-number","sz":"0.5","time":1769916000000,"tid":1}"#;
-        assert!(serde_json::from_str::<HyperliquidRecentTrade>(json).is_err());
+        assert!(serde_json::from_str::<Trade>(json).is_err());
     }
 
     #[rstest]

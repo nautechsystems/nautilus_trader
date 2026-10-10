@@ -331,7 +331,7 @@ async fn submit_builder_fee_update(
         status,
         message,
         wallet_address,
-        builder_address: NAUTILUS_BUILDER_ADDRESS.to_string(),
+        builder_address: format!("{NAUTILUS_BUILDER_ADDRESS:#x}"),
         is_testnet,
     })
 }
@@ -342,7 +342,7 @@ fn build_approval_action(is_testnet: bool, nonce: u64) -> serde_json::Value {
         "hyperliquidChain": if is_testnet { "Testnet" } else { "Mainnet" },
         "signatureChainId": format!("{HYPERLIQUID_CHAIN_ID:#x}"),
         "maxFeeRate": ZERO_FEE_RATE,
-        "builder": NAUTILUS_BUILDER_ADDRESS,
+        "builder": format!("{NAUTILUS_BUILDER_ADDRESS:#x}"),
         "nonce": nonce,
     })
 }
@@ -353,7 +353,7 @@ fn sign_approve_builder_fee(
     nonce: u64,
     fee_rate: &str,
 ) -> Result<HyperliquidSignature> {
-    let signing_hash = approval_signing_hash(is_testnet, nonce, fee_rate)?;
+    let signing_hash = approval_signing_hash(is_testnet, nonce, fee_rate);
 
     let key_hex = pk.as_hex();
     let key_hex = key_hex.strip_prefix("0x").unwrap_or(key_hex);
@@ -372,7 +372,7 @@ fn sign_approve_builder_fee(
     Ok(HyperliquidSignature::new(r, s, v))
 }
 
-fn approval_signing_hash(is_testnet: bool, nonce: u64, fee_rate: &str) -> Result<B256> {
+fn approval_signing_hash(is_testnet: bool, nonce: u64, fee_rate: &str) -> B256 {
     let domain = eip712_domain! {
         name: "HyperliquidSignTransaction",
         version: "1",
@@ -391,9 +391,6 @@ fn approval_signing_hash(is_testnet: bool, nonce: u64, fee_rate: &str) -> Result
     let chain_hash = keccak256(chain_str.as_bytes());
     let fee_rate_hash = keccak256(fee_rate.as_bytes());
 
-    let builder_addr = Address::from_str(NAUTILUS_BUILDER_ADDRESS)
-        .map_err(|e| Error::transport(format!("Invalid builder address: {e}")))?;
-
     let mut struct_data = Vec::with_capacity(32 * 5);
     struct_data.extend_from_slice(type_hash.as_slice());
     struct_data.extend_from_slice(chain_hash.as_slice());
@@ -401,7 +398,7 @@ fn approval_signing_hash(is_testnet: bool, nonce: u64, fee_rate: &str) -> Result
 
     // Address left-padded to 32 bytes
     let mut addr_bytes = [0u8; 32];
-    addr_bytes[12..].copy_from_slice(builder_addr.as_slice());
+    addr_bytes[12..].copy_from_slice(NAUTILUS_BUILDER_ADDRESS.as_slice());
     struct_data.extend_from_slice(&addr_bytes);
 
     // Nonce as uint64, left-padded to 32 bytes
@@ -417,7 +414,7 @@ fn approval_signing_hash(is_testnet: bool, nonce: u64, fee_rate: &str) -> Result
     final_data.extend_from_slice(domain_hash.as_slice());
     final_data.extend_from_slice(struct_hash.as_slice());
 
-    Ok(keccak256(&final_data))
+    keccak256(&final_data)
 }
 
 fn derive_address(pk: &EvmPrivateKey) -> Result<String> {
@@ -486,7 +483,7 @@ mod tests {
         assert_eq!(action["hyperliquidChain"], "Mainnet");
         assert_eq!(action["signatureChainId"], "0x66eee");
         assert_eq!(action["maxFeeRate"], "0%");
-        assert_eq!(action["builder"], NAUTILUS_BUILDER_ADDRESS);
+        assert_eq!(action["builder"], format!("{NAUTILUS_BUILDER_ADDRESS:#x}"));
         assert_eq!(action["nonce"], 1_700_000_000_000_u64);
     }
 
@@ -504,7 +501,7 @@ mod tests {
 
         let signature = sign_approve_builder_fee(&pk, false, nonce, ZERO_FEE_RATE).unwrap();
 
-        let signing_hash = approval_signing_hash(false, nonce, ZERO_FEE_RATE).unwrap();
+        let signing_hash = approval_signing_hash(false, nonce, ZERO_FEE_RATE);
         let signer = PrivateKeySigner::from_str(TEST_PK.strip_prefix("0x").unwrap()).unwrap();
         let direct = signer.sign_hash_sync(&signing_hash).unwrap();
         let recovered = direct.recover_address_from_prehash(&signing_hash).unwrap();
@@ -523,13 +520,10 @@ mod tests {
 
     #[rstest]
     fn test_approval_signing_hash_varies_with_inputs() {
-        let base = approval_signing_hash(false, 1, ZERO_FEE_RATE).unwrap();
+        let base = approval_signing_hash(false, 1, ZERO_FEE_RATE);
 
-        assert_ne!(base, approval_signing_hash(true, 1, ZERO_FEE_RATE).unwrap());
-        assert_ne!(
-            base,
-            approval_signing_hash(false, 2, ZERO_FEE_RATE).unwrap()
-        );
-        assert_ne!(base, approval_signing_hash(false, 1, "0.001%").unwrap());
+        assert_ne!(base, approval_signing_hash(true, 1, ZERO_FEE_RATE));
+        assert_ne!(base, approval_signing_hash(false, 2, ZERO_FEE_RATE));
+        assert_ne!(base, approval_signing_hash(false, 1, "0.001%"));
     }
 }

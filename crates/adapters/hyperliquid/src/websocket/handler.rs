@@ -25,6 +25,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use hypersdk::hypercore::Subscription as SdkSubscription;
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, Params, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::book::snapshot::SnapshotGate;
@@ -50,9 +51,9 @@ use super::{
     enums::HyperliquidWsChannel,
     error::HyperliquidWsError,
     messages::{
-        CandleData, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
-        PostRequest, SubscriptionRequest, WsActiveAssetCtxData, WsAllDexsAssetCtxsData,
-        WsUserEventData,
+        Candle, ExecutionReport, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
+        PostRequest, SubscriptionExtension, SubscriptionRequest, WsActiveAssetCtxData,
+        WsAllDexsAssetCtxsData, WsUserEventData,
     },
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
@@ -202,7 +203,7 @@ impl Default for AllMidsDataTypeCache {
 
 impl AllMidsDataTypeCache {
     fn apply(&mut self, subscription: &SubscriptionRequest, subscribed: bool) {
-        let SubscriptionRequest::AllMids { dex } = subscription else {
+        let SubscriptionRequest::Sdk(SdkSubscription::AllMids { dex }) = subscription else {
             return;
         };
         let changed = if subscribed {
@@ -261,7 +262,7 @@ pub(super) struct FeedHandler {
     instruments: AHashMap<Ustr, InstrumentAny>,
     cloid_cache: CloidCache,
     bar_types_cache: AHashMap<String, BarType>,
-    bar_cache: AHashMap<String, CandleData>,
+    bar_cache: AHashMap<String, Candle>,
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
     trade_subs: AHashMap<Ustr, TradeStreamUses>,
     all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
@@ -774,7 +775,7 @@ impl FeedHandler {
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
         processed_public_trade_ids: &mut FifoCache<(Ustr, u64), 10_000>,
         asset_context_caches: &mut AssetContextCaches,
-        bar_cache: &mut AHashMap<String, CandleData>,
+        bar_cache: &mut AHashMap<String, Candle>,
         all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<Option<InstrumentId>>>,
         all_mids_data_types: &[DataType],
     ) -> Vec<NautilusWsMessage> {
@@ -1069,7 +1070,7 @@ impl FeedHandler {
     }
 
     fn handle_trades(
-        data: &[super::messages::WsTradeData],
+        data: &[super::messages::Trade],
         instruments: &AHashMap<Ustr, InstrumentAny>,
         trade_subs: &AHashMap<Ustr, TradeStreamUses>,
         processed_public_trade_ids: &mut FifoCache<(Ustr, u64), 10_000>,
@@ -1079,8 +1080,11 @@ impl FeedHandler {
         let mut public_trades = Vec::new();
 
         for trade in data {
-            if let Some(instrument) = instruments.get(&trade.coin) {
-                let uses = trade_subs.get(&trade.coin).copied().unwrap_or_default();
+            if let Some(instrument) = instruments.get(&Ustr::from(trade.coin.as_str())) {
+                let uses = trade_subs
+                    .get(&Ustr::from(trade.coin.as_str()))
+                    .copied()
+                    .unwrap_or_default();
 
                 if uses.ticks {
                     match parse_ws_trade_tick(trade, instrument, ts_init) {
@@ -1092,7 +1096,7 @@ impl FeedHandler {
                 }
 
                 if uses.public_trades {
-                    let trade_key = (trade.coin, trade.tid);
+                    let trade_key = (Ustr::from(trade.coin.as_str()), trade.tid);
                     if processed_public_trade_ids.contains(&trade_key) {
                         log::debug!(
                             "Skipping replayed public trade: coin={}, tid={}",
@@ -1132,11 +1136,11 @@ impl FeedHandler {
     }
 
     fn handle_bbo(
-        data: &super::messages::WsBboData,
+        data: &super::messages::Bbo,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
-        if let Some(instrument) = instruments.get(&data.coin) {
+        if let Some(instrument) = instruments.get(&Ustr::from(data.coin.as_str())) {
             match parse_ws_quote_tick(data, instrument, ts_init) {
                 Ok(quote_tick) => Some(NautilusWsMessage::Quote(quote_tick)),
                 Err(e) => {
@@ -1151,14 +1155,14 @@ impl FeedHandler {
     }
 
     fn handle_l2_book(
-        data: &super::messages::WsBookData,
+        data: &super::messages::L2Book,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         depth_subs: &AHashSet<Ustr>,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
         let mut out = Vec::new();
 
-        let Some(instrument) = instruments.get(&data.coin) else {
+        let Some(instrument) = instruments.get(&Ustr::from(data.coin.as_str())) else {
             log::debug!("No instrument found for coin: {}", data.coin);
             return out;
         };
@@ -1171,7 +1175,7 @@ impl FeedHandler {
             }
         }
 
-        if depth_subs.contains(&data.coin) {
+        if depth_subs.contains(&Ustr::from(data.coin.as_str())) {
             match parse_ws_order_book_depth(data, instrument, ts_init) {
                 Ok(depth) => out.push(NautilusWsMessage::Depth(Box::new(depth))),
                 Err(e) => log::error!("Error parsing order book depth: {e}"),
@@ -1182,13 +1186,13 @@ impl FeedHandler {
     }
 
     fn handle_candle(
-        data: &CandleData,
+        data: &Candle,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         bar_types: &AHashMap<String, BarType>,
-        bar_cache: &mut AHashMap<String, CandleData>,
+        bar_cache: &mut AHashMap<String, Candle>,
         ts_init: UnixNanos,
     ) -> Option<NautilusWsMessage> {
-        let key = format!("candle:{}:{}", data.s, data.i);
+        let key = format!("candle:{}:{}", data.coin, data.interval);
 
         let mut closed_bar = None;
 
@@ -1197,7 +1201,7 @@ impl FeedHandler {
             if cached.close_time != data.close_time {
                 log::debug!(
                     "Bar period changed for {}: prev_close_time={}, new_close_time={}",
-                    data.s,
+                    data.coin,
                     cached.close_time,
                     data.close_time
                 );
@@ -1209,7 +1213,7 @@ impl FeedHandler {
 
         if let Some(closed_data) = closed_bar {
             if let Some(bar_type) = bar_types.get(&key) {
-                if let Some(instrument) = instruments.get(&data.s) {
+                if let Some(instrument) = instruments.get(&Ustr::from(data.coin.as_str())) {
                     match parse_ws_candle(&closed_data, instrument, bar_type, ts_init) {
                         Ok(bar) => return Some(NautilusWsMessage::Candle(bar)),
                         Err(e) => {
@@ -1217,7 +1221,7 @@ impl FeedHandler {
                         }
                     }
                 } else {
-                    log::debug!("No instrument found for coin: {}", data.s);
+                    log::debug!("No instrument found for coin: {}", data.coin);
                 }
             } else {
                 log::debug!("No bar type found for key: {key}");
@@ -1614,80 +1618,84 @@ fn should_retry_post_send(error: &PostSendError) -> bool {
 
 pub(super) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
     match sub {
-        SubscriptionRequest::AllMids { dex } => {
+        SubscriptionRequest::Sdk(SdkSubscription::AllMids { dex }) => {
             if let Some(dex_name) = dex {
                 format!("{}:{dex_name}", HyperliquidWsChannel::AllMids.as_str())
             } else {
                 HyperliquidWsChannel::AllMids.as_str().to_string()
             }
         }
-        SubscriptionRequest::AllDexsAssetCtxs => {
+        SubscriptionRequest::Sdk(SdkSubscription::AllDexsAssetCtxs) => {
             HyperliquidWsChannel::AllDexsAssetCtxs.as_str().to_string()
         }
-        SubscriptionRequest::Notification { user } => {
+        SubscriptionRequest::Sdk(SdkSubscription::Notification { user }) => {
             format!("{}:{user}", HyperliquidWsChannel::Notification.as_str())
         }
-        SubscriptionRequest::WebData2 { user } => {
+        SubscriptionRequest::Extension(SubscriptionExtension::WebData2 { user }) => {
             format!("{}:{user}", HyperliquidWsChannel::WebData2.as_str())
         }
-        SubscriptionRequest::Candle { coin, interval } => {
+        SubscriptionRequest::Sdk(SdkSubscription::Candle { coin, interval }) => {
             format!(
                 "{}:{coin}:{}",
                 HyperliquidWsChannel::Candle.as_str(),
                 interval.as_str()
             )
         }
-        SubscriptionRequest::L2Book { coin, .. } => {
+        SubscriptionRequest::Sdk(SdkSubscription::L2Book { coin, .. }) => {
             format!("{}:{coin}", HyperliquidWsChannel::L2Book.as_str())
         }
-        SubscriptionRequest::Trades { coin } => {
+        SubscriptionRequest::Sdk(SdkSubscription::Trades { coin }) => {
             format!("{}:{coin}", HyperliquidWsChannel::Trades.as_str())
         }
-        SubscriptionRequest::OrderUpdates { user } => {
+        SubscriptionRequest::Sdk(SdkSubscription::OrderUpdates { user }) => {
             format!("{}:{user}", HyperliquidWsChannel::OrderUpdates.as_str())
         }
-        SubscriptionRequest::UserEvents { user } => {
+        SubscriptionRequest::Sdk(SdkSubscription::UserEvents { user }) => {
             format!("{}:{user}", HyperliquidWsChannel::UserEvents.as_str())
         }
-        SubscriptionRequest::UserFills { user, .. } => {
+        SubscriptionRequest::Sdk(SdkSubscription::UserFills { user }) => {
+            format!("{}:{user:#x}", HyperliquidWsChannel::UserFills.as_str())
+        }
+        SubscriptionRequest::Extension(SubscriptionExtension::UserFills { user, .. }) => {
             format!("{}:{user}", HyperliquidWsChannel::UserFills.as_str())
         }
-        SubscriptionRequest::UserFundings { user } => {
+        SubscriptionRequest::Sdk(SdkSubscription::UserFundings { user }) => {
             format!("{}:{user}", HyperliquidWsChannel::UserFundings.as_str())
         }
-        SubscriptionRequest::UserNonFundingLedgerUpdates { user } => {
+        SubscriptionRequest::Sdk(SdkSubscription::UserNonFundingLedgerUpdates { user }) => {
             format!(
                 "{}:{user}",
                 HyperliquidWsChannel::UserNonFundingLedgerUpdates.as_str()
             )
         }
-        SubscriptionRequest::ActiveAssetCtx { coin } => {
+        SubscriptionRequest::Sdk(SdkSubscription::ActiveAssetCtx { coin }) => {
             format!("{}:{coin}", HyperliquidWsChannel::ActiveAssetCtx.as_str())
         }
-        SubscriptionRequest::ActiveSpotAssetCtx { coin } => {
+        SubscriptionRequest::Extension(SubscriptionExtension::ActiveSpotAssetCtx { coin }) => {
             format!(
                 "{}:{coin}",
                 HyperliquidWsChannel::ActiveSpotAssetCtx.as_str()
             )
         }
-        SubscriptionRequest::ActiveAssetData { user, coin } => {
+        SubscriptionRequest::Sdk(SdkSubscription::ActiveAssetData { user, coin }) => {
             format!(
                 "{}:{user}:{coin}",
                 HyperliquidWsChannel::ActiveAssetData.as_str()
             )
         }
-        SubscriptionRequest::UserTwapSliceFills { user } => {
+        SubscriptionRequest::Sdk(SdkSubscription::UserTwapSliceFills { user }) => {
             format!(
                 "{}:{user}",
                 HyperliquidWsChannel::UserTwapSliceFills.as_str()
             )
         }
-        SubscriptionRequest::UserTwapHistory { user } => {
+        SubscriptionRequest::Sdk(SdkSubscription::UserTwapHistory { user }) => {
             format!("{}:{user}", HyperliquidWsChannel::UserTwapHistory.as_str())
         }
-        SubscriptionRequest::Bbo { coin } => {
+        SubscriptionRequest::Sdk(SdkSubscription::Bbo { coin }) => {
             format!("{}:{coin}", HyperliquidWsChannel::Bbo.as_str())
         }
+        SubscriptionRequest::Sdk(subscription) => subscription.to_string(),
     }
 }
 
@@ -1727,6 +1735,7 @@ mod tests {
     };
 
     use ahash::{AHashMap, AHashSet};
+    use hypersdk::hypercore::Subscription as SdkSubscription;
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_common::cache::fifo::FifoCacheMap;
     use nautilus_core::nanos::UnixNanos;
@@ -1756,9 +1765,9 @@ mod tests {
             client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
             error::HyperliquidWsError,
             messages::{
-                HyperliquidWsRequest, NautilusWsMessage, PerpsAssetCtx, PostRequest,
-                SharedAssetCtx, SpotAssetCtx, SubscriptionRequest, WsActiveAssetCtxData,
-                WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
+                BookLevel, HyperliquidWsRequest, L2Book, NautilusWsMessage, PerpsAssetCtx,
+                PostRequest, SharedAssetCtx, SpotAssetCtx, SubscriptionExtension,
+                SubscriptionRequest, WsActiveAssetCtxData, WsAllDexsAssetCtxsData,
             },
             post::PostRouter,
             rate_limits::WebSocketRateLimits,
@@ -1819,9 +1828,9 @@ mod tests {
         assert!(cache.as_slice()[0].metadata().is_none());
 
         cache.apply(
-            &SubscriptionRequest::AllMids {
+            &SubscriptionRequest::Sdk(SdkSubscription::AllMids {
                 dex: Some("xyz".to_owned()),
-            },
+            }),
             true,
         );
         assert_eq!(cache.as_slice().len(), 1);
@@ -1832,20 +1841,26 @@ mod tests {
             Some("xyz"),
         );
 
-        cache.apply(&SubscriptionRequest::AllMids { dex: None }, true);
+        cache.apply(
+            &SubscriptionRequest::Sdk(SdkSubscription::AllMids { dex: None }),
+            true,
+        );
         assert_eq!(cache.as_slice().len(), 2);
 
         cache.apply(
-            &SubscriptionRequest::AllMids {
+            &SubscriptionRequest::Sdk(SdkSubscription::AllMids {
                 dex: Some("xyz".to_owned()),
-            },
+            }),
             false,
         );
         assert_eq!(cache.as_slice().len(), 1);
         assert_eq!(cache.as_slice()[0].type_name(), "HyperliquidAllMids");
         assert!(cache.as_slice()[0].metadata().is_none());
 
-        cache.apply(&SubscriptionRequest::AllMids { dex: None }, false);
+        cache.apply(
+            &SubscriptionRequest::Sdk(SdkSubscription::AllMids { dex: None }),
+            false,
+        );
         assert_eq!(cache.as_slice().len(), 1);
         assert_eq!(cache.as_slice()[0].type_name(), "HyperliquidAllMids");
         assert!(cache.as_slice()[0].metadata().is_none());
@@ -1874,22 +1889,23 @@ mod tests {
         )
     }
 
-    fn one_level_book() -> WsBookData {
-        WsBookData {
-            coin: Ustr::from("BTC"),
+    fn one_level_book() -> L2Book {
+        L2Book {
+            coin: "BTC".to_string(),
             levels: [
-                vec![WsLevelData {
+                vec![BookLevel {
                     px: dec!(100.00),
                     sz: dec!(1.0),
                     n: 1,
                 }],
-                vec![WsLevelData {
+                vec![BookLevel {
                     px: dec!(100.01),
                     sz: dec!(1.0),
                     n: 1,
                 }],
             ],
             time: 1_700_000_000_000,
+            snapshot: false,
         }
     }
 
@@ -2041,10 +2057,14 @@ mod tests {
             1,
         );
 
-        let subscription = || SubscriptionRequest::L2Book {
-            coin: Ustr::from("BTC"),
-            n_sig_figs: None,
-            mantissa: None,
+        let subscription = || {
+            SubscriptionRequest::Sdk(SdkSubscription::L2Book {
+                coin: "BTC".to_string(),
+                n_sig_figs: None,
+                mantissa: None,
+
+                fast: false,
+            })
         };
 
         let failed_gate = SnapshotGate::default();
@@ -2291,9 +2311,9 @@ mod tests {
             Arc::new(WebSocketRateLimits::new()),
             1,
         );
-        let subscription = SubscriptionRequest::Notification {
+        let subscription = SubscriptionRequest::Extension(SubscriptionExtension::WebData2 {
             user: SECRET_MARKER.to_string(),
-        };
+        });
         let subscribe_len = serde_json::to_string(&HyperliquidWsRequest::Subscribe {
             subscription: subscription.clone(),
         })
@@ -2352,9 +2372,9 @@ mod tests {
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
         let subscriptions = SubscriptionState::new(':');
         let limits = Arc::new(WebSocketRateLimits::new());
-        let released = SubscriptionRequest::Trades {
-            coin: Ustr::from("RELEASED"),
-        };
+        let released = SubscriptionRequest::Sdk(SdkSubscription::Trades {
+            coin: "RELEASED".to_string(),
+        });
         let released_key = super::subscription_to_key(&released);
         subscriptions.mark_subscribe(&released_key);
         subscriptions.confirm_subscribe(&released_key);
@@ -2366,9 +2386,9 @@ mod tests {
                 limits
                     .reserve_subscription(
                         1,
-                        &SubscriptionRequest::Trades {
-                            coin: Ustr::from(&format!("COIN-{index}")),
-                        },
+                        &SubscriptionRequest::Sdk(SdkSubscription::Trades {
+                            coin: format!("COIN-{index}"),
+                        }),
                     )
                     .unwrap()
             );
@@ -2377,9 +2397,9 @@ mod tests {
             limits
                 .reserve_subscription(
                     2,
-                    &SubscriptionRequest::Trades {
-                        coin: Ustr::from("BEFORE-ACK"),
-                    },
+                    &SubscriptionRequest::Sdk(SdkSubscription::Trades {
+                        coin: "BEFORE-ACK".to_string(),
+                    }),
                 )
                 .is_err()
         );
@@ -2425,9 +2445,9 @@ mod tests {
             limits
                 .reserve_subscription(
                     2,
-                    &SubscriptionRequest::Trades {
-                        coin: Ustr::from("AFTER-ACK"),
-                    },
+                    &SubscriptionRequest::Sdk(SdkSubscription::Trades {
+                        coin: "AFTER-ACK".to_string(),
+                    }),
                 )
                 .unwrap()
         );

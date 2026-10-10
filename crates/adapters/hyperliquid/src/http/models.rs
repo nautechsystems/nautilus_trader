@@ -16,15 +16,10 @@
 use std::fmt::{Debug, Display};
 
 use alloy_primitives::{Address, keccak256};
-use hypersdk::hypercore::{
-    Builder as SdkBuilder, Cancel as SdkCancel, CancelByCloid as SdkCancelByCloid, Chain,
-    Cloid as SdkCloid, OrderRequest as SdkOrderRequest, OrderTypePlacement,
-    TimeInForce as SdkTimeInForce, TpSl,
-};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::{hex, string::secret::SecretString};
-use nautilus_model::identifiers::{ClientOrderId, VenueOrderId};
+use nautilus_model::identifiers::ClientOrderId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
@@ -545,38 +540,6 @@ pub struct HyperliquidFundingHistoryEntry {
     pub time: u64,
 }
 
-/// Represents a single trade from the `recentTrades` info endpoint.
-///
-/// The endpoint returns a recent snapshot of public trades (newest first) and
-/// shares the field layout of the `trades` WebSocket channel.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HyperliquidRecentTrade {
-    /// Coin symbol (raw Hyperliquid name, e.g. `"BTC"`).
-    pub coin: Ustr,
-    /// Aggressor side: `"A"` (ask/sell) or `"B"` (bid/buy).
-    pub side: HyperliquidSide,
-    /// Trade price.
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub px: Decimal,
-    /// Trade size.
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub sz: Decimal,
-    /// Hyperliquid trade hash.
-    pub hash: String,
-    /// Trade timestamp in milliseconds.
-    pub time: u64,
-    /// Venue trade identifier.
-    pub tid: u64,
-    /// Buyer and seller wallet addresses, in that order.
-    pub users: [String; 2],
-}
-
 /// Represents an individual fill from user fills.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperliquidFill {
@@ -878,6 +841,11 @@ pub const RESPONSE_STATUS_OK: &str = "ok";
 
 #[cfg(test)]
 mod tests {
+    use hypersdk::hypercore::{
+        BatchCancel, BatchCancelCloid, BatchOrder, Cancel, CancelByCloid, Modify, OidOrCloid,
+        OrderGrouping, OrderRequest, OrderTypePlacement, Side, TimeInForce, Trade,
+        api::{Action, UserOutcomeAction},
+    };
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use serde_json::json;
@@ -904,20 +872,21 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_request_debug_redacts_signature() {
-        let request = HyperliquidExchangeActionRequest {
-            action: HyperliquidExchangeAction::Noop,
+        let request = HyperliquidExchangeRequest {
+            action: Action::Noop,
             nonce: 1_700_000_000_000,
-            signature: SecretString::from("0xsigned-action"),
+            signature: HyperliquidSignature::new("0xsignature-r", "0xsignature-s", 27),
             vault_address: Some("0xvault".to_string()),
             expires_after: Some(1_700_000_001_000),
         };
         let wire = serde_json::to_value(&request).unwrap();
         let debug = format!("{request:?}");
 
-        assert_eq!(wire["signature"], "0xsigned-action");
+        assert_eq!(wire["signature"]["r"], "0xsignature-r");
         assert_eq!(wire["nonce"], 1_700_000_000_000_u64);
         assert!(debug.contains(REDACTED));
-        assert!(!debug.contains("0xsigned-action"));
+        assert!(!debug.contains("0xsignature-r"));
+        assert!(!debug.contains("0xsignature-s"));
     }
 
     #[rstest]
@@ -966,7 +935,6 @@ mod tests {
 
     #[rstest]
     fn test_recent_trade_deserializes() {
-        // The venue payload carries `hash`/`users` fields the model ignores.
         let json = r#"{
             "coin": "BTC",
             "side": "B",
@@ -975,13 +943,13 @@ mod tests {
             "hash": "0xabc",
             "time": 1769916000000,
             "tid": 987654321,
-            "users": ["0xbuyer", "0xseller"]
+            "users": ["0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222"]
         }"#;
 
-        let trade: HyperliquidRecentTrade = serde_json::from_str(json).unwrap();
+        let trade: Trade = serde_json::from_str(json).unwrap();
 
         assert_eq!(trade.coin, "BTC");
-        assert_eq!(trade.side, HyperliquidSide::Buy);
+        assert_eq!(trade.side, Side::Bid);
         assert_eq!(trade.px, dec!(104250.0));
         assert_eq!(trade.sz, dec!(0.0123));
         assert_eq!(trade.time, 1769916000000);
@@ -1200,11 +1168,11 @@ mod tests {
         // Python SDK serializes: {"type": "order", "orders": [...], "grouping": "na"}
         // We need to verify rmp_serde::to_vec_named produces the same format.
 
-        let action = HyperliquidExchangeAction::Order {
+        let action = Action::Order(BatchOrder {
             orders: vec![],
-            grouping: HyperliquidExchangeGrouping::Na,
+            grouping: OrderGrouping::Na,
             builder: None,
-        };
+        });
 
         // First verify JSON is correct
         let json = serde_json::to_string(&action).unwrap();
@@ -1238,13 +1206,13 @@ mod tests {
 
     #[rstest]
     fn test_cancel_action_serializes_fast_flag() {
-        let action = HyperliquidExchangeAction::Cancel {
-            cancels: vec![HyperliquidExchangeCancelOrderRequest {
+        let action = Action::Cancel(BatchCancel {
+            cancels: vec![Cancel {
                 asset: 0,
                 oid: 12345,
             }],
-            fast: Some(true),
-        };
+            fast: true,
+        });
 
         let value = serde_json::to_value(action).unwrap();
 
@@ -1260,13 +1228,13 @@ mod tests {
 
     #[rstest]
     fn test_cancel_by_cloid_action_serializes_fast_flag() {
-        let action = HyperliquidExchangeAction::CancelByCloid {
-            cancels: vec![HyperliquidExchangeCancelByCloidRequest {
+        let action = Action::CancelByCloid(BatchCancelCloid {
+            cancels: vec![CancelByCloid {
                 asset: 0,
-                cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
+                cloid: Default::default(),
             }],
-            fast: Some(true),
-        };
+            fast: true,
+        });
 
         let value = serde_json::to_value(action).unwrap();
 
@@ -1317,14 +1285,7 @@ mod tests {
 
     #[rstest]
     fn test_user_outcome_split_serialization() {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::SplitOutcome(
-                HyperliquidExchangeSplitOutcomeParams {
-                    outcome: 1,
-                    amount: dec!(123.0),
-                },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::split(1, dec!(123.0)));
 
         let value: serde_json::Value = serde_json::to_value(&action).unwrap();
         assert_eq!(
@@ -1338,14 +1299,7 @@ mod tests {
 
     #[rstest]
     fn test_user_outcome_split_msgpack_roundtrip() {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::SplitOutcome(
-                HyperliquidExchangeSplitOutcomeParams {
-                    outcome: 4,
-                    amount: dec!(10),
-                },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::split(4, dec!(10)));
 
         let bytes = rmp_serde::to_vec_named(&action).unwrap();
         let decoded: serde_json::Value = rmp_serde::from_slice(&bytes).unwrap();
@@ -1372,14 +1326,7 @@ mod tests {
 
     #[rstest]
     fn test_user_outcome_merge_outcome_serialization() {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::MergeOutcome(
-                HyperliquidExchangeMergeOutcomeParams {
-                    outcome: 1,
-                    amount: Some(dec!(5.0)),
-                },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::merge(1, Some(dec!(5.0))));
         let value: serde_json::Value = serde_json::to_value(&action).unwrap();
         assert_eq!(
             value,
@@ -1392,14 +1339,7 @@ mod tests {
 
     #[rstest]
     fn test_user_outcome_merge_outcome_null_amount_means_max() {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::MergeOutcome(
-                HyperliquidExchangeMergeOutcomeParams {
-                    outcome: 7,
-                    amount: None,
-                },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::merge(7, None));
         let value: serde_json::Value = serde_json::to_value(&action).unwrap();
         assert_eq!(
             value,
@@ -1412,14 +1352,7 @@ mod tests {
 
     #[rstest]
     fn test_user_outcome_merge_question_serialization() {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::MergeQuestion(
-                HyperliquidExchangeMergeQuestionParams {
-                    question: 9,
-                    amount: Some(dec!(2.0)),
-                },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::merge_question(9, Some(dec!(2.0))));
         let value: serde_json::Value = serde_json::to_value(&action).unwrap();
         assert_eq!(
             value,
@@ -1432,14 +1365,7 @@ mod tests {
 
     #[rstest]
     fn test_user_outcome_merge_question_null_amount_means_max() {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::MergeQuestion(
-                HyperliquidExchangeMergeQuestionParams {
-                    question: 9,
-                    amount: None,
-                },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::merge_question(9, None));
         let value: serde_json::Value = serde_json::to_value(&action).unwrap();
         assert_eq!(
             value,
@@ -1452,15 +1378,7 @@ mod tests {
 
     #[rstest]
     fn test_user_outcome_negate_outcome_serialization() {
-        let action = HyperliquidExchangeAction::UserOutcome {
-            op: HyperliquidExchangeUserOutcomeOp::NegateOutcome(
-                HyperliquidExchangeNegateOutcomeParams {
-                    question: 9,
-                    outcome: 52,
-                    amount: dec!(1.5),
-                },
-            ),
-        };
+        let action = Action::UserOutcome(UserOutcomeAction::negate(9, 52, dec!(1.5)));
         let value: serde_json::Value = serde_json::to_value(&action).unwrap();
         assert_eq!(
             value,
@@ -1473,7 +1391,7 @@ mod tests {
 
     #[rstest]
     fn test_modify_target_serializes_numeric_oid() {
-        let request = modify_request_with_target(HyperliquidExchangeModifyTarget::Oid(12345));
+        let request = modify_request_with_target(OidOrCloid::Left(12345));
         let value: serde_json::Value = serde_json::to_value(request).unwrap();
 
         assert_eq!(value["oid"], json!(12345));
@@ -1482,636 +1400,28 @@ mod tests {
     #[rstest]
     fn test_modify_target_serializes_cloid() {
         let cloid = Cloid::from_hex("0x1234567890abcdef1234567890abcdef").unwrap();
-        let request = modify_request_with_target(HyperliquidExchangeModifyTarget::Cloid(cloid));
+        let request = modify_request_with_target(OidOrCloid::Right(cloid.0.into()));
         let value: serde_json::Value = serde_json::to_value(request).unwrap();
 
         assert_eq!(value["oid"], json!("0x1234567890abcdef1234567890abcdef"));
     }
 
-    fn modify_request_with_target(
-        oid: HyperliquidExchangeModifyTarget,
-    ) -> HyperliquidExchangeModifyOrderRequest {
-        HyperliquidExchangeModifyOrderRequest {
+    fn modify_request_with_target(oid: OidOrCloid) -> Modify {
+        Modify {
             oid,
-            order: HyperliquidExchangePlaceOrderRequest {
+            order: OrderRequest {
                 asset: 0,
                 is_buy: true,
-                price: dec!(51000),
-                size: dec!(0.2),
+                limit_px: dec!(51000),
+                sz: dec!(0.2),
                 reduce_only: false,
-                kind: HyperliquidExchangeOrderKind::Limit {
-                    limit: HyperliquidExchangeLimitParams {
-                        tif: HyperliquidExchangeTif::Gtc,
-                    },
+                order_type: OrderTypePlacement::Limit {
+                    tif: TimeInForce::Gtc,
                 },
-                cloid: None,
+                cloid: Default::default(),
             },
         }
     }
-}
-
-/// Time-in-force for limit orders in exchange endpoint.
-///
-/// These values must match exactly what Hyperliquid expects for proper serialization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum HyperliquidExchangeTif {
-    /// Add Liquidity Only (post-only order).
-    #[serde(rename = "Alo")]
-    Alo,
-    /// Immediate or Cancel.
-    #[serde(rename = "Ioc")]
-    Ioc,
-    /// Good Till Canceled.
-    #[serde(rename = "Gtc")]
-    Gtc,
-}
-
-/// Take profit or stop loss side for trigger orders in exchange endpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum HyperliquidExchangeTpSl {
-    /// Take profit.
-    #[serde(rename = "tp")]
-    Tp,
-    /// Stop loss.
-    #[serde(rename = "sl")]
-    Sl,
-}
-
-/// Order grouping strategy for linked TP/SL orders in exchange endpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum HyperliquidExchangeGrouping {
-    /// No grouping semantics.
-    #[serde(rename = "na")]
-    #[default]
-    Na,
-    /// Normal TP/SL grouping (linked orders).
-    #[serde(rename = "normalTpsl")]
-    NormalTpsl,
-    /// Position-level TP/SL grouping.
-    #[serde(rename = "positionTpsl")]
-    PositionTpsl,
-}
-
-/// Order kind specification for the `t` field in exchange endpoint order requests.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum HyperliquidExchangeOrderKind {
-    /// Limit order with time-in-force.
-    Limit {
-        /// Limit order parameters.
-        limit: HyperliquidExchangeLimitParams,
-    },
-    /// Trigger order (stop/take profit).
-    Trigger {
-        /// Trigger order parameters.
-        trigger: HyperliquidExchangeTriggerParams,
-    },
-}
-
-/// Parameters for limit orders in exchange endpoint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HyperliquidExchangeLimitParams {
-    /// Time-in-force for the limit order.
-    pub tif: HyperliquidExchangeTif,
-}
-
-/// Parameters for trigger orders (stop/take profit) in exchange endpoint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidExchangeTriggerParams {
-    /// Whether to use market price when triggered.
-    pub is_market: bool,
-    /// Trigger price as a string.
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub trigger_px: Decimal,
-    /// Whether this is a take profit or stop loss.
-    pub tpsl: HyperliquidExchangeTpSl,
-}
-
-/// Builder code for order attribution in the exchange endpoint.
-///
-/// The fee is specified in tenths of a basis point.
-/// For example, `f: 10` represents 1 basis point (0.01%).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct HyperliquidExchangeBuilderFee {
-    /// Builder address for attribution.
-    #[serde(rename = "b")]
-    pub address: String,
-    /// Fee in tenths of a basis point.
-    #[serde(rename = "f")]
-    pub fee_tenths_bp: u32,
-}
-
-impl Serialize for HyperliquidExchangeBuilderFee {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        SdkBuilder {
-            builder_address: self.address.parse().map_err(serde::ser::Error::custom)?,
-            fee: self.fee_tenths_bp,
-        }
-        .serialize(serializer)
-    }
-}
-
-/// Order specification for placing orders via exchange endpoint.
-///
-/// This struct represents a single order in the exact format expected
-/// by the Hyperliquid exchange endpoint.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct HyperliquidExchangePlaceOrderRequest {
-    /// Asset ID.
-    #[serde(rename = "a")]
-    pub asset: AssetId,
-    /// Is buy order (true for buy, false for sell).
-    #[serde(rename = "b")]
-    pub is_buy: bool,
-    /// Price as a string with no trailing zeros.
-    #[serde(rename = "p", deserialize_with = "deserialize_decimal_from_str")]
-    pub price: Decimal,
-    /// Size as a string with no trailing zeros.
-    #[serde(rename = "s", deserialize_with = "deserialize_decimal_from_str")]
-    pub size: Decimal,
-    /// Reduce-only flag.
-    #[serde(rename = "r")]
-    pub reduce_only: bool,
-    /// Order type (limit or trigger).
-    #[serde(rename = "t")]
-    pub kind: HyperliquidExchangeOrderKind,
-    /// Optional client order ID (128-bit hex).
-    #[serde(rename = "c", skip_serializing_if = "Option::is_none")]
-    pub cloid: Option<Cloid>,
-}
-
-impl From<&HyperliquidExchangePlaceOrderRequest> for SdkOrderRequest {
-    fn from(order: &HyperliquidExchangePlaceOrderRequest) -> Self {
-        let order_type = match &order.kind {
-            HyperliquidExchangeOrderKind::Limit { limit } => OrderTypePlacement::Limit {
-                tif: match limit.tif {
-                    HyperliquidExchangeTif::Alo => SdkTimeInForce::Alo,
-                    HyperliquidExchangeTif::Ioc => SdkTimeInForce::Ioc,
-                    HyperliquidExchangeTif::Gtc => SdkTimeInForce::Gtc,
-                },
-            },
-            HyperliquidExchangeOrderKind::Trigger { trigger } => OrderTypePlacement::Trigger {
-                is_market: trigger.is_market,
-                trigger_px: trigger.trigger_px,
-                tpsl: match trigger.tpsl {
-                    HyperliquidExchangeTpSl::Tp => TpSl::Tp,
-                    HyperliquidExchangeTpSl::Sl => TpSl::Sl,
-                },
-            },
-        };
-
-        Self {
-            asset: order.asset as usize,
-            is_buy: order.is_buy,
-            limit_px: order.price,
-            sz: order.size,
-            reduce_only: order.reduce_only,
-            order_type,
-            cloid: order
-                .cloid
-                .map_or(SdkCloid::ZERO, |cloid| SdkCloid::from(cloid.0)),
-        }
-    }
-}
-
-impl Serialize for HyperliquidExchangePlaceOrderRequest {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        SdkOrderRequest::from(self).serialize(serializer)
-    }
-}
-
-/// Cancel specification for canceling orders by order ID via exchange endpoint.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct HyperliquidExchangeCancelOrderRequest {
-    /// Asset ID.
-    #[serde(rename = "a")]
-    pub asset: AssetId,
-    /// Order ID to cancel.
-    #[serde(rename = "o")]
-    pub oid: OrderId,
-}
-
-impl Serialize for HyperliquidExchangeCancelOrderRequest {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        SdkCancel {
-            asset: self.asset as usize,
-            oid: self.oid,
-        }
-        .serialize(serializer)
-    }
-}
-
-/// Cancel specification for canceling orders by client order ID via exchange endpoint.
-///
-/// Note: Unlike order placement which uses abbreviated field names ("a", "c"),
-/// cancel-by-cloid uses full field names ("asset", "cloid") per the Hyperliquid API.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct HyperliquidExchangeCancelByCloidRequest {
-    /// Asset ID.
-    pub asset: AssetId,
-    /// Client order ID to cancel.
-    pub cloid: Cloid,
-}
-
-impl Serialize for HyperliquidExchangeCancelByCloidRequest {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        SdkCancelByCloid {
-            asset: self.asset,
-            cloid: SdkCloid::from(self.cloid.0),
-        }
-        .serialize(serializer)
-    }
-}
-
-pub(crate) fn is_fast_cancel_disabled(fast: &Option<bool>) -> bool {
-    !fast.unwrap_or(false)
-}
-
-/// Target of a modify request.
-///
-/// Hyperliquid names this field `oid`, but accepts either a numeric venue
-/// order ID or a CLOID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum HyperliquidExchangeModifyTarget {
-    /// Numeric venue order ID.
-    Oid(OrderId),
-    /// CLOID.
-    Cloid(Cloid),
-}
-
-impl HyperliquidExchangeModifyTarget {
-    /// Creates a numeric modify target from a Nautilus venue order ID.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the venue order ID is not a numeric Hyperliquid order ID.
-    pub fn from_venue_order_id(
-        venue_order_id: &VenueOrderId,
-    ) -> Result<Self, std::num::ParseIntError> {
-        venue_order_id.as_str().parse::<OrderId>().map(Self::Oid)
-    }
-}
-
-impl From<OrderId> for HyperliquidExchangeModifyTarget {
-    fn from(value: OrderId) -> Self {
-        Self::Oid(value)
-    }
-}
-
-impl From<Cloid> for HyperliquidExchangeModifyTarget {
-    fn from(value: Cloid) -> Self {
-        Self::Cloid(value)
-    }
-}
-
-/// Modify specification for modifying existing orders via exchange endpoint.
-///
-/// The HL API requires the full order spec (same as a place order) plus
-/// the venue order ID or CLOID to modify.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HyperliquidExchangeModifyOrderRequest {
-    /// Venue order ID or CLOID to modify.
-    pub oid: HyperliquidExchangeModifyTarget,
-    /// Full replacement order specification.
-    pub order: HyperliquidExchangePlaceOrderRequest,
-}
-
-/// Parameters for the HIP-4 `splitOutcome` operation inside a `userOutcome` action.
-///
-/// Debits `amount` quote tokens from the user's spot balance and credits both
-/// the Yes and No side tokens of the referenced outcome.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HyperliquidExchangeSplitOutcomeParams {
-    /// Outcome index (matches `outcomeMeta.outcomes[i].outcome`).
-    pub outcome: u32,
-    /// Quote-token amount to split, serialized as a decimal string (e.g. `"123.0"`).
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub amount: Decimal,
-}
-
-/// Parameters for the HIP-4 `mergeOutcome` operation inside a `userOutcome` action.
-///
-/// Burns `amount` matched Yes + No side tokens of `outcome` for `amount` quote
-/// tokens back. `amount = None` serializes as `null`, which the venue treats as
-/// the maximum mergeable balance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HyperliquidExchangeMergeOutcomeParams {
-    /// Outcome index whose Yes + No pair is being merged.
-    pub outcome: u32,
-    /// Side-token amount to merge, or `None` to merge the maximum available.
-    #[serde(
-        default,
-        serialize_with = "serialize_optional_decimal_as_str",
-        deserialize_with = "deserialize_optional_decimal_from_str"
-    )]
-    pub amount: Option<Decimal>,
-}
-
-/// Parameters for the HIP-4 `mergeQuestion` operation inside a `userOutcome` action.
-///
-/// Burns `amount` Yes shares of every outcome associated with `question` for
-/// `amount` quote tokens back. `amount = None` serializes as `null`, meaning
-/// the maximum mergeable balance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HyperliquidExchangeMergeQuestionParams {
-    /// Question identifier whose named outcomes are being merged.
-    pub question: u32,
-    /// Yes-share amount to merge per outcome, or `None` for the max.
-    #[serde(
-        default,
-        serialize_with = "serialize_optional_decimal_as_str",
-        deserialize_with = "deserialize_optional_decimal_from_str"
-    )]
-    pub amount: Option<Decimal>,
-}
-
-/// Parameters for the HIP-4 `negateOutcome` operation inside a `userOutcome` action.
-///
-/// Converts `amount` `No` shares of `outcome` (within `question`) into `amount`
-/// `Yes` shares of every other outcome in the same question.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HyperliquidExchangeNegateOutcomeParams {
-    /// Question identifier the outcome belongs to.
-    pub question: u32,
-    /// Outcome index whose `No` shares are being negated.
-    pub outcome: u32,
-    /// Side-token amount to negate, serialized as a decimal string.
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub amount: Decimal,
-}
-
-/// Operations carried by the [`HyperliquidExchangeAction::UserOutcome`] action.
-///
-/// Each variant serializes as a single-keyed object (for example,
-/// `{ "splitOutcome": { ... } }`) and is flattened into the outer action
-/// envelope alongside `"type": "userOutcome"` to match the Hyperliquid wire
-/// format.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum HyperliquidExchangeUserOutcomeOp {
-    /// Split `amount` quote tokens into `amount` Yes plus `amount` No shares.
-    #[serde(rename = "splitOutcome")]
-    SplitOutcome(HyperliquidExchangeSplitOutcomeParams),
-    /// Merge `amount` Yes + No side-token pairs of `outcome` back into quote
-    /// tokens (reverse of [`Self::SplitOutcome`]).
-    #[serde(rename = "mergeOutcome")]
-    MergeOutcome(HyperliquidExchangeMergeOutcomeParams),
-    /// Merge `amount` Yes shares of every outcome in `question` into quote
-    /// tokens (multi-outcome reverse of `splitOutcome`).
-    #[serde(rename = "mergeQuestion")]
-    MergeQuestion(HyperliquidExchangeMergeQuestionParams),
-    /// Swap `amount` `No` shares of one outcome into `Yes` shares of every
-    /// other outcome in the same question.
-    #[serde(rename = "negateOutcome")]
-    NegateOutcome(HyperliquidExchangeNegateOutcomeParams),
-}
-
-/// TWAP (Time-Weighted Average Price) order specification for exchange endpoint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HyperliquidExchangeTwapRequest {
-    /// Asset ID.
-    #[serde(rename = "a")]
-    pub asset: AssetId,
-    /// Is buy order.
-    #[serde(rename = "b")]
-    pub is_buy: bool,
-    /// Total size to execute.
-    #[serde(
-        rename = "s",
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub size: Decimal,
-    /// Whether the order can only reduce a position.
-    #[serde(rename = "r")]
-    pub reduce_only: bool,
-    /// Duration in minutes.
-    #[serde(rename = "m")]
-    pub duration_minutes: u32,
-    /// Whether execution timing is randomized.
-    #[serde(rename = "t")]
-    pub randomize: bool,
-}
-
-/// All possible exchange actions for the Hyperliquid `/exchange` endpoint.
-///
-/// Each variant corresponds to a specific action type that can be performed
-/// through the exchange API. The serialization uses the exact action type
-/// names expected by Hyperliquid.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum HyperliquidExchangeAction {
-    /// Place one or more orders.
-    #[serde(rename = "order")]
-    Order {
-        /// List of orders to place.
-        orders: Vec<HyperliquidExchangePlaceOrderRequest>,
-        /// Grouping strategy for TP/SL orders.
-        #[serde(default)]
-        grouping: HyperliquidExchangeGrouping,
-        /// Optional builder code for attribution.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        builder: Option<HyperliquidExchangeBuilderFee>,
-    },
-
-    /// Cancel orders by order ID.
-    #[serde(rename = "cancel")]
-    Cancel {
-        /// Orders to cancel.
-        cancels: Vec<HyperliquidExchangeCancelOrderRequest>,
-        /// Optional fast-cancel flag.
-        #[serde(rename = "f", skip_serializing_if = "is_fast_cancel_disabled")]
-        fast: Option<bool>,
-    },
-
-    /// Cancel orders by client order ID.
-    #[serde(rename = "cancelByCloid")]
-    CancelByCloid {
-        /// Orders to cancel by CLOID.
-        cancels: Vec<HyperliquidExchangeCancelByCloidRequest>,
-        /// Optional fast-cancel flag.
-        #[serde(rename = "f", skip_serializing_if = "is_fast_cancel_disabled")]
-        fast: Option<bool>,
-    },
-
-    /// Modify a single order.
-    #[serde(rename = "modify")]
-    Modify {
-        /// Order modification specification.
-        #[serde(flatten)]
-        modify: HyperliquidExchangeModifyOrderRequest,
-    },
-
-    /// Modify multiple orders atomically.
-    #[serde(rename = "batchModify")]
-    BatchModify {
-        /// Multiple order modifications.
-        modifies: Vec<HyperliquidExchangeModifyOrderRequest>,
-    },
-
-    /// Schedule automatic order cancellation (dead man's switch).
-    #[serde(rename = "scheduleCancel")]
-    ScheduleCancel {
-        /// Time in milliseconds when orders should be cancelled.
-        /// If None, clears the existing schedule.
-        time: Option<u64>,
-    },
-
-    /// Update leverage for a position.
-    #[serde(rename = "updateLeverage")]
-    UpdateLeverage {
-        /// Asset ID.
-        asset: AssetId,
-        /// Whether to use cross margin.
-        #[serde(rename = "isCross")]
-        is_cross: bool,
-        /// Leverage value.
-        #[serde(rename = "leverage")]
-        leverage: u32,
-    },
-
-    /// Update isolated margin for a position.
-    #[serde(rename = "updateIsolatedMargin")]
-    UpdateIsolatedMargin {
-        /// Asset ID.
-        asset: AssetId,
-        /// Position side, reserved for hedge mode.
-        #[serde(rename = "isBuy")]
-        is_buy: bool,
-        /// Margin delta in millionths of USD, negative to remove margin.
-        ntli: i64,
-    },
-
-    /// Transfer USD between spot and perp accounts.
-    #[serde(rename = "usdClassTransfer")]
-    UsdClassTransfer {
-        /// Hyperliquid network, populated when preparing the signed request.
-        #[serde(rename = "hyperliquidChain")]
-        hyperliquid_chain: Chain,
-        /// EIP-712 signing chain ID, populated when preparing the signed request.
-        #[serde(
-            rename = "signatureChainId",
-            serialize_with = "serialize_chain_id",
-            deserialize_with = "deserialize_chain_id"
-        )]
-        signature_chain_id: u64,
-        /// Amount to transfer.
-        #[serde(
-            serialize_with = "serialize_decimal_as_str",
-            deserialize_with = "deserialize_decimal_from_str"
-        )]
-        amount: Decimal,
-        /// Whether to transfer to perpetual balances instead of spot.
-        #[serde(rename = "toPerp")]
-        to_perp: bool,
-        /// Nonce matching the outer request, populated before signing.
-        nonce: u64,
-    },
-
-    /// HIP-4 outcome-side token management (`splitOutcome` and related ops).
-    ///
-    /// The active op is carried via [`HyperliquidExchangeUserOutcomeOp`] and
-    /// flattened into this action envelope, producing wire payloads such as
-    /// `{ "type": "userOutcome", "splitOutcome": { ... } }`.
-    #[serde(rename = "userOutcome")]
-    UserOutcome {
-        /// Operation to perform on the user's outcome balances.
-        #[serde(flatten)]
-        op: HyperliquidExchangeUserOutcomeOp,
-    },
-
-    /// Place a TWAP order.
-    #[serde(rename = "twapOrder")]
-    TwapPlace {
-        /// TWAP order specification.
-        twap: HyperliquidExchangeTwapRequest,
-    },
-
-    /// Cancel a TWAP order.
-    #[serde(rename = "twapCancel")]
-    TwapCancel {
-        /// Asset ID.
-        #[serde(rename = "a")]
-        asset: AssetId,
-        /// TWAP ID.
-        #[serde(rename = "t")]
-        twap_id: u64,
-    },
-
-    /// No-operation to invalidate pending nonces.
-    #[serde(rename = "noop")]
-    Noop,
-}
-
-fn serialize_chain_id<S>(chain_id: &u64, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&format!("0x{chain_id:x}"))
-}
-
-fn deserialize_chain_id<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = String::deserialize(deserializer)?;
-    let hex = value
-        .strip_prefix("0x")
-        .ok_or_else(|| serde::de::Error::custom("Signing chain ID must be hexadecimal"))?;
-    u64::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
-}
-
-/// Typed exchange action request envelope for the `/exchange` endpoint.
-///
-/// This is the top-level structure sent to Hyperliquid's exchange endpoint.
-/// It includes the action to perform along with authentication and metadata.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HyperliquidExchangeActionRequest {
-    /// The exchange action to perform.
-    pub action: HyperliquidExchangeAction,
-    /// Request nonce for replay protection (milliseconds timestamp recommended).
-    pub nonce: u64,
-    /// ECC signature over the action and nonce.
-    pub signature: SecretString,
-    /// Optional vault address for sub-account trading.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub vault_address: Option<String>,
-    /// Optional expiration time in milliseconds.
-    /// Note: Using this field increases rate limit weight by 5x if the request expires.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub expires_after: Option<u64>,
-}
-
-/// Typed exchange action response envelope from the `/exchange` endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HyperliquidExchangeActionResponse {
-    /// Response status ("ok" for success).
-    pub status: String,
-    /// Response payload.
-    pub response: HyperliquidExchangeResponseData,
 }
 
 /// Response data containing the actual response payload from exchange endpoint.

@@ -168,7 +168,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
             "time": 1703875200000u64,
             "tid": 123456u64,
             "hash": "0xabc123",
-            "users": ["0xbuyer", "0xseller"]
+            "users": ["0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222"]
         }]
     });
 
@@ -691,8 +691,8 @@ async fn test_subscribe_public_trades_emits_complete_custom_data() {
         .downcast_ref::<HyperliquidPublicTrade>()
         .expect("expected HyperliquidPublicTrade");
     assert_eq!(trade.trade_id, "123456");
-    assert_eq!(trade.buyer, "0xbuyer");
-    assert_eq!(trade.seller, "0xseller");
+    assert_eq!(trade.buyer, "0x1111111111111111111111111111111111111111");
+    assert_eq!(trade.seller, "0x2222222222222222222222222222222222222222");
     assert_eq!(trade.hash, "0xabc123");
 
     client.disconnect().await.expect("close failed");

@@ -30,18 +30,14 @@
 
 use std::{fmt::Display, time::Duration};
 
+use hypersdk::hypercore::{
+    BatchCancelCloid, BatchOrder, CancelByCloid, OidOrCloid, OrderGrouping, OrderRequest,
+    OrderTypePlacement, TimeInForce as SdkTimeInForce,
+    api::{Action, ModifyAction},
+};
 use nautilus_hyperliquid::{
     common::enums::HyperliquidEnvironment,
-    http::{
-        client::HyperliquidHttpClient,
-        models::{
-            Cloid, HyperliquidExchangeAction, HyperliquidExchangeCancelByCloidRequest,
-            HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
-            HyperliquidExchangeModifyOrderRequest, HyperliquidExchangeModifyTarget,
-            HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest,
-            HyperliquidExchangeTif,
-        },
-    },
+    http::{client::HyperliquidHttpClient, models::Cloid},
 };
 use nautilus_model::identifiers::ClientOrderId;
 use rust_decimal::Decimal;
@@ -49,34 +45,26 @@ use serde_json::Value;
 
 const COIN: &str = "ETH";
 
-fn place_order(
-    asset: u32,
-    price: Decimal,
-    size: Decimal,
-    cloid: Cloid,
-) -> HyperliquidExchangePlaceOrderRequest {
-    HyperliquidExchangePlaceOrderRequest {
-        asset,
+fn place_order(asset: u32, price: Decimal, size: Decimal, cloid: Cloid) -> OrderRequest {
+    OrderRequest {
+        asset: asset as usize,
         is_buy: true,
-        price,
-        size,
+        limit_px: price,
+        sz: size,
         reduce_only: false,
-        kind: HyperliquidExchangeOrderKind::Limit {
-            limit: HyperliquidExchangeLimitParams {
-                tif: HyperliquidExchangeTif::Alo, // post-only: never take, always rest
-            },
+        order_type: OrderTypePlacement::Limit {
+            tif: SdkTimeInForce::Alo, // post-only: never take, always rest
         },
-        cloid: Some(cloid),
+        cloid: cloid.0.into(),
     }
 }
 
-fn modify_action(
-    target: HyperliquidExchangeModifyTarget,
-    order: HyperliquidExchangePlaceOrderRequest,
-) -> HyperliquidExchangeAction {
-    HyperliquidExchangeAction::Modify {
-        modify: HyperliquidExchangeModifyOrderRequest { oid: target, order },
-    }
+fn modify_action(target: OidOrCloid, order: OrderRequest) -> Action {
+    Action::Modify(ModifyAction {
+        oid: target,
+        order,
+        always_place: false,
+    })
 }
 
 // Returns the resting (oid, limit_px) entries under `cloid_hex` from frontendOpenOrders
@@ -100,11 +88,7 @@ fn resting_for_cloid(open: &Value, cloid_hex: &str) -> Vec<(u64, String)> {
         .unwrap_or_default()
 }
 
-async fn post_and_log(
-    client: &HyperliquidHttpClient,
-    label: &str,
-    action: &HyperliquidExchangeAction,
-) {
+async fn post_and_log(client: &HyperliquidHttpClient, label: &str, action: &Action) {
     match client.post_action_exec(action).await {
         Ok(resp) => log::info!("{label}: ok -> {resp:?}"),
         Err(e) => log::error!("{label}: ERROR -> {e}"),
@@ -147,11 +131,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pass = true;
 
     // 1) Place the passive order
-    let place = HyperliquidExchangeAction::Order {
+    let place = Action::Order(BatchOrder {
         orders: vec![place_order(asset, base, size, cloid)],
-        grouping: HyperliquidExchangeGrouping::Na,
+        grouping: OrderGrouping::Na,
         builder: None,
-    };
+    });
     post_and_log(&client, "place", &place).await;
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
@@ -172,7 +156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &client,
         "modify-by-oid",
         &modify_action(
-            HyperliquidExchangeModifyTarget::Oid(v0),
+            OidOrCloid::Left(v0),
             place_order(asset, base + Decimal::ONE, size, cloid),
         ),
     )
@@ -196,7 +180,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &client,
         "modify-by-cloid",
         &modify_action(
-            HyperliquidExchangeModifyTarget::Cloid(cloid),
+            OidOrCloid::Right(cloid.0.into()),
             place_order(asset, base + Decimal::TWO, size, cloid),
         ),
     )
@@ -223,7 +207,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &client,
             &format!("burst-modify-{i}"),
             &modify_action(
-                HyperliquidExchangeModifyTarget::Cloid(cloid),
+                OidOrCloid::Right(cloid.0.into()),
                 place_order(asset, base + Decimal::from(bump), size, cloid),
             ),
         )
@@ -248,10 +232,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     post_and_log(
         &client,
         "cancel-by-cloid",
-        &HyperliquidExchangeAction::CancelByCloid {
-            cancels: vec![HyperliquidExchangeCancelByCloidRequest { asset, cloid }],
-            fast: None,
-        },
+        &Action::CancelByCloid(BatchCancelCloid {
+            cancels: vec![CancelByCloid {
+                asset,
+                cloid: cloid.0.into(),
+            }],
+            fast: false,
+        }),
     )
     .await;
     tokio::time::sleep(Duration::from_millis(1500)).await;

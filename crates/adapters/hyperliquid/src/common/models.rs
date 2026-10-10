@@ -16,6 +16,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use ahash::AHashMap;
+use hypersdk::hypercore::{BookLevel, L2Book};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{delta::OrderBookDelta, deltas::OrderBookDeltas, order::BookOrder},
@@ -34,7 +35,6 @@ use crate::{
         models::{HyperliquidL2Book, HyperliquidLevel},
         parse::get_currency,
     },
-    websocket::messages::{WsBookData, WsLevelData},
 };
 
 /// Configuration for price/size precision.
@@ -303,11 +303,11 @@ impl HyperliquidDataConverter {
     /// Convert Hyperliquid WebSocket book data to OrderBookDeltas
     pub fn convert_ws_snapshot(
         &self,
-        data: &WsBookData,
+        data: &L2Book,
         instrument_id: InstrumentId,
         ts_init: UnixNanos,
     ) -> Result<OrderBookDeltas, ConversionError> {
-        let config = self.configs.get(&data.coin);
+        let config = self.configs.get(&Ustr::from(data.coin.as_str()));
         let ts_event = UnixNanos::from(data.time * 1_000_000);
         let mut deltas = Vec::with_capacity(1 + data.levels[0].len() + data.levels[1].len());
 
@@ -493,7 +493,7 @@ fn parse_level(
 
 /// Convert WebSocket level to price and size
 fn parse_ws_level(
-    level: &WsLevelData,
+    level: &BookLevel,
     config: Option<&HyperliquidInstrumentInfo>,
 ) -> Result<(Price, Quantity), ConversionError> {
     let price = price_from_decimal(level.px, config.map(|value| value.price_decimals))?;
@@ -854,7 +854,7 @@ mod tests {
         load_test_data("http_l2_book_snapshot.json")
     }
 
-    fn sample_ws_book() -> WsBookData {
+    fn sample_ws_book() -> L2Book {
         load_test_data("ws_book_data.json")
     }
 

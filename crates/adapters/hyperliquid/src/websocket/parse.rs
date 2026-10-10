@@ -16,6 +16,7 @@
 //! Parsers for Hyperliquid WebSocket payloads.
 
 use anyhow::Context;
+use hypersdk::hypercore::Side;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
@@ -34,8 +35,8 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::messages::{
-    CandleData, TwapStateData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData,
-    WsOrderData, WsTradeData, WsTwapHistoryData, WsTwapSliceFillData,
+    Bbo, Candle, L2Book, Trade, TwapStateData, WsActiveAssetCtxData, WsFillData, WsOrderData,
+    WsTwapHistoryData, WsTwapSliceFillData,
 };
 use crate::{
     common::{
@@ -72,13 +73,16 @@ fn parse_quantity(
 
 /// Parses a WebSocket trade frame into a [`TradeTick`].
 pub fn parse_ws_trade_tick(
-    trade: &WsTradeData,
+    trade: &Trade,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
     let price = parse_price(trade.px, instrument, "trade.px")?;
     let size = parse_quantity(trade.sz, instrument, "trade.sz")?;
-    let aggressor = AggressorSide::from(trade.side);
+    let aggressor = match trade.side {
+        Side::Bid => AggressorSide::Buy,
+        Side::Ask => AggressorSide::Sell,
+    };
     let trade_id = TradeId::new_checked(trade.tid.to_string())
         .context("invalid trade identifier in Hyperliquid trade message")?;
     let ts_event = millis_to_nanos(trade.time)?;
@@ -97,7 +101,7 @@ pub fn parse_ws_trade_tick(
 
 /// Parses a WebSocket trade frame into a complete public Hyperliquid trade.
 pub fn parse_ws_public_trade(
-    trade: &WsTradeData,
+    trade: &Trade,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<HyperliquidPublicTrade> {
@@ -109,10 +113,13 @@ pub fn parse_ws_public_trade(
         instrument.id(),
         price,
         size,
-        AggressorSide::from(trade.side),
+        match trade.side {
+            Side::Bid => AggressorSide::Buy,
+            Side::Ask => AggressorSide::Sell,
+        },
         trade.tid.to_string(),
-        trade.users[0].clone(),
-        trade.users[1].clone(),
+        format!("{:#x}", trade.users[0]),
+        format!("{:#x}", trade.users[1]),
         trade.hash.clone(),
         ts_event,
         ts_init,
@@ -121,7 +128,7 @@ pub fn parse_ws_public_trade(
 
 /// Parses a WebSocket L2 order book message into [`OrderBookDeltas`].
 pub fn parse_ws_order_book_deltas(
-    book: &WsBookData,
+    book: &L2Book,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
@@ -194,7 +201,7 @@ pub fn parse_ws_order_book_deltas(
 /// placeholder orders so the fixed-size `[BookOrder; 10]` arrays are
 /// always fully populated.
 pub fn parse_ws_order_book_depth(
-    book: &WsBookData,
+    book: &L2Book,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDepth> {
@@ -214,7 +221,7 @@ pub fn parse_ws_order_book_depth(
         let price = parse_price(level.px, instrument, "book.bid.px")?;
         let size = parse_quantity(level.sz, instrument, "book.bid.sz")?;
         bids[i] = BookOrder::new(OrderSide::Buy, price, size, 0);
-        bid_counts[i] = level.n;
+        bid_counts[i] = u32::try_from(level.n)?;
     }
 
     for bid in bids.iter_mut().skip(raw_bids.len().min(DEPTH10_LEN)) {
@@ -230,7 +237,7 @@ pub fn parse_ws_order_book_depth(
         let price = parse_price(level.px, instrument, "book.ask.px")?;
         let size = parse_quantity(level.sz, instrument, "book.ask.sz")?;
         asks[i] = BookOrder::new(OrderSide::Sell, price, size, 0);
-        ask_counts[i] = level.n;
+        ask_counts[i] = u32::try_from(level.n)?;
     }
 
     for ask in asks.iter_mut().skip(raw_asks.len().min(DEPTH10_LEN)) {
@@ -257,14 +264,18 @@ pub fn parse_ws_order_book_depth(
 
 /// Parses a WebSocket BBO (best bid/offer) message into a [`QuoteTick`].
 pub fn parse_ws_quote_tick(
-    bbo: &WsBboData,
+    bbo: &Bbo,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
-    let bid_level = bbo.bbo[0]
+    let bid_level = bbo
+        .bbo
+        .0
         .as_ref()
         .context("BBO message missing bid level")?;
-    let ask_level = bbo.bbo[1]
+    let ask_level = bbo
+        .bbo
+        .1
         .as_ref()
         .context("BBO message missing ask level")?;
 
@@ -289,18 +300,18 @@ pub fn parse_ws_quote_tick(
 
 /// Parses a WebSocket candle message into a [`Bar`].
 pub fn parse_ws_candle(
-    candle: &CandleData,
+    candle: &Candle,
     instrument: &InstrumentAny,
     bar_type: &BarType,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
-    let open = parse_price(candle.o, instrument, "candle.o")?;
-    let high = parse_price(candle.h, instrument, "candle.h")?;
-    let low = parse_price(candle.l, instrument, "candle.l")?;
-    let close = parse_price(candle.c, instrument, "candle.c")?;
-    let volume = parse_quantity(candle.v, instrument, "candle.v")?;
+    let open = parse_price(candle.open, instrument, "candle.open")?;
+    let high = parse_price(candle.high, instrument, "candle.high")?;
+    let low = parse_price(candle.low, instrument, "candle.low")?;
+    let close = parse_price(candle.close, instrument, "candle.close")?;
+    let volume = parse_quantity(candle.volume, instrument, "candle.volume")?;
 
-    let ts_event = millis_to_nanos(candle.t)?;
+    let ts_event = millis_to_nanos(candle.open_time)?;
 
     Ok(Bar::new(
         *bar_type, open, high, low, close, volume, ts_event, ts_init,
@@ -654,8 +665,8 @@ mod tests {
             },
         },
         websocket::messages::{
-            CandleData, FillLiquidationData, PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx,
-            WsBasicOrderData, WsBookData, WsLevelData,
+            BookLevel, Candle, FillLiquidationData, L2Book, PerpsAssetCtx, SharedAssetCtx,
+            SpotAssetCtx, WsBasicOrderData,
         },
     };
 
@@ -685,23 +696,23 @@ mod tests {
     fn test_parse_ws_candle_preserves_open_event_and_receipt_initialization_timestamps() {
         let instrument = create_test_instrument();
         let bar_type = BarType::from("BTC-PERP.HYPERLIQUID-1-MINUTE-LAST-EXTERNAL");
-        let candle = CandleData {
-            t: 1_700_000_000_000,
+        let candle = Candle {
+            open_time: 1_700_000_000_000,
             close_time: 1_700_000_059_999,
-            s: Ustr::from("BTC"),
-            i: Ustr::from("1m"),
-            o: dec!(100.0),
-            c: dec!(100.5),
-            h: dec!(101.0),
-            l: dec!(99.0),
-            v: dec!(10.0),
-            n: 42,
+            coin: "BTC".to_string(),
+            interval: "1m".to_string(),
+            open: dec!(100.0),
+            close: dec!(100.5),
+            high: dec!(101.0),
+            low: dec!(99.0),
+            volume: dec!(10.0),
+            num_trades: 42,
         };
         let receipt_timestamp = UnixNanos::from(1_700_000_060_123_000_000);
 
         let bar = parse_ws_candle(&candle, &instrument, &bar_type, receipt_timestamp).unwrap();
 
-        assert_eq!(bar.ts_event, millis_to_nanos(candle.t).unwrap());
+        assert_eq!(bar.ts_event, millis_to_nanos(candle.open_time).unwrap());
         assert_eq!(bar.ts_init, receipt_timestamp);
     }
 
@@ -939,21 +950,22 @@ mod tests {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
 
-        let book = WsBookData {
-            coin: Ustr::from("BTC"),
+        let book = L2Book {
+            coin: "BTC".to_string(),
             levels: [
-                vec![WsLevelData {
+                vec![BookLevel {
                     px: dec!(50000.0),
                     sz: dec!(1.0),
                     n: 1,
                 }],
-                vec![WsLevelData {
+                vec![BookLevel {
                     px: dec!(50001.0),
                     sz: dec!(2.0),
                     n: 1,
                 }],
             ],
             time: 1_704_470_400_000,
+            snapshot: false,
         };
 
         let deltas = parse_ws_order_book_deltas(&book, &instrument, ts_init).unwrap();
@@ -986,10 +998,11 @@ mod tests {
     fn test_parse_ws_order_book_deltas_empty_book_is_lone_clear() {
         let instrument = create_test_instrument();
 
-        let book = WsBookData {
-            coin: Ustr::from("BTC"),
+        let book = L2Book {
+            coin: "BTC".to_string(),
             levels: [vec![], vec![]],
             time: 1_704_470_400_000,
+            snapshot: false,
         };
 
         let deltas = parse_ws_order_book_deltas(&book, &instrument, UnixNanos::default()).unwrap();
@@ -1007,33 +1020,33 @@ mod tests {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::from(123);
 
-        let book = WsBookData {
-            coin: Ustr::from("BTC"),
+        let book = L2Book {
+            coin: "BTC".to_string(),
             levels: [
                 vec![
-                    WsLevelData {
+                    BookLevel {
                         px: dec!(100.00),
                         sz: dec!(1.0),
                         n: 2,
                     },
-                    WsLevelData {
+                    BookLevel {
                         px: dec!(99.99),
                         sz: dec!(2.0),
                         n: 3,
                     },
-                    WsLevelData {
+                    BookLevel {
                         px: dec!(99.98),
                         sz: dec!(3.0),
                         n: 1,
                     },
                 ],
                 vec![
-                    WsLevelData {
+                    BookLevel {
                         px: dec!(100.01),
                         sz: dec!(1.5),
                         n: 1,
                     },
-                    WsLevelData {
+                    BookLevel {
                         px: dec!(100.02),
                         sz: dec!(2.5),
                         n: 4,
@@ -1041,6 +1054,7 @@ mod tests {
                 ],
             ],
             time: 1_704_470_400_000,
+            snapshot: false,
         };
 
         let depth = parse_ws_order_book_depth(&book, &instrument, ts_init).unwrap();
@@ -1082,9 +1096,9 @@ mod tests {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
 
-        let mk_levels = |base: f64, n: usize| -> Vec<WsLevelData> {
+        let mk_levels = |base: f64, n: usize| -> Vec<BookLevel> {
             (0..n)
-                .map(|i| WsLevelData {
+                .map(|i| BookLevel {
                     px: Decimal::from_str(&format!("{:.2}", base - i as f64 * 0.01)).unwrap(),
                     sz: dec!(1.0),
                     n: 1,
@@ -1092,10 +1106,11 @@ mod tests {
                 .collect()
         };
 
-        let book = WsBookData {
-            coin: Ustr::from("BTC"),
+        let book = L2Book {
+            coin: "BTC".to_string(),
             levels: [mk_levels(100.00, 15), mk_levels(100.50, 12)],
             time: 1_704_470_400_000,
+            snapshot: false,
         };
 
         let depth = parse_ws_order_book_depth(&book, &instrument, ts_init).unwrap();

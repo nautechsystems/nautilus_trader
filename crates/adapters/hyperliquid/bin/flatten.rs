@@ -37,6 +37,10 @@
 use std::{env, str::FromStr, time::Duration};
 
 use ahash::AHashMap;
+use hypersdk::hypercore::{
+    BatchCancel, BatchOrder, Cancel, OrderGrouping, OrderRequest, OrderTypePlacement,
+    TimeInForce as SdkTimeInForce, api::Action,
+};
 use nautilus_hyperliquid::{
     common::{
         enums::{HyperliquidEnvironment, HyperliquidProductType},
@@ -47,12 +51,7 @@ use nautilus_hyperliquid::{
     },
     http::{
         client::HyperliquidHttpClient,
-        models::{
-            HyperliquidExchangeAction, HyperliquidExchangeCancelOrderRequest,
-            HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
-            HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest,
-            HyperliquidExchangeResponse, HyperliquidExchangeTif, HyperliquidL2Book,
-        },
+        models::{HyperliquidExchangeResponse, HyperliquidL2Book},
     },
 };
 use nautilus_model::{
@@ -148,10 +147,10 @@ async fn cancel_open_orders(
     log::info!("Cancelling {} open perp order(s)", cancels.len());
     // Flatten cancels a mixed bag of order types (trigger orders can't be fast-cancelled)
     // and the frontend open-orders parse does not track type, so omit the fast flag here.
-    let action = HyperliquidExchangeAction::Cancel {
+    let action = Action::Cancel(BatchCancel {
         cancels,
-        fast: None,
-    };
+        fast: false,
+    });
     let response = client
         .post_action_exec(&action)
         .await
@@ -177,7 +176,7 @@ async fn fetch_open_perp_cancels(
     client: &HyperliquidHttpClient,
     user: &str,
     perp_by_coin: &AHashMap<Ustr, &InstrumentAny>,
-) -> anyhow::Result<Vec<HyperliquidExchangeCancelOrderRequest>> {
+) -> anyhow::Result<Vec<Cancel>> {
     let raw = client.info_frontend_open_orders(user).await?;
     parse_perp_cancels(&raw, perp_by_coin, |symbol| client.get_asset_index(symbol))
 }
@@ -187,7 +186,7 @@ fn parse_perp_cancels<F>(
     raw: &serde_json::Value,
     perp_by_coin: &AHashMap<Ustr, &InstrumentAny>,
     mut asset_index: F,
-) -> anyhow::Result<Vec<HyperliquidExchangeCancelOrderRequest>>
+) -> anyhow::Result<Vec<Cancel>>
 where
     F: FnMut(&str) -> Option<u32>,
 {
@@ -215,7 +214,10 @@ where
         let asset = asset_index(instrument.id().symbol.as_str()).ok_or_else(|| {
             anyhow::anyhow!("Asset index unresolved for perp coin {coin_str}; cannot cancel")
         })?;
-        cancels.push(HyperliquidExchangeCancelOrderRequest { asset, oid });
+        cancels.push(Cancel {
+            asset: asset as usize,
+            oid,
+        });
     }
     Ok(cancels)
 }
@@ -320,25 +322,23 @@ async fn close_position(
         if is_buy { "BUY" } else { "SELL" },
     );
 
-    let order = HyperliquidExchangePlaceOrderRequest {
-        asset,
+    let order = OrderRequest {
+        asset: asset as usize,
         is_buy,
-        price,
-        size: close_qty.normalize(),
+        limit_px: price,
+        sz: close_qty.normalize(),
         reduce_only: true,
-        kind: HyperliquidExchangeOrderKind::Limit {
-            limit: HyperliquidExchangeLimitParams {
-                tif: HyperliquidExchangeTif::Ioc,
-            },
+        order_type: OrderTypePlacement::Limit {
+            tif: SdkTimeInForce::Ioc,
         },
-        cloid: None,
+        cloid: Default::default(),
     };
 
-    let action = HyperliquidExchangeAction::Order {
+    let action = Action::Order(BatchOrder {
         orders: vec![order],
-        grouping: HyperliquidExchangeGrouping::Na,
+        grouping: OrderGrouping::Na,
         builder: None,
-    };
+    });
     let response = client.post_action_exec(&action).await?;
     check_response(&format!("close {instrument_id}"), &response)?;
     if let Some(inner) = extract_inner_error(&response) {
@@ -389,6 +389,7 @@ async fn verify_flat(
 
 #[cfg(test)]
 mod tests {
+
     use nautilus_core::nanos::UnixNanos;
     use nautilus_hyperliquid::{common::consts::HYPERLIQUID_VENUE, http::models::HyperliquidLevel};
     use nautilus_model::{

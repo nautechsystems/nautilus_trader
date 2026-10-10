@@ -15,6 +15,7 @@
 
 use std::{sync::LazyLock, time::Duration};
 
+use alloy_primitives::{Address, address};
 use nautilus_model::{
     enums::OrderType,
     identifiers::{ClientId, Venue},
@@ -51,9 +52,9 @@ pub(crate) const HYPERLIQUID_WS_SUBSCRIPTION_USERS_MAX: usize = 10;
 pub(crate) const HYPERLIQUID_WS_POST_INFLIGHT_MAX: usize = 100;
 pub const INFLIGHT_MAX: usize = HYPERLIQUID_WS_POST_INFLIGHT_MAX;
 
-// Builder code address for order attribution (zero-fee)
-// Address MUST be lowercase for msgpack serialization
-pub const NAUTILUS_BUILDER_ADDRESS: &str = "0x0c8d970c462726e014ad36f6c5a63e99db48a8e7";
+/// Builder address for zero-fee order attribution.
+pub const NAUTILUS_BUILDER_ADDRESS: Address =
+    address!("0x0c8d970c462726e014ad36f6c5a63e99db48a8e7");
 
 /// Public docs anchor for builder fee approval.
 pub const HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL: &str =
@@ -84,8 +85,8 @@ pub const HYPERLIQUID_BUILDER_FEE_NOT_APPROVED: &str = "Builder fee has not been
 ///
 /// Trailing stops (TrailingStopMarket/TrailingStopLimit) are supported by the exchange
 /// and can be parsed from incoming WS messages, but the outgoing request model does not
-/// yet serialize the trailing offset parameters. Add them once HyperliquidExchangeTriggerParams
-/// is extended with trailing offset fields.
+/// yet serialize the trailing offset parameters. Add them once the SDK trigger order type
+/// supports trailing offset fields.
 pub const HYPERLIQUID_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
     OrderType::Market,          // IOC limit order
     OrderType::Limit,           // Standard limit with GTC/IOC/ALO
@@ -98,7 +99,7 @@ pub const HYPERLIQUID_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
 /// Conditional order types that use trigger orders on Hyperliquid.
 ///
 /// These order types require a trigger_price and are implemented using
-/// HyperliquidExchangeOrderKind::Trigger with appropriate parameters.
+/// OrderTypePlacement::Trigger with appropriate parameters.
 pub const HYPERLIQUID_CONDITIONAL_ORDER_TYPES: &[OrderType] = &[
     OrderType::StopMarket,
     OrderType::StopLimit,

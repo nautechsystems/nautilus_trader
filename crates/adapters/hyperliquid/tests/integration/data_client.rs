@@ -614,7 +614,7 @@ async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
                                             "hash": "0xabc123",
                                             "time": 1703875200000u64,
                                             "tid": 100001u64,
-                                            "users": ["0xbuyer", "0xseller"]
+                                            "users": ["0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222"]
                                         }]
                                     })),
                                     "bbo" => {
@@ -3130,8 +3130,8 @@ async fn test_data_client_request_public_trades() {
     }
     assert_eq!(trades.len(), 3);
     assert_eq!(trade.trade_id, "300001");
-    assert_eq!(trade.buyer, "0xbuyer1");
-    assert_eq!(trade.seller, "0xseller1");
+    assert_eq!(trade.buyer, "0x0101010101010101010101010101010101010101");
+    assert_eq!(trade.seller, "0x1111111111111111111111111111111111111111");
 
     client.disconnect().await.unwrap();
 }

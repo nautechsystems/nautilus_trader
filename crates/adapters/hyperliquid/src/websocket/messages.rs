@@ -13,21 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::num::TryFromIntError;
-
 use ahash::AHashMap;
-use derive_builder::Builder;
-use hypersdk::hypercore::{
-    BookLevel as SdkBookLevel, Candle as SdkCandle, Subscription as SdkSubscription,
-};
-#[cfg(test)]
-use nautilus_core::string::secret::REDACTED;
-use nautilus_core::{
-    serialization::{
-        deserialize_decimal, deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
-        serialize_decimal_as_str,
-    },
-    string::secret::SecretString,
+pub use hypersdk::hypercore::{Bbo, BookLevel, Candle, L2Book, Trade};
+use hypersdk::hypercore::{Subscription as SdkSubscription, api::Action};
+use nautilus_core::serialization::{
+    deserialize_decimal, deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
 };
 use nautilus_model::{
     data::{
@@ -38,16 +28,16 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use ustr::Ustr;
 
 use crate::{
     common::enums::{
-        HyperliquidBarInterval, HyperliquidFillDirection, HyperliquidLiquidationMethod,
+        HyperliquidFillDirection, HyperliquidLiquidationMethod,
         HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
         HyperliquidTimeInForce, HyperliquidTpSl, HyperliquidTwapStatus,
     },
-    http::models::{HyperliquidExchangeAction, HyperliquidExchangeRequest},
+    http::models::HyperliquidExchangeRequest,
 };
 
 /// Represents an outbound WebSocket message from client to Hyperliquid.
@@ -58,13 +48,11 @@ pub enum HyperliquidWsRequest {
     /// Subscribe to a data feed.
     Subscribe {
         /// Subscription details.
-        #[serde(serialize_with = "serialize_sdk_subscription")]
         subscription: SubscriptionRequest,
     },
     /// Unsubscribe from a data feed.
     Unsubscribe {
         /// Subscription details to remove.
-        #[serde(serialize_with = "serialize_sdk_subscription")]
         subscription: SubscriptionRequest,
     },
     /// Post a request (info or action).
@@ -78,120 +66,29 @@ pub enum HyperliquidWsRequest {
     Ping,
 }
 
-/// Represents subscription request types for WebSocket feeds.
+/// A venue subscription, including feeds not yet represented by the SDK.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type")]
-#[serde(rename_all = "camelCase")]
+#[serde(untagged)]
 pub enum SubscriptionRequest {
-    /// All mid prices across markets.
-    AllMids {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        dex: Option<String>,
-    },
-    /// Aggregate asset contexts across all perp dexes.
-    AllDexsAssetCtxs,
-    /// Notifications for a user.
-    Notification { user: String },
-    /// Web data for frontend.
-    WebData2 { user: String },
-    /// Candlestick data.
-    Candle {
-        coin: Ustr,
-        interval: HyperliquidBarInterval,
-    },
-    /// Level 2 order book.
-    L2Book {
-        coin: Ustr,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "nSigFigs")]
-        n_sig_figs: Option<u32>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        mantissa: Option<u32>,
-    },
-    /// Trade updates.
-    Trades { coin: Ustr },
-    /// Order updates for a user.
-    OrderUpdates { user: String },
-    /// User events (fills, funding, liquidations).
-    UserEvents { user: String },
-    /// User fill history.
-    UserFills {
-        user: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        #[serde(rename = "aggregateByTime")]
-        aggregate_by_time: Option<bool>,
-    },
-    /// User funding payments.
-    UserFundings { user: String },
-    /// User ledger updates (non-funding).
-    UserNonFundingLedgerUpdates { user: String },
-    /// Active asset context (for perpetuals).
-    ActiveAssetCtx { coin: Ustr },
-    /// Active spot asset context.
-    ActiveSpotAssetCtx { coin: Ustr },
-    /// Active asset data for user.
-    ActiveAssetData { user: String, coin: String },
-    /// TWAP slice fills.
-    UserTwapSliceFills { user: String },
-    /// TWAP history.
-    UserTwapHistory { user: String },
-    /// Best bid/offer updates.
-    Bbo { coin: Ustr },
+    Extension(SubscriptionExtension),
+    Sdk(SdkSubscription),
 }
 
-fn serialize_sdk_subscription<S>(
-    subscription: &SubscriptionRequest,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let sdk_subscription = match subscription {
-        SubscriptionRequest::AllMids { dex } => SdkSubscription::AllMids { dex: dex.clone() },
-        SubscriptionRequest::Candle { coin, interval } => SdkSubscription::Candle {
-            coin: coin.to_string(),
-            interval: interval.as_str().to_owned(),
-        },
-        SubscriptionRequest::L2Book {
-            coin,
-            n_sig_figs,
-            mantissa,
-        } => SdkSubscription::L2Book {
-            coin: coin.to_string(),
-            n_sig_figs: n_sig_figs
-                .map(u8::try_from)
-                .transpose()
-                .map_err(serde::ser::Error::custom)?,
-            mantissa: mantissa
-                .map(u8::try_from)
-                .transpose()
-                .map_err(serde::ser::Error::custom)?,
-            fast: false,
-        },
-        SubscriptionRequest::Trades { coin } => SdkSubscription::Trades {
-            coin: coin.to_string(),
-        },
-        SubscriptionRequest::ActiveAssetCtx { coin } => SdkSubscription::ActiveAssetCtx {
-            coin: coin.to_string(),
-        },
-        SubscriptionRequest::Bbo { coin } => SdkSubscription::Bbo {
-            coin: coin.to_string(),
-        },
-        // Preserve the adapter's user feeds and SDK protocol extensions
-        SubscriptionRequest::AllDexsAssetCtxs
-        | SubscriptionRequest::Notification { .. }
-        | SubscriptionRequest::WebData2 { .. }
-        | SubscriptionRequest::OrderUpdates { .. }
-        | SubscriptionRequest::UserEvents { .. }
-        | SubscriptionRequest::UserFills { .. }
-        | SubscriptionRequest::UserFundings { .. }
-        | SubscriptionRequest::UserNonFundingLedgerUpdates { .. }
-        | SubscriptionRequest::ActiveSpotAssetCtx { .. }
-        | SubscriptionRequest::ActiveAssetData { .. }
-        | SubscriptionRequest::UserTwapSliceFills { .. }
-        | SubscriptionRequest::UserTwapHistory { .. } => return subscription.serialize(serializer),
-    };
-    sdk_subscription.serialize(serializer)
+/// Subscription fields missing from hypersdk.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SubscriptionExtension {
+    WebData2 {
+        user: String,
+    },
+    ActiveSpotAssetCtx {
+        coin: String,
+    },
+    UserFills {
+        user: String,
+        #[serde(rename = "aggregateByTime")]
+        aggregate_by_time: bool,
+    },
 }
 
 /// Post request wrapper for info and action requests.
@@ -203,192 +100,8 @@ pub enum PostRequest {
     Info { payload: serde_json::Value },
     /// Action request (requires signature).
     Action {
-        payload: HyperliquidExchangeRequest<HyperliquidExchangeAction>,
+        payload: Box<HyperliquidExchangeRequest<Action>>,
     },
-}
-
-/// Action payload with signature.
-#[derive(Debug, Clone, Serialize)]
-pub struct ActionPayload {
-    pub action: ActionRequest,
-    pub nonce: u64,
-    pub signature: SignatureData,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "vaultAddress")]
-    pub vault_address: Option<String>,
-}
-
-/// Signature data.
-#[derive(Debug, Clone, Serialize)]
-pub struct SignatureData {
-    pub r: SecretString,
-    pub s: SecretString,
-    pub v: SecretString,
-}
-
-/// Action request types.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "lowercase")]
-pub enum ActionRequest {
-    /// Place orders.
-    Order {
-        orders: Vec<OrderRequest>,
-        grouping: String,
-    },
-    /// Cancel orders.
-    Cancel {
-        cancels: Vec<CancelRequest>,
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
-        fast: Option<bool>,
-    },
-    /// Cancel orders by client order ID.
-    CancelByCloid {
-        cancels: Vec<CancelByCloidRequest>,
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
-        fast: Option<bool>,
-    },
-    /// Modify orders.
-    Modify { modifies: Vec<ModifyRequest> },
-}
-
-impl ActionRequest {
-    /// Create a simple order action with default "na" grouping
-    ///
-    /// # Example
-    /// ```ignore
-    /// let action = ActionRequest::order(vec![order1, order2], "na");
-    /// ```
-    pub fn order(orders: Vec<OrderRequest>, grouping: impl Into<String>) -> Self {
-        Self::Order {
-            orders,
-            grouping: grouping.into(),
-        }
-    }
-
-    /// Create a cancel action for multiple orders
-    ///
-    /// # Example
-    /// ```ignore
-    /// let action = ActionRequest::cancel(vec![
-    ///     CancelRequest { a: 0, o: 12345 },
-    ///     CancelRequest { a: 1, o: 67890 },
-    /// ]);
-    /// ```
-    pub fn cancel(cancels: Vec<CancelRequest>) -> Self {
-        Self::Cancel {
-            cancels,
-            fast: None,
-        }
-    }
-
-    /// Create a cancel-by-cloid action
-    ///
-    /// # Example
-    /// ```ignore
-    /// let action = ActionRequest::cancel_by_cloid(vec![
-    ///     CancelByCloidRequest { asset: 0, cloid: "order-1".to_string() },
-    /// ]);
-    /// ```
-    pub fn cancel_by_cloid(cancels: Vec<CancelByCloidRequest>) -> Self {
-        Self::CancelByCloid {
-            cancels,
-            fast: None,
-        }
-    }
-
-    /// Create a modify action for multiple orders
-    ///
-    /// # Example
-    /// ```ignore
-    /// let action = ActionRequest::modify(vec![
-    ///     ModifyRequest { oid: 12345, order: new_order },
-    /// ]);
-    /// ```
-    pub fn modify(modifies: Vec<ModifyRequest>) -> Self {
-        Self::Modify { modifies }
-    }
-}
-
-/// Order placement request.
-#[derive(Debug, Clone, Serialize, Builder)]
-pub struct OrderRequest {
-    /// Asset ID.
-    pub a: u32,
-    /// Buy side (true = buy, false = sell).
-    pub b: bool,
-    /// Price.
-    pub p: String,
-    /// Size.
-    pub s: String,
-    /// Reduce only.
-    pub r: bool,
-    /// Order type.
-    pub t: OrderTypeRequest,
-    /// Client order ID (optional).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub c: Option<String>,
-}
-
-/// Order type in request format.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "lowercase")]
-pub enum OrderTypeRequest {
-    Limit {
-        tif: TimeInForceRequest,
-    },
-    Trigger {
-        #[serde(rename = "isMarket")]
-        is_market: bool,
-        #[serde(rename = "triggerPx")]
-        trigger_px: String,
-        tpsl: TpSlRequest,
-    },
-}
-
-/// Time in force in request format.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub enum TimeInForceRequest {
-    Alo,
-    Ioc,
-    Gtc,
-}
-
-/// TP/SL in request format.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TpSlRequest {
-    Tp,
-    Sl,
-}
-
-/// Cancel order request.
-#[derive(Debug, Clone, Serialize)]
-pub struct CancelRequest {
-    /// Asset ID.
-    pub a: u32,
-    /// Order ID.
-    pub o: u64,
-}
-
-/// Cancel by client order ID request.
-#[derive(Debug, Clone, Serialize)]
-pub struct CancelByCloidRequest {
-    /// Asset ID.
-    pub asset: u32,
-    /// Client order ID.
-    pub cloid: String,
-}
-
-/// Modify order request.
-#[derive(Debug, Clone, Serialize)]
-pub struct ModifyRequest {
-    /// Order ID.
-    pub oid: u64,
-    /// New order details.
-    pub order: OrderRequest,
 }
 
 /// Subscription response data wrapper.
@@ -416,11 +129,20 @@ pub enum HyperliquidWsMessage {
     /// Web data.
     WebData2 { data: serde_json::Value },
     /// Candlestick data.
-    Candle { data: CandleData },
+    Candle {
+        #[serde(deserialize_with = "deserialize_candle")]
+        data: Candle,
+    },
     /// Level 2 order book.
-    L2Book { data: WsBookData },
+    L2Book {
+        #[serde(deserialize_with = "deserialize_book")]
+        data: L2Book,
+    },
     /// Trade updates.
-    Trades { data: Vec<WsTradeData> },
+    Trades {
+        #[serde(deserialize_with = "deserialize_trades")]
+        data: Vec<Trade>,
+    },
     /// Order updates.
     OrderUpdates { data: Vec<WsOrderData> },
     /// User events.
@@ -445,7 +167,10 @@ pub enum HyperliquidWsMessage {
     /// TWAP history.
     UserTwapHistory { data: WsUserTwapHistoryData },
     /// Best bid/offer.
-    Bbo { data: WsBboData },
+    Bbo {
+        #[serde(deserialize_with = "deserialize_bbo")]
+        data: Bbo,
+    },
     /// Error response.
     Error { data: String },
     /// Pong response.
@@ -487,163 +212,90 @@ pub struct NotificationData {
     pub notification: String,
 }
 
-/// Candlestick data.
-#[derive(Debug, Clone)]
-pub struct CandleData {
-    /// Open time (millis).
-    pub t: u64,
-    /// Close time (millis).
-    pub close_time: u64,
-    /// Symbol.
-    pub s: Ustr,
-    /// Interval.
-    pub i: Ustr,
-    /// Open price.
-    pub o: Decimal,
-    /// Close price.
-    pub c: Decimal,
-    /// High price.
-    pub h: Decimal,
-    /// Low price.
-    pub l: Decimal,
-    /// Volume.
-    pub v: Decimal,
-    /// Number of trades.
-    pub n: u32,
+/// Decode venue strings directly into the SDK candle without passing through floats.
+fn deserialize_candle<'de, D>(deserializer: D) -> Result<Candle, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    require_decimal_strings::<D::Error>(&value, &["o", "h", "l", "c", "v"])?;
+    let candle: Candle = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+    u32::try_from(candle.num_trades).map_err(serde::de::Error::custom)?;
+    Ok(candle)
 }
 
-impl TryFrom<SdkCandle> for CandleData {
-    type Error = TryFromIntError;
-
-    fn try_from(candle: SdkCandle) -> Result<Self, Self::Error> {
-        Ok(Self {
-            t: candle.open_time,
-            close_time: candle.close_time,
-            s: Ustr::from(candle.coin.as_str()),
-            i: Ustr::from(candle.interval.as_str()),
-            o: candle.open,
-            c: candle.close,
-            h: candle.high,
-            l: candle.low,
-            v: candle.volume,
-            n: u32::try_from(candle.num_trades)?,
-        })
+fn require_decimal_strings<E: serde::de::Error>(
+    value: &serde_json::Value,
+    fields: &[&str],
+) -> Result<(), E> {
+    for field in fields {
+        if !value.get(field).is_some_and(serde_json::Value::is_string) {
+            return Err(E::custom(format!("{field} must be a decimal string")));
+        }
     }
+    Ok(())
 }
 
-impl<'de> Deserialize<'de> for CandleData {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Self::try_from(SdkCandleWire::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+fn validate_book_level<E: serde::de::Error>(value: &serde_json::Value) -> Result<(), E> {
+    require_decimal_strings::<E>(value, &["px", "sz"])?;
+    let count = value
+        .get("n")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| E::custom("n must be an unsigned integer"))?;
+    u32::try_from(count).map_err(E::custom)?;
+    Ok(())
+}
+
+fn deserialize_book<'de, D>(deserializer: D) -> Result<L2Book, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if let Some(sides) = value.get("levels").and_then(serde_json::Value::as_array) {
+        for levels in sides {
+            if let Some(levels) = levels.as_array() {
+                for level in levels {
+                    validate_book_level::<D::Error>(level)?;
+                }
+            }
+        }
     }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
-// Decode venue decimals as strings to preserve exact values in the SDK model
-#[derive(Deserialize)]
-#[serde(remote = "SdkCandle")]
-struct SdkCandleWire {
-    #[serde(rename = "t")]
-    open_time: u64,
-    #[serde(rename = "T")]
-    close_time: u64,
-    #[serde(rename = "s")]
-    coin: String,
-    #[serde(rename = "i")]
-    interval: String,
-    #[serde(rename = "o", deserialize_with = "deserialize_decimal_from_str")]
-    open: Decimal,
-    #[serde(rename = "c", deserialize_with = "deserialize_decimal_from_str")]
-    close: Decimal,
-    #[serde(rename = "h", deserialize_with = "deserialize_decimal_from_str")]
-    high: Decimal,
-    #[serde(rename = "l", deserialize_with = "deserialize_decimal_from_str")]
-    low: Decimal,
-    #[serde(rename = "v", deserialize_with = "deserialize_decimal_from_str")]
-    volume: Decimal,
-    #[serde(rename = "n")]
-    num_trades: u64,
-}
-
-/// WebSocket book data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsBookData {
-    pub coin: Ustr,
-    pub levels: [Vec<WsLevelData>; 2], // [bids, asks]
-    pub time: u64,
-}
-
-/// WebSocket level data.
-#[derive(Debug, Clone, Serialize)]
-pub struct WsLevelData {
-    /// Price.
-    #[serde(
-        deserialize_with = "deserialize_decimal_from_str",
-        serialize_with = "serialize_decimal_as_str"
-    )]
-    pub px: Decimal,
-    /// Size.
-    #[serde(
-        deserialize_with = "deserialize_decimal_from_str",
-        serialize_with = "serialize_decimal_as_str"
-    )]
-    pub sz: Decimal,
-    /// Number of orders.
-    pub n: u32,
-}
-
-impl TryFrom<SdkBookLevel> for WsLevelData {
-    type Error = TryFromIntError;
-
-    fn try_from(level: SdkBookLevel) -> Result<Self, Self::Error> {
-        Ok(Self {
-            px: level.px,
-            sz: level.sz,
-            n: u32::try_from(level.n)?,
-        })
+fn deserialize_bbo<'de, D>(deserializer: D) -> Result<Bbo, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if let Some(levels) = value.get("bbo").and_then(serde_json::Value::as_array) {
+        for level in levels.iter().filter(|level| !level.is_null()) {
+            validate_book_level::<D::Error>(level)?;
+        }
     }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
-impl<'de> Deserialize<'de> for WsLevelData {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Self::try_from(SdkBookLevelWire::deserialize(deserializer)?)
-            .map_err(serde::de::Error::custom)
+pub(crate) fn deserialize_trades<'de, D>(deserializer: D) -> Result<Vec<Trade>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if let Some(trades) = value.as_array() {
+        for trade in trades {
+            require_decimal_strings::<D::Error>(trade, &["px", "sz"])?;
+            if !trade
+                .get("users")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|users| users.len() == 2)
+            {
+                return Err(serde::de::Error::custom(
+                    "users must contain the buyer and seller addresses",
+                ));
+            }
+        }
     }
-}
-
-#[derive(Deserialize)]
-#[serde(remote = "SdkBookLevel")]
-struct SdkBookLevelWire {
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
-    px: Decimal,
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
-    sz: Decimal,
-    n: usize,
-}
-
-/// WebSocket trade data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WsTradeData {
-    pub coin: Ustr,
-    pub side: HyperliquidSide,
-    #[serde(
-        deserialize_with = "deserialize_decimal_from_str",
-        serialize_with = "serialize_decimal_as_str"
-    )]
-    pub px: Decimal,
-    #[serde(
-        deserialize_with = "deserialize_decimal_from_str",
-        serialize_with = "serialize_decimal_as_str"
-    )]
-    pub sz: Decimal,
-    pub hash: String,
-    pub time: u64,
-    pub tid: u64,
-    pub users: [String; 2], // [buyer, seller]
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
 }
 
 /// WebSocket order data.
@@ -1060,48 +712,25 @@ pub struct TwapStatusData {
     pub description: String,
 }
 
-/// WebSocket BBO data.
-#[derive(Debug, Clone, Deserialize)]
-pub struct WsBboData {
-    pub coin: Ustr,
-    pub time: u64,
-    pub bbo: [Option<WsLevelData>; 2], // [bid, ask]
-}
-
 #[cfg(test)]
 mod tests {
+    use hypersdk::hypercore::Side;
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use serde_json;
 
     use super::*;
-
-    #[rstest]
-    fn test_signature_data_serialization_and_debug_redaction() {
-        let signature = SignatureData {
-            r: SecretString::from("0xsignature-r"),
-            s: SecretString::from("0xsignature-s"),
-            v: SecretString::from("0x1b"),
-        };
-        let wire = serde_json::to_value(&signature).unwrap();
-        let debug = format!("{signature:?}");
-
-        assert_eq!(wire["r"], "0xsignature-r");
-        assert_eq!(wire["s"], "0xsignature-s");
-        assert_eq!(wire["v"], "0x1b");
-        assert_eq!(debug.matches(REDACTED).count(), 3);
-        assert!(!debug.contains("0xsignature-r"));
-        assert!(!debug.contains("0xsignature-s"));
-        assert!(!debug.contains("0x1b"));
-    }
+    use crate::common::enums::HyperliquidBarInterval;
 
     #[rstest]
     fn test_subscription_request_serialization() {
-        let sub = SubscriptionRequest::L2Book {
-            coin: Ustr::from("BTC"),
+        let sub = SubscriptionRequest::Sdk(SdkSubscription::L2Book {
+            coin: "BTC".to_string(),
             n_sig_figs: Some(5),
             mantissa: None,
-        };
+
+            fast: false,
+        });
 
         let json = serde_json::to_string(&sub).unwrap();
         assert!(json.contains(r#""type":"l2Book""#));
@@ -1111,9 +740,9 @@ mod tests {
     #[rstest]
     fn test_hyperliquid_ws_request_serialization() {
         let req = HyperliquidWsRequest::Subscribe {
-            subscription: SubscriptionRequest::Trades {
-                coin: Ustr::from("ETH"),
-            },
+            subscription: SubscriptionRequest::Sdk(SdkSubscription::Trades {
+                coin: "ETH".to_string(),
+            }),
         };
 
         let json = serde_json::to_string(&req).unwrap();
@@ -1122,15 +751,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case::all_mids(SubscriptionRequest::AllMids { dex: None }, serde_json::json!({"type": "allMids"}))]
-    #[case::dex_mids(SubscriptionRequest::AllMids { dex: Some("testdex".to_owned()) }, serde_json::json!({"type": "allMids", "dex": "testdex"}))]
-    #[case::book(SubscriptionRequest::L2Book { coin: Ustr::from("testdex:BTC"), n_sig_figs: Some(5), mantissa: Some(2) }, serde_json::json!({"type": "l2Book", "coin": "testdex:BTC", "nSigFigs": 5, "mantissa": 2}))]
-    #[case::full_book(SubscriptionRequest::L2Book { coin: Ustr::from("BTC"), n_sig_figs: None, mantissa: None }, serde_json::json!({"type": "l2Book", "coin": "BTC"}))]
-    #[case::candle(SubscriptionRequest::Candle { coin: Ustr::from("BTC"), interval: HyperliquidBarInterval::OneMonth }, serde_json::json!({"type": "candle", "coin": "BTC", "interval": "1M"}))]
-    #[case::trades(SubscriptionRequest::Trades { coin: Ustr::from("#123") }, serde_json::json!({"type": "trades", "coin": "#123"}))]
-    #[case::asset_context(SubscriptionRequest::ActiveAssetCtx { coin: Ustr::from("BTC") }, serde_json::json!({"type": "activeAssetCtx", "coin": "BTC"}))]
-    #[case::bbo(SubscriptionRequest::Bbo { coin: Ustr::from("BTC") }, serde_json::json!({"type": "bbo", "coin": "BTC"}))]
-    #[case::aggregate_user_fills(SubscriptionRequest::UserFills { user: "0xuser".to_owned(), aggregate_by_time: Some(true) }, serde_json::json!({"type": "userFills", "user": "0xuser", "aggregateByTime": true}))]
+    #[case::all_mids(SubscriptionRequest::Sdk(SdkSubscription::AllMids { dex: None }), serde_json::json!({"type": "allMids"}))]
+    #[case::dex_mids(SubscriptionRequest::Sdk(SdkSubscription::AllMids { dex: Some("testdex".to_owned()) }), serde_json::json!({"type": "allMids", "dex": "testdex"}))]
+    #[case::book(SubscriptionRequest::Sdk(SdkSubscription::L2Book { coin: "testdex:BTC".to_string(), n_sig_figs: Some(5), mantissa: Some(2),
+fast: false,
+}), serde_json::json!({"type": "l2Book", "coin": "testdex:BTC", "nSigFigs": 5, "mantissa": 2}))]
+    #[case::full_book(SubscriptionRequest::Sdk(SdkSubscription::L2Book { coin: "BTC".to_string(), n_sig_figs: None, mantissa: None,
+fast: false,
+}), serde_json::json!({"type": "l2Book", "coin": "BTC"}))]
+    #[case::candle(SubscriptionRequest::Sdk(SdkSubscription::Candle { coin: "BTC".to_string(), interval: HyperliquidBarInterval::OneMonth.as_str().to_string() }), serde_json::json!({"type": "candle", "coin": "BTC", "interval": "1M"}))]
+    #[case::trades(SubscriptionRequest::Sdk(SdkSubscription::Trades { coin: "#123".to_string() }), serde_json::json!({"type": "trades", "coin": "#123"}))]
+    #[case::asset_context(SubscriptionRequest::Sdk(SdkSubscription::ActiveAssetCtx { coin: "BTC".to_string() }), serde_json::json!({"type": "activeAssetCtx", "coin": "BTC"}))]
+    #[case::bbo(SubscriptionRequest::Sdk(SdkSubscription::Bbo { coin: "BTC".to_string() }), serde_json::json!({"type": "bbo", "coin": "BTC"}))]
+    #[case::aggregate_user_fills(SubscriptionRequest::Extension(SubscriptionExtension::UserFills { user: "0xuser".to_owned(), aggregate_by_time: true }), serde_json::json!({"type": "userFills", "user": "0xuser", "aggregateByTime": true}))]
     fn test_sdk_subscription_preserves_wire_options(
         #[case] subscription: SubscriptionRequest,
         #[case] expected: serde_json::Value,
@@ -1155,34 +788,66 @@ mod tests {
 
     #[rstest]
     fn test_sdk_subscription_rejects_overflowing_book_options() {
-        let request = HyperliquidWsRequest::Subscribe {
-            subscription: SubscriptionRequest::L2Book {
-                coin: Ustr::from("BTC"),
-                n_sig_figs: Some(256),
-                mantissa: None,
-            },
-        };
-        assert!(serde_json::to_value(request).is_err());
+        let subscription = serde_json::json!({"type": "l2Book", "coin": "BTC", "nSigFigs": 256});
+        assert!(serde_json::from_value::<SubscriptionRequest>(subscription).is_err());
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_aggregate_user_fills_subscription_response(#[case] aggregate_by_time: bool) {
+        let subscription = serde_json::json!({
+            "type": "userFills", "user": "0x1111111111111111111111111111111111111111",
+            "aggregateByTime": aggregate_by_time,
+        });
+        let response: SubscriptionResponseData = serde_json::from_value(serde_json::json!({
+            "method": "subscribe", "subscription": subscription,
+        }))
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(response.subscription).unwrap(),
+            subscription
+        );
     }
 
     #[rstest]
     fn test_order_request_serialization() {
+        use hypersdk::hypercore::{Cloid as B128, OrderRequest, OrderTypePlacement, TimeInForce};
         let order = OrderRequest {
-            a: 0,    // BTC asset ID
-            b: true, // buy
-            p: "50000.0".to_string(),
-            s: "0.1".to_string(),
-            r: false,
-            t: OrderTypeRequest::Limit {
-                tif: TimeInForceRequest::Gtc,
+            asset: 0,
+            is_buy: true,
+            limit_px: dec!(50000),
+            sz: dec!(0.1),
+            reduce_only: false,
+            order_type: OrderTypePlacement::Limit {
+                tif: TimeInForce::Gtc,
             },
-            c: Some("client-123".to_string()),
+            cloid: B128::from([1; 16]),
         };
+        let wire = serde_json::to_value(order).unwrap();
+        assert_eq!(wire["a"], 0);
+        assert_eq!(wire["b"], true);
+        assert_eq!(wire["p"], "50000");
+        assert_eq!(wire["s"], "0.1");
+        assert_eq!(wire["t"], serde_json::json!({"limit": {"tif": "Gtc"}}));
+    }
 
-        let json = serde_json::to_string(&order).unwrap();
-        assert!(json.contains(r#""a":0"#));
-        assert!(json.contains(r#""b":true"#));
-        assert!(json.contains(r#""p":"50000.0""#));
+    #[rstest]
+    #[case("px")]
+    #[case("sz")]
+    fn test_sdk_trade_rejects_numeric_decimals(#[case] field: &str) {
+        let mut trade = serde_json::json!({
+            "coin": "BTC", "side": "B", "px": "1", "sz": "2", "hash": "0xhash",
+            "time": 1, "tid": 1,
+            "users": ["0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222"],
+        });
+        trade[field] = serde_json::json!(0.12345678901234567);
+        assert!(
+            serde_json::from_value::<HyperliquidWsMessage>(serde_json::json!({
+                "channel": "trades", "data": [trade],
+            }))
+            .is_err()
+        );
     }
 
     #[rstest]
@@ -1195,12 +860,12 @@ mod tests {
             "hash": "0x123",
             "time": 1234567890,
             "tid": 12345,
-            "users": ["0xabc", "0xdef"]
+            "users": ["0x1111111111111111111111111111111111111111", "0x2222222222222222222222222222222222222222"]
         }"#;
 
-        let trade: WsTradeData = serde_json::from_str(json).unwrap();
+        let trade: Trade = serde_json::from_str(json).unwrap();
         assert_eq!(trade.coin, "BTC");
-        assert_eq!(trade.side, HyperliquidSide::Buy);
+        assert_eq!(trade.side, Side::Bid);
         assert_eq!(trade.px, dec!(50000.0));
     }
 
@@ -1215,7 +880,7 @@ mod tests {
             "time": 1234567890
         }"#;
 
-        let book: WsBookData = serde_json::from_str(json).unwrap();
+        let book: L2Book = serde_json::from_str(json).unwrap();
         assert_eq!(book.coin, "ETH");
         assert_eq!(book.levels[0].len(), 1);
         assert_eq!(book.levels[1].len(), 1);
@@ -1238,22 +903,22 @@ mod tests {
 
     #[rstest]
     fn test_sdk_candle_preserves_exact_decimals_and_metadata() {
-        let candle: CandleData = serde_json::from_value(candle_payload()).unwrap();
-        assert_eq!(candle.t, 1_700_000_000_000);
+        let candle: Candle = serde_json::from_value(candle_payload()).unwrap();
+        assert_eq!(candle.open_time, 1_700_000_000_000);
         assert_eq!(candle.close_time, 1_700_000_059_999);
-        assert_eq!(candle.s, "BTC");
-        assert_eq!(candle.i, "1m");
-        assert_eq!(candle.n, 42);
-        assert_eq!(candle.o, dec!(0.1234567890123456789012345678));
-        assert_eq!(candle.c, dec!(0.1234567890123456789012345679));
-        assert_eq!(candle.h, dec!(0.1234567890123456789012345680));
-        assert_eq!(candle.l, dec!(0.1234567890123456789012345677));
-        assert_eq!(candle.v, dec!(1.0000000000000000000000000001));
+        assert_eq!(candle.coin, "BTC");
+        assert_eq!(candle.interval, "1m");
+        assert_eq!(candle.num_trades, 42);
+        assert_eq!(candle.open, dec!(0.1234567890123456789012345678));
+        assert_eq!(candle.close, dec!(0.1234567890123456789012345679));
+        assert_eq!(candle.high, dec!(0.1234567890123456789012345680));
+        assert_eq!(candle.low, dec!(0.1234567890123456789012345677));
+        assert_eq!(candle.volume, dec!(1.0000000000000000000000000001));
     }
 
     #[rstest]
     fn test_sdk_book_level_preserves_exact_decimals_and_counts() {
-        let level: WsLevelData = serde_json::from_value(serde_json::json!({
+        let level: BookLevel = serde_json::from_value(serde_json::json!({
             "px": "0.1234567890123456789012345678",
             "sz": "1.0000000000000000000000000001",
             "n": u32::MAX,
@@ -1261,7 +926,7 @@ mod tests {
         .unwrap();
         assert_eq!(level.px, dec!(0.1234567890123456789012345678));
         assert_eq!(level.sz, dec!(1.0000000000000000000000000001));
-        assert_eq!(level.n, u32::MAX);
+        assert_eq!(level.n, u32::MAX as usize);
     }
 
     #[rstest]
@@ -1269,9 +934,9 @@ mod tests {
         let overflow = u64::from(u32::MAX) + 1;
         let mut payload = candle_payload();
         payload["n"] = serde_json::json!(overflow);
-        assert!(serde_json::from_value::<CandleData>(payload).is_err());
+        assert!(deserialize_candle(payload).is_err());
         assert!(
-            serde_json::from_value::<WsLevelData>(serde_json::json!({
+            validate_book_level::<serde_json::Error>(&serde_json::json!({
                 "px": "1", "sz": "2", "n": overflow
             }))
             .is_err()
@@ -1287,7 +952,7 @@ mod tests {
     fn test_sdk_candle_rejects_numeric_decimals(#[case] field: &str) {
         let mut payload = candle_payload();
         payload[field] = serde_json::json!(0.1);
-        assert!(serde_json::from_value::<CandleData>(payload).is_err());
+        assert!(deserialize_candle(payload).is_err());
     }
 
     #[rstest]
@@ -1296,7 +961,7 @@ mod tests {
     fn test_sdk_book_level_rejects_numeric_decimals(#[case] field: &str) {
         let mut payload = serde_json::json!({"px": "1", "sz": "2", "n": 1});
         payload[field] = serde_json::json!(0.1);
-        assert!(serde_json::from_value::<WsLevelData>(payload).is_err());
+        assert!(validate_book_level::<serde_json::Error>(&payload).is_err());
     }
 
     #[rstest]
@@ -1470,9 +1135,9 @@ mod tests {
     fn test_ws_trade_data_round_trips_decimals_as_strings() {
         // Deserializing into Decimal then serializing must reproduce the
         // string wire form (with scale preserved), not emit a JSON number.
-        let json = r#"{"coin":"BTC","side":"B","px":"66653.0","sz":"0.001","hash":"0xabc","time":1,"tid":2,"users":["0xa","0xb"]}"#;
+        let json = r#"{"coin":"BTC","side":"B","px":"66653.0","sz":"0.001","hash":"0xabc","time":1,"tid":2,"users":["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]}"#;
 
-        let trade: WsTradeData = serde_json::from_str(json).unwrap();
+        let trade: Trade = serde_json::from_str(json).unwrap();
         assert_eq!(trade.px, dec!(66653.0));
         assert_eq!(trade.sz, dec!(0.001));
 
