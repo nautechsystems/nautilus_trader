@@ -17,7 +17,7 @@
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     path::PathBuf,
     rc::Rc,
@@ -146,6 +146,8 @@ struct TestServerState {
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/derivatives/api/v3/openorders` returns this JSON.
     futures_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// Served by `/derivatives/api/v3/openorders` one per request, ahead of the override.
+    futures_open_orders_sequence: Arc<tokio::sync::Mutex<VecDeque<String>>>,
     /// When set, `/derivatives/api/v3/openpositions` returns this JSON.
     futures_open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/api/history/v3/orders` returns this JSON; otherwise an empty page.
@@ -194,6 +196,7 @@ impl Default for TestServerState {
             orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
             fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             futures_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            futures_open_orders_sequence: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             futures_open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
             futures_order_history_json: Arc::new(tokio::sync::Mutex::new(None)),
             futures_order_history_status: Arc::new(tokio::sync::Mutex::new(None)),
@@ -297,6 +300,9 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             json_response(r#"{"result":"success","accounts":{}}"#.to_string())
         }
         "/derivatives/api/v3/openorders" => {
+            if let Some(response) = state.futures_open_orders_sequence.lock().await.pop_front() {
+                return json_response(response);
+            }
             let response = state.futures_open_orders_json.lock().await;
             json_response(
                 response
@@ -2596,8 +2602,48 @@ async fn test_futures_mass_status_nets_an_open_order_fill_against_a_terminal_one
     assert!(snapshot.reports_complete());
 }
 
-/// The flat rule withholds terminal orders only: an open order the cache does not hold keeps its
-/// fill on a flat instrument, and with nothing withheld the set stays complete.
+/// When the fills on a flat instrument do not net to zero, the flat rule withholds the terminal
+/// orders with their fills and keeps the open order with its fill, marking the set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_an_open_order_beside_a_withheld_terminal_one_on_a_flat_instrument()
+ {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_half_filled_open_order_json("F-FLAT-O1"));
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e1",
+            "F-FLAT-T1",
+            "PI_XBTUSD",
+            "Sell",
+            "1000",
+            "1000",
+            1680879600000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-flat-o1", "F-FLAT-O1", "buy", "500", "49000.0"),
+        ("f-flat-t1", "F-FLAT-T1", "sell", "1000", "50000.0"),
+    ]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    let order_ids: Vec<_> = snapshot.order_reports().keys().copied().collect();
+    assert_eq!(
+        order_ids,
+        vec![VenueOrderId::from("F-FLAT-O1")],
+        "the open order stays and the terminal one is withheld"
+    );
+    let fill_orders: Vec<_> = snapshot.fill_reports().keys().copied().collect();
+    assert_eq!(fill_orders, vec![VenueOrderId::from("F-FLAT-O1")]);
+    assert!(!snapshot.reports_complete());
+}
+
+/// An open order the cache does not hold keeps its fill on a flat instrument that has no terminal
+/// order, since the flat rule withholds terminal orders only, and the set stays complete.
 #[rstest]
 #[tokio::test]
 async fn test_futures_mass_status_keeps_an_open_order_fill_on_a_flat_instrument() {
@@ -2750,8 +2796,8 @@ async fn test_futures_mass_status_reads_open_orders_only_when_the_history_read_i
 }
 
 /// A history read that faults rather than being refused fails the mass status, as a failed
-/// open-order read does: a server error, an authentication failure and a body that cannot be
-/// parsed are not the venue declining the request.
+/// open-order read does: an HTTP error status other than 429, including an authentication
+/// status, and a body that cannot be parsed are not the venue declining the request.
 #[rstest]
 #[case::server_error(
     Some(StatusCode::INTERNAL_SERVER_ERROR),
@@ -2786,6 +2832,35 @@ async fn test_futures_mass_status_fails_when_the_history_read_faults(
     assert!(
         message.contains("get_order_events failed") && message.contains(expected),
         "unexpected error: {message}"
+    );
+}
+
+/// A failed open-order read fails the mass status, including the open-only read that follows a
+/// refused history read: a mass status without its open orders is not reported.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_fails_when_the_open_only_read_after_a_refusal_fails() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    state
+        .futures_open_orders_sequence
+        .lock()
+        .await
+        .push_back(futures_open_orders_json("V-OPEN-1", "PI_XBTUSD"));
+    *state.futures_open_orders_json.lock().await =
+        Some(r#"{"result":"error","error":"apiLimitExceeded"}"#.to_string());
+    *state.futures_order_history_status.lock().await = Some(StatusCode::TOO_MANY_REQUESTS);
+
+    let error = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect_err("a mass status without open orders must fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("Failed to get open orders: apiLimitExceeded"),
+        "unexpected error: {error}"
     );
 }
 

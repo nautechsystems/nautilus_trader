@@ -1130,11 +1130,12 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         // report is flat at the venue. With no lookback declared the engine applies every kept
         // fill to positions, and the fills read is a single page, so a round trip whose opening
         // fill is older than that page would leave its closing side alone and open a position
-        // opposite to the one the venue closed. On a flat instrument the fills of every order the
-        // cache does not hold are netted, open orders included, since an open order's fill can
-        // offset a terminal one. When they do not net to zero, the terminal orders are withheld
-        // with their fills and the set is marked incomplete; open orders stay, and an open
-        // order's own fill can still open a position. With a bounded lookback the engine projects
+        // opposite to the one the venue closed. On a flat instrument the fills of every order on
+        // the read pages that the cache does not hold are netted, open orders included, since an
+        // open order's fill can offset a terminal one. When they do not net to zero and a terminal
+        // order is among them, the terminal orders are withheld with their fills and the set is
+        // marked incomplete; open orders stay, and an open order's own fill can still open a
+        // position. With a bounded lookback the engine projects
         // terminal orders onto order state only, so this applies to the unbounded read alone.
         // Cached orders are left out, since their fills reconcile against the cached order and
         // its position.
@@ -1881,9 +1882,10 @@ fn cached_order_for_report(cache: &Cache, report: &OrderStatusReport) -> Option<
 
 /// Whether a combined order read failed because the venue refused its history page.
 ///
-/// A refusal arrives as an error body under a success status, or as HTTP 429. Authentication,
-/// transport, parse and server failures are faults, as is any failure of the open-order read,
-/// which carries no typed error.
+/// The rule goes by the response's shape: an error body under a success status, whatever its
+/// code, or HTTP 429 is a refusal. Any other HTTP status, a transport failure and a body that
+/// cannot be parsed are faults, as is any failure of the open-order read, which carries no typed
+/// error. A credential failure fails that open-order read, which runs first with the same key.
 fn is_refused_history_read(error: &anyhow::Error) -> bool {
     error
         .chain()
@@ -1913,8 +1915,8 @@ fn is_unpriced_terminal_report(report: &OrderStatusReport) -> bool {
 /// the fills a cached order has recorded complete the page, each counted once by trade ID, and
 /// must cover it exactly too. Exact coverage rejects a double count: an execution the engine
 /// inferred carries a synthetic trade ID, so it would otherwise be counted beside the venue fill
-/// it stands for. The fills endpoint returns one page with no cursor, so an older execution can be
-/// absent from it.
+/// it stands for. The adapter reads only the latest fills page, so an older execution can be absent
+/// from it.
 ///
 /// # Errors
 ///
