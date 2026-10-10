@@ -143,7 +143,9 @@ pub(crate) fn fill_missing_avg_px(
 /// quantity minus the window's net quantity. Once that replay passes through flat, or flips,
 /// every later fill is known, and the entry price is the netting average of the fills after the
 /// last flat crossing. A position that still carries a pre-window remnant keeps IB's average
-/// cost, which position recovery prices from.
+/// cost, which position recovery prices from. So does a position whose fills include opposite
+/// sides at the same timestamp: fill reports arrive in commission order, so their execution
+/// order, and with it any flat crossing, is unknown.
 pub(crate) fn fill_position_avg_px_from_fills(
     position_reports: &mut [PositionStatusReport],
     fill_reports: &[FillReport],
@@ -160,6 +162,12 @@ pub(crate) fn fill_position_avg_px_from_fills(
             .collect();
 
         fills.sort_by_key(|fill| fill.ts_event);
+
+        if fills.windows(2).any(|pair| {
+            pair[0].ts_event == pair[1].ts_event && pair[0].order_side != pair[1].order_side
+        }) {
+            continue;
+        }
 
         let window_qty: Decimal = fills.iter().map(|fill| signed_fill_qty(fill)).sum();
         let pre_window_qty = report.signed_decimal_qty - window_qty;
@@ -1034,6 +1042,61 @@ mod tests {
         assert_eq!(
             reports[0].avg_px_open,
             Some(Decimal::from_str("118.01").unwrap())
+        );
+    }
+
+    #[rstest]
+    #[case::buy_first(true)]
+    #[case::sell_first(false)]
+    fn test_fill_position_avg_px_from_fills_keeps_venue_average_for_same_timestamp_opposite_fills(
+        #[case] buy_first: bool,
+    ) {
+        // Long 1 before the window, then BUY 2 and SELL 2 at one timestamp leave long 1. Fill
+        // reports arrive in commission order, so the replay would report a flat crossing in one
+        // delivery order and none in the other; the venue average stands for both.
+        let instrument_id = InstrumentId::from("SOL/USD.PAXOS");
+        let account_id = AccountId::from("IB-DUR151935");
+        let mut reports = vec![PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from("1"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            Some(Decimal::from_str("105.00").unwrap()),
+        )];
+        let ts_event = 1_790_845_000_000_000_000;
+        let buy = crypto_fill(
+            account_id,
+            instrument_id,
+            OrderSide::Buy,
+            "2",
+            "110.00",
+            "T-1",
+            ts_event,
+        );
+        let sell = crypto_fill(
+            account_id,
+            instrument_id,
+            OrderSide::Sell,
+            "2",
+            "120.00",
+            "T-2",
+            ts_event,
+        );
+        let fill_reports = if buy_first {
+            vec![buy, sell]
+        } else {
+            vec![sell, buy]
+        };
+
+        fill_position_avg_px_from_fills(&mut reports, &fill_reports);
+
+        assert_eq!(
+            reports[0].avg_px_open,
+            Some(Decimal::from_str("105.00").unwrap())
         );
     }
 

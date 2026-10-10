@@ -193,6 +193,7 @@ mod tests {
 
     fn create_quote_quantity_crypto_order(
         order_type: OrderType,
+        time_in_force: NautilusTimeInForce,
     ) -> (OrderAny, InteractiveBrokersInstrumentProvider) {
         let instrument_id =
             InstrumentId::new(NautilusSymbol::from("BTC/USD"), Venue::from("PAXOS"));
@@ -232,6 +233,7 @@ mod tests {
             .instrument_id(instrument_id)
             .side(OrderSide::Buy)
             .quantity(Quantity::from("20"))
+            .time_in_force(time_in_force)
             .quote_quantity(true);
 
         if order_type == OrderType::Limit {
@@ -243,7 +245,8 @@ mod tests {
 
     #[rstest]
     fn test_quote_quantity_crypto_market_buy_maps_to_cash_qty() {
-        let (order, provider) = create_quote_quantity_crypto_order(OrderType::Market);
+        let (order, provider) =
+            create_quote_quantity_crypto_order(OrderType::Market, NautilusTimeInForce::Gtc);
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("cash quantity is valid for a crypto MARKET BUY");
@@ -255,7 +258,8 @@ mod tests {
     #[rstest]
     fn test_quote_quantity_limit_order_is_rejected_before_submission() {
         // IB rejects `cashQty` on non-MARKET orders with error 10244; deny locally instead
-        let (order, provider) = create_quote_quantity_crypto_order(OrderType::Limit);
+        let (order, provider) =
+            create_quote_quantity_crypto_order(OrderType::Limit, NautilusTimeInForce::Gtc);
 
         let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect_err("cash quantity must not be sent on a LIMIT order");
@@ -263,6 +267,22 @@ mod tests {
         let message = format!("{err:#}");
         assert!(message.contains("MARKET"), "unexpected reason: {message}");
         assert!(message.contains("10244"), "unexpected reason: {message}");
+    }
+
+    #[rstest]
+    fn test_quote_quantity_market_at_the_close_is_rejected_before_submission() {
+        // MARKET with AT_THE_CLOSE is sent to IB as MOC, which also rejects `cashQty`
+        let (order, provider) =
+            create_quote_quantity_crypto_order(OrderType::Market, NautilusTimeInForce::AtTheClose);
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("cash quantity must not be sent on a MOC order");
+
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("sent as MOC"),
+            "unexpected reason: {message}"
+        );
     }
 
     #[rstest]
