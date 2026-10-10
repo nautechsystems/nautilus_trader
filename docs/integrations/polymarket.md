@@ -1439,6 +1439,11 @@ the Data API without a trade, and Polymarket can redeem winning tokens automatic
 resolution. Continuous position checks therefore never close a position that the Data API no
 longer reports; open positions close through fills or settlement.
 
+The adapter declares no bulk position coverage, so a missing report also does not keep a closing
+fill from its position under a lookback window: fills that close or reduce a retained position can
+apply to it under the conditions in
+[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection).
+
 ### Settlement precedence
 
 Order status, fill, position status, and mass-status reports fail instead of returning coverage

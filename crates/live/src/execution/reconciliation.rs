@@ -240,6 +240,14 @@ pub(super) struct RetainedFillState {
     pub(super) netting_lifecycle_starts: IndexMap<AccountInstrumentStrategyKey, UnixNanos>,
 }
 
+/// Unapplied closing quantity of the bounded orders that resolve to one retained open position.
+pub(super) struct RetainedPositionReduction {
+    pub(super) instrument_id: InstrumentId,
+    pub(super) open_qty: Decimal,
+    pub(super) unapplied_qty: Decimal,
+    pub(super) venue_order_ids: Vec<VenueOrderId>,
+}
+
 /// Tracks pending fill identities and their generated reconciliation events.
 #[derive(Default)]
 pub(super) struct ReconciliationFillQueue {
@@ -552,6 +560,12 @@ pub(super) fn create_orphan_fill_order_report(
     .with_venue_position_id(venue_position_id);
 
     Ok(report)
+}
+
+/// Returns whether reconciliation materializes `report` as a synthetic reconciliation order,
+/// which carries no execution client origin.
+pub(super) fn is_synthetic_order_report(report: &OrderStatusReport) -> bool {
+    report.client_order_id.is_none() && report.venue_order_id.as_str().starts_with("S-")
 }
 
 /// Checks whether a fill belongs in the retained position projection.

@@ -237,6 +237,42 @@ reaches the reported status and filled quantity. An explicit position report, op
 quantity target: the engine applies the available fills, generates the difference when configured,
 or leaves the position unresolved.
 
+A retained open position is the quantity target instead when the reporting client cannot cover the
+instrument, so a missing report proves nothing. The fills of a bounded order apply to that position
+when all of these hold:
+
+1. The reporting client declares no bulk position coverage for the instrument.
+2. The mass status reports are complete.
+3. `filter_position_reports` is not set.
+4. The order is cached, or its instrument is claimed through `external_order_claim`.
+5. The position is open, held by an account the order names (see condition 6), and the one the
+   engine routes the order's fills to: the order's assigned position, else the position for its
+   instrument and strategy when the cached position is NETTING and so is the OMS the engine routes
+   fills under for the order's client. That client is the cached order's origin, else the
+   reporting client that reconciliation records on an order it creates. An order without an
+   origin, such as a synthetic `S-` order, uses the account's single client on the venue, if there
+   is one.
+6. Every order resolving to the position with fills not yet applied names only the position's
+   account: its report's, each unapplied fill's, and its own, which is the cached order's account,
+   else the reporting account under which reconciliation creates an uncached order. The engine
+   applies a fill under the fill's account and infers one under the order's.
+7. Every side such an order is known by, the cached order's, the report's, and each unapplied
+   fill's, is the position's closing side. An uncached order whose report states no side is not.
+8. For an `EXTERNAL` position, no bounded order that is neither cached nor claimed names the
+   position's account and instrument on its report or fills. Its fills stay order-only, yet they
+   move the venue's `EXTERNAL` inventory.
+9. The combined unapplied quantity of those orders does not exceed the open quantity, counting
+   each trade of a cached or reported order once at its largest copy, and every copy for an
+   uncached order with no report, since reconciliation fills an order it creates from fills alone
+   with every copy.
+
+An order whose fills the cache has already applied, such as the order that opened the position
+inside the window, is ignored. When a condition fails, the fills stay order-only. When condition 5
+fails on the OMS, or one of conditions 6 to 9 fails, every order for that position stays order-only
+and a warning names the position, its instrument, and the reason. An order that names only other
+accounts fails condition 5 for its own fills alone. The orders still reach their reported status,
+so an order can reach `FILLED` while the position stays open.
+
 This projection applies only to reconciliation recovery. Raw reports remain available. Setting
 `filter_position_reports` makes bounded historical fills order-only, even when the mass status
 contains position reports. See [Bounded history safety](#bounded-history-safety) for the
@@ -701,8 +737,9 @@ orders and fills, and by default generates the orders and fills required to reac
 `generate_missing_orders` does not allow a mismatch to stand.
 
 A bounded fill for an instrument with no in-scope explicit position report does not open, close, or change a
-position, and it does not update portfolio economics. The order still reaches the reported status
-and filled quantity. Raw reconciliation reports remain available.
+position, and it does not update portfolio economics, unless it reduces a retained position as
+described in [Order-only fill projection](#order-only-fill-projection). The order still reaches the
+reported status and filled quantity. Raw reconciliation reports remain available.
 
 For compatibility, a mass status without a declared `lookback_start` can still apply historical
 fills when there is no position report. This exception does not treat a missing report as flat.
@@ -907,7 +944,7 @@ These scenarios apply whether or not the mass status declares a `lookback_start`
 | ----------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | **Explicit open** | Complete, incomplete, or ambiguous bounded history.       | Applies available reports and attempts recovery to the reported quantity and entry average; unresolved differences block startup. |
 | **Explicit flat** | Complete, incomplete, or ambiguous bounded history.       | Applies available reports and closes residual exposure when generation is enabled; unresolved quantity differences block startup. |
-| **Missing**       | Bounded history, with or without a cached predecessor.    | Recovers order state only; fills do not change positions or portfolio economics.                                                  |
+| **Missing**       | Bounded history, with or without a cached predecessor.    | Recovers order state only, unless closing fills reduce a retained position the client cannot cover.                               |
 | **Filtered**      | Position-report or instrument filters exclude the report. | Position-report filtering makes bounded fills order-only; instrument filtering excludes both orders and positions.                |
 
 ## Common reconciliation issues
@@ -965,7 +1002,8 @@ The reconciliation path preserves these invariants for the reports and positions
    aligns to it, generating orders and fills when configured, or leaves it unresolved. A missing
    report is not flat.
 1. **Missing position report**: an explicitly bounded historical fill with no in-scope position report updates
-   order state only, without changing positions or portfolio economics.
+   order state only, without changing positions or portfolio economics, unless it closes or reduces a
+   retained position under the conditions in [Order-only fill projection](#order-only-fill-projection).
 1. **Position quantity**: reconciled positions match authoritative venue reports within the applicable
    quantity tolerance.
 1. **Entry price**: reported entry averages match within tolerance before startup proceeds, except
