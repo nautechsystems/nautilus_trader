@@ -135,7 +135,7 @@ def test_bounded_constructor_rejects_invalid_sizes(
     Reject invalid sizes through ordinary Python exceptions.
     """
     expected = OverflowError if name == "ZScore" and invalid > sys.maxsize else ValueError
-    pattern = "too large" if expected is OverflowError else r"period|displacement|slowing"
+    pattern = r"too (?:large|big)" if expected is OverflowError else r"period|displacement|slowing"
     with pytest.raises(expected, match=pattern):
         getattr(indicators, name)(**(kwargs | {field: invalid}))
 
