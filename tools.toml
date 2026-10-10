@@ -20,7 +20,7 @@ rustc-version = "1.100.0"
 version = "0.0.30"
 
 [socket-cli]
-version = "1.4.1"
+version = "1.5.0"
 
 [tokei]
 version = "15.0.0"

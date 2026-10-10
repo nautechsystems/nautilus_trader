@@ -1406,10 +1406,6 @@ criteria = "safe-to-run"
 version = "0.1.65"
 criteria = "safe-to-deploy"
 
-[[exemptions.ibapi]]
-version = "5.0.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.icu_collections]]
 version = "2.2.0"
 criteria = "safe-to-deploy"

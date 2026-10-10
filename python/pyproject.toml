@@ -29,7 +29,7 @@ visualization = [
   "pandas>=2.3.3,<4.0.0",
   "plotly>=7.0.0,<8.0.0",
   "kaleido>=1.4.0,<2.0.0",
-  "simplejson>=4.1.2,<5.0.0",
+  "simplejson>=4.2.0,<5.0.0",
 ]
 
 [project.urls]
@@ -163,7 +163,7 @@ test = [
   "pytest-memray>=1.10.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   "pytest-xdist[psutil]>=3.8.0",
   "uvicorn>=0.54.0",
-  "uvloop>=0.22.1; sys_platform != 'win32'",
+  "uvloop>=0.23.0; sys_platform != 'win32'",
 ]
 docs = [
   "furo==2025.12.19",

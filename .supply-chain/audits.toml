@@ -1014,6 +1014,12 @@ criteria = "safe-to-deploy"
 delta = "0.1.5 -> 0.1.6"
 notes = 'Marks the system-property FFI callback extern "C" so it is no longer a plain Rust fn passed into a C callback slot, and switches its out-parameter from String to Option<String> so non-UTF-8 property values return None instead of panicking across the FFI boundary. Manifest license string normalized to SPDX. Android-only code path; no new build, filesystem, network, process, or credential behavior.'
 
+[[audits.arbitrary]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.4.2 -> 1.5.0"
+notes = "Reviewed checksum-verified published crates. Array construction writes elements through raw pointers without creating references to uninitialized arrays; the initialized-prefix drop guard is retained. Nonzero generation maps zero to MAX. Remaining unsafe changes add safety explanations. MSRV is 1.71; no build script or ambient capability changes."
+
 [[audits.arc-swap]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1796,6 +1802,12 @@ criteria = "safe-to-deploy"
 delta = "0.1.6 -> 0.1.7"
 notes = "Manifest-only delta: pins the generic-array dependency to an exact =0.14.7 and picks up Cargo's normalized manifest fields. No source, build script, feature behavior, or dependency addition changes."
 
+[[audits.ctutils]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.2 -> 0.4.3"
+notes = "Reviewed checksum-verified published crates. Const Choice conversions retain black_box; signed casts become cast_unsigned/cast_signed. Deprecated vartime accessors delegate to the same conversions. MSRV is 1.87; unsafe remains forbidden and cmov is unchanged."
+
 [[audits.curve25519-dalek]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2492,6 +2504,12 @@ criteria = "safe-to-deploy"
 delta = "1.17.0 -> 1.18.0"
 notes = "Adds Extend and FromIterator implementations that partition Either values into a pair of collections. No new dependencies, unsafe, build script, filesystem, network, process, credential, or data-exfiltration behavior."
 
+[[audits.either]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.18.0 -> 1.19.0"
+notes = "Reviewed cargo-vet local diff and checksum-verified published crates. Adds safe is_left_or/is_right_or enum matches and inline annotations on folds. No unsafe, dependency, build, or ambient capability changes."
+
 [[audits.enum-ordinalize]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2648,6 +2666,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.17 -> 0.4.19"
 notes = "Reviewed 0.4.17 -> 0.4.19: bounded frame processing and flow-control budget scaling"
 
+[[audits.h2]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.19 -> 0.4.20"
+notes = "Reviewed checksum-verified published crates. Validates duplicate content lengths, response status, and GOAWAY stream IDs. Counts reserved pushes and refusals, tracks spent DATA budget across window changes, and defers send-buffer locks. Huffman fast decoding uses bounded safe slices and rejects invalid padding/EOS; all 256 encoding entries and the decode table match the prior release. No new unsafe or ambient capabilities."
+
 [[audits.hashlink]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2713,6 +2737,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.11.0 -> 1.11.1"
 notes = "Fixes HTTP/1 connection reuse, buffered-write flushing, head termination, and trailer token parsing, plus minimal HTTP/2 send capacity. Reviewed the published source; no new dependencies, unsafe blocks, network destinations, or ambient capabilities."
+
+[[audits.hyper]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.11.1 -> 1.12.0"
+notes = "Reviewed cargo-vet local diff and checksum-verified published crates. HTTP/1 body channel uses a mutex, atomic wakers, one data slot, and pending errors/trailers; wakes happen after unlocking. Adds optional header byte limits, preserves Connection close semantics, and removes Content-Length when chunking. HTTP/2 upgrade buffers one cursor before waiting on capacity. Unsafe runtime/FFI implementations retain their prior bounds and operations; no new ambient capabilities."
 
 [[audits.hyper-rustls]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2870,6 +2900,12 @@ delta = "0.2.35 -> 0.2.37"
 importable = false
 notes = "Reviewed the published crate delta for the root and fuzz feature graphs, which do not enable arbitrary. Corrects optional Serde serialization to preserve Some tags, retains time zone serialization validation, removes a redundant cast, and repairs packaged documentation. The new arbitrary integration is outside this certification. No new unsafe, build script, network, process, or credential behavior in the enabled paths."
 
+[[audits.jiff]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.37 -> 0.2.38"
+notes = "Reviewed checksum-verified published crates. Runtime source is unchanged; dependency and cfg(any()) version pins advance with bundled IANA data to 2026e. README adds project background. No build or ambient capability changes."
+
 [[audits.jiff-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2882,6 +2918,18 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.2.35 -> 0.2.37"
 notes = "Reviewed the published crate delta. Proc-macro source is unchanged; changes are package version, VCS metadata, and the packaged lockfile. No new dependencies or build behavior."
+
+[[audits.jiff-static]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.37 -> 0.2.38"
+notes = "Reviewed checksum-verified published crates. Procedural macro source is unchanged; only version, lockfile, and source revision metadata change."
+
+[[audits.jiff-tzdb]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.8 -> 0.1.9"
+notes = "Reviewed checksum-verified published crates. Updates bundled IANA data from 2026c to 2026e and matching offsets; all 598 zone ranges are within the data blob and begin with TZif. Parser/runtime source is unchanged; no build or ambient capabilities added."
 
 [[audits.js-sys]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3140,6 +3188,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.1.5 -> 0.1.6"
 notes = "Reviewed the published 0.1.5 -> 0.1.6 crate. PotentialCodePoint/Ustr writeable helpers only. No new unsafe, build script, filesystem, network, process, or credential behavior."
+
+[[audits.powerfmt]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.0 -> 0.2.1"
+notes = "Reviewed checksum-verified published crates. Replaces MaybeUninit array and slice compatibility functions with equivalent raw slice construction, preserving write bounds and valid UTF-8 initialization. Fixes alternate formatting option dispatch and adds inline annotations. MSRV is 1.79; no new dependencies or ambient capabilities."
 
 [[audits.prettyplease]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3939,6 +3993,12 @@ criteria = "safe-to-deploy"
 delta = "2.1.3 -> 2.1.4"
 notes = "Adds portability documentation and lint-driven source cleanup. Reviewed SIMD and unchecked invariants; unsafe bodies and preconditions are unchanged. No dependency, build script, ambient capability, or hash behavior changes."
 
+[[audits.twox-hash]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.1.4 -> 2.1.5"
+notes = "Reviewed checksum-verified published crates. Bounds minimum-secret views to 136 bytes, splits medium inputs at checked 128-byte boundaries, and outlines large-input paths. assert_unchecked conditions follow the same branch predicates; x86_64 assembly is an empty register barrier with nomem/nostack/preserves_flags. Removes reverse-chunk unsafe code; no new build or ambient capabilities."
+
 [[audits.unicode-ident]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4021,6 +4081,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.13.2 -> 1.14.1"
 notes = "Extends error capture to core::error behind a new feature and updates feature gates consistently. No unsafe, build script, dependency, or ambient capability changes."
+
+[[audits.want]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.3.1 -> 0.3.2"
+notes = "Reviewed checksum-verified published crates. Adds unwant using SeqCst compare_exchange from Want to Idle, preserving canceled state. Includes a state regression test. No new unsafe, dependencies, build, or ambient capabilities."
 
 [[audits.wasm-bindgen]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4231,6 +4297,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.1.7 -> 0.1.8"
 notes = "Proc-macro patch. Compile-time only."
+
+[[audits.zeroize]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.9.0 -> 1.9.1"
+notes = "Reviewed checksum-verified published crates. Zeroizing Debug becomes opaque. Vec zeros spare capacity before initialized elements and clear, avoiding duplicate zeroization. Fallback barrier reads MaybeUninit<u8>; internal barrier calls are removed while volatile writes remain. SIMD zero values and slice bounds are unchanged; no new ambient capabilities."
 
 [[audits.zerotrie]]
 who = "Nautech Systems <info@nautechsystems.io>"

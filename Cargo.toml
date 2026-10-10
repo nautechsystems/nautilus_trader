@@ -163,11 +163,11 @@ futures-util = { version = "0.3.34", default-features = false, features = [
   "async-await",
   "sink",
 ] }
-h2 = "0.4.19"
+h2 = "0.4.20"
 http = "1.5.0"
 http-body = "1.1.0"
 http-body-util = "0.1.5"
-hyper = { version = "1.11.1", default-features = false, features = [
+hyper = { version = "1.12.0", default-features = false, features = [
   "client",
   "http1",
 ] }
@@ -182,7 +182,7 @@ hyper-util = { version = "0.1.21", default-features = false, features = [
 implied-vol = { version = "2.1.0" }
 indexmap = { version = "2.14.2", features = ["serde"] }
 itchy = "0.3"
-jiff = { version = "0.2.37", default-features = false, features = [
+jiff = { version = "0.2.38", default-features = false, features = [
   "perf-inline",
   "serde",
   "std",
@@ -324,7 +324,7 @@ url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.27.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.9"
-zeroize = { version = "1.9.0", features = ["alloc", "zeroize_derive"] }
+zeroize = { version = "1.9.1", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
 # Adapter dependencies
