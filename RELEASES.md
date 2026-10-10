@@ -46,6 +46,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed released emulated orders sending stale order initialization (#5169), thanks @jrile018
 - Fixed `RiskEngine` notional limits for negative prices
 - Fixed maker/taker commission sign at negative prices
 - Fixed cache open-order queries retaining submitted orders after cancel or modify rejections
