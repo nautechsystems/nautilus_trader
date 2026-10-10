@@ -17,7 +17,7 @@
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     path::PathBuf,
     rc::Rc,
@@ -146,10 +146,14 @@ struct TestServerState {
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/derivatives/api/v3/openorders` returns this JSON.
     futures_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// Served by `/derivatives/api/v3/openorders` one per request, ahead of the override.
+    futures_open_orders_sequence: Arc<tokio::sync::Mutex<VecDeque<String>>>,
     /// When set, `/derivatives/api/v3/openpositions` returns this JSON.
     futures_open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/api/history/v3/orders` returns this JSON; otherwise an empty page.
     futures_order_history_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/api/history/v3/orders` answers with this status instead of `200 OK`.
+    futures_order_history_status: Arc<tokio::sync::Mutex<Option<StatusCode>>>,
     /// When set, `/0/private/OpenPositions` returns this JSON.
     spot_open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/0/private/TradesHistory` returns this JSON once, then empty pages.
@@ -192,8 +196,10 @@ impl Default for TestServerState {
             orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
             fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             futures_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            futures_open_orders_sequence: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             futures_open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
             futures_order_history_json: Arc::new(tokio::sync::Mutex::new(None)),
+            futures_order_history_status: Arc::new(tokio::sync::Mutex::new(None)),
             ws_message_tx,
         }
     }
@@ -294,6 +300,9 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             json_response(r#"{"result":"success","accounts":{}}"#.to_string())
         }
         "/derivatives/api/v3/openorders" => {
+            if let Some(response) = state.futures_open_orders_sequence.lock().await.pop_front() {
+                return json_response(response);
+            }
             let response = state.futures_open_orders_json.lock().await;
             json_response(
                 response
@@ -329,12 +338,20 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             )
         }
         "/api/history/v3/orders" => {
-            let response = state.futures_order_history_json.lock().await;
-            json_response(
-                response
-                    .clone()
-                    .unwrap_or_else(|| r#"{"elements":[]}"#.to_string()),
-            )
+            let body = state
+                .futures_order_history_json
+                .lock()
+                .await
+                .clone()
+                .unwrap_or_else(|| r#"{"elements":[]}"#.to_string());
+
+            match *state.futures_order_history_status.lock().await {
+                Some(status) => Response::builder()
+                    .status(status)
+                    .body(Body::from(body))
+                    .unwrap(),
+                None => json_response(body),
+            }
         }
         "/derivatives/api/v3/sendorder" => {
             state.submit_request_count.fetch_add(1, Ordering::Relaxed);
@@ -1253,8 +1270,22 @@ fn futures_open_positions_json(symbol: &str) -> String {
 }
 
 fn futures_open_orders_json(order_id: &str, symbol: &str) -> String {
+    futures_open_orders_json_rows(&[(order_id, symbol)])
+}
+
+/// An open-orders response with one resting 1,000-contract buy per `(order_id, symbol)`.
+fn futures_open_orders_json_rows(rows: &[(&str, &str)]) -> String {
+    let orders: Vec<String> = rows
+        .iter()
+        .map(|(order_id, symbol)| {
+            format!(
+                r#"{{"order_id":"{order_id}","symbol":"{symbol}","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}}"#
+            )
+        })
+        .collect();
     format!(
-        r#"{{"result":"success","openOrders":[{{"order_id":"{order_id}","symbol":"{symbol}","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":1000.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}}]}}"#
+        r#"{{"result":"success","openOrders":[{}]}}"#,
+        orders.join(",")
     )
 }
 
@@ -1486,8 +1517,25 @@ fn futures_history_element(
     filled: &str,
     ts_ms: i64,
 ) -> String {
+    futures_history_element_sided(
+        kind, uid, order_uid, tradeable, "Buy", quantity, filled, ts_ms,
+    )
+}
+
+/// As [`futures_history_element`], for an order in `direction` (`Buy` or `Sell`).
+#[expect(clippy::too_many_arguments)]
+fn futures_history_element_sided(
+    kind: &str,
+    uid: &str,
+    order_uid: &str,
+    tradeable: &str,
+    direction: &str,
+    quantity: &str,
+    filled: &str,
+    ts_ms: i64,
+) -> String {
     let order = format!(
-        r#"{{"uid":"{order_uid}","accountUid":"acc","tradeable":"{tradeable}","direction":"Buy","quantity":"{quantity}","filled":"{filled}","timestamp":1680876930250,"limitPrice":"27500.5","orderType":"Limit","clientId":"","reduceOnly":false,"lastUpdateTimestamp":{ts_ms}}}"#
+        r#"{{"uid":"{order_uid}","accountUid":"acc","tradeable":"{tradeable}","direction":"{direction}","quantity":"{quantity}","filled":"{filled}","timestamp":1680876930250,"limitPrice":"27500.5","orderType":"Limit","clientId":"","reduceOnly":false,"lastUpdateTimestamp":{ts_ms}}}"#
     );
     let payload = match kind {
         "OrderUpdated" => format!(r#"{{"newOrder":{order}}}"#),
@@ -2066,6 +2114,849 @@ async fn test_futures_history_filled_report_counts_the_cached_order_fills(
     );
 }
 
+/// A fills page of `PI_XBTUSD` fills stamped a second ago, inside any lookback, each given as
+/// `(fill_id, order_id, side, size, price)`.
+fn futures_recent_fills_json(fills: &[(&str, &str, &str, &str, &str)]) -> String {
+    let fill_time = jiff::Timestamp::now() - jiff::Span::new().seconds(1);
+    let fills: Vec<String> = fills
+        .iter()
+        .map(|(fill_id, order_id, side, size, price)| {
+            format!(
+                r#"{{"fill_id":"{fill_id}","symbol":"PI_XBTUSD","side":"{side}","order_id":"{order_id}","fillTime":"{fill_time}","size":{size},"price":{price},"fillType":"taker","fee_paid":0.0,"fee_currency":"USD"}}"#
+            )
+        })
+        .collect();
+    format!(r#"{{"result":"success","fills":[{}]}}"#, fills.join(","))
+}
+
+/// A history page holding one fully filled 1,000-contract `PI_XBTUSD` buy.
+fn executed_history_json(order_uid: &str) -> String {
+    futures_order_history_json(&[futures_history_element(
+        "OrderUpdated",
+        "e1",
+        order_uid,
+        "PI_XBTUSD",
+        "1000",
+        "1000",
+        1680877245500,
+    )])
+}
+
+/// Startup mass status reads the order history, and a terminal history order whose fills cover
+/// its filled quantity is kept, priced from those fills rather than at its 27500.5 limit.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_executed_history_order_with_a_fill() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(executed_history_json("F-EXEC"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-exec", "F-EXEC", "buy", "1000", "49000.0",
+    )]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let report = snapshot
+        .order_reports()
+        .get(&VenueOrderId::from("F-EXEC"))
+        .cloned()
+        .expect("a covered execution must be kept");
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("49000").unwrap())
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// A terminal history order with no fill on the page is withheld and leaves the set incomplete:
+/// unpriced, reconciliation would infer the execution at the order's limit price.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_an_execution_with_no_fill() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(executed_history_json("F-EXEC"));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-EXEC")),
+        "an execution with no covering fill must be withheld, not priced at the limit"
+    );
+    assert!(
+        !snapshot.reports_complete(),
+        "withholding a report leaves the set incomplete"
+    );
+}
+
+/// Fills must cover the whole filled quantity, not merely exist, and an uncached order's fills go
+/// with its withheld report.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_a_partially_covered_execution() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(executed_history_json("F-PART"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-part-1", "F-PART", "buy", "400", "49000.0",
+    )]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-PART")),
+        "a partially covered execution must be withheld, not priced at the limit"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 0, "a withheld uncached order's fills go with it");
+    assert!(
+        !snapshot.reports_complete(),
+        "withholding a report leaves the set incomplete"
+    );
+}
+
+/// Coverage is exact: fills that exceed the order's executed quantity do not price it, and the
+/// report is withheld.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_an_execution_its_fills_over_cover() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(executed_history_json("F-OVER"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-over-1", "F-OVER", "buy", "1000", "49000.0"),
+        ("f-over-2", "F-OVER", "buy", "200", "49100.0"),
+    ]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-OVER")),
+        "fills of 1200 do not price a 1000 execution"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 0, "a withheld uncached order's fills go with it");
+    assert!(!snapshot.reports_complete());
+}
+
+/// Coverage can be reached across several fills, priced at their quantity-weighted average.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_an_execution_covered_across_two_fills() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(executed_history_json("F-PART"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-part-1", "F-PART", "buy", "400", "49000.0"),
+        ("f-part-2", "F-PART", "buy", "600", "49100.0"),
+    ]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let report = snapshot
+        .order_reports()
+        .get(&VenueOrderId::from("F-PART"))
+        .cloned()
+        .expect("fills summing to the filled quantity must keep the report");
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("49060").unwrap()),
+        "(400 x 49000.0 + 600 x 49100.0) / 1000"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// A canceled order with an executed quantity is terminal, so it is withheld the same way when
+/// nothing covers that quantity.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_a_canceled_partial_with_no_fill() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await =
+        Some(futures_order_history_json(&[futures_history_element(
+            "OrderCancelled",
+            "e1",
+            "F-CANCEL",
+            "PI_XBTUSD",
+            "1000",
+            "400",
+            1680877245500,
+        )]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-CANCEL")),
+        "a canceled order with an uncovered partial must be withheld"
+    );
+    assert!(!snapshot.reports_complete());
+}
+
+/// An open partially filled order is kept with no fill: the venue still lists it, and dropping it
+/// would let reconciliation resolve it as missing.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_an_open_partial_with_no_fill() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(
+        r#"{"result":"success","openOrders":[{"order_id":"F-OPEN","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":600.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"partiallyFilled","filledSize":400.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}]}"#
+            .to_string(),
+    );
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-OPEN")),
+        "an open partially filled order must be kept"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// A cached order's recorded fills count toward coverage, so with 600 of 1,000 contracts recorded
+/// the final 400 on the page keep the report and reach reconciliation at their real price.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_cached_partial_order_covered_by_remaining_fills() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    cache_order_with_fills(&cache, "F-PART", &[("f-part-recorded", "600", "49000.0")]);
+    *state.futures_order_history_json.lock().await = Some(executed_history_json("F-PART"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-part-remaining",
+        "F-PART",
+        "buy",
+        "400",
+        "49100.0",
+    )]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let report = snapshot
+        .order_reports()
+        .get(&VenueOrderId::from("F-PART"))
+        .cloned()
+        .expect("the cached order covers the rest, so the report must be kept");
+    assert_eq!(
+        report.avg_px,
+        Some(rust_decimal::Decimal::from_str_exact("49040").unwrap()),
+        "(600 x 49000.0 + 400 x 49100.0) / 1000"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(
+        fills, 1,
+        "the remaining execution must reach reconciliation"
+    );
+    assert!(snapshot.reports_complete());
+}
+
+/// A cached order's page fills stay when its report is withheld: the engine reconciles priced
+/// fills against the cached order without a report. With 200 of 1,000 recorded and 400 on the
+/// page, 400 contracts are unpriced, so only the report goes.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_cached_order_fills_when_its_report_is_withheld() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    cache_order_with_fills(&cache, "F-INC", &[("f-inc-recorded", "200", "49000.0")]);
+    *state.futures_order_history_json.lock().await = Some(executed_history_json("F-INC"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-inc-on-page",
+        "F-INC",
+        "buy",
+        "400",
+        "49100.0",
+    )]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-INC")),
+        "400 contracts are unpriced, so the report must be withheld"
+    );
+    let fill_reports = snapshot.fill_reports();
+    let fills: Vec<_> = fill_reports.values().flatten().collect();
+    assert_eq!(
+        fills.len(),
+        1,
+        "the priced fill stays for the cached order: {fills:?}"
+    );
+    assert_eq!(fills[0].venue_order_id, VenueOrderId::from("F-INC"));
+    assert_eq!(fills[0].trade_id, TradeId::from("f-inc-on-page"));
+    assert!(!snapshot.reports_complete());
+}
+
+/// A history page holding a filled round trip on `PI_XBTUSD`: a 1,000-contract buy opened a long
+/// and a 1,000-contract sell closed it.
+fn flat_round_trip_history_json() -> String {
+    futures_order_history_json(&[
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e2",
+            "F-FLAT-CLOSE",
+            "PI_XBTUSD",
+            "Sell",
+            "1000",
+            "1000",
+            1680879600000,
+        ),
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e1",
+            "F-FLAT-OPEN",
+            "PI_XBTUSD",
+            "Buy",
+            "1000",
+            "1000",
+            1680876000000,
+        ),
+    ])
+}
+
+/// On an instrument the venue reports flat, an unbounded read keeps no terminal order whose fills
+/// would open a position: with the opening fill off the fills page, neither side of the round
+/// trip nor its fills reach reconciliation, and the set is incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_a_closing_order_on_a_flat_instrument_when_the_open_is_off_page()
+ {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(flat_round_trip_history_json());
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-close",
+        "F-FLAT-CLOSE",
+        "sell",
+        "1000",
+        "50000.0",
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot.order_reports().is_empty(),
+        "neither side of the round trip may reach reconciliation: {:?}",
+        snapshot.order_reports().keys().collect::<Vec<_>>()
+    );
+    assert!(snapshot.fill_reports().values().all(Vec::is_empty));
+    assert!(!snapshot.reports_complete());
+}
+
+/// A round trip whose fills are all on the page nets to zero on the flat instrument and is kept.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_a_flat_round_trip_whose_fills_net_to_zero() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(flat_round_trip_history_json());
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-flat-open", "F-FLAT-OPEN", "buy", "1000", "49000.0"),
+        ("f-flat-close", "F-FLAT-CLOSE", "sell", "1000", "50000.0"),
+    ]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert_eq!(
+        snapshot.order_reports().len(),
+        2,
+        "{:?}",
+        snapshot.order_reports()
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 2);
+    assert!(snapshot.reports_complete());
+}
+
+/// A closing order its own fill covers exactly, whose opening order is on neither page, is
+/// withheld with that fill on a flat instrument, and the flat rule marks the set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_a_lone_closing_order_on_a_flat_instrument() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e2",
+            "F-FLAT-CLOSE",
+            "PI_XBTUSD",
+            "Sell",
+            "1000",
+            "1000",
+            1680879600000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-close",
+        "F-FLAT-CLOSE",
+        "sell",
+        "1000",
+        "50000.0",
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot.order_reports().is_empty(),
+        "the closing order must not reach reconciliation: {:?}",
+        snapshot.order_reports().keys().collect::<Vec<_>>()
+    );
+    assert!(snapshot.fill_reports().values().all(Vec::is_empty));
+    assert!(!snapshot.reports_complete());
+}
+
+/// An open `PI_XBTUSD` buy of 1,000 contracts with 500 of them executed.
+fn futures_half_filled_open_order_json(order_id: &str) -> String {
+    format!(
+        r#"{{"result":"success","openOrders":[{{"order_id":"{order_id}","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":500.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"partiallyFilled","filledSize":500.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}}]}}"#
+    )
+}
+
+/// On a flat instrument, the fills of an open order the cache does not hold count toward the net,
+/// so a terminal order whose fill offsets them stays with both fills and the set stays complete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_nets_an_open_order_fill_against_a_terminal_one_on_a_flat_instrument()
+ {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_half_filled_open_order_json("F-FLAT-O1"));
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e1",
+            "F-FLAT-T1",
+            "PI_XBTUSD",
+            "Sell",
+            "500",
+            "500",
+            1680879600000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-flat-o1", "F-FLAT-O1", "buy", "500", "49000.0"),
+        ("f-flat-t1", "F-FLAT-T1", "sell", "500", "50000.0"),
+    ]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    let order_ids: Vec<_> = snapshot.order_reports().keys().copied().collect();
+    assert!(
+        order_ids.contains(&VenueOrderId::from("F-FLAT-T1"))
+            && order_ids.contains(&VenueOrderId::from("F-FLAT-O1")),
+        "both orders must reach reconciliation: {order_ids:?}"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 2);
+    assert!(snapshot.reports_complete());
+}
+
+/// When the fills on a flat instrument do not net to zero, the flat rule withholds the terminal
+/// orders with their fills and keeps the open order with its fill, marking the set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_an_open_order_beside_a_withheld_terminal_one_on_a_flat_instrument()
+ {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_half_filled_open_order_json("F-FLAT-O1"));
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e1",
+            "F-FLAT-T1",
+            "PI_XBTUSD",
+            "Sell",
+            "1000",
+            "1000",
+            1680879600000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-flat-o1", "F-FLAT-O1", "buy", "500", "49000.0"),
+        ("f-flat-t1", "F-FLAT-T1", "sell", "1000", "50000.0"),
+    ]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    let order_ids: Vec<_> = snapshot.order_reports().keys().copied().collect();
+    assert_eq!(
+        order_ids,
+        vec![VenueOrderId::from("F-FLAT-O1")],
+        "the open order stays and the terminal one is withheld"
+    );
+    let fill_orders: Vec<_> = snapshot.fill_reports().keys().copied().collect();
+    assert_eq!(fill_orders, vec![VenueOrderId::from("F-FLAT-O1")]);
+    assert!(!snapshot.reports_complete());
+}
+
+/// An open order the cache does not hold keeps its fill on a flat instrument that has no terminal
+/// order, since the flat rule withholds terminal orders only, and the set stays complete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_an_open_order_fill_on_a_flat_instrument() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_half_filled_open_order_json("F-FLAT-O1"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-o1",
+        "F-FLAT-O1",
+        "buy",
+        "500",
+        "49000.0",
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-FLAT-O1")),
+        "an open order is not withheld by the flat rule"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 1);
+    assert!(snapshot.reports_complete());
+}
+
+/// An instrument with a position report is left to that report, so the flat rule keeps the
+/// closing order there.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_leaves_a_held_instrument_to_its_position_report() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(flat_round_trip_history_json());
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-close",
+        "F-FLAT-CLOSE",
+        "sell",
+        "1000",
+        "50000.0",
+    )]));
+    *state.futures_open_positions_json.lock().await =
+        Some(futures_open_positions_json("PI_XBTUSD"));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-FLAT-CLOSE")),
+        "the position report governs a held instrument"
+    );
+    assert!(
+        !snapshot.reports_complete(),
+        "the opening order is still withheld for coverage"
+    );
+}
+
+/// A cached order is left out of the flat rule, since its fills reconcile against the cached order
+/// and its position: its terminal report and fills stay on an instrument the venue reports flat.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_leaves_a_cached_order_on_a_flat_instrument_to_the_engine() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    cache_order_with_fills(&cache, "F-CACHED", &[]);
+    *state.futures_order_history_json.lock().await = Some(executed_history_json("F-CACHED"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-cached", "F-CACHED", "buy", "1000", "49000.0",
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-CACHED")),
+        "a cached order is not withheld by the flat rule"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 1);
+    assert!(snapshot.reports_complete());
+}
+
+/// With a bounded lookback the engine projects such orders onto order state only, so the flat
+/// rule does not apply and the closing order is kept.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_the_closing_order_under_a_bounded_lookback() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(flat_round_trip_history_json());
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-close",
+        "F-FLAT-CLOSE",
+        "sell",
+        "1000",
+        "50000.0",
+    )]));
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-FLAT-CLOSE")),
+        "a bounded read leaves the order-only projection to the engine"
+    );
+}
+
+/// A history read the venue refuses, with HTTP 429 or an error body, degrades the mass status to
+/// the open-only read rather than failing it: the open orders are reported, nothing from the
+/// history is, and the set is incomplete.
+#[rstest]
+#[case::rate_limited(Some(StatusCode::TOO_MANY_REQUESTS), "rate limit exceeded")]
+#[case::venue_error_body(None, r#"{"result":"error","error":"apiLimitExceeded"}"#)]
+#[tokio::test]
+async fn test_futures_mass_status_reads_open_orders_only_when_the_history_read_is_refused(
+    #[case] status: Option<StatusCode>,
+    #[case] body: &str,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_open_orders_json("V-OPEN-1", "PI_XBTUSD"));
+    *state.futures_order_history_json.lock().await = Some(body.to_string());
+    *state.futures_order_history_status.lock().await = status;
+
+    let snapshot = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("a refused history read must not fail the mass status")
+        .unwrap();
+
+    assert_eq!(
+        snapshot.order_reports().keys().collect::<Vec<_>>(),
+        vec![&VenueOrderId::from("V-OPEN-1")],
+        "the open-only read supplies the open orders"
+    );
+    assert!(
+        !snapshot.reports_complete(),
+        "a mass status without its history is incomplete"
+    );
+}
+
+/// A history read that faults rather than being refused fails the mass status, as a failed
+/// open-order read does: an HTTP error status other than 429, including an authentication
+/// status, and a body that cannot be parsed are not the venue declining the request.
+#[rstest]
+#[case::server_error(
+    Some(StatusCode::INTERNAL_SERVER_ERROR),
+    "history unavailable",
+    "HTTP error 500"
+)]
+#[case::unauthorized(Some(StatusCode::UNAUTHORIZED), "invalid key", "Authentication error")]
+#[case::malformed_body(
+    None,
+    r#"{"serverTime":"2023-04-07T16:30:45.678Z","elements":"nope"}"#,
+    "Parse error"
+)]
+#[tokio::test]
+async fn test_futures_mass_status_fails_when_the_history_read_faults(
+    #[case] status: Option<StatusCode>,
+    #[case] body: &str,
+    #[case] expected: &str,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_open_orders_json("V-OPEN-1", "PI_XBTUSD"));
+    *state.futures_order_history_json.lock().await = Some(body.to_string());
+    *state.futures_order_history_status.lock().await = status;
+
+    let error = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect_err("a faulted history read must fail the mass status");
+
+    let message = error.to_string();
+    assert!(
+        message.contains("get_order_events failed") && message.contains(expected),
+        "unexpected error: {message}"
+    );
+}
+
+/// A failed open-order read fails the mass status, including the open-only read that follows a
+/// refused history read: a mass status without its open orders is not reported.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_fails_when_the_open_only_read_after_a_refusal_fails() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    state
+        .futures_open_orders_sequence
+        .lock()
+        .await
+        .push_back(futures_open_orders_json("V-OPEN-1", "PI_XBTUSD"));
+    *state.futures_open_orders_json.lock().await =
+        Some(r#"{"result":"error","error":"apiLimitExceeded"}"#.to_string());
+    *state.futures_order_history_status.lock().await = Some(StatusCode::TOO_MANY_REQUESTS);
+
+    let error = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect_err("a mass status without open orders must fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("Failed to get open orders: apiLimitExceeded"),
+        "unexpected error: {error}"
+    );
+}
+
+/// A failed open-order read fails the mass status.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_fails_when_the_open_order_read_fails() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(r#"{"result":"error","error":"apiLimitExceeded"}"#.to_string());
+
+    let error = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect_err("a mass status without open orders must fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("Failed to get open orders: apiLimitExceeded"),
+        "unexpected error: {error}"
+    );
+}
+
+/// A scoped read rejects rows of another instrument the client holds, on both the open-order and
+/// history reads. The spot-id case returns at the early guard, so this pins the per-row
+/// comparison.
+#[rstest]
+#[tokio::test]
+async fn test_futures_scoped_order_reads_reject_rows_of_another_held_instrument() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(futures_open_orders_json_rows(&[
+        ("V-SCOPE-XBT-OPEN", "PI_XBTUSD"),
+        ("V-SCOPE-ETH-OPEN", "PF_ETHUSD"),
+    ]));
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element(
+            "OrderPlaced",
+            "e1",
+            "V-SCOPE-XBT-HIST",
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1680877245500,
+        ),
+        futures_history_element(
+            "OrderPlaced",
+            "e2",
+            "V-SCOPE-ETH-HIST",
+            "PF_ETHUSD",
+            "1000",
+            "0",
+            1680877245500,
+        ),
+    ]));
+
+    let scoped_cmd = |instrument_id: &str| {
+        GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            Some(InstrumentId::from(instrument_id)),
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+
+    let eth = client
+        .generate_order_status_reports(&scoped_cmd("PF_ETHUSD.KRAKEN"))
+        .await
+        .unwrap();
+    let mut eth_ids: Vec<&str> = eth.iter().map(|r| r.venue_order_id.as_str()).collect();
+    eth_ids.sort_unstable();
+    assert_eq!(
+        eth_ids,
+        vec!["V-SCOPE-ETH-HIST", "V-SCOPE-ETH-OPEN"],
+        "only the scoped instrument's rows, from both reads: {eth:?}"
+    );
+    assert!(
+        eth.iter()
+            .all(|r| r.instrument_id == InstrumentId::from("PF_ETHUSD.KRAKEN"))
+    );
+
+    let xbt = client
+        .generate_order_status_reports(&scoped_cmd("PI_XBTUSD.KRAKEN"))
+        .await
+        .unwrap();
+    let mut xbt_ids: Vec<&str> = xbt.iter().map(|r| r.venue_order_id.as_str()).collect();
+    xbt_ids.sort_unstable();
+    assert_eq!(xbt_ids, vec!["V-SCOPE-XBT-HIST", "V-SCOPE-XBT-OPEN"]);
+}
+
 /// A scoped futures position read must match the resolved instrument.
 ///
 /// This read is the one that used to return every futures position for a spot ID, since spot and
@@ -2341,8 +3232,8 @@ async fn test_spot_fill_pagination_stops_at_the_cap_and_reports_incomplete() {
 
 /// The closed-order read is capped on the same terms as the fill read.
 ///
-/// Startup mass status asks for open orders only, so this loop is reached when a caller requests
-/// non-open orders. It pages the same way and needs the same bound.
+/// This drives the loop directly through a non-open report request. Startup mass status reaches it
+/// as well, so the bound matters on both paths.
 #[rstest]
 #[tokio::test]
 async fn test_spot_closed_order_pagination_stops_at_the_cap() {

@@ -4992,6 +4992,272 @@ async fn test_bounded_same_timestamp_orders_reconcile_explicit_flat() {
     assert_eq!(portfolio_events, expected_portfolio_events);
 }
 
+/// An order whose fills span a position lifecycle keeps its pre-boundary fill as order-only.
+///
+/// A sell that closes a long and opens a short crosses zero inside the order. The closing fill
+/// stays on the order, so its filled quantity settles at the real price rather than an inferred
+/// one, and it does not apply to the position.
+#[tokio::test]
+async fn test_order_spanning_two_lifecycles_keeps_pre_boundary_fill_order_only() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let open_order_id = ClientOrderId::from("O-LIFECYCLE-OPEN");
+    let open_venue_order_id = VenueOrderId::from("V-LIFECYCLE-OPEN");
+    let open_trade_id = TradeId::from("T-LIFECYCLE-OPEN");
+    let flip_order_id = ClientOrderId::from("O-LIFECYCLE-FLIP");
+    let flip_venue_order_id = VenueOrderId::from("V-LIFECYCLE-FLIP");
+    let close_trade_id = TradeId::from("T-LIFECYCLE-CLOSE");
+    let short_trade_id = TradeId::from("T-LIFECYCLE-SHORT");
+    let position_id = PositionId::new(format!("{instrument_id}-{strategy_id}"));
+
+    ctx.add_instrument(instrument);
+    ctx.manager
+        .claim_external_orders(instrument_id, strategy_id)
+        .unwrap();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+
+    // The long that the flip closes, opened and filled before the crossing.
+    let open_report = create_order_report(
+        Some(open_order_id),
+        open_venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+    )
+    .with_avg_px(dec!(3000.0));
+    let open_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        open_venue_order_id,
+        open_trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.000"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(open_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+
+    // The sell spanning the crossing: one fill closes the long, the next opens the short. Its
+    // order price sits below both fill prices, so an inferred remainder would be visible.
+    let flip_report = create_order_report_for_side(
+        Some(flip_order_id),
+        flip_venue_order_id,
+        instrument_id,
+        OrderSide::Sell,
+        OrderStatus::Filled,
+        Quantity::from("2.000"),
+        Quantity::from("2.000"),
+    )
+    .with_price(Price::from("3000.00"))
+    .with_avg_px(dec!(3150.0));
+    let close_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        flip_venue_order_id,
+        close_trade_id,
+        OrderSide::Sell,
+        Quantity::from("1.000"),
+        Price::from("3100.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Taker,
+        Some(flip_order_id),
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    let short_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        flip_venue_order_id,
+        short_trade_id,
+        OrderSide::Sell,
+        Quantity::from("1.000"),
+        Price::from("3200.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Taker,
+        Some(flip_order_id),
+        None,
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None,
+    );
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Short,
+        Quantity::from("1.000"),
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None,
+        None,
+        Some(dec!(3200.00)),
+    );
+    mass_status.add_order_reports(vec![open_report, flip_report]);
+    mass_status.add_fill_reports(vec![open_fill, close_fill, short_fill]);
+    mass_status.add_position_reports(vec![position_report]);
+
+    ctx.manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let cache = ctx.cache.borrow();
+    let flip_order = cache.order(&flip_order_id).unwrap();
+    assert_eq!(flip_order.status(), OrderStatus::Filled);
+    assert_eq!(flip_order.filled_qty(), Quantity::from("2.000"));
+    assert!(
+        flip_order.trade_ids().contains(&&close_trade_id),
+        "the closing fill must settle the order rather than be inferred: {:?}",
+        flip_order.trade_ids()
+    );
+    assert!(flip_order.trade_ids().contains(&&short_trade_id));
+    assert_eq!(
+        flip_order.avg_px(),
+        Some(dec!(3150.0)),
+        "both real fills price the order; nothing is inferred at the 3000 order price"
+    );
+
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(position.side, PositionSide::Short);
+    assert_eq!(position.quantity, Quantity::from("1.000"));
+    assert!(
+        !position.trade_ids.contains(&close_trade_id),
+        "the pre-boundary fill must not apply to the current lifecycle"
+    );
+    assert!(position.trade_ids.contains(&short_trade_id));
+}
+
+/// A partially filled cached order recovers its remaining executions at their real prices.
+///
+/// With 0.600 of 1.000 already recorded and the final 0.400 executing offline, the fills page
+/// carries only that 0.400. Reconciliation matches it to the cached order rather than inferring
+/// it, so the adapter must not withhold the report for not covering the full quantity on its own.
+#[tokio::test]
+async fn test_partially_filled_cached_order_recovers_remaining_fills_at_real_prices() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let client_order_id = ClientOrderId::from("O-PARTIAL-CACHED");
+    let venue_order_id = VenueOrderId::from("V-PARTIAL-CACHED");
+    let cached_trade_id = TradeId::from("T-PARTIAL-CACHED");
+    let remaining_trade_id = TradeId::from("T-PARTIAL-REMAINING");
+    let position_id = PositionId::new(format!("{instrument_id}-{strategy_id}"));
+
+    ctx.add_instrument(instrument.clone());
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3000.00"))
+        .build();
+    apply_submitted_and_accepted(&mut order, venue_order_id);
+    let cached_fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(cached_trade_id),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("0.600")),
+        Some(LiquiditySide::Maker),
+        Some(Money::from("0.30 USDT")),
+        Some(UnixNanos::from(1_000_000)),
+        Some(test_account_id()),
+    );
+    order.apply(cached_fill).unwrap();
+    {
+        let mut cache = ctx.cache.borrow_mut();
+        cache
+            .add_order(order, None, Some(test_client_id()), false)
+            .unwrap();
+        cache
+            .add_venue_order_id(&client_order_id, &venue_order_id, false)
+            .unwrap();
+    }
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let order_report = create_order_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+    )
+    .with_avg_px(dec!(3050.0));
+    let remaining_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        remaining_trade_id,
+        OrderSide::Buy,
+        Quantity::from("0.400"),
+        Price::from("3125.00"),
+        Money::from("0.20 USDT"),
+        LiquiditySide::Taker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    mass_status.add_order_reports(vec![order_report]);
+    mass_status.add_fill_reports(vec![remaining_fill]);
+
+    ctx.manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let cache = ctx.cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert!(order.trade_ids().contains(&&cached_trade_id));
+    assert!(
+        order.trade_ids().contains(&&remaining_trade_id),
+        "the remaining execution must be applied from its fill report: {:?}",
+        order.trade_ids()
+    );
+    assert_eq!(
+        order.trade_ids().len(),
+        2,
+        "no inferred fill alongside the real ones"
+    );
+    assert_eq!(
+        order.avg_px(),
+        Some(dec!(3050.0)),
+        "0.600 at 3000 and 0.400 at 3125 price the order; nothing is inferred"
+    );
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "test fixture sets distinct lifecycle fields"

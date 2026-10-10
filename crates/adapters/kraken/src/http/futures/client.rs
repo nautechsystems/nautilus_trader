@@ -1883,11 +1883,16 @@ impl KrakenFuturesHttpClient {
             // Kraken Futures order events API expects Unix timestamp in milliseconds
             let start_ms = start.map(|dt| dt.as_millisecond());
             let end_ms = end.map(|dt| dt.as_millisecond());
+            // Typed, so the mass status can tell a refusal from a fault; the message repeats the
+            // cause for callers that print only the outermost context.
             let response = self
                 .inner
                 .get_order_events(end_ms, start_ms, None)
                 .await
-                .map_err(|e| anyhow::anyhow!("get_order_events failed: {e}"))?;
+                .map_err(|e| {
+                    let message = format!("get_order_events failed: {e}");
+                    anyhow::Error::new(e).context(message)
+                })?;
 
             // A page that hands back a continuation token leaves events of the window unread.
             if response

@@ -18,7 +18,7 @@
 use indexmap::{IndexMap, IndexSet};
 use nautilus_model::{
     enums::{AvgPxReconciliation, OrderSide, PositionSide},
-    identifiers::VenueOrderId,
+    identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
 };
 use rust_decimal::Decimal;
@@ -128,4 +128,6 @@ pub struct ReconciliationResult {
     pub fills: IndexMap<VenueOrderId, Vec<FillReport>>,
     /// Orders whose fills recover order state only because synthetic fills replace their economics.
     pub order_only_ids: IndexSet<VenueOrderId>,
+    /// Fills that recover order state only because they precede the current position lifecycle.
+    pub order_only_fill_keys: IndexSet<(AccountId, InstrumentId, TradeId)>,
 }
