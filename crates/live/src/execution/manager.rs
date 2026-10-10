@@ -1717,15 +1717,15 @@ impl ExecutionManager {
     /// claimed, and its fills resolve to that retained position: the order's indexed position,
     /// else the position keyed by instrument and strategy when the cache holds it under NETTING
     /// and the engine routes fills under NETTING for the client the order's fills carry. An order
-    /// names the account of its report, of each unapplied fill and of any fill the engine infers
-    /// for it. An order whose fills are all applied already contributes nothing and is ignored,
-    /// as is one that does not name the position's account. Every other qualifying order for the
-    /// position must name only the position's account, and every side it is known by (the cached
-    /// order's, the report's and each unapplied fill's) must close the position. Together their
-    /// unapplied quantity, counting each trade of an order once, or every copy for an order
-    /// reconciliation creates from fills alone, must not exceed the open quantity. An order that
-    /// fails any of these needs evidence the retained position cannot give, so all of that
-    /// position's orders stay order-only and a warning names the position.
+    /// names the account of its report, of each unapplied fill and its own, the cached order's
+    /// account or else the reporting account. An order whose fills are all applied already
+    /// contributes nothing and is ignored, as is one that does not name the position's account.
+    /// Every other qualifying order for the position must name only the position's account, and
+    /// every side it is known by (the cached order's, the report's and each unapplied fill's) must
+    /// close the position. Together their unapplied quantity, counting each trade of a cached or
+    /// reported order once and every copy for any other order, must not exceed the open quantity.
+    /// An order that fails any of these needs evidence the retained position cannot give, so all
+    /// of that position's orders stay order-only and a warning names the position.
     /// An order that is neither cached nor claimed stays order-only, since its `EXTERNAL`
     /// attribution does not establish which position it closes. Its fills still move the venue's
     /// `EXTERNAL` inventory, so it withholds any reduction of an `EXTERNAL` position on its
@@ -1818,8 +1818,8 @@ impl ExecutionManager {
                 continue;
             }
 
-            // An order applies each of its trades once however many copies the venue reports,
-            // and the largest copy bounds what that trade can apply
+            // A cached or reported order applies each of its trades once however many copies the
+            // venue reports, and the largest copy bounds what that trade can apply
             let mut unapplied_trade_qtys: IndexMap<TradeId, Decimal> = IndexMap::new();
             for fill in fills
                 .iter()
@@ -1829,7 +1829,8 @@ impl ExecutionManager {
                 *qty = (*qty).max(fill.last_qty.as_decimal());
             }
             let unapplied_fill_qty: Decimal = if order.is_none() && report.is_none() {
-                // Reconciliation creates this order filled by every copy and infers unapplied ones
+                // Reconciliation fills an order it creates from fills alone with every copy, and a
+                // group it drops applies nothing, so counting every copy can only withhold
                 fills.iter().map(|fill| fill.last_qty.as_decimal()).sum()
             } else {
                 unapplied_trade_qtys.values().copied().sum()

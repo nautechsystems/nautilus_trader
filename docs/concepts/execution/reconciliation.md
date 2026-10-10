@@ -253,17 +253,18 @@ when all of these hold:
    origin, such as a synthetic `S-` order, uses the account's single client on the venue, if there
    is one.
 6. Every order resolving to the position with fills not yet applied names only the position's
-   account: its report's, each unapplied fill's, and that of any fill the engine infers for it,
-   which is the cached order's account, else the reporting account for an order reconciliation
-   creates.
+   account: its report's, each unapplied fill's, and its own, which is the cached order's account,
+   else the reporting account under which reconciliation creates an uncached order. The engine
+   applies a fill under the fill's account and infers one under the order's.
 7. Every side such an order is known by, the cached order's, the report's, and each unapplied
    fill's, is the position's closing side. An uncached order whose report states no side is not.
 8. For an `EXTERNAL` position, no bounded order that is neither cached nor claimed names the
    position's account and instrument on its report or fills. Its fills stay order-only, yet they
    move the venue's `EXTERNAL` inventory.
 9. The combined unapplied quantity of those orders does not exceed the open quantity, counting
-   each trade of an order once at its largest copy, or every copy for an order reconciliation
-   creates from fills alone.
+   each trade of a cached or reported order once at its largest copy, and every copy for an
+   uncached order with no report, since reconciliation fills an order it creates from fills alone
+   with every copy.
 
 An order whose fills the cache has already applied, such as the order that opened the position
 inside the window, is ignored. When a condition fails, the fills stay order-only. When condition 5

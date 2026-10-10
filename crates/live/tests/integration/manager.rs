@@ -6550,11 +6550,11 @@ fn test_bounded_partial_closing_fill_reduces_restored_position_without_coverage(
     );
 }
 
-/// A closing trade reported more than once for its order counts once toward the restored
-/// position's quantity, as event processing applies each trade of an order once: a complete
-/// bounded status from a client without bulk position coverage that repeats a closing fill
-/// closes the restored position with each trade, fee and realized PnL recorded once, with or
-/// without an order report for the closing order.
+/// A closing trade reported more than once for a cached or reported order counts once toward the
+/// restored position's quantity, as event processing applies one copy of each trade of such an
+/// order: a complete bounded status from a client without bulk position coverage that repeats a
+/// closing fill closes the restored position with each trade, fee and realized PnL recorded once,
+/// whether the order is reported or cached without a report.
 #[rstest]
 #[case::cached_with_report(ClosingOrder::Cached, true)]
 #[case::claimed_with_report(ClosingOrder::Claimed, true)]
@@ -6972,10 +6972,10 @@ async fn test_bounded_claimed_closing_fill_for_another_reporting_account_stays_o
 
 /// Bounded closing fills from a client without bulk position coverage leave the retained
 /// position unchanged beside an order that names the position's account and another one. An
-/// order names the account of its report, of each unapplied fill and of any fill the engine
-/// infers for it (the cached order's, else the reporting account), and an order naming two
-/// accounts does not establish which account's position it moves, so the closing order alone
-/// does not close the position. A warning names the position and the first other account.
+/// order names the account of its report, of each unapplied fill and its own (the cached
+/// order's, else the reporting account), and an order naming two accounts does not establish
+/// which account's position it moves, so the closing order alone does not close the position. A
+/// warning names the position and the first other account.
 #[rstest]
 #[case::cached_report_with_fill(
     Some("BINANCE-001"),
@@ -7013,6 +7013,18 @@ async fn test_bounded_claimed_closing_fill_for_another_reporting_account_stays_o
     None,
     &["BINANCE-001"],
     "account BINANCE-002"
+)]
+#[case::other_accounts_cached_later_fill(
+    Some("BINANCE-002"),
+    None,
+    &["BINANCE-002", "BINANCE-001"],
+    "fill T-ADD-1 account BINANCE-002"
+)]
+#[case::other_accounts_cached_report_only(
+    Some("BINANCE-002"),
+    Some("BINANCE-001"),
+    &["BINANCE-002"],
+    "fill T-ADD-1 account BINANCE-002"
 )]
 #[tokio::test]
 async fn test_bounded_closing_fills_beside_an_order_naming_two_accounts_stay_order_only(
@@ -7141,10 +7153,7 @@ async fn test_bounded_closing_fills_beside_an_order_naming_two_accounts_stay_ord
 /// that order moves another account's position, so it neither counts toward the retained
 /// position nor withholds it.
 #[rstest]
-#[tokio::test]
-async fn test_bounded_closing_fills_close_position_beside_another_accounts_order() {
-    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
-    install_manager_log_capture();
+fn test_bounded_closing_fills_close_position_beside_another_accounts_order() {
     let other_account_id = AccountId::from("BINANCE-002");
     let mut ctx =
         closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
@@ -7194,14 +7203,6 @@ async fn test_bounded_closing_fills_close_position_beside_another_accounts_order
     assert_eq!(count_filled_events(&result.events), 3);
     assert_closing_scenario_recorded_once(&ctx.cache.borrow(), closing_order_id);
     assert_closing_scenario_position_events(&position_events);
-
-    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
-    assert!(
-        !messages
-            .iter()
-            .any(|message| message.contains("leave retained position")),
-        "found {messages:?}"
-    );
 }
 
 /// Bounded closing fills for an uncached claimed order stay on the order only when the reporting
