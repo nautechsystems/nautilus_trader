@@ -64,7 +64,9 @@ use nautilus_model::{
         OrderStatus, PositionAdjustmentType, PriceType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    events::{AccountState, OrderEventAny, OrderFilled},
+    events::{
+        AccountState, OrderEventAny, OrderEventType, OrderFilled, OrderModifyRejected, OrderUpdated,
+    },
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
         StrategyId, Symbol, TradeId, Venue,
@@ -4550,6 +4552,241 @@ fn test_cascading_stop_loss_on_fill_settled_same_tick(crypto_perpetual_ethusdt: 
         "Expected 2 orders (entry + cascading stop-loss), was {}",
         bt_result.total_orders
     );
+}
+
+#[rstest]
+#[case::venue_update(true, false, 20, OrderStatus::Accepted)]
+#[case::control(false, false, 10, OrderStatus::Accepted)]
+#[case::pending_cancel(true, true, 20, OrderStatus::Canceled)]
+fn test_stop_modify_rejection_reaches_strategy(
+    #[case] add_entry: bool,
+    #[case] cancel_on_update: bool,
+    #[case] expected_quantity: u64,
+    #[case] expected_status: OrderStatus,
+) {
+    let instrument = option_underlying_equity(Venue::from("SIM"));
+    let instrument_id = instrument.id();
+
+    let bar_type = BarType::new(
+        instrument_id,
+        BarSpecification::new(1, BarAggregation::Hour, PriceType::Last),
+        AggregationSource::External,
+    );
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(instrument_id.venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Cash)
+                .book_type(BookType::L1_MBP)
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+                .starting_balances(vec![Money::from("100_000 USD")])
+                .use_reduce_only(true)
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                    DurationNanos::from_secs(1),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                )))
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    engine.add_instrument(&instrument).unwrap();
+    let rejections = Rc::new(RefCell::new(Vec::new()));
+    let stop_id = ClientOrderId::from("STOP-001");
+    engine
+        .add_strategy(StopModifyRejection {
+            core: StrategyCore::new(StrategyConfig {
+                strategy_id: Some(StrategyId::from("STOP-MODIFY-001")),
+                order_id_tag: Some("001".to_string()),
+                ..Default::default()
+            }),
+            bar_type,
+            bar_count: 0,
+            stop_id,
+            add_entry,
+            cancel_on_update,
+            rejections: Rc::clone(&rejections),
+        })
+        .unwrap();
+
+    let bars = (1..=8)
+        .map(|i| {
+            let ts = UnixNanos::new(i * 3_600_000_000_000);
+            Data::Bar(Bar::new(
+                bar_type,
+                Price::from("103.00"),
+                Price::from("104.00"),
+                Price::from("102.00"),
+                Price::from("103.00"),
+                Quantity::from(1_000_000),
+                ts,
+                ts,
+            ))
+        })
+        .collect();
+
+    engine.add_data(bars, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let stop = cache.order(&stop_id).unwrap();
+    let events = stop.events();
+
+    let request_events: Vec<_> = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                OrderEventAny::PendingUpdate(_)
+                    | OrderEventAny::Updated(_)
+                    | OrderEventAny::PendingCancel(_)
+                    | OrderEventAny::ModifyRejected(_)
+                    | OrderEventAny::Canceled(_)
+            )
+        })
+        .collect();
+
+    let expected_kinds = match (add_entry, cancel_on_update) {
+        (false, _) => vec![
+            OrderEventType::PendingUpdate,
+            OrderEventType::ModifyRejected,
+        ],
+        (true, false) => vec![
+            OrderEventType::PendingUpdate,
+            OrderEventType::Updated,
+            OrderEventType::ModifyRejected,
+        ],
+        (true, true) => vec![
+            OrderEventType::PendingUpdate,
+            OrderEventType::Updated,
+            OrderEventType::PendingCancel,
+            OrderEventType::ModifyRejected,
+            OrderEventType::Canceled,
+        ],
+    };
+
+    let actual_kinds: Vec<_> = request_events
+        .iter()
+        .map(|event| event.event_type())
+        .collect();
+    assert_eq!(actual_kinds, expected_kinds);
+    assert_eq!(stop.status(), expected_status);
+    assert_eq!(stop.quantity(), Quantity::from(expected_quantity));
+    assert_eq!(stop.trigger_price(), Some(Price::from("99.00")));
+    let rejections = rejections.borrow();
+    assert_eq!(rejections.len(), 1);
+    assert_eq!(rejections[0].0.client_order_id, stop_id);
+    assert_eq!(
+        rejections[0].0.reason,
+        Ustr::from(
+            "STOP_MARKET SELL order new stop px of 110.00 was in the market: bid=103.00, ask=103.00"
+        ),
+    );
+    assert_eq!(
+        rejections[0].1,
+        if cancel_on_update {
+            OrderStatus::PendingCancel
+        } else {
+            OrderStatus::Accepted
+        },
+    );
+    assert_eq!(
+        request_events.iter().find_map(|event| match event {
+            OrderEventAny::ModifyRejected(rejection) => Some(rejection),
+            _ => None,
+        }),
+        Some(&rejections[0].0),
+    );
+}
+
+#[derive(Debug)]
+struct StopModifyRejection {
+    core: StrategyCore,
+    bar_type: BarType,
+    bar_count: usize,
+    stop_id: ClientOrderId,
+    add_entry: bool,
+    cancel_on_update: bool,
+    rejections: Rc<RefCell<Vec<(OrderModifyRejected, OrderStatus)>>>,
+}
+
+nautilus_strategy!(StopModifyRejection, {
+    fn on_order_updated(&mut self, event: OrderUpdated) {
+        if self.cancel_on_update && event.client_order_id == self.stop_id {
+            self.cancel_order(self.stop_id, None, None).unwrap();
+        }
+    }
+
+    fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
+        let status = self.cache().order(&self.stop_id).unwrap().status();
+        self.rejections.borrow_mut().push((event, status));
+    }
+});
+
+impl DataActor for StopModifyRejection {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_bars(self.bar_type, None, None);
+        Ok(())
+    }
+
+    fn on_bar(&mut self, _bar: &Bar) -> anyhow::Result<()> {
+        self.bar_count += 1;
+
+        match self.bar_count {
+            1 | 4 if self.bar_count == 1 || self.add_entry => {
+                let order = self.order().market(
+                    self.bar_type.instrument_id(),
+                    OrderSide::Buy,
+                    Quantity::from(10),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+                self.submit_order(order, None, None, None)?;
+            }
+            3 => {
+                let order = self.order().stop_market(
+                    self.bar_type.instrument_id(),
+                    OrderSide::Sell,
+                    Quantity::from(10),
+                    Price::from("99.00"),
+                    None,
+                    None,
+                    None,
+                    Some(true),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(self.stop_id),
+                );
+                self.submit_order(order, None, None, None)?;
+            }
+            5 => {
+                self.modify_order(
+                    self.stop_id,
+                    Some(Quantity::from(10)),
+                    None,
+                    Some(Price::from("110.00")),
+                    None,
+                    None,
+                )?;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
 }
 
 struct EmulatedStopEntryOnQuote {

@@ -231,6 +231,7 @@ impl OrderStatus {
             (Self::Accepted, OrderEventAny::Rejected(_)) => Self::Rejected,  // StopLimit order
             (Self::Accepted, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::Accepted, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
+            (Self::Accepted, OrderEventAny::ModifyRejected(_)) => Self::Accepted,
             (Self::Accepted, OrderEventAny::CancelRejected(_)) => Self::Accepted,  // Acceptance can overtake a cancel rejection
             (Self::Accepted, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::Accepted, OrderEventAny::Triggered(_)) => Self::Triggered,
@@ -267,6 +268,7 @@ impl OrderStatus {
             (Self::Triggered, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::Triggered, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::Triggered, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
+            (Self::Triggered, OrderEventAny::ModifyRejected(_)) => Self::Triggered,
             (Self::Triggered, OrderEventAny::CancelRejected(_)) => Self::Triggered,
             (Self::Triggered, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::Triggered, OrderEventAny::Expired(_)) => Self::Expired,
@@ -275,6 +277,7 @@ impl OrderStatus {
             (Self::Triggered, OrderEventAny::FillVoided(_)) => Self::Triggered,
             (Self::PartiallyFilled, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::PartiallyFilled, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
+            (Self::PartiallyFilled, OrderEventAny::ModifyRejected(_)) => Self::PartiallyFilled,
             (Self::PartiallyFilled, OrderEventAny::CancelRejected(_)) => Self::PartiallyFilled,
             (Self::PartiallyFilled, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::PartiallyFilled, OrderEventAny::Expired(_)) => Self::Expired,
@@ -921,7 +924,7 @@ impl OrderCore {
 
         let rejection_status = if matches!(
             (&event, self.status),
-            (OrderEventAny::ModifyRejected(_), _)
+            (OrderEventAny::ModifyRejected(_), OrderStatus::PendingUpdate)
                 | (OrderEventAny::CancelRejected(_), OrderStatus::PendingCancel)
         ) {
             self.previous_status.ok_or(OrderError::NoPreviousState)?
@@ -1037,9 +1040,9 @@ impl OrderCore {
         // Do nothing else
     }
 
-    fn modify_rejected(&mut self, _event: &OrderModifyRejected, previous_status: OrderStatus) {
-        if self.status != OrderStatus::PendingCancel {
-            self.status = previous_status;
+    fn modify_rejected(&mut self, _event: &OrderModifyRejected, rejection_status: OrderStatus) {
+        if self.status == OrderStatus::PendingUpdate {
+            self.status = rejection_status;
         }
     }
 
@@ -4398,6 +4401,158 @@ mod tests {
             .apply(OrderEventAny::ModifyRejected(modify_rejected))
             .unwrap();
         assert_eq!(order.status(), OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    #[case::accepted(false, OrderStatus::Accepted)]
+    #[case::partially_filled(true, OrderStatus::PartiallyFilled)]
+    fn test_modify_rejected_after_venue_update(
+        #[case] partial_fill: bool,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(10))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+
+        if partial_fill {
+            order
+                .apply(OrderEventAny::Filled(
+                    OrderFilledSpec::builder()
+                        .last_qty(Quantity::from(3))
+                        .build(),
+                ))
+                .unwrap();
+        }
+
+        order
+            .apply(OrderEventAny::PendingUpdate(
+                OrderPendingUpdateSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .quantity(Quantity::from(20))
+                    .build(),
+            ))
+            .unwrap();
+        assert_eq!(order.status(), expected_status);
+
+        let rejection = OrderEventAny::ModifyRejected(OrderModifyRejectedSpec::builder().build());
+        order.apply(rejection.clone()).unwrap();
+
+        assert_eq!(order.status(), expected_status);
+        assert_eq!(order.quantity(), Quantity::from(20));
+        assert_eq!(order.last_event(), &rejection);
+    }
+
+    #[rstest]
+    fn test_modify_rejected_preserves_triggered_with_stale_previous_status() {
+        let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+            .instrument_id(InstrumentId::test_default())
+            .quantity(Quantity::from(10))
+            .price(Price::from("98.00"))
+            .trigger_price(Price::from("99.00"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::PendingUpdate(
+                OrderPendingUpdateSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Updated(
+                OrderUpdatedSpec::builder()
+                    .quantity(Quantity::from(20))
+                    .price(Price::from("97.00"))
+                    .trigger_price(Price::from("98.00"))
+                    .build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Triggered(
+                OrderTriggeredSpec::builder().build(),
+            ))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::Triggered);
+        assert_eq!(order.previous_status(), Some(OrderStatus::Accepted));
+
+        let rejection = OrderEventAny::ModifyRejected(OrderModifyRejectedSpec::builder().build());
+        order.apply(rejection.clone()).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Triggered);
+        assert_eq!(order.quantity(), Quantity::from(20));
+        assert_eq!(order.price(), Some(Price::from("97.00")));
+        assert_eq!(order.trigger_price(), Some(Price::from("98.00")));
+        assert_eq!(order.last_event(), &rejection);
+    }
+
+    #[rstest]
+    #[case::accepted(OrderStatus::Accepted)]
+    #[case::pending_update(OrderStatus::PendingUpdate)]
+    #[case::pending_cancel(OrderStatus::PendingCancel)]
+    fn test_modify_rejected_without_previous_status(#[case] status: OrderStatus) {
+        let mut order: MarketOrder = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(10))
+            .build()
+            .try_into()
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+
+        match status {
+            OrderStatus::PendingUpdate => order
+                .apply(OrderEventAny::PendingUpdate(
+                    OrderPendingUpdateSpec::builder().build(),
+                ))
+                .unwrap(),
+            OrderStatus::PendingCancel => order
+                .apply(OrderEventAny::PendingCancel(
+                    OrderPendingCancelSpec::builder().build(),
+                ))
+                .unwrap(),
+            _ => {}
+        }
+
+        order.previous_status = None;
+        let events_before = order.events().len();
+        let rejection = OrderEventAny::ModifyRejected(OrderModifyRejectedSpec::builder().build());
+        let result = order.apply(rejection.clone());
+
+        if status == OrderStatus::PendingUpdate {
+            assert!(matches!(result, Err(OrderError::NoPreviousState)));
+            assert_eq!(order.events().len(), events_before);
+        } else {
+            result.unwrap();
+            assert_eq!(order.last_event(), &rejection);
+        }
+
+        assert_eq!(order.status(), status);
+        assert_eq!(order.quantity(), Quantity::from(10));
+        assert_eq!(order.previous_status(), None);
     }
 
     #[rstest]
