@@ -25,6 +25,7 @@ PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
 NIGHTLY_TOOLCHAIN := $(shell bash scripts/tool-version.sh miri) # Pinned nightly, shared with Miri
 DOCSRS_TOOLCHAIN := $(shell bash scripts/tool-version.sh nightly)
 SOCKET_CLI_VERSION := $(shell bash scripts/tool-version.sh socket-cli)
+TOKEI_VERSION := $(shell bash scripts/tool-version.sh tokei)
 UV_VERSION := $(shell bash scripts/uv-version.sh)
 UV_REQUIRED_SPEC := $(shell awk -F'"' '\
 	/^\[tool\.uv\]/ { in_section=1; next } \
@@ -549,6 +550,16 @@ hawk: check-cargo-cooldown check-hawk-installed  #-- Find unnecessary Rust publi
 	$(info $(M) Running Hawk visibility checks...)
 	cargo hawk check -D warnings
 
+.PHONY: loc
+loc: check-tokei-installed  #-- Count Rust and Python lines of code, excluding test data, vendored, and generated code
+	tokei --types Rust,Python --hidden \
+		--exclude .git \
+		--exclude test_data \
+		--exclude 'patches/**' \
+		--exclude crates/adapters/binance/src/spot/sbe/generated \
+		--exclude crates/serialization/generated \
+		--exclude '*.pyi'
+
 #== Dependencies
 
 .PHONY: outdated
@@ -556,7 +567,7 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	sh scripts/check-outdated.sh
 	@printf "\n$(CYAN)Checking tool versions...$(RESET)\n"
 	@outdated_count=0; \
-	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-codspeed:$(CARGO_CODSPEED_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-fuzz:$(CARGO_FUZZ_VERSION) cargo-hawk:$(CARGO_HAWK_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) cbindgen:$(CBINDGEN_VERSION) flamegraph:$(FLAMEGRAPH_VERSION) lychee:$(LYCHEE_VERSION); do \
+	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-codspeed:$(CARGO_CODSPEED_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-fuzz:$(CARGO_FUZZ_VERSION) cargo-hawk:$(CARGO_HAWK_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) cbindgen:$(CBINDGEN_VERSION) flamegraph:$(FLAMEGRAPH_VERSION) lychee:$(LYCHEE_VERSION) tokei:$(TOKEI_VERSION); do \
 		name=$${tool%%:*}; current=$${tool##*:}; \
 		latest=$$(cargo search $$name --limit 1 2>/dev/null | head -1 | awk -F\" '{print $$2}'); \
 		if [ "$$current" != "$$latest" ]; then \
@@ -593,6 +604,7 @@ install-tools: check-binstall-installed update-uv  #-- Install required developm
 	&& cargo install cbindgen --version $(CBINDGEN_VERSION) --locked \
 	&& cargo install flamegraph --version $(FLAMEGRAPH_VERSION) --locked \
 	&& cargo install lychee --version $(LYCHEE_VERSION) --locked \
+	&& cargo install tokei --version $(TOKEI_VERSION) --locked \
 	&& cargo binstall prek --version $(PREK_VERSION) --no-confirm --locked
 
 #== Security
@@ -803,6 +815,14 @@ check-hawk-installed:  #-- Verify the pinned cargo-hawk version is installed
 	if [ "$$INSTALLED" != "$(CARGO_HAWK_VERSION)" ]; then \
 		printf "$(RED)cargo-hawk version mismatch: installed %s, expected %s (from Cargo.toml)$(RESET)\n" \
 			"$$INSTALLED" "$(CARGO_HAWK_VERSION)"; \
+		exit 1; \
+	fi
+
+.PHONY: check-tokei-installed
+check-tokei-installed:  #-- Verify tokei is installed
+	@if ! tokei --version >/dev/null 2>&1; then \
+		printf "$(YELLOW)tokei %s is required but not installed$(RESET)\n" "$(TOKEI_VERSION)"; \
+		printf "Install with: $(CYAN)cargo install tokei --version %s --locked$(RESET)\n" "$(TOKEI_VERSION)"; \
 		exit 1; \
 	fi
 

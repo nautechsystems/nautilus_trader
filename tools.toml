@@ -21,3 +21,6 @@ version = "0.0.30"
 
 [socket-cli]
 version = "1.4.1"
+
+[tokei]
+version = "15.0.0"
