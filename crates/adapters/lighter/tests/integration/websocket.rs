@@ -733,6 +733,61 @@ async fn test_subscribe_book_sends_outbound_slash_payload() {
     harness.client.disconnect().await.expect("disconnect");
 }
 
+#[rstest]
+#[case::deltas(true, false)]
+#[case::depth(false, true)]
+#[case::shared(true, true)]
+#[tokio::test]
+async fn test_new_session_resends_order_book_subscriptions(
+    #[case] deltas: bool,
+    #[case] depth: bool,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let id = harness.instrument(PERP_MARKET_INDEX);
+    let mut new_session_count = None;
+
+    for session in 0..2 {
+        if session == 1 {
+            harness.client.connect().await.expect("second connect");
+            new_session_count = Some(harness.client.subscription_count());
+        }
+
+        if deltas {
+            harness
+                .client
+                .subscribe_book(id)
+                .await
+                .expect("subscribe_book");
+        }
+
+        if depth {
+            harness
+                .client
+                .subscribe_book_depth(id)
+                .await
+                .expect("subscribe_book_depth");
+        }
+
+        await_subscribe_count(&state, session + 1).await;
+        await_subscription_count(&harness.client, 1).await;
+        harness.client.connect().await.expect("already connected");
+        assert_eq!(harness.client.subscription_count(), 1);
+        harness.client.disconnect().await.expect("disconnect");
+    }
+
+    assert_eq!(new_session_count, Some(0));
+    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        state.subscribes().await,
+        vec![
+            json!({"type": "subscribe", "channel": "order_book/0"}),
+            json!({"type": "subscribe", "channel": "order_book/0"}),
+        ]
+    );
+}
+
 #[tokio::test]
 async fn test_unsubscribe_book_sends_outbound_payload() {
     let state = Arc::new(TestServerState::default());
@@ -2251,6 +2306,164 @@ async fn test_multi_market_book_state_isolation() {
     );
 
     harness.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::deltas(false)]
+#[case::depth(true)]
+#[tokio::test]
+async fn test_old_session_book_failure_preserves_current_session(#[case] depth: bool) {
+    let state = Arc::new(TestServerState::default());
+    state.book_ack_mode.store(1, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let id = harness.instrument(PERP_MARKET_INDEX);
+    let previous_client = harness.client.clone();
+
+    let mut pending = Box::pin(async {
+        if depth {
+            previous_client.subscribe_book_depth(id).await
+        } else {
+            previous_client.subscribe_book(id).await
+        }
+    });
+
+    assert!(futures_util::poll!(pending.as_mut()).is_pending());
+    await_subscribe_count(&state, 1).await;
+    harness.client.disconnect().await.expect("first disconnect");
+    state.book_ack_mode.store(0, Ordering::SeqCst);
+    harness.client.connect().await.expect("second connect");
+    if depth {
+        harness
+            .client
+            .subscribe_book_depth(id)
+            .await
+            .expect("current depth");
+    } else {
+        harness
+            .client
+            .subscribe_book(id)
+            .await
+            .expect("current deltas");
+    }
+
+    let error = pending
+        .await
+        .expect_err("previous handler drops pending result");
+    assert!(
+        error
+            .to_string()
+            .contains("handler dropped subscription result for order_book:0")
+    );
+    state
+        .drop_after_next_subscribe
+        .store(true, Ordering::Relaxed);
+    harness
+        .client
+        .subscribe_quotes(id)
+        .await
+        .expect("reconnect trigger");
+    let event = next_event_within(&mut harness.client, Duration::from_secs(5))
+        .await
+        .expect("reconnect event");
+    assert!(matches!(
+        event,
+        NautilusWsMessage::Reconnected {
+            connection_epoch: 1
+        }
+    ));
+    await_subscribe_count(&state, 5).await;
+
+    state
+        .enqueue_push(book_snapshot_frame_for_market(PERP_MARKET_INDEX))
+        .await;
+    harness
+        .client
+        .subscribe_quotes(harness.instrument(SECOND_MARKET_INDEX))
+        .await
+        .expect("snapshot trigger");
+    let snapshot = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("current book snapshot");
+    harness
+        .client
+        .disconnect()
+        .await
+        .expect("second disconnect");
+
+    match (depth, snapshot) {
+        (true, NautilusWsMessage::Depth(book)) => assert_eq!(book.instrument_id, id),
+        (false, NautilusWsMessage::Deltas(book)) => assert_eq!(book.instrument_id, id),
+        (_, event) => panic!("expected current book snapshot, was {event:?}"),
+    }
+
+    let subs = state.subscribes().await;
+    assert_eq!(subs.len(), 6);
+    assert_eq!(
+        subs.iter()
+            .filter(|s| s["channel"] == "order_book/0")
+            .count(),
+        3
+    );
+    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn test_new_session_reconnect_replays_only_current_subscriptions() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let id0 = harness.instrument(PERP_MARKET_INDEX);
+    let id1 = harness.instrument(SECOND_MARKET_INDEX);
+
+    harness
+        .client
+        .subscribe_quotes(id0)
+        .await
+        .expect("old session quotes");
+    harness.client.disconnect().await.expect("first disconnect");
+    harness.client.connect().await.expect("second connect");
+
+    state
+        .drop_after_next_subscribe
+        .store(true, Ordering::Relaxed);
+    harness
+        .client
+        .subscribe_book(id1)
+        .await
+        .expect("new session book");
+
+    let event = next_event_within(&mut harness.client, Duration::from_secs(5))
+        .await
+        .expect("reconnect event");
+    assert!(matches!(
+        event,
+        NautilusWsMessage::Reconnected {
+            connection_epoch: 1
+        }
+    ));
+    await_subscribe_count(&state, 3).await;
+    harness
+        .client
+        .subscribe_quotes(id1)
+        .await
+        .expect("current session quotes");
+    harness
+        .client
+        .disconnect()
+        .await
+        .expect("second disconnect");
+
+    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        state.subscribes().await,
+        vec![
+            json!({"type": "subscribe", "channel": "ticker/0"}),
+            json!({"type": "subscribe", "channel": "order_book/1"}),
+            json!({"type": "subscribe", "channel": "order_book/1"}),
+            json!({"type": "subscribe", "channel": "ticker/1"}),
+        ]
+    );
 }
 
 #[tokio::test]
