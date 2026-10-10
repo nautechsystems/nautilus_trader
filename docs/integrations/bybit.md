@@ -444,6 +444,13 @@ it emits neither a `FillReport` nor an `OrderFilled` event and does not change l
 quantity. During reconciliation, funding records do not count toward the requested fill-report
 limit.
 
+Mass status queries order and fill history over one window, ending at the request time and capped
+at the venue's seven-day query span. The report set is marked incomplete when the lookback is
+unspecified or longer than seven days, when SPOT is requested (bulk position reports cannot cover
+it), or when an order or fill row cannot be resolved or parsed. Historical fills without an
+explicit position report recover order state only, including SPOT fills against retained cached
+positions; see [Bounded history safety](../concepts/execution/reconciliation.md#bounded-history-safety).
+
 Bybit also publishes an ADL ranking on position updates via the
 `adlRankIndicator` field. The range is 0 (flat / no position) to 5 (next to
 deleverage). The adapter logs a warning whenever an open position carries a

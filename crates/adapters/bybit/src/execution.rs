@@ -25,14 +25,14 @@ use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
+use jiff::Timestamp;
 use nautilus_common::{
     clients::ExecutionClient,
     live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -60,7 +60,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::BYBIT_VENUE,
+        consts::{BYBIT_HISTORY_WINDOW_MINS, BYBIT_VENUE},
         credential::credential_env_vars,
         enums::{
             BybitAccountType, BybitEnvironment, BybitOrderSide, BybitOrderSmpType, BybitOrderType,
@@ -1201,23 +1201,72 @@ impl ExecutionClient for BybitExecutionClient {
 
         let ts_now = self.clock.get_time_ns();
 
-        let start = lookback_mins
+        let end_ms = ts_now.as_millis();
+        let floor_ms =
+            end_ms.saturating_sub(DurationNanos::from_mins(BYBIT_HISTORY_WINDOW_MINS).as_millis());
+        let requested_start_ms = lookback_mins
             .map(DurationNanos::try_from_mins)
             .transpose()?
-            .map(|lookback| ts_now.saturating_sub(lookback));
+            .map(|lookback| end_ms.saturating_sub(lookback.as_millis()));
+        let start_ms = requested_start_ms.unwrap_or(floor_ms).max(floor_ms);
+        let report_start = UnixNanos::from_millis(start_ms);
+        let mut reports_complete = requested_start_ms.is_some_and(|start| start >= floor_ms)
+            && !self.product_types().contains(&BybitProductType::Spot);
+        let start = Timestamp::from_millisecond(start_ms as i64)?;
+        let end = Timestamp::from_millisecond(end_ms as i64)?;
 
-        let order_cmd = GenerateOrderStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .open_only(false)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let order_reports_fut = async {
+            let mut reports = Vec::new();
+            let mut complete = true;
 
-        let fill_cmd = GenerateFillReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            for product_type in self.product_types() {
+                let (mut fetched, source_complete) = self
+                    .http_client
+                    .collect_order_status_reports(
+                        self.core.account_id,
+                        product_type,
+                        None,
+                        false,
+                        Some(start),
+                        Some(end),
+                        None,
+                    )
+                    .await?;
+                reports.append(&mut fetched);
+                complete &= source_complete;
+            }
+            reports.retain(|report| {
+                report.order_status.is_open()
+                    || report.order_status.is_inflight()
+                    || report.ts_last >= report_start
+            });
+
+            for report in &reports {
+                self.cache_reconciliation_order_identity(report);
+            }
+            Ok::<_, anyhow::Error>((reports, complete))
+        };
+        let fill_reports_fut = async {
+            let mut reports = Vec::new();
+            let mut complete = true;
+
+            for product_type in self.product_types() {
+                let (mut fetched, source_complete) = self
+                    .http_client
+                    .collect_fill_reports(
+                        self.core.account_id,
+                        product_type,
+                        None,
+                        Some(start_ms as i64),
+                        Some(end_ms as i64),
+                        None,
+                    )
+                    .await?;
+                reports.append(&mut fetched);
+                complete &= source_complete;
+            }
+            Ok::<_, anyhow::Error>((reports, complete))
+        };
 
         let position_reports_fut = async {
             let product_types = self.product_types();
@@ -1235,11 +1284,8 @@ impl ExecutionClient for BybitExecutionClient {
                 .await
         };
 
-        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
-            self.generate_fill_reports(fill_cmd),
-            position_reports_fut,
-        )?;
+        let ((order_reports, orders_complete), (fill_reports, fills_complete), position_reports) =
+            tokio::try_join!(order_reports_fut, fill_reports_fut, position_reports_fut,)?;
 
         log::info!("Received {} OrderStatusReports", order_reports.len());
         log::info!("Received {} FillReports", fill_reports.len());
@@ -1253,6 +1299,8 @@ impl ExecutionClient for BybitExecutionClient {
             None,
         );
 
+        reports_complete &= orders_complete && fills_complete;
+        mass_status.set_report_window(Some(report_start), reports_complete);
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);

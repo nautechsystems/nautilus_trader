@@ -2500,9 +2500,9 @@ impl BybitHttpClient {
             .instruments_cache
             .get_cloned(&instrument_id.symbol.inner())
         {
-            let base_currency = instrument
-                .base_currency()
-                .expect("SPOT instrument should have base currency");
+            let base_currency = instrument.base_currency().ok_or_else(|| {
+                anyhow::anyhow!("SPOT instrument {instrument_id} has no base currency")
+            })?;
             let coin = base_currency.code;
             let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
@@ -4126,6 +4126,31 @@ impl BybitHttpClient {
         end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let (reports, _) = self
+            .collect_order_status_reports(
+                account_id,
+                product_type,
+                instrument_id,
+                open_only,
+                start,
+                end,
+                limit,
+            )
+            .await?;
+        Ok(reports)
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) async fn collect_order_status_reports(
+        &self,
+        account_id: AccountId,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        open_only: bool,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
         // Extract symbol parameter from instrument_id if provided
         let symbol_param = if let Some(id) = instrument_id.as_ref() {
             let symbol_str = id.symbol.as_str();
@@ -4430,43 +4455,54 @@ impl BybitHttpClient {
         let ts_init = self.generate_ts_init();
 
         let mut reports = Vec::new();
+        let mut reports_complete = true;
 
         for order in all_collected_orders {
-            if let Some(ref instrument_id) = instrument_id {
-                let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+            if instrument_id.is_none() && order.symbol.is_empty() {
+                log::warn!(
+                    "Skipping order report with empty symbol: order_id={}",
+                    order.order_id,
+                );
+                reports_complete = false;
+                continue;
+            }
 
-                if let Ok(report) =
-                    parse_order_status_report(&order, &instrument, account_id, ts_init)
-                {
-                    reports.push(report);
-                }
-            } else {
-                // Bybit returns raw symbol (e.g. "ETHUSDT"), need to add product suffix for cache lookup
-                // Note: instruments are stored in cache by symbol only (without venue)
-                if !order.symbol.is_empty() {
-                    let symbol_with_product =
-                        Symbol::from_ustr_unchecked(make_bybit_symbol(order.symbol, product_type));
-
-                    let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                        log::debug!(
-                            "Skipping order report for instrument not in cache: symbol={}, full_symbol={}",
-                            order.symbol,
-                            symbol_with_product
-                        );
-                        continue;
-                    };
-
-                    match parse_order_status_report(&order, &instrument, account_id, ts_init) {
-                        Ok(report) => reports.push(report),
-                        Err(e) => {
-                            log::error!("Failed to parse order status report: {e}");
-                        }
+            let symbol = instrument_id.map_or_else(
+                || Symbol::from_ustr_unchecked(make_bybit_symbol(order.symbol, product_type)),
+                |id| id.symbol,
+            );
+            let instrument_id_for_log = InstrumentId::new(symbol, *BYBIT_VENUE);
+            let instrument = match self.instrument_from_cache(&symbol) {
+                Ok(instrument) => instrument,
+                Err(e) => {
+                    if instrument_id.is_some() {
+                        return Err(e);
                     }
+                    log::warn!(
+                        "Skipping order report for instrument not in cache: order_id={}, symbol={}, instrument={instrument_id_for_log}: {e}",
+                        order.order_id,
+                        order.symbol,
+                    );
+                    reports_complete = false;
+                    continue;
+                }
+            };
+
+            match parse_order_status_report(&order, &instrument, account_id, ts_init) {
+                Ok(report) => reports.push(report),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to parse order status report: order_id={}, symbol={}, instrument={}: {e}",
+                        order.order_id,
+                        order.symbol,
+                        instrument.id(),
+                    );
+                    reports_complete = false;
                 }
             }
         }
 
-        Ok(reports)
+        Ok((reports, reports_complete))
     }
 
     /// Fetches execution history (fills) for the account and returns a list of [`FillReport`]s.
@@ -4489,6 +4525,21 @@ impl BybitHttpClient {
         end: Option<i64>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        let (reports, _) = self
+            .collect_fill_reports(account_id, product_type, instrument_id, start, end, limit)
+            .await?;
+        Ok(reports)
+    }
+
+    pub(crate) async fn collect_fill_reports(
+        &self,
+        account_id: AccountId,
+        product_type: BybitProductType,
+        instrument_id: Option<InstrumentId>,
+        start: Option<i64>,
+        end: Option<i64>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<(Vec<FillReport>, bool)> {
         // Build query parameters
         let symbol = if let Some(id) = instrument_id {
             let bybit_symbol = BybitSymbol::new(id.symbol.as_str())?;
@@ -4556,6 +4607,7 @@ impl BybitHttpClient {
 
         let ts_init = self.generate_ts_init();
         let mut reports = Vec::new();
+        let mut reports_complete = true;
 
         for execution in all_executions {
             // Get instrument for this execution
@@ -4563,24 +4615,32 @@ impl BybitHttpClient {
             let symbol_with_product =
                 Symbol::from_ustr_unchecked(make_bybit_symbol(execution.symbol, product_type));
 
+            let instrument_id_for_log = InstrumentId::new(symbol_with_product, *BYBIT_VENUE);
             let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                log::debug!(
-                    "Skipping fill report for instrument not in cache: symbol={}, full_symbol={}",
+                log::warn!(
+                    "Skipping fill report for instrument not in cache: order_id={}, symbol={}, instrument={instrument_id_for_log}",
+                    execution.order_id,
                     execution.symbol,
-                    symbol_with_product
                 );
+                reports_complete = false;
                 continue;
             };
 
             match parse_fill_report(&execution, account_id, &instrument, ts_init) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
-                    log::error!("Failed to parse fill report: {e}");
+                    log::warn!(
+                        "Failed to parse fill report: order_id={}, symbol={}, instrument={}: {e}",
+                        execution.order_id,
+                        execution.symbol,
+                        instrument.id(),
+                    );
+                    reports_complete = false;
                 }
             }
         }
 
-        Ok(reports)
+        Ok((reports, reports_complete))
     }
 
     /// Fetches position information for the account and returns a list of [`PositionStatusReport`]s.
