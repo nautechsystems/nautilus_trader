@@ -8,8 +8,10 @@
 - `http_order_book_depth.json` and `http_orders.json` are schema fixtures for REST models whose
   exact public endpoint response was not available without auth or was blocked for unauthenticated
   access during fixture collection.
-- `ws_*.json` fixtures follow the official Lighter WebSocket documentation examples and message
-  field definitions.
+- Unless noted below, `ws_*.json` fixtures follow the official Lighter WebSocket documentation
+  examples and message field definitions.
+- `ws_order_book_subscribe_failed.json` is a constructed error fixture for subscription-failure
+  routing tests. Its `channel` attribution is assumed until a genuine live 30012 frame is captured.
 - `ws_spot_market_stats_subscribed_single_empty_mid.json` is a verbatim live Testnet
   `subscribed/spot_market_stats` frame captured on 2026-09-18, pinning the venue's empty-string
   mid price on a market with no resting quotes on one side.

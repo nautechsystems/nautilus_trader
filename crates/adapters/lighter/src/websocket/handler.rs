@@ -988,27 +988,6 @@ impl FeedHandler {
         }
     }
 
-    fn fail_inflight_subscriptions(&mut self, message: &str) {
-        let mut topics: Vec<(Ustr, u64)> = self
-            .inflight_subs
-            .iter()
-            .map(|(topic, generation)| (*topic, *generation))
-            .collect();
-        topics.sort_unstable();
-
-        for (topic, generation) in topics {
-            if let Some(market_index) = order_book_market_index_from_topic(topic.as_str()) {
-                self.reject_book_subscription(
-                    market_index,
-                    generation,
-                    LighterWsError::Client(message.into()),
-                );
-            } else {
-                self.fail_subscription_attempt(topic, message);
-            }
-        }
-    }
-
     fn schedule_subscription_retry(&mut self, topic: Ustr, generation: u64, message: &str) {
         if self.inflight_subs.get(&topic) != Some(&generation) {
             return;
@@ -1183,10 +1162,7 @@ impl FeedHandler {
         }
 
         if subscription_code == Some(LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED) {
-            self.fail_inflight_subscriptions(&format!(
-                "venue rejected the WebSocket subscribe with code \
-                 {LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED}",
-            ));
+            self.handle_subscribe_failure(value);
             return (true, None);
         }
 
@@ -1302,6 +1278,51 @@ impl FeedHandler {
                 }
                 (false, None)
             }
+        }
+    }
+
+    fn handle_subscribe_failure(&mut self, value: &serde_json::Value) {
+        let message = format!(
+            "venue rejected the WebSocket subscribe with code \
+             {LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED}",
+        );
+
+        let channel = value
+            .get("channel")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| {
+                value
+                    .get("error")
+                    .and_then(|e| e.get("channel"))
+                    .and_then(serde_json::Value::as_str)
+            })
+            .filter(|channel| !channel.is_empty());
+
+        let Some(channel) = channel else {
+            log::warn!(
+                "Lighter subscribe error code={LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED} channel=none: retrying inflight subscriptions"
+            );
+            self.retry_inflight_subscriptions(&message);
+            return;
+        };
+
+        let topic = Ustr::from(channel.replace('/', ":").as_str());
+
+        let Some(generation) = self.inflight_subs.get(&topic).copied() else {
+            log::warn!(
+                "Lighter subscribe error code={LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED} channel={channel}: no matching inflight subscription"
+            );
+            return;
+        };
+
+        if let Some(market_index) = order_book_market_index_from_topic(topic.as_str()) {
+            self.reject_book_subscription(
+                market_index,
+                generation,
+                LighterWsError::Client(message),
+            );
+        } else {
+            self.fail_subscription_attempt(topic, &message);
         }
     }
 
@@ -2389,14 +2410,18 @@ mod tests {
 
     impl Log for OutboundLogCapture {
         fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-            metadata.level() == Level::Debug
+            matches!(metadata.level(), Level::Debug | Level::Warn)
                 && metadata.target() == "nautilus_lighter::websocket::handler"
         }
 
         fn log(&self, record: &Record<'_>) {
             if self.enabled(record.metadata()) {
                 let message = record.args().to_string();
-                if message.starts_with("Sending Lighter unsubscribe") {
+                if (record.level() == Level::Debug
+                    && message.starts_with("Sending Lighter unsubscribe"))
+                    || (record.level() == Level::Warn
+                        && message.starts_with("Lighter subscribe error"))
+                {
                     self.messages.lock().push(message);
                 }
             }
@@ -2432,7 +2457,7 @@ mod tests {
     const WS_BOOK_SUBSCRIBED_BAD_BODY: &str =
         include_str!("../../test_data/ws_order_book_subscribed_bad_body.json");
     const WS_SUBSCRIBE_FAILED: &str =
-        r#"{"type":"error","code":30012,"message":"failed to subscribe"}"#;
+        include_str!("../../test_data/ws_order_book_subscribe_failed.json");
     const BOOK_SUBSCRIBE_REJECTION: &str =
         "client error: venue rejected the WebSocket subscribe with code 30012: order_book:0";
 
@@ -2550,7 +2575,8 @@ mod tests {
         if retry {
             handler.retry_inflight_subscriptions("venue rejection");
         } else {
-            handler.fail_inflight_subscriptions("venue rejection");
+            let value = serde_json::json!({"code": 30012, "channel": "order_book:0"});
+            handler.handle_control_value(&value);
         }
 
         let rejected = confirmed && gate_open;
@@ -2569,7 +2595,10 @@ mod tests {
             }
             BookRecoveryOutcome::Rejected(LighterWsError::Client(message)) => {
                 assert!(confirmed && gate_open && !retry);
-                assert_eq!(message, "venue rejection");
+                assert_eq!(
+                    message,
+                    "venue rejected the WebSocket subscribe with code 30012"
+                );
             }
             outcome => panic!("unexpected recovery outcome: {outcome:?}"),
         }
@@ -3183,11 +3212,11 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_outbound_unsubscribe_log_omits_payload_body() {
+    async fn test_subscription_logs_omit_payload_body() {
         log::set_logger(&OUTBOUND_LOG_CAPTURE).expect("test logger already installed");
         log::set_max_level(LevelFilter::Debug);
 
-        let handler = make_handler_with_account();
+        let mut handler = make_handler_with_account();
         let account_index = SECRET_MARKER.parse::<i64>().unwrap();
         let channel = LighterWsChannel::AccountAll(account_index);
         let payload_len = serde_json::to_string(&LighterWsRequest::unsubscribe(
@@ -3198,6 +3227,10 @@ mod tests {
         OUTBOUND_LOG_CAPTURE.clear();
 
         handler.dispatch_unsubscribe(channel).await;
+        handler.handle_control_value(&json!({"code": 30012, "auth": SECRET_MARKER}));
+        handler.handle_control_value(&json!({
+            "code": 30012, "channel": "trade/999", "auth": SECRET_MARKER,
+        }));
 
         let messages = OUTBOUND_LOG_CAPTURE.messages();
 
@@ -3213,6 +3246,12 @@ mod tests {
             }),
             "unsubscribe metadata missing or inaccurate: {messages:?}"
         );
+        assert!(messages.iter().any(|message| {
+            message == "Lighter subscribe error code=30012 channel=none: retrying inflight subscriptions"
+        }));
+        assert!(messages.iter().any(|message| {
+            message == "Lighter subscribe error code=30012 channel=trade/999: no matching inflight subscription"
+        }));
     }
 
     fn mark_subscription_inflight(
@@ -5446,6 +5485,112 @@ mod tests {
         assert_eq!(handler.subscriptions.len(), 1);
     }
 
+    #[rstest]
+    #[case::nonbook_top_level(false, false, "market_stats:0")]
+    #[case::nonbook_wrapped(false, true, "market_stats/0")]
+    #[case::book_top_level(true, false, "order_book/0")]
+    #[case::book_wrapped(true, true, "order_book:0")]
+    #[tokio::test]
+    async fn subscribe_failure_preserves_distinct_inflight_subscription(
+        #[case] book: bool,
+        #[case] wrapped: bool,
+        #[case] channel: &str,
+    ) {
+        let mut handler = make_handler_with_account();
+        let (failed_tx, mut failed_rx) = tokio::sync::oneshot::channel();
+        let (valid_tx, mut valid_rx) = tokio::sync::oneshot::channel();
+
+        let failed_channel = if book {
+            LighterWsChannel::OrderBook(0)
+        } else {
+            LighterWsChannel::MarketStats(LighterMarketSelection::Market(0))
+        };
+
+        let (failed_topic, _) =
+            mark_subscription_inflight(&mut handler, failed_channel, Some(failed_tx));
+        let (valid_topic, generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::Trade(7), Some(valid_tx));
+        let error = serde_json::json!({"code": 30012, "channel": channel});
+
+        let value = if wrapped {
+            serde_json::json!({"error": error})
+        } else {
+            error
+        };
+
+        let (matched, message) = handler.handle_control_value(&value);
+        let pending = valid_rx.try_recv();
+        let inflight = handler.inflight_subs.get(&valid_topic).copied();
+        let retries = handler.subscription_attempts[&valid_topic].retries;
+        let rejected = failed_rx.try_recv();
+        let failure_retained = handler.subscription_attempts.contains_key(&failed_topic);
+        handler.handle_control_value(&serde_json::json!({
+            "type": "subscribed", "channel": "trade:7"
+        }));
+
+        let expected_error = if book {
+            BOOK_SUBSCRIBE_REJECTION.to_string()
+        } else {
+            "subscription market_stats:0 failed after 1 attempts: venue rejected the WebSocket \
+             subscribe with code 30012"
+                .to_string()
+        };
+
+        assert!(matched);
+        assert!(message.is_none());
+        assert_eq!(
+            pending,
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        );
+        assert_eq!(inflight, Some(generation));
+        assert_eq!(retries, 0);
+        assert_eq!(rejected, Ok(Err(expected_error)));
+        assert!(!failure_retained);
+        assert_eq!(valid_rx.try_recv(), Ok(Ok(())));
+        assert!(handler.inflight_subs.is_empty());
+        assert!(handler.subscription_attempts.is_empty());
+        assert_eq!(handler.subscriptions.len(), 1);
+    }
+
+    #[rstest]
+    #[case::unknown("trade:999")]
+    #[case::confirmed("trade:7")]
+    #[case::queued("market_stats:0")]
+    #[tokio::test]
+    async fn subscribe_failure_ignores_channel_without_inflight_attempt(#[case] channel: &str) {
+        let mut handler = make_handler_with_account();
+        let (response, mut result) = tokio::sync::oneshot::channel();
+        let (topic, generation) =
+            mark_subscription_inflight(&mut handler, LighterWsChannel::Trade(3), Some(response));
+        handler.subscriptions.mark_subscribe("trade:7");
+        handler.subscriptions.confirm_subscribe("trade:7");
+        handler.queue_subscribe(
+            LighterWsChannel::MarketStats(LighterMarketSelection::Market(0)),
+            None,
+            None,
+        );
+        let (queued_topic, queued_generation) = *handler.pending_subs.front().unwrap();
+
+        handler.handle_control_value(&serde_json::json!({"code": 30012, "channel": channel}));
+
+        assert_eq!(
+            result.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        );
+        assert_eq!(handler.inflight_subs.get(&topic), Some(&generation));
+        assert_eq!(
+            handler.subscription_attempts[&queued_topic].generation,
+            queued_generation
+        );
+        assert_eq!(handler.subscription_attempts[&queued_topic].retries, 0);
+        assert_eq!(
+            handler.pending_subs.iter().copied().collect::<Vec<_>>(),
+            [(queued_topic, queued_generation)]
+        );
+        assert!(handler.subscription_retries.is_empty());
+        assert_eq!(handler.subscriptions.len(), 1);
+    }
+
     #[tokio::test]
     async fn failed_subscribe_error_fails_every_waiter_for_the_generation() {
         let mut handler = make_handler_with_account();
@@ -5457,7 +5602,10 @@ mod tests {
 
         let (matched, msg) = handle_control_text(
             &mut handler,
-            r#"{"type":"error","code":30012,"message":"failed to subscribe"}"#,
+            &serde_json::json!({
+                "type": "error", "code": 30012, "channel": "market_stats:0"
+            })
+            .to_string(),
         );
 
         assert!(matched);
@@ -5472,8 +5620,11 @@ mod tests {
         assert!(handler.subscriptions.is_empty());
     }
 
+    #[rstest]
+    #[case::rate_limit(30009)]
+    #[case::unattributed_failure(30012)]
     #[tokio::test]
-    async fn rate_limit_retry_exhaustion_fails_waiter_and_clears_intent() {
+    async fn subscription_retry_exhaustion_fails_waiter_and_clears_intent(#[case] code: u64) {
         let mut handler = make_handler_with_account();
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         let (topic, _) =
@@ -5484,28 +5635,33 @@ mod tests {
             .expect("subscription attempt")
             .retries = SUBSCRIBE_RETRY_MAX;
 
-        let (matched, msg) = handle_control_text(
-            &mut handler,
-            r#"{"type":"error","code":30009,"message":"rate limit exceeded"}"#,
-        );
+        let (matched, msg) =
+            handle_control_text(&mut handler, &serde_json::json!({"code": code}).to_string());
 
         assert!(matched);
         assert!(msg.is_none());
         assert_eq!(
             response_rx.await.unwrap(),
-            Err(
+            Err(format!(
                 "subscription trade:7 failed after 6 attempts: venue rejected the WebSocket \
-                 subscribe with code 30009"
-                    .to_string(),
-            ),
+                 subscribe with code {code}"
+            )),
         );
         assert!(handler.inflight_subs.is_empty());
         assert!(handler.subscription_attempts.is_empty());
         assert!(handler.subscriptions.is_empty());
     }
 
+    #[rstest]
+    #[case::rate_limit(serde_json::json!({"code": 30009}))]
+    #[case::unattributed_failure(serde_json::json!({"code": 30012}))]
+    #[case::wrapped_failure(serde_json::json!({"error": {"code": 30012}}))]
+    #[case::invalid_channel(serde_json::json!({"code": 30012, "channel": 7}))]
+    #[case::empty_channel(serde_json::json!({"code": 30012, "channel": ""}))]
     #[tokio::test]
-    async fn rate_limit_error_retries_each_inflight_topic_with_new_generation() {
+    async fn subscription_error_retries_each_inflight_topic_with_new_generation(
+        #[case] value: serde_json::Value,
+    ) {
         let mut handler = make_handler_with_account();
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.set_command_sender(cmd_tx);
@@ -5522,10 +5678,7 @@ mod tests {
             Some(candle_tx),
         );
 
-        let (matched, msg) = handle_control_text(
-            &mut handler,
-            r#"{"type":"error","code":30009,"message":"rate limit exceeded"}"#,
-        );
+        let (matched, msg) = handler.handle_control_value(&value);
 
         assert!(matched);
         assert!(msg.is_none());

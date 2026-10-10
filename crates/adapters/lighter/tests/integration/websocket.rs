@@ -140,6 +140,7 @@ fn spot_instrument(
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     book_ack_mode: Arc<AtomicUsize>,
+    nonbook_acks_silent: Arc<AtomicUsize>,
     upgrade_attempts: Arc<AtomicUsize>,
     transient_upgrade_failures: Arc<AtomicUsize>,
     reject_upgrade: Arc<AtomicBool>,
@@ -240,7 +241,14 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let mode = if channel.starts_with("order_book:") {
                             state.book_ack_mode.load(Ordering::SeqCst)
                         } else {
-                            0
+                            usize::from(
+                                state
+                                    .nonbook_acks_silent
+                                    .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                                        remaining.checked_sub(1)
+                                    })
+                                    .is_ok(),
+                            )
                         };
 
                         state.subscribes.lock().await.push(value.clone());
@@ -250,7 +258,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                                 json!({"type":"error", "code": LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED, "message": format!("Already Subscribed to : {channel}")})
                             }
                             3 => {
-                                json!({"type":"error", "code": LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED, "message": "failed to subscribe"})
+                                json!({"type":"error", "code": LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED, "channel": channel, "message": "failed to subscribe"})
                             }
                             _ => json!({"type":"subscribed", "channel": channel}),
                         };
@@ -1012,6 +1020,161 @@ async fn book_rejected_subscription_allows_resubscribe() {
     assert!(state.unsubscribes().await.is_empty());
 
     harness.client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
+async fn book_subscribe_failure_preserves_distinct_waiting_subscriber() {
+    let state = Arc::new(TestServerState::default());
+    state.book_ack_mode.store(1, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let failed_id = harness.instrument(PERP_MARKET_INDEX);
+    let valid_id = harness.instrument(SECOND_MARKET_INDEX);
+    let failed_client = harness.client.clone();
+    let valid_client = harness.client.clone();
+
+    let failed = tokio::spawn(async move { failed_client.subscribe_book(failed_id).await });
+    await_subscribe_count(&state, 1).await;
+    state
+        .enqueue_push(load_json("ws_order_book_subscribe_failed.json"))
+        .await;
+
+    let valid = tokio::spawn(async move { valid_client.subscribe_book(valid_id).await });
+    await_subscribe_count(&state, 2).await;
+
+    let error = tokio::time::timeout(Duration::from_secs(2), failed)
+        .await
+        .expect("failed subscription must answer")
+        .unwrap()
+        .unwrap_err();
+    let mut snapshot = load_json("ws_order_book_subscribed.json");
+    snapshot["channel"] = json!("order_book:1");
+    state.enqueue_push(snapshot).await;
+    harness.client.subscribe_trades(failed_id).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), valid)
+        .await
+        .expect("valid subscription must acknowledge")
+        .unwrap()
+        .unwrap();
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("valid snapshot");
+
+    let NautilusWsMessage::Deltas(deltas) = event else {
+        panic!("expected valid snapshot Deltas, was {event:?}");
+    };
+
+    assert_eq!(
+        error.to_string(),
+        "client error: client error: venue rejected the WebSocket subscribe with code 30012: order_book:0"
+    );
+    assert_eq!(deltas.instrument_id, valid_id);
+    assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+    assert_eq!(state.subscribes().await.len(), 3);
+    assert!(state.unsubscribes().await.is_empty());
+    harness.client.disconnect().await.unwrap();
+}
+
+#[tokio::test]
+async fn unattributed_subscribe_failure_recovers_book_and_completes_waiter() {
+    let state = Arc::new(TestServerState::default());
+    state.book_ack_mode.store(1, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let id = harness.instrument(PERP_MARKET_INDEX);
+    let subscriber = harness.client.clone();
+    let subscription = tokio::spawn(async move { subscriber.subscribe_book(id).await });
+    await_subscribe_count(&state, 1).await;
+    state.enqueue_push(json!({"error": {"code": 30012}})).await;
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+    state.book_ack_mode.store(0, Ordering::SeqCst);
+    harness
+        .client
+        .subscribe_trades(harness.instrument(SECOND_MARKET_INDEX))
+        .await
+        .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(5), subscription)
+        .await
+        .expect("recovery must complete the original waiter")
+        .unwrap()
+        .unwrap();
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("recovered snapshot");
+
+    let NautilusWsMessage::Deltas(deltas) = event else {
+        panic!("expected recovered snapshot Deltas, was {event:?}");
+    };
+
+    let channels: Vec<_> = state
+        .subscribes()
+        .await
+        .into_iter()
+        .map(|frame| frame["channel"].as_str().unwrap().to_string())
+        .collect();
+    let unsubscribes = state.unsubscribes().await;
+
+    assert_eq!(deltas.instrument_id, id);
+    assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+    assert_eq!(channels, ["order_book/0", "trade/1", "order_book/0"]);
+    assert_eq!(unsubscribes.len(), 1);
+    assert_eq!(
+        unsubscribes[0],
+        json!({"type": "unsubscribe", "channel": "order_book/0"})
+    );
+    harness.client.disconnect().await.unwrap();
+}
+
+#[tokio::test]
+async fn unattributed_subscribe_failure_retries_distinct_nonbook_waiters() {
+    let state = Arc::new(TestServerState::default());
+    state.nonbook_acks_silent.store(2, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let id = harness.instrument(PERP_MARKET_INDEX);
+    let trade_client = harness.client.clone();
+    let stats_client = harness.client.clone();
+
+    let trade = tokio::spawn(async move { trade_client.subscribe_trades(id).await });
+    await_subscribe_count(&state, 1).await;
+    state.enqueue_push(json!({"error": {"code": 30012}})).await;
+
+    let stats = tokio::spawn(async move {
+        stats_client
+            .subscribe_market_stats(LighterMarketSelection::Market(SECOND_MARKET_INDEX))
+            .await
+    });
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        trade.await.unwrap().unwrap();
+        stats.await.unwrap().unwrap();
+    })
+    .await
+    .expect("timer-driven retries must complete both original waiters");
+
+    let mut subscribes = state.subscribes().await;
+    subscribes.sort_by(|left, right| {
+        left["channel"]
+            .as_str()
+            .unwrap()
+            .cmp(right["channel"].as_str().unwrap())
+    });
+
+    assert_eq!(
+        subscribes,
+        [
+            json!({"type": "subscribe", "channel": "market_stats/1"}),
+            json!({"type": "subscribe", "channel": "market_stats/1"}),
+            json!({"type": "subscribe", "channel": "trade/0"}),
+            json!({"type": "subscribe", "channel": "trade/0"}),
+        ]
+    );
+    assert_eq!(harness.client.subscription_count(), 2);
+    assert!(state.unsubscribes().await.is_empty());
+    harness.client.disconnect().await.unwrap();
 }
 
 #[tokio::test]
