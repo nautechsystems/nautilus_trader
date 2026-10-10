@@ -18,17 +18,20 @@
 use std::collections::BTreeMap;
 
 use nautilus_core::correctness::{CorrectnessResult, CorrectnessResultExt};
+#[cfg(not(feature = "defi"))]
 use rust_decimal::Decimal;
 
 use super::{BookLevel, BookPrice, OrderBook};
+#[cfg(feature = "defi")]
+pub use crate::defi::orderbook::{
+    get_avg_px_for_quantity, get_avg_px_qty_for_exposure, get_worst_px_for_quantity,
+};
+#[cfg(not(feature = "defi"))]
+use crate::types::{fixed::FIXED_SCALAR, quantity::QuantityRaw};
 use crate::{
     enums::{BookType, OrderSide},
     orderbook::BookIntegrityError,
-    types::{
-        Price, Quantity,
-        fixed::{check_fixed_precision, raw_scale},
-        quantity::QuantityRaw,
-    },
+    types::{Price, Quantity, fixed::check_fixed_precision},
 };
 
 /// Calculates the estimated fill quantity for a specified price from a set of
@@ -115,6 +118,7 @@ fn is_level_within_price(order_side: OrderSide, level_price: Price, limit_price:
 /// # Panics
 ///
 /// Panics if the calculated average price cannot be parsed as an `f64`.
+#[cfg(not(feature = "defi"))]
 #[must_use]
 pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookLevel>) -> f64 {
     let mut cumulative_size_raw: QuantityRaw = 0;
@@ -148,6 +152,7 @@ pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, BookL
 ///
 /// For buy-side traversal this is the highest ask touched; for sell-side traversal
 /// this is the lowest bid touched. Returns `None` when no quantity can be matched.
+#[cfg(not(feature = "defi"))]
 #[must_use]
 pub fn get_worst_px_for_quantity(
     qty: Quantity,
@@ -180,6 +185,7 @@ pub fn get_worst_px_for_quantity(
 
 /// Calculates the estimated average price for a specified exposure from a set of
 /// order book levels.
+#[cfg(not(feature = "defi"))]
 #[must_use]
 pub fn get_avg_px_qty_for_exposure(
     target_exposure: Quantity,
@@ -220,15 +226,10 @@ pub fn get_avg_px_qty_for_exposure(
     if cumulative_size_raw == 0 {
         (0.0, 0.0, final_price)
     } else {
-        // Native DeFi sizes store raw values above the fixed scale
-        let size_precision = levels
-            .values()
-            .find_map(BookLevel::first)
-            .map_or(0, |order| order.size.precision);
         let avg_price = cumulative_exposure / cumulative_size_raw as f64;
         (
             avg_price,
-            cumulative_size_raw as f64 / raw_scale(size_precision) as f64,
+            cumulative_size_raw as f64 / FIXED_SCALAR,
             final_price,
         )
     }

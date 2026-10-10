@@ -67,13 +67,15 @@ use nautilus_core::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
+#[cfg(not(feature = "defi"))]
+use super::fixed::FIXED_SCALAR_RAW;
 #[cfg(feature = "defi")]
 use super::fixed::compare_raw;
 use super::fixed::{
-    FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, canonical_raw, check_fixed_precision,
-    checked_mul_div_fixed, checked_mul_div_raw, format_scaled_u128,
-    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, parse_decimal_mantissa,
-    raw_scale, raw_scales_match, scaled_raw_to_decimal,
+    FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, checked_mul_div_fixed,
+    checked_mul_div_raw, format_scaled_u128, mantissa_exponent_to_fixed_i128,
+    mantissa_exponent_to_raw_checked, parse_decimal_mantissa, raw_scale, raw_scales_match,
+    scaled_raw_to_decimal,
 };
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
@@ -458,6 +460,7 @@ impl Quantity {
         clippy::unnecessary_fallible_conversions,
         reason = "try_from is infallible when QuantityRaw is u64, fallible when u128"
     )]
+    #[cfg(not(feature = "defi"))]
     pub(crate) fn raw_as_decimal(raw: QuantityRaw) -> Decimal {
         let whole =
             i128::try_from(raw / FIXED_SCALAR_RAW).expect("Whole raw quantity must fit in Decimal");
@@ -1004,6 +1007,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::types::fixed::FIXED_SCALAR_RAW;
     #[cfg(not(feature = "defi"))]
     use crate::types::fixed::MAX_FLOAT_PRECISION;
 
@@ -2149,6 +2153,7 @@ mod property_tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::types::fixed::FIXED_SCALAR_RAW;
     #[cfg(not(feature = "defi"))]
     use crate::types::fixed::MAX_FLOAT_PRECISION;
 

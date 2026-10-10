@@ -40,6 +40,8 @@ pub mod types;
 pub mod validation;
 pub mod wallet;
 
+pub(crate) mod orderbook;
+
 #[cfg(test)]
 pub mod stubs;
 

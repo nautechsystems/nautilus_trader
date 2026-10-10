@@ -788,49 +788,6 @@ fn test_book_get_price_for_exposure_no_market() {
     );
 }
 
-#[cfg(feature = "defi")]
-#[rstest]
-fn test_book_worst_price_preserves_mixed_scale_traversal() {
-    let mut book = OrderBook::new(InstrumentId::from("AAPL.XNAS"), BookType::L2_MBP);
-    let price = Price::from("1.00");
-    book.add(
-        BookOrder::new(OrderSide::Sell, price, Quantity::from_raw(1, 18), 1),
-        0,
-        0,
-        0.into(),
-    );
-    assert_eq!(
-        book.get_worst_px_for_quantity(Quantity::from(2), OrderSide::Buy),
-        Some(price)
-    );
-}
-
-#[cfg(feature = "defi")]
-#[rstest]
-fn test_book_exposure_accepts_native_scale_quantities() {
-    let mut book = OrderBook::new(InstrumentId::from("AAPL.XNAS"), BookType::L2_MBP);
-    let target = Quantity::from_raw(1_000_000_000_000_000_000, 18);
-    assert_eq!(
-        book.get_avg_px_qty_for_exposure(target, OrderSide::Buy),
-        (0.0, 0.0, 0.0)
-    );
-    book.add(
-        BookOrder::new(
-            OrderSide::Sell,
-            Price::from("1.00"),
-            Quantity::from_raw(2_000_000_000_000_000_000, 18),
-            1,
-        ),
-        0,
-        0,
-        0.into(),
-    );
-    assert_eq!(
-        book.get_avg_px_qty_for_exposure(target, OrderSide::Buy),
-        (1.0, 1.0, 1.0)
-    );
-}
-
 #[rstest]
 fn test_book_get_price_for_exposure(stub_depth10: OrderBookDepth) {
     let depth = stub_depth10;
