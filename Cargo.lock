@@ -5724,6 +5724,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-coinapi"
+version = "0.66.0"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "arc-swap",
+ "async-trait",
+ "axum",
+ "bon",
+ "codspeed-criterion-compat",
+ "csv",
+ "dotenvy",
+ "flate2",
+ "futures-util",
+ "jiff",
+ "log",
+ "madsim",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-system",
+ "nautilus-testkit",
+ "parking_lot",
+ "pyo3",
+ "pyo3-stub-gen",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
+ "url",
+ "ustr",
+]
+
+[[package]]
 name = "nautilus-coinbase"
 version = "0.66.0"
 dependencies = [
@@ -6730,6 +6773,7 @@ dependencies = [
  "nautilus-binance",
  "nautilus-blockchain",
  "nautilus-bybit",
+ "nautilus-coinapi",
  "nautilus-coinbase",
  "nautilus-common",
  "nautilus-core",

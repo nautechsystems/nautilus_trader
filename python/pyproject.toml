@@ -50,6 +50,7 @@ features = [
   "extension-module",
   "arrow",
   "betfair",
+  "coinapi",
   "high-precision",
   "mimalloc",
   "redis",

@@ -369,6 +369,7 @@ betfair nautilus_betfair::python::betfair
 binance nautilus_binance::python::binance
 blockchain nautilus_blockchain::python::blockchain
 bybit nautilus_bybit::python::bybit
+coinapi nautilus_coinapi::python::coinapi
 coinbase nautilus_coinbase::python::coinbase
 common nautilus_common::python::common
 core nautilus_core::python::core
