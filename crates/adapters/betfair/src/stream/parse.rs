@@ -272,6 +272,7 @@ struct FillLot {
     trade_id: TradeId,
     quantity: Decimal,
     price: Price,
+    accounting_px: Price,
 }
 
 /// One cumulative per-fill allocation derived from Betfair's cumulative `sv`.
@@ -289,10 +290,12 @@ impl FillTracker {
         Self::default()
     }
 
-    /// Computes an incremental [`FillReport`] for an unmatched order update.
+    /// Computes a [`FillReport`] for an unmatched order update.
     ///
-    /// Returns `None` if no new fill occurred (size matched unchanged,
-    /// duplicate trade ID, or overfill detected).
+    /// A new fill is incremental. A price restatement repeats the surviving lot's trade ID
+    /// when matched and voided quantities are unchanged, the average changed, and exactly one
+    /// lot survives. Returns `None` when those conditions are not met, including a duplicate
+    /// trade ID or an overfill.
     #[expect(clippy::too_many_arguments)]
     pub fn maybe_fill_report(
         &mut self,
@@ -406,8 +409,14 @@ impl FillTracker {
             .map_or(Decimal::ZERO, normalize_betfair_quantity);
 
         if size_matched == previous_filled {
+            let restatement =
+                self.matched_price_restatement(bet_id, cumulative_voided, average_price_matched);
+            if let Some((_, _, last_px)) = restatement {
+                self.set_surviving_accounting_px(bet_id, last_px);
+            }
+
             self.record_cumulative_state(bet_id, size_matched, average_price_matched);
-            return None;
+            return restatement;
         }
 
         if size_matched < previous_filled {
@@ -455,6 +464,7 @@ impl FillTracker {
                 trade_id,
                 quantity: fill_qty,
                 price: last_px,
+                accounting_px: last_px,
             });
 
         Some((trade_id, last_qty, last_px))
@@ -541,6 +551,60 @@ impl FillTracker {
         cumulative > previous
     }
 
+    /// Returns whether an unchanged matched and voided quantity carries a new average while
+    /// exactly one fill lot survives, without recording that average.
+    #[must_use]
+    pub(crate) fn has_pending_price_restatement(
+        &self,
+        bet_id: &str,
+        size_matched: Decimal,
+        size_voided: Decimal,
+        average_price_matched: Option<Decimal>,
+    ) -> bool {
+        let size_voided = normalize_betfair_quantity(size_voided);
+        let previous_voided = self
+            .voided_qty
+            .get(bet_id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+
+        if size_voided > previous_voided {
+            return false;
+        }
+
+        let size_matched = normalize_betfair_quantity(size_matched);
+        let cumulative = if self.has_fill_lots(bet_id) {
+            size_matched + size_voided
+        } else {
+            size_matched
+        };
+
+        let previous = self
+            .filled_qty
+            .get(bet_id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+
+        if cumulative != previous || cumulative <= Decimal::ZERO {
+            return false;
+        }
+
+        self.matched_price_restatement(bet_id, Some(size_voided), average_price_matched)
+            .is_some()
+    }
+
+    /// Returns whether an update with unchanged matched and voided quantities carries a new
+    /// average price while exactly one fill lot survives.
+    #[must_use]
+    pub(crate) fn has_unseen_price_restatement(&self, uo: &UnmatchedOrder) -> bool {
+        self.has_pending_price_restatement(
+            &uo.id,
+            uo.sm.unwrap_or(Decimal::ZERO),
+            uo.sv.unwrap_or(Decimal::ZERO),
+            uo.avp,
+        )
+    }
+
     /// Returns whether a cumulative Betfair fill update has not yet been applied.
     #[must_use]
     pub fn has_unseen_fill(&self, uo: &UnmatchedOrder) -> bool {
@@ -568,11 +632,17 @@ impl FillTracker {
         voided_qty: Decimal,
     ) {
         let lots = self.fill_lots.entry(bet_id.to_string()).or_default();
-        if !lots.iter().any(|lot| lot.trade_id == trade_id) {
+        if let Some(lot) = lots.iter_mut().find(|lot| lot.trade_id == trade_id) {
+            let stale_original = lot.accounting_px != price && price == lot.price;
+            if !stale_original {
+                lot.accounting_px = price;
+            }
+        } else {
             lots.push(FillLot {
                 trade_id,
                 quantity: normalize_betfair_quantity(quantity),
                 price,
+                accounting_px: price,
             });
         }
         let gross_filled = lots.iter().map(|lot| lot.quantity).sum();
@@ -583,6 +653,16 @@ impl FillTracker {
                 (bet_id.to_string(), trade_id),
                 normalize_betfair_quantity(voided_qty),
             );
+        }
+    }
+
+    pub(crate) fn set_accounting_px(&mut self, bet_id: &str, trade_id: TradeId, price: Price) {
+        let Some(lots) = self.fill_lots.get_mut(bet_id) else {
+            return;
+        };
+
+        if let Some(lot) = lots.iter_mut().find(|lot| lot.trade_id == trade_id) {
+            lot.accounting_px = price;
         }
     }
 
@@ -599,6 +679,117 @@ impl FillTracker {
     pub(crate) fn sync_voided_qty(&mut self, bet_id: &str, voided_qty: Decimal) {
         self.voided_qty
             .insert(bet_id.to_string(), normalize_betfair_quantity(voided_qty));
+    }
+
+    fn matched_price_restatement(
+        &self,
+        bet_id: &str,
+        cumulative_voided: Option<Decimal>,
+        average_price_matched: Option<Decimal>,
+    ) -> Option<(TradeId, Quantity, Price)> {
+        if !self.size_voided_unchanged(bet_id, cumulative_voided) {
+            return None;
+        }
+
+        let avp = average_price_matched.map(normalize_betfair_price)?;
+        let prev_avg = self.avg_px.get(bet_id).copied()?;
+        if avp == prev_avg {
+            return None;
+        }
+
+        let (trade_id, surviving_qty) = self.single_surviving_lot(bet_id)?;
+
+        let Ok(last_qty) = parse_betfair_quantity(surviving_qty) else {
+            log::warn!("Cannot restate matched quantity {surviving_qty} for bet_id={bet_id}");
+            return None;
+        };
+
+        let Ok(last_px) = parse_betfair_price(avp) else {
+            log::warn!("Cannot restate matched price {avp} for bet_id={bet_id}");
+            return None;
+        };
+
+        Some((trade_id, last_qty, last_px))
+    }
+
+    fn set_surviving_accounting_px(&mut self, bet_id: &str, price: Price) {
+        let Some(lots) = self.fill_lots.get_mut(bet_id) else {
+            return;
+        };
+
+        for lot in lots.iter_mut() {
+            let voided = self
+                .fill_voids
+                .get(&(bet_id.to_string(), lot.trade_id))
+                .copied()
+                .unwrap_or(Decimal::ZERO);
+
+            if lot.quantity.saturating_sub(voided) > Decimal::ZERO {
+                lot.accounting_px = price;
+            }
+        }
+    }
+
+    fn size_voided_unchanged(&self, bet_id: &str, cumulative_voided: Option<Decimal>) -> bool {
+        let current = cumulative_voided.map_or(Decimal::ZERO, normalize_betfair_quantity);
+        let previous = self
+            .voided_qty
+            .get(bet_id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+        current == previous
+    }
+
+    pub(crate) fn seed_missing_averages(&mut self) {
+        let bet_ids = self.fill_lots.keys().cloned().collect::<Vec<_>>();
+        for bet_id in bet_ids {
+            if self.avg_px.contains_key(&bet_id) {
+                continue;
+            }
+
+            let Some(lots) = self.fill_lots.get(&bet_id) else {
+                continue;
+            };
+
+            let mut quantity = Decimal::ZERO;
+            let mut notional = Decimal::ZERO;
+
+            for lot in lots {
+                let voided = self
+                    .fill_voids
+                    .get(&(bet_id.clone(), lot.trade_id))
+                    .copied()
+                    .unwrap_or(Decimal::ZERO);
+                let surviving = lot.quantity.saturating_sub(voided);
+                if surviving <= Decimal::ZERO {
+                    continue;
+                }
+
+                quantity += surviving;
+                notional += surviving * lot.accounting_px.as_decimal();
+            }
+
+            if quantity > Decimal::ZERO {
+                self.avg_px.insert(bet_id, notional / quantity);
+            }
+        }
+    }
+
+    fn single_surviving_lot(&self, bet_id: &str) -> Option<(TradeId, Decimal)> {
+        let lots = self.fill_lots.get(bet_id)?;
+
+        let mut surviving = lots.iter().filter_map(|lot| {
+            let voided = self
+                .fill_voids
+                .get(&(bet_id.to_string(), lot.trade_id))
+                .copied()
+                .unwrap_or(Decimal::ZERO);
+            let surviving_qty = lot.quantity.saturating_sub(voided);
+            (surviving_qty > Decimal::ZERO).then_some((lot.trade_id, surviving_qty))
+        });
+
+        let lot = surviving.next()?;
+        surviving.next().is_none().then_some(lot)
     }
 
     fn record_cumulative_state(
@@ -696,8 +887,8 @@ impl FillTracker {
                     .copied()
                     .unwrap_or(Decimal::ZERO);
                 let effective = lot.quantity.saturating_sub(already_voided);
-                prior_notional += effective * lot.price.as_decimal();
-                effective_lots.push((effective, lot.price.as_decimal()));
+                prior_notional += effective * lot.accounting_px.as_decimal();
+                effective_lots.push((effective, lot.accounting_px.as_decimal()));
             }
         }
 
@@ -3069,10 +3260,119 @@ mod tests {
             )
             .expect("new cumulative quantity should emit a fill");
 
-        assert!(first.is_some());
-        assert!(normalized_duplicate.is_none());
+        let first = first.expect("first fill");
+        let restatement = normalized_duplicate.expect("changed average restates the surviving lot");
+        assert_eq!(restatement.0, first.0);
+        assert_eq!(restatement.1, Quantity::from("10.00"));
+        assert_eq!(restatement.2, Price::from("3.00"));
         assert_eq!(next.1, Quantity::from("1.00"));
         assert_eq!(next.2, Price::from("3.00"));
+    }
+
+    #[rstest]
+    fn test_fill_tracker_changed_average_with_two_lots_emits_nothing() {
+        let mut tracker = FillTracker::new();
+        let first = tracker
+            .advance_cumulative_fill(
+                "bet",
+                Decimal::from(2),
+                Some(Decimal::from(12)),
+                Decimal::from(12),
+            )
+            .expect("first lot");
+        let second = tracker
+            .advance_cumulative_fill(
+                "bet",
+                Decimal::from(4),
+                Some(Decimal::from(10)),
+                Decimal::from(10),
+            )
+            .expect("second lot");
+        let restatement = tracker.advance_cumulative_fill(
+            "bet",
+            Decimal::from(4),
+            Some(Decimal::new(900, 2)),
+            Decimal::from(12),
+        );
+        let later = tracker
+            .advance_cumulative_fill(
+                "bet",
+                Decimal::from(6),
+                Some(Decimal::from(8)),
+                Decimal::from(12),
+            )
+            .expect("later fill uses the corrected average");
+
+        assert_ne!(first.0, second.0);
+        assert!(restatement.is_none());
+        // (8 * 6 - 9 * 4) / 2 = 6, not (8 * 6 - 10 * 4) / 2 = 4
+        assert_eq!(later.1, Quantity::from("2.00"));
+        assert_eq!(later.2, Price::from("6.00"));
+    }
+
+    #[rstest]
+    fn test_fill_tracker_void_with_new_average_does_not_restate_price() {
+        let mut tracker = FillTracker::new();
+        tracker
+            .advance_cumulative_fill(
+                "bet",
+                Decimal::from(2),
+                Some(Decimal::from(12)),
+                Decimal::from(12),
+            )
+            .expect("fill");
+        let restatement = tracker.advance_cumulative_fill_with_voids(
+            "bet",
+            Decimal::from(2),
+            Decimal::from(1),
+            Some(Decimal::new(947, 2)),
+            Decimal::from(12),
+        );
+
+        assert!(restatement.is_none());
+    }
+
+    #[rstest]
+    fn test_fill_tracker_post_void_fill_uses_restated_accounting_price() {
+        let mut tracker = FillTracker::new();
+        let bet_id = "bet-void-restate";
+        tracker
+            .advance_cumulative_fill(
+                bet_id,
+                Decimal::from(2),
+                Some(Decimal::from(12)),
+                Decimal::from(12),
+            )
+            .expect("fill");
+
+        let voided = tracker.maybe_fill_voids(&UnmatchedOrder {
+            id: bet_id.to_string(),
+            sv: Some(Decimal::from(1)),
+            ..make_test_uo(bet_id, Decimal::from(2), Some(Decimal::from(1)), None)
+        });
+
+        let restatement = tracker
+            .advance_cumulative_fill_with_voids(
+                bet_id,
+                Decimal::from(2),
+                Decimal::from(1),
+                Some(Decimal::new(947, 2)),
+                Decimal::from(12),
+            )
+            .expect("one surviving lot restates");
+        let later = tracker
+            .advance_cumulative_fill_with_voids(
+                bet_id,
+                Decimal::from(3),
+                Decimal::from(1),
+                Some(Decimal::from(10)),
+                Decimal::from(12),
+            )
+            .expect("later fill");
+
+        assert_eq!(voided[0].last_px, Price::from("12.00"));
+        assert_eq!(restatement.2, Price::from("9.47"));
+        assert_eq!(later.2, Price::from("10.53"));
     }
 
     #[rstest]

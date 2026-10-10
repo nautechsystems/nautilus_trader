@@ -6585,6 +6585,77 @@ fn apply_events(order: &OrderAny, events: &[OrderEventAny]) -> OrderAny {
 }
 
 #[rstest]
+fn test_reconciliation_fill_decrease_voids_restatement_at_original_price(
+    instrument: InstrumentAny,
+) {
+    let client_order_id = ClientOrderId::from("O-RESTATE-VOID");
+    let venue_order_id = VenueOrderId::from("V-RESTATE-VOID");
+    let account_id = AccountId::from("SIM-001");
+    let trade_id = TradeId::from("T-RESTATED");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(2))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+    for last_px in [Price::from("1.00000"), Price::from("0.90000")] {
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .trade_id(trade_id)
+                    .order_side(OrderSide::Buy)
+                    .order_type(OrderType::Limit)
+                    .last_qty(Quantity::from(2))
+                    .last_px(last_px)
+                    .currency(instrument.quote_currency())
+                    .event_id(UUID4::new())
+                    .build(),
+            ))
+            .unwrap();
+    }
+
+    let mut report = create_test_order_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Voided,
+        Quantity::from(2),
+        Quantity::from(1),
+    );
+    report.avg_px = Some(dec!(0.9));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::from(10),
+    );
+
+    let corrected = match &events[0] {
+        OrderEventAny::FillVoided(event) => event,
+        other => panic!("expected fill correction, was {other:?}"),
+    };
+
+    let after = apply_events(&order, &events);
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(corrected.trade_id, trade_id);
+    assert_eq!(corrected.voided_qty, Quantity::from(1));
+    assert_eq!(corrected.last_px, Price::from("1.00000"));
+    assert_eq!(after.filled_qty(), Quantity::from(1));
+    assert_eq!(after.status(), OrderStatus::Voided);
+}
+
+#[rstest]
 #[case(OrderStatus::Voided, false)]
 #[case(OrderStatus::PartiallyFilled, true)]
 fn test_reconciliation_fill_decrease_carries_terminal_disposition(

@@ -27,6 +27,10 @@
 //! keeps the quotient at that precision. Corrections rebuild the fold rather than subtracting
 //! from saturated or rounded totals. Deserialized orders rebuild the cached fold from stored
 //! events on the next fill. `slippage` derives from `avg_px` in the same arithmetic.
+//! A later fill with the same `trade_id` and a new price restates the price that trade
+//! contributes to `avg_px`. The original fill's `last_px` stays so a void still matches it,
+//! and quantity and status stay unchanged. Repeating the latest price for that trade ID
+//! returns [`OrderError::DuplicateFill`]. A return to an earlier price restates the average.
 
 pub mod any;
 pub mod limit;
@@ -47,7 +51,7 @@ pub mod builder;
 pub mod stubs;
 
 // Re-exports
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use enum_dispatch::enum_dispatch;
 use indexmap::IndexMap;
 use nautilus_core::{
@@ -395,17 +399,21 @@ pub trait Order: 'static + Send {
 
     fn has_price(&self) -> bool;
 
-    /// Returns `true` if a fill with matching `trade_id`, side, qty, and price already exists.
+    /// Returns `true` if the latest fill for this `trade_id` already has this side, quantity, and price.
     fn is_duplicate_fill(&self, fill: &OrderFilled) -> bool {
-        self.events().iter().any(|event| {
-            if let OrderEventAny::Filled(existing) = event {
-                existing.trade_id == fill.trade_id
-                    && existing.order_side == fill.order_side
-                    && existing.last_qty == fill.last_qty
-                    && existing.last_px == fill.last_px
-            } else {
-                false
+        let mut latest = None;
+
+        for event in self.events() {
+            if let OrderEventAny::Filled(existing) = event
+                && existing.trade_id == fill.trade_id
+                && existing.order_side == fill.order_side
+            {
+                latest = Some(existing);
             }
+        }
+
+        latest.is_some_and(|existing| {
+            existing.last_qty == fill.last_qty && existing.last_px == fill.last_px
         })
     }
 
@@ -853,16 +861,10 @@ impl OrderCore {
 
         // Check for duplicate fill before state transition to maintain consistency
         if let OrderEventAny::Filled(fill) = &event {
-            for candidate in &self.events {
-                match candidate {
-                    OrderEventAny::Filled(existing) if existing.trade_id == fill.trade_id => {
-                        return Err(OrderError::DuplicateFill(fill.trade_id));
-                    }
-                    OrderEventAny::FillVoided(existing) if existing.trade_id == fill.trade_id => {
-                        has_prior_fill_void = true;
-                    }
-                    _ => {}
-                }
+            has_prior_fill_void = self.has_prior_fill_void(fill.trade_id);
+            if self.is_price_restatement_fill(fill)? {
+                self.restate_fill_price(event);
+                return Ok(());
             }
         }
 
@@ -1229,11 +1231,9 @@ impl OrderCore {
         let mut position_id = None;
         let mut liquidity_side = Some(LiquiditySide::NoLiquiditySide);
         let mut matched_corrections = AHashSet::new();
+        let prices = self.accounting_prices();
 
-        for candidate in &self.events {
-            let OrderEventAny::Filled(fill) = candidate else {
-                continue;
-            };
+        for fill in self.quantity_fills() {
             let correction = corrections.get(&fill.trade_id).copied();
             if correction.is_some() {
                 matched_corrections.insert(fill.trade_id);
@@ -1246,7 +1246,11 @@ impl OrderCore {
             }
 
             if !effective.is_zero() {
-                totals.add(effective.as_decimal(), fill.last_px.as_decimal());
+                let price = prices
+                    .get(&fill.trade_id)
+                    .copied()
+                    .unwrap_or(fill.last_px.as_decimal());
+                totals.add(effective.as_decimal(), price);
                 filled = filled.saturating_add(effective);
                 trade_ids.push(fill.trade_id);
                 last_trade_id = Some(fill.trade_id);
@@ -1437,22 +1441,92 @@ impl OrderCore {
         );
     }
 
+    fn has_prior_fill_void(&self, trade_id: TradeId) -> bool {
+        self.events.iter().any(|candidate| {
+            matches!(
+                candidate,
+                OrderEventAny::FillVoided(existing) if existing.trade_id == trade_id
+            )
+        })
+    }
+
+    fn is_price_restatement_fill(&self, fill: &OrderFilled) -> Result<bool, OrderError> {
+        let mut latest = None;
+
+        for candidate in &self.events {
+            let OrderEventAny::Filled(existing) = candidate else {
+                continue;
+            };
+
+            if existing.trade_id != fill.trade_id {
+                continue;
+            }
+
+            latest = Some(existing.last_px);
+        }
+
+        match latest {
+            Some(price) if price == fill.last_px => Err(OrderError::DuplicateFill(fill.trade_id)),
+            Some(_) => Ok(true),
+            None => Ok(false),
+        }
+    }
+
+    fn restate_fill_price(&mut self, event: OrderEventAny) {
+        self.ts_last = event.ts_event();
+        self.events.push(event);
+        let totals = self.fill_totals_from_events();
+        self.avg_px = totals.average();
+        self.fill_totals = Some(totals);
+    }
+
     fn fill_totals_from_events(&self) -> FillTotals {
         let corrections = self.fill_corrections(None);
+        let prices = self.accounting_prices();
         let mut totals = FillTotals::default();
+
+        for fill in self.quantity_fills() {
+            let removed = Self::removed_fill_qty(fill, corrections.get(&fill.trade_id).copied());
+            let effective = (fill.last_qty - removed).as_decimal();
+            if !effective.is_zero() {
+                let price = prices
+                    .get(&fill.trade_id)
+                    .copied()
+                    .unwrap_or(fill.last_px.as_decimal());
+                totals.add(effective, price);
+            }
+        }
+
+        totals
+    }
+
+    fn quantity_fills(&self) -> Vec<&OrderFilled> {
+        let mut seen = AHashSet::new();
+        let mut fills = Vec::new();
 
         for candidate in &self.events {
             let OrderEventAny::Filled(fill) = candidate else {
                 continue;
             };
-            let removed = Self::removed_fill_qty(fill, corrections.get(&fill.trade_id).copied());
-            let effective = (fill.last_qty - removed).as_decimal();
-            if !effective.is_zero() {
-                totals.add(effective, fill.last_px.as_decimal());
+
+            if seen.insert(fill.trade_id) {
+                fills.push(fill);
             }
         }
 
-        totals
+        fills
+    }
+
+    fn accounting_prices(&self) -> AHashMap<TradeId, Decimal> {
+        let mut prices = AHashMap::new();
+
+        for candidate in &self.events {
+            if let OrderEventAny::Filled(fill) = candidate {
+                prices.insert(fill.trade_id, fill.last_px.as_decimal());
+            }
+        }
+
+        prices
     }
 
     fn fill_corrections<'a>(
@@ -4074,6 +4148,91 @@ mod tests {
         // Order state should be unchanged after rejected duplicate
         assert_eq!(order.filled_qty(), Quantity::from(50_000));
         assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    }
+
+    #[rstest]
+    fn test_same_trade_id_new_price_restates_average_and_void_matches_original_price() {
+        let trade_id = TradeId::from("TRADE-1");
+        let qty = Quantity::from("2");
+        let original_px = Price::from("12");
+        let restated_px = Price::from("9.47");
+        let mut order =
+            market_order_with_fills(OrderSide::Buy, qty, &[(trade_id, qty, original_px)]);
+        let restatement = OrderFilledSpec::builder()
+            .order_side(OrderSide::Buy)
+            .trade_id(trade_id)
+            .last_qty(qty)
+            .last_px(restated_px)
+            .event_id(UUID4::new())
+            .build();
+
+        order
+            .apply(OrderEventAny::Filled(restatement.clone()))
+            .unwrap();
+        let repeated = order.apply(OrderEventAny::Filled(restatement));
+        assert!(matches!(repeated, Err(OrderError::DuplicateFill(_))));
+
+        let stored_px = order.events().iter().find_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.last_px == original_px => Some(fill.last_px),
+            _ => None,
+        });
+
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), qty);
+        assert!(order.leaves_qty().is_zero());
+        let returned = OrderFilledSpec::builder()
+            .order_side(OrderSide::Buy)
+            .trade_id(trade_id)
+            .last_qty(qty)
+            .last_px(original_px)
+            .event_id(UUID4::new())
+            .build();
+        order.apply(OrderEventAny::Filled(returned)).unwrap();
+        assert_eq!(order.avg_px(), Some(dec!(12)));
+        assert_eq!(order.filled_qty(), qty);
+        assert_eq!(order.trade_ids().len(), 1);
+        assert_eq!(stored_px, Some(original_px));
+        assert_eq!(replayed.status(), OrderStatus::Filled);
+        assert_eq!(replayed.filled_qty(), qty);
+        assert_eq!(replayed.avg_px(), Some(dec!(9.47)));
+
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(trade_id)
+                    .voided_qty(qty)
+                    .last_px(original_px)
+                    .order_side(OrderSide::Buy)
+                    .build(),
+            ))
+            .unwrap();
+
+        let mut mismatched =
+            market_order_with_fills(OrderSide::Buy, qty, &[(trade_id, qty, original_px)]);
+        mismatched
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .order_side(OrderSide::Buy)
+                    .trade_id(trade_id)
+                    .last_qty(qty)
+                    .last_px(restated_px)
+                    .event_id(UUID4::new())
+                    .build(),
+            ))
+            .unwrap();
+        let rejected = mismatched.apply(OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trade_id(trade_id)
+                .voided_qty(qty)
+                .last_px(restated_px)
+                .order_side(OrderSide::Buy)
+                .build(),
+        ));
+
+        assert!(matches!(rejected, Err(OrderError::InvalidOrderEvent)));
     }
 
     #[rstest]

@@ -195,19 +195,16 @@ def test_position_apply_rejects_invalid_fill_identity_without_mutation(
     assert position.to_dict() == state_before
 
 
-def test_position_apply_rejects_duplicate_trade_without_mutation() -> None:
+def test_position_apply_same_event_leaves_state_unchanged() -> None:
     """
-    Test an ordinary duplicate trade is rejected before position mutation.
+    Test reapplying the same fill event does not mutate the position.
     """
     fill = _make_fill()
     position = Position(instrument=AUDUSD_SIM, fill=fill)
     state_before = position.to_dict()
-    expected_error = "`fill.trade_id` already contained in `trade_ids`"
 
-    with pytest.raises(ValueError, match=re.escape(expected_error)) as exc_info:
-        position.apply(fill)
+    position.apply(fill)
 
-    assert str(exc_info.value) == expected_error
     assert position.to_dict() == state_before
 
 

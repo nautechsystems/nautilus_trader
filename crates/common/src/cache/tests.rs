@@ -15,13 +15,7 @@
 
 //! Tests module for `Cache`.
 
-use std::{
-    borrow::Cow,
-    cell::RefCell,
-    panic::{AssertUnwindSafe, catch_unwind},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{borrow::Cow, cell::RefCell, rc::Rc, sync::Arc};
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use bytes::Bytes;
@@ -4431,11 +4425,7 @@ fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
     let position = Position::new(&instrument, fill.clone());
     cache.add_position(&position, OmsType::Netting).unwrap();
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        cache.update_position_from_fill(position_id, &fill)
-    }));
-
-    assert!(result.is_err());
+    cache.update_position_from_fill(position_id, &fill).unwrap();
     let cached = cache.position(&position_id).unwrap();
     assert_eq!(
         serde_json::to_value(&*cached).unwrap(),

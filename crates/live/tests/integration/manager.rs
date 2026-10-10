@@ -7337,9 +7337,24 @@ async fn test_fill_qty_mismatch_venue_less_generates_fill_void(#[case] echo_cach
         .order_owned(&client_order_id)
         .expect("order cached");
 
-    assert_eq!(result.events.len(), 1);
+    let expected_events = if echo_cached_fill {
+        // The echoed fill report prices the trade at 3000.00 while the cached fill recorded
+        // 1.0, so reconciliation first restates the trade's price, then voids the decrease
+        let OrderEventAny::Filled(restatement) = &result.events[0] else {
+            panic!("expected price restatement fill event");
+        };
 
-    let OrderEventAny::FillVoided(voided) = &result.events[0] else {
+        assert_eq!(restatement.trade_id, trade_id);
+        assert_eq!(restatement.last_qty, Quantity::from("5.0"));
+        assert_eq!(restatement.last_px, Price::from("3000.00"));
+        2
+    } else {
+        1
+    };
+
+    assert_eq!(result.events.len(), expected_events);
+
+    let OrderEventAny::FillVoided(voided) = &result.events[expected_events - 1] else {
         panic!("expected OrderFillVoided event");
     };
 
@@ -7350,6 +7365,14 @@ async fn test_fill_qty_mismatch_venue_less_generates_fill_void(#[case] echo_cach
     assert_eq!(order.status(), OrderStatus::PartiallyFilled);
     assert_eq!(order.filled_qty(), Quantity::from("3.0"));
     assert_eq!(order.voided_qty(), Quantity::from("2.0"));
+    assert_eq!(
+        order.avg_px(),
+        if echo_cached_fill {
+            Some(dec!(3000.00))
+        } else {
+            Some(dec!(1.0))
+        }
+    );
 }
 
 #[tokio::test]

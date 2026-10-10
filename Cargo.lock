@@ -5510,6 +5510,7 @@ dependencies = [
  "bon",
  "bytes",
  "bzip2",
+ "codspeed-criterion-compat",
  "dotenvy",
  "flate2",
  "futures-util",

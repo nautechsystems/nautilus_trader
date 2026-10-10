@@ -18,6 +18,8 @@
 //! Event construction, order state reconciliation, and fill reconciliation. Venue-sourced
 //! reports become zero or more `OrderEventAny`s that are safe to apply to the local order model.
 
+use std::collections::HashSet;
+
 use nautilus_common::enums::LogColor;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -594,11 +596,19 @@ fn create_reconciliation_fill_voids(
     let order_events = order.events();
     let mut corrections = Vec::new();
 
-    for candidate in order_events.iter().rev() {
-        let OrderEventAny::Filled(fill) = candidate else {
-            continue;
-        };
+    // A repeated `trade_id` in the event log restates that trade's price and carries no
+    // quantity; a void must price against the original fill so the order accepts it.
+    let mut seen = HashSet::new();
 
+    let quantity_fills: Vec<&OrderFilled> = order_events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if seen.insert(fill.trade_id) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    for fill in quantity_fills.iter().rev() {
         if remaining.is_zero() {
             break;
         }

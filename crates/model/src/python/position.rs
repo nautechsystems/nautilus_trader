@@ -359,6 +359,13 @@ impl Position {
     }
 
     /// Applies an `OrderFilled` event to this position.
+    ///
+    /// A fill with the same `trade_id`, the same `client_order_id`, and a new price restates
+    /// the open average when that trade is an opening fill in the current cycle. Quantity is
+    /// unchanged. The original fill stays in `events`, so a void still matches its `last_px`.
+    /// Applying the same `event_id` again does nothing. A different order that reuses the trade
+    /// ID is rejected. A closing fill does not change the open average, and restating an
+    /// opening fill does not change realized PnL for quantity already closed.
     #[pyo3(name = "apply")]
     fn py_apply(&mut self, fill: &OrderFilled) -> PyResult<()> {
         self.try_apply(fill)

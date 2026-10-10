@@ -8524,6 +8524,305 @@ fn test_handle_order_fill_event_skips_duplicate_fill(mut execution_engine: Execu
 }
 
 #[rstest]
+fn test_fill_price_restatement_keeps_quantity_and_updates_averages(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let portfolio_events = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+
+    let handler = TypedIntoHandler::from({
+        let portfolio_events = portfolio_events.clone();
+        move |event: OrderEventAny| {
+            portfolio_events.borrow_mut().push(event);
+        }
+    });
+
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::portfolio_update_order(), handler);
+
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let trade_id = TradeId::new("E-19700101-000000-001-001-1");
+    let original_px = Price::from("12");
+    let restated_px = Price::from("9.47");
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(2))
+        .build();
+    let client_order_id = order.client_order_id();
+    let order_side = order.order_side();
+    let order_type = order.order_type();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+
+    let fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        client_order_id,
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        trade_id,
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(2),
+        original_px,
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    execution_engine.process(&fill);
+
+    let restatement = OrderEventAny::Filled(
+        OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .account_id(AccountId::test_default())
+            .trade_id(trade_id)
+            .order_side(order.order_side())
+            .order_type(order.order_type())
+            .last_qty(Quantity::from(2))
+            .last_px(restated_px)
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .event_id(UUID4::new())
+            .build(),
+    );
+    execution_engine.process(&restatement);
+
+    {
+        let cache = execution_engine.cache().borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let position = cache.position(&order.position_id().unwrap()).unwrap();
+
+        let stored_px = order.events().iter().find_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.last_px == original_px => Some(fill.last_px),
+            _ => None,
+        });
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty().as_decimal(), Decimal::from(2));
+        assert!(order.leaves_qty().is_zero());
+        assert_eq!(order.avg_px(), Some(dec!(9.47)));
+        assert_eq!(stored_px, Some(original_px));
+        assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
+        assert_eq!(position.avg_px_open, restated_px.as_f64());
+        let portfolio_fills = portfolio_events
+            .borrow()
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count();
+        assert_eq!(portfolio_fills, 1);
+    }
+
+    execution_engine.process(&OrderEventAny::Filled(
+        OrderFilledSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .account_id(AccountId::test_default())
+            .trade_id(trade_id)
+            .order_side(order_side)
+            .order_type(order_type)
+            .last_qty(Quantity::from(2))
+            .last_px(original_px)
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .event_id(UUID4::new())
+            .build(),
+    ));
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    let position = cache.position(&order.position_id().unwrap()).unwrap();
+    assert_eq!(order.filled_qty().as_decimal(), Decimal::from(2));
+    assert_eq!(order.avg_px(), Some(dec!(12)));
+    assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
+    assert_eq!(position.avg_px_open, original_px.as_f64());
+}
+
+#[rstest]
+fn test_fill_price_restatement_does_not_flip_netting_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let buy_trade_id = TradeId::new("E-19700101-000000-001-001-1");
+    let sell_trade_id = TradeId::new("E-19700101-000000-001-002-1");
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let buy = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(2))
+        .build();
+    let sell = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-002-1"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(3))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(buy.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(sell.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &buy,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &sell,
+        AccountId::test_default(),
+    ));
+
+    let buy_fill = OrderEventAny::Filled(build_order_filled(
+        buy.trader_id(),
+        buy.strategy_id(),
+        instrument.id(),
+        buy.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        buy_trade_id,
+        OrderSide::Buy,
+        buy.order_type(),
+        Quantity::from(2),
+        Price::from("12"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    execution_engine.process(&buy_fill);
+
+    let sell_fill = OrderEventAny::Filled(build_order_filled(
+        sell.trader_id(),
+        sell.strategy_id(),
+        instrument.id(),
+        sell.client_order_id(),
+        VenueOrderId::from("V-002"),
+        AccountId::test_default(),
+        sell_trade_id,
+        OrderSide::Sell,
+        sell.order_type(),
+        Quantity::from(3),
+        Price::from("10"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    execution_engine.process(&sell_fill);
+
+    let position_id = {
+        let cache = execution_engine.cache().borrow();
+        let position_id = cache.order(&buy.client_order_id()).unwrap().position_id();
+        let position = cache.position(&position_id.unwrap()).unwrap();
+        assert_eq!(position.side, PositionSide::Short);
+        assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
+        position.id
+    };
+
+    let restatement = OrderEventAny::Filled(
+        OrderFilledSpec::builder()
+            .trader_id(buy.trader_id())
+            .strategy_id(buy.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(buy.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .account_id(AccountId::test_default())
+            .trade_id(buy_trade_id)
+            .order_side(OrderSide::Buy)
+            .order_type(buy.order_type())
+            .last_qty(Quantity::from(2))
+            .last_px(Price::from("10.2"))
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .event_id(UUID4::new())
+            .build(),
+    );
+    execution_engine.process(&restatement);
+
+    let cache = execution_engine.cache().borrow();
+    let position = cache.position(&position_id).unwrap();
+    let buy_order = cache.order(&buy.client_order_id()).unwrap();
+
+    assert_eq!(position.side, PositionSide::Short);
+    assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
+    assert_eq!(position.avg_px_open, Price::from("10").as_f64());
+    assert_eq!(buy_order.filled_qty().as_decimal(), Decimal::from(2));
+    assert_eq!(buy_order.avg_px(), Some(dec!(10.2)));
+}
+
+#[rstest]
 fn test_handle_multiple_partial_fill_events(mut execution_engine: ExecutionEngine) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();

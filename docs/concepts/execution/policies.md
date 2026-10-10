@@ -48,9 +48,10 @@ define a global FIFO order. See
 NautilusTrader does not use `event_id` as a universal order-level deduplication key and does not
 guarantee exactly-once application for every order event. Its narrower protections are:
 
-- An order rejects a second fill with the same `trade_id`.
-- The execution engine prevents the same `trade_id` from being applied again to the target
-  position.
+- An order rejects a repeated fill at the latest recorded price for a `trade_id`; a repeated fill
+  at a new price restates that trade's average price without applying quantity.
+- The execution engine prevents the same `trade_id` from adding quantity to the target position
+  again, and routes a price restatement to the open position's average instead.
 - Fill voids use the original `trade_id` and reject duplicate, stale, conflicting, or excessive
   cumulative corrections.
 - Other repeated lifecycle events must still pass the state transition. Some state-preserving

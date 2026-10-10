@@ -151,6 +151,53 @@ impl Debug for ExecutionEngine {
     }
 }
 
+fn fill_affects_quantity(apply_position: bool, restatement: bool) -> bool {
+    apply_position && !restatement
+}
+
+fn position_accepts_price_restatement(position: &Position, fill: &OrderFilled) -> bool {
+    if !position.is_open()
+        || !position.trade_ids.contains(&fill.trade_id)
+        || fill.order_side != position.entry
+    {
+        return false;
+    }
+
+    let Some(existing) = position.events.iter().find(|event| {
+        event.trade_id == fill.trade_id && event.client_order_id == fill.client_order_id
+    }) else {
+        return false;
+    };
+
+    if existing.last_qty != fill.last_qty {
+        return false;
+    }
+
+    let mut latest = None;
+
+    for event in &position.replay_events {
+        let PositionReplayEvent::Filled(existing) = event else {
+            continue;
+        };
+
+        if existing.trade_id == fill.trade_id && existing.client_order_id == fill.client_order_id {
+            latest = Some(existing.last_px);
+        }
+    }
+
+    latest.is_some_and(|price| price != fill.last_px)
+}
+
+fn is_fill_price_restatement(order: &OrderAny, fill: &OrderFilled) -> bool {
+    order.events().iter().any(|event| {
+        matches!(
+            event,
+            OrderEventAny::Filled(existing)
+                if existing.trade_id == fill.trade_id && existing.last_px != fill.last_px
+        )
+    })
+}
+
 impl ExecutionEngine {
     /// Creates a new [`ExecutionEngine`] instance.
     pub fn new(
@@ -3172,6 +3219,7 @@ impl ExecutionEngine {
                 let mut fill = fill.clone();
                 fill.position_id = Some(position_id);
 
+                let restatement = is_fill_price_restatement(&order_before_fill, &fill);
                 let validation = if apply_position {
                     self.validate_fill_for_order(&order_before_fill, &fill)
                 } else {
@@ -3182,7 +3230,8 @@ impl ExecutionEngine {
                     return false;
                 }
 
-                if apply_position
+                let affects_quantity = fill_affects_quantity(apply_position, restatement);
+                if affects_quantity
                     && !self.validate_fill_for_external_position(
                         &order_before_fill,
                         &fill,
@@ -3195,13 +3244,14 @@ impl ExecutionEngine {
 
                 let event = OrderEventAny::Filled(fill.clone());
 
-                let Some(order) = self.update_cached_order(client_order_id, &event, apply_position)
+                let Some(order) =
+                    self.update_cached_order(client_order_id, &event, affects_quantity)
                 else {
                     return false;
                 };
 
                 let position_events = if apply_position {
-                    self.handle_order_fill(&order, fill, oms_type)
+                    self.handle_order_fill(&order, fill, oms_type, restatement)
                 } else {
                     Vec::new()
                 };
@@ -3862,6 +3912,10 @@ impl ExecutionEngine {
             anyhow::bail!("Duplicate fill");
         }
 
+        if is_fill_price_restatement(order, fill) {
+            return Ok(());
+        }
+
         if let Some(position_id) = fill.position_id
             && self.position_contains_trade_id(position_id, fill.trade_id)
         {
@@ -3884,6 +3938,10 @@ impl ExecutionEngine {
     ) -> anyhow::Result<()> {
         if order.is_duplicate_fill(fill) {
             anyhow::bail!("Duplicate fill");
+        }
+
+        if is_fill_price_restatement(order, fill) {
+            return Ok(());
         }
 
         self.check_overfill(order, fill)
@@ -4105,6 +4163,7 @@ impl ExecutionEngine {
         order: &OrderAny,
         fill: OrderFilled,
         oms_type: OmsType,
+        restatement: bool,
     ) -> Vec<PositionEvent> {
         let instrument =
             if let Some(instrument) = self.cache.borrow().instrument(&fill.instrument_id) {
@@ -4131,14 +4190,27 @@ impl ExecutionEngine {
         };
 
         // Skip portfolio position updates for combo fills (spread instruments)
-        // Combo fills are only used for order management, not portfolio updates
-        if !instrument.is_spread() && is_margin_account {
+        // Combo fills are only used for order management, not portfolio updates.
+        // A price restatement does not change quantity, so it is not a cash fill.
+        if !instrument.is_spread() && is_margin_account && !restatement {
             let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
             msgbus::send_order_event(portfolio_endpoint, OrderEventAny::Filled(fill.clone()));
         }
 
         let (position, position_events) = if instrument.is_spread() {
             (None, Vec::new())
+        } else if restatement {
+            let position_events = self.restate_open_position_price(&fill);
+            let position_id = fill.position_id;
+            (
+                position_id.and_then(|position_id| {
+                    self.cache
+                        .borrow()
+                        .position(&position_id)
+                        .map(|position| position.clone_without_events())
+                }),
+                position_events,
+            )
         } else {
             let position_events = self.handle_position_update(&instrument, fill.clone(), oms_type);
             let position_id = fill.position_id.unwrap();
@@ -4773,6 +4845,36 @@ impl ExecutionEngine {
             let event = PositionChanged::create(position, fill, UUID4::new(), ts_init);
             Some(PositionEvent::PositionChanged(event))
         }
+    }
+
+    fn restate_open_position_price(&self, fill: &OrderFilled) -> Vec<PositionEvent> {
+        let Some(position_id) = fill.position_id else {
+            return Vec::new();
+        };
+
+        let applicable = self
+            .cache
+            .borrow()
+            .position(&position_id)
+            .is_some_and(|position| position_accepts_price_restatement(&position, fill));
+
+        if !applicable {
+            if let Some(position) = self.cache.borrow().position(&position_id) {
+                log::warn!(
+                    "Price restatement for {} trade_id={} was not applied to position {}: \
+                     the trade is not an opening fill of the current cycle with a matching quantity",
+                    fill.client_order_id,
+                    fill.trade_id,
+                    position.id,
+                );
+            }
+
+            return Vec::new();
+        }
+
+        self.update_position_from_fill(position_id, fill)
+            .into_iter()
+            .collect()
     }
 
     fn update_position_from_fill(

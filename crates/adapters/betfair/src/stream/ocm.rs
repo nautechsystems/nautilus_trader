@@ -560,6 +560,7 @@ impl OcmState {
             && !self.is_canceled_replace(&order.id)
             && !self.fill_tracker.has_unseen_fill(order)
             && !self.fill_tracker.has_unseen_fill_void(order)
+            && !self.fill_tracker.has_unseen_price_restatement(order)
     }
 
     pub(crate) fn clear_canceled_replace(&mut self, bet_id: &str) {

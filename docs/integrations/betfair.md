@@ -648,6 +648,15 @@ The adapter handles several edge cases when processing fills from the stream:
 - **Replacement fills**: a fill reported against an old Bet ID updates the same logical order once
   without replacing its current Bet ID. A partial fill received while an order is `PENDING_UPDATE`
   or `PENDING_CANCEL` updates its filled quantity while preserving the pending command state.
+- **Price restatements**: a Rule 4 withdrawal republishes a matched Bet with a reduced average
+  matched price and unchanged matched size. The adapter emits the new price as a fill carrying the
+  Bet's trade ID, which restates the order and open position averages without changing quantity.
+  A restatement applies when exactly one fill lot survives on the Bet; an update where more than
+  one lot survives, or a void and a new average arrive together, emits nothing. Restating a
+  closing fill corrects the order average only; position close accounting keeps its original
+  values. Restating an opening fill after a partial close updates the open average only;
+  realized PnL for already-closed quantity keeps its original value. A restatement on a
+  canceled Bet does not emit another cancel.
 - **Late terminal corrections**: the adapter retains correlation and per-Bet fill and void state for
   the 10,000 most recent terminal identities, including identities restored from closed cached
   orders. Locally owned identities and external terminal Bet IDs share this bound. Delayed fills and

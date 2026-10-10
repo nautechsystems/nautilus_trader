@@ -531,21 +531,25 @@ The order transitions to `FILLED` status and `leaves_qty` is clamped to zero.
 
 ### Duplicate fill detection
 
-The `Order` model enforces one applied fill per `trade_id`. `Order.apply()` returns an error when
-the same ID already exists on the order.
+The `Order` model enforces one quantity-bearing fill per `trade_id`. A repeated fill at the
+latest recorded price for that trade is rejected as a duplicate. A repeated fill at a new price
+restates the price that trade contributes to `avg_px` without changing quantity, status, or the
+original stored fill.
 
 #### Core engine path
 
-Before applying a fill, the `ExecutionEngine` calls `Order.is_duplicate_fill()`, which compares:
+Before applying a fill, the `ExecutionEngine` calls `Order.is_duplicate_fill()`, which compares
+the latest fill for the `trade_id` on:
 
 - `trade_id`
 - `order_side`
 - `last_px`
 - `last_qty`
 
-An exact match is skipped with a warning. If the `trade_id` matches but another field differs, the
-four-field check does not classify the fill as an exact duplicate. `Order.apply()` then rejects the
-reused ID, and the engine logs and drops the fill.
+An exact match is skipped with a warning. If the `trade_id` matches but the price differs, the
+fill is a price restatement: the order restates its average price and the engine restates the
+open position's average without applying quantity. If another field differs, `Order.apply()`
+rejects the reused ID, and the engine logs and drops the fill.
 
 #### Reconciliation path
 
@@ -610,8 +614,9 @@ A void is a venue action on a trade it already reported. The causes recur across
   positions carry no exposure.
 - **Post-trade restatement**: the venue restates the quantity or fees of a trade during clearing.
 
-The event does not restate the fill price, so a venue price adjustment is not expressible as a
-single correction.
+A venue price adjustment is expressed as a new `OrderFilled` carrying the same `trade_id` at the
+new price, which restates the trade's accounting without changing its matched quantity. The
+`OrderFillVoided` event itself corrects quantity, not price.
 
 A break reaches the client differently by venue. FIX venues signal one through
 [`ExecType <150>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_150.html) values `H` (trade
