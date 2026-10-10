@@ -146,8 +146,10 @@ Current priorities include stabilizing the Rust-native core, improving documenta
 
 The open-source project focuses on single-node backtesting and live trading for individual and small-team quantitative traders.
 UI dashboards, distributed orchestration, and built-in AI/ML tooling are out of scope to maintain focus on the core engine and ecosystem sustainability.
+Additional external integrations (such as databases, cloud services, and monitoring tools) are also out of scope
+unless explicitly listed in the [open-source scope](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#open-source-scope).
 
-New integration proposals should start with an RFC issue to discuss suitability before submitting a PR.
+New integration proposals within the open-source scope should start with an RFC issue to discuss suitability before submitting a PR.
 See [Community-contributed integrations](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#community-contributed-integrations) for guidelines.
 
 ## Security
@@ -646,6 +648,12 @@ Thank you again for your interest in NautilusTrader! We look forward to reviewin
 Join our community of users and contributors on [Discord](https://discord.gg/NautilusTrader) to chat
 and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a
 developer looking to contribute or just want to learn more about the platform, all are welcome on our Discord server.
+
+Features and integrations excluded by the [open-source scope](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#out-of-scope)
+are also out of scope for discussion across official NautilusTrader channels, including GitHub and Discord.
+This includes "Show & Tell" posts about downstream implementations, even when no contribution is offered
+and no support or upstream inclusion is requested. Correctness and performance reports about the core trading engine
+remain welcome. Keep those reports focused on the core behavior.
 
 > [!WARNING]
 >

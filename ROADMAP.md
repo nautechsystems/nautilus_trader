@@ -7,7 +7,8 @@ Given the dynamic nature of the project, priorities may evolve to keep pace with
 For real-time updates and detailed task tracking, refer to the [NautilusTrader Kanban board](https://github.com/orgs/nautechsystems/projects/3).
 
 **Note**: Bug fixes and roadmap priorities take precedence over feature requests to ensure stability
-and progress. However, pull requests (PRs) for improvements and new features are always welcome.
+and progress. However, pull requests (PRs) for improvements and new features within the
+[open-source scope](#open-source-scope) are welcome.
 For more details, see the [CONTRIBUTING.md](/CONTRIBUTING.md).
 
 ## Vision
@@ -68,6 +69,16 @@ we set clear expectations, focus community efforts, and support a sustainable op
 - Integrated hyper-parameter optimization or built-in AI/ML tooling: users should integrate their own optimization frameworks tailored to their needs.
 - Additional external integrations (e.g. cloud services, databases, and monitoring tools): these are not in scope unless explicitly listed.
 
+These exclusions apply to implementation, proposals, and all discussion across official NautilusTrader channels,
+including GitHub issues, pull requests, Discussions, and Discord. Do not use these channels to discuss or showcase
+out-of-scope features or integrations, including through "Show & Tell" posts, demonstrations, tutorials, or links
+to downstream implementations. This applies even when no contribution is offered and no support or upstream
+inclusion is requested.
+This keeps community discussion and maintainer support focused on the open-source scope.
+
+Correctness and performance reports about the core trading engine remain welcome. Keep those reports focused
+on the core behavior.
+
 ## Community-contributed integrations
 
 New integrations are a major undertaking for the project. They involve more than just the initial code:
@@ -81,6 +92,9 @@ At present, the project has limited bandwidth to support new official integratio
 To set clearer expectations:
 
 **Step 1 - Open an RFC**
+
+The RFC process applies only to integrations within the open-source scope. It does not provide an exception
+for integrations excluded above.
 
 Before opening a PR for a new integration, contributors should first open a Request for Comments (RFC) issue.
 This allows discussion of suitability, alignment with the roadmap, and maintenance considerations before any code is written.
