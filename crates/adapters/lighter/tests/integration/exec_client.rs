@@ -4748,7 +4748,7 @@ async fn test_generate_mass_status_restores_filled_orders_from_trade_market() {
     assert_eq!(fill_report.order_side, OrderSide::Buy);
     assert_eq!(fill_report.last_qty, Quantity::from("0.1336"));
     assert_eq!(fill_report.last_px, Price::from("2352.73"));
-    assert_eq!(fill_report.commission, Money::from("0.000196 USDC"));
+    assert_eq!(fill_report.commission, Money::from("0.06160765 USDC"));
     assert_eq!(
         reused_order_report.client_order_id,
         Some(reused_client_order_id),
