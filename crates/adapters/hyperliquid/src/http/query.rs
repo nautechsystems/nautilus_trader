@@ -13,14 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::Serialize;
+use hypersdk::hypercore::CandleSnapshotRequest;
+use serde::{Serialize, Serializer};
 
 use crate::{
     common::enums::{HyperliquidBarInterval, HyperliquidInfoRequestType},
     http::models::{
         HyperliquidExchangeBuilderFee, HyperliquidExchangeCancelByCloidRequest,
         HyperliquidExchangeGrouping, HyperliquidExchangeModifyOrderRequest,
-        HyperliquidExchangePlaceOrderRequest,
+        HyperliquidExchangePlaceOrderRequest, is_fast_cancel_disabled,
     },
 };
 
@@ -68,7 +69,7 @@ pub struct OrderParams {
 #[derive(Debug, Clone, Serialize)]
 pub struct CancelParams {
     pub cancels: Vec<HyperliquidExchangeCancelByCloidRequest>,
-    #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "f", skip_serializing_if = "is_fast_cancel_disabled")]
     pub fast: Option<bool>,
 }
 
@@ -145,13 +146,31 @@ pub struct SpotClearinghouseStateParams {
 }
 
 /// Parameters for candle snapshot request.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct CandleSnapshotReq {
     pub coin: String,
     pub interval: HyperliquidBarInterval,
     pub start_time: u64,
     pub end_time: u64,
+}
+
+impl Serialize for CandleSnapshotReq {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        CandleSnapshotRequest {
+            coin: self.coin.clone(),
+            interval: self
+                .interval
+                .as_str()
+                .parse()
+                .map_err(serde::ser::Error::custom)?,
+            start_time: self.start_time,
+            end_time: self.end_time,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Wrapper for candle snapshot parameters.
@@ -535,6 +554,31 @@ mod tests {
 
         assert_eq!(req.request_type, HyperliquidInfoRequestType::Meta);
         assert!(matches!(req.params, InfoRequestParams::None));
+    }
+
+    #[rstest]
+    fn test_sdk_candle_request_preserves_interval_and_time_bounds(
+        #[values(
+            "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h", "1d", "3d", "1w", "1M"
+        )]
+        interval: &str,
+    ) {
+        let request = InfoRequest::candle_snapshot(
+            "testdex:BTC",
+            interval.parse().unwrap(),
+            1_700_000_000_000,
+            1_700_000_059_999,
+        );
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "type": "candleSnapshot",
+                "req": {
+                    "coin": "testdex:BTC", "interval": interval,
+                    "startTime": 1_700_000_000_000_u64, "endTime": 1_700_000_059_999_u64,
+                },
+            })
+        );
     }
 
     #[rstest]

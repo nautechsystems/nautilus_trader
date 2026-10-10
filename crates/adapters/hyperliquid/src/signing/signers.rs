@@ -15,32 +15,20 @@
 
 use std::{fmt::Debug, str::FromStr};
 
-use alloy::{
-    signers::{SignerSync, local::PrivateKeySigner},
-    sol_types::{Eip712Domain, SolStruct, eip712_domain},
-};
+use alloy::signers::SignerSync;
 use alloy_primitives::{Address, B256, Keccak256};
+use hypersdk::hypercore::{Chain, PrivateKeySigner, api::Action, signing::agent_signing_hash};
 use nautilus_core::string::secret::REDACTED;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{nonce::TimeNonce, types::HyperliquidActionType};
+use super::{actions::sdk_action, nonce::TimeNonce, types::HyperliquidActionType};
 use crate::{
     common::credential::{EvmPrivateKey, VaultAddress},
     http::{
         error::{Error, Result},
-        models::HyperliquidSignature,
+        models::{HyperliquidExchangeAction, HyperliquidSignature},
     },
 };
-
-// Define the Agent struct for L1 signing
-alloy::sol! {
-    #[derive(Debug, Serialize, Deserialize)]
-    struct Agent {
-        string source;
-        bytes32 connectionId;
-    }
-}
 
 /// Request to be signed by the Hyperliquid EIP-712 signer.
 ///
@@ -70,7 +58,6 @@ pub struct SignatureBundle {
 pub struct HyperliquidEip712Signer {
     signer: PrivateKeySigner,
     address: String,
-    domain: Eip712Domain,
 }
 
 impl Debug for HyperliquidEip712Signer {
@@ -78,7 +65,6 @@ impl Debug for HyperliquidEip712Signer {
         f.debug_struct(stringify!(HyperliquidEip712Signer))
             .field("signer", &REDACTED)
             .field("address", &self.address)
-            .field("domain", &self.domain)
             .finish()
     }
 }
@@ -98,18 +84,7 @@ impl HyperliquidEip712Signer {
 
         let address = format!("{:#x}", signer.address());
 
-        let domain = eip712_domain! {
-            name: "Exchange",
-            version: "1",
-            chain_id: 1337,
-            verifying_contract: Address::ZERO,
-        };
-
-        Ok(Self {
-            signer,
-            address,
-            domain,
-        })
+        Ok(Self { signer, address })
     }
 
     pub fn sign(&self, request: &SignRequest) -> Result<SignatureBundle> {
@@ -117,7 +92,7 @@ impl HyperliquidEip712Signer {
             HyperliquidActionType::L1 => self.sign_l1_action(request)?,
             HyperliquidActionType::UserSigned => {
                 return Err(Error::bad_request(
-                    "UserSigned signing is not implemented; all exchange actions use L1",
+                    "Generic user-signed requests are unsupported; use typed exchange actions",
                 ));
             }
         };
@@ -126,27 +101,67 @@ impl HyperliquidEip712Signer {
     }
 
     pub fn sign_l1_action(&self, request: &SignRequest) -> Result<HyperliquidSignature> {
-        // L1 signing for Hyperliquid follows this pattern:
-        // 1. Serialize action with MessagePack (rmp_serde)
-        // 2. Append timestamp, vault info, and optional expiry
-        // 3. Hash with keccak256 to get connection_id
-        // 4. Create Agent struct with source + connection_id
-        // 5. Sign Agent with EIP-712
-
-        // Step 1-3: Create connection_id
         let connection_id = self.compute_connection_id(request)?;
+        let chain = if request.is_testnet {
+            Chain::Testnet
+        } else {
+            Chain::Mainnet
+        };
+        let signing_hash = agent_signing_hash(chain, connection_id);
 
-        // Step 4: Create Agent struct
-        let source = if request.is_testnet { "b" } else { "a" };
+        self.sign_hash(&signing_hash.0)
+    }
 
-        let agent = Agent {
-            source: source.to_string(),
-            connectionId: connection_id,
+    pub(crate) fn sign_exchange_action(
+        &self,
+        action: &HyperliquidExchangeAction,
+        request: &SignRequest,
+    ) -> Result<HyperliquidSignature> {
+        let Some(action) = sdk_action(action)? else {
+            let action_bytes = rmp_serde::to_vec_named(action)
+                .map_err(|e| Error::bad_request(format!("Failed to serialize action: {e}")))?;
+            return self.sign_l1_action(&SignRequest {
+                action_bytes: Some(action_bytes),
+                ..request.clone()
+            });
         };
 
-        // Step 5: Sign Agent with EIP-712
-        let signing_hash = agent.eip712_signing_hash(&self.domain);
+        let vault = request
+            .vault_address
+            .map(|vault| Address::from_slice(vault.as_bytes()));
+        let chain = if request.is_testnet {
+            Chain::Testnet
+        } else {
+            Chain::Mainnet
+        };
 
+        if let Action::UsdClassTransfer(transfer) = &action {
+            if transfer.nonce != request.time_nonce.as_millis() as u64
+                || transfer.hyperliquid_chain != chain
+            {
+                return Err(Error::bad_request(
+                    "Transfer network or nonce does not match its request",
+                ));
+            }
+
+            if request.vault_address.is_some() || request.expires_after.is_some() {
+                return Err(Error::bad_request(
+                    "USD class transfers do not support vaults or expiry",
+                ));
+            }
+            let hash = action
+                .prehash(request.time_nonce.as_millis() as u64, None, None, chain)
+                .map_err(|e| Error::bad_request(format!("Failed to hash transfer: {e}")))?;
+            return self.sign_hash(&hash.0);
+        }
+        let connection_id = action
+            .hash(
+                request.time_nonce.as_millis() as u64,
+                vault,
+                request.expires_after,
+            )
+            .map_err(|e| Error::bad_request(format!("Failed to hash action: {e}")))?;
+        let signing_hash = agent_signing_hash(chain, connection_id);
         self.sign_hash(&signing_hash.0)
     }
 
@@ -214,11 +229,14 @@ impl HyperliquidEip712Signer {
 #[cfg(test)]
 mod tests {
     use ahash::AHashSet;
-    use alloy::sol_types::SolStruct;
+    use alloy::sol_types::{SolStruct, eip712_domain};
+    use alloy_primitives::Address;
+    use hypersdk::hypercore::api::{Action, UserOutcomeAction};
     use nautilus_core::hex;
     use nautilus_model::{identifiers::ClientOrderId, types::Price};
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use serde::Serialize;
     use serde_json::json;
 
     use super::*;
@@ -226,7 +244,163 @@ mod tests {
         Cloid, HyperliquidExchangeAction, HyperliquidExchangeGrouping,
         HyperliquidExchangeLimitParams, HyperliquidExchangeOrderKind,
         HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
+        HyperliquidExchangeUserOutcomeOp,
     };
+
+    alloy::sol! {
+        struct Agent {
+            string source;
+            bytes32 connectionId;
+        }
+    }
+
+    #[rstest]
+    #[case::order(json!({
+        "type": "order",
+        "orders": [{
+            "a": 0, "b": true, "p": "51000.00", "s": "0.1000", "r": false,
+            "t": {"limit": {"tif": "Alo"}},
+            "c": "0x11111111111111111111111111111111"
+        }],
+        "grouping": "na"
+    }))]
+    #[case::trigger(json!({
+        "type": "order",
+        "orders": [{
+            "a": 10001, "b": false, "p": "49000", "s": "0.1", "r": true,
+            "t": {"trigger": {"isMarket": true, "triggerPx": "50000.00", "tpsl": "sl"}}
+        }],
+        "grouping": "positionTpsl",
+        "builder": {"b": "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "f": 10}
+    }))]
+    #[case::cancel(json!({"type": "cancel", "cancels": [{"a": 0, "o": 123}]}))]
+    #[case::cancel_without_fast(json!({
+        "type": "cancel", "cancels": [{"a": 0, "o": 123}], "f": false
+    }))]
+    #[case::zero_cloid(json!({
+        "type": "order",
+        "orders": [{
+            "a": 0, "b": true, "p": "0.0000000000000000000000000001",
+            "s": "1.0000000000000000000000000000", "r": false,
+            "t": {"limit": {"tif": "Gtc"}},
+            "c": "0x00000000000000000000000000000000"
+        }],
+        "grouping": "na"
+    }))]
+    #[case::fast_cancel(json!({
+        "type": "cancel", "cancels": [{"a": 10001, "o": 123}], "f": true
+    }))]
+    #[case::cancel_by_cloid(json!({
+        "type": "cancelByCloid",
+        "cancels": [{"asset": 0, "cloid": "0x11111111111111111111111111111111"}]
+    }))]
+    #[case::modify(json!({
+        "type": "modify", "oid": "0x11111111111111111111111111111111",
+        "order": {"a": 0, "b": true, "p": "51000", "s": "0.1", "r": false,
+                  "t": {"limit": {"tif": "Gtc"}}}
+    }))]
+    #[case::batch_modify(json!({
+        "type": "batchModify",
+        "modifies": [{"oid": 123,
+            "order": {"a": 0, "b": false, "p": "52000", "s": "0.1", "r": true,
+                      "t": {"limit": {"tif": "Ioc"}}}}]
+    }))]
+    #[case::schedule_cancel(json!({"type": "scheduleCancel", "time": 1700000001000_u64}))]
+    #[case::clear_schedule(json!({"type": "scheduleCancel"}))]
+    #[case::split_outcome(json!({
+        "type": "userOutcome", "splitOutcome": {"outcome": 123, "amount": "2"}
+    }))]
+    #[case::merge_outcome(json!({
+        "type": "userOutcome", "mergeOutcome": {"outcome": 123, "amount": null}
+    }))]
+    #[case::merge_question(json!({
+        "type": "userOutcome", "mergeQuestion": {"question": 123, "amount": "2"}
+    }))]
+    #[case::merge_question_max(json!({
+        "type": "userOutcome", "mergeQuestion": {"question": 123, "amount": null}
+    }))]
+    #[case::negate_outcome(json!({
+        "type": "userOutcome",
+        "negateOutcome": {"question": 123, "outcome": 456, "amount": "2"}
+    }))]
+    #[case::noop(json!({"type": "noop"}))]
+    #[case::update_leverage(json!({
+        "type": "updateLeverage", "asset": 10001, "isCross": false, "leverage": 3
+    }))]
+    #[case::cancel_twap(json!({"type": "twapCancel", "a": 10001, "t": 123}))]
+    #[case::place_twap(json!({
+        "type": "twapOrder",
+        "twap": {"a": 10001, "b": false, "s": "0.1000", "r": true, "m": 30, "t": true}
+    }))]
+    #[case::add_margin(json!({
+        "type": "updateIsolatedMargin", "asset": 10001, "isBuy": true, "ntli": 1_000_001
+    }))]
+    fn test_l1_signature_matches_hypersdk(
+        #[case] payload: Value,
+        #[values(false, true)] is_testnet: bool,
+        #[values(false, true)] with_vault: bool,
+        #[values(None, Some(1700000001000_u64))] expires_after: Option<u64>,
+    ) {
+        let private_key = EvmPrivateKey::new(
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
+        .unwrap();
+        let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
+        let action: HyperliquidExchangeAction = serde_json::from_value(payload.clone()).unwrap();
+        let sdk_action: Action = match &action {
+            HyperliquidExchangeAction::UserOutcome {
+                op: HyperliquidExchangeUserOutcomeOp::MergeOutcome(params),
+            } => Action::UserOutcome(UserOutcomeAction::merge(params.outcome, params.amount)),
+            HyperliquidExchangeAction::UserOutcome {
+                op: HyperliquidExchangeUserOutcomeOp::MergeQuestion(params),
+            } => Action::UserOutcome(UserOutcomeAction::merge_question(
+                params.question,
+                params.amount,
+            )),
+            _ => serde_json::from_value(payload).unwrap(),
+        };
+        let action_bytes = rmp_serde::to_vec_named(&action).unwrap();
+        assert_eq!(action_bytes, rmp_serde::to_vec_named(&sdk_action).unwrap());
+
+        let vault_address = with_vault
+            .then(|| VaultAddress::parse("0x2222222222222222222222222222222222222222").unwrap());
+        let request = SignRequest {
+            action: None,
+            action_bytes: Some(action_bytes),
+            time_nonce: TimeNonce::from_millis(1700000000000),
+            action_type: HyperliquidActionType::L1,
+            is_testnet,
+            vault_address,
+            expires_after,
+        };
+        let connection_id = sdk_action
+            .hash(
+                request.time_nonce.as_millis() as u64,
+                vault_address.map(|vault| Address::from_slice(vault.as_bytes())),
+                expires_after,
+            )
+            .unwrap();
+        assert_eq!(
+            signer.compute_connection_id(&request).unwrap(),
+            connection_id
+        );
+
+        let chain = if is_testnet {
+            Chain::Testnet
+        } else {
+            Chain::Mainnet
+        };
+        let signing_hash = agent_signing_hash(chain, connection_id);
+        let sdk_signature = signer.signer.sign_hash_sync(&signing_hash).unwrap();
+        let signature = signer.sign(&request).unwrap().signature;
+        let signature_bytes = signature.to_hex();
+        assert_eq!(signature_bytes.expose_secret(), &format!("{sdk_signature}"));
+        let typed_signature = signer.sign_exchange_action(&action, &request).unwrap();
+        assert_eq!(
+            typed_signature.to_hex().expose_secret(),
+            signature_bytes.expose_secret()
+        );
+    }
 
     #[rstest]
     fn test_sign_request_l1_action() {
@@ -258,6 +432,128 @@ mod tests {
         assert_eq!(sig_hex.expose_secret().len(), 132); // 0x + 130 hex chars
         assert!(debug.contains(REDACTED));
         assert!(!debug.contains(private_key.as_hex()));
+    }
+
+    #[rstest]
+    fn test_usd_transfer_signature_uses_sdk_user_domain(
+        #[values(false, true)] is_testnet: bool,
+        #[values(false, true)] to_perp: bool,
+    ) {
+        let private_key = EvmPrivateKey::new(
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
+        .unwrap();
+        let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
+        let chain = if is_testnet {
+            Chain::Testnet
+        } else {
+            Chain::Mainnet
+        };
+        let action = HyperliquidExchangeAction::UsdClassTransfer {
+            hyperliquid_chain: chain,
+            signature_chain_id: u64::from_str_radix(
+                chain.arbitrum_id().trim_start_matches("0x"),
+                16,
+            )
+            .unwrap(),
+            amount: dec!(1.0000000000000000000000000001),
+            to_perp,
+            nonce: 1_700_000_000_000,
+        };
+        let request = SignRequest {
+            action: None,
+            action_bytes: None,
+            time_nonce: TimeNonce::from_millis(1_700_000_000_000),
+            action_type: HyperliquidActionType::UserSigned,
+            is_testnet,
+            vault_address: None,
+            expires_after: None,
+        };
+        let signature = signer.sign_exchange_action(&action, &request).unwrap();
+        let sdk_action: Action =
+            serde_json::from_value(serde_json::to_value(&action).unwrap()).unwrap();
+        let sdk_signature = signature.to_hex().expose_secret().parse().unwrap();
+        assert_eq!(
+            sdk_action
+                .recover(&sdk_signature, 1_700_000_000_000, None, None, chain)
+                .unwrap(),
+            signer.signer.address()
+        );
+
+        let raw_request = SignRequest {
+            action_bytes: Some(rmp_serde::to_vec_named(&action).unwrap()),
+            ..request.clone()
+        };
+        assert_ne!(
+            signer
+                .sign_l1_action(&raw_request)
+                .unwrap()
+                .to_hex()
+                .expose_secret(),
+            signature.to_hex().expose_secret()
+        );
+        let mismatched_request = SignRequest {
+            time_nonce: TimeNonce::from_millis(1_700_000_000_001),
+            ..request.clone()
+        };
+        assert!(
+            signer
+                .sign_exchange_action(&action, &mismatched_request)
+                .is_err()
+        );
+        let mismatched_request = SignRequest {
+            is_testnet: !is_testnet,
+            ..request
+        };
+        assert!(
+            signer
+                .sign_exchange_action(&action, &mismatched_request)
+                .is_err()
+        );
+    }
+
+    #[rstest]
+    fn test_margin_withdrawal_preserves_signed_wire_value(
+        #[values(-1_i64, -1_000_001, i64::MIN)] ntli: i64,
+        #[values(false, true)] is_testnet: bool,
+    ) {
+        let private_key = EvmPrivateKey::new(
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
+        .unwrap();
+        let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
+        let action = HyperliquidExchangeAction::UpdateIsolatedMargin {
+            asset: 10001,
+            is_buy: true,
+            ntli,
+        };
+        let reference =
+            crate::http::query::ExchangeAction::update_isolated_margin(10001, true, ntli);
+        let reference_bytes = rmp_serde::to_vec_named(&reference).unwrap();
+        assert_eq!(rmp_serde::to_vec_named(&action).unwrap(), reference_bytes);
+        let request = SignRequest {
+            action: None,
+            action_bytes: Some(reference_bytes),
+            time_nonce: TimeNonce::from_millis(1_700_000_000_000),
+            action_type: HyperliquidActionType::L1,
+            is_testnet,
+            vault_address: None,
+            expires_after: Some(1_700_000_001_000),
+        };
+        assert_eq!(
+            signer
+                .sign_exchange_action(&action, &request)
+                .unwrap()
+                .to_hex()
+                .expose_secret(),
+            signer
+                .sign_l1_action(&request)
+                .unwrap()
+                .to_hex()
+                .expose_secret()
+        );
+        let value = serde_json::to_value(&action).unwrap();
+        assert_eq!(value["ntli"].as_i64(), Some(ntli));
     }
 
     // L1 sign with neither field set must error, not panic on missing input

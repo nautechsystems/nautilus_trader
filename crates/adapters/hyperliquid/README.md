@@ -11,6 +11,11 @@
 The `nautilus-hyperliquid` crate provides client bindings (HTTP & WebSocket) and data
 models for the official **Hyperliquid API**.
 
+Exchange signing, public market-data subscriptions, and candle/book decoding use
+[hypersdk](https://github.com/infinitefield/hypersdk). NautilusTrader manages connections,
+rate limits, domain conversion, and reconciliation. Negative isolated-margin deltas retain
+signed wire encoding because hypersdk 0.2.18 models the delta as unsigned.
+
 ## NautilusTrader
 
 [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native

@@ -341,6 +341,7 @@ databento = { version = "0.63.0" }
 dydx-proto = { version = "0.4.0", default-features = false }
 fallible-streaming-iterator = "0.1.9"
 flate2 = "1.1.10"
+hypersdk = "0.2.18"
 hypersync-client = { version = "1.4.1" }
 ibapi = "=5.0.0"
 ryu = "1.0.23"

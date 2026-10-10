@@ -33,15 +33,17 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::post,
 };
+use hypersdk::hypercore::{Chain, PrivateKeySigner, api::Action};
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_hyperliquid::{
     HyperliquidHttpClient,
     common::enums::{HyperliquidEnvironment, HyperliquidInfoRequestType},
     http::{
+        client::HyperliquidRawHttpClient,
         error::Error,
         models::{
-            Cloid, HyperliquidExchangeResponse, HyperliquidFills, HyperliquidL2Book, OutcomeMeta,
-            PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
+            Cloid, HyperliquidExchangeAction, HyperliquidExchangeResponse, HyperliquidFills,
+            HyperliquidL2Book, OutcomeMeta, PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
         },
         query::{InfoRequest, InfoRequestParams},
     },
@@ -389,6 +391,82 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
 
     wait_for_server(addr, "/health").await;
     addr
+}
+
+#[rstest]
+#[case::mainnet(HyperliquidEnvironment::Mainnet, Chain::Mainnet)]
+#[case::testnet(HyperliquidEnvironment::Testnet, Chain::Testnet)]
+#[tokio::test]
+async fn test_sdk_usd_transfer_prepares_and_signs_sent_request(
+    #[case] environment: HyperliquidEnvironment,
+    #[case] chain: Chain,
+    #[values(false, true)] to_perp: bool,
+) {
+    let private_key = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut client =
+        HyperliquidRawHttpClient::from_credentials(private_key, None, environment, 60, None)
+            .unwrap();
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    let action = HyperliquidExchangeAction::UsdClassTransfer {
+        hyperliquid_chain: Chain::Mainnet,
+        signature_chain_id: 0,
+        nonce: 0,
+        amount: rust_decimal_macros::dec!(15.250000),
+        to_perp,
+    };
+    client.post_action_exec(&action).await.unwrap();
+    let body = state.last_request_body.lock().await.clone().unwrap();
+    let nonce = body["nonce"].as_u64().unwrap();
+    assert_eq!(body["action"]["nonce"], nonce);
+    assert_eq!(body["action"]["hyperliquidChain"], chain.to_string());
+    assert_eq!(body["action"]["signatureChainId"], chain.arbitrum_id());
+    assert_eq!(body["action"]["amount"], "15.250000");
+    assert_eq!(body["action"]["toPerp"], to_perp);
+    assert!(body.get("vaultAddress").is_none());
+    let sdk_action: Action = serde_json::from_value(body["action"].clone()).unwrap();
+    let signature = serde_json::from_value(body["signature"].clone()).unwrap();
+    let expected_signer: PrivateKeySigner = private_key.parse().unwrap();
+    assert_eq!(
+        sdk_action
+            .recover(&signature, nonce, None, None, chain)
+            .unwrap(),
+        expected_signer.address()
+    );
+}
+
+#[rstest]
+#[case::vault(Some("0x1111111111111111111111111111111111111111"), None)]
+#[case::expiry(None, Some(1_700_000_001_000))]
+#[tokio::test]
+async fn test_sdk_usd_transfer_rejects_unsupported_context_before_dispatch(
+    #[case] vault: Option<&str>,
+    #[case] expires_after: Option<u64>,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut client = HyperliquidRawHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        vault,
+        HyperliquidEnvironment::Testnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    let action = HyperliquidExchangeAction::UsdClassTransfer {
+        hyperliquid_chain: Chain::Mainnet,
+        signature_chain_id: 0,
+        nonce: 0,
+        amount: rust_decimal_macros::dec!(1),
+        to_perp: true,
+    };
+    let e = client
+        .sign_action_exec_request(&action, expires_after)
+        .unwrap_err();
+    assert!(matches!(e, Error::BadRequest(_)));
+    assert_eq!(*state.request_count.lock().await, 0);
 }
 
 #[rstest]

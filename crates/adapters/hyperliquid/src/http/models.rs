@@ -16,6 +16,11 @@
 use std::fmt::{Debug, Display};
 
 use alloy_primitives::{Address, keccak256};
+use hypersdk::hypercore::{
+    Builder as SdkBuilder, Cancel as SdkCancel, CancelByCloid as SdkCancelByCloid, Chain,
+    Cloid as SdkCloid, OrderRequest as SdkOrderRequest, OrderTypePlacement,
+    TimeInForce as SdkTimeInForce, TpSl,
+};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::{hex, string::secret::SecretString};
@@ -1590,7 +1595,7 @@ pub struct HyperliquidExchangeTriggerParams {
 ///
 /// The fee is specified in tenths of a basis point.
 /// For example, `f: 10` represents 1 basis point (0.01%).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct HyperliquidExchangeBuilderFee {
     /// Builder address for attribution.
     #[serde(rename = "b")]
@@ -1600,11 +1605,24 @@ pub struct HyperliquidExchangeBuilderFee {
     pub fee_tenths_bp: u32,
 }
 
+impl Serialize for HyperliquidExchangeBuilderFee {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        SdkBuilder {
+            builder_address: self.address.parse().map_err(serde::ser::Error::custom)?,
+            fee: self.fee_tenths_bp,
+        }
+        .serialize(serializer)
+    }
+}
+
 /// Order specification for placing orders via exchange endpoint.
 ///
 /// This struct represents a single order in the exact format expected
 /// by the Hyperliquid exchange endpoint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct HyperliquidExchangePlaceOrderRequest {
     /// Asset ID.
     #[serde(rename = "a")]
@@ -1613,18 +1631,10 @@ pub struct HyperliquidExchangePlaceOrderRequest {
     #[serde(rename = "b")]
     pub is_buy: bool,
     /// Price as a string with no trailing zeros.
-    #[serde(
-        rename = "p",
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
+    #[serde(rename = "p", deserialize_with = "deserialize_decimal_from_str")]
     pub price: Decimal,
     /// Size as a string with no trailing zeros.
-    #[serde(
-        rename = "s",
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
+    #[serde(rename = "s", deserialize_with = "deserialize_decimal_from_str")]
     pub size: Decimal,
     /// Reduce-only flag.
     #[serde(rename = "r")]
@@ -1637,8 +1647,51 @@ pub struct HyperliquidExchangePlaceOrderRequest {
     pub cloid: Option<Cloid>,
 }
 
+impl From<&HyperliquidExchangePlaceOrderRequest> for SdkOrderRequest {
+    fn from(order: &HyperliquidExchangePlaceOrderRequest) -> Self {
+        let order_type = match &order.kind {
+            HyperliquidExchangeOrderKind::Limit { limit } => OrderTypePlacement::Limit {
+                tif: match limit.tif {
+                    HyperliquidExchangeTif::Alo => SdkTimeInForce::Alo,
+                    HyperliquidExchangeTif::Ioc => SdkTimeInForce::Ioc,
+                    HyperliquidExchangeTif::Gtc => SdkTimeInForce::Gtc,
+                },
+            },
+            HyperliquidExchangeOrderKind::Trigger { trigger } => OrderTypePlacement::Trigger {
+                is_market: trigger.is_market,
+                trigger_px: trigger.trigger_px,
+                tpsl: match trigger.tpsl {
+                    HyperliquidExchangeTpSl::Tp => TpSl::Tp,
+                    HyperliquidExchangeTpSl::Sl => TpSl::Sl,
+                },
+            },
+        };
+
+        Self {
+            asset: order.asset as usize,
+            is_buy: order.is_buy,
+            limit_px: order.price,
+            sz: order.size,
+            reduce_only: order.reduce_only,
+            order_type,
+            cloid: order
+                .cloid
+                .map_or(SdkCloid::ZERO, |cloid| SdkCloid::from(cloid.0)),
+        }
+    }
+}
+
+impl Serialize for HyperliquidExchangePlaceOrderRequest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        SdkOrderRequest::from(self).serialize(serializer)
+    }
+}
+
 /// Cancel specification for canceling orders by order ID via exchange endpoint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct HyperliquidExchangeCancelOrderRequest {
     /// Asset ID.
     #[serde(rename = "a")]
@@ -1648,16 +1701,46 @@ pub struct HyperliquidExchangeCancelOrderRequest {
     pub oid: OrderId,
 }
 
+impl Serialize for HyperliquidExchangeCancelOrderRequest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        SdkCancel {
+            asset: self.asset as usize,
+            oid: self.oid,
+        }
+        .serialize(serializer)
+    }
+}
+
 /// Cancel specification for canceling orders by client order ID via exchange endpoint.
 ///
 /// Note: Unlike order placement which uses abbreviated field names ("a", "c"),
 /// cancel-by-cloid uses full field names ("asset", "cloid") per the Hyperliquid API.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct HyperliquidExchangeCancelByCloidRequest {
     /// Asset ID.
     pub asset: AssetId,
     /// Client order ID to cancel.
     pub cloid: Cloid,
+}
+
+impl Serialize for HyperliquidExchangeCancelByCloidRequest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        SdkCancelByCloid {
+            asset: self.asset,
+            cloid: SdkCloid::from(self.cloid.0),
+        }
+        .serialize(serializer)
+    }
+}
+
+pub(crate) fn is_fast_cancel_disabled(fast: &Option<bool>) -> bool {
+    !fast.unwrap_or(false)
 }
 
 /// Target of a modify request.
@@ -1821,9 +1904,15 @@ pub struct HyperliquidExchangeTwapRequest {
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub size: Decimal,
-    /// Duration in milliseconds.
+    /// Whether the order can only reduce a position.
+    #[serde(rename = "r")]
+    pub reduce_only: bool,
+    /// Duration in minutes.
     #[serde(rename = "m")]
-    pub duration_ms: u64,
+    pub duration_minutes: u32,
+    /// Whether execution timing is randomized.
+    #[serde(rename = "t")]
+    pub randomize: bool,
 }
 
 /// All possible exchange actions for the Hyperliquid `/exchange` endpoint.
@@ -1853,7 +1942,7 @@ pub enum HyperliquidExchangeAction {
         /// Orders to cancel.
         cancels: Vec<HyperliquidExchangeCancelOrderRequest>,
         /// Optional fast-cancel flag.
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "f", skip_serializing_if = "is_fast_cancel_disabled")]
         fast: Option<bool>,
     },
 
@@ -1863,7 +1952,7 @@ pub enum HyperliquidExchangeAction {
         /// Orders to cancel by CLOID.
         cancels: Vec<HyperliquidExchangeCancelByCloidRequest>,
         /// Optional fast-cancel flag.
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "f", skip_serializing_if = "is_fast_cancel_disabled")]
         fast: Option<bool>,
     },
 
@@ -1887,7 +1976,6 @@ pub enum HyperliquidExchangeAction {
     ScheduleCancel {
         /// Time in milliseconds when orders should be cancelled.
         /// If None, clears the existing schedule.
-        #[serde(skip_serializing_if = "Option::is_none")]
         time: Option<u64>,
     },
 
@@ -1895,7 +1983,6 @@ pub enum HyperliquidExchangeAction {
     #[serde(rename = "updateLeverage")]
     UpdateLeverage {
         /// Asset ID.
-        #[serde(rename = "a")]
         asset: AssetId,
         /// Whether to use cross margin.
         #[serde(rename = "isCross")]
@@ -1909,30 +1996,38 @@ pub enum HyperliquidExchangeAction {
     #[serde(rename = "updateIsolatedMargin")]
     UpdateIsolatedMargin {
         /// Asset ID.
-        #[serde(rename = "a")]
         asset: AssetId,
-        /// Margin delta as a string.
-        #[serde(
-            rename = "delta",
-            serialize_with = "serialize_decimal_as_str",
-            deserialize_with = "deserialize_decimal_from_str"
-        )]
-        delta: Decimal,
+        /// Position side, reserved for hedge mode.
+        #[serde(rename = "isBuy")]
+        is_buy: bool,
+        /// Margin delta in millionths of USD, negative to remove margin.
+        ntli: i64,
     },
 
     /// Transfer USD between spot and perp accounts.
     #[serde(rename = "usdClassTransfer")]
     UsdClassTransfer {
-        /// Source account type.
-        from: String,
-        /// Destination account type.
-        to: String,
+        /// Hyperliquid network, populated when preparing the signed request.
+        #[serde(rename = "hyperliquidChain")]
+        hyperliquid_chain: Chain,
+        /// EIP-712 signing chain ID, populated when preparing the signed request.
+        #[serde(
+            rename = "signatureChainId",
+            serialize_with = "serialize_chain_id",
+            deserialize_with = "deserialize_chain_id"
+        )]
+        signature_chain_id: u64,
         /// Amount to transfer.
         #[serde(
             serialize_with = "serialize_decimal_as_str",
             deserialize_with = "deserialize_decimal_from_str"
         )]
         amount: Decimal,
+        /// Whether to transfer to perpetual balances instead of spot.
+        #[serde(rename = "toPerp")]
+        to_perp: bool,
+        /// Nonce matching the outer request, populated before signing.
+        nonce: u64,
     },
 
     /// HIP-4 outcome-side token management (`splitOutcome` and related ops).
@@ -1948,10 +2043,9 @@ pub enum HyperliquidExchangeAction {
     },
 
     /// Place a TWAP order.
-    #[serde(rename = "twapPlace")]
+    #[serde(rename = "twapOrder")]
     TwapPlace {
         /// TWAP order specification.
-        #[serde(flatten)]
         twap: HyperliquidExchangeTwapRequest,
     },
 
@@ -1969,6 +2063,24 @@ pub enum HyperliquidExchangeAction {
     /// No-operation to invalidate pending nonces.
     #[serde(rename = "noop")]
     Noop,
+}
+
+fn serialize_chain_id<S>(chain_id: &u64, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&format!("0x{chain_id:x}"))
+}
+
+fn deserialize_chain_id<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    let hex = value
+        .strip_prefix("0x")
+        .ok_or_else(|| serde::de::Error::custom("Signing chain ID must be hexadecimal"))?;
+    u64::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
 }
 
 /// Typed exchange action request envelope for the `/exchange` endpoint.

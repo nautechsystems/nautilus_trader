@@ -29,6 +29,7 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
+use hypersdk::hypercore::Chain;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, UUID4, UnixNanos,
@@ -834,6 +835,13 @@ impl HyperliquidRawHttpClient {
         action: &HyperliquidExchangeAction,
         expires_after: Option<u64>,
     ) -> Result<HyperliquidExchangeRequest<HyperliquidExchangeAction>> {
+        if matches!(action, HyperliquidExchangeAction::UsdClassTransfer { .. })
+            && (self.vault_address.is_some() || expires_after.is_some())
+        {
+            return Err(Error::bad_request(
+                "USD class transfers do not support vaults or expiry",
+            ));
+        }
         let signer = self
             .signer
             .as_ref()
@@ -848,32 +856,50 @@ impl HyperliquidRawHttpClient {
         let time_nonce = nonce_manager.next(signer_id)?;
         // No need to validate - next() guarantees a valid, unused nonce
 
-        // L1 signing uses `action_bytes` only; skip the JSON value to save work
-        let action_bytes = rmp_serde::to_vec_named(action)
-            .context("serialize action with MessagePack")
-            .map_err(|e| Error::bad_request(e.to_string()))?;
+        let mut action = action.clone();
 
-        let sig = signer
-            .sign(&SignRequest {
+        if let HyperliquidExchangeAction::UsdClassTransfer {
+            hyperliquid_chain,
+            signature_chain_id,
+            nonce,
+            ..
+        } = &mut action
+        {
+            let chain = if self.is_testnet() {
+                Chain::Testnet
+            } else {
+                Chain::Mainnet
+            };
+            *hyperliquid_chain = chain;
+            *signature_chain_id =
+                u64::from_str_radix(chain.arbitrum_id().trim_start_matches("0x"), 16).map_err(
+                    |e| Error::bad_request(format!("Invalid SDK signing chain ID: {e}")),
+                )?;
+            *nonce = time_nonce.as_millis() as u64;
+        }
+
+        let sig = signer.sign_exchange_action(
+            &action,
+            &SignRequest {
                 action: None,
-                action_bytes: Some(action_bytes),
+                action_bytes: None,
                 time_nonce,
                 action_type: HyperliquidActionType::L1,
                 is_testnet: self.is_testnet(),
                 vault_address: self.vault_address,
                 expires_after,
-            })?
-            .signature;
+            },
+        )?;
 
         let mut request = if let Some(vault) = self.vault_address {
             HyperliquidExchangeRequest::with_vault(
-                action.clone(),
+                action,
                 time_nonce.as_millis() as u64,
                 sig,
                 vault.to_string(),
             )
         } else {
-            HyperliquidExchangeRequest::new(action.clone(), time_nonce.as_millis() as u64, sig)
+            HyperliquidExchangeRequest::new(action, time_nonce.as_millis() as u64, sig)
         };
         request.expires_after = expires_after;
         Ok(request)

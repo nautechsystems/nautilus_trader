@@ -13,8 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::num::TryFromIntError;
+
 use ahash::AHashMap;
 use derive_builder::Builder;
+use hypersdk::hypercore::{
+    BookLevel as SdkBookLevel, Candle as SdkCandle, Subscription as SdkSubscription,
+};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::{
@@ -33,7 +38,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
 use crate::{
@@ -53,11 +58,13 @@ pub enum HyperliquidWsRequest {
     /// Subscribe to a data feed.
     Subscribe {
         /// Subscription details.
+        #[serde(serialize_with = "serialize_sdk_subscription")]
         subscription: SubscriptionRequest,
     },
     /// Unsubscribe from a data feed.
     Unsubscribe {
         /// Subscription details to remove.
+        #[serde(serialize_with = "serialize_sdk_subscription")]
         subscription: SubscriptionRequest,
     },
     /// Post a request (info or action).
@@ -130,6 +137,61 @@ pub enum SubscriptionRequest {
     UserTwapHistory { user: String },
     /// Best bid/offer updates.
     Bbo { coin: Ustr },
+}
+
+fn serialize_sdk_subscription<S>(
+    subscription: &SubscriptionRequest,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let sdk_subscription = match subscription {
+        SubscriptionRequest::AllMids { dex } => SdkSubscription::AllMids { dex: dex.clone() },
+        SubscriptionRequest::Candle { coin, interval } => SdkSubscription::Candle {
+            coin: coin.to_string(),
+            interval: interval.as_str().to_owned(),
+        },
+        SubscriptionRequest::L2Book {
+            coin,
+            n_sig_figs,
+            mantissa,
+        } => SdkSubscription::L2Book {
+            coin: coin.to_string(),
+            n_sig_figs: n_sig_figs
+                .map(u8::try_from)
+                .transpose()
+                .map_err(serde::ser::Error::custom)?,
+            mantissa: mantissa
+                .map(u8::try_from)
+                .transpose()
+                .map_err(serde::ser::Error::custom)?,
+            fast: false,
+        },
+        SubscriptionRequest::Trades { coin } => SdkSubscription::Trades {
+            coin: coin.to_string(),
+        },
+        SubscriptionRequest::ActiveAssetCtx { coin } => SdkSubscription::ActiveAssetCtx {
+            coin: coin.to_string(),
+        },
+        SubscriptionRequest::Bbo { coin } => SdkSubscription::Bbo {
+            coin: coin.to_string(),
+        },
+        // Preserve the adapter's user feeds and SDK protocol extensions
+        SubscriptionRequest::AllDexsAssetCtxs
+        | SubscriptionRequest::Notification { .. }
+        | SubscriptionRequest::WebData2 { .. }
+        | SubscriptionRequest::OrderUpdates { .. }
+        | SubscriptionRequest::UserEvents { .. }
+        | SubscriptionRequest::UserFills { .. }
+        | SubscriptionRequest::UserFundings { .. }
+        | SubscriptionRequest::UserNonFundingLedgerUpdates { .. }
+        | SubscriptionRequest::ActiveSpotAssetCtx { .. }
+        | SubscriptionRequest::ActiveAssetData { .. }
+        | SubscriptionRequest::UserTwapSliceFills { .. }
+        | SubscriptionRequest::UserTwapHistory { .. } => return subscription.serialize(serializer),
+    };
+    sdk_subscription.serialize(serializer)
 }
 
 /// Post request wrapper for info and action requests.
@@ -426,34 +488,82 @@ pub struct NotificationData {
 }
 
 /// Candlestick data.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct CandleData {
     /// Open time (millis).
     pub t: u64,
     /// Close time (millis).
-    #[serde(rename = "T")]
     pub close_time: u64,
     /// Symbol.
     pub s: Ustr,
     /// Interval.
     pub i: Ustr,
     /// Open price.
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub o: Decimal,
     /// Close price.
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub c: Decimal,
     /// High price.
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub h: Decimal,
     /// Low price.
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub l: Decimal,
     /// Volume.
-    #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub v: Decimal,
     /// Number of trades.
     pub n: u32,
+}
+
+impl TryFrom<SdkCandle> for CandleData {
+    type Error = TryFromIntError;
+
+    fn try_from(candle: SdkCandle) -> Result<Self, Self::Error> {
+        Ok(Self {
+            t: candle.open_time,
+            close_time: candle.close_time,
+            s: Ustr::from(candle.coin.as_str()),
+            i: Ustr::from(candle.interval.as_str()),
+            o: candle.open,
+            c: candle.close,
+            h: candle.high,
+            l: candle.low,
+            v: candle.volume,
+            n: u32::try_from(candle.num_trades)?,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for CandleData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::try_from(SdkCandleWire::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+// Decode venue decimals as strings to preserve exact values in the SDK model
+#[derive(Deserialize)]
+#[serde(remote = "SdkCandle")]
+struct SdkCandleWire {
+    #[serde(rename = "t")]
+    open_time: u64,
+    #[serde(rename = "T")]
+    close_time: u64,
+    #[serde(rename = "s")]
+    coin: String,
+    #[serde(rename = "i")]
+    interval: String,
+    #[serde(rename = "o", deserialize_with = "deserialize_decimal_from_str")]
+    open: Decimal,
+    #[serde(rename = "c", deserialize_with = "deserialize_decimal_from_str")]
+    close: Decimal,
+    #[serde(rename = "h", deserialize_with = "deserialize_decimal_from_str")]
+    high: Decimal,
+    #[serde(rename = "l", deserialize_with = "deserialize_decimal_from_str")]
+    low: Decimal,
+    #[serde(rename = "v", deserialize_with = "deserialize_decimal_from_str")]
+    volume: Decimal,
+    #[serde(rename = "n")]
+    num_trades: u64,
 }
 
 /// WebSocket book data.
@@ -465,7 +575,7 @@ pub struct WsBookData {
 }
 
 /// WebSocket level data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct WsLevelData {
     /// Price.
     #[serde(
@@ -481,6 +591,38 @@ pub struct WsLevelData {
     pub sz: Decimal,
     /// Number of orders.
     pub n: u32,
+}
+
+impl TryFrom<SdkBookLevel> for WsLevelData {
+    type Error = TryFromIntError;
+
+    fn try_from(level: SdkBookLevel) -> Result<Self, Self::Error> {
+        Ok(Self {
+            px: level.px,
+            sz: level.sz,
+            n: u32::try_from(level.n)?,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for WsLevelData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::try_from(SdkBookLevelWire::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(remote = "SdkBookLevel")]
+struct SdkBookLevelWire {
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    px: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    sz: Decimal,
+    n: usize,
 }
 
 /// WebSocket trade data.
@@ -980,6 +1122,50 @@ mod tests {
     }
 
     #[rstest]
+    #[case::all_mids(SubscriptionRequest::AllMids { dex: None }, serde_json::json!({"type": "allMids"}))]
+    #[case::dex_mids(SubscriptionRequest::AllMids { dex: Some("testdex".to_owned()) }, serde_json::json!({"type": "allMids", "dex": "testdex"}))]
+    #[case::book(SubscriptionRequest::L2Book { coin: Ustr::from("testdex:BTC"), n_sig_figs: Some(5), mantissa: Some(2) }, serde_json::json!({"type": "l2Book", "coin": "testdex:BTC", "nSigFigs": 5, "mantissa": 2}))]
+    #[case::full_book(SubscriptionRequest::L2Book { coin: Ustr::from("BTC"), n_sig_figs: None, mantissa: None }, serde_json::json!({"type": "l2Book", "coin": "BTC"}))]
+    #[case::candle(SubscriptionRequest::Candle { coin: Ustr::from("BTC"), interval: HyperliquidBarInterval::OneMonth }, serde_json::json!({"type": "candle", "coin": "BTC", "interval": "1M"}))]
+    #[case::trades(SubscriptionRequest::Trades { coin: Ustr::from("#123") }, serde_json::json!({"type": "trades", "coin": "#123"}))]
+    #[case::asset_context(SubscriptionRequest::ActiveAssetCtx { coin: Ustr::from("BTC") }, serde_json::json!({"type": "activeAssetCtx", "coin": "BTC"}))]
+    #[case::bbo(SubscriptionRequest::Bbo { coin: Ustr::from("BTC") }, serde_json::json!({"type": "bbo", "coin": "BTC"}))]
+    #[case::aggregate_user_fills(SubscriptionRequest::UserFills { user: "0xuser".to_owned(), aggregate_by_time: Some(true) }, serde_json::json!({"type": "userFills", "user": "0xuser", "aggregateByTime": true}))]
+    fn test_sdk_subscription_preserves_wire_options(
+        #[case] subscription: SubscriptionRequest,
+        #[case] expected: serde_json::Value,
+        #[values(false, true)] unsubscribe: bool,
+    ) {
+        let request = if unsubscribe {
+            HyperliquidWsRequest::Unsubscribe { subscription }
+        } else {
+            HyperliquidWsRequest::Subscribe { subscription }
+        };
+        let wire = serde_json::to_value(request).unwrap();
+        assert_eq!(wire["subscription"], expected);
+        assert_eq!(
+            wire["method"],
+            if unsubscribe {
+                "unsubscribe"
+            } else {
+                "subscribe"
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_sdk_subscription_rejects_overflowing_book_options() {
+        let request = HyperliquidWsRequest::Subscribe {
+            subscription: SubscriptionRequest::L2Book {
+                coin: Ustr::from("BTC"),
+                n_sig_figs: Some(256),
+                mantissa: None,
+            },
+        };
+        assert!(serde_json::to_value(request).is_err());
+    }
+
+    #[rstest]
     fn test_order_request_serialization() {
         let order = OrderRequest {
             a: 0,    // BTC asset ID
@@ -1033,6 +1219,84 @@ mod tests {
         assert_eq!(book.coin, "ETH");
         assert_eq!(book.levels[0].len(), 1);
         assert_eq!(book.levels[1].len(), 1);
+    }
+
+    fn candle_payload() -> serde_json::Value {
+        serde_json::json!({
+            "t": 1_700_000_000_000_u64,
+            "T": 1_700_000_059_999_u64,
+            "s": "BTC",
+            "i": "1m",
+            "o": "0.1234567890123456789012345678",
+            "c": "0.1234567890123456789012345679",
+            "h": "0.1234567890123456789012345680",
+            "l": "0.1234567890123456789012345677",
+            "v": "1.0000000000000000000000000001",
+            "n": 42
+        })
+    }
+
+    #[rstest]
+    fn test_sdk_candle_preserves_exact_decimals_and_metadata() {
+        let candle: CandleData = serde_json::from_value(candle_payload()).unwrap();
+        assert_eq!(candle.t, 1_700_000_000_000);
+        assert_eq!(candle.close_time, 1_700_000_059_999);
+        assert_eq!(candle.s, "BTC");
+        assert_eq!(candle.i, "1m");
+        assert_eq!(candle.n, 42);
+        assert_eq!(candle.o, dec!(0.1234567890123456789012345678));
+        assert_eq!(candle.c, dec!(0.1234567890123456789012345679));
+        assert_eq!(candle.h, dec!(0.1234567890123456789012345680));
+        assert_eq!(candle.l, dec!(0.1234567890123456789012345677));
+        assert_eq!(candle.v, dec!(1.0000000000000000000000000001));
+    }
+
+    #[rstest]
+    fn test_sdk_book_level_preserves_exact_decimals_and_counts() {
+        let level: WsLevelData = serde_json::from_value(serde_json::json!({
+            "px": "0.1234567890123456789012345678",
+            "sz": "1.0000000000000000000000000001",
+            "n": u32::MAX,
+        }))
+        .unwrap();
+        assert_eq!(level.px, dec!(0.1234567890123456789012345678));
+        assert_eq!(level.sz, dec!(1.0000000000000000000000000001));
+        assert_eq!(level.n, u32::MAX);
+    }
+
+    #[rstest]
+    fn test_sdk_market_data_rejects_counts_above_adapter_bounds() {
+        let overflow = u64::from(u32::MAX) + 1;
+        let mut payload = candle_payload();
+        payload["n"] = serde_json::json!(overflow);
+        assert!(serde_json::from_value::<CandleData>(payload).is_err());
+        assert!(
+            serde_json::from_value::<WsLevelData>(serde_json::json!({
+                "px": "1", "sz": "2", "n": overflow
+            }))
+            .is_err()
+        );
+    }
+
+    #[rstest]
+    #[case("o")]
+    #[case("c")]
+    #[case("h")]
+    #[case("l")]
+    #[case("v")]
+    fn test_sdk_candle_rejects_numeric_decimals(#[case] field: &str) {
+        let mut payload = candle_payload();
+        payload[field] = serde_json::json!(0.1);
+        assert!(serde_json::from_value::<CandleData>(payload).is_err());
+    }
+
+    #[rstest]
+    #[case("px")]
+    #[case("sz")]
+    fn test_sdk_book_level_rejects_numeric_decimals(#[case] field: &str) {
+        let mut payload = serde_json::json!({"px": "1", "sz": "2", "n": 1});
+        payload[field] = serde_json::json!(0.1);
+        assert!(serde_json::from_value::<WsLevelData>(payload).is_err());
     }
 
     #[rstest]
