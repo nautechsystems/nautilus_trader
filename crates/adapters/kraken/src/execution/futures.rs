@@ -1015,10 +1015,36 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let start = lookback_start.map(Timestamp::from);
         let account_id = self.core.account_id;
 
-        let (mut order_reports, orders_complete) = self
+        // Read the order-event history as well as open orders, matching the shared default. An
+        // order that reached a terminal state while the node was down is only visible there. A
+        // failed combined read falls back to the open-only read and marks the set incomplete, so
+        // a history page the shared `/history` token pool refuses degrades startup to open orders
+        // rather than failing it.
+        let (mut order_reports, orders_complete) = match self
             .http
-            .request_order_status_reports_checked(account_id, None, start, None, true)
-            .await?;
+            .request_order_status_reports_checked(account_id, None, start, None, false)
+            .await
+        {
+            Ok(read) => read,
+            Err(e) => {
+                log::warn!(
+                    "Failed to read order history for mass status, reading open orders only and \
+                     marking the set incomplete: {e}"
+                );
+                let (reports, _) = self
+                    .http
+                    .request_order_status_reports_checked(account_id, None, start, None, true)
+                    .await?;
+                (reports, false)
+            }
+        };
+        // Captured before the orders-status extension is merged in, so the safeguard below applies
+        // to the venue read alone and leaves the extension to its own rule.
+        let from_venue_read: HashSet<VenueOrderId> = order_reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect();
+
         let extension = self
             .reports_for_open_orders_absent_from_venue(account_id, None, &order_reports)
             .await?;
@@ -1037,10 +1063,60 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             order_reports.push(report);
         }
 
-        let (fill_reports, fills_complete) = self
+        let (mut fill_reports, fills_complete) = self
             .http
             .request_fill_reports_checked(account_id, None, start, None)
             .await?;
+
+        // A terminal history report with an executed quantity carries no price, so it is priced
+        // from its fills as on the bulk path, which requires exact coverage. The fills endpoint
+        // returns one page with no cursor, so an execution older than that page is absent and
+        // does not come back on a later read. Unpriced, reconciliation would infer the remainder
+        // at the order's limit price, so such a report is withheld and the set marked incomplete.
+        // A withheld report's page fills stay for a cached order, since the engine reconciles
+        // priced fills against a cached order with no report. An uncached order's fills go with
+        // its report: unpaired, they would materialize an external order at the partial quantity
+        // in snapshot reconciliation.
+        let mut withheld = false;
+        let mut withheld_fills: HashSet<VenueOrderId> = HashSet::new();
+        {
+            let cache = self.core.cache();
+            order_reports.retain_mut(|report| {
+                if !from_venue_read.contains(&report.venue_order_id)
+                    || !is_unpriced_terminal_report(report)
+                {
+                    return true;
+                }
+
+                let cached = cached_order_for_report(&cache, report);
+
+                match price_from_fills(report, cached.as_ref(), &fill_reports) {
+                    Ok(()) => true,
+                    Err(covered) => {
+                        log::warn!(
+                            "Withholding executed order {} from mass status: fills cover \
+                             {covered} of {}; {}",
+                            report.venue_order_id,
+                            report.filled_qty,
+                            if cached.is_some() {
+                                "its page fills stay for the cached order"
+                            } else {
+                                "its page fills are withheld with it"
+                            },
+                        );
+                        withheld = true;
+
+                        if cached.is_none() {
+                            withheld_fills.insert(report.venue_order_id);
+                        }
+                        false
+                    }
+                }
+            });
+        }
+        fill_reports.retain(|fill| !withheld_fills.contains(&fill.venue_order_id));
+        let orders_complete = orders_complete && !withheld;
+
         let position_reports = self
             .http
             .request_position_status_reports(account_id, None)

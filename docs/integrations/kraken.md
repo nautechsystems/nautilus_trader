@@ -605,8 +605,9 @@ When reconciliation supplies a lookback, both execution clients derive a single 
 to every historical query, then record it on the mass status through `set_report_window`. Using one
 cutoff avoids a report set that never existed at the venue, which a moving cutoff can produce.
 
-Declaring the cutoff is what lets the engine apply its bounded-history rules; the completeness flag
-described below qualifies that set rather than gating it.
+Declaring the cutoff is what lets the engine apply its bounded-history rules. The completeness flag
+described below qualifies that set rather than gating it: the engine logs a warning when a bounded
+set arrives incomplete and reconciles what it received.
 
 An in-scope open order or position whose instrument cannot be resolved fails the read on both
 clients, as the adapter guide's scope table requires: dropped, it would read to reconciliation as
@@ -758,6 +759,16 @@ every holding it covers and an absent report is genuine evidence of flat.
   the fills a cached order has recorded, again exactly, and a failed fills read counts as an empty
   page; when nothing covers it, the single-order query fails and the bulk read leaves the order out,
   so reconciliation defers it rather than infer the executions at the limit price.
+- Startup mass status reads one page of the order history alongside open orders, so an order that
+  reached a terminal state while the node was down is reconciled. When that read fails for any
+  reason, such as a refused `/history` page, the mass status logs a warning, falls back to the open
+  orders alone and marks the set incomplete; it fails only when the open-order read fails too.
+- Startup pricing safeguard: the mass status prices a terminal history order from its fills with
+  the same exact coverage. An order nothing covers is withheld with a warning naming it, and the set
+  is marked incomplete; the fills page only moves forward, so the missing execution does not come
+  back on a later read. A withheld order's page fills stay when the cache holds the order, since the
+  engine reconciles them against it without a report; an uncached order's fills are withheld with
+  it, since on their own they would materialize an order at the partial quantity.
 
 **Fill reports:**
 
