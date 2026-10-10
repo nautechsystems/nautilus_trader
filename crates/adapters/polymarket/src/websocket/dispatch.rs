@@ -908,7 +908,7 @@ fn is_ready_for_terminal_normalization(
             pending
                 .trade_ids
                 .iter()
-                .all(|trade_id| ctx.settlement.is_trade_confirmed(trade_id))
+                .all(|trade_id| ctx.settlement.authorizes_terminal_bookkeeping(trade_id))
         })
 }
 
@@ -917,7 +917,9 @@ fn emit_quantity_normalization_if_ready(
     ctx: &WsDispatchContext<'_>,
     state: &mut WsDispatchState,
 ) {
-    if !is_ready_for_terminal_normalization(&venue_order_id, ctx, state) {
+    if !is_ready_for_terminal_normalization(&venue_order_id, ctx, state)
+        || ctx.settlement.blocks_terminal_bookkeeping(&venue_order_id)
+    {
         return;
     }
 
@@ -942,7 +944,8 @@ fn emit_quantity_normalization_if_ready(
 ///
 /// Taker fills receive no order-channel `MATCHED` update. FOK is atomic, so a sub-cent quantity
 /// difference can be normalized. IOC maps to FAK, so every positive remainder was killed by the
-/// venue and must close as `Canceled` without changing the venue-reported fill quantity.
+/// venue and must close as `Canceled` without changing the venue-reported fill quantity. A hard
+/// fault withdraws that authority and does not consume the tracker's one emission.
 fn emit_taker_terminal_status(
     venue_order_id: VenueOrderId,
     ctx: &WsDispatchContext<'_>,
@@ -951,6 +954,14 @@ fn emit_taker_terminal_status(
     let Some(context) = ctx.order_contexts.get(&venue_order_id) else {
         return;
     };
+
+    if context.time_in_force != TimeInForce::Fok && context.time_in_force != TimeInForce::Ioc {
+        return;
+    }
+
+    if ctx.settlement.blocks_terminal_bookkeeping(&venue_order_id) {
+        return;
+    }
 
     if context.time_in_force == TimeInForce::Fok {
         if let Some(quantity) = ctx
@@ -1009,9 +1020,16 @@ fn dispatch_trade_update(
         return None;
     }
 
-    // Quantity normalization and taker terminal statuses key off trade confirmation
-    let ts_event = parse_timestamp_ms(&trade.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
-    confirm_trade_bookkeeping(&admitted, ts_event, ctx, state);
+    // Quantity normalization and taker terminal statuses key off trade confirmation,
+    // and a hard fault keeps the confirmed outcome while withdrawing that bookkeeping.
+    if ctx
+        .settlement
+        .authorizes_terminal_bookkeeping(&admitted.venue_trade_id)
+    {
+        let ts_event =
+            parse_timestamp_ms(&trade.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
+        confirm_trade_bookkeeping(&admitted, ts_event, ctx, state);
+    }
     Some(AccountRefreshRequest)
 }
 
@@ -1130,14 +1148,44 @@ pub(crate) fn apply_uncertain_order_evidence(
         return true;
     }
 
-    emit_tracked_order_status(&report, &context, report.ts_last, ctx);
+    let faulted = order_trades_block_terminal_bookkeeping(venue_order_id, trades, ctx);
+    // Venue `Matched` is not a cancel, and the parsed `Canceled` status is the IOC remainder rule
+    let inferred_cancel = order.status == PolymarketOrderStatus::Matched
+        && report.order_status == OrderStatus::Canceled;
 
-    // A filled taker order reaches the terminal normalization a stream confirmation would apply
-    if report.order_status == OrderStatus::Filled {
+    if faulted && inferred_cancel {
+        ensure_accepted(&context, venue_order_id, report.ts_last, ctx);
+    } else {
+        emit_tracked_order_status(&report, &context, report.ts_last, ctx);
+    }
+
+    // A filled taker order reaches the terminal normalization a stream confirmation would apply,
+    // and this check also covers a faulted trade in this slice whose order was not stored.
+    if report.order_status == OrderStatus::Filled && !faulted {
         emit_taker_terminal_status(venue_order_id, ctx, report.ts_last);
     }
 
     true
+}
+
+fn order_trades_block_terminal_bookkeeping(
+    venue_order_id: VenueOrderId,
+    trades: &[PolymarketTradeReport],
+    ctx: &WsDispatchContext<'_>,
+) -> bool {
+    ctx.settlement.blocks_terminal_bookkeeping(&venue_order_id)
+        || trades.iter().any(|trade| {
+            trade_touches_order(trade, venue_order_id)
+                && ctx.settlement.is_trade_hard_faulted(&trade.id)
+        })
+}
+
+fn trade_touches_order(trade: &PolymarketTradeReport, venue_order_id: VenueOrderId) -> bool {
+    trade.taker_order_id == venue_order_id.as_str()
+        || trade
+            .maker_orders
+            .iter()
+            .any(|maker| maker.order_id == venue_order_id.as_str())
 }
 
 /// Applies REST trades for an order that was live while the user stream was disconnected,
@@ -1180,7 +1228,10 @@ fn apply_admitted_rest_trade(
     let actions = ctx.settlement.admit_rest_result(admitted);
     execute_settlement_actions(actions, rest_trade_info(trade).as_ref(), ctx, state);
 
-    if ctx.settlement.is_trade_confirmed(&admitted.venue_trade_id) {
+    if ctx
+        .settlement
+        .authorizes_terminal_bookkeeping(&admitted.venue_trade_id)
+    {
         confirm_trade_bookkeeping(admitted, ctx.clock.get_time_ns(), ctx, state);
     }
 }
@@ -4290,6 +4341,341 @@ mod tests {
             settlement_state(&settlement, &trade.id),
             Some(SettlementState::RestConfirmed)
         );
+
+        apply_rest_trade_evidence(&trade, &ctx, &mut state);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_apply_rest_trade_evidence_normalizes_fok_dust_once() {
+        let trade: PolymarketTradeReport =
+            serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
+                .expect("REST trade fixture");
+        let ws_trade: PolymarketUserTrade = load("ws_user_trade.json");
+        let instrument = instrument_for_trade(&ws_trade);
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.asset_id, instrument.clone());
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+        let submitted_qty = Quantity::from("25.005000");
+        let fill_tracker = OrderFillTrackerMap::new();
+        fill_tracker.register(
+            venue_order_id,
+            submitted_qty,
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let pending_submits = PendingSubmitTracker::default();
+        let order_contexts = OrderContextRegistry::default();
+        register_context(&order_contexts, venue_order_id, instrument.id(), "O-FOK");
+        let mut context = order_contexts
+            .get(&venue_order_id)
+            .expect("registered context");
+        context.time_in_force = TimeInForce::Fok;
+        order_contexts.register_context(venue_order_id, context);
+        order_contexts.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.begin_session();
+
+        let ctx = WsDispatchContext {
+            signer_type: PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &order_contexts,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            user_api_key: "00000000-0000-0000-0000-000000000001",
+        };
+        let mut state = WsDispatchState::default();
+
+        apply_rest_trade_evidence(&trade, &ctx, &mut state);
+
+        let filled = match receiver.try_recv().unwrap() {
+            ExecutionEvent::Order(OrderEventAny::Filled(event)) => event,
+            other => panic!("expected REST-confirmed fill, was {other:?}"),
+        };
+        let updated = match receiver.try_recv().unwrap() {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => event,
+            other => panic!("expected FOK quantity normalization, was {other:?}"),
+        };
+
+        assert_eq!(filled.last_qty.as_decimal(), dec!(25));
+        assert_eq!(updated.quantity, filled.last_qty);
+        assert_eq!(updated.client_order_id, ClientOrderId::from("O-FOK"));
+        assert!(receiver.try_recv().is_err());
+
+        apply_rest_trade_evidence(&trade, &ctx, &mut state);
+        assert!(receiver.try_recv().is_err());
+        assert_eq!(
+            settlement_state(&settlement, &trade.id),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert_eq!(trade_hard_fault(&settlement, &trade.id), None);
+    }
+
+    struct TerminalFaultHarness {
+        trade: PolymarketUserTrade,
+        token_instruments: AtomicMap<Ustr, InstrumentAny>,
+        venue_order_id: VenueOrderId,
+        fill_tracker: OrderFillTrackerMap,
+        pending_submits: PendingSubmitTracker,
+        order_contexts: OrderContextRegistry,
+        emitter: ExecutionEventEmitter,
+        receiver: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        settlement: SettlementRegistry,
+        fill: OrderFilled,
+    }
+
+    impl TerminalFaultHarness {
+        fn new(time_in_force: TimeInForce, submitted_qty: &str, client_order_id: &str) -> Self {
+            let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
+            trade.status = PolymarketTradeStatus::Matched;
+            let mut instrument = instrument_for_trade(&trade);
+            set_taker_fee_rate(&mut instrument, dec!(0.0721));
+            let token_instruments = AtomicMap::new();
+            token_instruments.insert(trade.asset_id, instrument.clone());
+            let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+            let fill_tracker = OrderFillTrackerMap::new();
+            fill_tracker.register(
+                venue_order_id,
+                Quantity::from(submitted_qty),
+                OrderSide::Buy,
+                instrument.id(),
+                instrument.size_precision(),
+                instrument.price_precision(),
+            );
+            let pending_submits = PendingSubmitTracker::default();
+            pending_submits.insert(venue_order_id, ClientOrderId::from(client_order_id));
+            let order_contexts = OrderContextRegistry::default();
+            register_context(
+                &order_contexts,
+                venue_order_id,
+                instrument.id(),
+                client_order_id,
+            );
+            let mut context = order_contexts
+                .get(&venue_order_id)
+                .expect("registered context");
+            context.time_in_force = time_in_force;
+            order_contexts.register_context(venue_order_id, context);
+            order_contexts.mark_accepted(venue_order_id);
+            let mut emitter = test_emitter();
+            let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+            emitter.set_sender(sender);
+            let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+            settlement.begin_session();
+            settlement.note_order_submitted(venue_order_id);
+            let ctx = WsDispatchContext {
+                signer_type: PolymarketSignerType::Owner,
+                token_instruments: &token_instruments,
+                fill_tracker: &fill_tracker,
+                settlement: &settlement,
+                pending_submits: &pending_submits,
+                order_contexts: &order_contexts,
+                emitter: &emitter,
+                account_id: AccountId::from("POLY-001"),
+                clock: nautilus_core::time::get_atomic_clock_realtime(),
+                user_address: trade.maker_address.as_str(),
+                user_api_key: trade.owner.as_str(),
+            };
+            let mut state = WsDispatchState::default();
+            dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+            let fill = match receiver.try_recv().expect("matched fill") {
+                ExecutionEvent::Order(OrderEventAny::Filled(fill)) => fill,
+                other => panic!("expected matched fill, was {other:?}"),
+            };
+            settlement.observe_fill_applied(&fill);
+            assert!(
+                receiver.try_recv().is_err(),
+                "provisional match emitted terminal bookkeeping"
+            );
+
+            Self {
+                trade,
+                token_instruments,
+                venue_order_id,
+                fill_tracker,
+                pending_submits,
+                order_contexts,
+                emitter,
+                receiver,
+                settlement,
+                fill,
+            }
+        }
+
+        fn ctx(&self) -> WsDispatchContext<'_> {
+            WsDispatchContext {
+                signer_type: PolymarketSignerType::Owner,
+                token_instruments: &self.token_instruments,
+                fill_tracker: &self.fill_tracker,
+                settlement: &self.settlement,
+                pending_submits: &self.pending_submits,
+                order_contexts: &self.order_contexts,
+                emitter: &self.emitter,
+                account_id: AccountId::from("POLY-001"),
+                clock: nautilus_core::time::get_atomic_clock_realtime(),
+                user_address: self.trade.maker_address.as_str(),
+                user_api_key: self.trade.owner.as_str(),
+            }
+        }
+
+        fn contradicting_rest(&self) -> PolymarketTradeReport {
+            let mut rest: PolymarketTradeReport = load("http_trade_report.json");
+            rest.id = self.trade.id.clone();
+            rest.taker_order_id = self.trade.taker_order_id.clone();
+            rest.asset_id = self.trade.asset_id;
+            rest.price = dec!(0.6);
+            rest.status = PolymarketTradeStatus::Confirmed;
+            rest
+        }
+    }
+
+    fn assert_no_fault_bookkeeping(events: &[ExecutionEvent]) {
+        assert!(
+            events.iter().all(|event| !matches!(
+                event,
+                ExecutionEvent::Order(
+                    OrderEventAny::Updated(_)
+                        | OrderEventAny::Canceled(_)
+                        | OrderEventAny::Filled(_)
+                        | OrderEventAny::FillVoided(_)
+                )
+            )),
+            "faulted trade authorized bookkeeping, was {events:?}"
+        );
+    }
+
+    fn assert_fault_retained(harness: &TerminalFaultHarness) {
+        assert_eq!(harness.fill.last_qty, Quantity::from("25.000000"));
+        assert_eq!(harness.fill.last_px.as_decimal(), dec!(0.5));
+        assert_eq!(harness.fill.commission.unwrap().as_decimal(), dec!(0.45062));
+        assert_eq!(
+            settlement_state(&harness.settlement, &harness.trade.id),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert!(trade_hard_fault(&harness.settlement, &harness.trade.id).is_some());
+        assert!(harness.settlement.is_trade_confirmed(&harness.trade.id));
+        assert!(
+            harness
+                .settlement
+                .ensure_resolved(None, "mass status")
+                .is_err()
+        );
+        assert!(harness.fill_tracker.contains(&harness.venue_order_id));
+    }
+
+    #[rstest]
+    #[case::fok_dust(TimeInForce::Fok, "25.005000", "O-FAULT-FOK")]
+    #[case::ioc_partial(TimeInForce::Ioc, "100.000000", "O-FAULT-IOC")]
+    fn test_contradicting_rest_does_not_authorize_terminal_bookkeeping(
+        #[case] time_in_force: TimeInForce,
+        #[case] submitted_qty: &str,
+        #[case] client_order_id: &str,
+    ) {
+        let mut harness = TerminalFaultHarness::new(time_in_force, submitted_qty, client_order_id);
+        let rest = harness.contradicting_rest();
+        let mut state = WsDispatchState::default();
+        {
+            let ctx = harness.ctx();
+            apply_rest_trade_evidence(&rest, &ctx, &mut state);
+            apply_rest_trade_evidence(&rest, &ctx, &mut state);
+        }
+
+        let events: Vec<_> = std::iter::from_fn(|| harness.receiver.try_recv().ok()).collect();
+        assert_no_fault_bookkeeping(&events);
+        assert_fault_retained(&harness);
+    }
+
+    #[rstest]
+    #[case::fok_dust(TimeInForce::Fok, "25.005000", "O-UNCERTAIN-FOK", PolymarketOrderType::FOK, dec!(25.005))]
+    #[case::ioc_partial(TimeInForce::Ioc, "100.000000", "O-UNCERTAIN-IOC", PolymarketOrderType::FAK, dec!(100))]
+    fn test_uncertain_filled_recovery_does_not_bypass_fault_guard(
+        #[case] time_in_force: TimeInForce,
+        #[case] submitted_qty: &str,
+        #[case] client_order_id: &str,
+        #[case] order_type: PolymarketOrderType,
+        #[case] original_size: Decimal,
+    ) {
+        let mut harness = TerminalFaultHarness::new(time_in_force, submitted_qty, client_order_id);
+        let rest = harness.contradicting_rest();
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json"))
+                .expect("REST open order fixture");
+        order.status = PolymarketOrderStatus::Matched;
+        order.order_type = order_type;
+        order.original_size = original_size;
+        order.size_matched = dec!(25);
+        let mut state = WsDispatchState::default();
+        let applied = {
+            let ctx = harness.ctx();
+            apply_uncertain_order_evidence(
+                harness.venue_order_id,
+                &order,
+                std::slice::from_ref(&rest),
+                &ctx,
+                &mut state,
+            )
+        };
+
+        let events: Vec<_> = std::iter::from_fn(|| harness.receiver.try_recv().ok()).collect();
+        assert!(applied);
+        assert_no_fault_bookkeeping(&events);
+        assert_fault_retained(&harness);
+    }
+
+    #[rstest]
+    fn test_uncertain_venue_cancel_still_emits_after_hard_fault() {
+        let mut harness =
+            TerminalFaultHarness::new(TimeInForce::Fok, "25.005000", "O-VENUE-CANCEL");
+        let rest = harness.contradicting_rest();
+        let mut state = WsDispatchState::default();
+        {
+            let ctx = harness.ctx();
+            apply_rest_trade_evidence(&rest, &ctx, &mut state);
+        }
+        let fault_events: Vec<_> =
+            std::iter::from_fn(|| harness.receiver.try_recv().ok()).collect();
+        assert_no_fault_bookkeeping(&fault_events);
+
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json"))
+                .expect("REST open order fixture");
+        order.status = PolymarketOrderStatus::Canceled;
+        order.order_type = PolymarketOrderType::FAK;
+        order.original_size = dec!(100);
+        order.size_matched = dec!(25);
+        let applied = {
+            let ctx = harness.ctx();
+            apply_uncertain_order_evidence(
+                harness.venue_order_id,
+                &order,
+                std::slice::from_ref(&rest),
+                &ctx,
+                &mut state,
+            )
+        };
+        let canceled = match harness.receiver.try_recv().expect("venue cancel") {
+            ExecutionEvent::Order(OrderEventAny::Canceled(event)) => event,
+            other => panic!("expected venue cancel, was {other:?}"),
+        };
+
+        assert!(applied);
+        assert_eq!(
+            canceled.client_order_id,
+            ClientOrderId::from("O-VENUE-CANCEL")
+        );
+        assert_eq!(canceled.venue_order_id, Some(harness.venue_order_id));
+        assert!(harness.receiver.try_recv().is_err());
+        assert_fault_retained(&harness);
     }
 
     #[rstest]
@@ -4374,6 +4760,16 @@ mod tests {
         assert_eq!(filled.last_qty.as_decimal(), dec!(25));
         assert_eq!(updated.client_order_id, client_order_id);
         assert_eq!(updated.quantity.as_decimal(), dec!(25));
+
+        let repeated = apply_uncertain_order_evidence(
+            venue_order_id,
+            &order,
+            std::slice::from_ref(&trade),
+            &ctx,
+            &mut state,
+        );
+        assert!(repeated);
+        assert!(receiver.try_recv().is_err());
     }
 
     #[rstest]

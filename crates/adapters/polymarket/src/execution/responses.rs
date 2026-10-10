@@ -885,10 +885,10 @@ fn emit_drained_activity(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
 ) {
-    let has_unconfirmed_fill = fills.iter().any(|fill| {
-        fill.correction
-            .as_ref()
-            .is_some_and(|metadata| !settlement.is_trade_confirmed(&metadata.venue_trade_id))
+    let batch_blocks = fills.iter().any(|fill| {
+        fill.correction.as_ref().is_some_and(|metadata| {
+            !settlement.authorizes_terminal_bookkeeping(&metadata.venue_trade_id)
+        })
     });
 
     for fill in fills {
@@ -911,7 +911,11 @@ fn emit_drained_activity(
     let context = OrderContext::from(order);
     let is_taker_terminal = matches!(context.time_in_force, TimeInForce::Fok | TimeInForce::Ioc);
 
-    if has_unconfirmed_fill || has_unfilled_terminal || (!has_filled && !is_taker_terminal) {
+    if batch_blocks || has_unfilled_terminal || (!has_filled && !is_taker_terminal) {
+        return;
+    }
+
+    if settlement.blocks_terminal_bookkeeping(&venue_order_id) {
         return;
     }
 
@@ -2970,6 +2974,202 @@ mod tests {
         assert_eq!(order.trade_ids().len(), 1);
         assert!(!fill_tracker.contains(&venue_order_id));
         assert!(receiver.try_recv().is_err());
+
+        emit_drained_activity(
+            &order,
+            venue_order_id,
+            Vec::new(),
+            &[],
+            &fill_tracker,
+            &settlement,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+        );
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_drained_fok_dust_normalizes_once() {
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let venue_order_id = VenueOrderId::from("0xfok-drain");
+        let submitted_qty = Quantity::from("5.202910");
+        let venue_fill_qty = Quantity::from("5.202897");
+        let order = test_limit_order_with(
+            "O-FOK-DRAIN",
+            instrument_id,
+            submitted_qty,
+            Price::new(0.50, 4),
+            TimeInForce::Fok,
+        );
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        fill_tracker.register(
+            venue_order_id,
+            submitted_qty,
+            OrderSide::Buy,
+            instrument_id,
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.begin_session();
+        settlement.note_order_submitted(venue_order_id);
+        let venue_trade_id = "trade-fok-drain";
+        let _ = settlement.admit_stream_trade(&AdmittedTrade {
+            venue_trade_id: venue_trade_id.to_string(),
+            status: PolymarketTradeStatus::Confirmed,
+            legs: vec![AdmittedLeg {
+                venue_order_id,
+                trade_id: TradeId::from("trade-1"),
+                instrument_id,
+                order_side: OrderSide::Buy,
+                liquidity_side: LiquiditySide::Taker,
+                last_qty: venue_fill_qty,
+                last_px: Price::new(0.50, 4),
+                commission: Money::zero(Currency::pUSD()),
+                taker_fee_basis: None,
+                ts_event: UnixNanos::from(900u64),
+            }],
+        });
+        assert!(
+            fill_tracker
+                .accept_or_buffer_fill(
+                    venue_order_id,
+                    test_fill_report(
+                        instrument_id,
+                        venue_order_id,
+                        venue_fill_qty,
+                        UnixNanos::from(900u64)
+                    ),
+                    FillCorrectionMetadata {
+                        venue_trade_id: venue_trade_id.to_string(),
+                        info: None,
+                    },
+                )
+                .is_some()
+        );
+        let clock = nautilus_core::time::get_atomic_clock_realtime();
+
+        emit_drained_activity(
+            &order,
+            venue_order_id,
+            Vec::new(),
+            &[],
+            &fill_tracker,
+            &settlement,
+            &emitter,
+            clock,
+        );
+        let updated = match receiver.try_recv().expect("FOK normalization") {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => event,
+            other => panic!("expected quantity normalization, was {other:?}"),
+        };
+        emit_drained_activity(
+            &order,
+            venue_order_id,
+            Vec::new(),
+            &[],
+            &fill_tracker,
+            &settlement,
+            &emitter,
+            clock,
+        );
+
+        assert_eq!(updated.quantity, venue_fill_qty);
+        assert!(updated.reconciliation);
+        assert!(receiver.try_recv().is_err());
+        assert!(!fill_tracker.contains(&venue_order_id));
+    }
+
+    #[rstest]
+    fn test_faulted_trade_does_not_normalize_on_empty_drain() {
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let venue_order_id = VenueOrderId::from("0xfault-drain");
+        let submitted_qty = Quantity::from("5.202910");
+        let venue_fill_qty = Quantity::from("5.202897");
+        let order = test_limit_order_with(
+            "O-FAULT-DRAIN",
+            instrument_id,
+            submitted_qty,
+            Price::new(0.50, 4),
+            TimeInForce::Fok,
+        );
+        let (emitter, mut receiver) = test_emitter();
+        let fill_tracker = Arc::new(OrderFillTrackerMap::new());
+        fill_tracker.register(
+            venue_order_id,
+            submitted_qty,
+            OrderSide::Buy,
+            instrument_id,
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+        let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
+        settlement.begin_session();
+        settlement.note_order_submitted(venue_order_id);
+        let venue_trade_id = "trade-fault-drain";
+        let leg = AdmittedLeg {
+            venue_order_id,
+            trade_id: TradeId::from("trade-1"),
+            instrument_id,
+            order_side: OrderSide::Buy,
+            liquidity_side: LiquiditySide::Taker,
+            last_qty: venue_fill_qty,
+            last_px: Price::new(0.50, 4),
+            commission: Money::zero(Currency::pUSD()),
+            taker_fee_basis: None,
+            ts_event: UnixNanos::from(900u64),
+        };
+        let _ = settlement.admit_stream_trade(&AdmittedTrade {
+            venue_trade_id: venue_trade_id.to_string(),
+            status: PolymarketTradeStatus::Matched,
+            legs: vec![leg.clone()],
+        });
+        let rest_leg = AdmittedLeg {
+            last_px: Price::new(0.60, 4),
+            ..leg
+        };
+        let actions = settlement.admit_rest_result(&AdmittedTrade {
+            venue_trade_id: venue_trade_id.to_string(),
+            status: PolymarketTradeStatus::Confirmed,
+            legs: vec![rest_leg],
+        });
+        assert!(
+            fill_tracker
+                .accept_or_buffer_fill(
+                    venue_order_id,
+                    test_fill_report(
+                        instrument_id,
+                        venue_order_id,
+                        venue_fill_qty,
+                        UnixNanos::from(900u64),
+                    ),
+                    FillCorrectionMetadata {
+                        venue_trade_id: venue_trade_id.to_string(),
+                        info: None,
+                    },
+                )
+                .is_some()
+        );
+
+        emit_drained_activity(
+            &order,
+            venue_order_id,
+            Vec::new(),
+            &[],
+            &fill_tracker,
+            &settlement,
+            &emitter,
+            nautilus_core::time::get_atomic_clock_realtime(),
+        );
+
+        assert!(actions.is_empty());
+        assert!(settlement.is_trade_hard_faulted(venue_trade_id));
+        assert!(settlement.is_trade_confirmed(venue_trade_id));
+        assert!(receiver.try_recv().is_err());
+        assert!(fill_tracker.contains(&venue_order_id));
     }
 
     // A terminal order update can race ahead of the submit confirmation and be buffered. On

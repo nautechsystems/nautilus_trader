@@ -1198,10 +1198,22 @@ A trade enters a hard fault when its venue outcome and the engine's state cannot
 - REST `CONFIRMED` values contradict an applied fill, or the terminal REST result omits one of the
   account's fills that the engine applied.
 
+##### Fills and reconciliation
+
 A hard-faulted trade admits no further fills or voids, except the one void owed for a fill applied
 after REST reported `FAILED`. The adapter logs the fault at error level, refreshes the account, and
 blocks reconciliation for the trade (see [settlement precedence](#settlement-precedence)) until the
 node restarts.
+
+##### Quantity and cancellation
+
+A hard fault withholds the quantity normalization and FAK remainder cancellation that confirmation
+would authorize, including the fully matched `associate_trades` update. The confirmed venue outcome
+stays in place, and an applied fill keeps its quantity, price, and commission apart from that owed
+void. A cancellation, expiry, or rejection that the venue reports still applies; one inferred from a
+`MATCHED` underfill does not.
+
+##### Settlement records
 
 The adapter keeps settlement records for the lifetime of the execution client. If more than 100,000
 records accumulate after connect, the client faults closed: it reports disconnected and refuses new
@@ -1685,6 +1697,9 @@ partial fill.
 | Overfill  | BUY filled below its limit, or quote drift     | Raise the BUY order quantity to the fill     |
 | Underfill | Signed or venue quantity truncation (`< 0.01`) | Normalize atomic FOK; cancel a FAK remainder |
 
+A hard-faulted trade that touches the order withholds that normalization and the FAK remainder
+cancellation. See [Settlement faults](#settlement-faults).
+
 See [BUY overfills](#buy-overfills) for how a BUY can receive more shares than it signed.
 
 ### BUY overfills
@@ -1771,6 +1786,10 @@ order partially filled. REST reports apply the same rule when a `MATCHED` FAK ha
 `size_matched < original_size`. The same terminal handling runs after buffered fills drain when a
 confirmed trade arrives before the submit response. A buffered `Canceled`, `Expired`, or
 `Rejected` report takes precedence.
+
+A hard-faulted trade that touches the order withholds this handling, including after buffered fills
+drain. Healthy confirmation emits the update or the cancellation once; a later drain or the same
+evidence does not emit it again. See [Settlement faults](#settlement-faults).
 
 ### Commissions and tracking scope
 
@@ -2290,11 +2309,12 @@ not retry a quarantined trade.
 #### Terminal quantity normalization
 
 For a fully matched order, terminal quantity normalization waits for every trade ID in the order's
-`associate_trades` list to confirm before lowering the order quantity to its actual fills. If a
-confirmed trade is recovered through REST after a WebSocket gap, reconciliation applies the same
-order-only normalization. If a `MATCHED` WebSocket update omits `associate_trades`, the adapter does
-not infer that settlement is final; the next REST reconciliation recovers the residual after the
-trade reaches `CONFIRMED`.
+`associate_trades` list to confirm before lowering the order quantity to its actual fills. A
+hard-faulted trade in that list does not release it. See
+[Settlement faults](#settlement-faults). If a confirmed trade is recovered through REST after a
+WebSocket gap, reconciliation applies the same order-only normalization. If a `MATCHED` WebSocket
+update omits `associate_trades`, the adapter does not infer that settlement is final; the next REST
+reconciliation recovers the residual after the trade reaches `CONFIRMED`.
 
 ### Subscription limits
 

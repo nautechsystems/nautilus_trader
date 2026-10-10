@@ -574,6 +574,9 @@ impl SettlementRegistry {
     }
 
     /// Returns whether the trade reached a confirmed settlement (stream or REST).
+    ///
+    /// A hard fault does not clear this outcome. Terminal bookkeeping uses
+    /// [`Self::authorizes_terminal_bookkeeping`] instead.
     pub(crate) fn is_trade_confirmed(&self, venue_trade_id: &str) -> bool {
         self.inner
             .lock()
@@ -585,6 +588,43 @@ impl SettlementRegistry {
                     SettlementState::StreamConfirmed | SettlementState::RestConfirmed
                 )
             })
+    }
+
+    /// Returns whether confirmed settlement may authorize terminal order bookkeeping.
+    ///
+    /// `venue_trade_id` is the venue trade id, not a leg trade id. A hard fault keeps the
+    /// confirmed venue outcome and withdraws this authority.
+    pub(crate) fn authorizes_terminal_bookkeeping(&self, venue_trade_id: &str) -> bool {
+        self.inner
+            .lock()
+            .records
+            .get(venue_trade_id)
+            .is_some_and(|record| {
+                record.hard_fault.is_none()
+                    && matches!(
+                        record.settlement,
+                        SettlementState::StreamConfirmed | SettlementState::RestConfirmed
+                    )
+            })
+    }
+
+    /// Returns whether the trade holds a sticky hard fault.
+    pub(crate) fn is_trade_hard_faulted(&self, venue_trade_id: &str) -> bool {
+        self.inner
+            .lock()
+            .records
+            .get(venue_trade_id)
+            .is_some_and(|record| record.hard_fault.is_some())
+    }
+
+    /// Returns whether a hard-faulted trade touches this order.
+    ///
+    /// The scan includes terminal REST legs when the faulting transition stored them. A missing
+    /// record does not block.
+    pub(crate) fn blocks_terminal_bookkeeping(&self, venue_order_id: &VenueOrderId) -> bool {
+        self.inner.lock().records.values().any(|record| {
+            record.hard_fault.is_some() && faulted_record_touches_order(record, venue_order_id)
+        })
     }
 
     /// Returns whether the registry holds evidence or an observed fill for the trade.
@@ -1284,6 +1324,17 @@ fn insert_stream_gap_order(
             noted_at,
             kind: UncertainOrderKind::StreamGap,
         });
+}
+
+fn faulted_record_touches_order(record: &SettlementRecord, venue_order_id: &VenueOrderId) -> bool {
+    record
+        .legs
+        .iter()
+        .any(|leg| &leg.venue_order_id == venue_order_id)
+        || record
+            .terminal_rest_legs
+            .as_ref()
+            .is_some_and(|legs| legs.iter().any(|leg| &leg.venue_order_id == venue_order_id))
 }
 
 fn hard_fault(inner: &mut RegistryInner, key: &str, reason: String) {
@@ -3180,10 +3231,50 @@ pub(crate) mod tests {
         assert!(confirmed.is_empty());
         assert!(trade_hard_fault(&registry, TRADE).is_some());
         assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert!(registry.is_trade_confirmed(TRADE));
+        assert!(!registry.authorizes_terminal_bookkeeping(TRADE));
+        assert!(registry.blocks_terminal_bookkeeping(&leg.venue_order_id));
+        assert_eq!(
             leg_application(&registry, &leg.trade_id),
             Some(LegApplication::FillObserved)
         );
         assert!(registry.ensure_resolved(None, "mass status").is_err());
+    }
+
+    #[rstest]
+    fn test_faulted_rest_payload_blocks_order_not_copied_onto_legs() {
+        let registry = live_registry();
+        let leg = applied_taker(&registry);
+        let order_id = leg.venue_order_id;
+        registry.admit_stream_trade(&trade(PolymarketTradeStatus::Failed, vec![leg.clone()]));
+        let rest_leg = AdmittedLeg {
+            last_qty: Quantity::from("9.00"),
+            ..leg
+        };
+        let extra = maker_leg("0xuncopied");
+        let extra_order_id = extra.venue_order_id;
+        let confirmed = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![rest_leg, extra],
+        ));
+
+        assert!(confirmed.is_empty());
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert!(trade_hard_fault(&registry, TRADE).is_some());
+        assert!(
+            !registry.inner.lock().records[TRADE]
+                .legs
+                .iter()
+                .any(|stored| stored.venue_order_id == extra_order_id)
+        );
+        assert!(registry.blocks_terminal_bookkeeping(&order_id));
+        assert!(registry.blocks_terminal_bookkeeping(&extra_order_id));
     }
 
     #[rstest]
