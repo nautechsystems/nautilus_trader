@@ -562,6 +562,12 @@ pub(super) fn create_orphan_fill_order_report(
     Ok(report)
 }
 
+/// Returns whether reconciliation materializes `report` as a synthetic reconciliation order,
+/// which carries no execution client origin.
+pub(super) fn is_synthetic_order_report(report: &OrderStatusReport) -> bool {
+    report.client_order_id.is_none() && report.venue_order_id.as_str().starts_with("S-")
+}
+
 /// Checks whether a fill belongs in the retained position projection.
 pub(super) fn should_project_fill(
     fill: &OrderFilled,

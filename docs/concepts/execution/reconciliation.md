@@ -245,18 +245,29 @@ when all of these hold:
 2. The mass status reports are complete.
 3. `filter_position_reports` is not set.
 4. The order is cached, or its instrument is claimed through `external_order_claim`.
-5. The position is open, held by the reporting account, and the one the engine routes the order's
-   fills to: the order's assigned position, else the position for its instrument and strategy when
-   both the OMS the engine routes the order's fills under and the cached position are NETTING.
-6. Every order resolving to the position with fills not yet applied, and each of those fills, is
-   on its closing side. An order with an unknown side is not.
-7. The combined unapplied quantity of those orders does not exceed the open quantity.
+5. The position is open, held by the account the order's report (or, without one, its first fill)
+   names, and the one the engine routes the order's fills to: the order's assigned position, else
+   the position for its instrument and strategy when the cached position is NETTING and so is the
+   OMS the engine routes fills under for the order's client. That client is the cached order's
+   origin, else the reporting client that reconciliation records on an order it creates. An order
+   without an origin, such as a synthetic `S-` order, uses the account's single client on the
+   venue, if there is one.
+6. Every order resolving to the position with fills not yet applied carries the position's account
+   on each of those fills and on any fill the engine infers for it: the cached order's account,
+   else the reporting account.
+7. Every side such an order is known by, the cached order's, the report's, and each unapplied
+   fill's, is the position's closing side. An uncached order whose report states no side is not.
+8. For an `EXTERNAL` position, no bounded order that is neither cached nor claimed names the
+   position's account and instrument on its report or fills. Its fills stay order-only, yet they
+   move the venue's `EXTERNAL` inventory.
+9. The combined unapplied quantity of those orders, counting each trade of an order once, does
+   not exceed the open quantity.
 
 An order whose fills the cache has already applied, such as the order that opened the position
 inside the window, is ignored. When a condition fails, the fills stay order-only. When condition 5
-fails on the OMS, or condition 6 or 7 fails, every order for that position stays order-only and a
-warning names the position, its instrument, and the reason. The orders still reach their reported status, so an
-order can reach `FILLED` while the position stays open.
+fails on the OMS, or one of conditions 6 to 9 fails, every order for that position stays order-only
+and a warning names the position, its instrument, and the reason. The orders still reach their
+reported status, so an order can reach `FILLED` while the position stays open.
 
 This projection applies only to reconciliation recovery. Raw reports remain available. Setting
 `filter_position_reports` makes bounded historical fills order-only, even when the mass status

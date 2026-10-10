@@ -683,19 +683,18 @@ impl ExecutionEngine {
         log::info!("Registered OMS::{oms_type:?} for {strategy_id}");
     }
 
-    /// Returns the OMS type the engine applies to a fill for `strategy_id`: the OMS type
-    /// registered for the strategy unless `UNSPECIFIED`, else that of the client the order
-    /// `client_order_id` was submitted through, else that of the only client registered for
-    /// `account_id` on the instrument's venue, else `NETTING`.
+    /// Returns the OMS type the engine applies to a fill for `strategy_id` whose order carries
+    /// `client_id` as its execution client origin: the OMS type registered for the strategy
+    /// unless `UNSPECIFIED`, else that of the `client_id` client, else that of the only client
+    /// registered for `account_id` on the instrument's venue, else `NETTING`.
     #[must_use]
     pub fn fill_oms_type(
         &self,
-        client_order_id: Option<&ClientOrderId>,
+        client_id: Option<ClientId>,
         account_id: AccountId,
         instrument_id: &InstrumentId,
         strategy_id: StrategyId,
     ) -> OmsType {
-        let client_id = client_order_id.and_then(|id| self.cache.borrow().client_id(id).copied());
         let client = client_id.and_then(|id| self.get_client(&id)).or_else(|| {
             self.source_client_id_for_account(account_id, instrument_id)
                 .and_then(|id| self.get_client(&id))
@@ -3539,8 +3538,14 @@ impl ExecutionEngine {
     }
 
     fn determine_oms_type(&self, fill: &OrderFilled) -> OmsType {
+        let client_id = self
+            .cache
+            .borrow()
+            .client_id(&fill.client_order_id)
+            .copied();
+
         self.fill_oms_type(
-            Some(&fill.client_order_id),
+            client_id,
             fill.account_id,
             &fill.instrument_id,
             fill.strategy_id,

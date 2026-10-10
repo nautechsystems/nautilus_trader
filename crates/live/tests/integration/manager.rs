@@ -6550,6 +6550,988 @@ fn test_bounded_partial_closing_fill_reduces_restored_position_without_coverage(
     );
 }
 
+/// A closing trade reported more than once for its order counts once toward the restored
+/// position's quantity, as event processing applies each trade of an order once: a complete
+/// bounded status from a client without bulk position coverage that repeats a closing fill
+/// closes the restored position with each trade, fee and realized PnL recorded once, with or
+/// without an order report for the closing order.
+#[rstest]
+#[case::cached_with_report(ClosingOrder::Cached, true)]
+#[case::claimed_with_report(ClosingOrder::Claimed, true)]
+#[case::cached_fills_only(ClosingOrder::Cached, false)]
+fn test_bounded_repeated_closing_fill_counts_once_toward_restored_position(
+    #[case] closing: ClosingOrder,
+    #[case] with_order_report: bool,
+) {
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+    let (closing_order_id, reported_order_id) = prepare_closing_scenario_order(&mut ctx, closing);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 1_000_000),
+        Some(UUID4::new()),
+    );
+    mass_status.set_report_window(Some(UnixNanos::from(CLOSING_SCENARIO_WINDOW_START)), true);
+
+    if with_order_report {
+        mass_status.add_order_reports(vec![closing_scenario_closing_order_report(
+            reported_order_id,
+        )]);
+    }
+
+    let mut fill_reports = closing_scenario_closing_fill_reports(reported_order_id);
+    fill_reports.push(fill_reports[1].clone());
+    mass_status.add_fill_reports(fill_reports);
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(
+        result.external_orders.len(),
+        usize::from(matches!(closing, ClosingOrder::Claimed))
+    );
+    assert_eq!(count_filled_events(&result.events), 2);
+    assert_closing_scenario_recorded_once(&ctx.cache.borrow(), closing_order_id);
+    assert_closing_scenario_position_events(&position_events);
+}
+
+/// Bounded closing fills from a client without bulk position coverage stay on the order only
+/// when an unapplied fill of the closing order carries another account than the retained
+/// position: the engine applies each fill to the resolved position under the fill's own
+/// account, so that fill would change the position with another account's trade. A warning
+/// names the position, the fill and both accounts.
+#[rstest]
+#[case::cached_with_report(ClosingOrder::Cached, true)]
+#[case::cached_without_report(ClosingOrder::Cached, false)]
+#[case::claimed_with_report(ClosingOrder::Claimed, true)]
+#[tokio::test]
+async fn test_bounded_closing_fills_with_another_accounts_fill_stay_order_only(
+    #[case] closing: ClosingOrder,
+    #[case] with_report: bool,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let other_account_id = AccountId::from("BINANCE-002");
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    // The engine changes a position only for a fill whose account is cached
+    ctx.add_margin_account(other_account_id);
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+    let (closing_order_id, reported_order_id) = prepare_closing_scenario_order(&mut ctx, closing);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 1_000_000),
+        Some(UUID4::new()),
+    );
+    mass_status.set_report_window(Some(UnixNanos::from(CLOSING_SCENARIO_WINDOW_START)), true);
+
+    if with_report {
+        mass_status.add_order_reports(vec![closing_scenario_closing_order_report(
+            reported_order_id,
+        )]);
+    }
+
+    let mut fill_reports = closing_scenario_closing_fill_reports(reported_order_id);
+    fill_reports[1].account_id = other_account_id;
+    mass_status.add_fill_reports(fill_reports);
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(count_filled_events(&result.events), 2);
+    assert!(position_events.is_empty(), "found {position_events:?}");
+    assert_closing_scenario_order_only(&ctx.cache.borrow(), closing_order_id);
+
+    let expected = format!(
+        "leave retained position {} unchanged: order {} fill T-CLOSE-2 account \
+         {other_account_id} is not position account {}",
+        closing_scenario_position_id(),
+        closing_scenario_venue_order_id(),
+        test_account_id(),
+    );
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    assert!(
+        messages.iter().any(|message| message.contains(&expected)),
+        "expected warning containing {expected:?}, found {messages:?}"
+    );
+}
+
+/// Bounded closing fills from a client without bulk position coverage stay on the order only
+/// when the cached closing order is held under another account than the retained position,
+/// whether its fills are reported or inferred from its report: the engine infers a fill under
+/// the cached order's account, and an order the cache holds for another account does not
+/// establish which account's position its reported fills reduce. A warning names the position
+/// and both accounts.
+#[rstest]
+#[case::reported_fills(true)]
+#[case::inferred_fill(false)]
+#[tokio::test]
+async fn test_bounded_closing_fills_of_another_accounts_cached_order_stay_order_only(
+    #[case] with_fills: bool,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let other_account_id = AccountId::from("BINANCE-002");
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    // The engine changes a position only for a fill whose account is cached
+    ctx.add_margin_account(other_account_id);
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+
+    let closing_order_id = ClientOrderId::from("O-CLOSE");
+    let mut closing_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(closing_order_id)
+        .strategy_id(closing_scenario_strategy_id())
+        .instrument_id(test_instrument_id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3100.00"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&closing_order, other_account_id);
+    closing_order.apply(submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(
+        &closing_order,
+        other_account_id,
+        closing_scenario_venue_order_id(),
+    );
+    closing_order.apply(accepted).unwrap();
+    ctx.add_order(closing_order);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 1_000_000),
+        Some(UUID4::new()),
+    );
+    mass_status.set_report_window(Some(UnixNanos::from(CLOSING_SCENARIO_WINDOW_START)), true);
+    mass_status.add_order_reports(vec![closing_scenario_closing_order_report(Some(
+        closing_order_id,
+    ))]);
+
+    if with_fills {
+        mass_status.add_fill_reports(closing_scenario_closing_fill_reports(Some(
+            closing_order_id,
+        )));
+    }
+
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(
+        count_filled_events(&result.events),
+        if with_fills { 2 } else { 1 }
+    );
+    assert!(position_events.is_empty(), "found {position_events:?}");
+    {
+        let cache = ctx.cache.borrow();
+        assert_closing_scenario_position_unchanged(&cache);
+        assert_eq!(
+            closing_scenario_instrument_position_ids(&cache),
+            vec![closing_scenario_position_id()]
+        );
+        let order = cache
+            .order(&closing_order_id)
+            .expect("closing order cached");
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    }
+
+    let expected = format!(
+        "leave retained position {} unchanged: order {} account {other_account_id} is not \
+         position account {}",
+        closing_scenario_position_id(),
+        closing_scenario_venue_order_id(),
+        test_account_id(),
+    );
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    assert!(
+        messages.iter().any(|message| message.contains(&expected)),
+        "expected warning containing {expected:?}, found {messages:?}"
+    );
+}
+
+/// A claimed closing order reported by a client without bulk position coverage stays on the
+/// order only when the mass status reports for another account than the retained position: the
+/// engine materializes the order under the reporting account and infers its fill under that
+/// account, so the fill would change the position with another account's trade. A warning names
+/// the position and both accounts.
+#[rstest]
+#[tokio::test]
+async fn test_bounded_claimed_closing_fill_for_another_reporting_account_stays_order_only() {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let other_account_id = AccountId::from("BINANCE-002");
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    // The engine changes a position only for a fill whose account is cached
+    ctx.add_margin_account(other_account_id);
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+    let (closing_order_id, reported_order_id) =
+        prepare_closing_scenario_order(&mut ctx, ClosingOrder::Claimed);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        other_account_id,
+        test_venue(),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 1_000_000),
+        Some(UUID4::new()),
+    );
+    mass_status.set_report_window(Some(UnixNanos::from(CLOSING_SCENARIO_WINDOW_START)), true);
+    mass_status.add_order_reports(vec![closing_scenario_closing_order_report(
+        reported_order_id,
+    )]);
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(result.external_orders.len(), 1);
+    assert_eq!(count_filled_events(&result.events), 1);
+    assert!(position_events.is_empty(), "found {position_events:?}");
+    {
+        let cache = ctx.cache.borrow();
+        assert_closing_scenario_position_unchanged(&cache);
+        assert_eq!(
+            closing_scenario_instrument_position_ids(&cache),
+            vec![closing_scenario_position_id()]
+        );
+        let order = cache
+            .order(&closing_order_id)
+            .expect("closing order cached");
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.account_id(), Some(other_account_id));
+    }
+
+    let expected = format!(
+        "leave retained position {} unchanged: order {} account {other_account_id} is not \
+         position account {}",
+        closing_scenario_position_id(),
+        closing_scenario_venue_order_id(),
+        test_account_id(),
+    );
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    assert!(
+        messages.iter().any(|message| message.contains(&expected)),
+        "expected warning containing {expected:?}, found {messages:?}"
+    );
+}
+
+/// Bounded closing fills for an uncached claimed order stay on the order only when the reporting
+/// client without bulk position coverage is HEDGING and the strategy has no registered OMS,
+/// whether the account has several clients on the venue or none: materialization records the
+/// reporting client as the order's origin, so the engine would key the fills to a new HEDGING
+/// position rather than reduce the retained NETTING one. A warning names the position and both
+/// OMS types.
+#[rstest]
+#[case::account_clients_ambiguous(true)]
+#[case::account_client_absent(false)]
+#[tokio::test]
+async fn test_bounded_claimed_closing_fills_stay_order_only_when_the_reporting_client_is_hedging(
+    #[case] ambiguous: bool,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+
+        if ambiguous {
+            engine
+                .register_client(Box::new(
+                    MockExecutionClient::for_venue(
+                        ClientId::from("SIM-NETTING"),
+                        test_venue(),
+                        Vec::new(),
+                    )
+                    .with_oms_type(OmsType::Netting),
+                ))
+                .unwrap();
+        } else {
+            engine.deregister_client(test_client_id()).unwrap();
+            engine
+                .register_client(Box::new(
+                    MockExecutionClient::new(Vec::new())
+                        .with_bulk_position_coverage(false)
+                        .with_account_id(AccountId::from("SIM-002")),
+                ))
+                .unwrap();
+        }
+        engine.register_oms_type(closing_scenario_strategy_id(), OmsType::Unspecified);
+    }
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+    let (closing_order_id, reported_order_id) =
+        prepare_closing_scenario_order(&mut ctx, ClosingOrder::Claimed);
+
+    let mass_status = closing_scenario_mass_status(true, reported_order_id);
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(count_filled_events(&result.events), 2);
+    assert_eq!(
+        ctx.cache.borrow().client_id(&closing_order_id),
+        Some(&test_client_id())
+    );
+    assert!(position_events.is_empty(), "found {position_events:?}");
+    assert_closing_scenario_order_only(&ctx.cache.borrow(), closing_order_id);
+
+    let expected = format!(
+        "leave retained position {} unchanged: order {} resolves to it with engine OMS HEDGING \
+         and cached OMS NETTING, not NETTING",
+        closing_scenario_position_id(),
+        closing_scenario_venue_order_id(),
+    );
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    assert!(
+        messages.iter().any(|message| message.contains(&expected)),
+        "expected warning containing {expected:?}, found {messages:?}"
+    );
+}
+
+/// Bounded closing fills for an uncached claimed order close the retained position when the
+/// reporting client without bulk position coverage is NETTING and the strategy has no registered
+/// OMS, though the only client registered for the report's account is HEDGING, whether or not
+/// the venue reports a client order ID: materialization records the reporting client as the
+/// order's origin, so the engine reduces the retained NETTING position.
+#[rstest]
+#[case::without_client_order_id(None)]
+#[case::with_client_order_id(Some(ClientOrderId::from("O-EXT-CLOSE")))]
+fn test_bounded_claimed_closing_fills_close_position_when_the_reporting_client_is_netting(
+    #[case] reported_order_id: Option<ClientOrderId>,
+) {
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.deregister_client(test_client_id()).unwrap();
+        engine
+            .register_client(Box::new(
+                MockExecutionClient::new(Vec::new())
+                    .with_bulk_position_coverage(false)
+                    .with_oms_type(OmsType::Netting)
+                    .with_account_id(AccountId::from("SIM-002")),
+            ))
+            .unwrap();
+        engine
+            .register_client(Box::new(MockExecutionClient::for_venue(
+                ClientId::from("SIM-HEDGING"),
+                test_venue(),
+                Vec::new(),
+            )))
+            .unwrap();
+        engine.register_oms_type(closing_scenario_strategy_id(), OmsType::Unspecified);
+    }
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+    let (materialized_order_id, _) =
+        prepare_closing_scenario_order(&mut ctx, ClosingOrder::Claimed);
+    let closing_order_id = reported_order_id.unwrap_or(materialized_order_id);
+
+    let mass_status = closing_scenario_mass_status(true, reported_order_id);
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(result.external_orders.len(), 1);
+    assert_eq!(count_filled_events(&result.events), 2);
+    assert_closing_scenario_recorded_once(&ctx.cache.borrow(), closing_order_id);
+    assert_closing_scenario_position_events(&position_events);
+}
+
+/// Bounded closing fills for an uncached claimed order reported without a client order ID under
+/// a synthetic `S-` venue order ID stay on the order only when the strategy has no registered OMS
+/// and the only client registered for the report's account is HEDGING, though the reporting
+/// client without bulk position coverage is NETTING: materialization records no origin for a
+/// synthetic order, so the engine routes its fills by the account's client.
+#[rstest]
+fn test_bounded_synthetic_claimed_closing_fills_follow_the_account_client() {
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.deregister_client(test_client_id()).unwrap();
+        engine
+            .register_client(Box::new(
+                MockExecutionClient::new(Vec::new())
+                    .with_bulk_position_coverage(false)
+                    .with_oms_type(OmsType::Netting)
+                    .with_account_id(AccountId::from("SIM-002")),
+            ))
+            .unwrap();
+        engine
+            .register_client(Box::new(MockExecutionClient::for_venue(
+                ClientId::from("SIM-HEDGING"),
+                test_venue(),
+                Vec::new(),
+            )))
+            .unwrap();
+        engine.register_oms_type(closing_scenario_strategy_id(), OmsType::Unspecified);
+    }
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+    prepare_closing_scenario_order(&mut ctx, ClosingOrder::Claimed);
+    let venue_order_id = VenueOrderId::from("S-CLOSE");
+    let mut order_report = closing_scenario_closing_order_report(None);
+    order_report.venue_order_id = venue_order_id;
+    let fill_reports: Vec<FillReport> = closing_scenario_closing_fill_reports(None)
+        .into_iter()
+        .map(|mut fill| {
+            fill.venue_order_id = venue_order_id;
+            fill
+        })
+        .collect();
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 1_000_000),
+        Some(UUID4::new()),
+    );
+    mass_status.set_report_window(Some(UnixNanos::from(CLOSING_SCENARIO_WINDOW_START)), true);
+    mass_status.add_order_reports(vec![order_report]);
+    mass_status.add_fill_reports(fill_reports);
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    let closing_order_id = ClientOrderId::from(venue_order_id.as_str());
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(count_filled_events(&result.events), 2);
+    assert_eq!(ctx.cache.borrow().client_id(&closing_order_id), None);
+    assert!(position_events.is_empty(), "found {position_events:?}");
+    assert_closing_scenario_order_only(&ctx.cache.borrow(), closing_order_id);
+}
+
+/// Bounded fills from a client without bulk position coverage stay on the order only, and a
+/// warning names the retained position, when the cached order's side opens the position while
+/// its report or fills show the closing side: the engine applies each fill with its own side and
+/// infers the rest of the reported filled quantity with the cached order's side, so any known
+/// side off the closing side may extend the position rather than reduce it.
+#[rstest]
+#[case::report_only(Some(OrderSide::Sell), Some("0.400"), None)]
+#[case::report_beyond_fill(Some(OrderSide::Sell), Some("0.600"), Some("0.400"))]
+#[case::sideless_report_beyond_fill(None, Some("0.600"), Some("0.400"))]
+#[case::fill_only(None, None, Some("0.400"))]
+#[tokio::test]
+async fn test_bounded_fills_for_an_opening_side_cached_order_stay_order_only(
+    #[case] report_side: Option<OrderSide>,
+    #[case] report_filled_qty: Option<&str>,
+    #[case] fill_qty: Option<&str>,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+
+    let closing_order_id = ClientOrderId::from("O-CLOSE");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(closing_order_id)
+        .strategy_id(closing_scenario_strategy_id())
+        .instrument_id(test_instrument_id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3100.00"))
+        .build();
+    apply_submitted_and_accepted(&mut order, closing_scenario_venue_order_id());
+    ctx.add_order(order);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2),
+        Some(UUID4::new()),
+    );
+    mass_status.set_report_window(Some(UnixNanos::from(CLOSING_SCENARIO_WINDOW_START)), true);
+
+    if let Some(filled_qty) = report_filled_qty {
+        let mut order_report = OrderStatusReport::new(
+            test_account_id(),
+            test_instrument_id(),
+            Some(closing_order_id),
+            closing_scenario_venue_order_id(),
+            OrderSide::Sell.into(),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("1.000"),
+            Quantity::from(filled_qty),
+            UnixNanos::from(CLOSING_SCENARIO_ACCEPTED_TS),
+            UnixNanos::from(CLOSING_SCENARIO_FILL_TS_1),
+            UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2),
+            None,
+        )
+        .with_price(Price::from("3100.00"))
+        .with_avg_px(dec!(3100.00));
+        order_report.order_side = report_side;
+        mass_status.add_order_reports(vec![order_report]);
+    }
+
+    if let Some(fill_qty) = fill_qty {
+        let fill_ts = UnixNanos::from(CLOSING_SCENARIO_FILL_TS_1);
+        mass_status.add_fill_reports(vec![FillReport::new(
+            test_account_id(),
+            test_instrument_id(),
+            closing_scenario_venue_order_id(),
+            TradeId::from("T-CLOSE-1"),
+            OrderSide::Sell,
+            Quantity::from(fill_qty),
+            Price::from("3100.00"),
+            Money::from("0.25 USDT"),
+            LiquiditySide::Taker,
+            Some(closing_order_id),
+            None,
+            fill_ts,
+            fill_ts,
+            None,
+        )]);
+    }
+
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert!(position_events.is_empty(), "found {position_events:?}");
+    {
+        let cache = ctx.cache.borrow();
+        assert_closing_scenario_position_unchanged(&cache);
+        assert_eq!(
+            closing_scenario_instrument_position_ids(&cache),
+            vec![closing_scenario_position_id()]
+        );
+        let order = cache
+            .order(&closing_order_id)
+            .expect("closing order cached");
+        assert_eq!(
+            order.filled_qty(),
+            Quantity::from(report_filled_qty.or(fill_qty).unwrap())
+        );
+    }
+
+    let expected = format!(
+        "leave retained position {} unchanged: order {} cached order side BUY does not close LONG",
+        closing_scenario_position_id(),
+        closing_scenario_venue_order_id(),
+    );
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    assert!(
+        messages.iter().any(|message| message.contains(&expected)),
+        "expected warning containing {expected:?}, found {messages:?}"
+    );
+}
+
+/// Bounded fills from a client without bulk position coverage stay on the order only, and a
+/// warning names the retained position, when the closing order's report shows the opening side
+/// and no fill is reported: a claimed order materializes on the report's side and infers its
+/// fill on it, and a cached order whose report disagrees with its own side gives no evidence of
+/// which way the venue moved the position.
+#[rstest]
+#[case::cached(ClosingOrder::Cached)]
+#[case::claimed(ClosingOrder::Claimed)]
+#[tokio::test]
+async fn test_bounded_fills_for_an_opening_side_report_stay_order_only(
+    #[case] closing: ClosingOrder,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+    let (_, reported_order_id) = prepare_closing_scenario_order(&mut ctx, closing);
+
+    let mut order_report = closing_scenario_closing_order_report(reported_order_id);
+    order_report.order_side = Some(OrderSide::Buy);
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 1_000_000),
+        Some(UUID4::new()),
+    );
+    mass_status.set_report_window(Some(UnixNanos::from(CLOSING_SCENARIO_WINDOW_START)), true);
+    mass_status.add_order_reports(vec![order_report]);
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(count_filled_events(&result.events), 1);
+    assert!(position_events.is_empty(), "found {position_events:?}");
+    {
+        let cache = ctx.cache.borrow();
+        assert_closing_scenario_position_unchanged(&cache);
+        assert_eq!(
+            closing_scenario_instrument_position_ids(&cache),
+            vec![closing_scenario_position_id()]
+        );
+    }
+
+    let expected = format!(
+        "leave retained position {} unchanged: order {} report side BUY does not close LONG",
+        closing_scenario_position_id(),
+        closing_scenario_venue_order_id(),
+    );
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    assert!(
+        messages.iter().any(|message| message.contains(&expected)),
+        "expected warning containing {expected:?}, found {messages:?}"
+    );
+}
+
+/// Bounded fills from a client without bulk position coverage stay on the order only, and a
+/// warning names the retained position, when an uncached claimed order for it reports no side,
+/// even beside a partial closing order that alone fits the open quantity and even when the
+/// sideless order's fills show the closing side: reconciliation materializes no order from a
+/// report without a side, so the venue's change to the position is unknown.
+#[rstest]
+#[case::report_only(false)]
+#[case::report_with_closing_fill(true)]
+#[tokio::test]
+async fn test_bounded_partial_closing_fill_beside_unknown_side_order_stays_order_only(
+    #[case] with_unknown_fill: bool,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+    let (closing_order_id, reported_order_id) =
+        prepare_closing_scenario_order(&mut ctx, ClosingOrder::Cached);
+    claim_closing_scenario_instrument(&mut ctx, ClosingOrder::Claimed);
+
+    let fill_ts = UnixNanos::from(CLOSING_SCENARIO_FILL_TS_1);
+    let closing_report = OrderStatusReport::new(
+        test_account_id(),
+        test_instrument_id(),
+        reported_order_id,
+        closing_scenario_venue_order_id(),
+        OrderSide::Sell.into(),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::PartiallyFilled,
+        Quantity::from("1.000"),
+        Quantity::from("0.400"),
+        UnixNanos::from(CLOSING_SCENARIO_ACCEPTED_TS),
+        fill_ts,
+        fill_ts,
+        None,
+    )
+    .with_price(Price::from("3100.00"))
+    .with_avg_px(dec!(3100.00));
+    let closing_fill = FillReport::new(
+        test_account_id(),
+        test_instrument_id(),
+        closing_scenario_venue_order_id(),
+        TradeId::from("T-CLOSE-1"),
+        OrderSide::Sell,
+        Quantity::from("0.400"),
+        Price::from("3100.00"),
+        Money::from("0.25 USDT"),
+        LiquiditySide::Taker,
+        reported_order_id,
+        None,
+        fill_ts,
+        fill_ts,
+        None,
+    );
+
+    let unknown_venue_order_id = VenueOrderId::from("V-UNKNOWN");
+    let (mut unknown_report, unknown_fill) = create_bounded_fill_lifecycle(
+        test_instrument_id(),
+        unknown_venue_order_id,
+        TradeId::from("T-UNKNOWN"),
+        OrderSide::Sell,
+        "0.500",
+        "3130.00",
+        false,
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2),
+    );
+    unknown_report.order_side = None;
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 1_000_000),
+        Some(UUID4::new()),
+    );
+    mass_status.set_report_window(Some(UnixNanos::from(CLOSING_SCENARIO_WINDOW_START)), true);
+    mass_status.add_order_reports(vec![closing_report, unknown_report]);
+    let mut fill_reports = vec![closing_fill];
+
+    if with_unknown_fill {
+        fill_reports.push(unknown_fill);
+    }
+
+    mass_status.add_fill_reports(fill_reports);
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert!(position_events.is_empty(), "found {position_events:?}");
+    {
+        let cache = ctx.cache.borrow();
+        assert_closing_scenario_position_unchanged(&cache);
+        let order = cache
+            .order(&closing_order_id)
+            .expect("closing order cached");
+        assert_eq!(order.filled_qty(), Quantity::from("0.400"));
+    }
+
+    let expected = format!(
+        "leave retained position {} unchanged: order {unknown_venue_order_id} side is unknown",
+        closing_scenario_position_id(),
+    );
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    assert!(
+        messages.iter().any(|message| message.contains(&expected)),
+        "expected warning containing {expected:?}, found {messages:?}"
+    );
+}
+
+fn external_closing_scenario_position_id() -> PositionId {
+    PositionId::new(format!("{}-EXTERNAL", test_instrument_id()))
+}
+
+/// Caches the open `EXTERNAL` LONG 1.000 @ 3000.00 that the filled order `O-EXT-OPEN` (trade
+/// `T-EXT-OPEN`) opened under NETTING, and the accepted `EXTERNAL` closing order `O-CLOSE`
+/// (SELL 1.000 limit 3100.00, venue `V-CLOSE`) with no indexed position, as a prior session
+/// leaves an external order it materialized while open.
+fn cache_external_closing_scenario(ctx: &TestContext, instrument: &InstrumentAny) -> ClientOrderId {
+    let position_id = external_closing_scenario_position_id();
+    let mut opening_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(ClientOrderId::from("O-EXT-OPEN"))
+        .strategy_id(StrategyId::external())
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3000.00"))
+        .build();
+    apply_submitted_and_accepted(&mut opening_order, VenueOrderId::from("V-EXT-OPEN"));
+    let filled = TestOrderEventStubs::filled(
+        &opening_order,
+        instrument,
+        Some(TradeId::from("T-EXT-OPEN")),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("1.000")),
+        Some(LiquiditySide::Maker),
+        Some(Money::from("0.60 USDT")),
+        Some(UnixNanos::from(CLOSING_SCENARIO_OPENING_TS)),
+        Some(test_account_id()),
+    );
+    opening_order.apply(filled.clone()).unwrap();
+    let position = Position::new(instrument, filled.into());
+
+    let closing_order_id = ClientOrderId::from("O-CLOSE");
+    let mut closing_order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(closing_order_id)
+        .strategy_id(StrategyId::external())
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3100.00"))
+        .build();
+    apply_submitted_and_accepted(&mut closing_order, closing_scenario_venue_order_id());
+
+    let mut cache = ctx.cache.borrow_mut();
+    cache
+        .add_order(
+            opening_order,
+            Some(position_id),
+            Some(test_client_id()),
+            false,
+        )
+        .unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_order(closing_order, None, Some(test_client_id()), false)
+        .unwrap();
+    closing_order_id
+}
+
+/// A complete bounded status from a client without bulk position coverage leaves a retained
+/// `EXTERNAL` position unchanged, with a warning naming it, when an order that is neither cached
+/// nor claimed trades its account and instrument beside a cached `EXTERNAL` closing order. Event
+/// processing applies none of the unclaimed order's fills to a position, yet they move the
+/// venue's `EXTERNAL` inventory on either side, so the cached closing fills alone do not
+/// establish what remains open. This holds whether the unclaimed order arrives with a report
+/// and fills, fills only or a report only, and when only its fill names the position's account.
+#[rstest]
+#[case::extending(OrderSide::Buy, true, true, false)]
+#[case::crossing(OrderSide::Sell, true, true, false)]
+#[case::extending_fill_only(OrderSide::Buy, false, true, false)]
+#[case::extending_report_only(OrderSide::Buy, true, false, false)]
+#[case::report_of_another_account(OrderSide::Buy, true, true, true)]
+#[tokio::test]
+async fn test_bounded_external_closing_fills_beside_unclaimed_order_stay_order_only(
+    #[case] unclaimed_side: OrderSide,
+    #[case] with_report: bool,
+    #[case] with_fill: bool,
+    #[case] report_of_another_account: bool,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    let closing_order_id = cache_external_closing_scenario(&ctx, &test_instrument());
+
+    let unclaimed_venue_order_id = VenueOrderId::from("V-UNCLAIMED");
+    let (mut unclaimed_report, unclaimed_fill) = create_bounded_fill_lifecycle(
+        test_instrument_id(),
+        unclaimed_venue_order_id,
+        TradeId::from("T-UNCLAIMED"),
+        unclaimed_side,
+        "0.500",
+        "3130.00",
+        false,
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 500_000),
+    );
+
+    if report_of_another_account {
+        unclaimed_report.account_id = AccountId::from("BINANCE-002");
+    }
+
+    let mut mass_status = closing_scenario_mass_status(true, Some(closing_order_id));
+
+    if with_report {
+        mass_status.add_order_reports(vec![unclaimed_report]);
+    }
+
+    if with_fill {
+        mass_status.add_fill_reports(vec![unclaimed_fill]);
+    }
+
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert!(position_events.is_empty(), "found {position_events:?}");
+    {
+        let cache = ctx.cache.borrow();
+        assert_closing_scenario_order_filled(&cache, closing_order_id);
+        let position = cache
+            .position(&external_closing_scenario_position_id())
+            .expect("external position cached");
+        assert!(position.is_open(), "found {position:?}");
+        assert_eq!(position.side, PositionSide::Long);
+        assert_eq!(position.quantity, Quantity::from("1.000"));
+        assert_eq!(
+            position.trade_ids,
+            [TradeId::from("T-EXT-OPEN")]
+                .into_iter()
+                .collect::<AHashSet<_>>()
+        );
+        drop(position);
+        assert_eq!(
+            closing_scenario_instrument_position_ids(&cache),
+            vec![external_closing_scenario_position_id()]
+        );
+    }
+
+    let expected = format!(
+        "leave retained position {} unchanged: order {unclaimed_venue_order_id} is neither \
+         cached nor claimed",
+        external_closing_scenario_position_id(),
+    );
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    assert!(
+        messages.iter().any(|message| message.contains(&expected)),
+        "expected warning containing {expected:?}, found {messages:?}"
+    );
+}
+
+/// A complete bounded status from a client without bulk position coverage closes a retained
+/// `EXTERNAL` position with the fills of a cached `EXTERNAL` closing order when no order that
+/// is neither cached nor claimed trades the position's account and instrument, including when
+/// such an order trades the instrument for another account only.
+#[rstest]
+#[case::alone(false)]
+#[case::beside_another_accounts_unclaimed_order(true)]
+fn test_bounded_external_closing_fills_close_retained_external_position(
+    #[case] with_other_account_order: bool,
+) {
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    let closing_order_id = cache_external_closing_scenario(&ctx, &test_instrument());
+
+    let mut mass_status = closing_scenario_mass_status(true, Some(closing_order_id));
+
+    if with_other_account_order {
+        let other_account_id = AccountId::from("BINANCE-002");
+        let (mut unclaimed_report, mut unclaimed_fill) = create_bounded_fill_lifecycle(
+            test_instrument_id(),
+            VenueOrderId::from("V-UNCLAIMED"),
+            TradeId::from("T-UNCLAIMED"),
+            OrderSide::Buy,
+            "0.500",
+            "3130.00",
+            false,
+            UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 500_000),
+        );
+        unclaimed_report.account_id = other_account_id;
+        unclaimed_fill.account_id = other_account_id;
+        mass_status.add_order_reports(vec![unclaimed_report]);
+        mass_status.add_fill_reports(vec![unclaimed_fill]);
+    }
+
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(
+        count_filled_events(&result.events),
+        2 + usize::from(with_other_account_order)
+    );
+    assert_closing_scenario_position_events(&position_events);
+    let cache = ctx.cache.borrow();
+    assert_closing_scenario_order_filled(&cache, closing_order_id);
+    let position = cache
+        .position(&external_closing_scenario_position_id())
+        .expect("external position cached");
+    assert!(position.is_closed(), "found {position:?}");
+    assert_eq!(position.realized_pnl, Some(Money::from("110.78 USDT")));
+    assert_eq!(
+        position.trade_ids,
+        [
+            TradeId::from("T-EXT-OPEN"),
+            TradeId::from("T-CLOSE-1"),
+            TradeId::from("T-CLOSE-2"),
+        ]
+        .into_iter()
+        .collect::<AHashSet<_>>()
+    );
+}
+
+/// A complete bounded status from a client without bulk position coverage closes a strategy's
+/// retained position with its cached closing order's fills although an order that is neither
+/// cached nor claimed trades the same account and instrument: that order belongs to `EXTERNAL`,
+/// so event processing applies none of its fills to the strategy's position.
+#[rstest]
+fn test_bounded_closing_fills_close_strategy_position_beside_unclaimed_order() {
+    let mut ctx =
+        closing_scenario_context(Cache::default(), ExecutionManagerConfig::default(), false);
+    cache_closing_scenario_open_long(&ctx, &test_instrument());
+    let (closing_order_id, reported_order_id) =
+        prepare_closing_scenario_order(&mut ctx, ClosingOrder::Cached);
+
+    let (unclaimed_report, unclaimed_fill) = create_bounded_fill_lifecycle(
+        test_instrument_id(),
+        VenueOrderId::from("V-UNCLAIMED"),
+        TradeId::from("T-UNCLAIMED"),
+        OrderSide::Buy,
+        "0.500",
+        "3130.00",
+        false,
+        UnixNanos::from(CLOSING_SCENARIO_FILL_TS_2 + 500_000),
+    );
+    let mut mass_status = closing_scenario_mass_status(true, reported_order_id);
+    mass_status.add_order_reports(vec![unclaimed_report]);
+    mass_status.add_fill_reports(vec![unclaimed_fill]);
+    let (result, position_events) = reconcile_closing_scenario(&mut ctx, &mass_status);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(result.external_orders.len(), 1);
+    assert_eq!(count_filled_events(&result.events), 3);
+    assert_closing_scenario_recorded_once(&ctx.cache.borrow(), closing_order_id);
+    assert_closing_scenario_position_events(&position_events);
+}
+
 #[tokio::test]
 async fn test_fill_before_retained_netting_lifecycle_projects_order_only() {
     let config = ExecutionManagerConfig {
