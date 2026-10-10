@@ -19,6 +19,7 @@
 //! runtime worker as an `ExecutionReportTask` and inline through the same code.
 
 use ibapi::client::Client;
+use nautilus_model::enums::AvgPxReconciliation;
 
 use super::{core::*, parse::parse_order_data_to_report};
 
@@ -528,7 +529,10 @@ impl IbReportClient {
                         None,    // report_id: auto-generated
                         None,    // venue_position_id
                         avg_px_open,
-                    );
+                    )
+                    // IB's average cost includes commissions, so it can open a position from
+                    // flat but must not be compared with the average of the fill prices
+                    .with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly);
 
                     reports.push(report);
                 }

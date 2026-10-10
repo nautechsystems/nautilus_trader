@@ -467,7 +467,9 @@ IB's position average cost includes commissions, while a position rebuilt from f
 prices. When the reported fills of an instrument net to exactly its position quantity, the position
 report carries the entry price of those fills instead, so a position held across a restart
 reconciles. Otherwise the report keeps IB's average cost, which the engine's reconciliation fill
-uses.
+uses. Position reports are marked `AvgPxReconciliation::OpeningOnly`: the engine prices a position
+it opens from flat with the reported average, but never compares that average with a position
+rebuilt from fills, so only quantities must match.
 
 On connect, the execution client resolves the instrument of every open position in the account and
 publishes any the cache does not hold, so a position in a contract outside the provider's `load_ids`

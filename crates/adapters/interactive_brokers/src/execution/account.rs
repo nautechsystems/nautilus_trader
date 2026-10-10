@@ -38,7 +38,7 @@ use nautilus_common::{
 use nautilus_core::{Params, time::get_atomic_clock_realtime};
 use nautilus_live::task::TaskGroup;
 use nautilus_model::{
-    enums::PositionSide,
+    enums::{AvgPxReconciliation, PositionSide},
     identifiers::AccountId,
     instruments::Instrument,
     reports::PositionStatusReport,
@@ -762,7 +762,11 @@ pub async fn subscribe_positions(
                                     None,
                                     None,
                                     avg_px_open,
-                                );
+                                )
+                                // IB's average cost includes commissions, so it can open a
+                                // position from flat but must not be compared with the average
+                                // of the fill prices
+                                .with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly);
                                 let event = ExecutionEvent::Report(ExecutionReport::Position(
                                     Box::new(report),
                                 ));
