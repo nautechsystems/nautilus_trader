@@ -760,10 +760,11 @@ every holding it covers and an absent report is genuine evidence of flat.
   page; when nothing covers it, the single-order query fails and the bulk read leaves the order out,
   so reconciliation defers it rather than infer the executions at the limit price.
 - Startup mass status reads one page of the order history alongside open orders, so an order that
-  reached a terminal state while the node was down is reconciled when that page holds it. When that
-  read fails for any reason, such as a refused `/history` page, the mass status logs a warning,
-  falls back to the open orders alone and marks the set incomplete; it fails only when the
-  open-order read fails too.
+  reached a terminal state while the node was down is reconciled when that page holds it. When the
+  venue refuses that history page, with an error body or HTTP 429, the mass status logs a warning,
+  falls back to the open orders alone and marks the set incomplete. Any other failure, such as an
+  authentication, transport, parse or server error, fails the mass status, as a failed open-order
+  read does.
 - Startup pricing safeguard: the mass status prices each terminal history order with an executed
   quantity from its fills, with the same exact coverage. An order its fills do not cover exactly is
   withheld with a warning naming it, and the set is marked incomplete; the adapter reads only the
@@ -774,15 +775,17 @@ every holding it covers and an absent report is genuine evidence of flat.
   position report is flat at the venue. The fills read is a single page, so a round trip whose
   opening fill is older than that page would leave its closing side alone, and with no
   `reconciliation_lookback_mins` the engine applies every kept fill to positions, opening a
-  position the venue does not hold. To compensate, on an unbounded startup read the terminal
-  history orders the cache does not hold stay on a flat instrument only when their fills net to
-  zero; otherwise they are withheld with their fills, with a warning, and the set is marked
-  incomplete. A held instrument is left to its position report, and a bounded lookback leaves such
-  orders to the engine, which projects them onto order state only.
+  position the venue does not hold. To compensate, an unbounded startup read nets the fills of
+  every order the cache does not hold on a flat instrument, open orders included. When they do not
+  net to zero, the terminal history orders among them are withheld with their fills, with a
+  warning, and the set is marked incomplete. Open orders stay, so an open order's own fill can
+  still open a position. A held instrument is left to its position report, and a bounded lookback
+  leaves terminal orders to the engine, which projects them onto order state only.
 
 **Fill reports:**
 
-- Fill history: Fetches all execution reports.
+- Fill history: Reads the latest fills page, the last 100 fills across all futures contracts;
+  older executions are not returned.
 - Time filtering: Client-side filtering by start/end timestamps (parses
   RFC3339 timestamps).
 - All fill types: Maker and taker fills with fee information.

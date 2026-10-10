@@ -71,7 +71,7 @@ use crate::{
     },
     config::KrakenExecutionClientConfig,
     http::{
-        KrakenFuturesHttpClient,
+        KrakenFuturesHttpClient, KrakenHttpError,
         futures::{
             client::KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND, models::FuturesBatchCancelStatus,
             query::KrakenFuturesBatchCancelItem,
@@ -1016,19 +1016,19 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let account_id = self.core.account_id;
 
         // Read the order-event history as well as open orders, matching the shared default. An
-        // order that reached a terminal state while the node was down is only visible there. A
-        // failed combined read falls back to the open-only read and marks the set incomplete, so
-        // a history page the shared `/history` token pool refuses degrades startup to open orders
-        // rather than failing it.
+        // order that reached a terminal state while the node was down is only visible there. The
+        // venue can refuse the history page, since every `/history` endpoint draws on one token
+        // pool; a refusal degrades startup to the open-only read and marks the set incomplete.
+        // Any other failure fails the mass status, as a failed open-order read does.
         let (mut order_reports, orders_complete) = match self
             .http
             .request_order_status_reports_checked(account_id, None, start, None, false)
             .await
         {
             Ok(read) => read,
-            Err(e) => {
+            Err(e) if is_refused_history_read(&e) => {
                 log::warn!(
-                    "Failed to read order history for mass status, reading open orders only and \
+                    "Order history read refused for mass status, reading open orders only and \
                      marking the set incomplete: {e}"
                 );
                 let (reports, _) = self
@@ -1037,6 +1037,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                     .await?;
                 (reports, false)
             }
+            Err(e) => return Err(e),
         };
         // Captured before the orders-status extension is merged in, so the safeguard below applies
         // to the venue read alone and leaves the extension to its own rule.
@@ -1069,14 +1070,16 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .await?;
 
         // A terminal history report with an executed quantity carries no price, so it is priced
-        // from its fills as on the bulk path, which requires exact coverage. The fills endpoint
-        // returns one page with no cursor, so an execution older than that page is absent and
-        // does not come back on a later read. Unpriced, reconciliation would infer the remainder
-        // at the order's limit price, so such a report is withheld and the set marked incomplete.
+        // from its fills as on the bulk path, which requires exact coverage. The adapter reads
+        // only the latest fills page, so an execution older than that page is absent and does
+        // not come back on a later read. Unpriced, reconciliation would infer the remainder at
+        // the order's limit price, so such a report is withheld and the set marked incomplete.
         // A withheld report's page fills stay for a cached order, since the engine reconciles
         // priced fills against a cached order with no report. An uncached order's fills go with
-        // its report: unpaired, they would materialize an external order at the partial quantity
-        // in snapshot reconciliation.
+        // its report. With no order, and no venue position ID on a Kraken fill, the engine drops
+        // them, but on an instrument with a position report its partial-window adjustment first
+        // counts every fill there when sizing a synthetic opening, so they would skew that
+        // opening without ever being applied.
         let mut withheld = false;
         let mut withheld_fills: HashSet<VenueOrderId> = HashSet::new();
         {
@@ -1122,46 +1125,56 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .request_position_status_reports(account_id, None)
             .await?;
 
-        // An instrument the venue reports flat must not open a position in reconciliation. The
-        // position read returns open positions only, so an instrument with no position report is
-        // flat at the venue. With no lookback declared the engine applies every kept fill to
-        // positions, and the fills read is a single page, so a round trip whose opening fill is
-        // older than that page would leave its closing side alone and open a position opposite to
-        // the one the venue closed. Terminal history orders on a flat instrument therefore stay
-        // only when their fills net to zero; otherwise they are withheld with their fills and the
-        // set is marked incomplete. With a bounded lookback the engine projects such orders onto
-        // order state only, so this applies to the unbounded read alone. Cached orders are left
-        // out, since their fills reconcile against the cached order and its position.
+        // Terminal history orders must not open a position on an instrument the venue reports
+        // flat. The position read returns open positions only, so an instrument with no position
+        // report is flat at the venue. With no lookback declared the engine applies every kept
+        // fill to positions, and the fills read is a single page, so a round trip whose opening
+        // fill is older than that page would leave its closing side alone and open a position
+        // opposite to the one the venue closed. On a flat instrument the fills of every order the
+        // cache does not hold are netted, open orders included, since an open order's fill can
+        // offset a terminal one. When they do not net to zero, the terminal orders are withheld
+        // with their fills and the set is marked incomplete; open orders stay, and an open
+        // order's own fill can still open a position. With a bounded lookback the engine projects
+        // terminal orders onto order state only, so this applies to the unbounded read alone.
+        // Cached orders are left out, since their fills reconcile against the cached order and
+        // its position.
         let orders_complete = if lookback_start.is_none() {
             let held: HashSet<InstrumentId> = position_reports
                 .iter()
                 .map(|report| report.instrument_id)
                 .collect();
-            let candidates: HashSet<VenueOrderId> = {
+            let netted: HashSet<VenueOrderId> = {
                 let cache = self.core.cache();
                 order_reports
                     .iter()
                     .filter(|report| {
                         from_venue_read.contains(&report.venue_order_id)
                             && !held.contains(&report.instrument_id)
-                            && matches!(
-                                report.order_status,
-                                OrderStatus::Filled
-                                    | OrderStatus::Canceled
-                                    | OrderStatus::Expired
-                                    | OrderStatus::Voided
-                            )
                             && cached_order_for_report(&cache, report).is_none()
                     })
                     .map(|report| report.venue_order_id)
                     .collect()
             };
+            let candidates: HashMap<VenueOrderId, InstrumentId> = order_reports
+                .iter()
+                .filter(|report| {
+                    netted.contains(&report.venue_order_id)
+                        && matches!(
+                            report.order_status,
+                            OrderStatus::Filled
+                                | OrderStatus::Canceled
+                                | OrderStatus::Expired
+                                | OrderStatus::Voided
+                        )
+                })
+                .map(|report| (report.venue_order_id, report.instrument_id))
+                .collect();
 
             let mut net: HashMap<InstrumentId, Decimal> = HashMap::new();
 
             for fill in fill_reports
                 .iter()
-                .filter(|fill| candidates.contains(&fill.venue_order_id))
+                .filter(|fill| netted.contains(&fill.venue_order_id))
             {
                 let qty = fill.last_qty.as_decimal();
                 let signed = match fill.order_side {
@@ -1170,7 +1183,9 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 };
                 *net.entry(fill.instrument_id).or_default() += signed;
             }
-            net.retain(|_, net| !net.is_zero());
+            net.retain(|instrument_id, net| {
+                !net.is_zero() && candidates.values().any(|id| id == instrument_id)
+            });
 
             if net.is_empty() {
                 orders_complete
@@ -1178,17 +1193,14 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 for (instrument_id, net) in &net {
                     log::warn!(
                         "Withholding terminal orders on {instrument_id} from mass status: the venue \
-                         reports it flat but their fills net to {net}, so reconciliation would open \
-                         a position; marking the set incomplete",
+                         reports it flat but the fills of orders the cache does not hold net to \
+                         {net}, so reconciliation would open a position; marking the set incomplete",
                     );
                 }
-                let withheld_flat: HashSet<VenueOrderId> = order_reports
+                let withheld_flat: HashSet<VenueOrderId> = candidates
                     .iter()
-                    .filter(|report| {
-                        candidates.contains(&report.venue_order_id)
-                            && net.contains_key(&report.instrument_id)
-                    })
-                    .map(|report| report.venue_order_id)
+                    .filter(|(_, instrument_id)| net.contains_key(instrument_id))
+                    .map(|(venue_order_id, _)| *venue_order_id)
                     .collect();
                 order_reports.retain(|report| !withheld_flat.contains(&report.venue_order_id));
                 fill_reports.retain(|fill| !withheld_flat.contains(&fill.venue_order_id));
@@ -1865,6 +1877,22 @@ impl KrakenFuturesExecutionClient {
 fn cached_order_for_report(cache: &Cache, report: &OrderStatusReport) -> Option<OrderAny> {
     let client_order_id = cache.client_order_id(&report.venue_order_id)?;
     cache.order(client_order_id).map(|order| order.clone())
+}
+
+/// Whether a combined order read failed because the venue refused its history page.
+///
+/// A refusal arrives as an error body under a success status, or as HTTP 429. Authentication,
+/// transport, parse and server failures are faults, as is any failure of the open-order read,
+/// which carries no typed error.
+fn is_refused_history_read(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .filter_map(|cause| cause.downcast_ref::<KrakenHttpError>())
+        .any(|e| match e {
+            KrakenHttpError::ApiError(_) => true,
+            KrakenHttpError::NetworkError(message) => message.starts_with("HTTP error 429"),
+            _ => false,
+        })
 }
 
 /// Whether `report` is terminal with an executed quantity it carries no price for.

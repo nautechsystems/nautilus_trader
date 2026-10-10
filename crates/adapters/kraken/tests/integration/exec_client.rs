@@ -765,16 +765,6 @@ fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
-    create_test_execution_client_with_config(create_test_exec_config(addr))
-}
-
-fn create_test_execution_client_with_config(
-    config: KrakenExecutionClientConfig,
-) -> (
-    KrakenFuturesExecutionClient,
-    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    Rc<RefCell<Cache>>,
-) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let core = ExecutionClientCore::new(
         test_trader_id(),
@@ -786,6 +776,7 @@ fn create_test_execution_client_with_config(
         None,
         cache.clone(),
     );
+    let config = create_test_exec_config(addr);
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
@@ -2204,8 +2195,7 @@ async fn test_futures_mass_status_withholds_an_execution_with_no_fill() {
 }
 
 /// Fills must cover the whole filled quantity, not merely exist, and an uncached order's fills go
-/// with its withheld report, since unpaired they would materialize an order at the partial
-/// quantity.
+/// with its withheld report.
 #[rstest]
 #[tokio::test]
 async fn test_futures_mass_status_withholds_a_partially_covered_execution() {
@@ -2236,8 +2226,8 @@ async fn test_futures_mass_status_withholds_a_partially_covered_execution() {
     );
 }
 
-/// Coverage is exact: fills on the page beyond the order's filled quantity, such as one that
-/// landed between the history read and the fills read, withhold the report rather than price it.
+/// Coverage is exact: fills that exceed the order's executed quantity do not price it, and the
+/// report is withheld.
 #[rstest]
 #[tokio::test]
 async fn test_futures_mass_status_withholds_an_execution_its_fills_over_cover() {
@@ -2521,6 +2511,121 @@ async fn test_futures_mass_status_keeps_a_flat_round_trip_whose_fills_net_to_zer
     assert!(snapshot.reports_complete());
 }
 
+/// A closing order its own fill covers exactly, whose opening order is on neither page, is
+/// withheld with that fill on a flat instrument, and the flat rule marks the set incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_a_lone_closing_order_on_a_flat_instrument() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e2",
+            "F-FLAT-CLOSE",
+            "PI_XBTUSD",
+            "Sell",
+            "1000",
+            "1000",
+            1680879600000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-close",
+        "F-FLAT-CLOSE",
+        "sell",
+        "1000",
+        "50000.0",
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot.order_reports().is_empty(),
+        "the closing order must not reach reconciliation: {:?}",
+        snapshot.order_reports().keys().collect::<Vec<_>>()
+    );
+    assert!(snapshot.fill_reports().values().all(Vec::is_empty));
+    assert!(!snapshot.reports_complete());
+}
+
+/// An open `PI_XBTUSD` buy of 1,000 contracts with 500 of them executed.
+fn futures_half_filled_open_order_json(order_id: &str) -> String {
+    format!(
+        r#"{{"result":"success","openOrders":[{{"order_id":"{order_id}","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":27500.5,"unfilledSize":500.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"partiallyFilled","filledSize":500.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"}}]}}"#
+    )
+}
+
+/// On a flat instrument, the fills of an open order the cache does not hold count toward the net,
+/// so a terminal order whose fill offsets them stays with both fills and the set stays complete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_nets_an_open_order_fill_against_a_terminal_one_on_a_flat_instrument()
+ {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_half_filled_open_order_json("F-FLAT-O1"));
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element_sided(
+            "OrderUpdated",
+            "e1",
+            "F-FLAT-T1",
+            "PI_XBTUSD",
+            "Sell",
+            "500",
+            "500",
+            1680879600000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-flat-o1", "F-FLAT-O1", "buy", "500", "49000.0"),
+        ("f-flat-t1", "F-FLAT-T1", "sell", "500", "50000.0"),
+    ]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    let order_ids: Vec<_> = snapshot.order_reports().keys().copied().collect();
+    assert!(
+        order_ids.contains(&VenueOrderId::from("F-FLAT-T1"))
+            && order_ids.contains(&VenueOrderId::from("F-FLAT-O1")),
+        "both orders must reach reconciliation: {order_ids:?}"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 2);
+    assert!(snapshot.reports_complete());
+}
+
+/// The flat rule withholds terminal orders only: an open order the cache does not hold keeps its
+/// fill on a flat instrument, and with nothing withheld the set stays complete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_an_open_order_fill_on_a_flat_instrument() {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_half_filled_open_order_json("F-FLAT-O1"));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
+        "f-flat-o1",
+        "F-FLAT-O1",
+        "buy",
+        "500",
+        "49000.0",
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("F-FLAT-O1")),
+        "an open order is not withheld by the flat rule"
+    );
+    let fills: usize = snapshot.fill_reports().values().map(Vec::len).sum();
+    assert_eq!(fills, 1);
+    assert!(snapshot.reports_complete());
+}
+
 /// An instrument with a position report is left to that report, so the flat rule keeps the
 /// closing order there.
 #[rstest]
@@ -2609,27 +2714,19 @@ async fn test_futures_mass_status_keeps_the_closing_order_under_a_bounded_lookba
     );
 }
 
-/// A failed history read degrades the mass status to the open-only read rather than failing it:
-/// the open orders are reported, nothing from the history is, and the set is incomplete.
+/// A history read the venue refuses, with HTTP 429 or an error body, degrades the mass status to
+/// the open-only read rather than failing it: the open orders are reported, nothing from the
+/// history is, and the set is incomplete.
 #[rstest]
-#[case::server_error(Some(StatusCode::INTERNAL_SERVER_ERROR), "history unavailable")]
 #[case::rate_limited(Some(StatusCode::TOO_MANY_REQUESTS), "rate limit exceeded")]
 #[case::venue_error_body(None, r#"{"result":"error","error":"apiLimitExceeded"}"#)]
-#[case::malformed_body(None, r#"{"serverTime":"2023-04-07T16:30:45.678Z","elements":"nope"}"#)]
 #[tokio::test]
-async fn test_futures_mass_status_reads_open_orders_only_when_the_history_read_fails(
+async fn test_futures_mass_status_reads_open_orders_only_when_the_history_read_is_refused(
     #[case] status: Option<StatusCode>,
     #[case] body: &str,
 ) {
-    let (addr, state) = start_test_server().await.unwrap();
-    // No retries, so a retryable status fails the read at once.
-    let (mut client, _rx, cache) =
-        create_test_execution_client_with_config(KrakenExecutionClientConfig {
-            max_retries: 0,
-            ..create_test_exec_config(addr)
-        });
-    add_test_account_to_cache(&cache);
-    client.connect().await.unwrap();
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
     *state.futures_open_orders_json.lock().await =
         Some(futures_open_orders_json("V-OPEN-1", "PI_XBTUSD"));
     *state.futures_order_history_json.lock().await = Some(body.to_string());
@@ -2638,7 +2735,7 @@ async fn test_futures_mass_status_reads_open_orders_only_when_the_history_read_f
     let snapshot = client
         .generate_mass_status(Some(60))
         .await
-        .expect("a failed history read must not fail the mass status")
+        .expect("a refused history read must not fail the mass status")
         .unwrap();
 
     assert_eq!(
@@ -2652,7 +2749,47 @@ async fn test_futures_mass_status_reads_open_orders_only_when_the_history_read_f
     );
 }
 
-/// When the open-only read fails as well, the mass status fails.
+/// A history read that faults rather than being refused fails the mass status, as a failed
+/// open-order read does: a server error, an authentication failure and a body that cannot be
+/// parsed are not the venue declining the request.
+#[rstest]
+#[case::server_error(
+    Some(StatusCode::INTERNAL_SERVER_ERROR),
+    "history unavailable",
+    "HTTP error 500"
+)]
+#[case::unauthorized(Some(StatusCode::UNAUTHORIZED), "invalid key", "Authentication error")]
+#[case::malformed_body(
+    None,
+    r#"{"serverTime":"2023-04-07T16:30:45.678Z","elements":"nope"}"#,
+    "Parse error"
+)]
+#[tokio::test]
+async fn test_futures_mass_status_fails_when_the_history_read_faults(
+    #[case] status: Option<StatusCode>,
+    #[case] body: &str,
+    #[case] expected: &str,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_open_orders_json("V-OPEN-1", "PI_XBTUSD"));
+    *state.futures_order_history_json.lock().await = Some(body.to_string());
+    *state.futures_order_history_status.lock().await = status;
+
+    let error = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect_err("a faulted history read must fail the mass status");
+
+    let message = error.to_string();
+    assert!(
+        message.contains("get_order_events failed") && message.contains(expected),
+        "unexpected error: {message}"
+    );
+}
+
+/// A failed open-order read fails the mass status.
 #[rstest]
 #[tokio::test]
 async fn test_futures_mass_status_fails_when_the_open_order_read_fails() {
