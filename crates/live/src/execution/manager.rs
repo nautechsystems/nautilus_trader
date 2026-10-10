@@ -1717,13 +1717,15 @@ impl ExecutionManager {
     /// claimed, and its fills resolve to that retained position: the order's indexed position,
     /// else the position keyed by instrument and strategy when the cache holds it under NETTING
     /// and the engine routes fills under NETTING for the client the order's fills carry. An order
-    /// whose fills are all applied already contributes nothing and is ignored. Every other
-    /// qualifying order for the position must carry the position's account on each unapplied
-    /// fill and on any fill the engine infers for it, and every side it is known by (the cached
+    /// names the account of its report, of each unapplied fill and of any fill the engine infers
+    /// for it. An order whose fills are all applied already contributes nothing and is ignored,
+    /// as is one that does not name the position's account. Every other qualifying order for the
+    /// position must name only the position's account, and every side it is known by (the cached
     /// order's, the report's and each unapplied fill's) must close the position. Together their
-    /// unapplied quantity, counting each trade of an order once, must not exceed the open
-    /// quantity. An order that fails any of these needs evidence the retained position cannot
-    /// give, so all of that position's orders stay order-only and a warning names the position.
+    /// unapplied quantity, counting each trade of an order once, or every copy for an order
+    /// reconciliation creates from fills alone, must not exceed the open quantity. An order that
+    /// fails any of these needs evidence the retained position cannot give, so all of that
+    /// position's orders stay order-only and a warning names the position.
     /// An order that is neither cached nor claimed stays order-only, since its `EXTERNAL`
     /// attribution does not establish which position it closes. Its fills still move the venue's
     /// `EXTERNAL` inventory, so it withholds any reduction of an `EXTERNAL` position on its
@@ -1751,18 +1753,12 @@ impl ExecutionManager {
             let fills = fill_reports
                 .get(venue_order_id)
                 .map_or(&[][..], Vec::as_slice);
-            let Some((account_id, instrument_id, client_order_id)) = report
-                .map(|report| {
-                    (
-                        report.account_id,
-                        report.instrument_id,
-                        report.client_order_id,
-                    )
-                })
+            let Some((instrument_id, client_order_id)) = report
+                .map(|report| (report.instrument_id, report.client_order_id))
                 .or_else(|| {
                     fills
                         .first()
-                        .map(|fill| (fill.account_id, fill.instrument_id, fill.client_order_id))
+                        .map(|fill| (fill.instrument_id, fill.client_order_id))
                 })
             else {
                 continue;
@@ -1818,7 +1814,7 @@ impl ExecutionManager {
                 continue;
             };
 
-            if position.account_id != account_id || !position.is_open() {
+            if !position.is_open() {
                 continue;
             }
 
@@ -1832,7 +1828,12 @@ impl ExecutionManager {
                 let qty = unapplied_trade_qtys.entry(fill.trade_id).or_default();
                 *qty = (*qty).max(fill.last_qty.as_decimal());
             }
-            let unapplied_fill_qty: Decimal = unapplied_trade_qtys.values().copied().sum();
+            let unapplied_fill_qty: Decimal = if order.is_none() && report.is_none() {
+                // Reconciliation creates this order filled by every copy and infers unapplied ones
+                fills.iter().map(|fill| fill.last_qty.as_decimal()).sum()
+            } else {
+                unapplied_trade_qtys.values().copied().sum()
+            };
             let unapplied_report_qty = report.map_or(Decimal::ZERO, |report| {
                 (report.filled_qty.as_decimal() - applied_qty).max(Decimal::ZERO)
             });
@@ -1850,23 +1851,41 @@ impl ExecutionManager {
                 Some(order) => order.account_id(),
                 None => Some(reporting_account_id),
             };
-            let other_account = order_account_id
-                .filter(|order_account_id| *order_account_id != position.account_id)
-                .map(|order_account_id| {
-                    format!("order {venue_order_id} account {order_account_id}")
+            let report_account_id = report.map(|report| report.account_id);
+            let mut unapplied_fills = fills
+                .iter()
+                .filter(|fill| !applied_trade_ids.contains(&fill.trade_id));
+
+            // An order naming only other accounts trades another account's position, not this one
+            if report_account_id != Some(position.account_id)
+                && order_account_id != Some(position.account_id)
+                && !unapplied_fills
+                    .clone()
+                    .any(|fill| fill.account_id == position.account_id)
+            {
+                continue;
+            }
+
+            let other_account = report_account_id
+                .filter(|report_account_id| *report_account_id != position.account_id)
+                .map(|report_account_id| {
+                    format!("order {venue_order_id} report account {report_account_id}")
                 })
                 .or_else(|| {
-                    fills
-                        .iter()
-                        .find(|fill| {
-                            !applied_trade_ids.contains(&fill.trade_id)
-                                && fill.account_id != position.account_id
-                        })
+                    unapplied_fills
+                        .find(|fill| fill.account_id != position.account_id)
                         .map(|fill| {
                             format!(
                                 "order {venue_order_id} fill {} account {}",
                                 fill.trade_id, fill.account_id
                             )
+                        })
+                })
+                .or_else(|| {
+                    order_account_id
+                        .filter(|order_account_id| *order_account_id != position.account_id)
+                        .map(|order_account_id| {
+                            format!("order {venue_order_id} account {order_account_id}")
                         })
                 });
 
@@ -1892,7 +1911,7 @@ impl ExecutionManager {
                 };
                 let engine_oms_type = exec_engine.fill_oms_type(
                     order_client_id,
-                    account_id,
+                    position.account_id,
                     &instrument_id,
                     strategy_id,
                 );

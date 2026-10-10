@@ -703,11 +703,11 @@ flag.
   equity and free margin populate the summary balance (see Spot margin trading).
 
 :::warning
-A leveraged position closed while the node was down carries no position report, because a fully
-closed lot is absent from `OpenPositions`. Margin mode declares no bulk position coverage, so when
-`reconciliation_lookback_mins` is set the engine can apply the closing fills, such as those of a
-strategy exit submitted before the outage, to the cached position, which then closes and records its
-realized PnL and fees.
+A leveraged position that closes while the node is down carries no position report, because a
+fully closed lot is absent from `OpenPositions`. Margin mode declares no bulk position coverage, so
+when `reconciliation_lookback_mins` is set the engine can apply the closing fills, such as those of
+a strategy exit submitted before the outage, to the cached position, which then closes and records
+its realized PnL and fees.
 [Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection)
 lists the conditions; when one fails, the fills stay order-only.
 
