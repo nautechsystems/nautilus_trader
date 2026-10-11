@@ -531,10 +531,25 @@ impl OrderEmulator {
         &mut self,
         instrument_id: InstrumentId,
         price_increment: Price,
+        emulation_trigger: TriggerType,
     ) -> OrderMatchingCore {
-        let matching_core = OrderMatchingCore::new(instrument_id, price_increment);
+        let mut matching_core = OrderMatchingCore::new(instrument_id, price_increment);
+        let cache = self.cache.borrow();
+        if emulation_trigger == TriggerType::LastPrice {
+            if let Some(trade) = cache.trade(&instrument_id) {
+                matching_core.set_bid_raw(trade.price);
+                matching_core.set_ask_raw(trade.price);
+                matching_core.set_last_raw(trade.price);
+            }
+        } else if let Some(quote) = cache.quote(&instrument_id) {
+            matching_core.set_bid_raw(quote.bid_price);
+            matching_core.set_ask_raw(quote.ask_price);
+        }
+
+        drop(cache);
         self.matching_cores
             .insert(instrument_id, matching_core.clone());
+
         log::info!("Creating matching core for {instrument_id:?}");
         matching_core
     }
@@ -576,6 +591,8 @@ impl OrderEmulator {
             self.dispatch_manager_actions(actions);
             return;
         }
+
+        let emulation_trigger = emulation_trigger.expect("emulation trigger must be set");
         let strategy_id = command.strategy_id;
         let position_id = command.position_id;
 
@@ -624,7 +641,7 @@ impl OrderEmulator {
                 }
             };
 
-            self.create_matching_core(instrument_id, price_increment)
+            self.create_matching_core(instrument_id, price_increment, emulation_trigger)
         };
 
         // Update trailing stop
@@ -669,7 +686,7 @@ impl OrderEmulator {
         }
 
         // Handle data subscriptions
-        match emulation_trigger.unwrap() {
+        match emulation_trigger {
             TriggerType::Default | TriggerType::BidAsk => {
                 if !self.subscribed_quotes.contains(&trigger_instrument_id)
                     && self.subscribe_quotes_for_instrument(trigger_instrument_id)
@@ -2474,9 +2491,11 @@ mod tests {
     fn test_create_matching_core(instrument: CryptoPerpetual) {
         let (_clock, _cache, emulator) = create_emulator();
 
-        emulator
-            .borrow_mut()
-            .create_matching_core(instrument.id(), instrument.price_increment);
+        emulator.borrow_mut().create_matching_core(
+            instrument.id(),
+            instrument.price_increment,
+            TriggerType::BidAsk,
+        );
 
         assert!(
             emulator
@@ -2659,9 +2678,11 @@ mod tests {
         )));
 
         drop(emulator_ref);
-        emulator
-            .borrow_mut()
-            .create_matching_core(instrument.id(), instrument.price_increment);
+        emulator.borrow_mut().create_matching_core(
+            instrument.id(),
+            instrument.price_increment,
+            TriggerType::BidAsk,
+        );
         let quote = create_quote_tick(&instrument, "5060.00", "5070.00");
         let trade = create_trade_tick(&instrument, "5065.00");
         msgbus::publish_quote(get_quotes_topic(instrument.id()), &quote);
@@ -2934,6 +2955,466 @@ mod tests {
         assert!(matches!(
             &risk_events[0],
             OrderEventAny::Released(event) if event.client_order_id == client_order_id
+        ));
+    }
+
+    #[rstest]
+    #[case::bid_ask_quote_below(TriggerType::BidAsk, Some(("5098.00", "5099.00")), Some("5101.00"), (Some(false), Some(true)))]
+    #[case::bid_ask_quote_above(TriggerType::BidAsk, Some(("5101.00", "5102.00")), Some("5099.00"), (Some(true), Some(false)))]
+    #[case::default_quote(TriggerType::Default, Some(("5098.00", "5099.00")), Some("5101.00"), (Some(false), Some(true)))]
+    #[case::last_price_trade_below(TriggerType::LastPrice, Some(("5101.00", "5102.00")), Some("5099.00"), (Some(false), Some(true)))]
+    #[case::last_price_trade_above(TriggerType::LastPrice, Some(("5098.00", "5099.00")), Some("5101.00"), (Some(true), Some(false)))]
+    #[case::last_price_quote_only(TriggerType::LastPrice, Some(("5098.00", "5099.00")), None, (None, None))]
+    #[case::last_price_trade_only(
+        TriggerType::LastPrice,
+        None,
+        Some("5101.00"),
+        (Some(true), Some(false))
+    )]
+    #[case::bid_ask_trade_only(TriggerType::BidAsk, None, Some("5101.00"), (None, None))]
+    #[case::default_trade_only(TriggerType::Default, None, Some("5101.00"), (None, None))]
+    #[case::bid_ask_no_data(TriggerType::BidAsk, None, None, (None, None))]
+    #[case::default_no_data(TriggerType::Default, None, None, (None, None))]
+    #[case::last_price_no_data(TriggerType::LastPrice, None, None, (None, None))]
+    fn test_submit_order_uses_cached_emulation_source(
+        instrument: CryptoPerpetual,
+        #[case] emulation_trigger: TriggerType,
+        #[case] quote: Option<(&str, &str)>,
+        #[case] trade: Option<&str>,
+        #[case] stop_matches: (Option<bool>, Option<bool>),
+        #[values(
+            OrderType::Limit,
+            OrderType::StopMarket,
+            OrderType::StopLimit,
+            OrderType::MarketIfTouched,
+            OrderType::LimitIfTouched
+        )]
+        order_type: OrderType,
+        #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let risk_events = register_risk_event_handler("RiskEngine.process.submit_cached_source");
+        add_instrument_to_cache(&cache, &instrument);
+        if let Some((bid, ask)) = quote {
+            cache
+                .borrow_mut()
+                .add_quote(create_quote_tick(&instrument, bid, ask))
+                .unwrap();
+        }
+
+        if let Some(price) = trade {
+            cache
+                .borrow_mut()
+                .add_trade(create_trade_tick(&instrument, price))
+                .unwrap();
+        }
+
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(instrument.id())
+            .side(side)
+            .price(Price::from("5100.00"))
+            .trigger_price(Price::from("5100.00"))
+            .quantity(Quantity::from(3))
+            .emulation_trigger(emulation_trigger)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let stop_matches = match side {
+            OrderSide::Buy => stop_matches.0,
+            OrderSide::Sell => stop_matches.1,
+        };
+
+        let should_release = stop_matches.is_some_and(|matches| match order_type {
+            OrderType::StopMarket | OrderType::StopLimit => matches,
+            _ => !matches,
+        });
+
+        let expected_status = if should_release {
+            OrderStatus::Released
+        } else {
+            OrderStatus::Emulated
+        };
+
+        let expected_type = if should_release {
+            match order_type {
+                OrderType::StopLimit | OrderType::LimitIfTouched => OrderType::Limit,
+                _ => OrderType::Market,
+            }
+        } else {
+            order_type
+        };
+
+        let cache = cache.borrow();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        let emulator = emulator.borrow();
+        let core = emulator.get_matching_core(&instrument.id()).unwrap();
+        let events = risk_events.get_messages();
+        assert_eq!(cached_order.status(), expected_status);
+        assert_eq!(cached_order.order_type(), expected_type);
+        assert_eq!(cached_order.quantity(), Quantity::from(3));
+        assert_eq!(core.order_exists(client_order_id), !should_release);
+        assert_eq!(
+            emulator
+                .get_submit_order_commands()
+                .contains_key(&client_order_id),
+            !should_release
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].client_order_id(), client_order_id);
+        assert_eq!(
+            matches!(&events[0], OrderEventAny::Released(_)),
+            should_release
+        );
+        assert_eq!(
+            matches!(&events[0], OrderEventAny::Emulated(_)),
+            !should_release
+        );
+
+        let expected_price = match (emulation_trigger, side) {
+            (TriggerType::LastPrice, _) => trade.map(Price::from),
+            (_, OrderSide::Buy) => quote.map(|(_, ask)| Price::from(ask)),
+            (_, OrderSide::Sell) => quote.map(|(bid, _)| Price::from(bid)),
+        };
+
+        let released_price = match &events[0] {
+            OrderEventAny::Released(event) => Some(event.released_price),
+            _ => None,
+        };
+
+        assert_eq!(released_price, expected_price.filter(|_| should_release));
+    }
+
+    #[rstest]
+    #[case(TriggerType::Default, "5099.00", "5101.00", None)]
+    #[case(TriggerType::BidAsk, "5099.00", "5101.00", None)]
+    #[case(TriggerType::LastPrice, "5098.00", "5098.00", Some("5098.00"))]
+    fn test_create_matching_core_seeds_cached_prices(
+        instrument: CryptoPerpetual,
+        #[case] emulation_trigger: TriggerType,
+        #[case] expected_bid: &str,
+        #[case] expected_ask: &str,
+        #[case] expected_last: Option<&str>,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        cache
+            .borrow_mut()
+            .add_quote(create_quote_tick(&instrument, "5099.00", "5101.00"))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5098.00"))
+            .unwrap();
+
+        let core = emulator.borrow_mut().create_matching_core(
+            instrument.id(),
+            instrument.price_increment,
+            emulation_trigger,
+        );
+
+        let emulator = emulator.borrow();
+        let stored_core = emulator.get_matching_core(&instrument.id()).unwrap();
+        assert_eq!(core.bid, Some(Price::from(expected_bid)));
+        assert_eq!(core.ask, Some(Price::from(expected_ask)));
+        assert_eq!(core.last, expected_last.map(Price::from));
+        assert_eq!(stored_core.bid, core.bid);
+        assert_eq!(stored_core.ask, core.ask);
+        assert_eq!(stored_core.last, core.last);
+    }
+
+    #[rstest]
+    fn test_submit_order_seeds_cached_trigger_instrument(
+        instrument: CryptoPerpetual,
+        #[values(TriggerType::BidAsk, TriggerType::LastPrice)] emulation_trigger: TriggerType,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events =
+            register_risk_event_handler("RiskEngine.process.cached_trigger_instrument");
+        let trigger_instrument = btcusd_bybit();
+        add_instrument_to_cache(&cache, &instrument);
+        add_instrument_to_cache(&cache, &trigger_instrument);
+        cache
+            .borrow_mut()
+            .add_quote(create_quote_tick(&instrument, "5099.00", "5101.00"))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5101.00"))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_quote(create_quote_tick(&trigger_instrument, "5098.00", "5099.00"))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&trigger_instrument, "5099.00"))
+            .unwrap();
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .trigger_instrument_id(trigger_instrument.id())
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("5100.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(emulation_trigger)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let emulator = emulator.borrow();
+        let core = emulator
+            .get_matching_core(&trigger_instrument.id())
+            .unwrap();
+
+        let expected_bid = if emulation_trigger == TriggerType::LastPrice {
+            "5099.00"
+        } else {
+            "5098.00"
+        };
+
+        assert_eq!(core.bid, Some(Price::from(expected_bid)));
+        assert_eq!(core.ask, Some(Price::from("5099.00")));
+        assert_eq!(
+            core.last,
+            (emulation_trigger == TriggerType::LastPrice).then(|| Price::from("5099.00"))
+        );
+        assert_eq!(
+            cache.borrow().order(&client_order_id).unwrap().status(),
+            OrderStatus::Emulated
+        );
+        assert!(emulator.get_matching_core(&instrument.id()).is_none());
+    }
+
+    #[rstest]
+    fn test_quote_emulated_trailing_stop_uses_latest_cached_trade(
+        instrument: CryptoPerpetual,
+        #[values(TriggerType::Default, TriggerType::BidAsk)] emulation_trigger: TriggerType,
+        #[values(TriggerType::LastPrice, TriggerType::LastOrBidAsk)] trigger_type: TriggerType,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.cached_trailing_trade");
+        add_instrument_to_cache(&cache, &instrument);
+        cache
+            .borrow_mut()
+            .add_quote(create_quote_tick(&instrument, "5000.00", "5001.00"))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5000.00"))
+            .unwrap();
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(3))
+            .trigger_type(trigger_type)
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .emulation_trigger(emulation_trigger)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        assert_eq!(
+            cache
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .trigger_price(),
+            Some(Price::from("4990.00"))
+        );
+
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5050.00"))
+            .unwrap();
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "5010.00", "5011.00"));
+
+        let cache = cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(order.trigger_price(), Some(Price::from("5040.00")));
+        assert_eq!(order.quantity(), Quantity::from(3));
+        assert_eq!(order.status(), OrderStatus::Emulated);
+    }
+
+    #[rstest]
+    fn test_submit_order_preserves_existing_matching_core(
+        instrument: CryptoPerpetual,
+        #[values(TriggerType::BidAsk, TriggerType::LastPrice)] emulation_trigger: TriggerType,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.cached_existing_core");
+        add_instrument_to_cache(&cache, &instrument);
+        cache
+            .borrow_mut()
+            .add_quote(create_quote_tick(&instrument, "5098.00", "5099.00"))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5099.00"))
+            .unwrap();
+
+        let first = create_stop_market_order(&instrument, emulation_trigger);
+        let first_id = first.client_order_id();
+        let first_command = create_submit_order(&instrument, &first);
+        cache
+            .borrow_mut()
+            .add_order(first, None, None, false)
+            .unwrap();
+        emulator.borrow_mut().handle_submit_order(&first_command);
+        cache
+            .borrow_mut()
+            .add_quote(create_quote_tick(&instrument, "5101.00", "5102.00"))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, "5102.00"))
+            .unwrap();
+        let second = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-CACHED-SECOND"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("5100.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(emulation_trigger)
+            .build();
+        let second_id = second.client_order_id();
+        let second_command = create_submit_order(&instrument, &second);
+        cache
+            .borrow_mut()
+            .add_order(second, None, None, false)
+            .unwrap();
+
+        emulator.borrow_mut().handle_submit_order(&second_command);
+
+        let emulator = emulator.borrow();
+        let core = emulator.get_matching_core(&instrument.id()).unwrap();
+        assert_eq!(core.ask, Some(Price::from("5099.00")));
+        assert_eq!(
+            core.last,
+            (emulation_trigger == TriggerType::LastPrice).then(|| Price::from("5099.00"))
+        );
+        assert!(core.order_exists(first_id));
+        assert!(core.order_exists(second_id));
+        assert_eq!(
+            cache.borrow().order(&first_id).unwrap().status(),
+            OrderStatus::Emulated
+        );
+        assert_eq!(
+            cache.borrow().order(&second_id).unwrap().status(),
+            OrderStatus::Emulated
+        );
+    }
+
+    #[rstest]
+    #[case(OrderType::StopMarket, ("5099.00", "5101.00"), "5099.00", "5101.00")]
+    #[case(OrderType::Limit, ("5098.00", "5099.00"), "5101.00", "5099.00")]
+    fn test_modify_last_price_order_ignores_cached_quote_before_first_trade(
+        instrument: CryptoPerpetual,
+        #[case] order_type: OrderType,
+        #[case] quote: (&str, &str),
+        #[case] trade: &str,
+        #[case] next_trade: &str,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let risk_events = register_risk_event_handler("RiskEngine.process.modify_cached_quote");
+        add_instrument_to_cache(&cache, &instrument);
+        cache
+            .borrow_mut()
+            .add_quote(create_quote_tick(&instrument, quote.0, quote.1))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_trade(create_trade_tick(&instrument, trade))
+            .unwrap();
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("5150.00"))
+            .price(Price::from("5050.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::LastPrice)
+            .build();
+        let client_order_id = order.client_order_id();
+        let command = create_submit_order(&instrument, &order);
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        emulator.borrow_mut().handle_submit_order(&command);
+
+        let modify = ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            instrument.id(),
+            client_order_id,
+            None,
+            None,
+            (order_type == OrderType::Limit).then(|| Price::from("5100.00")),
+            (order_type == OrderType::StopMarket).then(|| Price::from("5100.00")),
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+
+        emulator.borrow_mut().handle_modify_order(&modify);
+
+        {
+            let cache = cache.borrow();
+            let cached_order = cache.order(&client_order_id).unwrap();
+            let core = emulator
+                .borrow()
+                .get_matching_core(&instrument.id())
+                .unwrap();
+            assert_eq!(core.bid, Some(Price::from(trade)));
+            assert_eq!(core.ask, Some(Price::from(trade)));
+            assert_eq!(core.last, Some(Price::from(trade)));
+            assert_eq!(cached_order.status(), OrderStatus::Emulated);
+            assert_eq!(
+                if order_type == OrderType::Limit {
+                    cached_order.price()
+                } else {
+                    cached_order.trigger_price()
+                },
+                Some(Price::from("5100.00"))
+            );
+            assert!(matches!(risk_events.get_messages().as_slice(),
+                [OrderEventAny::Emulated(event)] if event.client_order_id == client_order_id
+            ));
+        }
+
+        emulator
+            .borrow_mut()
+            .on_trade_tick(create_trade_tick(&instrument, next_trade));
+
+        assert_eq!(
+            cache.borrow().order(&client_order_id).unwrap().status(),
+            OrderStatus::Released
+        );
+        assert!(matches!(risk_events.get_messages().as_slice(),
+            [OrderEventAny::Emulated(_), OrderEventAny::Released(event)]
+                if event.client_order_id == client_order_id
+                    && event.released_price == Price::from(next_trade)
         ));
     }
 

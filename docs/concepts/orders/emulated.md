@@ -36,6 +36,12 @@ The choice of trigger type determines how emulation behaves:
 - For emulated `LIMIT` orders, it compares the limit price with that market data and releases a
   `MARKET` order when matched.
 
+When the emulator creates a matching core for a trigger instrument, it seeds the core from cached
+market data selected by the first order's `emulation_trigger`. `DEFAULT` and `BID_ASK` use the
+latest cached quote's bid and ask; `LAST_PRICE` uses the latest cached trade price. An eligible
+order that matches this data releases on submission without an `OrderEmulated` event. If the
+selected source has no cached data, the order remains emulated until matching market data arrives.
+
 ## Technical details
 
 The same `OrderEmulator` component manages supported emulated order types in all
@@ -52,9 +58,10 @@ An emulated order progresses through these stages:
 
 1. A `Strategy` submits it through `submit_order`.
 1. The `RiskEngine` applies pre-trade checks and may deny it.
-1. The `OrderEmulator` holds and monitors it locally.
-1. A matching market update transforms it into a `MARKET` or `LIMIT` order and releases it once
-   the required prices are available.
+1. The `OrderEmulator` checks for immediate release. If the order does not match, it holds and
+   monitors it locally.
+1. For a held order, a matching market update transforms it into a `MARKET` or `LIMIT` order and
+   releases it once the required prices are available.
 1. The `RiskEngine` checks the released order again before venue submission.
 
 :::note
