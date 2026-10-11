@@ -1343,7 +1343,10 @@ mod tests {
         assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
     }
 
-    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_timeout_retries_when_predicate_allows() {
         let config = RetryConfig {
@@ -1358,16 +1361,14 @@ mod tests {
         };
         let manager = RetryManager::new(config);
 
-        // Test with retry predicate that allows timeouts
         let should_retry_timeouts = |error: &TestError| matches!(error, TestError::Timeout(_));
-
-        let start = time::Instant::now();
+        let mut attempts = 0;
         let result = manager
             .invocation(
                 "test_timeout_retryable",
-                || async {
-                    time::sleep(Duration::from_millis(100)).await;
-                    Ok::<i32, TestError>(42)
+                || {
+                    attempts += 1;
+                    std::future::pending::<Result<i32, TestError>>()
                 },
                 should_retry_timeouts,
                 create_test_error,
@@ -1375,13 +1376,12 @@ mod tests {
             .execute()
             .await;
 
-        let elapsed = start.elapsed();
+        let TestError::Timeout(reason) = result.unwrap_err() else {
+            panic!("expected operation timeout");
+        };
 
-        // Should fail after retries (not immediately)
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
-        // Should have taken time for retries (at least 2 timeouts + delays)
-        assert!(elapsed.as_millis() > 80); // More than just one timeout
+        assert_eq!(reason, RetryError::OperationTimeout { timeout_ms: 50 });
+        assert_eq!(attempts, 3);
     }
 
     #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
