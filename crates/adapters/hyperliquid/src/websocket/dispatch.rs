@@ -86,6 +86,7 @@ use nautilus_model::{
         OrderTriggered, OrderUpdated,
     },
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
+    orders::LIMIT_ORDER_TYPES,
     reports::{FillReport, OrderStatusReport},
     types::{Price, Quantity},
 };
@@ -212,6 +213,7 @@ pub struct WsDispatchState {
     /// Raw Hyperliquid CLOIDs that reached a terminal state through the post
     /// response path before the matching `orderUpdates` event arrived.
     terminal_cloids: Mutex<FifoCache<Ustr, DEDUP_CAPACITY>>,
+    closed_venue_order_ids: Mutex<FifoCache<VenueOrderId, DEDUP_CAPACITY>>,
     /// Last venue order id observed for a tracked client order id.
     ///
     /// Populated on the first `OrderAccepted` and refreshed on every
@@ -258,6 +260,7 @@ impl Default for WsDispatchState {
             filled_orders: DashSet::default(),
             emitted_trades: Mutex::new(FifoCache::new()),
             terminal_cloids: Mutex::new(FifoCache::new()),
+            closed_venue_order_ids: Mutex::new(FifoCache::new()),
             cached_venue_order_ids: DashMap::new(),
             pending_modify_chains: DashMap::new(),
             buffered_fills: DashMap::new(),
@@ -545,6 +548,10 @@ impl WsDispatchState {
         claimed
     }
 
+    pub(crate) fn record_closed_venue_order_id(&self, venue_order_id: VenueOrderId) {
+        self.closed_venue_order_ids.lock().add(venue_order_id);
+    }
+
     /// Queues a corrective reduce for the WebSocket consumer loop to post.
     pub fn queue_corrective(&self, client_order_id: ClientOrderId, corrective: CorrectiveReduce) {
         self.pending_corrective.insert(client_order_id, corrective);
@@ -818,11 +825,11 @@ pub fn dispatch_order_fill(
     };
 
     if state.filled_orders.contains(&client_order_id) {
-        log::debug!(
-            "Skipping stale fill for filled order: cid={client_order_id}, trade_id={}",
-            report.trade_id,
-        );
-        return DispatchOutcome::Skip;
+        return if state.check_and_insert_trade(report.trade_id) {
+            DispatchOutcome::Skip
+        } else {
+            DispatchOutcome::External
+        };
     }
 
     let Some(mut context) = state.lookup_context(&client_order_id) else {
@@ -871,9 +878,7 @@ pub fn dispatch_order_fill(
             ts_init,
         );
         // Re-read the context advanced by the promotion (quantity and price)
-        if let Some(updated) = state.lookup_context(&client_order_id) {
-            context = updated;
-        }
+        context = state.lookup_context(&client_order_id).unwrap_or(context);
 
         if let (Some(target), Some(sent_request)) = (target, sent_request) {
             promoted_corrective = Some((target, sent_request));
@@ -1087,7 +1092,9 @@ fn promote_cancel_replace(
         false,
         Some(venue_order_id),
         Some(account_id),
-        Some(price),
+        LIMIT_ORDER_TYPES
+            .contains(&context.identity.order_type)
+            .then_some(price),
         trigger_price,
         None,
         false,
@@ -1179,6 +1186,15 @@ fn maybe_queue_corrective_reduce(
     target: Quantity,
     sent_request: HyperliquidExchangePlaceOrderRequest,
 ) {
+    // Recovery opens closed legs before replaying their fills, those legs cannot be reduced
+    if state
+        .closed_venue_order_ids
+        .lock()
+        .contains(&venue_order_id)
+    {
+        return;
+    }
+
     let Ok(new_oid) = venue_order_id.as_str().parse::<u64>() else {
         return;
     };
@@ -1277,16 +1293,44 @@ fn handle_canceled(
 ) -> DispatchOutcome {
     let venue_order_id = report.venue_order_id;
 
-    // Stale cancel suppression: if the cached venue_order_id has already
-    // been advanced by a cancel-replace promotion, this CANCELED refers to
-    // the old leg and has already been handled as OrderUpdated. See GH-3827.
     if let Some(cached_voi) = state.cached_venue_order_id(&client_order_id)
         && cached_voi != venue_order_id
     {
-        log::debug!(
-            "Skipping stale CANCELED for {venue_order_id} (cached {cached_voi}) on {client_order_id}",
+        if !state.has_pending_modify(&client_order_id)
+            || venue_oid(venue_order_id) <= venue_oid(cached_voi)
+        {
+            log::debug!(
+                "Skipping stale CANCELED for {venue_order_id} (cached {cached_voi}) on {client_order_id}",
+            );
+            return DispatchOutcome::Skip;
+        }
+
+        let Some(price) = report.price.or(context.price) else {
+            log::warn!(
+                "Cannot promote canceled replacement for {client_order_id}: no report or cached price",
+            );
+            return DispatchOutcome::Skip;
+        };
+
+        let quantity = state
+            .pending_modify_target_qty(&client_order_id)
+            .unwrap_or(report.quantity);
+
+        // The replacement can close before its acceptance arrives, promote without queuing
+        // a corrective reduce against the already closed leg.
+        promote_cancel_replace(
+            client_order_id,
+            context,
+            state,
+            emitter,
+            venue_order_id,
+            report.account_id,
+            price,
+            quantity,
+            report.trigger_price,
+            report.ts_last,
+            ts_init,
         );
-        return DispatchOutcome::Skip;
     }
 
     // Cancel-before-accept race: an in-flight modify may deliver

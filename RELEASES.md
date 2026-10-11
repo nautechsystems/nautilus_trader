@@ -88,6 +88,10 @@ Released on TBD (UTC).
 - Fixed Hyperliquid account updates retaining balances reported at zero (#5210), thanks @XBeg9
 - Fixed Hyperliquid reduce-only filled order lookups overstating fill quantity (#5222), thanks @XBeg9
 - Fixed Hyperliquid HIP-4 outcome price and size precision (#5266), thanks @vignesh-chaturvedi
+- Fixed Hyperliquid canceled replacements leaving orders open when acceptance updates are missing
+- Fixed Hyperliquid recovery sending corrective reductions for canceled replacement orders
+- Fixed Hyperliquid dropping late fill reports after orders close
+- Fixed Hyperliquid stop-market replacement updates causing order-state panics
 - Fixed Interactive Brokers account balances and margins remaining stale after connect (#5041), thanks @faysou
 - Fixed Interactive Brokers spread fills arriving before their leg fills (#5041), thanks @faysou
 - Fixed Interactive Brokers execution queries replaying historical fills as live fills (#5041), thanks @faysou

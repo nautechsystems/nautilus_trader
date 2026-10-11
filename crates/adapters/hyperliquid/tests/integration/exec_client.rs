@@ -3424,14 +3424,14 @@ async fn test_reconnect_reduces_oversized_replacement_after_middle_leg_fill(
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_reconnect_applies_replacement_cancel_once_reduce_and_modify_fail() {
-    // As above, but the venue canceled the oversized replacement while disconnected, so the
-    // corrective reduce sent after the rebind fails, and so does a modify the strategy sends
-    // meanwhile. The replacement's cancel stays held while either can still replace it, then
-    // closes the order.
+    // Recovery finds an open oversized replacement and starts a corrective reduce, then a live
+    // cancel arrives while that reduce and a strategy modify are in flight, both fail before
+    // the held cancellation closes the order.
     let state = TestServerState::default();
     let last_action = state.last_exchange_action.clone();
     let user_fills = state.user_fills_response.clone();
     let historical_orders = state.historical_orders_response.clone();
+    let frame_after_user_events_ack = state.frame_after_user_events_ack.clone();
     let pause_next_exchange = state.pause_next_exchange.clone();
     let pause_release = state.pause_release.clone();
     let inner_order_error_next = state.inner_order_error_next.clone();
@@ -3501,10 +3501,18 @@ async fn test_reconnect_applies_replacement_cancel_once_reduce_and_modify_fail()
     *historical_orders.lock().await = Some(json!([
         leg(12345, "56730.0", "0.0001", "canceled", ts_ms, ts_ms + 1),
         leg(12346, "56800.0", "0.0001", "canceled", ts_ms + 1, ts_ms + 3),
-        leg(12347, "56900.0", "0.0002", "canceled", ts_ms + 3, ts_ms + 4),
+        leg(12347, "56900.0", "0.0002", "open", ts_ms + 3, ts_ms + 3),
         external_canceled_order(999, ts_ms + 5),
     ]));
     *user_fills.lock().await = Some(json!([middle_fill]));
+    *frame_after_user_events_ack.lock().await = Some(order_updates_frame(&[leg(
+        12347,
+        "56900.0",
+        "0.0002",
+        "canceled",
+        ts_ms + 3,
+        ts_ms + 4,
+    )]));
     pause_next_exchange.store(true, Ordering::Relaxed);
     inner_order_error_next.store(true, Ordering::Relaxed);
 
