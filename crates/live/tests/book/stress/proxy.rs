@@ -51,9 +51,11 @@ use nautilus_common::live::dst::{
     self,
     time::{Duration, Instant},
 };
-use nautilus_network::net::{TcpListener, TcpStream};
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
+    net::{TcpListener, TcpStream},
+};
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest, http::HeaderValue};
 
 const HELD_MAX: usize = 20_000;
