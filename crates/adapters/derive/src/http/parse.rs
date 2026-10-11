@@ -20,7 +20,7 @@ use anyhow::Context;
 use nautilus_core::string::secret::SecretString;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
-    enums::{LiquiditySide, OrderType, PositionSide},
+    enums::{AvgPxReconciliation, LiquiditySide, OrderType, PositionSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -32,8 +32,8 @@ use thiserror::Error;
 use crate::{
     common::{
         enums::{
-            DeriveLiquidityRole, DeriveOrderSide, DeriveOrderStatus, DeriveOrderType,
-            DeriveTimeInForce, DeriveTriggerType,
+            DeriveInstrumentType, DeriveLiquidityRole, DeriveOrderSide, DeriveOrderStatus,
+            DeriveOrderType, DeriveTimeInForce, DeriveTriggerType,
         },
         parse::{
             derive_order_side_to_nautilus, derive_order_type_to_nautilus_for_order,
@@ -340,7 +340,7 @@ pub(crate) fn parse_derive_position_to_report_with_precision(
         "Derive position.amount {signed_amount} cannot be represented exactly for {instrument_id}",
     );
 
-    Ok(PositionStatusReport::new(
+    let report = PositionStatusReport::new(
         account_id,
         instrument_id,
         side,
@@ -350,7 +350,14 @@ pub(crate) fn parse_derive_position_to_report_with_precision(
         Some(UUID4::new()),
         None,
         Some(position.average_price),
-    ))
+    );
+
+    // Perpetual averages include opening fees, which Nautilus books as fill commissions
+    if position.instrument_type == DeriveInstrumentType::Perp {
+        Ok(report.with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly))
+    } else {
+        Ok(report)
+    }
 }
 
 /// Derives balances, margins, and supplemental info from a [`DeriveSubaccount`] snapshot.
@@ -562,9 +569,9 @@ mod tests {
     use crate::{
         common::{
             enums::{
-                DeriveAssetType, DeriveInstrumentType, DeriveLiquidityRole,
-                DeriveOrderCancelReason, DeriveOrderSide, DeriveOrderStatus, DeriveOrderType,
-                DeriveTimeInForce, DeriveTriggerPriceType, DeriveTriggerType,
+                DeriveAssetType, DeriveLiquidityRole, DeriveOrderCancelReason, DeriveOrderSide,
+                DeriveOrderStatus, DeriveOrderType, DeriveTimeInForce, DeriveTriggerPriceType,
+                DeriveTriggerType,
             },
             parse::{
                 derive_status_to_nautilus, order_side_to_derive, order_type_to_derive,
@@ -1361,9 +1368,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_position_report_uses_instrument_precision() {
+    #[case::perp(DeriveInstrumentType::Perp, AvgPxReconciliation::OpeningOnly)]
+    #[case::option(DeriveInstrumentType::Option, AvgPxReconciliation::Match)]
+    #[case::spot(DeriveInstrumentType::Erc20, AvgPxReconciliation::Match)]
+    fn test_parse_position_report_uses_instrument_precision(
+        #[case] instrument_type: DeriveInstrumentType,
+        #[case] reconciliation: AvgPxReconciliation,
+    ) {
         let mut position = sample_position();
         position.amount = Decimal::from_str_exact("25.000").unwrap();
+        position.average_price = dec!(2553.87589666777);
+        position.instrument_type = instrument_type;
 
         let report = parse_derive_position_to_report_with_precision(
             &position,
@@ -1384,8 +1399,9 @@ mod tests {
                 UnixNanos::from(3),
                 Some(report.report_id),
                 None,
-                Some(dec!(3500)),
+                Some(position.average_price),
             )
+            .with_avg_px_open_reconciliation(reconciliation)
         );
         assert_eq!(report.quantity.precision, 3);
     }

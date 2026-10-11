@@ -605,9 +605,18 @@ Position-report requests additionally require amounts to fit the cached instrume
 A position conversion failure rejects the whole mass status, including its order and fill reports,
 preserving cached positions instead of treating a missing position report as flat.
 
-Position reports preserve the venue's average entry price. Restart reconciliation can fail when
-that price differs from the average reconstructed from fills; the adapter retains the position
-report rather than omitting it to avoid the discrepancy.
+Position reports preserve the venue's average entry price. For perpetuals, this price includes
+opening fees and can differ from the average reconstructed from real fill prices. The adapter
+uses [`AvgPxReconciliation::OpeningOnly`](../concepts/execution/reconciliation.md#reported-entry-averages)
+for perpetuals: a matching position quantity does not require
+the fill-derived average to equal the reported average. Real fill prices, quantities, and
+commissions remain intact; Nautilus keeps commissions out of the position's average entry price
+and deducts them from realized PnL. Other instrument types retain the default average-price reconciliation.
+
+When fill history is absent, recovery opens a synthetic position at the reported average,
+rounded to the instrument's price precision. With partial history, synthetic recovery can
+produce an approximate cost basis. Set the reconciliation lookback to cover the current
+position's opening fills when exact fill-based accounting is required.
 
 #### Conditional orders
 

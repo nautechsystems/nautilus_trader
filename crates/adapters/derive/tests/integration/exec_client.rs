@@ -8260,6 +8260,276 @@ async fn test_generate_mass_status_normalizes_duplicate_labels() {
 }
 
 #[rstest]
+#[case::current_lifecycle(false)]
+#[case::prior_closed_lifecycle(true)]
+#[tokio::test]
+async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
+    #[case] prior_closed_lifecycle: bool,
+) {
+    let state = RestState::default();
+    let cid = ClientOrderId::from("FEE-AVERAGE-ENTRY");
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let venue_order_id = VenueOrderId::from("fee-average-entry");
+    let trade_id = TradeId::from("fee-average-fill");
+    let mut order = order_json_with(
+        venue_order_id.as_str(),
+        cid.as_str(),
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_000,
+        "filled",
+    );
+    order["amount"] = json!("0.1");
+    order["filled_amount"] = json!("0.1");
+    order["average_price"] = json!("2553.01");
+    order["limit_price"] = json!("2554.00");
+    order["order_fee"] = json!("0.086589666777");
+    let mut trade = trade_json_with_label(
+        trade_id.as_str(),
+        venue_order_id.as_str(),
+        "ETH-PERP",
+        cid.as_str(),
+    );
+    trade["trade_amount"] = json!("0.1");
+    trade["trade_price"] = json!("2553.01");
+    trade["trade_fee"] = order["order_fee"].clone();
+    let mut position = sample_position_json("ETH-PERP", "0.1");
+    position["average_price"] = json!("2553.87589666777");
+    position["average_price_excl_fees"] = trade["trade_price"].clone();
+    position["total_fees"] = trade["trade_fee"].clone();
+    *state.open_orders_response.lock().await =
+        json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
+    let mut orders = Vec::new();
+    let mut trades = Vec::new();
+
+    if prior_closed_lifecycle {
+        for (label, direction, price, fee, timestamp) in [
+            (
+                "PREVIOUS-ENTRY",
+                "buy",
+                "2500.00",
+                "0.01",
+                1_700_000_000_000,
+            ),
+            (
+                "PREVIOUS-CLOSE",
+                "sell",
+                "2501.00",
+                "0.02",
+                1_700_000_001_000,
+            ),
+        ] {
+            let mut previous =
+                order_json_with(label, label, direction, "ETH-PERP", timestamp, "filled");
+            previous["amount"] = json!("0.2");
+            previous["filled_amount"] = json!("0.2");
+            previous["average_price"] = json!(price);
+            previous["limit_price"] = json!(price);
+            previous["order_fee"] = json!(fee);
+            orders.push(previous);
+            let mut previous = trade_json_with_label(label, label, "ETH-PERP", label);
+            previous["direction"] = json!(direction);
+            previous["trade_amount"] = json!("0.2");
+            previous["trade_price"] = json!(price);
+            previous["trade_fee"] = json!(fee);
+            previous["timestamp"] = json!(timestamp);
+            trades.push(previous);
+        }
+    }
+
+    orders.push(order);
+    trades.push(trade);
+    *state.order_history_response.lock().await = json!({"orders": orders, "pagination": {"count": orders.len(), "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    *state.trade_history_response.lock().await = json!({"trades": trades, "pagination": {"count": trades.len(), "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await =
+        json!({"positions": [position], "subaccount_id": TEST_SUBACCOUNT});
+    let mut tc = build_report_client(state, WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let mass = tc.client.generate_mass_status(None).await.unwrap().unwrap();
+    tc.client.disconnect().await.unwrap();
+    assert!(
+        tc.cache
+            .borrow()
+            .orders(None, None, None, None, None)
+            .is_empty()
+    );
+    assert!(
+        tc.cache
+            .borrow()
+            .positions(None, None, None, None, None)
+            .is_empty()
+    );
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), tc.cache.clone(), None);
+    engine.register_client(Box::new(tc.client)).unwrap();
+    let engine = RefCell::new(engine);
+    let mut manager =
+        ExecutionManager::new(clock, tc.cache.clone(), ExecutionManagerConfig::default()).unwrap();
+
+    for pass in 0..2 {
+        let result = manager.reconcile_execution_mass_status(&mass, &engine);
+        assert_eq!(result.unresolved_positions, Vec::<String>::new());
+        let cache = tc.cache.borrow();
+        let order = cache.order(&cid).unwrap();
+
+        let fills: Vec<_> = order
+            .events()
+            .into_iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill),
+                _ => None,
+            })
+            .collect();
+
+        let positions = cache.positions_open(
+            None,
+            Some(&instrument_id),
+            None,
+            Some(&AccountId::from("DERIVE-001")),
+            None,
+        );
+
+        assert_eq!(
+            mass.position_reports()[&instrument_id][0].avg_px_open,
+            Some(dec!(2553.87589666777))
+        );
+        assert_eq!(
+            cache.orders(None, None, None, None, None).len(),
+            if prior_closed_lifecycle && pass == 1 {
+                3
+            } else {
+                1
+            }
+        );
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.quantity(), Quantity::from("0.100"));
+        assert_eq!(order.filled_qty(), Quantity::from("0.100"));
+        assert_eq!(order.avg_px(), Some(dec!(2553.01)));
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].venue_order_id, venue_order_id);
+        assert_eq!(fills[0].trade_id, trade_id);
+        assert_eq!(fills[0].order_side, OrderSide::Buy);
+        assert_eq!(fills[0].last_qty, Quantity::from("0.100"));
+        assert_eq!(fills[0].last_px, Price::from("2553.01"));
+        assert_eq!(fills[0].commission, Some(Money::from("0.08658967 USDC")));
+        assert_eq!(
+            fills[0].ts_event,
+            UnixNanos::from(1_700_000_002_000_000_000_u64)
+        );
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("0.100"));
+        assert_eq!(positions[0].signed_decimal_qty(), dec!(0.1));
+        assert_eq!(positions[0].avg_px_open, 2553.01);
+        assert_eq!(
+            positions[0].trade_ids.iter().copied().collect::<Vec<_>>(),
+            vec![trade_id]
+        );
+        assert_eq!(
+            positions[0].commissions(),
+            vec![Money::from("0.08658967 USDC")]
+        );
+        assert_eq!(
+            positions[0].realized_pnl,
+            Some(Money::from("-0.08658967 USDC"))
+        );
+        assert_eq!(
+            positions[0].unrealized_pnl(Price::from("2553.01")),
+            Money::from("0.00000000 USDC")
+        );
+    }
+
+    let close_cid = ClientOrderId::from("FEE-AVERAGE-CLOSE");
+    let close_order_id = VenueOrderId::from("fee-average-close");
+    let close_trade_id = TradeId::from("fee-average-close-fill");
+    let close_ts = UnixNanos::from(1_700_000_003_000_000_000_u64);
+    let mut close_order = mass.order_reports()[&venue_order_id].clone();
+    close_order.client_order_id = Some(close_cid);
+    close_order.venue_order_id = close_order_id;
+    close_order.order_side = Some(OrderSide::Sell);
+    close_order.price = Some(Price::from("2552.59"));
+    close_order.avg_px = Some(dec!(2552.59));
+    close_order.ts_accepted = close_ts;
+    close_order.ts_last = close_ts;
+    let mut close_fill = mass.fill_reports()[&venue_order_id][0].clone();
+    close_fill.client_order_id = Some(close_cid);
+    close_fill.venue_order_id = close_order_id;
+    close_fill.trade_id = close_trade_id;
+    close_fill.order_side = OrderSide::Sell;
+    close_fill.last_px = Price::from("2552.59");
+    close_fill.commission = Money::from("0.08658522 USDC");
+    close_fill.ts_event = close_ts;
+
+    let flat = PositionStatusReport::new(
+        mass.account_id,
+        instrument_id,
+        PositionSide::Flat,
+        Quantity::from("0.000"),
+        close_ts,
+        close_ts,
+        None,
+        None,
+        None,
+    );
+    let mut closed_mass =
+        ExecutionMassStatus::new(mass.client_id, mass.account_id, mass.venue, close_ts, None);
+    closed_mass.add_order_reports(vec![close_order]);
+    closed_mass.add_fill_reports(vec![close_fill]);
+    closed_mass.add_position_reports(vec![flat]);
+    for _ in 0..2 {
+        let result = manager.reconcile_execution_mass_status(&closed_mass, &engine);
+        let cache = tc.cache.borrow();
+        let positions = cache.positions(
+            None,
+            Some(&instrument_id),
+            None,
+            Some(&mass.account_id),
+            None,
+        );
+        let close_order = cache.order(&close_cid).unwrap();
+
+        let fills: Vec<_> = close_order
+            .events()
+            .into_iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(result.unresolved_positions, Vec::<String>::new());
+        assert_eq!(
+            cache.orders(None, None, None, None, None).len(),
+            if prior_closed_lifecycle { 4 } else { 2 }
+        );
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("0.000"));
+        assert_eq!(positions[0].avg_px_open, 2553.01);
+        assert_eq!(positions[0].avg_px_close, Some(2552.59));
+        assert_eq!(
+            positions[0].trade_ids,
+            [trade_id, close_trade_id].into_iter().collect()
+        );
+        assert_eq!(
+            positions[0].commissions(),
+            vec![Money::from("0.17317489 USDC")]
+        );
+        assert_eq!(
+            positions[0].realized_pnl,
+            Some(Money::from("-0.21517489 USDC"))
+        );
+        assert_eq!(close_order.filled_qty(), Quantity::from("0.100"));
+        assert_eq!(close_order.avg_px(), Some(dec!(2552.59)));
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].last_px, Price::from("2552.59"));
+        assert_eq!(fills[0].last_qty, Quantity::from("0.100"));
+        assert_eq!(fills[0].commission, Some(Money::from("0.08658522 USDC")));
+        assert_eq!(fills[0].trade_id, close_trade_id);
+        assert_eq!(fills[0].venue_order_id, close_order_id);
+        assert_eq!(fills[0].ts_event, close_ts);
+    }
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_generate_mass_status_adds_flat_position_without_current_position() {
     let rest_state = RestState::default();

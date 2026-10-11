@@ -753,7 +753,7 @@ pub struct DerivePosition {
     /// Signed position amount; positive = long, negative = short.
     #[serde(deserialize_with = "deserialize_decimal_token")]
     pub amount: Decimal,
-    /// Average entry price over the lifetime of the position.
+    /// Average entry price over the lifetime of the position; includes opening fees for perpetuals.
     #[serde(deserialize_with = "deserialize_decimal_token")]
     pub average_price: Decimal,
     /// Position opening timestamp (UNIX ms).
