@@ -102,12 +102,14 @@ fn process_mass_status_for_reconciliation_inner(
     let mut order_map = extracted.orders;
     let mut fill_map = extracted.fills;
     let mut order_only_ids = IndexSet::new();
+    let mut order_only_fill_keys = IndexSet::new();
 
     if fill_snapshots.is_empty() {
         return Ok(ReconciliationResult {
             orders: order_map,
             fills: fill_map,
             order_only_ids,
+            order_only_fill_keys,
         });
     }
 
@@ -173,11 +175,23 @@ fn process_mass_status_for_reconciliation_inner(
             last_zero_crossing_ts,
             current_lifecycle_fills: _,
         } => {
-            // Filter fills to current lifecycle
-            for fills in fill_map.values_mut() {
-                fills.retain(|f| f.ts_event.as_u64() > last_zero_crossing_ts);
-            }
-            fill_map.retain(|_, fills| !fills.is_empty());
+            // Drop orders filled entirely before the current lifecycle. A spanning order keeps
+            // its earlier fills as order-only: they settle its filled quantity, not the position
+            fill_map.retain(|_, fills| {
+                if !fills
+                    .iter()
+                    .any(|f| f.ts_event.as_u64() > last_zero_crossing_ts)
+                {
+                    return false;
+                }
+                order_only_fill_keys.extend(
+                    fills
+                        .iter()
+                        .filter(|f| f.ts_event.as_u64() <= last_zero_crossing_ts)
+                        .map(|f| (f.account_id, f.instrument_id, f.trade_id)),
+                );
+                true
+            });
 
             // Keep only orders that have fills or are still working
             let orders_with_fills: ahash::AHashSet<VenueOrderId> =
@@ -203,6 +217,7 @@ fn process_mass_status_for_reconciliation_inner(
         orders: order_map,
         fills: fill_map,
         order_only_ids,
+        order_only_fill_keys,
     })
 }
 
@@ -665,6 +680,7 @@ fn extract_instrument_reports(
         orders,
         fills,
         order_only_ids: IndexSet::new(),
+        order_only_fill_keys: IndexSet::new(),
     }
 }
 
