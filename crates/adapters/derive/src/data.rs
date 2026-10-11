@@ -32,7 +32,11 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::{InstrumentLookupError, fifo::FifoCache, quote::QuoteCache},
     clients::DataClient,
-    live::{runner::get_data_event_sender, sender::EventSender},
+    live::{
+        dst::time::{self, Instant},
+        runner::get_data_event_sender,
+        sender::EventSender,
+    },
     messages::{
         DataEvent,
         data::{
@@ -70,6 +74,7 @@ use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    book::{recovery::spawn_recovery, sync::BookSyncTracker},
     common::{
         consts::{
             DERIVE_CANDLES_DEFAULT_LIMIT, DERIVE_CANDLES_MAX_PAGES, DERIVE_TRADES_PAGE_SIZE,
@@ -124,6 +129,7 @@ pub struct DeriveDataClient {
     active_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     channel_subscriptions: Arc<ChannelSubscriptionRegistry>,
     subscription_lock: Arc<Mutex<()>>,
+    book_sync: BookSyncTracker,
     quote_cache: Arc<Mutex<QuoteCache>>,
     trades_emitted: Arc<Mutex<FifoCache<TradeId, TRADE_DEDUP_CAPACITY>>>,
     clock: &'static AtomicTime,
@@ -154,11 +160,16 @@ impl DeriveDataClient {
             config.currencies.clone(),
             config.include_expired,
         );
+        let book_sync = BookSyncTracker::default();
         let mut ws_client = DeriveWebSocketClient::new(
             Some(config.ws_url()),
             config.environment,
             config.transport_backend,
             proxy_url,
+        )
+        .with_book_sync(
+            book_sync.clone(),
+            Duration::from_secs(config.book_snapshot_timeout_secs),
         )
         .with_socket_control(SocketControl::new(
             client_id,
@@ -197,6 +208,7 @@ impl DeriveDataClient {
             active_greeks_subs: Arc::new(AtomicSet::new()),
             channel_subscriptions: Arc::new(ChannelSubscriptionRegistry::default()),
             subscription_lock: Arc::new(Mutex::new(())),
+            book_sync,
             quote_cache: Arc::new(Mutex::new(QuoteCache::new())),
             trades_emitted: Arc::new(Mutex::new(FifoCache::new())),
             clock,
@@ -236,6 +248,7 @@ impl DeriveDataClient {
     fn clear_subscription_state(&self) {
         let _guard = self.subscription_lock.lock();
         self.channel_subscriptions.clear();
+        self.book_sync.clear();
         self.active_book_delta_channels.store(AHashMap::new());
         self.active_book_depth_channels.store(AHashMap::new());
         self.active_ticker_channels.store(AHashMap::new());
@@ -298,6 +311,7 @@ impl DeriveDataClient {
             active_funding_subs: Arc::clone(&self.active_funding_subs),
             active_greeks_subs: Arc::clone(&self.active_greeks_subs),
             subscription_lock: Arc::clone(&self.subscription_lock),
+            book_sync: self.book_sync.clone(),
             quote_cache: Arc::clone(&self.quote_cache),
             trades_emitted: Arc::clone(&self.trades_emitted),
         };
@@ -340,6 +354,44 @@ impl DeriveDataClient {
         Ok(())
     }
 
+    fn spawn_book_monitor(&self) -> anyhow::Result<()> {
+        let tracker = self.book_sync.clone();
+        let ws = self.ws_handle();
+        let registry = Arc::clone(&self.channel_subscriptions);
+        let stale_timeout = Duration::from_secs(self.config.book_stale_threshold_secs);
+        let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+        let tasks = self.pending_tasks.spawner()?;
+        let cancellation = self.cancellation_token.clone();
+
+        self.session_tasks.spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(1));
+
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    _ = interval.tick() => {
+                        for (channel, signal, recovery) in tracker.recoveries(stale_timeout, Instant::now()) {
+                            signal.log();
+                            let transition = registry.transition(&channel);
+                            spawn_recovery(
+                                channel,
+                                signal.instrument_id,
+                                recovery,
+                                ws.clone(),
+                                transition,
+                                snapshot_timeout,
+                                &tasks,
+                            );
+                        }
+                    }
+                }
+            }
+        })?;
+
+        Ok(())
+    }
+
     fn handle_ws_message(message: DeriveWsMessage, ctx: &WsMessageContext) {
         match message {
             DeriveWsMessage::Subscription(payload) => match parse_public_ws_data(&payload) {
@@ -355,6 +407,31 @@ impl DeriveDataClient {
                     );
                 }
             },
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation,
+            } => {
+                let _guard = ctx.subscription_lock.lock();
+
+                if generation.is_cancelled() {
+                    return;
+                }
+
+                match parse_public_ws_data(&payload) {
+                    Ok(DerivePublicWsData::Orderbook(msg)) => {
+                        Self::handle_public_book(&msg, ctx, Some(&generation));
+                    }
+                    Err(e) => {
+                        ctx.book_sync.reject_snapshot(
+                            payload.channel.as_str(),
+                            Arc::new(DeriveWsError::Transport(e.to_string())),
+                            Some(&generation),
+                        );
+                        log::warn!("Failed to parse Derive book snapshot: {e}");
+                    }
+                    Ok(_) => {}
+                }
+            }
             DeriveWsMessage::Reconnected => {
                 let _guard = ctx.subscription_lock.lock();
                 ctx.quote_cache.lock().clear();
@@ -372,13 +449,17 @@ impl DeriveDataClient {
         // generation cannot change during cache mutation.
         let _guard = ctx.subscription_lock.lock();
         match data {
-            DerivePublicWsData::Orderbook(msg) => Self::handle_public_book(&msg, ctx),
+            DerivePublicWsData::Orderbook(msg) => Self::handle_public_book(&msg, ctx, None),
             DerivePublicWsData::Trades(msg) => Self::handle_public_trades(&msg, ctx),
             DerivePublicWsData::Ticker(msg) => Self::handle_public_ticker(&msg, ctx),
         }
     }
 
-    fn handle_public_book(msg: &DeriveOrderbookMsg, ctx: &WsMessageContext) {
+    fn handle_public_book(
+        msg: &DeriveOrderbookMsg,
+        ctx: &WsMessageContext,
+        generation: Option<&CancellationToken>,
+    ) {
         let instrument_id = match msg.data.instrument_id() {
             Ok(instrument_id) => instrument_id,
             Err(e) => {
@@ -404,32 +485,65 @@ impl DeriveDataClient {
 
         let ts_init = ctx.clock.get_time_ns();
 
-        if deltas_active {
+        let deltas = if deltas_active {
             match parse_orderbook_deltas(
                 msg,
                 instrument.price_precision(),
                 instrument.size_precision(),
                 ts_init,
             ) {
-                Ok(deltas) => {
-                    Self::send_data(ctx, Data::BookDeltas(Box::new(deltas)));
-                }
-                Err(e) => log::warn!("Failed to parse Derive orderbook deltas: {e}"),
-            }
-        }
+                Ok(deltas) => Some(deltas),
+                Err(e) => {
+                    ctx.book_sync.reject_snapshot(
+                        channel,
+                        Arc::new(DeriveWsError::Transport(e.to_string())),
+                        generation,
+                    );
 
-        if depth_active {
+                    log::warn!("Failed to parse Derive book deltas: {e}");
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
+        let depth = if depth_active {
             match parse_orderbook_depth(
                 msg,
                 instrument.price_precision(),
                 instrument.size_precision(),
                 ts_init,
             ) {
-                Ok(depth) => {
-                    Self::send_data(ctx, Data::BookDepth(Box::new(depth)));
+                Ok(depth) => Some(depth),
+                Err(e) => {
+                    ctx.book_sync.reject_snapshot(
+                        channel,
+                        Arc::new(DeriveWsError::Transport(e.to_string())),
+                        generation,
+                    );
+
+                    log::warn!("Failed to parse Derive book depth: {e}");
+                    return;
                 }
-                Err(e) => log::warn!("Failed to parse Derive orderbook depth: {e}"),
             }
+        } else {
+            None
+        };
+
+        if !ctx
+            .book_sync
+            .record_snapshot(channel, msg.data.timestamp, generation, Instant::now())
+        {
+            return;
+        }
+
+        if let Some(deltas) = deltas {
+            Self::send_data(ctx, Data::BookDeltas(Box::new(deltas)));
+        }
+
+        if let Some(depth) = depth {
+            Self::send_data(ctx, Data::BookDepth(Box::new(depth)));
         }
     }
 
@@ -662,7 +776,9 @@ impl DeriveDataClient {
         SubscriptionLifecycle {
             registry: Arc::clone(&self.channel_subscriptions),
             lock: Arc::clone(&self.subscription_lock),
+            snapshot_timeout: Duration::from_secs(self.config.book_snapshot_timeout_secs),
             dispatch: SubscriptionDispatchState {
+                book_sync: self.book_sync.clone(),
                 active_book_delta_channels: Arc::clone(&self.active_book_delta_channels),
                 active_book_depth_channels: Arc::clone(&self.active_book_depth_channels),
                 active_ticker_channels: Arc::clone(&self.active_ticker_channels),
@@ -781,6 +897,7 @@ impl DataClient for DeriveDataClient {
         self.cancellation_token.cancel();
         self.abort_session_tasks();
         self.abort_pending_tasks();
+        self.book_sync.clear();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -864,7 +981,8 @@ impl DataClient for DeriveDataClient {
             .ws_client
             .take_event_receiver()
             .ok_or_else(|| anyhow::anyhow!("Derive WebSocket event receiver not initialized"))
-            .and_then(|rx| self.spawn_stream_task(rx));
+            .and_then(|rx| self.spawn_stream_task(rx))
+            .and_then(|()| self.spawn_book_monitor());
 
         if let Err(e) = session_result {
             if let Err(teardown_error) = self.teardown_partial_connect().await {
@@ -1859,6 +1977,7 @@ struct RemovedSubscription {
 
 #[derive(Debug, Clone)]
 struct SubscriptionDispatchState {
+    book_sync: BookSyncTracker,
     active_book_delta_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_book_depth_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_ticker_channels: Arc<AtomicMap<InstrumentId, String>>,
@@ -1873,6 +1992,7 @@ struct SubscriptionDispatchState {
 
 #[derive(Debug, Clone)]
 struct SubscriptionLifecycle {
+    snapshot_timeout: Duration,
     registry: Arc<ChannelSubscriptionRegistry>,
     lock: Arc<Mutex<()>>,
     dispatch: SubscriptionDispatchState,
@@ -1909,11 +2029,27 @@ async fn run_channel_subscribe(
     let transition = lifecycle.registry.transition(&channel);
     let _guard = transition.lock().await;
 
-    if !lifecycle.is_current_channel(owner, generation, &channel) || ws.has_subscription(&channel) {
+    if !lifecycle.is_current_channel(owner, generation, &channel) {
         return Ok(());
     }
 
-    if let Err(e) = request.subscribe(&ws).await {
+    let book_pending = lifecycle
+        .dispatch
+        .book_sync
+        .write(&channel)
+        .is_some_and(|write| write.gate.lock().is_closed());
+
+    if ws.has_subscription(&channel) && !book_pending {
+        return Ok(());
+    }
+
+    let result = if matches!(&request, ChannelRequest::Orderbook { .. }) {
+        ws.subscribe_book_gated(channel.clone()).await
+    } else {
+        request.subscribe(&ws).await
+    };
+
+    if let Err(e) = result {
         lifecycle.rollback(owner, generation);
         log::error!("Failed to subscribe to Derive channel `{channel}`: {e}");
 
@@ -1941,6 +2077,10 @@ async fn run_channel_subscribe(
         return Ok(());
     }
 
+    lifecycle
+        .dispatch
+        .book_sync
+        .subscription_written(&channel, lifecycle.snapshot_timeout);
     if !lifecycle.has_owners(&channel)
         && let Err(e) = request.unsubscribe(&ws).await
     {
@@ -1983,6 +2123,15 @@ impl SubscriptionLifecycle {
         let mut state = self.registry.state.lock();
         let generation = state.activate(owner, channel)?;
         self.dispatch.activate(owner, channel);
+
+        if let ChannelOwner::BookDeltas(instrument_id) | ChannelOwner::BookDepth(instrument_id) =
+            owner
+        {
+            self.dispatch
+                .book_sync
+                .record_subscription(channel.expect("book channel present"), instrument_id);
+        }
+
         Some(generation)
     }
 
@@ -2016,6 +2165,12 @@ impl SubscriptionLifecycle {
         };
 
         self.dispatch.deactivate(owner, removed.channel_empty);
+        if removed.channel_empty
+            && let Some(channel) = &removed.channel
+        {
+            self.dispatch.book_sync.remove(channel);
+        }
+
         true
     }
 
@@ -2024,6 +2179,12 @@ impl SubscriptionLifecycle {
         let mut state = self.registry.state.lock();
         let removed = state.remove(owner)?;
         self.dispatch.deactivate(owner, removed.channel_empty);
+        if removed.channel_empty
+            && let Some(channel) = &removed.channel
+        {
+            self.dispatch.book_sync.remove(channel);
+        }
+
         Some(removed)
     }
 
@@ -2708,6 +2869,17 @@ mod tests {
                 active_funding_subs: Arc::new(AtomicSet::new()),
                 active_greeks_subs: Arc::new(AtomicSet::new()),
                 subscription_lock: Arc::new(Mutex::new(())),
+                book_sync: {
+                    let tracker = BookSyncTracker::default();
+                    let id = InstrumentId::from("ETH-PERP.DERIVE");
+                    tracker.record_subscription("orderbook.ETH-PERP.1.10", id);
+                    tracker
+                        .write("orderbook.ETH-PERP.1.10")
+                        .unwrap()
+                        .gate
+                        .open();
+                    tracker
+                },
                 quote_cache: Arc::new(Mutex::new(QuoteCache::new())),
                 trades_emitted: Arc::new(Mutex::new(FifoCache::new())),
             },

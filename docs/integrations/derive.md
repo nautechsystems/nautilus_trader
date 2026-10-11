@@ -386,6 +386,17 @@ Derive exposes book deltas and depth snapshots through the same
 snapshot deltas as `OrderBookDeltas`, while `subscribe_book_depth` fixes `depth=10` and
 publishes `OrderBookDepth` snapshots.
 
+Each grouped [book update](https://docs.derive.xyz/subscriptions) is a full snapshot.
+Delta and depth consumers with matching channel arguments share a subscription and recovery state.
+The channel stays active until its last consumer unsubscribes.
+
+The feed has no change ID, so the adapter uses its millisecond timestamp as the output sequence:
+
+- The adapter accepts only timestamps strictly newer than the last accepted timestamp, including across reconnects.
+- An advancing empty snapshot clears the book and counts as an update.
+
+Derive documents no timestamp ordering guarantee. `publish_id` can restart after resubscription.
+
 ### Execution
 
 Derive uses the configured session key for authenticated execution:
@@ -926,6 +937,60 @@ attempts, the client logs the error, marks itself disconnected, and stops that W
 `ws_timeout_secs` applies to individual WebSocket operations and reconnect cache refresh, not
 heartbeat detection or reconnect backoff.
 
+### Order book recovery
+
+Order books recover independently of session recovery. Recovery starts after:
+
+- `book_snapshot_timeout_secs` (default `10` seconds) without an initial or post-reconnect snapshot.
+- `book_stale_threshold_secs` (default `120` seconds) without receiving an advancing snapshot.
+
+Set either option to `0` to disable that timer. Choose the stale threshold for the expected update frequency:
+duplicate timestamps do not refresh freshness; advancing empty snapshots do.
+
+Recovery unsubscribes and resubscribes the affected channel, accepting snapshots only after its
+subscription acknowledgement. It follows the
+[shared retry budget and ceiling](../developer_guide/adapters.md#recovery-state-and-retry-budgets)
+until a snapshot is accepted or the channel is removed.
+
+- Reconnects preserve the recovery episode and its budget.
+- The last consumer's unsubscribe or client shutdown cancels recovery and pending writes.
+- With snapshot deadlines disabled, the initial retry budget remains capped at 180 seconds and each
+  later attempt at 60 seconds. `ws_timeout_secs` still bounds each RPC.
+
+:::warning
+Derive notifications have no subscription generation. The adapter rejects obsolete locally queued frames
+and non-increasing timestamps, but cannot identify an earlier subscription's delayed notification if its
+timestamp exceeds the last accepted timestamp.
+:::
+
+### Live recovery validation
+
+`derive-book-stress` checks public Derive testnet data without submitting orders. It validates depth-10
+`ETH-PERP` and `ETH-USDC` books against the book stream contract and an independent reconstruction of each
+relayed venue snapshot, including empty spot snapshots.
+
+The testnet WebSocket stream and public instrument REST API must be reachable. From the repository root, run:
+
+```bash
+CARGO_BUILD_JOBS=4 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-derive --features examples --test derive-book-stress -- \
+  --scenario initial --timeout 2 --rounds 60
+```
+
+| `--scenario` | Options       | Checks                                                                                                |
+| ------------ | ------------- | ----------------------------------------------------------------------------------------------------- |
+| `churn`      | Default       | Stale books, delayed frames, reconnects during recovery, unsubscribe/resubscribe, and bad timestamps. |
+| `initial`    | `--timeout 2` | Drops both initial snapshots, then runs `churn`.                                                      |
+| `disabled`   | `--timeout 0` | Quiet books across forced reconnects with both timers disabled.                                       |
+| `edges`      | `--timeout 1` | Exhausted eight-attempt budget, late snapshot acceptance, and retry after permanent rejection.        |
+
+- `--timeout` sets the snapshot timeout in seconds; `0` disables deadlines. The stale threshold is
+  four seconds except in `disabled`, which disables both timers.
+- `--rounds` sets churn or disabled rounds (default `20`); `edges` runs once.
+
+Every scenario checks bounded shutdown; all except `disabled` start shutdown during recovery.
+See [Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for shared flags and output.
+
 ## Deterministic simulation testing
 
 The Rust adapter supports `simulation` with `cfg(madsim)` through the shared clock, task, retry,
@@ -945,6 +1010,7 @@ comparison stays in the downstream DST harness, as specified by the
 
 The static gate covers these production paths under `crates/adapters/derive/src/`:
 
+- `book/recovery.rs` and `book/sync.rs`.
 - `common/parse.rs`, `common/rate_limit.rs`, `config.rs`, `data.rs`, `execution.rs`, and `providers.rs`.
 - `http/client.rs`, `http/models.rs`, `http/query.rs`, and `http/parse.rs`.
 - `signing/encoding.rs`, `signing/nonce.rs`, `signing/auth.rs`, `signing/eip712.rs`, and
@@ -1026,6 +1092,8 @@ Class/struct: `DeriveDataClientConfig`.
 | `environment`                      | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                                        |
 | `http_timeout_secs`                | `10`      | REST request timeout in seconds.                                                            |
 | `ws_timeout_secs`                  | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
+| `book_snapshot_timeout_secs`       | `10`      | Snapshot wait in seconds; `0` disables deadlines.                                           |
+| `book_stale_threshold_secs`        | `120`     | Seconds without an advancing snapshot before recovery; `0` disables this timer.             |
 | `update_instruments_interval_mins` | `60`      | Interval in minutes between instrument refreshes.                                           |
 | `currencies`                       | `[]`      | Currencies to bulk-load on connect. Empty means lazy-load on demand.                        |
 | `include_expired`                  | `false`   | Merge live and expired option listings from `public/get_all_instruments`.                   |

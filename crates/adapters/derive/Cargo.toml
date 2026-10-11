@@ -100,6 +100,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-execution = { workspace = true }
+nautilus-live = { workspace = true, features = ["test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -202,3 +203,11 @@ name = "derive-delta-neutral"
 path = "examples/node_delta_neutral.rs"
 required-features = ["examples"]
 doc = false
+
+# Run with `cargo test -p nautilus-derive --features examples --test derive-book-stress -- --scenario initial --timeout 2 --rounds 60`.
+[[test]]
+name = "derive-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

@@ -70,6 +70,8 @@ IN_SCOPE_CRATES=(
 # - Test-only or placeholder: common/testing.rs, http/parse.rs.
 
 ADAPTER_PATHS=(
+  "crates/adapters/derive/src/book/recovery.rs"
+  "crates/adapters/derive/src/book/sync.rs"
   "crates/adapters/derive/src/common/parse.rs"
   "crates/adapters/derive/src/common/rate_limit.rs"
   "crates/adapters/derive/src/config.rs"

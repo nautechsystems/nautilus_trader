@@ -16,6 +16,7 @@
 //! Configuration structures for the Derive adapter.
 
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
@@ -50,6 +51,14 @@ pub struct DeriveDataClientConfig {
     /// Optional per-operation WebSocket timeout in seconds (login, subscribe,
     /// reads, writes). When unset, the low-level `WS_REQUEST_TIMEOUT` applies.
     pub ws_timeout_secs: Option<u64>,
+    /// Maximum wait for an initial, post-reconnect, or recovery book snapshot, in seconds.
+    /// A zero value disables snapshot deadlines.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
+    /// Maximum receive age of advancing book snapshots before recovery, in seconds.
+    /// Empty snapshots count as updates; a zero value disables stale book recovery.
+    #[builder(default = 120)]
+    pub book_stale_threshold_secs: u64,
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
@@ -76,6 +85,8 @@ nautilus_core::impl_pyo3_config_getters!(DeriveDataClientConfig {
     base_url_ws: Option<String>,
     http_timeout_secs: u64,
     ws_timeout_secs: Option<u64>,
+    book_snapshot_timeout_secs: u64,
+    book_stale_threshold_secs: u64,
     update_instruments_interval_mins: u64,
     currencies: Vec<String>,
     include_expired: bool,

@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Added Bybit public liquidation custom data for linear and inverse contracts (#5152), thanks @Martingale42
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 - Added Derive adapter support for API v3
+- Added Derive order book recovery for missing and stale snapshots
 - Added Interactive Brokers subscription idle events (#5041), thanks @faysou
 - Added Lighter native transaction batching with automatic splitting for order lists and batch operations
 
@@ -47,6 +48,9 @@ Released on TBD (UTC).
 - Changed batched `BacktestNode` replay to reject deltas without a closing `F_LAST`; `batch_deltas=False` opts out
 - Changed Rust `Order` to require `non_reopened_voided_qty` (#5133), thanks @abhijeetvichare76
 - Changed Deribit position `leverage` to `Option<Decimal>` (#5240), thanks @abhijeetvichare76
+- Changed Rust `DeriveDataClientConfig` struct literals: add `book_snapshot_timeout_secs` and
+  `book_stale_threshold_secs`, or use `..Default::default()`
+- Changed Rust `DeriveWsMessage` to include `BookSubscription`; update exhaustive matches
 - Changed Interactive Brokers contract and security filters to reject unknown values (#5041), thanks @faysou
 - Changed Interactive Brokers Rust provider loaders; use `load_with_return_async` (#5041), thanks @faysou
 - Changed Rust `OKXAmendAlgoOrderRequest` literals to require `new_trigger_px_type`; use `None` to omit it

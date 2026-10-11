@@ -873,10 +873,9 @@ emissions are filtered to active subscriptions.
 
 ### Order book recovery ownership
 
-[`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides the recovery machinery shared by
-OKX, Polymarket, Lighter, Binance, Hyperliquid, Bybit, Betfair, and AX Exchange. Keep venue-specific
-book synchronization and recovery in each adapter's `src/book/`, with stream handlers dispatching
-commands and frames.
+[`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides shared recovery machinery. Keep
+venue-specific book synchronization and recovery in each adapter's `src/book/`, with stream handlers
+dispatching commands and frames.
 
 #### Per-book sync
 
@@ -891,9 +890,10 @@ recovery at a time, so repeated gap reports cannot start competing recoveries. A
 where a monitor checks it, or the book keeps an owner that never acts. Stale-feed reports cover
 every book that no running recovery owns.
 
-OKX, Polymarket, Binance, Hyperliquid, Bybit, and AX Exchange keep a `BookSync` per book. Betfair
-keeps one per market, since it images whole markets. Lighter keeps a `BookRecoveryState` per book
-inside its handler-owned tracker.
+- OKX, Polymarket, Binance, Hyperliquid, Bybit, and AX Exchange keep a `BookSync` per book.
+- Derive keeps a `BookSync` per exact wire channel, shared by delta and depth consumers with matching arguments.
+- Betfair keeps a `BookSync` per market, since it images whole markets.
+- Lighter keeps a `BookRecoveryState` per book inside its handler-owned tracker.
 
 #### Starting recovery
 
@@ -964,18 +964,24 @@ snapshot parsing. The shared types describe the result of validation and monitor
   gap diagnostics.
 - `BookSyncSignal`: a stale feed or missing snapshot for one book.
 
-Lighter retains its subscription generations and control-ack/typed-snapshot correlation. OKX retains
-its documented [acknowledgement-correlation limits](../integrations/okx.md#snapshot-correlation-limitation).
-Hyperliquid accepts every `l2Book` frame as a snapshot, and with stale stream recovery enabled its
-stream health monitor starts recovery for a stale delta book. Betfair carries one market
-subscription per connection, so a replacement re-images every market; recoveries join a pending
-image request rather than writing competing subscriptions, and a reconnect resumes synced books from
-the subscription's clocks. AX Exchange accepts every L2 and L3 frame as a snapshot and keeps its
-books across client reconnects, since its WebSocket client replays subscriptions on connect.
+- **Lighter**: retains subscription generations and control-ack/typed-snapshot correlation.
+- **OKX**: retains its documented
+  [acknowledgement-correlation limits](../integrations/okx.md#snapshot-correlation-limitation).
+- **Hyperliquid**: accepts every `l2Book` frame as a snapshot. With stale stream recovery enabled,
+  its stream health monitor starts recovery for a stale delta book.
+- **Betfair**: carries one market subscription per connection, so a replacement re-images every market.
+  Recoveries join a pending image request rather than writing competing subscriptions. Reconnects resume
+  synced books from the subscription's clocks.
+- **AX Exchange**: accepts every L2 and L3 frame as a snapshot and keeps books across client reconnects,
+  since its WebSocket client replays subscriptions on connect.
+- **Derive**: accepts full snapshots only when their timestamps advance, retaining that floor across
+  reconnects. Advancing empty snapshots count as updates. Replacement uses an unsubscribe/subscribe pair
+  on the existing socket; see [Derive order book recovery](../integrations/derive.md#order-book-recovery)
+  for timer defaults and the notification correlation limit.
 
 Adapters fall into two recovery families, which determine the oracle a stress harness can use:
 
-- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange): a replacement
+- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive): a replacement
   resubscribes, and the venue stream delivers the snapshot.
 - Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
   adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.

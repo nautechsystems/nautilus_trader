@@ -68,6 +68,8 @@ pub mod websocket;
 #[cfg(feature = "python")]
 pub mod python;
 
+mod book;
+
 pub use crate::{
     config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
     execution::DeriveExecutionClient,

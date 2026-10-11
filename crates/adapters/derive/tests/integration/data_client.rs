@@ -63,7 +63,9 @@ use nautilus_derive::{
     config::DeriveDataClientConfig,
     data::DeriveDataClient,
 };
-use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_live::{
+    SocketReconnectRegistry, SocketReconnectRequestOutcome, book::conformance::BookStreamChecker,
+};
 use nautilus_model::{
     data::{BarType, Data},
     enums::{AggressorSide, BookType},
@@ -128,6 +130,8 @@ impl RestState {
 #[derive(Clone)]
 struct WsState {
     connection_count: Arc<AtomicUsize>,
+    book_snapshots_missing: Arc<AtomicUsize>,
+    book_timestamp_step: Arc<AtomicUsize>,
     subscribe_frames: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscribe_frames: Arc<tokio::sync::Mutex<Vec<Value>>>,
     subscribe_failures: Arc<AtomicUsize>,
@@ -143,6 +147,8 @@ impl Default for WsState {
     fn default() -> Self {
         Self {
             connection_count: Arc::new(AtomicUsize::new(0)),
+            book_snapshots_missing: Arc::new(AtomicUsize::new(0)),
+            book_timestamp_step: Arc::new(AtomicUsize::new(0)),
             subscribe_frames: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             unsubscribe_frames: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             subscribe_failures: Arc::new(AtomicUsize::new(0)),
@@ -448,7 +454,9 @@ async fn handle_ws(socket: WebSocket, state: WsState) {
                                     })
                                     .or_else(|| subscription_notification(channel));
 
-                                if let Some(notification) = notification {
+                                if let Some(notification) =
+                                    book_notification(channel, notification, &state).await
+                                {
                                     notifications.push(notification);
                                 }
                             }
@@ -617,6 +625,38 @@ fn subscription_notification(channel: &str) -> Option<Value> {
     }))
 }
 
+async fn book_notification(
+    channel: &str,
+    notification: Option<Value>,
+    state: &WsState,
+) -> Option<Value> {
+    let mut notification = notification?;
+    if !channel.starts_with("orderbook.") {
+        return Some(notification);
+    }
+
+    if state
+        .book_snapshots_missing
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return None;
+    }
+
+    let step = state.book_timestamp_step.load(Ordering::SeqCst);
+    if step > 0 {
+        let timestamp = notification["params"]["data"]["timestamp"]
+            .as_i64()
+            .unwrap();
+        let count = state.subscribe_frames.lock().await.len();
+        notification["params"]["data"]["timestamp"] = json!(timestamp + (count * step) as i64);
+    }
+
+    Some(notification)
+}
+
 fn config(rest_addr: SocketAddr, ws_addr: SocketAddr) -> DeriveDataClientConfig {
     DeriveDataClientConfig {
         base_url_rest: Some(rest_url(rest_addr)),
@@ -625,6 +665,8 @@ fn config(rest_addr: SocketAddr, ws_addr: SocketAddr) -> DeriveDataClientConfig 
         environment: DeriveEnvironment::Mainnet,
         http_timeout_secs: 5,
         ws_timeout_secs: Some(5),
+        book_snapshot_timeout_secs: 10,
+        book_stale_threshold_secs: 120,
         update_instruments_interval_mins: 60,
         currencies: Vec::new(),
         include_expired: false,
@@ -995,6 +1037,204 @@ async fn test_shared_orderbook_channel_unsubscribes_after_last_owner() {
     assert_eq!(subscribe_count, 1);
     assert_eq!(ws_state.unsubscribes().await.len(), 1);
 
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_last_book_owner_can_resubscribe_before_unsubscribe_runs() {
+    let ws_state = WsState::default();
+    ws_state.book_timestamp_step.store(1, Ordering::SeqCst);
+    let rest_addr = start_rest_server(RestState::default()).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut client = connect_with_eth_currency(rest_addr, ws_addr).await;
+
+    while rx.try_recv().is_ok() {}
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let channel = "orderbook.ETH-PERP.1.10";
+    client
+        .subscribe_book_deltas(subscribe_book_deltas(instrument_id, Some(10), None))
+        .unwrap();
+    let first = recv_data(&mut rx).await;
+
+    client
+        .unsubscribe_book_deltas(&unsubscribe_book_deltas(instrument_id, None))
+        .unwrap();
+    client
+        .subscribe_book_deltas(subscribe_book_deltas(instrument_id, Some(10), None))
+        .unwrap();
+    wait_for_subscribe_count(&ws_state, channel, 2).await;
+    let second = recv_data(&mut rx).await;
+    let subscribe_count = ws_state
+        .subscribes()
+        .await
+        .iter()
+        .filter(|frame| frame["params"]["channels"][0] == channel)
+        .count();
+    let connections = ws_state.connection_count.load(Ordering::SeqCst);
+    client.disconnect().await.unwrap();
+
+    let Data::BookDeltas(first) = first else {
+        panic!("expected initial book deltas");
+    };
+
+    let Data::BookDeltas(second) = second else {
+        panic!("expected resubscribed book deltas");
+    };
+
+    assert_eq!(first.instrument_id, instrument_id);
+    assert_eq!(second.instrument_id, instrument_id);
+    assert_eq!(second.sequence, first.sequence + 1);
+    assert_eq!(subscribe_count, 2);
+    assert_eq!(ws_state.unsubscribes().await.len(), 0);
+    assert_eq!(connections, 1);
+}
+
+#[rstest]
+#[case::missing(true)]
+#[case::stale(false)]
+#[tokio::test]
+async fn test_book_recovery_keeps_shared_channel_and_active_socket(#[case] missing: bool) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    ws_state
+        .book_snapshots_missing
+        .store(usize::from(missing), Ordering::SeqCst);
+    ws_state.book_timestamp_step.store(1, Ordering::SeqCst);
+    let rest_addr = start_rest_server(rest_state).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut config = config(rest_addr, ws_addr);
+    config.book_snapshot_timeout_secs = 1;
+    config.book_stale_threshold_secs = 1;
+    config.currencies = vec!["ETH".to_owned()];
+    let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let id = InstrumentId::from("ETH-PERP.DERIVE");
+    let channel = "orderbook.ETH-PERP.1.10";
+    client
+        .subscribe_book_deltas(subscribe_book_deltas(id, Some(10), None))
+        .unwrap();
+    client
+        .subscribe_book_depth(subscribe_book_depth(id, None))
+        .unwrap();
+    let mut checker = BookStreamChecker::new(BookType::L2_MBP, true);
+    checker.open(id);
+    let first = recv_data(&mut rx).await;
+
+    let Data::BookDeltas(first) = first else {
+        panic!("expected snapshot deltas");
+    };
+
+    checker.apply(&first).unwrap();
+
+    let Data::BookDepth(first_depth) = recv_data(&mut rx).await else {
+        panic!("expected shared depth snapshot");
+    };
+
+    assert_eq!(first.sequence, first_depth.sequence);
+
+    if !missing {
+        let Data::BookDeltas(recovered) = recv_data(&mut rx).await else {
+            panic!("expected recovered deltas");
+        };
+
+        checker.apply(&recovered).unwrap();
+
+        let Data::BookDepth(depth) = recv_data(&mut rx).await else {
+            panic!("expected recovered shared depth");
+        };
+
+        assert_eq!(recovered.sequence, first.sequence + 1);
+        assert_eq!(depth.sequence, recovered.sequence);
+        assert_eq!(recovered.deltas[1].order, first.deltas[1].order);
+        assert_eq!(recovered.deltas[2].order, first.deltas[2].order);
+    }
+
+    assert_eq!(ws_state.connection_count.load(Ordering::SeqCst), 1);
+    assert_eq!(ws_state.subscribes().await.len(), 2);
+    assert_eq!(ws_state.unsubscribes().await.len(), 1);
+    client
+        .unsubscribe_book_deltas(&unsubscribe_book_deltas(id, None))
+        .unwrap();
+    assert_eq!(ws_state.unsubscribes().await.len(), 1);
+    client
+        .unsubscribe_book_depth(&unsubscribe_book_depth(id))
+        .unwrap();
+    wait_until_async(
+        || async { ws_state.unsubscribes().await.len() == 2 },
+        Duration::from_secs(3),
+    )
+    .await;
+    let subscribed = ws_state.subscribes().await.len();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(ws_state.subscribes().await.len(), subscribed);
+    assert!(rx.try_recv().is_err());
+    assert_eq!(
+        ws_state.unsubscribes().await.last().unwrap()["params"]["channels"],
+        json!([channel])
+    );
+    client.disconnect().await.unwrap();
+    assert_eq!(ws_state.connection_count.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_unsubscribe_cancels_inflight_book_recovery() {
+    let ws_state = WsState::default();
+    ws_state.book_snapshots_missing.store(1, Ordering::SeqCst);
+    let rest_addr = start_rest_server(RestState::default()).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut config = config(rest_addr, ws_addr);
+    config.currencies = vec!["ETH".to_owned()];
+    config.book_snapshot_timeout_secs = 1;
+    config.book_stale_threshold_secs = 0;
+    let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let id = InstrumentId::from("ETH-PERP.DERIVE");
+    let channel = "orderbook.ETH-PERP.1.10";
+    client
+        .subscribe_book_deltas(subscribe_book_deltas(id, Some(10), None))
+        .unwrap();
+    wait_until_async(
+        || async { ws_state.subscribe_response_count.load(Ordering::SeqCst) == 1 },
+        Duration::from_secs(3),
+    )
+    .await;
+    ws_state
+        .deferred_subscribe_responses
+        .store(1, Ordering::SeqCst);
+    wait_for_subscribe_count(&ws_state, channel, 2).await;
+
+    client
+        .unsubscribe_book_deltas(&unsubscribe_book_deltas(id, None))
+        .unwrap();
+    wait_until_async(
+        || async { ws_state.unsubscribes().await.len() == 2 },
+        Duration::from_secs(3),
+    )
+    .await;
+    ws_state.subscribe_response_gate.add_permits(1);
+    wait_until_async(
+        || async { ws_state.subscribe_response_count.load(Ordering::SeqCst) == 2 },
+        Duration::from_secs(3),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    assert_eq!(ws_state.subscribes().await.len(), 2);
+    assert_eq!(ws_state.unsubscribes().await.len(), 2);
+    assert_eq!(ws_state.connection_count.load(Ordering::SeqCst), 1);
+    assert!(rx.try_recv().is_err());
     client.disconnect().await.unwrap();
 }
 

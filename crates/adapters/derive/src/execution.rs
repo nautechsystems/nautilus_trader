@@ -760,6 +760,7 @@ impl DeriveExecutionClient {
 
         Ok(())
     }
+
     fn select_cancel_orders(
         &self,
         cmd: &CancelAllOrders,
@@ -3904,7 +3905,8 @@ fn handle_ws_message(
         DeriveWsMessage::Subscription(payload) => payload,
         DeriveWsMessage::Authenticated
         | DeriveWsMessage::Reconnected
-        | DeriveWsMessage::SessionRecoveryFailed(_) => return,
+        | DeriveWsMessage::SessionRecoveryFailed(_)
+        | DeriveWsMessage::BookSubscription { .. } => return,
     };
 
     let channel = DeriveWsChannel::from(payload.channel.as_str());

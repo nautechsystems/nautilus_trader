@@ -30,6 +30,7 @@ use nautilus_model::{
 use parking_lot::Mutex;
 
 use super::dispatch::TRADE_DEDUP_CAPACITY;
+use crate::book::sync::BookSyncTracker;
 
 pub(crate) struct WsMessageContext {
     pub(crate) clock: &'static AtomicTime,
@@ -45,6 +46,7 @@ pub(crate) struct WsMessageContext {
     pub(crate) active_funding_subs: Arc<AtomicSet<InstrumentId>>,
     pub(crate) active_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     pub(crate) subscription_lock: Arc<Mutex<()>>,
+    pub(crate) book_sync: BookSyncTracker,
     pub(crate) trades_emitted: Arc<Mutex<FifoCache<TradeId, TRADE_DEDUP_CAPACITY>>>,
     pub(crate) quote_cache: Arc<Mutex<QuoteCache>>,
 }

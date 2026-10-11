@@ -44,6 +44,7 @@ create_case() {
   done
 
   for adapter_path in \
+    book/recovery.rs book/sync.rs \
     common/parse.rs common/rate_limit.rs \
     config.rs data.rs execution.rs \
     http/client.rs http/models.rs http/query.rs http/parse.rs \

@@ -41,6 +41,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     SocketControl,
+    book::snapshot::SnapshotGate,
     task::{SharedTaskSlot, TaskJoinOutcome, TaskSlot, finish_task},
 };
 use nautilus_network::{
@@ -54,6 +55,7 @@ use nautilus_network::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::value::RawValue;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 use zeroize::Zeroizing;
 
@@ -70,6 +72,7 @@ use super::{
     },
 };
 use crate::{
+    book::{recovery::BookRecovery, sync::BookSyncTracker},
     common::{
         consts::{
             RECONNECT_BACKOFF_FACTOR, RECONNECT_BASE_BACKOFF, RECONNECT_JITTER_MS,
@@ -163,6 +166,7 @@ pub struct DeriveWebSocketClient {
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>>,
     subscriptions: Arc<SubscriptionState>,
     subscription_lock: Arc<tokio::sync::Mutex<()>>,
+    book_sync: Option<(BookSyncTracker, Duration)>,
     task_handle: TaskSlot<()>,
     send_task: Arc<SharedTaskSlot<()>>,
     recovery_task: Arc<SharedTaskSlot<()>>,
@@ -179,6 +183,8 @@ pub struct DeriveWebSocketSubscriptionHandle {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     subscriptions: Arc<SubscriptionState>,
     subscription_lock: Arc<tokio::sync::Mutex<()>>,
+    book_sync: Option<(BookSyncTracker, Duration)>,
+    connection_epoch: Arc<ArcSwap<AtomicU64>>,
     request_timeout: Duration,
     rate_limiter: Arc<WsRateLimiter>,
 }
@@ -291,6 +297,7 @@ impl DeriveWebSocketClient {
             out_rx: None,
             subscriptions: Arc::new(SubscriptionState::new('.')),
             subscription_lock: Arc::new(tokio::sync::Mutex::new(())),
+            book_sync: None,
             task_handle: TaskSlot::new(),
             send_task: Arc::new(SharedTaskSlot::new()),
             recovery_task: Arc::new(SharedTaskSlot::new()),
@@ -300,6 +307,12 @@ impl DeriveWebSocketClient {
             rate_limiter,
             socket_control: None,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_book_sync(mut self, tracker: BookSyncTracker, timeout: Duration) -> Self {
+        self.book_sync = Some((tracker, timeout));
+        self
     }
 
     /// Configures socket state reporting and reconnect control.
@@ -451,7 +464,8 @@ impl DeriveWebSocketClient {
             self.auth_tracker.clone(),
             Arc::clone(&self.authenticated_epoch),
             Arc::clone(&self.send_task),
-        );
+        )
+        .with_book_sync(self.book_sync.clone());
 
         if let Err(e) = self.task_handle.spawn(run_session_handler(
             handler,
@@ -583,6 +597,11 @@ impl DeriveWebSocketClient {
         self.authenticated_epoch
             .store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
         self.subscriptions.clear();
+
+        if let Some((tracker, _)) = &self.book_sync {
+            tracker.clear();
+        }
+
         self.signal.store(false, Ordering::Relaxed);
 
         if let Some(control) = &self.socket_control {
@@ -747,6 +766,8 @@ impl DeriveWebSocketClient {
             cmd_tx: Arc::clone(&self.cmd_tx),
             subscriptions: Arc::clone(&self.subscriptions),
             subscription_lock: Arc::clone(&self.subscription_lock),
+            book_sync: self.book_sync.clone(),
+            connection_epoch: Arc::clone(&self.connection_epoch),
             request_timeout: self.request_timeout,
             rate_limiter: Arc::clone(&self.rate_limiter),
         }
@@ -978,6 +999,133 @@ impl Drop for DeriveWebSocketSetupGuard {
 }
 
 impl DeriveWebSocketSubscriptionHandle {
+    pub(crate) async fn subscribe_book_gated(&self, channel: String) -> Result<()> {
+        let _guard = self.subscription_lock.lock().await;
+        self.book_request_locked(methods::PUBLIC_SUBSCRIBE, channel, None, None)
+            .await
+    }
+
+    pub(crate) async fn replace_book_gated(
+        &self,
+        channel: String,
+        cancel: CancellationToken,
+        recovery: &Arc<BookRecovery>,
+        gate: SnapshotGate,
+    ) -> Result<()> {
+        let _guard = tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err(DeriveWsError::NotConnected),
+            guard = self.subscription_lock.lock() => guard,
+        };
+        self.book_sync
+            .as_ref()
+            .and_then(|(tracker, _)| tracker.begin_recovery_write(&channel, recovery, gate))
+            .ok_or(DeriveWsError::NotConnected)?;
+        let epoch = self.connection_epoch.load().load(Ordering::Acquire);
+
+        // Keep replay ownership through an interrupted replacement
+        self.remember_subscription(&channel);
+        self.book_request_locked(
+            methods::PUBLIC_UNSUBSCRIBE,
+            channel.clone(),
+            Some(cancel.clone()),
+            Some(epoch),
+        )
+        .await?;
+        self.book_request_locked(
+            methods::PUBLIC_SUBSCRIBE,
+            channel,
+            Some(cancel),
+            Some(epoch),
+        )
+        .await
+    }
+
+    async fn book_request_locked(
+        &self,
+        method: &'static str,
+        channel: String,
+        cancel: Option<CancellationToken>,
+        epoch: Option<u64>,
+    ) -> Result<()> {
+        let params = WsSubscribeParams {
+            channels: vec![DeriveWsChannel::from(channel.clone())],
+        };
+
+        self.remember_subscription(&channel);
+        self.rate_limiter
+            .await_class_ready(rate_class_for_method(method), None)
+            .await;
+
+        let write = self
+            .book_sync
+            .as_ref()
+            .and_then(|(tracker, _)| tracker.write(&channel))
+            .ok_or(DeriveWsError::NotConnected)?;
+        let generation = write.generation.clone();
+        let cancel = cancel.unwrap_or_else(|| generation.clone());
+        let epoch = epoch.unwrap_or_else(|| self.connection_epoch.load().load(Ordering::Acquire));
+
+        if cancel.is_cancelled() || generation.is_cancelled() {
+            return Err(DeriveWsError::NotConnected);
+        }
+
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        cmd_tx
+            .send(HandlerCommand::Request {
+                method,
+                params: SecretString::from(serde_json::to_string(&params)?),
+                connection_epoch: Some(epoch),
+                cancellation: Some(cancel.clone()),
+                response_tx,
+            })
+            .map_err(|_| DeriveWsError::NotConnected)?;
+
+        let result = tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err(DeriveWsError::NotConnected),
+            () = generation.cancelled() => return Err(DeriveWsError::NotConnected),
+            result = time::timeout(self.request_timeout, response_rx) => result,
+        };
+
+        let value = result
+            .map_err(|_| DeriveWsError::Timeout {
+                method: method.to_owned(),
+            })?
+            .map_err(|_| DeriveWsError::RequestCancelled {
+                method: method.to_owned(),
+            })??;
+
+        if method == methods::PUBLIC_SUBSCRIBE {
+            let result: WsSubscribeResult = decode_default_result(&value)?;
+            subscription_outcome(
+                &params.channels,
+                &result,
+                SUBSCRIPTION_REPLAY_ACCEPTED_STATUSES,
+                &self.subscriptions,
+            )
+        } else {
+            let result: WsUnsubscribeResult = decode_default_result(&value)?;
+
+            // The data client's channel registry retains ownership during replacement
+            let topic = DeriveWsChannel::from(channel.clone());
+
+            if result
+                .status
+                .get(&topic)
+                .is_some_and(|status| status.as_str() == "ok")
+                && !result.remaining_subscriptions.contains(&topic)
+            {
+                Ok(())
+            } else {
+                Err(DeriveWsError::Subscription {
+                    details: format!("{channel}: unsubscribe not confirmed"),
+                })
+            }
+        }
+    }
+
     pub(crate) fn has_subscription(&self, channel: &str) -> bool {
         let (name, symbol) = channel.split_once('.').unwrap_or((channel, ""));
         self.subscriptions
@@ -1593,6 +1741,7 @@ where
             method,
             params,
             connection_epoch,
+            cancellation: None,
             response_tx,
         })
         .map_err(|_| DeriveWsError::NotConnected)?;
@@ -2142,6 +2291,8 @@ mod tests {
     use std::{env, time::SystemTime};
 
     use axum::{Json, Router, routing::post};
+    use nautilus_common::live::dst::time::Instant;
+    use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
     use serde_json::Value;
 
@@ -2154,6 +2305,169 @@ mod tests {
         },
         http::{DeriveHttpClient, client::DeriveCredentials},
     };
+
+    #[rstest]
+    #[case::subscription_lock(false)]
+    #[case::rate_limit(true)]
+    #[tokio::test]
+    async fn test_queued_book_subscribe_uses_reconnected_generation(#[case] paced: bool) {
+        let tracker = BookSyncTracker::default();
+        let channel = "orderbook.ETH-USDC.1.10";
+        tracker.record_subscription(channel, InstrumentId::from("ETH-USDC.DERIVE"));
+        let client = DeriveWebSocketClient::new(
+            None,
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+        )
+        .with_book_sync(tracker.clone(), Duration::from_secs(10));
+        let mut handle = client.subscription_handle();
+
+        handle.rate_limiter = Arc::new(RequestLimiter::new(
+            RateLimits::new(None, None),
+            MonotonicClock,
+        ));
+        handle.connection_epoch.load().store(1, Ordering::Release);
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *handle.cmd_tx.write().await = cmd_tx;
+        if paced {
+            while handle
+                .rate_limiter
+                .try_class_ready(RateClass::NonMatching, None)
+                .is_ok()
+            {}
+        }
+
+        let lock = Arc::clone(&handle.subscription_lock);
+
+        let guard = if paced { None } else { Some(lock.lock().await) };
+        let request = handle.subscribe_book_gated(channel.to_owned());
+        tokio::pin!(request);
+        assert!(futures_util::poll!(&mut request).is_pending());
+
+        tracker.reset_on_reconnect(Duration::from_secs(10));
+        handle.connection_epoch.load().store(2, Ordering::Release);
+        drop(guard);
+        let ack: Value =
+            serde_json::from_str(include_str!("../../test_data/spot/ws_subscribe_ack.json"))
+                .unwrap();
+        tokio::time::timeout(Duration::from_secs(8), async {
+            tokio::join!(async { request.await.unwrap() }, async {
+                let HandlerCommand::Request {
+                    method,
+                    params,
+                    connection_epoch,
+                    cancellation,
+                    response_tx,
+                } = cmd_rx.recv().await.unwrap()
+                else {
+                    panic!("expected book subscribe request");
+                };
+                let params: Value = serde_json::from_str(params.expose_secret()).unwrap();
+                response_tx
+                    .send(Ok(serde_json::value::to_raw_value(&ack["result"]).unwrap()))
+                    .unwrap();
+
+                assert_eq!(method, methods::PUBLIC_SUBSCRIBE);
+                assert_eq!(params, serde_json::json!({"channels": [channel]}));
+                assert_eq!(connection_epoch, Some(2));
+                assert!(!cancellation.unwrap().is_cancelled());
+            },);
+        })
+        .await
+        .unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_replay_ack_cannot_open_queued_book_replacement() {
+        let tracker = BookSyncTracker::default();
+        let channel = "orderbook.ETH-USDC.1.10";
+        let now = Instant::now();
+        tracker.record_subscription(channel, InstrumentId::from("ETH-USDC.DERIVE"));
+        tracker.write(channel).unwrap().gate.open();
+        assert!(tracker.record_snapshot(channel, 100, None, now));
+        let recovery = tracker
+            .recoveries(Duration::from_secs(1), now + Duration::from_secs(2))
+            .pop()
+            .unwrap()
+            .2;
+        assert!(recovery.begin_replacement());
+        tracker.reset_on_reconnect(Duration::from_secs(10));
+        let client = DeriveWebSocketClient::new(
+            None,
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+        )
+        .with_book_sync(tracker.clone(), Duration::from_secs(10));
+        let mut handle = client.subscription_handle();
+
+        handle.rate_limiter = Arc::new(RequestLimiter::new(
+            RateLimits::new(None, None),
+            MonotonicClock,
+        ));
+        handle.connection_epoch.load().store(2, Ordering::Release);
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *handle.cmd_tx.write().await = cmd_tx;
+        let lock = Arc::clone(&handle.subscription_lock);
+        let guard = lock.lock().await;
+        let request = handle.replace_book_gated(
+            channel.to_owned(),
+            CancellationToken::new(),
+            &recovery,
+            recovery.gate.clone(),
+        );
+        tokio::pin!(request);
+        assert!(futures_util::poll!(&mut request).is_pending());
+        let replay = tracker.write(channel).unwrap();
+        replay.gate.open();
+        drop(guard);
+        let ack: Value =
+            serde_json::from_str(include_str!("../../test_data/spot/ws_subscribe_ack.json"))
+                .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::join!(async { request.await.unwrap() }, async {
+                for method in [methods::PUBLIC_UNSUBSCRIBE, methods::PUBLIC_SUBSCRIBE] {
+                    let HandlerCommand::Request {
+                        method: actual_method,
+                        params,
+                        connection_epoch,
+                        cancellation,
+                        response_tx,
+                    } = cmd_rx.recv().await.unwrap()
+                    else {
+                        panic!("expected book replacement request");
+                    };
+                    let current = tracker.write(channel).unwrap();
+                    assert!(current.gate.lock().is_closed());
+                    assert!(!tracker.record_snapshot(channel, 101, Some(&current.generation), now));
+                    assert!(replay.generation.is_cancelled());
+                    assert_eq!(actual_method, method);
+                    assert_eq!(
+                        serde_json::from_str::<Value>(params.expose_secret()).unwrap(),
+                        serde_json::json!({"channels": [channel]}),
+                    );
+                    assert_eq!(connection_epoch, Some(2));
+                    assert!(!cancellation.unwrap().is_cancelled());
+                    let result = if method == methods::PUBLIC_SUBSCRIBE {
+                        current.gate.open();
+                        ack["result"].clone()
+                    } else {
+                        serde_json::json!({"status": {channel: "ok"}, "remaining_subscriptions": []})
+                    };
+                    response_tx
+                        .send(Ok(serde_json::value::to_raw_value(&result).unwrap()))
+                        .unwrap();
+                }
+            });
+        })
+        .await
+        .unwrap();
+
+        assert!(tracker.record_snapshot(channel, 101, None, now));
+        assert!(recovery.is_accepted());
+    }
 
     #[tokio::test]
     async fn test_expired_matching_reservation_has_local_failure_evidence() {
