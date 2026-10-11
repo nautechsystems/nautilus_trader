@@ -20,7 +20,7 @@ use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrder
 use nautilus_core::{string::secret::SecretString, time::AtomicTime};
 use nautilus_live::execution::{context::OrderContext, failure::CommandFailure};
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType},
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::OrderDeniedReason,
     identifiers::VenueOrderId,
     instruments::{Instrument, InstrumentAny},
@@ -32,7 +32,9 @@ use rust_decimal::Decimal;
 use super::{
     PolymarketExecutionClient,
     cancellations::execute_deferred_cancel,
-    order_builder::{PolymarketOrderBuilder, signed_limit_order_quantity},
+    order_builder::{
+        PolymarketOrderBuilder, posted_limit_share_quantity, signed_limit_order_quantity,
+    },
     parse::{
         InvalidMarketPriceError, compute_commission, instrument_fee_exponent, instrument_taker_fee,
     },
@@ -55,7 +57,10 @@ use super::{
     types::{BatchLimitOrderContext, LimitOrderSubmitRequest, classify_http_command_failure},
 };
 use crate::{
-    common::consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE},
+    common::{
+        consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE},
+        enums::{PolymarketOrderSide, PolymarketOrderType},
+    },
     http::{
         error::{Error as HttpError, sanitize_error_text},
         query::GetTradesParams,
@@ -944,7 +949,17 @@ impl PolymarketExecutionClient {
             return;
         };
 
-        if let Some(reason) = replacement_below_lot_size_reason(replacement_qty) {
+        let market_minimum = market_minimum_order_size(&instrument);
+        let tick_decimals = u32::from(instrument.min_price_increment_precision());
+
+        if let Some(reason) = replacement_quantity_reject_reason(
+            &market_minimum,
+            order.order_side(),
+            price,
+            replacement_qty,
+            order.time_in_force(),
+            tick_decimals,
+        ) {
             reject(&reason);
             return;
         }
@@ -1020,7 +1035,6 @@ impl PolymarketExecutionClient {
         let client_order_id = cmd.client_order_id;
         let instrument_id = order.instrument_id();
         let token_id = instrument.raw_symbol().to_string();
-        let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let size_precision = instrument.size_precision();
         let neg_risk = self.get_neg_risk(&instrument_id);
         let signer_type = self.config.signer_type;
@@ -1363,7 +1377,14 @@ impl PolymarketExecutionClient {
                 return Ok(());
             }
 
-            if let Some(reason) = replacement_below_lot_size_reason(replacement_qty) {
+            if let Some(reason) = replacement_quantity_reject_reason(
+                &market_minimum,
+                order.order_side(),
+                price,
+                replacement_qty,
+                order.time_in_force(),
+                tick_decimals,
+            ) {
                 reject_modify(&reason, true, final_filled_qty < order.quantity());
                 return Ok(());
             }
@@ -1518,6 +1539,48 @@ impl PolymarketExecutionClient {
     }
 }
 
+fn market_minimum_order_size(instrument: &InstrumentAny) -> Result<Option<Decimal>, String> {
+    let Some(value) = instrument
+        .info()
+        .and_then(|info| info.get("min_order_size"))
+    else {
+        return Ok(None);
+    };
+    let Some(text) = value.as_str() else {
+        return Err(format!(
+            "Polymarket market minimum order size {value} is not a positive decimal quantity"
+        ));
+    };
+
+    match Decimal::from_str_exact(text) {
+        Ok(minimum) if minimum.is_sign_positive() && !minimum.is_zero() => Ok(Some(minimum)),
+        _ => Err(format!(
+            "Polymarket market minimum order size {text} is not a positive decimal quantity"
+        )),
+    }
+}
+
+fn replacement_quantity_reject_reason(
+    market_minimum: &Result<Option<Decimal>, String>,
+    side: OrderSide,
+    price: Price,
+    replacement_qty: Quantity,
+    time_in_force: TimeInForce,
+    tick_decimals: u32,
+) -> Option<String> {
+    if let Some(reason) = replacement_below_lot_size_reason(replacement_qty) {
+        return Some(reason);
+    }
+    replacement_market_minimum_reason(
+        market_minimum,
+        side,
+        price,
+        replacement_qty,
+        time_in_force,
+        tick_decimals,
+    )
+}
+
 /// Returns the rejection reason for a replacement quantity below the lot size, which would sign
 /// for zero shares.
 fn replacement_below_lot_size_reason(replacement_qty: Quantity) -> Option<String> {
@@ -1528,6 +1591,41 @@ fn replacement_below_lot_size_reason(replacement_qty: Quantity) -> Option<String
                 "Polymarket replacement amount {replacement_qty} shares truncates to zero at {LOT_SIZE_SCALE} decimal places"
             )
         })
+}
+
+fn replacement_market_minimum_reason(
+    market_minimum: &Result<Option<Decimal>, String>,
+    side: OrderSide,
+    price: Price,
+    replacement_qty: Quantity,
+    time_in_force: TimeInForce,
+    tick_decimals: u32,
+) -> Option<String> {
+    if let Err(reason) = market_minimum {
+        return Some(reason.clone());
+    }
+    let minimum = market_minimum.as_ref().ok().copied().flatten()?;
+
+    let Ok(order_type) = PolymarketOrderType::try_from(time_in_force) else {
+        return None;
+    };
+    let shares = match posted_limit_share_quantity(
+        PolymarketOrderSide::from(side),
+        price.as_decimal(),
+        replacement_qty.as_decimal(),
+        order_type,
+        tick_decimals,
+    ) {
+        Ok(shares) => shares,
+        Err(reason) => return Some(reason),
+    };
+    (shares < minimum).then(|| {
+        format!(
+            "Polymarket replacement amount {} shares is below the market minimum order size {}",
+            shares.normalize(),
+            minimum.normalize(),
+        )
+    })
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -1612,8 +1710,13 @@ pub(super) fn calculate_commission(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{instruments::stubs::binary_option, types::Currency};
+    use nautilus_model::{
+        enums::TimeInForce,
+        instruments::stubs::binary_option,
+        types::{Currency, Price, Quantity},
+    };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -1675,5 +1778,123 @@ mod tests {
         .unwrap();
 
         assert_eq!(commission, Money::from(expected));
+    }
+
+    fn instrument_with_min_order_size(value: Option<serde_json::Value>) -> InstrumentAny {
+        let mut binary = binary_option();
+
+        if let Some(value) = value {
+            let mut info = nautilus_core::Params::new();
+            info.insert("min_order_size".into(), value);
+            binary.info = Some(info);
+        }
+        InstrumentAny::BinaryOption(binary)
+    }
+
+    #[rstest]
+    #[case::absent(None, None)]
+    #[case::positive(Some(serde_json::json!("5")), Some(dec!(5)))]
+    fn test_market_minimum_order_size_reads_positive_decimal_string(
+        #[case] value: Option<serde_json::Value>,
+        #[case] expected: Option<Decimal>,
+    ) {
+        let instrument = instrument_with_min_order_size(value);
+
+        assert_eq!(market_minimum_order_size(&instrument).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::number(serde_json::json!(5))]
+    #[case::zero(serde_json::json!("0"))]
+    #[case::negative(serde_json::json!("-1"))]
+    #[case::text(serde_json::json!("five"))]
+    fn test_market_minimum_order_size_rejects_non_positive_decimal(
+        #[case] value: serde_json::Value,
+    ) {
+        let instrument = instrument_with_min_order_size(Some(value));
+
+        let error = market_minimum_order_size(&instrument).unwrap_err();
+
+        assert!(error.contains("is not a positive decimal quantity"));
+    }
+
+    #[rstest]
+    fn test_replacement_market_minimum_reason_rejects_signed_shares_below_minimum() {
+        let minimum = market_minimum_order_size(&instrument_with_min_order_size(Some(
+            serde_json::json!("5"),
+        )));
+
+        let reason = replacement_market_minimum_reason(
+            &minimum,
+            OrderSide::Buy,
+            Price::from("0.227"),
+            Quantity::from("5"),
+            TimeInForce::Fok,
+            3,
+        );
+
+        assert_eq!(
+            reason.as_deref(),
+            Some(
+                "Polymarket replacement amount 4.97798 shares is below the market minimum order size 5"
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_replacement_market_minimum_reason_allows_exact_minimum() {
+        let minimum = market_minimum_order_size(&instrument_with_min_order_size(Some(
+            serde_json::json!("5"),
+        )));
+
+        let reason = replacement_market_minimum_reason(
+            &minimum,
+            OrderSide::Sell,
+            Price::from("0.40"),
+            Quantity::from("5"),
+            TimeInForce::Gtc,
+            2,
+        );
+
+        assert_eq!(reason, None);
+    }
+
+    #[rstest]
+    fn test_replacement_market_minimum_reason_skips_absent_minimum() {
+        let minimum = market_minimum_order_size(&instrument_with_min_order_size(None));
+
+        let reason = replacement_market_minimum_reason(
+            &minimum,
+            OrderSide::Buy,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+            TimeInForce::Ioc,
+            2,
+        );
+
+        assert_eq!(reason, None);
+    }
+
+    #[rstest]
+    fn test_replacement_market_minimum_reason_rejects_zero_budget_when_minimum_is_present() {
+        let minimum = market_minimum_order_size(&instrument_with_min_order_size(Some(
+            serde_json::json!("5"),
+        )));
+
+        let reason = replacement_market_minimum_reason(
+            &minimum,
+            OrderSide::Buy,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+            TimeInForce::Ioc,
+            2,
+        );
+
+        assert_eq!(
+            reason.as_deref(),
+            Some(
+                "Polymarket FAK BUY maker amount 0.0001 pUSD truncates to zero at 2 decimal places"
+            )
+        );
     }
 }

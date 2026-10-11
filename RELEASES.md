@@ -98,6 +98,7 @@ Released on TBD (UTC).
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
 - Fixed Polymarket bounded restarts marking cached closed orders as incomplete
 - Fixed Polymarket bounded restarts omitting confirmed partial fills from resting orders
+- Fixed Polymarket modify canceling a working order when the signed replacement is below the market minimum
 - Fixed Polymarket recovered BUY overfills being rejected instead of raising order quantity
 
 ### Internal Improvements

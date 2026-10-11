@@ -10381,6 +10381,257 @@ async fn test_modify_order_guard_rejects_without_venue_requests(
 }
 
 #[rstest]
+#[case::below_minimum(
+    Some(json!("5")),
+    ("0.01", TimeInForce::Gtc, "10.0000", "0.5000", Some("7.0000"), "0.6000"),
+    "Polymarket replacement amount 3 shares is below the market minimum order size 5"
+)]
+#[case::non_string_minimum(
+    Some(json!(5)),
+    ("0.01", TimeInForce::Gtc, "10.0000", "0.5000", None, "0.6000"),
+    "Polymarket market minimum order size 5 is not a positive decimal quantity"
+)]
+#[case::immediate_buy_below_signed_shares(
+    Some(json!("5")),
+    ("0.001", TimeInForce::Fok, "5.0000", "0.226", None, "0.227"),
+    "Polymarket replacement amount 4.97798 shares is below the market minimum order size 5"
+)]
+#[case::immediate_buy_zero_budget(
+    Some(json!("5")),
+    ("0.01", TimeInForce::Ioc, "0.0100", "0.0100", None, "0.0200"),
+    "Polymarket FAK BUY maker amount 0.0002 pUSD truncates to zero at 2 decimal places"
+)]
+#[tokio::test]
+async fn test_modify_order_market_minimum_rejects_without_cancel(
+    #[case] min_order_size: Option<Value>,
+    #[case] order: (&str, TimeInForce, &str, &str, Option<&str>, &str),
+    #[case] expected_reason: &str,
+) {
+    let (tick_size, time_in_force, quantity, price, filled, new_price) = order;
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_tick(&cache, instrument_id, tick_size, 4);
+    set_min_order_size(&cache, instrument_id, min_order_size);
+    let venue_order_id = "0xmodify-min-size";
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-MODIFY-MIN-SIZE",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        time_in_force,
+        Price::from(price),
+        Quantity::from(quantity),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id);
+
+    if let Some(filled) = filled {
+        let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from("T-MODIFY-MIN-SIZE")),
+            None,
+            Some(Price::from(price)),
+            Some(Quantity::from(filled)),
+            Some(LiquiditySide::Maker),
+            None,
+            None,
+            Some(AccountId::from("POLYMARKET-001")),
+        );
+        order = cache.borrow_mut().update_order(&fill).unwrap();
+    }
+
+    client
+        .modify_order(make_modify_cmd(
+            "O-MODIFY-MIN-SIZE",
+            instrument_id,
+            None,
+            Some(Price::from(new_price)),
+        ))
+        .unwrap();
+
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "ModifyRejected");
+    assert_eq!(order_event_reason(&rejected), expected_reason);
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        order.status()
+    );
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .venue_order_id(),
+        Some(VenueOrderId::from(venue_order_id))
+    );
+    assert_eq!(*state.cancel_delete_count.lock().await, 0);
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_order_fill_during_cancel_below_market_minimum_is_not_submitted() {
+    let state = TestServerState::default();
+    let old_venue_order_id = "0xmodify-min-after-cancel";
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [old_venue_order_id],
+        "not_canceled": {}
+    }));
+    *state.single_order_response.lock().await = Some(canceled_order_response(
+        old_venue_order_id,
+        "10.0000",
+        "7.0000",
+        "0.5000",
+    ));
+    *state.trades_response_override.lock().await = Some(confirmed_taker_trade_response(
+        old_venue_order_id,
+        "modify-min-late-fill",
+        "7.0000",
+        "0.5000",
+    ));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    set_min_order_size(&cache, instrument_id, Some(json!("5")));
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-MODIFY-MIN-AFTER-CANCEL",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.5000"),
+        Quantity::from("10.0000"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, old_venue_order_id);
+    state
+        .open_order_ids
+        .lock()
+        .await
+        .insert(old_venue_order_id.to_string());
+
+    client
+        .modify_order(make_modify_cmd(
+            "O-MODIFY-MIN-AFTER-CANCEL",
+            instrument_id,
+            None,
+            Some(Price::from("0.6000")),
+        ))
+        .unwrap();
+
+    match recv_execution_event(&mut rx).await {
+        ExecutionEvent::Report(ExecutionReport::Fill(fill)) => {
+            assert_eq!(fill.venue_order_id, VenueOrderId::from(old_venue_order_id));
+            assert_eq!(fill.last_qty, Quantity::from("7.0000"));
+        }
+        other => panic!("Expected reconciled fill report, was {other:?}"),
+    }
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "ModifyRejected");
+    assert_eq!(
+        order_event_reason(&rejected),
+        "Polymarket replacement amount 3 shares is below the market minimum order size 5"
+    );
+    assert_order_event(recv_execution_event(&mut rx).await, "Canceled");
+    assert_eq!(*state.cancel_delete_count.lock().await, 1);
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_order_at_market_minimum_submits_replacement() {
+    let state = TestServerState::default();
+    let old_venue_order_id = "0xmodify-at-minimum";
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [old_venue_order_id],
+        "not_canceled": {}
+    }));
+    *state.single_order_response.lock().await = Some(canceled_order_response(
+        old_venue_order_id,
+        "5.0000",
+        "0.0000",
+        "0.5000",
+    ));
+    *state.trades_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    set_min_order_size(&cache, instrument_id, Some(json!("5")));
+    let mut order = make_limit_order_at_price_and_quantity(
+        "O-MODIFY-AT-MINIMUM",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.5000"),
+        Quantity::from("5.0000"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, old_venue_order_id);
+    state
+        .open_order_ids
+        .lock()
+        .await
+        .insert(old_venue_order_id.to_string());
+
+    client
+        .modify_order(make_modify_cmd(
+            "O-MODIFY-AT-MINIMUM",
+            instrument_id,
+            None,
+            Some(Price::from("0.6000")),
+        ))
+        .unwrap();
+
+    let updated = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    let OrderEventAny::Updated(updated) = updated else {
+        unreachable!("assert_order_event checked the variant")
+    };
+    assert_eq!(updated.quantity, Quantity::from("5.0000"));
+    assert_eq!(updated.price, Some(Price::from("0.6000")));
+    assert_ne!(
+        updated.venue_order_id,
+        Some(VenueOrderId::from(old_venue_order_id))
+    );
+    assert_eq!(*state.order_post_count.lock().await, 1);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_modify_order_task_admission_failure_clears_pending_state() {
     let state = TestServerState::default();
@@ -12318,6 +12569,29 @@ fn replace_fee_schedule(
             "rebateRate": "0",
         }),
     );
+    binary.info = Some(info);
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+}
+
+fn set_min_order_size(
+    cache: &Rc<RefCell<Cache>>,
+    instrument_id: InstrumentId,
+    min_order_size: Option<Value>,
+) {
+    let mut instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    let InstrumentAny::BinaryOption(binary) = &mut instrument else {
+        panic!("expected binary option test instrument");
+    };
+    let mut info = binary.info.take().unwrap_or_default();
+
+    match min_order_size {
+        Some(value) => {
+            info.insert("min_order_size".into(), value);
+        }
+        None => {
+            info.shift_remove("min_order_size");
+        }
+    }
     binary.info = Some(info);
     cache.borrow_mut().add_instrument(instrument).unwrap();
 }

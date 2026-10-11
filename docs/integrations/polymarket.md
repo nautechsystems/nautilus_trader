@@ -742,7 +742,8 @@ Read each market's `min_order_size` from its order book; active markets commonly
 shares. Marketable orders can also be rejected below **1 pUSD** in notional value with
 `invalid amount for a marketable BUY order … min size: $1`. The adapter leaves instrument
 `min_quantity` unset because quote-sized BUY quantities use pUSD while base-sized orders use
-shares.
+shares. Submit still sends an undersized order for the venue to reject. Modify checks the cached
+share minimum before and after cancel. See [Order modification](#order-modification).
 
 ### Advanced order features
 
@@ -765,6 +766,17 @@ The target must leave a replacement of at least one 0.01 lot after the filled qu
 quantity voided without reopening. The adapter rejects a modify that does not before it cancels
 the venue order. Fills that arrive while the cancel is in flight can still take the replacement
 below a lot, in which case the modify is rejected and the order closes as canceled.
+
+When cached instrument `info["min_order_size"]` is a positive decimal string, the signed
+replacement share quantity must meet it. For a `FAK` or `FOK` BUY, that quantity is derived from
+the cent-truncated pUSD budget. The adapter rejects the modify before it cancels when the signed
+quantity is below that minimum, when the stored value is present but not a positive decimal
+string, or when a minimum is set but the signed amounts cannot be derived. A missing
+`min_order_size` key skips the minimum check. After the cancel, the adapter repeats these checks
+on the remaining quantity, using the instrument minimum captured when the modify started, not a
+fresh order-book read. An undersized remainder is not posted, the modify is rejected, and the
+order closes as canceled. A marketable replacement can still be rejected below 1 pUSD after the
+cancel.
 
 The adapter submits no replacement unless the cancel response, canceled order state, and confirmed
 trade totals agree. An ambiguous cancel emits `OrderModifyRejected`. An ambiguous replacement stays
