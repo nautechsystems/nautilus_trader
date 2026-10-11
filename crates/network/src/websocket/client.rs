@@ -3929,7 +3929,8 @@ mod tests {
         transport::{Message, TransportError},
         websocket::{
             InitialConnectRetryPolicy, ReconnectHeaders, TransportBackend, WebSocketClient,
-            WebSocketConfig, types::WriterCommand,
+            WebSocketConfig,
+            types::{WriterCommand, channel_message_handler},
         },
     };
 
@@ -4717,8 +4718,6 @@ mod tests {
         assert!(client.is_disconnected());
     }
 
-    // A close reason is fully server-controlled: the logged line must escape its control
-    // characters rather than let a hostile venue forge log lines or terminal sequences.
     #[rstest]
     #[tokio::test]
     async fn test_peer_close_frame_is_forwarded_to_handler() {
@@ -4754,7 +4753,7 @@ mod tests {
             .await
             .unwrap();
 
-        let message = tokio::time::timeout(TEST_TIMEOUT, handler_rx.recv())
+        let message = tokio::time::timeout(Duration::from_secs(10), handler_rx.recv())
             .await
             .expect("close frame was not forwarded")
             .expect("handler channel closed");
@@ -4767,6 +4766,8 @@ mod tests {
         client.disconnect().await;
     }
 
+    // A close reason is fully server-controlled: the logged line must escape its control
+    // characters rather than let a hostile venue forge log lines or terminal sequences.
     #[rstest]
     #[tokio::test]
     async fn test_close_frame_reason_is_sanitized_in_logs() {
