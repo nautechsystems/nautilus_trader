@@ -58,9 +58,10 @@ use super::{
     account_state::LighterAccountStateReconciler,
     error::LighterWsError,
     messages::{
-        AccountStream, CANCEL_BATCH_ID_PREFIX, ExecutionReport, LighterAsset, LighterPosition,
-        LighterUserStats, LighterWsCandle, LighterWsChannel, LighterWsChannelKind, LighterWsFrame,
+        AccountStream, ExecutionReport, LighterAsset, LighterPosition, LighterUserStats,
+        LighterWsCandle, LighterWsChannel, LighterWsChannelKind, LighterWsFrame,
         LighterWsOrderBook, LighterWsRequest, NautilusWsMessage, SendTxRejectionSource,
+        TX_BATCH_ID_PREFIX,
     },
     parse::{
         parse_ws_bar, parse_ws_funding_rate_update, parse_ws_index_price_update,
@@ -1117,7 +1118,7 @@ impl FeedHandler {
             || value
                 .get("id")
                 .and_then(|v| v.as_str())
-                .is_some_and(|id| id.starts_with(CANCEL_BATCH_ID_PREFIX))
+                .is_some_and(|id| id.starts_with(TX_BATCH_ID_PREFIX))
         {
             let body = value.get("error").unwrap_or(value);
             let id = value.get("id").and_then(|v| v.as_str());
@@ -3651,8 +3652,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case::ack(serde_json::json!({"type":"jsonapi/sendtxbatch","id":"cancel-batch:abc","code":200,"tx_hash":["abc","def"]}), 200, "batch rejected", vec!["abc", "def"])]
-    #[case::error(serde_json::json!({"id":"cancel-batch:abc","error":{"code":21104,"message":"invalid nonce"}}), 21104, "invalid nonce", vec![])]
+    #[case::ack(serde_json::json!({"type":"jsonapi/sendtxbatch","id":"tx-batch:abc","code":200,"tx_hash":["abc","def"]}), 200, "batch rejected", vec!["abc", "def"])]
+    #[case::error(serde_json::json!({"id":"tx-batch:abc","error":{"code":21104,"message":"invalid nonce"}}), 21104, "invalid nonce", vec![])]
     fn batch_response_preserves_correlation_and_epoch(
         #[case] value: serde_json::Value,
         #[case] expected_code: i64,
@@ -3672,7 +3673,7 @@ mod tests {
                 tx_hashes,
             } => {
                 assert_eq!(connection_epoch, 7);
-                assert_eq!(id, "cancel-batch:abc");
+                assert_eq!(id, "tx-batch:abc");
                 assert_eq!(code, expected_code);
                 assert_eq!(message, expected_message);
                 assert_eq!(tx_hashes, expected_hashes);

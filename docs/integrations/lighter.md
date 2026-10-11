@@ -74,7 +74,7 @@ The command does not confirm or retry requests. Success means it submitted the c
 discovered closes without a known error, not that the account is flat. Check account state afterward
 and rerun if anything remains. Each run submits at most 15 closes: cancellation uses one slot in
 the 16-transaction nonce window. An incomplete snapshot, request failure, or submission failure
-returns an error.
+returns an error. The position close pass times out after 15 minutes.
 
 Set `LIGHTER_DEPLOYMENT` to `lighter` or `robinhood` and `LIGHTER_ENVIRONMENT` to `mainnet` or
 `testnet`; omitted selectors default to Lighter Mainnet and select the matching credential
@@ -82,26 +82,31 @@ namespace.
 
 ## Product support
 
+Capability matrices describe adapter support. *Not supported by Lighter* identifies a venue API
+limitation; *Not currently implemented* identifies an adapter gap.
+
 | Product type      | Data feed | Trading | Notes                                                     |
 | ----------------- | --------- | ------- | --------------------------------------------------------- |
 | Spot              | ✓         | ✓       | Spot markets; new listings use 64-bit ids from 4095.      |
 | Perpetual futures | ✓         | ✓       | Linear perpetuals; new listings use 64-bit ids from 4095. |
-| Dated futures     | -         | -       | *Not supported*.                                          |
-| Options           | -         | -       | *Not supported*.                                          |
+| Dated futures     | -         | -       | *Not supported by Lighter*.                               |
+| Options           | -         | -       | *Not supported by Lighter*.                               |
 
 ## Limitations
 
 The adapter has these limits:
 
-- Grouped order lists, OCO/OTO groups, brackets, TWAP, trailing stops, and iceberg display size are
-  not implemented. Batch submit does not use `CreateGroupedOrders`.
-- Order lists submit up to 15 independent transactions sequentially over WebSocket. Explicit batch
-  cancellation also accepts at most 15 transactions per command.
+- Grouped order lists, OCO/OTO groups, brackets, and TWAP are not implemented by the adapter.
+  Lighter supports these features; batch submit does not use `CreateGroupedOrders`. Its trading API
+  has no trailing-stop order type or iceberg display-size field.
+- Order lists, batch modifications, and explicit batch cancellations automatically split supported
+  children into native WebSocket batches of up to 15 transactions.
 - The execution client implements `CancelAllOrders` from cached open orders on its account, filtered
   by the requested instrument and optional `order_side`, across strategies. Each cancellation retains
-  the order's owning strategy. The native cancel-all transaction cannot enforce the side filter, and the local
-  signing schema has no market restriction. Explicit per-order cancellations preserve these filters
-  and are sent in WebSocket batches of up to 15 transactions.
+  the order's owning strategy. The adapter's cancel-all signing schema is account-wide. Lighter's
+  [newer signer](https://apidocs.lighter.xyz/docs/wasm-signer#signcancelallorders) exposes a market
+  restriction, but no side filter. Explicit per-order cancellations preserve both filters and are
+  sent in WebSocket batches of up to 15 transactions.
 - Spot trading supports market and limit orders. Conditional stop-loss and take-profit orders are
   limited to perpetual markets.
 - Account state and position reports come from private WebSocket streams. `query_account` and
@@ -286,19 +291,19 @@ variables before calling it.
 
 ## Data subscriptions
 
-| Data type            | Sub.         | Snapshot | Hist. | Nautilus type       | Notes                                                    |
-| -------------------- | ------------ | -------- | ----- | ------------------- | -------------------------------------------------------- |
-| Instrument metadata  | Cache replay | ✓        | -     | `InstrumentAny`     | Loaded from `orderBookDetails`.                          |
-| Trade ticks          | ✓            | -        | ✓     | `TradeTick`         | WebSocket trades; public `recentTrades` REST history.    |
-| Quote ticks          | ✓            | -        | -     | `QuoteTick`         | Best bid and ask ticker stream.                          |
-| Order book deltas    | ✓            | ✓        | -     | `OrderBookDeltas`   | `L2_MBP` only.                                           |
-| Order book depth     | ✓            | -        | -     | `OrderBookDepth`    | Live top-10 view from maintained book; no REST snapshot. |
-| Order book snapshots | -            | ✓        | -     | `OrderBook`         | REST snapshot, max depth 250.                            |
-| Mark prices          | ✓            | -        | -     | `MarkPriceUpdate`   | Perp market stats stream.                                |
-| Index prices         | ✓            | -        | -     | `IndexPriceUpdate`  | Market and spot stats streams.                           |
-| Funding rates        | ✓            | -        | ✓     | `FundingRateUpdate` | Current estimates and REST hourly history.               |
-| Bars                 | ✓            | -        | ✓     | `Bar`               | WebSocket candle stream; REST history for backfill.      |
-| Instrument status    | REST         | ✓        | -     | `InstrumentStatus`  | `active` / `inactive` snapshots.                         |
+| Data type            | Sub.         | Snapshot | Hist. | Nautilus type       | Notes                                                 |
+| -------------------- | ------------ | -------- | ----- | ------------------- | ----------------------------------------------------- |
+| Instrument metadata  | Cache replay | ✓        | -     | `InstrumentAny`     | Loaded from `orderBookDetails`.                       |
+| Trade ticks          | ✓            | -        | ✓     | `TradeTick`         | WebSocket trades; public `recentTrades` REST history. |
+| Quote ticks          | ✓            | -        | -     | `QuoteTick`         | Live BBO; history *Not supported by Lighter*.         |
+| Order book deltas    | ✓            | ✓        | -     | `OrderBookDeltas`   | `L2_MBP`; history *Not supported by Lighter*.         |
+| Order book depth     | ✓            | -        | -     | `OrderBookDepth`    | Live top-10; REST *Not currently implemented*.        |
+| Order book snapshots | -            | ✓        | -     | `OrderBook`         | REST snapshot; aggregates up to 250 orders per side.  |
+| Mark prices          | ✓            | -        | -     | `MarkPriceUpdate`   | Perp market stats stream.                             |
+| Index prices         | ✓            | -        | -     | `IndexPriceUpdate`  | Market and spot stats streams.                        |
+| Funding rates        | ✓            | -        | ✓     | `FundingRateUpdate` | Current estimates and REST hourly history.            |
+| Bars                 | ✓            | -        | ✓     | `Bar`               | WebSocket candle stream; REST history for backfill.   |
+| Instrument status    | REST         | ✓        | -     | `InstrumentStatus`  | `active` / `inactive` snapshots.                      |
 
 ### Order book data
 
@@ -317,8 +322,10 @@ Bar subscriptions use `candle/{market_id}/{resolution}`. Lighter batches open-ca
 ~500 ms. The adapter emits a `Bar` only when the candle start timestamp advances, giving consumers
 one event per closed period. Reconnect and unsubscribe clear the in-progress cache.
 
-The stream supports `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `12h`, and `1d`. `1w` is REST-only via
-`request_bars`; subscribing to a `1-WEEK` bar type returns an error.
+REST and WebSocket support `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `12h`, and `1d`.
+The adapter accepts `1w` for REST requests, but Lighter Mainnet rejects that resolution with
+`20001 invalid param`; the [REST schema](https://apidocs.lighter.xyz/reference/candles) does not list
+it. Weekly subscriptions return an error locally. Aggregate shorter bars to obtain weekly data.
 
 REST bar history omits venue gap rows whose open, high, low, or close is missing, null, zero, or
 negative. These rows cannot form valid Nautilus bars and do not stop later valid rows from loading.
@@ -451,10 +458,10 @@ the derived client index can query active orders only. Duplicate active matches 
 | `STOP_LIMIT`           | ✓          | -    | Perp only; maps to Lighter stop-loss limit orders.      |
 | `MARKET_IF_TOUCHED`    | ✓          | -    | Perp only; cap derived from `trigger_price` + slippage. |
 | `LIMIT_IF_TOUCHED`     | ✓          | -    | Perp only; maps to Lighter take-profit limit orders.    |
-| `MARKET_TO_LIMIT`      | -          | -    | *Not supported*.                                        |
-| `TRAILING_STOP_MARKET` | -          | -    | *Not supported*.                                        |
-| `TRAILING_STOP_LIMIT`  | -          | -    | *Not supported*.                                        |
-| `TWAP`                 | -          | -    | *Not supported*; no Nautilus mapping.                   |
+| `MARKET_TO_LIMIT`      | -          | -    | *Not supported by Lighter*.                             |
+| `TRAILING_STOP_MARKET` | -          | -    | *Not supported by Lighter*.                             |
+| `TRAILING_STOP_LIMIT`  | -          | -    | *Not supported by Lighter*.                             |
+| `TWAP`                 | -          | -    | *Not currently implemented*; no Nautilus mapping.       |
 
 Every conditional order requires `trigger_price`. The adapter rejects missing triggers, triggers
 that truncate to `0` ticks at the instrument's price precision, and all spot conditional orders.
@@ -467,18 +474,23 @@ the instrument's price precision: up for buys, down for sells. A `MARKET` order 
 
 ### Contingent orders
 
-| Feature               | Perpetuals | Spot | Notes                                              |
-| --------------------- | ---------- | ---- | -------------------------------------------------- |
-| Stop-loss market      | ✓          | -    | `STOP_MARKET` maps to Lighter `STOP_LOSS`.         |
-| Stop-loss limit       | ✓          | -    | `STOP_LIMIT` maps to Lighter `STOP_LOSS_LIMIT`.    |
-| Take-profit market    | ✓          | -    | `MARKET_IF_TOUCHED` maps to Lighter `TAKE_PROFIT`. |
-| Take-profit limit     | ✓          | -    | `LIMIT_IF_TOUCHED` maps to `TAKE_PROFIT_LIMIT`.    |
-| Trigger price         | ✓          | -    | Required for every supported conditional order.    |
-| Trigger price type    | -          | -    | *Not supported*; no trigger source selector.       |
-| Grouped order lists   | -          | -    | *Not supported*.                                   |
-| OCO / OTO orders      | -          | -    | *Not supported*.                                   |
-| Bracket orders        | -          | -    | *Not supported*.                                   |
-| `CreateGroupedOrders` | -          | -    | *Not supported*; order lists use independent txs.  |
+| Feature                  | Perpetuals | Spot | Notes                                                 |
+| ------------------------ | ---------- | ---- | ----------------------------------------------------- |
+| Stop-loss market         | ✓          | -    | `STOP_MARKET` maps to Lighter `STOP_LOSS`.            |
+| Stop-loss limit          | ✓          | -    | `STOP_LIMIT` maps to Lighter `STOP_LOSS_LIMIT`.       |
+| Take-profit market       | ✓          | -    | `MARKET_IF_TOUCHED` maps to Lighter `TAKE_PROFIT`.    |
+| Take-profit limit        | ✓          | -    | `LIMIT_IF_TOUCHED` maps to `TAKE_PROFIT_LIMIT`.       |
+| Trigger price            | ✓          | -    | Required for every supported conditional order.       |
+| Trigger source selection | -          | -    | *Not supported by Lighter*; mark-price triggers only. |
+| Grouped order lists      | -          | -    | *Not currently implemented*.                          |
+| OCO / OTO orders         | -          | -    | *Not currently implemented*.                          |
+| Bracket orders           | -          | -    | *Not currently implemented*; venue supports OTOCO.    |
+| `CreateGroupedOrders`    | -          | -    | *Not currently implemented*; independent txs only.    |
+
+Lighter supports OTO, OCO, and OTOCO through
+[`CreateGroupedOrders`](https://apidocs.lighter.xyz/docs/trading#stop-loss-and-take-profit).
+Native transaction batching does not add these relationships to independent order lists.
+Conditional orders use [mark-price triggers](https://docs.lighter.xyz/trading/order-types-and-matching#trigger-conditions).
 
 ### Order options
 
@@ -486,16 +498,16 @@ the instrument's price precision: up for buys, down for sells. A `MARKET` order 
 | ---------------- | ---------- | ---- | ------------------------------------------------------------------------- |
 | `post_only`      | ✓          | ✓    | Maps to Lighter's post-only time-in-force.                                |
 | `reduce_only`    | ✓          | -    | Passed through to `CreateOrder`; use only to reduce an existing position. |
-| `quote_quantity` | -          | -    | *Not supported*; submit base quantity instead.                            |
-| `display_qty`    | -          | -    | *Not supported*; Lighter exposes no iceberg display quantity field.       |
+| `quote_quantity` | -          | -    | *Not supported by Lighter*; submit base quantity instead.                 |
+| `display_qty`    | -          | -    | *Not supported by Lighter*; no iceberg display quantity field.            |
 
 ### Adapter order params
 
 | Param                                      | Perpetuals | Spot | Notes                                               |
 | ------------------------------------------ | ---------- | ---- | --------------------------------------------------- |
 | `market_order_slippage_bps`                | ✓          | ✓    | Overrides the config default for market-style caps. |
-| `post_only` through `SubmitOrder.params`   | -          | -    | *Not supported*; use the Nautilus order flag.       |
-| `reduce_only` through `SubmitOrder.params` | -          | -    | *Not supported*; use the Nautilus order flag.       |
+| `post_only` through `SubmitOrder.params`   | -          | -    | *Not currently implemented*; use the order flag.    |
+| `reduce_only` through `SubmitOrder.params` | -          | -    | *Not currently implemented*; use the order flag.    |
 
 ### Time in force
 
@@ -505,9 +517,9 @@ the instrument's price precision: up for buys, down for sells. A `MARKET` order 
 | `DAY`          | ✓          | ✓    | Limit-style and conditional orders use a positive order expiry.               |
 | `GTD`          | ✓          | ✓    | Native expiry is 5 minutes to 30 days; see the managed-GTD policy below.      |
 | `IOC`          | ✓          | ✓    | Plain `MARKET`/`LIMIT` use expiry `0`; conditional limit uses trigger expiry. |
-| `FOK`          | -          | -    | *Not supported*.                                                              |
-| `AT_THE_OPEN`  | -          | -    | *Not supported*.                                                              |
-| `AT_THE_CLOSE` | -          | -    | *Not supported*.                                                              |
+| `FOK`          | -          | -    | *Not supported by Lighter*.                                                   |
+| `AT_THE_OPEN`  | -          | -    | *Not supported by Lighter*.                                                   |
+| `AT_THE_CLOSE` | -          | -    | *Not supported by Lighter*.                                                   |
 
 The adapter sends `MARKET`, `STOP_MARKET`, and `MARKET_IF_TOUCHED` as Lighter
 `ImmediateOrCancel`; the venue rejects market-style `GoodTillTime` orders. Plain `MARKET` uses
@@ -552,22 +564,33 @@ them as `INFLIGHT_TIMEOUT` rather than a venue-supplied rejection reason.
 | Feature            | Perpetuals | Spot | Notes                                                      |
 | ------------------ | ---------- | ---- | ---------------------------------------------------------- |
 | Order modification | ✓          | ✓    | Modify quantity, price, and trigger price on a live order. |
-| Bracket orders     | -          | -    | *Not supported*.                                           |
-| Iceberg orders     | -          | -    | *Not supported*.                                           |
-| Trailing stops     | -          | -    | *Not supported*.                                           |
-| Pegged orders      | -          | -    | *Not supported*.                                           |
-| TWAP orders        | -          | -    | *Not supported*; no Nautilus mapping.                      |
+| Bracket orders     | -          | -    | *Not currently implemented*; venue supports OTOCO.         |
+| Iceberg orders     | -          | -    | *Not supported by Lighter*.                                |
+| Trailing stops     | -          | -    | *Not supported by Lighter*.                                |
+| Pegged orders      | -          | -    | *Not supported by Lighter*; no native pegged API type.     |
+| TWAP orders        | -          | -    | *Not currently implemented*; no Nautilus mapping.          |
+| Chase limit orders | -          | -    | *Not currently implemented*.                               |
+| Atomic baskets     | -          | -    | *Not currently implemented*.                               |
 | Leverage update    | ✓          | -    | Perp only; submits a signed `UpdateLeverage` tx.           |
-| Native cancel-all  | -          | -    | *Not supported*; adapter scopes cancel-all per instrument. |
-| Dead man's switch  | -          | -    | *Not supported*.                                           |
+| Native cancel-all  | -          | -    | *Not currently implemented* in the execution client.       |
+| Dead man's switch  | -          | -    | *Not currently implemented*; venue has scheduled cancel.   |
+
+Lighter exposes immediate and scheduled cancellation through
+[`CancelAllOrders`](https://apidocs.lighter.xyz/docs/wasm-signer#signcancelallorders).
+The execution client uses per-order cancellations; the standalone `lighter-flatten` command uses
+immediate native account-wide cancellation. The adapter does not schedule or renew cancellation
+deadlines. Lighter also describes
+[chase limit orders and atomic baskets](https://docs.lighter.xyz/trading/order-types-and-matching#advanced-orders),
+which the adapter does not expose. Ordinary transaction batches execute each child independently.
 
 ### Order operations
 
 | Operation           | Perpetuals | Spot | Notes                                                          |
 | ------------------- | ---------- | ---- | -------------------------------------------------------------- |
 | Submit order        | ✓          | ✓    | Sends a signed `L2CreateOrder` transaction over WebSocket.     |
-| Submit order list   | ✓          | ✓    | Sequential fanout of up to 15 independent create transactions. |
+| Submit order list   | ✓          | ✓    | WebSocket batches of up to 15 independent create transactions. |
 | Modify order        | ✓          | ✓    | Sends a signed `ModifyOrder`; reports may restate accepts.     |
+| Batch modify orders | ✓          | ✓    | WebSocket batches of up to 15 signed modify transactions.      |
 | Cancel order        | ✓          | ✓    | Sends a signed `L2CancelOrder` transaction.                    |
 | Cancel all orders   | ✓          | ✓    | Cancels cached orders by instrument and optional side.         |
 | Set leverage        | ✓          | -    | Perp only; submits a signed `UpdateLeverage` tx.               |
@@ -576,37 +599,46 @@ them as `INFLIGHT_TIMEOUT` rather than a venue-supplied rejection reason.
 | Query account       | ✓          | ✓    | Replays the latest private WebSocket account state.            |
 | Mass status         | ✓          | ✓    | Bounded to account-active markets from WS and REST reports.    |
 
-#### Order lists and batch cancellations
+#### Order lists and batch operations
 
-`SubmitOrderList` signs and sends each child transaction in order through the hash-correlated
-WebSocket `sendTx` path, allocating each nonce after the prior handoff completes.
+`SubmitOrderList`, `BatchModifyOrders`, and `BatchCancelOrders` use WebSocket
+`jsonapi/sendtxbatch`. Each child retains its own signed transaction and order-event attribution.
+Local validation denies invalid submit children or rejects invalid modify children while supported
+siblings continue. These commands split supported children into batches of up to 15 transactions;
+31 supported children normally produce batches of 15, 15, and 1. Each batch uses a separate
+rate-limiter token and acknowledgement, and a rejected batch affects only its children. Concurrent
+nonce allocation or nonce recovery can produce smaller batches. `CancelAllOrders` uses the same
+batching path, preserving any side filter. Venue [active-order limits](#active-and-pending-order-limits)
+still apply: splitting a command does not increase the number of orders the account can hold on a market.
 
-`BatchCancelOrders` uses WebSocket `jsonapi/sendtxbatch` with sequential nonces from the same API key.
-`CancelAllOrders` chunks selected orders into batches of up to 15, preserving any side filter.
-Explicit `BatchCancelOrders` requests above 15 orders are rejected. Cancelling 45 orders normally
-produces three batches, but concurrent nonce allocation can make them smaller. Venue
-[active-order limits](#active-and-pending-order-limits) still apply: Standard accounts cannot hold
-45 active orders on one market.
+The adapter caps batches at 15 transactions. Lighter's
+[trading guide](https://apidocs.lighter.xyz/docs/trading#batch) describes a maximum of 50, while its
+[WebSocket reference](https://apidocs.lighter.xyz/docs/websocket-reference#send-batch-tx) states 15.
+The adapter uses the lower documented limit.
 
 Each batch uses one account and API key with consecutive nonces, as required by Lighter's
 [nonce contract](https://apidocs.lighter.xyz/docs/core-concepts#nonce). The adapter uses
 `skip_nonce=0`, so it must preserve nonce order. Its local window permits 16 unconfirmed nonce
 allocations per key; this is an adapter capacity limit, not a venue allowance for out-of-order
-transactions. Unsigned cancellations wait for capacity or nonce recovery instead of being discarded.
+transactions. Unsigned batch children wait for capacity or nonce recovery instead of being discarded.
 Shutdown stops new dispatch and drops any remaining queued work. Batch responses correlate through
 the request ID and each signed transaction hash.
 
 A pre-admission rejection fails the whole batch without consuming its nonces; an invalid-nonce
 response also triggers nonce refresh. An acknowledgement confirms transaction admission, not order
-cancellation. Individual cancellations can fail after admission while other transactions in the batch
-succeed; these execution failures consume their nonces. Order updates and transaction lookups resolve
-each batched cancellation, including orders not in `PendingCancel`, such as those selected by
-`CancelAllOrders`. For cached orders, the adapter emits `OrderCancelRejected` only if the order is
-`PendingCancel` when the cancel is dispatched; otherwise it logs the failure.
+acceptance, modification, or cancellation. Individual transactions can fail after admission while
+others in the batch succeed. Failures while applying a transaction consume its nonce; sequencer
+rejections before application can leave the nonce unconsumed and invalidate later nonces on that
+key. See [nonce consumption](https://apidocs.lighter.xyz/docs/core-concepts#when-a-rejected-transaction-consumes-its-nonce).
+Order updates and transaction lookups resolve create and cancel children. Modify children rely on order updates;
+the acknowledgement probe checks order status only, so failures after admission can remain pending
+and require reconciliation. Cancellation recovery includes orders not in `PendingCancel`, such as
+those selected by `CancelAllOrders`. For cached orders, the adapter emits `OrderCancelRejected` only
+if the order is `PendingCancel` when the cancel is dispatched; otherwise it logs the failure.
 Ambiguous delivery retains pending state for reconciliation instead of resending the batch.
 Before signing the next chunk, the adapter waits up to 10 seconds for the current chunk's
 acknowledgements. On timeout, dispatch continues and retains unacknowledged entries for reconciliation.
-Order lists and batch cancellations provide no atomic execution, grouped orders, OCO/OTO, or bracket semantics.
+Batch operations provide no atomic execution, grouped orders, OCO/OTO, or bracket semantics.
 
 #### Leverage updates and signing validation
 
@@ -645,9 +677,9 @@ incompleteness does not veto a position report. Bounded historical fills without
 report follow the engine's
 [order-only projection](../concepts/execution/reconciliation.md#order-only-fill-projection) rules.
 
-The `trades` endpoint retains only the most recent 3,000 trades per `account_index`, so a bounded
-lookback can request more fill history than the venue serves. Pagination walks back from the newest
-trade, and only a trade older than the lookback start proves the window was served:
+The [`trades` reference](https://apidocs.lighter.xyz/reference/trades) does not guarantee a retained-history
+depth. A bounded lookback can request more fill history than the venue serves. Pagination walks back
+from the newest trade, and only a trade older than the lookback start proves the window was served:
 
 - Trade older than the start: the report set stays complete.
 - Cursor exhausted first: the adapter logs the uncovered span and marks the report set incomplete.
@@ -694,16 +726,22 @@ snapshot covers it. Unmapped or malformed rows leave mass status incomplete inst
 Incremental `update/account_all_positions` frames replace non-zero positions and flatten explicit
 zero rows. Omitted markets remain cached, and an empty update retains all positions.
 
-| Feature                 | Perpetuals | Spot | Notes                                                        |
-| ----------------------- | ---------- | ---- | ------------------------------------------------------------ |
-| Account balances        | ✓          | ✓    | Merged assets + `user_stats`, replayed from cache on query.  |
-| Position state          | ✓          | -    | Perp only; initial snapshot plus live updates.               |
-| Netting positions       | ✓          | -    | One Nautilus position per perpetual market.                  |
-| Cross margin            | ✓          | -    | Passed through `LighterPositionMarginMode::Cross`.           |
-| Isolated margin         | ✓          | -    | Passed through `LighterPositionMarginMode::Isolated`.        |
-| Leverage updates        | ✓          | -    | Signed `UpdateLeverage` transaction.                         |
-| Spot margin / borrowing | -          | -    | *Not supported*.                                             |
-| Deposits / withdrawals  | -          | -    | Use venue tools or Lighter APIs outside the trading adapter. |
+| Feature                 | Perpetuals | Spot | Notes                                                       |
+| ----------------------- | ---------- | ---- | ----------------------------------------------------------- |
+| Account balances        | ✓          | ✓    | Merged assets + `user_stats`, replayed from cache on query. |
+| Position state          | ✓          | -    | Perp only; initial snapshot plus live updates.              |
+| Netting positions       | ✓          | -    | One Nautilus position per perpetual market.                 |
+| Cross margin            | ✓          | -    | Passed through `LighterPositionMarginMode::Cross`.          |
+| Isolated margin         | ✓          | -    | Passed through `LighterPositionMarginMode::Isolated`.       |
+| Leverage updates        | ✓          | -    | Signed `UpdateLeverage` transaction.                        |
+| Spot margin / borrowing | -          | -    | *Not currently implemented*; no borrowing workflow.         |
+| Collateral-mode changes | -          | -    | *Not currently implemented*; configure with venue tools.    |
+| Deposits / withdrawals  | -          | -    | *Not currently implemented*; use venue tools or APIs.       |
+
+Lighter supports non-USDC collateral for perpetuals through
+[multi-asset margin](https://docs.lighter.xyz/trading/multi-asset-margin). That page describes spot
+use cases but also states that spot support is excluded at launch. The adapter exposes neither
+spot borrowing nor collateral-mode changes; its spot-margin row does not assert a venue limitation.
 
 ## Liquidation and ADL handling
 
@@ -711,8 +749,15 @@ zero rows. Omitted markets remain cached, and an empty update retains all positi
 | --------------------------- | ------- | ------------------------------------------------------------- |
 | Liquidation trades          | ✓       | Account trade rows can parse as fills, with no special event. |
 | Deleverage trades           | ✓       | Account trade rows can parse as fills, with no special event. |
-| Liquidation price reporting | -       | *Not supported*; reports omit this field.                     |
-| ADL event stream            | -       | *Not supported*.                                              |
+| Liquidation price reporting | -       | *Not currently implemented*; position reports omit the field. |
+| ADL event stream            | -       | *Not currently implemented*; no notification subscription.    |
+
+Lighter includes `liquidation_price` in its position payload and publishes liquidation and
+deleverage notifications on its authenticated
+[`notification` stream](https://apidocs.lighter.xyz/docs/websocket-reference#notification).
+The adapter parses liquidation prices in raw payloads but does not expose them in Nautilus
+position reports or subscribe to notifications. Liquidation and deleverage trade rows still use
+the normal fill-report path.
 
 ## Funding rates
 
@@ -768,7 +813,7 @@ higher local quota does not make those requests eligible for an account-level ve
 ### Request buckets and endpoint weights
 
 The venue meters transaction requests per L1 address across HTTP and WebSocket in one bucket.
-A WebSocket `sendTxBatch` request counts once and carries up to 15 transactions. Standard accounts
+A WebSocket `sendTxBatch` request counts once; this adapter caps it at 15 transactions. Standard accounts
 share a 60-request-per-minute budget for reads and transactions; Plus and Premium have separate
 venue buckets. The adapter uses separate local read and transaction limiters on every tier, so
 Standard users must budget their combined traffic, including nonce and reconciliation reads.
@@ -788,7 +833,9 @@ A Lighter Mainnet quoting session amending on every quote drift hit
 [Volume quota and no-fill quoting](#volume-quota-and-no-fill-quoting) for the related quota that
 modify transactions also spend. Set `sendtx_quota_per_min` to 40 or lower for transaction-heavy
 quoting workloads. The limiter is shared across all `sendTx` traffic, so a lower quota also paces
-creates and cancels.
+creates and cancels. A batch consumes one limiter token while carrying up to 15 transactions, so
+this setting does not cap child transaction counts in order lists or batch modifications. Confirm
+how the selected deployment applies transaction-type limits to batched children.
 
 The local quotas allow bursts; they do not enforce a strict rolling-minute ceiling. A quota of
 30 permits an initial burst of 30 requests while replenishing capacity at 30 per minute, so it can
@@ -803,7 +850,7 @@ Pending outcomes require reconciliation; do not resend them blindly.
 ### Shared adapter limiters
 
 The execution client enforces `sendtx_quota_per_min` with a single shared limiter across WebSocket `sendTx`
-and `sendTxBatch` (including order lists and cancellation batches), and the HTTP `sendTx` used for
+and `sendTxBatch` (including submit, modify, and cancel batches), and the HTTP `sendTx` used for
 startup integrator approval. Low-level raw `sendTx` and `sendTxBatch` calls use that limiter when the client is
 constructed with it; otherwise, they fall back to the raw client's REST limiter.
 
@@ -854,29 +901,29 @@ Common REST weights from the [Lighter Mainnet rate limits](https://apidocs.light
 | `apikeys`                                                       | 150    | Adapter counts one REST token per HTTP call.    |
 | `trades`                                                        | 200    | Adapter counts one REST token per HTTP call.    |
 | `recentTrades`                                                  | 600    | Adapter counts one REST token per HTTP call.    |
-| Other endpoints in the official table                           | 300    | Adapter counts one REST token per HTTP call.    |
+| Endpoints without an explicit venue weight                      | 300    | Adapter counts one REST token per HTTP call.    |
 
 Other named endpoints have distinct weights. Check the official table before budgeting calls.
 Robinhood weights can differ; see [Robinhood rate limits](https://apidocs.lighter.xyz/docs/lighter-rh#rate-limits).
 
-| Endpoint or transport                  | Limit      | Notes                                                      |
-| -------------------------------------- | ---------- | ---------------------------------------------------------- |
-| `/api/v1/trades`                       | 100 rows   | Adapter paginates reconciliation at this cap.              |
-| `/api/v1/accountInactiveOrders`        | 100 rows   | Adapter follows `next_cursor` at this cap.                 |
-| `/api/v1/orderBookOrders`              | 250 levels | Snapshot depth is clamped to the venue cap.                |
-| `/api/v1/candles`                      | 500 rows   | Adapter caps REST bar pages at this venue maximum.         |
-| `/api/v1/fundings`                     | 750 rows   | Venue cap; adapter requests 100 rows per page.             |
-| WebSocket connections                  | 255 / IP   | Venue limit.                                               |
-| WebSocket subscriptions / connection   | 500        | Venue limit.                                               |
-| WebSocket subscriptions / IP           | 5,000      | Venue limit.                                               |
-| WebSocket unique accounts / connection | 500        | Venue limit.                                               |
-| WebSocket unique accounts / IP         | 5,000      | Venue limit.                                               |
-| WebSocket connections / minute         | 255        | Venue limit.                                               |
-| WebSocket client messages / minute     | 200        | Paces non-tx frames; heartbeat pings bypass it.            |
-| WebSocket inflight messages            | 50         | Venue cap; subscriptions use a 35-frame closed loop.       |
-| WebSocket `sendTxBatch` batch size     | 15 txs     | Cancel-all chunks; explicit batches above 15 are rejected. |
-| WebSocket keepalive                    | 2 minutes  | Adapter sends heartbeats every 30 seconds.                 |
-| WebSocket outbound command queue       | Not capped | Paced before writes; no queue-depth cap.                   |
+| Endpoint or transport                  | Limit               | Notes                                                        |
+| -------------------------------------- | ------------------- | ------------------------------------------------------------ |
+| `/api/v1/trades`                       | 100 rows            | Adapter paginates reconciliation at this cap.                |
+| `/api/v1/accountInactiveOrders`        | 100 rows            | Adapter follows `next_cursor` at this cap.                   |
+| `/api/v1/orderBookOrders`              | 250 orders per side | Adapter aggregates these orders into L2 price levels.        |
+| `/api/v1/candles`                      | 500 rows            | Adapter caps REST bar pages at this venue maximum.           |
+| `/api/v1/fundings`                     | 750 rows            | Venue cap; adapter requests 100 rows per page.               |
+| WebSocket connections                  | 255 / IP            | Venue limit.                                                 |
+| WebSocket subscriptions / connection   | 500                 | Venue limit.                                                 |
+| WebSocket subscriptions / IP           | 5,000               | Venue limit.                                                 |
+| WebSocket unique accounts / connection | 500                 | Venue limit.                                                 |
+| WebSocket unique accounts / IP         | 5,000               | Venue limit.                                                 |
+| WebSocket connections / minute         | 255                 | Venue limit.                                                 |
+| WebSocket client messages / minute     | 200                 | Paces non-tx frames; heartbeat pings bypass it.              |
+| WebSocket inflight messages            | 50                  | Venue cap; subscriptions use a 35-frame closed loop.         |
+| WebSocket `sendTxBatch` batch size     | 15 txs              | Adapter cap per request; larger commands split into batches. |
+| WebSocket keepalive                    | 2 minutes           | Adapter sends heartbeats every 30 seconds.                   |
+| WebSocket outbound command queue       | Not capped          | Paced before writes; no queue-depth cap.                     |
 
 ### Historical request limits
 
@@ -918,8 +965,8 @@ and account resubscription after tracked subscriptions start replaying.
 ### Nonce recovery
 
 On execution reconnect, the adapter starts a nonce-baseline refresh through
-`GET /api/v1/nextNonce`. Submit, modify, and single-cancel commands cannot sign until that refresh,
-or its background retry, installs the replacement connection's nonce baseline. Batch cancellations
+`GET /api/v1/nextNonce`. Single submit, modify, and cancel commands cannot sign until that refresh,
+or its background retry, installs the replacement connection's nonce baseline. Batch commands
 wait for nonce readiness, including requests received during the refresh.
 
 Within a session, venue confirmations advance the local nonce window, definitive rejections or

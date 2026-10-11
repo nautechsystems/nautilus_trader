@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 - Added Derive adapter support for API v3
 - Added Interactive Brokers subscription idle events (#5041), thanks @faysou
+- Added Lighter native transaction batching with automatic splitting for order lists and batch operations
 
 ### Breaking Changes
 
@@ -100,6 +101,7 @@ Released on TBD (UTC).
 - Fixed Kraken futures reads silently omitting unresolved live orders and positions (#5217), thanks @zhaow-de
 - Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
+- Fixed Lighter transaction nonce send ordering under concurrent preparation
 - Fixed Polymarket bounded restarts marking cached closed orders as incomplete
 - Fixed Polymarket bounded restarts omitting confirmed partial fills from resting orders
 - Fixed Polymarket modify canceling a working order when the signed replacement is below the market minimum

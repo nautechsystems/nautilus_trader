@@ -42,7 +42,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -66,9 +66,9 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, SubmitOrder, SubmitOrderList,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
+            GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GeneratePositionStatusReports, ModifyOrder, SubmitOrder, SubmitOrderList,
         },
         system::SocketState,
     },
@@ -77,12 +77,17 @@ use nautilus_common::{
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_lighter::{
     common::{
-        consts::{LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE},
+        consts::{
+            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_TESTNET_CHAIN_ID, LIGHTER_VENUE,
+        },
         enums::{LighterDeployment, LighterEnvironment},
     },
     config::LighterExecutionClientConfig,
     execution::LighterExecutionClient,
-    signing::tx::{CancelOrderTxInfo, TxContext, compute_tx_hash},
+    signing::tx::{
+        CancelOrderTxInfo, CreateOrderTxInfo, L2TxAttributes, ModifyOrderTxInfo, OrderInfo,
+        TxContext, compute_tx_hash,
+    },
 };
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
@@ -173,6 +178,7 @@ fn account_id() -> AccountId {
 /// be exercised.
 #[derive(Clone)]
 struct TestServerState {
+    chain_id: Arc<AtomicU32>,
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     subscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -219,6 +225,7 @@ impl Default for TestServerState {
     fn default() -> Self {
         let (inbox_tx, _) = tokio::sync::broadcast::channel(64);
         Self {
+            chain_id: Arc::new(AtomicU32::new(LIGHTER_TESTNET_CHAIN_ID)),
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
             subscribes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             unsubscribes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -451,7 +458,9 @@ async fn tx(
         (
             batch_cancel_infos(frame)
                 .into_iter()
-                .find(|info| cancel_tx_hash(info) == *tx_hash)
+                .find(|info| {
+                    cancel_tx_hash(info, state.chain_id.load(Ordering::Relaxed)) == *tx_hash
+                })
                 .expect("known batch hash"),
             15,
         )
@@ -672,8 +681,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                     }
                     "jsonapi/sendtxbatch" => {
                         state.send_txs.lock().await.push(value.clone());
-                        let infos = batch_cancel_infos(&value);
-                        let hashes: Vec<_> = infos.iter().map(cancel_tx_hash).collect();
+                        let infos = batch_tx_infos(&value);
+                        let types: Vec<u8> = serde_json::from_str(value["data"]["tx_types"].as_str().unwrap()).unwrap();
+                        let hashes: Vec<_> = types.into_iter().zip(&infos).map(|(kind, info)| order_tx_hash(kind, info, state.chain_id.load(Ordering::Relaxed))).collect();
                         let mut ack = state.next_send_tx_ack.lock().await.take().unwrap_or_else(|| json!({"code": 200, "tx_hash": hashes}));
                         if ack.is_null() { continue; }
                         ack["type"] = json!("jsonapi/sendtxbatch");
@@ -1357,7 +1367,9 @@ fn submit_command(order: &OrderAny) -> SubmitOrder {
 fn submit_order_list_command(orders: &[OrderAny], order_list_id: &str) -> SubmitOrderList {
     let order_list = OrderList::new(
         OrderListId::from(order_list_id),
-        orders[0].instrument_id(),
+        orders
+            .first()
+            .map_or(eth_perp_id(), |order| order.instrument_id()),
         strategy_id(),
         orders.iter().map(|order| order.client_order_id()).collect(),
         UnixNanos::default(),
@@ -1382,7 +1394,7 @@ fn submit_order_list_command(orders: &[OrderAny], order_list_id: &str) -> Submit
     )
 }
 
-fn cancel_tx_hash(info: &Value) -> String {
+fn cancel_tx_hash(info: &Value, chain_id: u32) -> String {
     let tx = CancelOrderTxInfo {
         context: TxContext {
             account_index: info["AccountIndex"].as_i64().unwrap(),
@@ -1395,22 +1407,88 @@ fn cancel_tx_hash(info: &Value) -> String {
         skip_nonce: 0,
     };
 
-    compute_tx_hash(&tx, 300)
+    compute_tx_hash(&tx, chain_id)
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
 }
 
 fn batch_cancel_infos(frame: &Value) -> Vec<Value> {
+    let infos = batch_tx_infos(frame);
+    let types: Vec<u8> = serde_json::from_str(frame["data"]["tx_types"].as_str().unwrap()).unwrap();
+    assert_eq!(types, vec![15; infos.len()]);
+    infos
+}
+
+fn batch_tx_infos(frame: &Value) -> Vec<Value> {
     assert_eq!(frame["type"], "jsonapi/sendtxbatch");
     let types: Vec<u8> = serde_json::from_str(frame["data"]["tx_types"].as_str().unwrap()).unwrap();
     let infos: Vec<String> =
         serde_json::from_str(frame["data"]["tx_infos"].as_str().unwrap()).unwrap();
-    assert_eq!(types, vec![15; infos.len()]);
+    assert_eq!(types.len(), infos.len());
     infos
         .iter()
         .map(|info| serde_json::from_str(info).unwrap())
         .collect()
+}
+
+fn order_tx_hash(kind: u8, info: &Value, chain_id: u32) -> String {
+    if kind == 15 {
+        return cancel_tx_hash(info, chain_id);
+    }
+
+    let context = TxContext {
+        account_index: info["AccountIndex"].as_i64().unwrap(),
+        api_key_index: info["ApiKeyIndex"].as_u64().unwrap() as u8,
+        nonce: info["Nonce"].as_i64().unwrap(),
+        expired_at: info["ExpiredAt"].as_i64().unwrap(),
+    };
+
+    let attrs = &info["L2TxAttributes"];
+
+    let attributes = L2TxAttributes {
+        integrator_account_index: attrs["1"].as_u64().unwrap_or(0),
+        integrator_taker_fee: attrs["2"].as_u64().unwrap_or(0) as u32,
+        integrator_maker_fee: attrs["3"].as_u64().unwrap_or(0) as u32,
+        skip_nonce: attrs["4"].as_u64().unwrap_or(0) as u8,
+    };
+
+    let hash = match kind {
+        14 => compute_tx_hash(
+            &CreateOrderTxInfo {
+                context,
+                attributes,
+                order: OrderInfo {
+                    market_index: info["MarketIndex"].as_i64().unwrap(),
+                    client_order_index: info["ClientOrderIndex"].as_i64().unwrap(),
+                    base_amount: info["BaseAmount"].as_i64().unwrap(),
+                    price: info["Price"].as_u64().unwrap() as u32,
+                    is_ask: info["IsAsk"].as_u64().unwrap() == 1,
+                    order_type: info["Type"].as_u64().unwrap() as u8,
+                    time_in_force: info["TimeInForce"].as_u64().unwrap() as u8,
+                    reduce_only: info["ReduceOnly"].as_u64().unwrap() == 1,
+                    trigger_price: info["TriggerPrice"].as_u64().unwrap() as u32,
+                    order_expiry: info["OrderExpiry"].as_i64().unwrap(),
+                },
+            },
+            chain_id,
+        ),
+        17 => compute_tx_hash(
+            &ModifyOrderTxInfo {
+                context,
+                attributes,
+                market_index: info["MarketIndex"].as_i64().unwrap(),
+                index: info["Index"].as_i64().unwrap(),
+                base_amount: info["BaseAmount"].as_i64().unwrap(),
+                price: info["Price"].as_u64().unwrap() as u32,
+                trigger_price: info["TriggerPrice"].as_u64().unwrap() as u32,
+            },
+            chain_id,
+        ),
+        _ => panic!("unsupported batch transaction type {kind}"),
+    };
+
+    hash.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 // The handler renders `tx_info` as a raw JSON string, so the recorded
@@ -2248,13 +2326,14 @@ async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_submit_order_list_fans_out_correlated_create_orders(
+async fn test_submit_order_list_shares_correlated_transport_batch(
     #[case] environment: LighterEnvironment,
     #[case] expected_attributes: Value,
 ) {
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.environment = environment;
+    state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
@@ -2295,18 +2374,22 @@ async fn test_submit_order_list_fans_out_correlated_create_orders(
     assert!(submitted_ids.contains(&order_a.client_order_id()));
     assert!(submitted_ids.contains(&order_b.client_order_id()));
 
-    await_send_tx_count(&state, 2).await;
+    await_send_tx_count(&state, 1).await;
     let frames = state.send_txs().await;
-    assert_eq!(frames.len(), 2, "one sendTx frame per list child expected");
-    assert!(frames.iter().all(|frame| frame["type"] == "jsonapi/sendtx"));
-    assert!(frames.iter().all(|frame| send_tx_type(frame) == 14));
-
-    let infos = frames.iter().map(send_tx_info).collect::<Vec<_>>();
+    assert_eq!(frames.len(), 1);
+    let types: Vec<u8> =
+        serde_json::from_str(frames[0]["data"]["tx_types"].as_str().unwrap()).unwrap();
+    assert_eq!(types, vec![14, 14]);
+    let infos = batch_tx_infos(&frames[0]);
     assert_eq!(infos.len(), 2);
     assert_eq!(infos[0]["MarketIndex"], TEST_MARKET_INDEX);
     assert_eq!(infos[0]["IsAsk"], 0);
+    assert_eq!(infos[0]["BaseAmount"], 50);
+    assert_eq!(infos[0]["Price"], 236_131);
     assert_eq!(infos[1]["MarketIndex"], TEST_MARKET_INDEX);
     assert_eq!(infos[1]["IsAsk"], 1);
+    assert_eq!(infos[1]["BaseAmount"], 100);
+    assert_eq!(infos[1]["Price"], 240_000);
     assert_eq!(infos[1]["TimeInForce"], 2);
     assert_eq!(infos[0]["L2TxAttributes"], expected_attributes);
     assert_eq!(infos[1]["L2TxAttributes"], expected_attributes);
@@ -2319,12 +2402,54 @@ async fn test_submit_order_list_fans_out_correlated_create_orders(
         "sendTx handoff is not a per-order terminal outcome",
     );
 
+    state.push_frame(&json!({
+        "type": "jsonapi/sendtxbatch",
+        "id": frames[0]["data"]["id"],
+        "code": 21727,
+        "message": "late duplicate batch rejection",
+    }));
+
+    for (i, order) in [&order_a, &order_b].iter().enumerate() {
+        let index = infos[i]["ClientOrderIndex"].as_i64().unwrap();
+        let venue_order_id = format!("{}", 281_476_929_510_801_i64 + i as i64);
+        let mut entry = account_all_orders_open_entry(
+            index,
+            &venue_order_id,
+            &index.to_string(),
+            TEST_ORDER_NONCE,
+        );
+        entry["is_ask"] = json!(order.order_side() == OrderSide::Sell);
+        state.push_frame(&json!({
+            "type": "update/account_all_orders",
+            "channel": format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+            "orders": {"0": [entry]},
+        }));
+    }
+
+    for (i, order) in [&order_a, &order_b].iter().enumerate() {
+        let event = next_order_event(&mut rx, Duration::from_secs(2))
+            .await
+            .unwrap();
+
+        let OrderEventAny::Accepted(event) = event else {
+            panic!("expected Accepted after correlated batch acknowledgement, was {event:?}");
+        };
+
+        assert_eq!(event.client_order_id, order.client_order_id());
+        assert_eq!(
+            event.venue_order_id,
+            VenueOrderId::from(format!("{}", 281_476_929_510_801_i64 + i as i64))
+        );
+        assert_eq!(event.strategy_id, strategy_id());
+        assert_eq!(event.instrument_id, eth_perp_id());
+    }
+
     client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_order_list_fanout_precedes_later_single_sendtx() {
+async fn test_order_list_batch_precedes_later_single_sendtx() {
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.sendtx_quota_per_min = Some(24_000);
@@ -2378,7 +2503,7 @@ async fn test_order_list_fanout_precedes_later_single_sendtx() {
     assert!(submitted_ids.contains(&batch_a.client_order_id()));
     assert!(submitted_ids.contains(&batch_b.client_order_id()));
 
-    await_send_tx_count(&state, 2).await;
+    await_send_tx_count(&state, 1).await;
 
     client
         .submit_order(submit_command(&single))
@@ -2391,13 +2516,13 @@ async fn test_order_list_fanout_precedes_later_single_sendtx() {
         other => panic!("expected Submitted, was {other:?}"),
     }
 
-    await_send_tx_count(&state, 3).await;
+    await_send_tx_count(&state, 2).await;
 
     let frames = state.send_txs().await;
-    assert_eq!(frames.len(), 3);
-    assert!(frames.iter().all(|frame| frame["type"] == "jsonapi/sendtx"));
-    assert!(frames.iter().all(|frame| send_tx_type(frame) == 14));
-    let infos = frames.iter().map(send_tx_info).collect::<Vec<_>>();
+    assert_eq!(frames.len(), 2);
+    let mut infos = batch_tx_infos(&frames[0]);
+    assert_eq!(send_tx_type(&frames[1]), 14);
+    infos.push(send_tx_info(&frames[1]));
     assert_eq!(infos[0]["IsAsk"], 0);
     assert_eq!(infos[1]["IsAsk"], 1);
     assert_eq!(infos[2]["Price"], 235_000);
@@ -3383,6 +3508,181 @@ async fn test_modify_order_signs_modify_sendtx(
 }
 
 #[rstest]
+#[case::acknowledged_testnet(false, LighterEnvironment::Testnet, Value::Null)]
+#[case::acknowledged_mainnet(false, LighterEnvironment::Mainnet, json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}))]
+#[case::venue_rejected(true, LighterEnvironment::Testnet, Value::Null)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_batch_modify_orders_shares_transport_and_child_outcomes(
+    #[case] rejected: bool,
+    #[case] environment: LighterEnvironment,
+    #[case] expected_attributes: Value,
+) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.environment = environment;
+    state.chain_id.store(config.chain_id(), Ordering::Relaxed);
+    let (mut client, mut rx, cache) = build_client_with(config);
+    client.connect().await.unwrap();
+    let mut modifies = Vec::new();
+    let mut indices = Vec::new();
+
+    for i in 0..2 {
+        let id = format!("O-MODIFY-BATCH-{i}");
+        let (index, voi) = seed_open_order(
+            &client,
+            &cache,
+            &state,
+            &mut rx,
+            &id,
+            &format!("{}", 281_476_929_510_701_i64 + i),
+        )
+        .await;
+        indices.push(index);
+        let order = cache
+            .borrow()
+            .order(&ClientOrderId::from(id.as_str()))
+            .unwrap()
+            .clone();
+        let pending = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+            trader_id(),
+            strategy_id(),
+            eth_perp_id(),
+            order.client_order_id(),
+            Some(account_id()),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(voi),
+        ));
+        cache.borrow_mut().update_order(&pending).unwrap();
+        modifies.push(ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            order.client_order_id(),
+            Some(voi),
+            Some(Quantity::from(if i == 0 { "0.0100" } else { "0.0200" })),
+            Some(Price::from(if i == 0 { "2401.00" } else { "2402.00" })),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+    }
+
+    if rejected {
+        *state.next_send_tx_ack.lock().await =
+            Some(json!({"code":21727,"message":"modify not allowed"}));
+    }
+
+    let baseline = state.send_txs().await.len();
+    client
+        .batch_modify_orders(BatchModifyOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            modifies.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, baseline + 1).await;
+    let frames = state.send_txs().await;
+    let frame = &frames[baseline];
+    let types: Vec<u8> = serde_json::from_str(frame["data"]["tx_types"].as_str().unwrap()).unwrap();
+    assert_eq!(types, vec![17, 17]);
+    let infos = batch_tx_infos(frame);
+    for (i, info) in infos.iter().enumerate() {
+        assert_eq!(info["AccountIndex"], TEST_ACCOUNT_INDEX);
+        assert_eq!(info["ApiKeyIndex"], TEST_API_KEY_INDEX);
+        assert_eq!(info["MarketIndex"], TEST_MARKET_INDEX);
+        assert_eq!(info["Index"], 281_476_929_510_701_i64 + i as i64);
+        assert_eq!(info["BaseAmount"], 100 * (i + 1));
+        assert_eq!(info["Price"], 240_100 + 100 * i);
+        assert_eq!(info["TriggerPrice"], 0);
+        assert_eq!(info["L2TxAttributes"], expected_attributes);
+    }
+
+    assert_eq!(
+        infos[1]["Nonce"].as_i64(),
+        Some(infos[0]["Nonce"].as_i64().unwrap() + 1)
+    );
+
+    if !rejected {
+        assert!(
+            next_order_event(&mut rx, Duration::from_millis(100))
+                .await
+                .is_none(),
+            "admission does not confirm a modify"
+        );
+
+        state.push_frame(&json!({
+            "type": "jsonapi/sendtxbatch",
+            "id": frame["data"]["id"],
+            "code": 21727,
+            "message": "late duplicate batch rejection",
+        }));
+
+        for (i, modify) in modifies.iter().enumerate() {
+            let mut entry = account_all_orders_open_entry(
+                indices[i],
+                modify.venue_order_id.unwrap().as_str(),
+                &indices[i].to_string(),
+                TEST_ORDER_NONCE,
+            );
+            entry["price"] = json!(modify.price.unwrap().to_string());
+            entry["base_price"] = infos[i]["Price"].clone();
+            entry["initial_base_amount"] = json!(modify.quantity.unwrap().to_string());
+            entry["remaining_base_amount"] = json!(modify.quantity.unwrap().to_string());
+            entry["base_size"] = infos[i]["BaseAmount"].clone();
+            state.push_frame(&json!({"type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"), "orders":{"0":[entry]}}));
+        }
+    }
+
+    let mut outcomes = Vec::new();
+
+    for _ in 0..2 {
+        let event = next_order_event(&mut rx, Duration::from_secs(2))
+            .await
+            .unwrap();
+
+        match event {
+            OrderEventAny::ModifyRejected(e) if rejected => {
+                assert!(e.reason.contains("modify not allowed"));
+                outcomes.push((e.client_order_id, e.venue_order_id));
+            }
+            OrderEventAny::Updated(e) if !rejected => {
+                let modify = modifies
+                    .iter()
+                    .find(|modify| modify.client_order_id == e.client_order_id)
+                    .unwrap();
+                assert_eq!(e.quantity, modify.quantity.unwrap());
+                assert_eq!(e.price, modify.price);
+                assert_eq!(e.trigger_price, None);
+                outcomes.push((e.client_order_id, e.venue_order_id));
+            }
+            other => panic!("unexpected batch modify outcome {other:?}"),
+        }
+    }
+
+    outcomes.sort();
+    let mut expected: Vec<_> = modifies
+        .iter()
+        .map(|modify| (modify.client_order_id, modify.venue_order_id))
+        .collect();
+    expected.sort();
+    assert_eq!(outcomes, expected);
+    assert_eq!(state.send_txs().await.len(), baseline + 1);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_venue_rejection_emits_modify_rejected() {
     let (addr, state) = start_server().await;
@@ -4327,7 +4627,7 @@ async fn test_cancel_all_orders_retain_unsigned_after_ack_gap(#[case] lost_acks:
         state.next_nonce.store(nonce + 16, Ordering::Release);
     } else if lost_acks == 0 {
         state.push_frame(&json!({"type":"jsonapi/sendtxbatch", "id":first["data"]["id"],
-            "code":200, "tx_hash":batch_cancel_infos(first).iter().map(cancel_tx_hash).collect::<Vec<_>>()}));
+            "code":200, "tx_hash":batch_cancel_infos(first).iter().map(|info| cancel_tx_hash(info, state.chain_id.load(Ordering::Relaxed))).collect::<Vec<_>>()}));
     }
 
     wait_until_async(
@@ -4444,7 +4744,7 @@ async fn test_cancel_all_orders_retain_unsigned_concurrent_sides(#[case] disconn
 
     let first = &frames[baseline];
     state.push_frame(&json!({"type":"jsonapi/sendtxbatch", "id":first["data"]["id"],
-        "code":200, "tx_hash":batch_cancel_infos(first).iter().map(cancel_tx_hash).collect::<Vec<_>>()}));
+        "code":200, "tx_hash":batch_cancel_infos(first).iter().map(|info| cancel_tx_hash(info, state.chain_id.load(Ordering::Relaxed))).collect::<Vec<_>>()}));
     wait_until_async(
         || {
             let state = state.clone();
@@ -7844,4 +8144,799 @@ async fn test_bulk_report_task_restores_identity_from_current_cache() {
         OrderStatus::Accepted
     );
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::empty(0, None, None, false, vec![])]
+#[case::single(1, None, None, false, vec![1])]
+#[case::full(15, None, None, false, vec![15])]
+#[case::spill(16, None, None, false, vec![15, 1])]
+#[case::two_full(30, None, None, false, vec![15, 15])]
+#[case::three(31, None, None, false, vec![15, 15, 1])]
+#[case::invalid_submit(32, Some(15), None, false, vec![15, 15, 1])]
+#[case::invalid_modify(31, None, Some(15), false, vec![15, 15, 1])]
+#[case::invalid_cancel(31, None, None, true, vec![15, 15, 1])]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_order_batches_chunk_commands(
+    #[case] count: usize,
+    #[case] invalid_submit: Option<usize>,
+    #[case] invalid_modify: Option<usize>,
+    #[case] invalid_cancel: bool,
+    #[case] sizes: Vec<usize>,
+) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.sendtx_quota_per_min = Some(9);
+    let (mut client, mut rx, cache) = build_client_with(config);
+    client.connect().await.unwrap();
+
+    let orders: Vec<_> = (0..count)
+        .map(|i| {
+            make_limit_order(
+                &format!("O-CHUNKS-{i}"),
+                OrderSide::Buy,
+                Quantity::from(
+                    format!(
+                        "{:.4}",
+                        Decimal::new(
+                            if invalid_submit == Some(i) {
+                                1
+                            } else {
+                                50 + i as i64
+                            },
+                            4
+                        )
+                    )
+                    .as_str(),
+                ),
+                Price::from(format!("{:.2}", Decimal::new(236_131 + i as i64, 2)).as_str()),
+                TimeInForce::Gtc,
+                true,
+                false,
+            )
+        })
+        .collect();
+
+    for order in &orders {
+        cache_order(&cache, order.clone());
+    }
+
+    client
+        .submit_order_list(submit_order_list_command(&orders, "OL-CHUNKS"))
+        .unwrap();
+    let valid: Vec<_> = orders
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| invalid_submit != Some(*i))
+        .map(|(_, order)| order)
+        .collect();
+    assert_chunked_submit_events(&mut rx, &cache, &orders, &valid, invalid_submit).await;
+
+    if !sizes.is_empty() {
+        await_send_tx_count(&state, sizes.len()).await;
+    }
+
+    let frames = state.send_txs().await;
+    let infos = assert_order_batches(&frames, &sizes, 14, TEST_NEXT_NONCE);
+    let mut entries = Vec::new();
+    let mut venues = Vec::new();
+
+    for (i, (order, info)) in valid.iter().zip(&infos).enumerate() {
+        assert_eq!(
+            Decimal::from(info["BaseAmount"].as_i64().unwrap()),
+            order.quantity().as_decimal() * Decimal::from(10_000)
+        );
+        assert_eq!(
+            Decimal::from(info["Price"].as_i64().unwrap()),
+            order.price().unwrap().as_decimal() * Decimal::from(100)
+        );
+        assert_eq!(info["IsAsk"], 0);
+        assert_eq!(info["TimeInForce"], 2);
+        assert_eq!(info["ReduceOnly"], 0);
+        let index = info["ClientOrderIndex"].as_i64().unwrap();
+        let venue = VenueOrderId::from(format!("{}", 281_476_929_610_000_i64 + i as i64));
+        let mut entry = account_all_orders_open_entry(
+            index,
+            venue.as_str(),
+            &index.to_string(),
+            info["Nonce"].as_i64().unwrap(),
+        );
+        entry["order_index"] = json!(venue.as_str().parse::<i64>().unwrap());
+        entry["initial_base_amount"] = json!(order.quantity().to_string());
+        entry["remaining_base_amount"] = entry["initial_base_amount"].clone();
+        entry["price"] = json!(order.price().unwrap().to_string());
+        entry["base_size"] = info["BaseAmount"].clone();
+        entry["base_price"] = info["Price"].clone();
+        entries.push(entry);
+        venues.push(venue);
+    }
+
+    state.push_frame(&json!({"type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"), "orders":{"0":entries}}));
+
+    for (i, order) in valid.iter().enumerate() {
+        let event = next_order_event(&mut rx, Duration::from_secs(5))
+            .await
+            .unwrap();
+        cache.borrow_mut().update_order(&event).unwrap();
+
+        let OrderEventAny::Accepted(e) = event else {
+            panic!("expected Accepted, was {event:?}");
+        };
+
+        assert_eq!(e.client_order_id, order.client_order_id());
+        assert_eq!(e.venue_order_id, venues[i]);
+        assert_eq!(e.instrument_id, eth_perp_id());
+        assert_eq!(e.strategy_id, strategy_id());
+    }
+
+    let modifies: Vec<_> = valid
+        .iter()
+        .enumerate()
+        .map(|(i, order)| {
+            cache
+                .borrow_mut()
+                .update_order(&OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+                    trader_id(),
+                    strategy_id(),
+                    eth_perp_id(),
+                    order.client_order_id(),
+                    Some(account_id()),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                    false,
+                    Some(venues[i]),
+                )))
+                .unwrap();
+
+            ModifyOrder::new(
+                trader_id(),
+                Some(client_id()),
+                strategy_id(),
+                eth_perp_id(),
+                order.client_order_id(),
+                Some(venues[i]),
+                Some(Quantity::from(
+                    format!(
+                        "{:.4}",
+                        Decimal::new(
+                            if invalid_modify == Some(i) {
+                                1
+                            } else {
+                                100 + i as i64
+                            },
+                            4
+                        )
+                    )
+                    .as_str(),
+                )),
+                Some(Price::from(
+                    format!("{:.2}", Decimal::new(240_101 + i as i64, 2)).as_str(),
+                )),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        })
+        .collect();
+
+    let baseline = frames.len();
+    client
+        .batch_modify_orders(BatchModifyOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            modifies.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let modify_sizes = if invalid_modify.is_some() {
+        vec![15, 15]
+    } else {
+        sizes.clone()
+    };
+
+    if !modify_sizes.is_empty() {
+        await_send_tx_count(&state, baseline + modify_sizes.len()).await;
+    }
+
+    let frames = state.send_txs().await;
+    let infos = assert_order_batches(
+        &frames[baseline..],
+        &modify_sizes,
+        17,
+        TEST_NEXT_NONCE + valid.len() as i64,
+    );
+    let supported: Vec<_> = modifies
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| invalid_modify != Some(*i))
+        .collect();
+
+    for ((i, modify), info) in supported.iter().zip(&infos) {
+        assert_eq!(info["Index"], venues[*i].as_str().parse::<i64>().unwrap());
+        assert_eq!(
+            Decimal::from(info["BaseAmount"].as_i64().unwrap()),
+            modify.quantity.unwrap().as_decimal() * Decimal::from(10_000)
+        );
+        assert_eq!(
+            Decimal::from(info["Price"].as_i64().unwrap()),
+            modify.price.unwrap().as_decimal() * Decimal::from(100)
+        );
+        assert_eq!(info["TriggerPrice"], 0);
+        entries[*i]["price"] = json!(modify.price.unwrap().to_string());
+        entries[*i]["base_price"] = info["Price"].clone();
+        entries[*i]["initial_base_amount"] = json!(modify.quantity.unwrap().to_string());
+        entries[*i]["remaining_base_amount"] = entries[*i]["initial_base_amount"].clone();
+        entries[*i]["base_size"] = info["BaseAmount"].clone();
+    }
+
+    state.push_frame(&json!({"type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"), "orders":{"0":entries}}));
+    assert_chunked_modify_events(&mut rx, &cache, &modifies, &supported, invalid_modify).await;
+    let mut cancels: Vec<_> = valid
+        .iter()
+        .enumerate()
+        .map(|(i, order)| {
+            cache
+                .borrow_mut()
+                .update_order(&OrderEventAny::PendingCancel(OrderPendingCancel::new(
+                    trader_id(),
+                    strategy_id(),
+                    eth_perp_id(),
+                    order.client_order_id(),
+                    Some(account_id()),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                    false,
+                    Some(venues[i]),
+                )))
+                .unwrap();
+
+            CancelOrder::new(
+                trader_id(),
+                Some(client_id()),
+                strategy_id(),
+                eth_perp_id(),
+                order.client_order_id(),
+                Some(venues[i]),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        })
+        .collect();
+
+    let invalid_cancel_id = ClientOrderId::from("O-CHUNKS-CANCEL-NOT-CACHED");
+
+    if invalid_cancel {
+        cancels.insert(
+            15,
+            CancelOrder::new(
+                trader_id(),
+                Some(client_id()),
+                strategy_id(),
+                eth_perp_id(),
+                invalid_cancel_id,
+                Some(VenueOrderId::from("999")),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ),
+        );
+    }
+
+    let baseline = frames.len();
+    client
+        .batch_cancel_orders(BatchCancelOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            cancels,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    if invalid_cancel {
+        let event = next_order_event(&mut rx, Duration::from_secs(5))
+            .await
+            .unwrap();
+
+        let OrderEventAny::CancelRejected(e) = event else {
+            panic!("expected CancelRejected, was {event:?}");
+        };
+
+        assert_eq!(e.client_order_id, invalid_cancel_id);
+        assert_eq!(e.venue_order_id, Some(VenueOrderId::from("999")));
+        let error = cache
+            .borrow()
+            .try_order(&invalid_cancel_id)
+            .err()
+            .unwrap()
+            .to_string();
+        assert_eq!(
+            e.reason.as_str(),
+            format!("Lighter cancel_order failed: {error}")
+        );
+    }
+
+    if !sizes.is_empty() {
+        await_send_tx_count(&state, baseline + sizes.len()).await;
+    }
+
+    let frames = state.send_txs().await;
+    let infos = assert_order_batches(
+        &frames[baseline..],
+        &sizes,
+        15,
+        TEST_NEXT_NONCE + (valid.len() + supported.len()) as i64,
+    );
+
+    for (i, info) in infos.iter().enumerate() {
+        assert_eq!(info["Index"], venues[i].as_str().parse::<i64>().unwrap());
+        entries[i]["status"] = json!("canceled");
+    }
+
+    state.push_frame(&json!({"type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"), "orders":{"0":entries}}));
+
+    assert_chunked_cancel_events(&mut rx, &cache, &valid, &venues).await;
+
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::first(0, 21727, None)]
+#[case::middle(1, 21727, None)]
+#[case::last(2, 21727, None)]
+#[case::middle_invalid_nonce(1, 21104, Some(TEST_NEXT_NONCE + 31))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_order_batches_chunk_rejections_are_isolated(
+    #[case] rejected_chunk: usize,
+    #[case] rejection_code: i64,
+    #[case] refreshed_nonce: Option<i64>,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+
+    let orders: Vec<_> = (0..31)
+        .map(|i| {
+            make_limit_order(
+                &format!("O-CHUNK-REJECT-{i}"),
+                OrderSide::Buy,
+                Quantity::from("0.0050"),
+                Price::from("2361.31"),
+                TimeInForce::Gtc,
+                true,
+                false,
+            )
+        })
+        .collect();
+
+    for order in &orders {
+        cache_order(&cache, order.clone());
+    }
+
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
+    client
+        .submit_order_list(submit_order_list_command(&orders, "OL-CHUNK-REJECT"))
+        .unwrap();
+    let sizes = [15, 15, 1];
+
+    for i in 0..sizes.len() {
+        await_send_tx_count(&state, i + 1).await;
+        let frames = state.send_txs().await;
+        let frame = &frames[i];
+        let hashes: Vec<_> = batch_tx_infos(frame)
+            .iter()
+            .map(|info| order_tx_hash(14, info, state.chain_id.load(Ordering::Relaxed)))
+            .collect();
+        *state.next_send_tx_ack.lock().await = Some(Value::Null);
+        if i == rejected_chunk
+            && let Some(nonce) = refreshed_nonce
+        {
+            state.next_nonce.store(nonce, Ordering::Release);
+        }
+
+        state.push_frame(&json!({
+            "type":"jsonapi/sendtxbatch", "id":frame["data"]["id"],
+            "code":if i == rejected_chunk {rejection_code} else {200},
+            "message":"chunk rejected", "tx_hash":hashes,
+        }));
+    }
+
+    let mut submitted = Vec::new();
+    let mut rejected = Vec::new();
+
+    for _ in 0..orders.len() + sizes[rejected_chunk] {
+        match next_order_event(&mut rx, Duration::from_secs(5))
+            .await
+            .unwrap()
+        {
+            OrderEventAny::Submitted(e) => submitted.push(e.client_order_id),
+            OrderEventAny::Rejected(e) => {
+                assert_eq!(
+                    e.reason.as_str(),
+                    format!("LIGHTER_{rejection_code}: chunk rejected"),
+                );
+                assert_eq!(e.instrument_id, eth_perp_id());
+                assert_eq!(e.strategy_id, strategy_id());
+                rejected.push(e.client_order_id);
+            }
+            other => panic!("unexpected chunk rejection event: {other:?}"),
+        }
+    }
+
+    let frames = state.send_txs().await;
+    let mut infos = Vec::new();
+    let mut nonce = TEST_NEXT_NONCE;
+
+    for (i, frame) in frames.iter().enumerate() {
+        infos.extend(assert_order_batches(
+            std::slice::from_ref(frame),
+            &sizes[i..=i],
+            14,
+            nonce,
+        ));
+
+        nonce = if i == rejected_chunk {
+            refreshed_nonce.unwrap_or(nonce)
+        } else {
+            nonce + sizes[i] as i64
+        };
+    }
+
+    let mut indices: Vec<_> = infos
+        .iter()
+        .map(|info| info["ClientOrderIndex"].as_i64().unwrap())
+        .collect();
+    indices.sort_unstable();
+    indices.dedup();
+    assert_eq!(indices.len(), orders.len());
+    assert_eq!(
+        submitted,
+        orders
+            .iter()
+            .map(|order| order.client_order_id())
+            .collect::<Vec<_>>()
+    );
+    let first = sizes[..rejected_chunk].iter().sum::<usize>();
+    let mut expected: Vec<_> = orders[first..first + sizes[rejected_chunk]]
+        .iter()
+        .map(|order| order.client_order_id())
+        .collect();
+    expected.sort();
+    rejected.sort();
+    assert_eq!(rejected, expected);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::delayed_ack(false)]
+#[case::lost_ack(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_order_batches_chunk_interleaves_with_single(#[case] lost_ack: bool) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.sendtx_quota_per_min = Some(24_000);
+    let (mut client, mut rx, cache) = build_client_with(config);
+    client.connect().await.unwrap();
+
+    let orders: Vec<_> = (0..32)
+        .map(|i| {
+            make_limit_order(
+                &format!("O-CHUNK-SINGLE-{i}"),
+                OrderSide::Buy,
+                Quantity::from("0.0050"),
+                Price::from(format!("{:.2}", Decimal::new(236_131 + i, 2)).as_str()),
+                TimeInForce::Gtc,
+                true,
+                false,
+            )
+        })
+        .collect();
+
+    for order in &orders {
+        cache_order(&cache, order.clone());
+    }
+
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
+    client
+        .submit_order_list(submit_order_list_command(&orders[..31], "OL-CHUNK-SINGLE"))
+        .unwrap();
+    await_send_tx_count(&state, 1).await;
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
+    client.submit_order(submit_command(&orders[31])).unwrap();
+    await_send_tx_count(&state, 2).await;
+    let frames = state.send_txs().await;
+    assert_order_batches(&frames[..1], &[15], 14, TEST_NEXT_NONCE);
+    assert_eq!(send_tx_type(&frames[1]), 14);
+    assert_eq!(send_tx_info(&frames[1])["Nonce"], TEST_NEXT_NONCE + 15);
+    let single = send_tx_info(&frames[1]);
+    state.push_frame(&json!({"type":"jsonapi/sendtx", "code":200, "tx_hash":order_tx_hash(14, &single, state.chain_id.load(Ordering::Relaxed))}));
+    let first = &frames[0];
+    if !lost_ack {
+        let hashes: Vec<_> = batch_tx_infos(first)
+            .iter()
+            .map(|info| order_tx_hash(14, info, state.chain_id.load(Ordering::Relaxed)))
+            .collect();
+        state.push_frame(&json!({"type":"jsonapi/sendtxbatch", "id":first["data"]["id"], "code":200, "tx_hash":hashes}));
+    }
+
+    wait_until_async(
+        || {
+            let state = Arc::clone(&state);
+            async move { state.send_txs().await.len() == 4 }
+        },
+        Duration::from_secs(15),
+    )
+    .await;
+
+    let frames = state.send_txs().await;
+    let mut infos = batch_tx_infos(&frames[0]);
+    infos.push(send_tx_info(&frames[1]));
+    infos.extend(assert_order_batches(
+        &frames[2..],
+        &[15, 1],
+        14,
+        TEST_NEXT_NONCE + 16,
+    ));
+
+    for (i, info) in infos.iter().enumerate() {
+        assert_eq!(info["Nonce"], TEST_NEXT_NONCE + i as i64);
+    }
+
+    let mut prices: Vec<_> = infos
+        .iter()
+        .map(|info| info["Price"].as_i64().unwrap())
+        .collect();
+    prices.sort_unstable();
+    assert_eq!(prices, (236_131..236_163).collect::<Vec<_>>());
+    let mut submitted = Vec::new();
+
+    for _ in &orders {
+        let event = next_order_event(&mut rx, Duration::from_secs(5))
+            .await
+            .unwrap();
+
+        let OrderEventAny::Submitted(e) = event else {
+            panic!("expected Submitted, was {event:?}");
+        };
+
+        submitted.push(e.client_order_id);
+    }
+
+    submitted.sort();
+    let mut expected: Vec<_> = orders.iter().map(|order| order.client_order_id()).collect();
+    expected.sort();
+    assert_eq!(submitted, expected);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_order_batches_chunk_disconnect_stops_queued_children() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+
+    let orders: Vec<_> = (0..31)
+        .map(|i| {
+            make_limit_order(
+                &format!("O-CHUNK-DISCONNECT-{i}"),
+                OrderSide::Buy,
+                Quantity::from("0.0050"),
+                Price::from("2361.31"),
+                TimeInForce::Gtc,
+                true,
+                false,
+            )
+        })
+        .collect();
+
+    for order in &orders {
+        cache_order(&cache, order.clone());
+    }
+
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
+    client
+        .submit_order_list(submit_order_list_command(&orders, "OL-CHUNK-DISCONNECT"))
+        .unwrap();
+    await_send_tx_count(&state, 1).await;
+    client.disconnect().await.unwrap();
+    assert_order_batches(&state.send_txs().await, &[15], 14, TEST_NEXT_NONCE);
+
+    for order in &orders[..15] {
+        let event = next_order_event(&mut rx, Duration::from_secs(2))
+            .await
+            .unwrap();
+
+        let OrderEventAny::Submitted(e) = event else {
+            panic!("expected Submitted, was {event:?}");
+        };
+
+        assert_eq!(e.client_order_id, order.client_order_id());
+    }
+
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(250))
+            .await
+            .is_none()
+    );
+    assert_eq!(state.send_txs().await.len(), 1);
+}
+
+async fn assert_chunked_submit_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    cache: &Rc<RefCell<Cache>>,
+    orders: &[OrderAny],
+    valid: &[&OrderAny],
+    invalid_submit: Option<usize>,
+) {
+    let mut submitted = Vec::new();
+    let mut denied = Vec::new();
+
+    for _ in orders {
+        let event = next_order_event(rx, Duration::from_secs(5)).await.unwrap();
+        cache.borrow_mut().update_order(&event).unwrap();
+
+        match event {
+            OrderEventAny::Submitted(e) => submitted.push(e.client_order_id),
+            OrderEventAny::Denied(e) => {
+                assert_eq!(
+                    Some(e.client_order_id),
+                    invalid_submit.map(|i| orders[i].client_order_id())
+                );
+                assert!(e.reason.contains("below Lighter min_quote_amount"));
+                denied.push(e.client_order_id);
+            }
+            other => panic!("unexpected chunked submit event: {other:?}"),
+        }
+    }
+
+    let expected_ids: Vec<_> = valid.iter().map(|order| order.client_order_id()).collect();
+    assert_eq!(submitted, expected_ids);
+    assert_eq!(
+        denied,
+        invalid_submit
+            .map(|i| vec![orders[i].client_order_id()])
+            .unwrap_or_default()
+    );
+}
+
+async fn assert_chunked_modify_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    cache: &Rc<RefCell<Cache>>,
+    modifies: &[ModifyOrder],
+    supported: &[(usize, &ModifyOrder)],
+    invalid_modify: Option<usize>,
+) {
+    let mut updated = Vec::new();
+    let mut rejected = Vec::new();
+
+    for _ in modifies {
+        let event = next_order_event(rx, Duration::from_secs(5)).await.unwrap();
+        cache.borrow_mut().update_order(&event).unwrap();
+
+        match event {
+            OrderEventAny::Updated(e) => {
+                let modify = modifies
+                    .iter()
+                    .find(|modify| modify.client_order_id == e.client_order_id)
+                    .unwrap();
+                assert_eq!(e.venue_order_id, modify.venue_order_id);
+                assert_eq!(e.price, modify.price);
+                assert_eq!(e.quantity, modify.quantity.unwrap());
+                assert_eq!(e.trigger_price, None);
+                updated.push(e.client_order_id);
+            }
+            OrderEventAny::ModifyRejected(e) => {
+                assert_eq!(
+                    Some(e.client_order_id),
+                    invalid_modify.map(|i| modifies[i].client_order_id)
+                );
+                assert!(e.reason.contains("below Lighter min_quote_amount"));
+                rejected.push(e.client_order_id);
+            }
+            other => panic!("unexpected chunked modify event: {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        updated,
+        supported
+            .iter()
+            .map(|(_, modify)| modify.client_order_id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rejected,
+        invalid_modify
+            .map(|i| vec![modifies[i].client_order_id])
+            .unwrap_or_default()
+    );
+}
+
+async fn assert_chunked_cancel_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    cache: &Rc<RefCell<Cache>>,
+    valid: &[&OrderAny],
+    venues: &[VenueOrderId],
+) {
+    for (i, order) in valid.iter().enumerate() {
+        let event = next_order_event(rx, Duration::from_secs(5)).await.unwrap();
+        cache.borrow_mut().update_order(&event).unwrap();
+
+        let OrderEventAny::Canceled(e) = event else {
+            panic!("expected Canceled, was {event:?}");
+        };
+
+        assert_eq!(e.client_order_id, order.client_order_id());
+        assert_eq!(e.venue_order_id, Some(venues[i]));
+        let cache = cache.borrow();
+        let order = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(order.status(), OrderStatus::Canceled);
+        assert_eq!(order.filled_qty(), Quantity::zero(4));
+    }
+}
+
+fn assert_order_batches(
+    frames: &[Value],
+    sizes: &[usize],
+    tx_type: u8,
+    nonce_start: i64,
+) -> Vec<Value> {
+    assert_eq!(frames.len(), sizes.len());
+    let mut infos = Vec::new();
+    let mut ids = Vec::new();
+
+    for (frame, size) in frames.iter().zip(sizes) {
+        let batch = batch_tx_infos(frame);
+        let types: Vec<u8> =
+            serde_json::from_str(frame["data"]["tx_types"].as_str().unwrap()).unwrap();
+        assert_eq!(batch.len(), *size);
+        assert_eq!(types, vec![tx_type; *size]);
+        ids.push(frame["data"]["id"].as_str().unwrap());
+        infos.extend(batch);
+    }
+
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), frames.len());
+
+    for (i, info) in infos.iter().enumerate() {
+        assert_eq!(info["AccountIndex"], TEST_ACCOUNT_INDEX);
+        assert_eq!(info["ApiKeyIndex"], TEST_API_KEY_INDEX);
+        assert_eq!(info["MarketIndex"], TEST_MARKET_INDEX);
+        assert_eq!(info["Nonce"], nonce_start + i as i64);
+    }
+
+    infos
 }
