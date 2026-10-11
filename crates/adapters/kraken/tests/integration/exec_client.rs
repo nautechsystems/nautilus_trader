@@ -4709,9 +4709,14 @@ async fn test_futures_orders_status_window_report_names_an_order_placed_after_it
     ("ENTERED_BOOK", 0, 300),
     Some((OrderStatus::Accepted, "0", 400)),
 )]
-#[case::equal_updates_keep_the_larger_fill(
+#[case::equal_updates_keep_the_later_larger_fill(
     ("ENTERED_BOOK", 0, 300),
     ("ENTERED_BOOK", 2, 300),
+    Some((OrderStatus::PartiallyFilled, "2", 300)),
+)]
+#[case::equal_updates_keep_the_earlier_larger_fill(
+    ("ENTERED_BOOK", 2, 300),
+    ("ENTERED_BOOK", 0, 300),
     Some((OrderStatus::PartiallyFilled, "2", 300)),
 )]
 #[case::later_request_fully_executes(("ENTERED_BOOK", 0, 300), ("FULLY_EXECUTED", 5, 400), None)]
