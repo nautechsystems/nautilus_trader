@@ -38,6 +38,7 @@ The adapter communicates with these Polymarket API surfaces:
 | -------------- | ----------------------------------------------- | ------------------------------- | ------------------------------------------- |
 | CLOB REST      | `https://clob.polymarket.com`                   | L2 HMAC                         | Orders, trades, balances.                   |
 | CLOB WebSocket | `wss://ws-subscriptions-clob.polymarket.com/ws` | L2 HMAC (user channel)          | Streaming orderbook, trades, order updates. |
+| PolyBolt       | `wss://ws-live-v2.polymarket.com/ws`            | L2 credentials (auth frame)     | Crypto, equity, and TWAP reference prices.  |
 | Gamma          | `https://gamma-api.polymarket.com`              | None                            | Market and event discovery, tags, search.   |
 | Data           | `https://data-api.polymarket.com`               | None                            | Trade history and user positions.           |
 | Relayer        | `https://relayer-v2.polymarket.com`             | Relayer API key or Builder HMAC | Deposit Wallet positions and session keys.  |

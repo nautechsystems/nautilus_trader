@@ -41,7 +41,7 @@ use nautilus_polymarket::{
         PolymarketDataClientConfig, PolymarketExecutionClientConfig,
         PolymarketInstrumentProviderConfig,
     },
-    data_types::PolymarketRtdsCryptoTwap,
+    data_types::PolymarketCryptoTwap,
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
     http::{
         models::GammaMarket,
@@ -107,8 +107,9 @@ fn test_polymarket_crypto_twap_python_value_is_exact_decimal_string() {
     Python::attach(|py| {
         let twap = Py::new(
             py,
-            PolymarketRtdsCryptoTwap::new(
-                "alpha/usd".to_string(),
+            PolymarketCryptoTwap::new(
+                "alphausd".to_string(),
+                "chainlink".to_string(),
                 60,
                 dec!(123.456789012345678901),
                 1_772_752_581_815,
@@ -117,7 +118,7 @@ fn test_polymarket_crypto_twap_python_value_is_exact_decimal_string() {
                 UnixNanos::from_millis(1_772_752_582_005),
             ),
         )
-        .expect("PolymarketRtdsCryptoTwap should construct");
+        .expect("PolymarketCryptoTwap should construct");
         let value = twap
             .bind(py)
             .getattr("value")

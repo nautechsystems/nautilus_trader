@@ -85,20 +85,20 @@ use self::{
 };
 use crate::{
     book::{BookSequenceOutcome, recovery::start_recovery, sync::BookSyncTracker},
-    common::consts::POLYMARKET_VENUE,
+    common::{consts::POLYMARKET_VENUE, credential::Credential},
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
     http::{
         clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
         gamma::PolymarketGammaHttpClient,
     },
+    polybolt::{PolymarketPolyBoltFeed, is_supported_polybolt_data_type},
     providers::PolymarketInstrumentProvider,
     resolve::{
         PendingResolution, ResolveContext, ResolveWatchEntry, StrictResolvedMarket,
         remove_data_resolve_watch_entry, upsert_data_resolve_watch_entry_from_instrument,
     },
-    rtds::{PolymarketRtdsFeed, is_supported_rtds_data_type},
-    websocket::{RTDS_STREAMS_ENDPOINT, pool::PolymarketMarketConnectionPool},
+    websocket::{POLYBOLT_STREAMS_ENDPOINT, pool::PolymarketMarketConnectionPool},
 };
 
 const NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP: usize = 64;
@@ -148,8 +148,9 @@ pub struct PolymarketDataClient {
     auto_load_scheduled: Arc<AtomicBool>,
     closed_condition_ids: Arc<Mutex<AHashSet<String>>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
-    rtds_feed: PolymarketRtdsFeed,
-    rtds_socket_control: Option<SocketControl>,
+    polybolt_feed: PolymarketPolyBoltFeed,
+    polybolt_socket_control: Option<SocketControl>,
+    polybolt_credential: Option<Credential>,
     proxy_url: Option<ProxyUrl>,
     reset_pending: bool,
     shutdown_errors: Vec<String>,
@@ -190,7 +191,7 @@ impl PolymarketDataClient {
         let data_sender = get_data_event_sender();
         let socket_factory = SocketControlFactory::new(client_id, Some(*POLYMARKET_VENUE));
         let ws_client = ws_client.with_socket_factory(socket_factory.clone());
-        let rtds_socket_control = Some(socket_factory.control(RTDS_STREAMS_ENDPOINT));
+        let polybolt_socket_control = Some(socket_factory.control(POLYBOLT_STREAMS_ENDPOINT));
         gamma_client.set_clob_client(clob_public_client.clone());
         let provider =
             PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
@@ -209,9 +210,13 @@ impl PolymarketDataClient {
         }
         config.new_market_fetch_max_concurrency = fetch_max_concurrency;
 
-        let rtds_url = config.rtds_url();
-        let rtds_transport_backend = config.transport_backend;
-        let rtds_data_sender = data_sender.clone();
+        let polybolt_url = config.reference_prices_url();
+        let polybolt_transport_backend = config.transport_backend;
+        let polybolt_data_sender = data_sender.clone();
+        let polybolt_credential = config.polybolt_credential().unwrap_or_else(|e| {
+            log::error!("{e}; PolyBolt price subscriptions will be rejected");
+            None
+        });
         let tasks = TaskGroup::new();
         let cancellation_token = tasks.cancellation_token();
 
@@ -252,15 +257,17 @@ impl PolymarketDataClient {
             auto_load_scheduled: Arc::new(AtomicBool::new(false)),
             closed_condition_ids: Arc::new(Mutex::new(AHashSet::new())),
             position_event_handler: None,
-            rtds_feed: PolymarketRtdsFeed::new_with_proxy_and_socket_control(
-                rtds_url,
-                rtds_transport_backend,
+            polybolt_feed: PolymarketPolyBoltFeed::new_with_proxy_and_socket_control(
+                polybolt_url,
+                polybolt_transport_backend,
                 clock,
-                rtds_data_sender,
+                polybolt_data_sender,
                 proxy_url.clone(),
-                rtds_socket_control.clone(),
+                polybolt_socket_control.clone(),
+                polybolt_credential.clone(),
             ),
-            rtds_socket_control,
+            polybolt_socket_control,
+            polybolt_credential,
             proxy_url,
             reset_pending: false,
             shutdown_errors: Vec::new(),
@@ -301,8 +308,8 @@ impl PolymarketDataClient {
     }
 
     #[cfg(test)]
-    pub(crate) fn rtds_feed(&self) -> &PolymarketRtdsFeed {
-        &self.rtds_feed
+    pub(crate) fn polybolt_feed(&self) -> &PolymarketPolyBoltFeed {
+        &self.polybolt_feed
     }
 
     /// Adds an instrument filter on the underlying provider.
@@ -671,7 +678,7 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
-        if !is_supported_rtds_data_type(&cmd.data_type) {
+        if !is_supported_polybolt_data_type(&cmd.data_type) {
             log::debug!(
                 "Ignoring unsupported Polymarket custom data subscription: {}",
                 cmd.data_type
@@ -680,10 +687,10 @@ impl DataClient for PolymarketDataClient {
         }
 
         log::debug!(
-            "Tracking Polymarket RTDS custom data subscription: {}",
+            "Tracking Polymarket PolyBolt custom data subscription: {}",
             cmd.data_type
         );
-        let changed = self.rtds_feed.track_subscribe(cmd.data_type)?;
+        let changed = self.polybolt_feed.track_subscribe(cmd.data_type)?;
         if !changed {
             return Ok(());
         }
@@ -692,8 +699,8 @@ impl DataClient for PolymarketDataClient {
             return Ok(());
         }
 
-        self.rtds_feed
-            .request_reconcile(crate::rtds::ReconcileReason::DesiredChanged);
+        self.polybolt_feed
+            .request_reconcile(crate::polybolt::ReconcileReason::DesiredChanged);
 
         Ok(())
     }
@@ -855,7 +862,7 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
-        if !is_supported_rtds_data_type(&cmd.data_type) {
+        if !is_supported_polybolt_data_type(&cmd.data_type) {
             log::debug!(
                 "Ignoring unsupported Polymarket custom data unsubscription: {}",
                 cmd.data_type
@@ -864,10 +871,10 @@ impl DataClient for PolymarketDataClient {
         }
 
         log::debug!(
-            "Tracking Polymarket RTDS custom data unsubscription: {}",
+            "Tracking Polymarket PolyBolt custom data unsubscription: {}",
             cmd.data_type
         );
-        let changed = self.rtds_feed.track_unsubscribe(&cmd.data_type)?;
+        let changed = self.polybolt_feed.track_unsubscribe(&cmd.data_type)?;
         if !changed {
             return Ok(());
         }
@@ -876,8 +883,8 @@ impl DataClient for PolymarketDataClient {
             return Ok(());
         }
 
-        self.rtds_feed
-            .request_reconcile(crate::rtds::ReconcileReason::DesiredChanged);
+        self.polybolt_feed
+            .request_reconcile(crate::polybolt::ReconcileReason::DesiredChanged);
 
         Ok(())
     }

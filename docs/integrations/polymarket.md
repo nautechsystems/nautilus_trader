@@ -1308,7 +1308,7 @@ can differ from the constructed instrument.
 ## Numeric precision
 
 Financial wire values are decoded directly as decimals. Values outside the supported decimal or
-domain-type range fail HTTP decoding or report construction. WebSocket and RTDS handlers log and
+domain-type range fail HTTP decoding or report construction. WebSocket and PolyBolt handlers log and
 skip invalid updates. Report construction does not substitute zero for an invalid price or quantity.
 
 ## Fees
@@ -2054,30 +2054,39 @@ snapshot batches (see [Data client options](#data-client-options)):
   `best_bid_ask` quote ticks. This can change those quote sizes and their unchanged-quote
   suppression, and the carried sizes can affect later `price_change` quotes. Trades are unchanged.
 
-#### RTDS custom data
+#### PolyBolt reference prices
 
-The data client also supports Polymarket's real-time data (RTDS) crypto, crypto TWAP, and equity
-topics. Subscribe through generic custom data with a required, non-empty `symbol` metadata value.
-TWAP subscriptions also require `window_seconds` equal to `30` or `60`:
+The data client also supports Polymarket's PolyBolt reference-price channels: crypto spot
+(`price.crypto`), 60-second Chainlink crypto TWAP (`price.crypto.twap`), and equity, ETF, forex,
+metal, and commodity prices (`price.equity`). PolyBolt replaced the legacy RTDS price topics in
+October 2026.
+
+PolyBolt requires CLOB L2 API credentials. Set `api_key`, `api_secret`, and `passphrase` on
+`PolymarketDataClientConfig`, or export `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, and
+`POLYMARKET_PASSPHRASE`. A data client without price subscriptions never needs them; a price
+subscription without them is rejected with a configuration error.
+
+Subscribe through generic custom data with a required, non-empty `symbol` metadata value. TWAP
+subscriptions also require `window_seconds` equal to `60`, the only window PolyBolt serves:
 
 ```python
 from nautilus_trader.adapters.polymarket import POLYMARKET_CLIENT_ID
-from nautilus_trader.adapters.polymarket import PolymarketRtdsCryptoPrice
-from nautilus_trader.adapters.polymarket import PolymarketRtdsCryptoTwap
-from nautilus_trader.adapters.polymarket import PolymarketRtdsEquityPrice
+from nautilus_trader.adapters.polymarket import PolymarketCryptoPrice
+from nautilus_trader.adapters.polymarket import PolymarketCryptoTwap
+from nautilus_trader.adapters.polymarket import PolymarketEquityPrice
 from nautilus_trader.model import DataType
 
 crypto_type = DataType(
-    PolymarketRtdsCryptoPrice.__name__,
-    metadata={"symbol": "btcusdt"},
+    PolymarketCryptoPrice.__name__,
+    metadata={"symbol": "btcusd"},
 )
 equity_type = DataType(
-    PolymarketRtdsEquityPrice.__name__,
-    metadata={"symbol": "AAPL"},
+    PolymarketEquityPrice.__name__,
+    metadata={"symbol": "aapl"},
 )
 twap_type = DataType(
-    PolymarketRtdsCryptoTwap.__name__,
-    metadata={"symbol": "BTC/USD", "window_seconds": 60},
+    PolymarketCryptoTwap.__name__,
+    metadata={"symbol": "btcusd", "window_seconds": 60},
 )
 
 strategy.subscribe_data(crypto_type, client_id=POLYMARKET_CLIENT_ID)
@@ -2087,25 +2096,68 @@ strategy.subscribe_data(twap_type, client_id=POLYMARKET_CLIENT_ID)
 
 ##### Symbols and values
 
-Symbol matching is case-insensitive, and published symbols are lowercase. Crypto RTDS uses the
-`crypto_prices` topic; equity RTDS uses `equity_prices`. Equity updates prefer
-`full_accuracy_value` when the venue supplies it and fall back to `value` for snapshots or updates
-that omit it. Crypto TWAP uses `crypto_prices_twap_thirty` or
-`crypto_prices_twap_sixty`, requires the frame's `window_s` to match the subscription, and exposes
-the exact signed-E18 `full_accuracy_value` as a Rust `Decimal`. Python receives the exact decimal
-string, which can be converted with `decimal.Decimal`; the display-only `value` is required and
-decimal-like for wire conformance but is never published.
+Symbols are lowercase and USD-quoted, for example `btcusd`, `ethusd`, `aapl`, `eurusd`, or
+`xauusd`; matching is case-insensitive and published symbols are lowercase. The legacy RTDS
+spellings `btcusdt` (Binance, USDT-quoted) and `btc/usd` are rejected at subscription time with a
+hint, because PolyBolt would silently serve nothing for them and `usdt` would change the quote
+currency. Crypto spot now defaults to Chainlink USD prices rather than Binance USDT.
 
-##### TWAP reconnects and replay
+Every emitted `value` is the venue's exact `full_accuracy_value` decimal, which carries up to 18
+fractional digits, so it is a Rust `Decimal` rather than a `Price`. Python receives the exact
+decimal string, which can be converted with `decimal.Decimal`. Spot channels fall back to the
+venue's display `value` only when the exact field is absent; TWAP never does. Each sample also
+carries `source`, the provider the venue served (`chainlink` or `pyth` for crypto; `pyth`,
+`massive`, or `chainlink` for equities), and `message_timestamp_ms`, the PolyBolt envelope time.
 
-Polymarket [TWAP subscriptions](https://docs.polymarket.com/market-data/chainlink-twap#stream-behavior)
-start with the next update and provide no snapshot, history, or replay after a disconnect. The
-adapter restores subscriptions after reconnect and resumes with the next update, so the disconnect
-interval remains a data gap. The replay guard survives reconnect, so a redelivery of the last
-observation remains suppressed. The adapter also suppresses older observations. A different value
-for the same observation timestamp is not emitted; it is logged at error level with the topic,
-symbol, timestamp, prior value, and received value. The stream continues with the prior observation
-authoritative, and emission resumes at the next newer observation timestamp.
+##### Subscriptions, snapshots, and reconnects
+
+The feed authenticates once per connection, waits for the venue's `authed` acknowledgement, and
+only then sends one subscription per `(channel, symbol)`. Every new subscription first receives a
+two-minute snapshot, emitted point by point in order, and then live updates. PolyBolt allows 64
+subscriptions per connection; the 65th distinct `(channel, symbol)` is rejected with an error.
+
+After a reconnect the feed re-authenticates and replays the retained subscriptions. The venue
+replays a fresh snapshot; points at or before the last emitted timestamp are suppressed, so the
+disconnect interval remains a data gap but nothing is emitted twice. For TWAP the replay guard
+also survives reconnect: a redelivery of the last observation is suppressed, older observations
+are suppressed, and a different value for the same observation timestamp is not emitted but is
+logged at error level with the channel, symbol, timestamp, prior value, and received value. The
+stream continues with the prior observation authoritative, and emission resumes at the next newer
+observation timestamp.
+
+If the venue rejects the credentials (`auth_invalid`, `auth_expired`, or `auth_attempts`), the
+feed logs an error, stops sending auth frames so the venue's eight-attempt budget is not consumed,
+and stays idle until the data client is explicitly reconnected with corrected credentials. A
+transient `auth_unavailable` is retried after a short delay, including during the data client's
+own connect, so an auth outage never takes the market data socket down with it. When the venue
+reports conflated frames (`dropped`), the feed logs a warning and continues.
+
+##### Migrating from RTDS
+
+The RTDS price transport and its public types were removed without compatibility aliases. Update
+code and serialized configurations to the new names:
+
+| Previous name               | New name                      |
+| --------------------------- | ----------------------------- |
+| `PolymarketRtdsCryptoPrice` | `PolymarketCryptoPrice`       |
+| `PolymarketRtdsCryptoTwap`  | `PolymarketCryptoTwap`        |
+| `PolymarketRtdsEquityPrice` | `PolymarketEquityPrice`       |
+| `base_url_rtds`             | `base_url_reference_prices`   |
+| `polymarket-rtds-streams`   | `polymarket-polybolt-streams` |
+
+Behavioral changes to account for:
+
+- Reference-price subscriptions now require CLOB L2 credentials (`api_key`, `api_secret`,
+  `passphrase`, or the `POLYMARKET_*` environment variables). Explicit fields are validated
+  strictly; environment variables apply only when all three are set, and a partial set is ignored
+  with a warning so clients that never subscribe to reference prices still start.
+- Crypto symbols are lowercase USD pairs such as `btcusd`; `btcusdt` and `btc/usd` are rejected.
+  Crypto spot defaults to Chainlink USD prices rather than Binance USDT, and every sample carries
+  the serving `source`.
+- The 30-second TWAP window was removed. `window_seconds` must be `60`; `30` is rejected rather
+  than mapped.
+- `value` is an exact decimal string on all three types; equity samples no longer carry a separate
+  `full_accuracy_value` field.
 
 ### Runtime instrument loading
 
@@ -2498,7 +2550,8 @@ Class/struct: `PolymarketDataClientConfig`.
 | `filters`                              | `[]`       | Rust-only instrument filters applied during loading and discovery.                        |
 | `base_url_http`, `base_url_ws`         | `None`     | Override the CLOB HTTP or WebSocket endpoint.                                             |
 | `base_url_gamma`, `base_url_data_api`  | `None`     | Override the Gamma or Data API endpoint.                                                  |
-| `base_url_rtds`                        | `None`     | Override the RTDS endpoint.                                                               |
+| `base_url_reference_prices`            | `None`     | Override the PolyBolt reference-price endpoint.                                           |
+| `api_key`, `api_secret`, `passphrase`  | `None`     | CLOB L2 credentials for PolyBolt price channels; fall back to `POLYMARKET_*` variables.   |
 | `proxy_url`                            | `None`     | HTTP or HTTPS proxy for every data transport.                                             |
 | `http_timeout_secs`, `ws_timeout_secs` | `60`, `30` | HTTP and WebSocket timeout in seconds.                                                    |
 | `ws_max_subscriptions`                 | `200`      | Per-connection subscription cap; the market pool shards across connections at this bound. |
@@ -2573,7 +2626,7 @@ After such a failure, explicitly disconnect and reconnect the client to restore 
 ### Proxy routing
 
 Set `proxy_url` to apply one HTTP or HTTPS proxy to every transport owned by that client. The data
-client routes CLOB HTTP, Gamma HTTP, Data API HTTP, the market WebSocket pool, and RTDS through the
+client routes CLOB HTTP, Gamma HTTP, Data API HTTP, the market WebSocket pool, and PolyBolt through the
 proxy. The execution client routes authenticated CLOB HTTP, Data API HTTP, and the authenticated
 user WebSocket through it. Configure the same value on both clients when running data and execution
 together.

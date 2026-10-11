@@ -98,6 +98,8 @@ impl PolymarketDataClientFactory {
     ) -> anyhow::Result<PolymarketDataClient> {
         let client_id = ClientId::from(name);
         let proxy_url = polymarket_config.validated_proxy_url()?;
+        // Fail fast on malformed credentials; the client resolves them again for its feed.
+        polymarket_config.polybolt_credential()?;
 
         let gamma_client = PolymarketGammaHttpClient::new_with_proxy(
             Some(polymarket_config.gamma_url()),
@@ -422,7 +424,7 @@ mod tests {
             base_url_ws: Some("wss://market.fixture/ws".to_string()),
             base_url_gamma: Some("https://gamma.fixture".to_string()),
             base_url_data_api: Some("https://data.fixture".to_string()),
-            base_url_rtds: Some("wss://rtds.fixture/ws".to_string()),
+            base_url_reference_prices: Some("wss://polybolt.fixture/ws".to_string()),
             proxy_url: Some(proxy_url.clone().into()),
             http_timeout_secs: 2,
             ..PolymarketDataClientConfig::default()
@@ -453,7 +455,10 @@ mod tests {
         let configured_proxy = client.config().validated_proxy_url().unwrap().unwrap();
 
         assert_eq!(client.ws_client().proxy_url().unwrap().expose(), proxy_url);
-        assert_eq!(client.rtds_feed().proxy_url().unwrap().expose(), proxy_url);
+        assert_eq!(
+            client.polybolt_feed().proxy_url().unwrap().expose(),
+            proxy_url
+        );
         assert_eq!(configured_proxy.expose(), proxy_url);
 
         let requests = requests.lock().await;

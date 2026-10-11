@@ -130,7 +130,7 @@ impl PolymarketDataClientConfig {
     /// and are skipped during serialization; they default to empty/`None` and must be
     /// installed programmatically after deserialization.
     #[new]
-    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None, base_url_rtds=None, transport_backend=None, drop_quotes_missing_side=None, proxy_url=None, compute_effective_deltas=None, book_snapshot_timeout_secs=None, book_stale_check_interval_secs=None, book_stale_threshold_secs=None))]
+    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None, base_url_reference_prices=None, api_key=None, api_secret=None, passphrase=None, transport_backend=None, drop_quotes_missing_side=None, proxy_url=None, compute_effective_deltas=None, book_snapshot_timeout_secs=None, book_stale_check_interval_secs=None, book_stale_threshold_secs=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_config: Option<PolymarketInstrumentProviderConfig>,
@@ -153,7 +153,10 @@ impl PolymarketDataClientConfig {
         resolve_poll_interval_secs: Option<u64>,
         resolve_poll_grace_secs: Option<u64>,
         resolve_poll_max_wait_secs: Option<u64>,
-        base_url_rtds: Option<String>,
+        base_url_reference_prices: Option<String>,
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        passphrase: Option<String>,
         transport_backend: Option<TransportBackend>,
         drop_quotes_missing_side: Option<bool>,
         proxy_url: Option<String>,
@@ -169,9 +172,12 @@ impl PolymarketDataClientConfig {
             filters: Vec::new(),
             base_url_http,
             base_url_ws,
-            base_url_rtds,
+            base_url_reference_prices,
             base_url_gamma,
             base_url_data_api,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
+            passphrase: passphrase.map(SecretString::from),
             proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(default.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(default.ws_timeout_secs),
@@ -432,18 +438,18 @@ mod tests {
     }
 
     #[rstest]
-    fn direct_pyo3_constructor_sets_base_url_rtds() {
+    fn direct_pyo3_constructor_sets_base_url_reference_prices() {
         Python::initialize();
         Python::attach(|py| {
             let kwargs = PyDict::new(py);
             kwargs
-                .set_item("base_url_rtds", "wss://ws-live-data.example")
+                .set_item("base_url_reference_prices", "wss://ws-live-data.example")
                 .unwrap();
 
             let config = construct_data_client_config(py, None, Some(&kwargs));
 
             assert_eq!(
-                config.base_url_rtds.as_deref(),
+                config.base_url_reference_prices.as_deref(),
                 Some("wss://ws-live-data.example")
             );
         });
@@ -499,7 +505,7 @@ mod tests {
                 config.base_url_data_api.as_deref(),
                 Some("https://data.example")
             );
-            assert_eq!(config.base_url_rtds, None);
+            assert_eq!(config.base_url_reference_prices, None);
             assert_eq!(config.http_timeout_secs, 41);
             assert_eq!(config.ws_timeout_secs, 42);
             assert_eq!(config.ws_max_subscriptions, 512);
@@ -507,7 +513,7 @@ mod tests {
     }
 
     #[rstest]
-    fn direct_pyo3_constructor_preserves_base_url_rtds_positional_slot() {
+    fn direct_pyo3_constructor_preserves_base_url_reference_prices_positional_slot() {
         Python::initialize();
         Python::attach(|py| {
             let args = PyTuple::new(
@@ -545,7 +551,7 @@ mod tests {
             let config = construct_data_client_config(py, Some(&args), None);
 
             assert_eq!(
-                config.base_url_rtds.as_deref(),
+                config.base_url_reference_prices.as_deref(),
                 Some("wss://ws-live-data.example")
             );
         });

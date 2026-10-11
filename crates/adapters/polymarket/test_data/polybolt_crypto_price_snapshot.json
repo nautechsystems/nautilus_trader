@@ -1,0 +1,28 @@
+{
+  "v": 1,
+  "channel": "price.crypto",
+  "seq": 1,
+  "ts": 1791355666000,
+  "snapshot": true,
+  "payload": {
+    "data": [
+      {
+        "full_accuracy_value": "84307.27064946722471936",
+        "timestamp": 1791355549000,
+        "value": 84307.27064946723
+      },
+      {
+        "full_accuracy_value": "84307.023637929491693568",
+        "timestamp": 1791355550000,
+        "value": 84307.0236379295
+      },
+      {
+        "full_accuracy_value": "84290.764561459730972672",
+        "timestamp": 1791355666000,
+        "value": 84290.76456145973
+      }
+    ],
+    "source": "chainlink",
+    "symbol": "btcusd"
+  }
+}

@@ -54,6 +54,12 @@ Released on TBD (UTC).
 - Changed Interactive Brokers contract and security filters to reject unknown values (#5041), thanks @faysou
 - Changed Interactive Brokers Rust provider loaders; use `load_with_return_async` (#5041), thanks @faysou
 - Changed Rust `OKXAmendAlgoOrderRequest` literals to require `new_trigger_px_type`; use `None` to omit it
+- Renamed Polymarket `PolymarketRtdsCryptoPrice`, `PolymarketRtdsCryptoTwap`, and `PolymarketRtdsEquityPrice` to `PolymarketCryptoPrice`, `PolymarketCryptoTwap`, and `PolymarketEquityPrice` without compatibility aliases (#5205)
+- Renamed Polymarket `PolymarketDataClientConfig.base_url_rtds` to `base_url_reference_prices` (#5205)
+- Migrated Polymarket reference prices from RTDS to PolyBolt; subscriptions now require CLOB L2 credentials on the data client (#5205)
+- Removed Polymarket 30-second TWAP support; `window_seconds` must be `60` and `30` is rejected (#5205)
+- Changed Polymarket crypto reference symbols to lowercase USD pairs such as `btcusd` sourced from Chainlink; `btcusdt` and `btc/usd` are rejected (#5205)
+- Changed Polymarket reference price `value` to an exact decimal on every type and added `source`; equity dropped `full_accuracy_value` (#5205)
 
 ### Security
 
@@ -167,6 +173,7 @@ Released on TBD (UTC).
 - Updated Derive integration guide for API v3 setup, margin models, and recovery limits
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
 - Clarified Lighter cancel-all scope and batch cancellation failure handling
+- Documented Polymarket PolyBolt reference prices and the RTDS migration (#5205)
 
 ### Deprecations
 

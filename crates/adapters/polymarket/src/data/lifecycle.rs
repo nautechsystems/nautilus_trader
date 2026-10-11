@@ -122,7 +122,7 @@ impl PolymarketDataClient {
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             tasks: task_spawner,
-            rtds_feed: self.rtds_feed.clone(),
+            polybolt_feed: self.polybolt_feed.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
             new_market_filter: self.config.new_market_filter.clone(),
             drop_quotes_missing_side: self.config.drop_quotes_missing_side,
@@ -219,7 +219,7 @@ impl PolymarketDataClient {
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
             tasks: task_spawner,
-            rtds_feed: self.rtds_feed.clone(),
+            polybolt_feed: self.polybolt_feed.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
             new_market_filter: self.config.new_market_filter.clone(),
             drop_quotes_missing_side: self.config.drop_quotes_missing_side,
@@ -482,7 +482,7 @@ impl PolymarketDataClient {
         log::info!("Stopping Polymarket data client: {}", self.client_id);
         self.tasks.begin_shutdown();
         self.ws_client.begin_shutdown();
-        self.rtds_feed.begin_shutdown();
+        self.polybolt_feed.begin_shutdown();
         self.is_connected
             .store(false, std::sync::atomic::Ordering::Relaxed);
         self.clear_position_event_subscription();
@@ -492,7 +492,7 @@ impl PolymarketDataClient {
         log::debug!("Resetting Polymarket data client: {}", self.client_id);
         self.tasks.begin_shutdown();
         self.ws_client.begin_shutdown();
-        self.rtds_feed.begin_shutdown();
+        self.polybolt_feed.begin_shutdown();
         self.is_connected
             .store(false, std::sync::atomic::Ordering::Relaxed);
         self.reset_pending = true;
@@ -558,10 +558,10 @@ impl PolymarketDataClient {
         }
 
         let ws_client = self.ws_client.handle();
-        let rtds_feed = self.rtds_feed.clone();
+        let polybolt_feed = self.polybolt_feed.clone();
         let setup_guard = TaskGroupGuard::new(&[&self.tasks], move || {
             ws_client.begin_shutdown();
-            rtds_feed.begin_shutdown();
+            polybolt_feed.begin_shutdown();
         });
         self.ensure_position_event_subscription();
         register_polymarket_custom_data();
@@ -598,8 +598,8 @@ impl PolymarketDataClient {
             self.register_book_health_monitor();
 
             // Connect unconditionally: this clears the feed's closing latch from a prior
-            // disconnect; without retained subscriptions no RTDS socket is opened.
-            self.rtds_feed.connect().await
+            // disconnect; without retained subscriptions no PolyBolt socket is opened.
+            self.polybolt_feed.connect().await
         }
         .await;
 
@@ -635,7 +635,7 @@ impl PolymarketDataClient {
 
         self.tasks.begin_shutdown();
         self.ws_client.begin_shutdown();
-        self.rtds_feed.begin_shutdown();
+        self.polybolt_feed.begin_shutdown();
 
         if let Err(e) = self
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(5))
@@ -650,28 +650,30 @@ impl PolymarketDataClient {
 
         self.book_sync.clear();
 
-        if let Err(e) = self.rtds_feed.disconnect().await {
+        if let Err(e) = self.polybolt_feed.disconnect().await {
             self.shutdown_errors.push(e.to_string());
         }
         self.clear_position_event_subscription();
 
         let drained = self.tasks.is_empty()
             && self.ws_client.connection_count() == 0
-            && !self.rtds_feed.has_retained_tasks().await;
+            && !self.polybolt_feed.has_retained_tasks().await;
 
         if drained {
             self.ws_open_tokens.rcu(|tokens| tokens.clear());
 
             if self.reset_pending {
                 self.ws_client.clear_reconnect_state();
-                self.rtds_feed = crate::rtds::PolymarketRtdsFeed::new_with_proxy_and_socket_control(
-                    self.config.rtds_url(),
-                    self.config.transport_backend,
-                    self.clock,
-                    self.data_sender.clone(),
-                    self.proxy_url.clone(),
-                    self.rtds_socket_control.clone(),
-                );
+                self.polybolt_feed =
+                    crate::polybolt::PolymarketPolyBoltFeed::new_with_proxy_and_socket_control(
+                        self.config.reference_prices_url(),
+                        self.config.transport_backend,
+                        self.clock,
+                        self.data_sender.clone(),
+                        self.proxy_url.clone(),
+                        self.polybolt_socket_control.clone(),
+                        self.polybolt_credential.clone(),
+                    );
                 self.reset_pending = false;
             }
 
@@ -802,6 +804,9 @@ mod tests {
             proxy_url: proxy_url
                 .as_ref()
                 .map(|proxy_url| SecretString::from(proxy_url.expose())),
+            api_key: Some(SecretString::from("fixture-key")),
+            api_secret: Some(SecretString::from("Zml4dHVyZS1zZWNyZXQ=")),
+            passphrase: Some(SecretString::from("fixture-passphrase")),
             ..PolymarketDataClientConfig::default()
         };
 
@@ -859,16 +864,16 @@ mod tests {
         assert!(client.provider().http_client().clob_client().is_some());
     }
 
-    fn rtds_crypto_data_type(symbol: &str) -> DataType {
+    fn polybolt_crypto_data_type(symbol: &str) -> DataType {
         let mut metadata = Params::new();
         metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
-        DataType::new("PolymarketRtdsCryptoPrice", Some(metadata), None)
+        DataType::new("PolymarketCryptoPrice", Some(metadata), None)
     }
 
-    fn rtds_equity_data_type(symbol: &str) -> DataType {
+    fn polybolt_equity_data_type(symbol: &str) -> DataType {
         let mut metadata = Params::new();
         metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
-        DataType::new("PolymarketRtdsEquityPrice", Some(metadata), None)
+        DataType::new("PolymarketEquityPrice", Some(metadata), None)
     }
 
     fn seed_expired_instrument(
@@ -1299,7 +1304,7 @@ mod tests {
             ))
             .expect("unsupported custom data subscribe should be ignored");
 
-        assert_eq!(client.rtds_feed.tracked_subscription_count(), 0);
+        assert_eq!(client.polybolt_feed.tracked_subscription_count(), 0);
     }
 
     #[rstest]
@@ -1319,14 +1324,14 @@ mod tests {
             ))
             .expect("unsupported custom data unsubscribe should be ignored");
 
-        assert_eq!(client.rtds_feed.tracked_subscription_count(), 0);
+        assert_eq!(client.polybolt_feed.tracked_subscription_count(), 0);
     }
 
     #[rstest]
-    fn subscribe_custom_rtds_reuses_single_wire_subscription_for_same_symbol() {
+    fn subscribe_custom_polybolt_reuses_single_wire_subscription_for_same_symbol() {
         let mut client = make_client_for_reset_test();
-        let crypto_upper = rtds_crypto_data_type("BTCUSDT");
-        let crypto_lower = rtds_crypto_data_type("btcusdt");
+        let crypto_upper = polybolt_crypto_data_type("BTCUSD");
+        let crypto_lower = polybolt_crypto_data_type("btcusd");
 
         client
             .subscribe(SubscribeCustomData::new(
@@ -1338,7 +1343,7 @@ mod tests {
                 None,
                 None,
             ))
-            .expect("first RTDS subscribe");
+            .expect("first PolyBolt subscribe");
         client
             .subscribe(SubscribeCustomData::new(
                 Some(*POLYMARKET_CLIENT_ID),
@@ -1349,21 +1354,21 @@ mod tests {
                 None,
                 None,
             ))
-            .expect("second RTDS subscribe");
+            .expect("second PolyBolt subscribe");
 
-        assert_eq!(client.rtds_feed.tracked_subscription_count(), 1);
+        assert_eq!(client.polybolt_feed.tracked_subscription_count(), 1);
         assert_eq!(
             client
-                .rtds_feed
-                .tracked_data_type_count("crypto_prices:btcusdt"),
+                .polybolt_feed
+                .tracked_data_type_count("price.crypto:btcusd"),
             2,
         );
     }
 
     #[rstest]
-    fn unsubscribe_custom_rtds_last_reference_removes_wire_subscription() {
+    fn unsubscribe_custom_polybolt_last_reference_removes_wire_subscription() {
         let mut client = make_client_for_reset_test();
-        let equity_data_type = rtds_equity_data_type("AAPL");
+        let equity_data_type = polybolt_equity_data_type("AAPL");
 
         client
             .subscribe(SubscribeCustomData::new(
@@ -1375,7 +1380,7 @@ mod tests {
                 None,
                 None,
             ))
-            .expect("RTDS subscribe");
+            .expect("PolyBolt subscribe");
 
         client
             .unsubscribe(&UnsubscribeCustomData::new(
@@ -1387,17 +1392,17 @@ mod tests {
                 None,
                 None,
             ))
-            .expect("RTDS unsubscribe");
+            .expect("PolyBolt unsubscribe");
 
-        assert_eq!(client.rtds_feed.tracked_subscription_count(), 0);
+        assert_eq!(client.polybolt_feed.tracked_subscription_count(), 0);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn reset_replaces_rtds_feed_generation_after_shutdown_finishes() {
+    async fn reset_replaces_polybolt_feed_generation_after_shutdown_finishes() {
         let mut client = make_client_for_reset_test();
-        let old_feed = client.rtds_feed.clone();
-        let data_type = rtds_crypto_data_type("btcusdt");
+        let old_feed = client.polybolt_feed.clone();
+        let data_type = polybolt_crypto_data_type("btcusd");
 
         client
             .subscribe(SubscribeCustomData::new(
@@ -1409,13 +1414,13 @@ mod tests {
                 None,
                 None,
             ))
-            .expect("RTDS subscribe");
+            .expect("PolyBolt subscribe");
 
         assert_eq!(old_feed.tracked_subscription_count(), 1);
 
         client.reset().expect("reset should succeed");
 
-        assert_eq!(client.rtds_feed.tracked_subscription_count(), 1);
+        assert_eq!(client.polybolt_feed.tracked_subscription_count(), 1);
         assert!(client.reset_pending);
 
         client
@@ -1423,29 +1428,35 @@ mod tests {
             .await
             .expect("deferred reset shutdown should finish");
 
-        assert_eq!(client.rtds_feed.tracked_subscription_count(), 0);
+        assert_eq!(client.polybolt_feed.tracked_subscription_count(), 0);
         assert!(!client.reset_pending);
         assert_eq!(
             old_feed.tracked_subscription_count(),
             1,
-            "old-generation RTDS state should remain isolated from the reset generation",
+            "old-generation PolyBolt state should remain isolated from the reset generation",
         );
     }
 
     #[rstest]
-    fn reset_preserves_rtds_proxy_url() {
+    fn reset_preserves_polybolt_proxy_url() {
         const PROXY_URL: &str = "http://reset-user:reset-proxy-secret@127.0.0.1:18090";
         let proxy_url = ProxyUrl::parse(PROXY_URL).unwrap();
         let mut client = make_client_for_reset_test_with_proxy(Some(proxy_url));
         let debug = format!("{client:?}");
 
-        assert_eq!(client.rtds_feed.proxy_url().unwrap().expose(), PROXY_URL);
+        assert_eq!(
+            client.polybolt_feed.proxy_url().unwrap().expose(),
+            PROXY_URL
+        );
         assert!(!debug.contains("reset-proxy-secret"));
 
         client.reset().expect("reset should succeed");
 
         assert_eq!(client.proxy_url.as_ref().unwrap().expose(), PROXY_URL);
-        assert_eq!(client.rtds_feed.proxy_url().unwrap().expose(), PROXY_URL);
+        assert_eq!(
+            client.polybolt_feed.proxy_url().unwrap().expose(),
+            PROXY_URL
+        );
     }
 
     #[rstest]
