@@ -1143,15 +1143,18 @@ impl OKXRawHttpClient {
         // already have filled and freed the client order ID. Retrying could then
         // place a second live order, so submits are sent once and an ambiguous
         // outcome is left for stream updates and reconciliation to resolve.
-        let is_order_submit = method == Method::POST
+        // Algo amendments also run once: a retry can reject after an earlier
+        // attempt applied and the order triggered, leaving the original outcome ambiguous.
+        let is_order_mutation = method == Method::POST
             && matches!(
                 path,
                 "/api/v5/trade/order"
                     | "/api/v5/trade/batch-orders"
                     | "/api/v5/trade/order-algo"
+                    | "/api/v5/trade/amend-algos"
                     | "/api/v5/sprd/order"
             );
-        let should_retry = |error: &OKXHttpError| !is_order_submit && error.is_retryable();
+        let should_retry = |error: &OKXHttpError| !is_order_mutation && error.is_retryable();
 
         let create_error = |error: RetryError| -> OKXHttpError {
             match error {
@@ -6199,6 +6202,7 @@ impl OKXHttpClient {
             algo_cl_ord_id: None,
             new_sz: new_quantity.map(|q| q.to_string()),
             new_trigger_px: new_trigger_price.map(|p| p.to_string()),
+            new_trigger_px_type: None,
             new_tp_trigger_px: new_tp_trigger_price.map(|p| p.to_string()),
             new_tp_ord_px: new_tp_order_price,
             new_tp_trigger_px_type,

@@ -1532,6 +1532,9 @@ pub struct OKXAmendAlgoOrderRequest {
     /// New trigger price (for `trigger` algo orders).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_trigger_px: Option<String>,
+    /// New trigger price type (last, mark, index) for `trigger` algo orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_trigger_px_type: Option<String>,
     /// New take-profit trigger price (for attached/OCO TP legs).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_tp_trigger_px: Option<String>,
@@ -1552,8 +1555,9 @@ pub struct OKXAmendAlgoOrderRequest {
     /// New stop-loss trigger price type (last, mark, index).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_sl_trigger_px_type: Option<String>,
-    /// New order price (for limit orders after trigger).
+    /// New order price (`-1` for market).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "newOrdPx")]
     pub new_order_px: Option<String>,
     /// New callback ratio for trailing stop (e.g., "0.01" for 1%).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1798,6 +1802,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -1828,6 +1833,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: Some("0.10495".to_string()),
             new_tp_ord_px: Some("-1".to_string()),
             new_tp_trigger_px_type: Some("last".to_string()),
@@ -1986,6 +1992,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: Some("3500".to_string()),
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2003,7 +2010,7 @@ mod tests {
         assert!(json.contains("\"instId\":\"ETH-USDT-SWAP\""));
         assert!(json.contains("\"algoId\":\"123456\""));
         assert!(json.contains("\"newTriggerPx\":\"3500\""));
-        assert!(json.contains("\"newOrderPx\":\"3490\""));
+        assert!(json.contains("\"newOrdPx\":\"3490\""));
         assert!(!json.contains("newSz"));
         assert!(!json.contains("algoClOrdId"));
         assert!(!json.contains("newCallbackRatio"));
@@ -2017,6 +2024,7 @@ mod tests {
             algo_cl_ord_id: Some("client456".to_string()),
             new_sz: Some("0.1".to_string()),
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2038,7 +2046,7 @@ mod tests {
         assert!(json.contains("\"newCallbackRatio\":\"0.02\""));
         assert!(json.contains("\"newActivePx\":\"50000\""));
         assert!(!json.contains("newTriggerPx"));
-        assert!(!json.contains("newOrderPx"));
+        assert!(!json.contains("newOrdPx"));
     }
 
     #[rstest]
@@ -2161,6 +2169,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2190,6 +2199,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: Some("0.5".to_string()),
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2206,7 +2216,7 @@ mod tests {
 
         assert!(json.contains("\"newSz\":\"0.5\""));
         assert!(!json.contains("newTriggerPx"));
-        assert!(!json.contains("newOrderPx"));
+        assert!(!json.contains("newOrdPx"));
         assert!(!json.contains("newCallbackRatio"));
         assert!(!json.contains("newCallbackSpread"));
         assert!(!json.contains("newActivePx"));
@@ -2220,6 +2230,7 @@ mod tests {
             algo_cl_ord_id: Some("client789".to_string()),
             new_sz: Some("1.0".to_string()),
             new_trigger_px: Some("60000".to_string()),
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2239,7 +2250,7 @@ mod tests {
         assert!(json.contains("\"algoClOrdId\":\"client789\""));
         assert!(json.contains("\"newSz\":\"1.0\""));
         assert!(json.contains("\"newTriggerPx\":\"60000\""));
-        assert!(json.contains("\"newOrderPx\":\"59900\""));
+        assert!(json.contains("\"newOrdPx\":\"59900\""));
         assert!(json.contains("\"newCallbackRatio\":\"0.015\""));
         assert!(json.contains("\"newCallbackSpread\":\"100\""));
         assert!(json.contains("\"newActivePx\":\"62000\""));

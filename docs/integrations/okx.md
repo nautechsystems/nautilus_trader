@@ -854,25 +854,20 @@ The low-level HTTP client models OKX attached TP/SL and OCO payloads, but
 
 #### Conditional order architecture
 
-Conditional orders (OKX algo orders) use a hybrid architecture:
+Conditional orders (OKX algo orders) use HTTP for commands and WebSocket for status updates:
 
-- **Submission**: HTTP REST API (`/api/v5/trade/order-algo`).
+- **Submission**: HTTP `/api/v5/trade/order-algo` returns an immediate acknowledgment.
 - **Status updates**: WebSocket business endpoint (`/ws/v5/business`). Stop and touched orders use
-  `orders-algo`; trailing stops use `algo-advance`.
-- **Cancellation**: HTTP REST API while the algo parent is active, then the regular order path
-  after a triggered child becomes authoritative.
+  `orders-algo`; trailing stops use `algo-advance`. Both deliver real-time updates.
+- **Cancellation**: HTTP while the algo parent is active.
+
+Once a triggered child becomes authoritative, cancellation and modification use its order ID and
+the regular WebSocket route. The Nautilus order identity stays unchanged.
 
 The `orders-algo` channel sends updates only, while `algo-advance` also sends a snapshot on
 subscription. The adapter keeps tracked order context across transport reconnects and deduplicates
 replayed advance-algo snapshots. REST reconciliation remains responsible for cold-start and
 missed-update recovery.
-
-This design ensures:
-
-- Immediate submission acknowledgment through HTTP.
-- Real-time status updates through WebSocket.
-- Stable order identity while venue authority moves from the algo parent ID to the triggered child
-  order ID.
 
 #### Supported conditional order types
 
@@ -888,6 +883,22 @@ This design ensures:
 OKX's `close_fraction` conditional-order parameter is not normalized to the generic
 `close_position` risk contract. Do not add `OKX` to `full_position_exit_venues` based on
 `close_fraction`; leave the venue unlisted so ordinary quantity and notional checks apply.
+:::
+
+#### Modifying conditional orders
+
+`modify_order` amends pending stop and touched orders through HTTP `amend-algos`.
+
+- **Preserved terms**: Omitted prices and the trigger source stay unchanged.
+- **Full-position exits**: With `close_fraction`, stop orders amend stop-loss terms; touched orders
+  amend take-profit terms.
+- **Confirmation**: The algo stream must confirm changed terms before `OrderUpdated` is emitted.
+  An acknowledgment alone does not emit an update.
+
+:::warning
+Pending amendments require tracked session context. Orders recovered after a restart or without
+that context emit `OrderModifyRejected` locally. Trailing-stop algo amendments also emit
+`OrderModifyRejected` locally.
 :::
 
 #### Trigger price types
@@ -1467,28 +1478,28 @@ Spread instruments use `load_spreads` instead of `instrument_types` because OKX 
 
 The OKX execution client provides the following Python configuration options.
 
-| Option                   | Default                    | Description                                                                                             |
-| ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `instrument_types`       | `[OKXInstrumentType.SPOT]` | Tradable OKX instrument types.                                                                          |
-| `load_spreads`           | `False`                    | Loads live spread instruments.                                                                          |
-| `account_id`             | Required                   | Nautilus account ID for the client.                                                                     |
-| `base_url_http`          | `None`                     | Override for the OKX trading REST endpoint.                                                             |
-| `base_url_ws_private`    | `None`                     | Override for the private WebSocket URL.                                                                 |
-| `base_url_ws_business`   | `None`                     | Override for the business WebSocket URL.                                                                |
-| `api_key`                | `None`                     | Falls back to `OKX_API_KEY` when unset.                                                                 |
-| `api_secret`             | `None`                     | Falls back to `OKX_API_SECRET` when unset.                                                              |
-| `api_passphrase`         | `None`                     | Falls back to `OKX_API_PASSPHRASE`.                                                                     |
-| `environment`            | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                                                    |
-| `region`                 | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                                                 |
-| `margin_mode`            | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                                    |
-| `spot_trade_quote_ccy`   | `None`                     | SPOT `tradeQuoteCcy` override. Set `"USD"` to keep USD after migrating to `Crypto-USDC`.                |
-| `http_timeout_secs`      | `60`                       | REST trading request timeout.                                                                           |
-| `max_retries`            | `3`                        | Retry attempts for recoverable REST errors. Order submission endpoints are exempt and always send once. |
-| `retry_delay_initial_ms` | `1,000`                    | Initial delay before retrying.                                                                          |
-| `retry_delay_max_ms`     | `10,000`                   | Maximum exponential backoff delay.                                                                      |
-| `auth_timeout_secs`      | `None`                     | Override WebSocket authentication timeout.                                                              |
-| `proxy_url`              | `None`                     | Optional HTTP and WebSocket proxy URL.                                                                  |
-| `transport_backend`      | `Sockudo`                  | WebSocket transport backend.                                                                            |
+| Option                   | Default                    | Description                                                                              |
+| ------------------------ | -------------------------- | ---------------------------------------------------------------------------------------- |
+| `instrument_types`       | `[OKXInstrumentType.SPOT]` | Tradable OKX instrument types.                                                           |
+| `load_spreads`           | `False`                    | Loads live spread instruments.                                                           |
+| `account_id`             | Required                   | Nautilus account ID for the client.                                                      |
+| `base_url_http`          | `None`                     | Override for the OKX trading REST endpoint.                                              |
+| `base_url_ws_private`    | `None`                     | Override for the private WebSocket URL.                                                  |
+| `base_url_ws_business`   | `None`                     | Override for the business WebSocket URL.                                                 |
+| `api_key`                | `None`                     | Falls back to `OKX_API_KEY` when unset.                                                  |
+| `api_secret`             | `None`                     | Falls back to `OKX_API_SECRET` when unset.                                               |
+| `api_passphrase`         | `None`                     | Falls back to `OKX_API_PASSPHRASE`.                                                      |
+| `environment`            | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                                     |
+| `region`                 | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                                  |
+| `margin_mode`            | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                     |
+| `spot_trade_quote_ccy`   | `None`                     | SPOT `tradeQuoteCcy` override. Set `"USD"` to keep USD after migrating to `Crypto-USDC`. |
+| `http_timeout_secs`      | `60`                       | REST trading request timeout.                                                            |
+| `max_retries`            | `3`                        | Recoverable REST retries; order submissions and algo amendments send once.               |
+| `retry_delay_initial_ms` | `1,000`                    | Initial delay before retrying.                                                           |
+| `retry_delay_max_ms`     | `10,000`                   | Maximum exponential backoff delay.                                                       |
+| `auth_timeout_secs`      | `None`                     | Override WebSocket authentication timeout.                                               |
+| `proxy_url`              | `None`                     | Optional HTTP and WebSocket proxy URL.                                                   |
+| `transport_backend`      | `Sockudo`                  | WebSocket transport backend.                                                             |
 
 Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting

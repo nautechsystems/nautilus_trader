@@ -49,6 +49,7 @@ Released on TBD (UTC).
 - Changed Deribit position `leverage` to `Option<Decimal>` (#5240), thanks @abhijeetvichare76
 - Changed Interactive Brokers contract and security filters to reject unknown values (#5041), thanks @faysou
 - Changed Interactive Brokers Rust provider loaders; use `load_with_return_async` (#5041), thanks @faysou
+- Changed Rust `OKXAmendAlgoOrderRequest` literals to require `new_trigger_px_type`; use `None` to omit it
 
 ### Security
 
@@ -102,6 +103,7 @@ Released on TBD (UTC).
 - Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
 - Fixed Lighter transaction nonce send ordering under concurrent preparation
+- Fixed OKX conditional order amendments dropping prices (#5275), thanks for reporting @ProfitChef
 - Fixed Polymarket bounded restarts marking cached closed orders as incomplete
 - Fixed Polymarket bounded restarts omitting confirmed partial fills from resting orders
 - Fixed Polymarket modify canceling a working order when the signed replacement is below the market minimum
