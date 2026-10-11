@@ -23,12 +23,12 @@
 use std::{
     sync::{
         Arc, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
     time::Duration,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
@@ -48,10 +48,11 @@ use nautilus_network::{
     },
 };
 use parking_lot::Mutex;
+use rand::RngExt;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{Message, protocol::CloseFrame};
 use zeroize::Zeroize;
 
 use crate::{
@@ -74,6 +75,13 @@ const POLYBOLT_AUTH_TIMEOUT_SECS: u64 = 10;
 // ponytail: fixed retry delay for transient auth failures; add backoff if the venue ever
 // rate-limits auth retries at this cadence (8 auth frames per connection is the hard cap).
 const POLYBOLT_AUTH_RETRY_DELAY_SECS: u64 = 5;
+/// Venue limit: auth frames per connection; the ninth closes the socket with `4008`.
+const POLYBOLT_AUTH_FRAME_BUDGET: u32 = 8;
+/// Venue close code: server draining; reconnect once after a uniform 0-10 s delay.
+const POLYBOLT_CLOSE_CODE_DRAINING: u16 = 4003;
+/// Venue close code: policy violation; do not reconnect blindly.
+const POLYBOLT_CLOSE_CODE_POLICY_VIOLATION: u16 = 4008;
+const POLYBOLT_DRAIN_RECONNECT_MAX_DELAY_MS: u64 = 10_000;
 const POLYBOLT_RECONNECT_TIMEOUT_MS: u64 = 15_000;
 const POLYBOLT_RECONNECT_DELAY_INITIAL_MS: u64 = 250;
 const POLYBOLT_RECONNECT_DELAY_MAX_MS: u64 = 5_000;
@@ -174,8 +182,17 @@ struct PolymarketPolyBoltFeedInner {
     // Set when the venue definitively rejects the credentials. Cleared only by an explicit
     // `connect`, so a reconnect loop cannot burn the venue's auth-frame budget.
     auth_rejected: AtomicBool,
-    /// Set when the next reconcile attempt must wait out the auth retry delay first.
-    auth_retry_pending: AtomicBool,
+    // Set when the venue closed the connection for a policy violation (4008). Cleared only by
+    // an explicit `connect`, so the feed never reconnects blindly after such a close.
+    halted: AtomicBool,
+    /// Auth frames sent on the current connection, bounded by the venue's per-connection budget.
+    auth_frames_sent: AtomicU32,
+    /// Delay the next reconcile attempt must wait out first (auth retry or drain reconnect).
+    retry_delay: Mutex<Option<Duration>>,
+    /// Last envelope `seq` per channel on the current connection, for gap detection.
+    last_seq_by_channel: Mutex<AHashMap<&'static str, u64>>,
+    /// Channels whose subscriptions must be resubscribed for a fresh snapshot after a gap.
+    resync_channels: Mutex<AHashSet<&'static str>>,
     subscriptions: dashmap::DashMap<String, TrackedSubscription>,
     last_emitted_timestamps_ms: dashmap::DashMap<String, u64>,
     // Tracks the last venue state we successfully pushed so incremental syncs
@@ -326,7 +343,6 @@ struct PolyBoltEnvelope {
     #[allow(dead_code, reason = "modeled for PolyBolt envelope conformance")]
     v: u8,
     channel: String,
-    #[allow(dead_code, reason = "modeled for PolyBolt envelope conformance")]
     seq: u64,
     ts: u64,
     #[serde(default)]
@@ -486,7 +502,11 @@ impl PolymarketPolyBoltFeed {
                 credential,
                 auth: AuthTracker::new(),
                 auth_rejected: AtomicBool::new(false),
-                auth_retry_pending: AtomicBool::new(false),
+                halted: AtomicBool::new(false),
+                auth_frames_sent: AtomicU32::new(0),
+                retry_delay: Mutex::new(None),
+                last_seq_by_channel: Mutex::new(AHashMap::new()),
+                resync_channels: Mutex::new(AHashSet::new()),
                 subscriptions: dashmap::DashMap::new(),
                 last_emitted_timestamps_ms: dashmap::DashMap::new(),
                 live_subscriptions: Mutex::new(AHashMap::new()),
@@ -632,6 +652,7 @@ impl PolymarketPolyBoltFeed {
             }
             self.inner.closing.store(false, Ordering::Release);
             self.inner.auth_rejected.store(false, Ordering::Release);
+            self.inner.halted.store(false, Ordering::Release);
         }
 
         self.ensure_reconcile_worker();
@@ -644,7 +665,7 @@ impl PolymarketPolyBoltFeed {
             }
 
             log::warn!("{e}; retrying in {POLYBOLT_AUTH_RETRY_DELAY_SECS}s");
-            self.schedule_auth_retry();
+            self.schedule_retry(Duration::from_secs(POLYBOLT_AUTH_RETRY_DELAY_SECS));
         }
 
         let current_generation = self.inner.shutdown_generation.lock();
@@ -702,10 +723,92 @@ impl PolymarketPolyBoltFeed {
         tasks.take_shutdown_result()
     }
 
-    fn schedule_auth_retry(&self) {
-        self.inner.auth_retry_pending.store(true, Ordering::Release);
+    fn schedule_retry(&self, delay: Duration) {
+        *self.inner.retry_delay.lock() = Some(delay);
         self.inner.reconcile_pending.store(true, Ordering::Release);
         self.inner.reconcile_notify.notify_one();
+    }
+
+    /// Resets per-connection state after a fresh connect or a transport-level reconnect.
+    fn reset_connection_state(&self) {
+        self.inner.auth.invalidate();
+        self.inner.auth_frames_sent.store(0, Ordering::Release);
+        self.inner.last_seq_by_channel.lock().clear();
+        self.inner.resync_channels.lock().clear();
+    }
+
+    /// Tears down the current connection so the next reconcile builds a fresh one.
+    async fn recycle_connection(&self, ws: &Arc<WebSocketClient>) {
+        ws.disconnect().await;
+        self.clear_ws_if_current(ws);
+    }
+
+    fn auth_budget_exhausted(&self) -> bool {
+        self.inner.auth_frames_sent.load(Ordering::Acquire) >= POLYBOLT_AUTH_FRAME_BUDGET
+    }
+
+    /// Applies the venue's documented recovery policy for a peer close code.
+    async fn handle_peer_close(&self, ws: &Arc<WebSocketClient>, frame: Option<CloseFrame>) {
+        let Some(frame) = frame else {
+            return;
+        };
+        let reason = frame.reason.as_str();
+
+        // ponytail: the shared client starts its own backoff when the reader ends; this loop
+        // disconnects it within microseconds, so at most one spurious reconnect can race ahead.
+        match u16::from(frame.code) {
+            POLYBOLT_CLOSE_CODE_POLICY_VIOLATION => {
+                log::error!(
+                    "PolyBolt closed the connection for a policy violation \
+                     (code={POLYBOLT_CLOSE_CODE_POLICY_VIOLATION}, reason={reason:?}); not \
+                     reconnecting automatically. This indicates an adapter fault; reconnect the \
+                     data client to retry"
+                );
+                self.inner.halted.store(true, Ordering::Release);
+                self.recycle_connection(ws).await;
+            }
+            POLYBOLT_CLOSE_CODE_DRAINING => {
+                let delay = Duration::from_millis(
+                    rand::rng().random_range(0..=POLYBOLT_DRAIN_RECONNECT_MAX_DELAY_MS),
+                );
+                log::warn!(
+                    "PolyBolt is draining (code={POLYBOLT_CLOSE_CODE_DRAINING}, \
+                     reason={reason:?}); reconnecting in {delay:?}"
+                );
+                self.recycle_connection(ws).await;
+                self.schedule_retry(delay);
+            }
+            _ => {
+                log::debug!("PolyBolt peer close code={} reason={reason:?}", frame.code);
+            }
+        }
+    }
+
+    /// Detects per-channel `seq` discontinuities and queues a resubscribe for the channel.
+    fn track_sequence(&self, channel: PolyBoltChannel, envelope: &PolyBoltEnvelope) {
+        let previous = self
+            .inner
+            .last_seq_by_channel
+            .lock()
+            .insert(channel.as_str(), envelope.seq);
+        let Some(previous) = previous else {
+            return;
+        };
+
+        if envelope.seq == previous.saturating_add(1) {
+            return;
+        }
+
+        log::warn!(
+            "PolyBolt sequence discontinuity on channel={}: expected seq={} received seq={} \
+             dropped={:?}; resubscribing the channel for a fresh snapshot",
+            channel.as_str(),
+            previous.saturating_add(1),
+            envelope.seq,
+            envelope.dropped,
+        );
+        self.inner.resync_channels.lock().insert(channel.as_str());
+        self.request_reconcile(ReconcileReason::DesiredChanged);
     }
 
     pub(crate) fn request_reconcile(&self, reason: ReconcileReason) {
@@ -824,7 +927,10 @@ impl PolymarketPolyBoltFeed {
     }
 
     pub(crate) fn needs_connection_recovery(&self) -> bool {
-        if self.inner.closing.load(Ordering::Acquire) || !self.has_subscriptions() {
+        if self.inner.closing.load(Ordering::Acquire)
+            || self.inner.halted.load(Ordering::Acquire)
+            || !self.has_subscriptions()
+        {
             return false;
         }
 
@@ -904,8 +1010,9 @@ impl PolymarketPolyBoltFeed {
             }
 
             while self.inner.reconcile_pending.swap(false, Ordering::AcqRel) {
-                if self.inner.auth_retry_pending.swap(false, Ordering::AcqRel) {
-                    tokio::time::sleep(Duration::from_secs(POLYBOLT_AUTH_RETRY_DELAY_SECS)).await;
+                let retry_delay = self.inner.retry_delay.lock().take();
+                if let Some(delay) = retry_delay {
+                    tokio::time::sleep(delay).await;
 
                     if self.inner.closing.load(Ordering::Acquire) {
                         break;
@@ -929,8 +1036,14 @@ impl PolymarketPolyBoltFeed {
                 log::error!("Failed to reconcile PolyBolt custom data subscriptions: {e}");
 
                 if e.downcast_ref::<AuthRetryable>().is_some() {
-                    self.inner.auth_retry_pending.store(true, Ordering::Release);
-                    self.inner.reconcile_pending.store(true, Ordering::Release);
+                    self.schedule_retry(Duration::from_secs(POLYBOLT_AUTH_RETRY_DELAY_SECS));
+                } else if self.current_ws().is_none()
+                    && self.has_subscriptions()
+                    && !self.inner.halted.load(Ordering::Acquire)
+                {
+                    // A fresh connection attempt failed outright (the shared client's backoff
+                    // only covers an established socket), so retry at the backoff ceiling.
+                    self.schedule_retry(Duration::from_millis(POLYBOLT_RECONNECT_DELAY_MAX_MS));
                 }
             }
         }
@@ -970,6 +1083,13 @@ impl PolymarketPolyBoltFeed {
             return Ok(false);
         }
 
+        if self.inner.halted.load(Ordering::Acquire) {
+            anyhow::bail!(
+                "PolyBolt is halted after a policy violation close \
+                 (code={POLYBOLT_CLOSE_CODE_POLICY_VIOLATION}); reconnect the data client to retry"
+            );
+        }
+
         let (handler, raw_rx) = channel_message_handler();
         let config = self.websocket_config();
 
@@ -1000,7 +1120,7 @@ impl PolymarketPolyBoltFeed {
             self.inner.url
         );
         *self.inner.ws_client.lock() = Some(Arc::clone(&ws));
-        self.inner.auth.invalidate();
+        self.reset_connection_state();
 
         // Tokio cancellation is cooperative. Quiesce the previous loop before
         // activating the replacement so an admitted old-loop tail cannot emit
@@ -1160,18 +1280,28 @@ impl PolymarketPolyBoltFeed {
         self.ensure_authenticated_locked(ws).await?;
 
         let desired = self.snapshot_wire_subscriptions();
+        let resync = std::mem::take(&mut *self.inner.resync_channels.lock());
         let (unsubscribe, subscribe) = {
             let live = self.inner.live_subscriptions.lock();
-            let unsubscribe = live
+            let mut unsubscribe = live
                 .iter()
                 .filter(|(key, _)| !desired.contains_key(*key))
                 .map(|(_, wire)| wire.clone())
                 .collect::<Vec<_>>();
-            let subscribe = desired
+            let mut subscribe = desired
                 .iter()
                 .filter(|(key, _)| !live.contains_key(*key))
                 .map(|(_, wire)| wire.clone())
                 .collect::<Vec<_>>();
+
+            // A sequence gap on a channel means every subscription on it may have missed
+            // points; unsubscribe then subscribe again so the venue replays a fresh snapshot.
+            for (key, wire) in live.iter() {
+                if desired.contains_key(key) && resync.contains(wire.channel) {
+                    unsubscribe.push(wire.clone());
+                    subscribe.push(wire.clone());
+                }
+            }
             (unsubscribe, subscribe)
         };
 
@@ -1211,7 +1341,7 @@ impl PolymarketPolyBoltFeed {
         if self.inner.auth_rejected.load(Ordering::Acquire) {
             anyhow::bail!(
                 "PolyBolt rejected the CLOB API credentials; fix api_key, api_secret and \
-                 passphrase, then reconnect the data client"
+                 passphrase, then recreate the data client"
             );
         }
 
@@ -1219,6 +1349,18 @@ impl PolymarketPolyBoltFeed {
             anyhow::bail!("PolyBolt price channels require CLOB API credentials");
         };
 
+        // The venue closes with 4008 on the ninth auth frame per connection, so a prolonged
+        // verifier outage must move to a fresh connection (and budget) instead of spending
+        // frames the venue will refuse.
+        if self.auth_budget_exhausted() {
+            log::warn!("PolyBolt auth frame budget exhausted on this connection; reconnecting");
+            self.recycle_connection(ws).await;
+            anyhow::bail!(AuthRetryable(
+                "auth frame budget exhausted on this connection".to_string()
+            ));
+        }
+
+        self.inner.auth_frames_sent.fetch_add(1, Ordering::AcqRel);
         let receiver = self.inner.auth.begin();
         let request = PolyBoltAuthRequest {
             op: "auth",
@@ -1246,7 +1388,15 @@ impl PolymarketPolyBoltFeed {
             Err(e) if self.inner.auth_rejected.load(Ordering::Acquire) => {
                 anyhow::bail!("PolyBolt rejected the CLOB API credentials: {e}")
             }
-            Err(e) => Err(AuthRetryable(e).into()),
+            Err(e) => {
+                if self.auth_budget_exhausted() {
+                    log::warn!(
+                        "PolyBolt auth frame budget exhausted on this connection; reconnecting"
+                    );
+                    self.recycle_connection(ws).await;
+                }
+                Err(AuthRetryable(e).into())
+            }
         }
     }
 
@@ -1277,7 +1427,7 @@ impl PolymarketPolyBoltFeed {
                 Some(Message::Text(text)) => {
                     if text.as_str() == RECONNECTED {
                         log::info!("Polymarket PolyBolt reconnected");
-                        self.inner.auth.invalidate();
+                        self.reset_connection_state();
                         self.request_reconcile(ReconcileReason::TransportReset);
                         continue;
                     }
@@ -1290,6 +1440,9 @@ impl PolymarketPolyBoltFeed {
                 }
                 Some(Message::Binary(_)) => {
                     log::debug!("Ignoring binary PolyBolt message");
+                }
+                Some(Message::Close(frame)) => {
+                    self.handle_peer_close(&ws, frame).await;
                 }
                 Some(other) => {
                     log::debug!("Ignoring PolyBolt control message: {other:?}");
@@ -1348,12 +1501,24 @@ impl PolymarketPolyBoltFeed {
                 log::debug!("PolyBolt unsubscribed channel={channel} rid={rid:?}");
             }
             PolyBoltControl::Error { code, channel, rid } => match code.as_str() {
-                "auth_invalid" | "auth_expired" | "auth_attempts" => {
+                "auth_invalid" | "auth_expired" => {
                     log::error!(
                         "PolyBolt rejected the CLOB API credentials code={code} rid={rid:?}; \
-                         fix api_key, api_secret and passphrase, then reconnect the data client"
+                         fix api_key, api_secret and passphrase, then recreate the data client"
                     );
                     self.inner.auth_rejected.store(true, Ordering::Release);
+                    self.inner.auth.fail(code);
+                }
+                "auth_attempts" => {
+                    // Budget exhaustion is per connection, not a credential verdict: the
+                    // next reconcile moves to a fresh connection instead of staying rejected.
+                    log::warn!(
+                        "PolyBolt auth frame budget exhausted rid={rid:?}; reconnecting with \
+                         a fresh budget"
+                    );
+                    self.inner
+                        .auth_frames_sent
+                        .store(POLYBOLT_AUTH_FRAME_BUDGET, Ordering::Release);
                     self.inner.auth.fail(code);
                 }
                 "auth_unavailable" => {
@@ -1374,6 +1539,12 @@ impl PolymarketPolyBoltFeed {
     }
 
     fn handle_envelope(&self, envelope: &PolyBoltEnvelope) -> anyhow::Result<()> {
+        let channel = PolyBoltChannel::parse(&envelope.channel);
+
+        if let Some(channel) = channel {
+            self.track_sequence(channel, envelope);
+        }
+
         if let Some(dropped) = envelope.dropped {
             log::warn!(
                 "PolyBolt conflated {dropped} frame(s) on channel={} (slow consumer)",
@@ -1381,7 +1552,7 @@ impl PolymarketPolyBoltFeed {
             );
         }
 
-        match (PolyBoltChannel::parse(&envelope.channel), envelope.snapshot) {
+        match (channel, envelope.snapshot) {
             (Some(PolyBoltChannel::CryptoTwap), true) => self.handle_twap_snapshot(envelope),
             (Some(PolyBoltChannel::CryptoTwap), false) => self.handle_twap_update(envelope),
             (Some(channel), true) => {
@@ -3121,6 +3292,36 @@ mod tests {
         assert_eq!(crypto_payload(&next_custom(&mut rx)).symbol, "btcusd");
     }
 
+    fn crypto_update_with_seq(seq: u64) -> String {
+        let mut update = fixture_json(CRYPTO_UPDATE_FIXTURE);
+        update["seq"] = json!(seq);
+        update.to_string()
+    }
+
+    #[rstest]
+    fn test_sequence_tracking_resets_on_reconnect() {
+        let (feed, _rx) = make_feed();
+
+        feed.handle_text_message(&crypto_update_with_seq(5))
+            .expect("seq 5");
+        feed.reset_connection_state();
+        feed.handle_text_message(&crypto_update_with_seq(1))
+            .expect("seq 1 on a new connection");
+        assert!(feed.inner.resync_channels.lock().is_empty());
+
+        feed.handle_text_message(&crypto_update_with_seq(3))
+            .expect("seq 3");
+        assert_eq!(
+            feed.inner
+                .resync_channels
+                .lock()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec!["price.crypto"]
+        );
+    }
+
     #[rstest]
     fn test_handle_crypto_update_with_dropped_counter_still_emits() {
         let (feed, mut rx) = make_feed();
@@ -3297,6 +3498,7 @@ mod tests {
         reject_auth: Arc<AtomicBool>,
         hold_auth: Arc<AtomicBool>,
         unavailable_auth_once: Arc<AtomicBool>,
+        auth_attempts_once: Arc<AtomicBool>,
         auth_count: Arc<AtomicUsize>,
     }
 
@@ -3304,6 +3506,7 @@ mod tests {
     enum TestServerCommand {
         SendText(String),
         Close,
+        CloseWithCode(u16),
     }
 
     impl TestServerState {
@@ -3330,6 +3533,13 @@ mod tests {
             let senders = self.control_txs.lock().await.clone();
             for tx in senders {
                 let _ = tx.send(TestServerCommand::Close);
+            }
+        }
+
+        async fn close_all_connections_with_code(&self, code: u16) {
+            let senders = self.control_txs.lock().await.clone();
+            for tx in senders {
+                let _ = tx.send(TestServerCommand::CloseWithCode(code));
             }
         }
     }
@@ -3359,6 +3569,14 @@ mod tests {
                         }
                         Some(TestServerCommand::Close) => {
                             let _ = socket.send(AxumWsMessage::Close(None)).await;
+                            break;
+                        }
+                        Some(TestServerCommand::CloseWithCode(code)) => {
+                            let frame = axum::extract::ws::CloseFrame {
+                                code,
+                                reason: "test".into(),
+                            };
+                            let _ = socket.send(AxumWsMessage::Close(Some(frame))).await;
                             break;
                         }
                         None => break,
@@ -3392,6 +3610,10 @@ mod tests {
                         } else if state.unavailable_auth_once.swap(false, Ordering::Relaxed) {
                             vec![
                                 json!({"op": "error", "code": "auth_unavailable", "rid": payload["rid"]}),
+                            ]
+                        } else if state.auth_attempts_once.swap(false, Ordering::Relaxed) {
+                            vec![
+                                json!({"op": "error", "code": "auth_attempts", "rid": payload["rid"]}),
                             ]
                         } else {
                             mock_replies(&payload)
@@ -3622,6 +3844,203 @@ mod tests {
 
         assert!(feed.is_authenticated());
         assert_eq!(state.auth_count.load(Ordering::Relaxed), 2);
+        feed.disconnect().await.expect("disconnect feed");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_spent_auth_budget_moves_to_a_fresh_connection() {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd"))
+            .expect("track BTC");
+        feed.connect().await.expect("connect feed");
+        wait_for_op(&state, "subscribe").await;
+        assert_eq!(state.connection_count().await, 1);
+        state.clear_received_payloads().await;
+
+        // The venue's per-connection budget is spent; a forced re-auth must not send a
+        // ninth frame on this connection.
+        feed.inner
+            .auth_frames_sent
+            .store(POLYBOLT_AUTH_FRAME_BUDGET, Ordering::Release);
+        let error = feed
+            .reconcile_once(true)
+            .await
+            .expect_err("spent budget must defer to a fresh connection");
+        assert!(error.downcast_ref::<AuthRetryable>().is_some(), "{error}");
+        assert!(feed.current_ws().is_none());
+        assert!(state.payloads().await.is_empty());
+
+        feed.reconcile_once(false)
+            .await
+            .expect("fresh connection authenticates");
+        wait_for_op(&state, "subscribe").await;
+
+        assert_eq!(state.connection_count().await, 2);
+        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
+        assert_eq!(feed.inner.auth_frames_sent.load(Ordering::Acquire), 1);
+        assert!(feed.is_authenticated());
+        feed.disconnect().await.expect("disconnect feed");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_auth_attempts_error_recovers_on_a_fresh_connection() {
+        let state = TestServerState::default();
+        state.auth_attempts_once.store(true, Ordering::Relaxed);
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd"))
+            .expect("track BTC");
+
+        feed.connect()
+            .await
+            .expect("a spent auth budget must not fail connect");
+
+        assert!(!feed.is_authenticated());
+        assert!(!feed.inner.auth_rejected.load(Ordering::Acquire));
+
+        // The reconcile worker waits out the retry delay, then authenticates on a new connection.
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { ops(&state.payloads().await) == vec!["auth", "auth", "subscribe"] }
+            },
+            Duration::from_secs(POLYBOLT_AUTH_RETRY_DELAY_SECS + 5),
+        )
+        .await;
+
+        assert_eq!(state.connection_count().await, 2);
+        assert!(feed.is_authenticated());
+        feed.disconnect().await.expect("disconnect feed");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_policy_violation_close_stops_reconnects_until_explicit_connect() {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd"))
+            .expect("track BTC");
+        feed.connect().await.expect("connect feed");
+        wait_for_op(&state, "subscribe").await;
+
+        state
+            .close_all_connections_with_code(POLYBOLT_CLOSE_CODE_POLICY_VIOLATION)
+            .await;
+        wait_until_async(
+            || {
+                let feed = feed.clone();
+                async move { feed.current_ws().is_none() }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // Longer than the shared client's reconnect backoff: nothing may reconnect.
+        tokio::time::sleep(Duration::from_millis(
+            POLYBOLT_RECONNECT_DELAY_INITIAL_MS * 4,
+        ))
+        .await;
+        feed.request_reconcile(ReconcileReason::DesiredChanged);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert_eq!(state.connection_count().await, 1);
+        assert!(!feed.needs_connection_recovery());
+
+        state.clear_received_payloads().await;
+        feed.connect()
+            .await
+            .expect("explicit connect clears the halt");
+        wait_for_op(&state, "subscribe").await;
+
+        assert_eq!(state.connection_count().await, 2);
+        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
+        feed.disconnect().await.expect("disconnect feed");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_draining_close_reconnects_after_the_drain_delay() {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd"))
+            .expect("track BTC");
+        feed.connect().await.expect("connect feed");
+        wait_for_op(&state, "subscribe").await;
+        state.clear_received_payloads().await;
+
+        state
+            .close_all_connections_with_code(POLYBOLT_CLOSE_CODE_DRAINING)
+            .await;
+        wait_until_async(
+            || {
+                let feed = feed.clone();
+                async move { feed.current_ws().is_none() }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { ops(&state.payloads().await) == vec!["auth", "subscribe"] }
+            },
+            Duration::from_millis(POLYBOLT_DRAIN_RECONNECT_MAX_DELAY_MS + 5_000),
+        )
+        .await;
+
+        assert_eq!(state.connection_count().await, 2);
+        assert!(feed.is_authenticated());
+        feed.disconnect().await.expect("disconnect feed");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_sequence_gap_resubscribes_only_the_affected_channel() {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd"))
+            .expect("track BTC");
+        feed.track_subscribe(equity_data_type("aapl"))
+            .expect("track AAPL");
+        feed.connect().await.expect("connect feed");
+        wait_for_op(&state, "subscribe").await;
+        state.clear_received_payloads().await;
+
+        feed.handle_text_message(&crypto_update_with_seq(1))
+            .expect("seq 1");
+        feed.handle_text_message(&crypto_update_with_seq(2))
+            .expect("seq 2");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            state.payloads().await.is_empty(),
+            "contiguous seq must not resubscribe"
+        );
+
+        feed.handle_text_message(&crypto_update_with_seq(4))
+            .expect("seq 4");
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { ops(&state.payloads().await) == vec!["unsubscribe", "subscribe"] }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        for payload in &state.payloads().await {
+            let subscriptions = payload["subscriptions"].as_array().expect("subscriptions");
+            assert_eq!(subscriptions.len(), 1, "{payload}");
+            assert_eq!(subscriptions[0]["channel"], "price.crypto");
+            assert_eq!(subscriptions[0]["filter"]["symbol"], "btcusd");
+        }
         feed.disconnect().await.expect("disconnect feed");
     }
 

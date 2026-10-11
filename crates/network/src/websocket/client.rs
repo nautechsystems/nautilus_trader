@@ -1740,20 +1740,28 @@ impl WebSocketClientInner {
                             break;
                         }
                     }
-                    Ok(Some(Ok(Message::Close(Some(frame))))) => {
-                        log::log!(
-                            read_termination_log_level(&connection_state),
-                            "Received close frame, terminating: code={}, reason='{}'",
-                            frame.code,
-                            escape_control_characters(&frame.reason)
-                        );
-                        break;
-                    }
-                    Ok(Some(Ok(Message::Close(None)))) => {
-                        log::log!(
-                            read_termination_log_level(&connection_state),
-                            "Received close frame with no code or reason, terminating"
-                        );
+                    Ok(Some(Ok(Message::Close(frame)))) => {
+                        match &frame {
+                            Some(frame) => log::log!(
+                                read_termination_log_level(&connection_state),
+                                "Received close frame, terminating: code={}, reason='{}'",
+                                frame.code,
+                                escape_control_characters(&frame.reason)
+                            ),
+                            None => log::log!(
+                                read_termination_log_level(&connection_state),
+                                "Received close frame with no code or reason, terminating"
+                            ),
+                        }
+
+                        // Surface the peer close frame so handlers can apply venue close-code
+                        // policies (for example "do not reconnect") before the reconnect runs.
+                        if let Some(ref handler) = handler
+                            && ConnectionMode::from_atomic(&connection_state).is_active()
+                            && read_fence.is_valid()
+                        {
+                            handler.handle(connection_epoch, Message::Close(frame));
+                        }
                         break;
                     }
                     Ok(Some(Err(e))) => {
@@ -3928,6 +3936,9 @@ mod tests {
     const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
     const PING_TRIGGER: &str = "send-test-ping";
     const HOSTILE_CLOSE_TRIGGER: &str = "close-hostile";
+    const CODED_CLOSE_TRIGGER: &str = "close-coded";
+    const CODED_CLOSE_CODE: u16 = 4003;
+    const CODED_CLOSE_REASON: &str = "draining";
     const HOSTILE_CLOSE_REASON: &str = "injected\r\n\u{1b}[31mforged\u{1b}[0m";
     const NETWORK_LOG_TARGETS: &[&str] = &[
         "nautilus_network::http::client",
@@ -4002,6 +4013,16 @@ mod tests {
                                         .send(WsMessage::Close(Some(WsCloseFrame {
                                             code: CloseCode::Error,
                                             reason: HOSTILE_CLOSE_REASON.into(),
+                                        })))
+                                        .await;
+
+                                    break;
+                                }
+                                WsMessage::Text(txt) if txt == CODED_CLOSE_TRIGGER => {
+                                    let _ = websocket
+                                        .send(WsMessage::Close(Some(WsCloseFrame {
+                                            code: CloseCode::from(CODED_CLOSE_CODE),
+                                            reason: CODED_CLOSE_REASON.into(),
                                         })))
                                         .await;
 
@@ -4698,6 +4719,54 @@ mod tests {
 
     // A close reason is fully server-controlled: the logged line must escape its control
     // characters rather than let a hostile venue forge log lines or terminal sequences.
+    #[rstest]
+    #[tokio::test]
+    async fn test_peer_close_frame_is_forwarded_to_handler() {
+        let server = TestServer::setup().await;
+        let (handler, mut handler_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(WebSocketConfig {
+                url: format!("ws://127.0.0.1:{}", server.port),
+                headers: vec![("test".into(), "test".into())],
+                heartbeat_interval_secs: None,
+                heartbeat_payload: None,
+                connect_timeout_ms: Some(1_000),
+                reconnect_delay_initial_ms: Some(1_000),
+                reconnect_backoff_factor: None,
+                reconnect_delay_max_ms: None,
+                reconnect_jitter_ms: Some(0),
+                reconnect_max_attempts: None,
+                heartbeat_timeout_secs: None,
+                idle_timeout_ms: None,
+                writer_capacity: None,
+                backend: TransportBackend::Tungstenite,
+                proxy_url: None,
+                max_message_size_bytes: None,
+                max_frame_size_bytes: None,
+            })
+            .message_handler(handler)
+            .connect()
+            .await
+            .expect("Failed to connect");
+
+        client
+            .send_text(CODED_CLOSE_TRIGGER.to_string(), None)
+            .await
+            .unwrap();
+
+        let message = tokio::time::timeout(TEST_TIMEOUT, handler_rx.recv())
+            .await
+            .expect("close frame was not forwarded")
+            .expect("handler channel closed");
+        let WsMessage::Close(Some(frame)) = message else {
+            panic!("expected a close frame, was {message:?}");
+        };
+        assert_eq!(u16::from(frame.code), CODED_CLOSE_CODE);
+        assert_eq!(frame.reason.as_str(), CODED_CLOSE_REASON);
+
+        client.disconnect().await;
+    }
+
     #[rstest]
     #[tokio::test]
     async fn test_close_frame_reason_is_sanitized_in_logs() {

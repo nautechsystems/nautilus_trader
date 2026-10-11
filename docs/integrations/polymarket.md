@@ -2125,12 +2125,26 @@ logged at error level with the channel, symbol, timestamp, prior value, and rece
 stream continues with the prior observation authoritative, and emission resumes at the next newer
 observation timestamp.
 
-If the venue rejects the credentials (`auth_invalid`, `auth_expired`, or `auth_attempts`), the
-feed logs an error, stops sending auth frames so the venue's eight-attempt budget is not consumed,
-and stays idle until the data client is explicitly reconnected with corrected credentials. A
-transient `auth_unavailable` is retried after a short delay, including during the data client's
-own connect, so an auth outage never takes the market data socket down with it. When the venue
-reports conflated frames (`dropped`), the feed logs a warning and continues.
+If the venue rejects the credentials (`auth_invalid` or `auth_expired`), the feed logs an error,
+stops sending auth frames, and stays idle. Credentials are resolved once when the data client is
+built, so reconnecting the same client retries with the rejected credentials; recreate the data
+client with corrected credentials instead. A transient `auth_unavailable` is retried after a
+short delay, including during the data client's own connect, so an auth outage never takes the
+market data socket down with it. The venue allows eight auth frames per connection, so a prolonged
+outage moves to a fresh connection before the ninth frame rather than staying rejected, and the
+venue's `auth_attempts` error is handled the same way.
+
+Every envelope carries a dense per-channel `seq` that resets on each connection. A gap or
+regression is logged at warning level together with the venue's `dropped` count, and every
+subscription on that channel is unsubscribed and subscribed again so the venue replays a fresh
+snapshot; the replay guard above keeps the backfill free of duplicates. Sequence tracking resets
+on every reconnect.
+
+The venue's close codes follow their documented recovery policies. A `4003` (server draining)
+close reconnects once after a uniform random delay of up to ten seconds. A `4008` (policy
+violation) close is logged at error level and the feed stops reconnecting until the data client
+is reconnected, because the close signals a client fault rather than a transient outage. Other
+close codes reconnect with the shared client's backoff.
 
 ##### Migrating from RTDS
 

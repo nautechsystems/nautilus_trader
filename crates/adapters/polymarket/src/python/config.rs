@@ -130,7 +130,7 @@ impl PolymarketDataClientConfig {
     /// and are skipped during serialization; they default to empty/`None` and must be
     /// installed programmatically after deserialization.
     #[new]
-    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None, base_url_reference_prices=None, api_key=None, api_secret=None, passphrase=None, transport_backend=None, drop_quotes_missing_side=None, proxy_url=None, compute_effective_deltas=None, book_snapshot_timeout_secs=None, book_stale_check_interval_secs=None, book_stale_threshold_secs=None))]
+    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None, base_url_reference_prices=None, transport_backend=None, drop_quotes_missing_side=None, proxy_url=None, compute_effective_deltas=None, book_snapshot_timeout_secs=None, book_stale_check_interval_secs=None, book_stale_threshold_secs=None, api_key=None, api_secret=None, passphrase=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_config: Option<PolymarketInstrumentProviderConfig>,
@@ -154,9 +154,6 @@ impl PolymarketDataClientConfig {
         resolve_poll_grace_secs: Option<u64>,
         resolve_poll_max_wait_secs: Option<u64>,
         base_url_reference_prices: Option<String>,
-        api_key: Option<String>,
-        api_secret: Option<String>,
-        passphrase: Option<String>,
         transport_backend: Option<TransportBackend>,
         drop_quotes_missing_side: Option<bool>,
         proxy_url: Option<String>,
@@ -164,6 +161,9 @@ impl PolymarketDataClientConfig {
         book_snapshot_timeout_secs: Option<u64>,
         book_stale_check_interval_secs: Option<u64>,
         book_stale_threshold_secs: Option<u64>,
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        passphrase: Option<String>,
     ) -> PyResult<Self> {
         let default = Self::default();
 
@@ -393,6 +393,27 @@ mod tests {
             let config = construct_data_client_config(py, Some(&args), None);
 
             assert_eq!(config.update_instruments_interval_mins, None);
+        });
+    }
+
+    #[rstest]
+    fn direct_pyo3_constructor_keeps_positional_slots_ahead_of_credentials() {
+        Python::initialize();
+        Python::attach(|py| {
+            // `drop_quotes_missing_side` is the 23rd positional parameter, directly after
+            // `base_url_reference_prices` and `transport_backend`; the credential parameters
+            // were appended so this slot did not move.
+            let mut args: Vec<pyo3::Bound<'_, pyo3::PyAny>> =
+                (0..22).map(|_| py.None().into_bound(py)).collect();
+            args.push(pyo3::types::PyBool::new(py, false).to_owned().into_any());
+            let args = PyTuple::new(py, args).expect("args");
+
+            let config = construct_data_client_config(py, Some(&args), None);
+
+            assert!(!config.drop_quotes_missing_side);
+            assert!(config.api_key.is_none());
+            assert!(config.api_secret.is_none());
+            assert!(config.passphrase.is_none());
         });
     }
 

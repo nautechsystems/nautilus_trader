@@ -181,9 +181,6 @@ class PolymarketDataClientConfig:
         resolve_poll_grace_secs: int | None = None,
         resolve_poll_max_wait_secs: int | None = None,
         base_url_reference_prices: str | None = None,
-        api_key: str | None = None,
-        api_secret: str | None = None,
-        passphrase: str | None = None,
         transport_backend: network.TransportBackend | None = None,
         drop_quotes_missing_side: bool | None = None,
         proxy_url: str | None = None,
@@ -191,6 +188,9 @@ class PolymarketDataClientConfig:
         book_snapshot_timeout_secs: int | None = None,
         book_stale_check_interval_secs: int | None = None,
         book_stale_threshold_secs: int | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        passphrase: str | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
