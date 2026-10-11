@@ -55,6 +55,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed portfolio Greeks panics when calculations, subscribers, or filters write to the cache
 - Fixed portfolio Greeks omitting multipliers before filtering and aggregation, including futures
 - Fixed missing Python Greeks conversion, scalar-left multiplication, and portfolio addition
 - Fixed released emulated orders sending stale order initialization (#5169), thanks @jrile018

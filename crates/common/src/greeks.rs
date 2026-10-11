@@ -1042,16 +1042,22 @@ impl GreeksCalculator {
         let cache_greeks = cache_greeks.unwrap_or(false);
         let publish_greeks = publish_greeks.unwrap_or(false);
         let percent_greeks = percent_greeks.unwrap_or(false);
-        let cache = self.cache.borrow();
-        let open_positions = cache.positions_open(
-            venue.as_ref(),
-            instrument_id.as_ref(),
-            strategy_id.as_ref(),
-            None, // account_id
-            side,
-        );
-        let open_positions: Vec<Position> =
-            open_positions.iter().map(PositionRef::cloned).collect();
+
+        // Release the cache borrow before calculations and callbacks can write to it
+        let open_positions: Vec<Position> = {
+            let cache = self.cache.borrow();
+            cache
+                .positions_open(
+                    venue.as_ref(),
+                    instrument_id.as_ref(),
+                    strategy_id.as_ref(),
+                    None, // account_id
+                    side,
+                )
+                .iter()
+                .map(PositionRef::cloned)
+                .collect()
+        };
 
         for position in open_positions {
             let position_instrument_id = position.instrument_id;
@@ -2303,6 +2309,156 @@ mod tests {
         assert_eq!(actual.vega, expected.vega);
         assert_eq!(actual.theta, expected.theta);
         assert_eq!(actual.rho, expected.rho);
+    }
+
+    #[rstest]
+    #[case::neither(false, false)]
+    #[case::cache(true, false)]
+    #[case::publish(false, true)]
+    #[case::cache_and_publish(true, true)]
+    fn test_portfolio_greeks_cache_and_publish(
+        #[case] cache_greeks: bool,
+        #[case] publish_greeks: bool,
+    ) {
+        msgbus::set_message_bus(Rc::new(RefCell::new(msgbus::MessageBus::default())));
+        let (calculator, position, now_ns) = portfolio_option_calculator();
+        let option_id = position.instrument_id;
+        let expected = InstrumentGreeksParams::builder()
+            .instrument_id(option_id)
+            .ts_event(now_ns)
+            .build()
+            .calculate(&calculator)
+            .unwrap();
+        let published = Rc::new(RefCell::new(Vec::new()));
+        let captured = published.clone();
+        calculator.subscribe_greeks("AAPL", None::<fn(&GreeksData)>);
+        calculator.subscribe_greeks(
+            "AAPL",
+            Some(move |data: &GreeksData| {
+                captured.borrow_mut().push(data.clone());
+            }),
+        );
+
+        let result = PortfolioGreeksParams::builder()
+            .cache_greeks(cache_greeks)
+            .publish_greeks(publish_greeks)
+            .build()
+            .calculate(&calculator)
+            .unwrap();
+        let cached = calculator.cache.borrow().greeks(&option_id);
+        msgbus::set_message_bus(Rc::new(RefCell::new(msgbus::MessageBus::default())));
+
+        let mut expected_position = expected.clone();
+        expected_position.pnl = expected_position.price - position.avg_px_open;
+        assert_portfolio_greeks_eq(
+            &result,
+            &(position.signed_qty * &expected_position.to_portfolio_greeks()),
+        );
+        assert_eq!(cached.is_some(), cache_greeks || publish_greeks);
+        assert_eq!(published.borrow().len(), usize::from(publish_greeks));
+
+        for actual in cached.iter().chain(published.borrow().iter()) {
+            assert_greeks_eq(actual, &expected);
+        }
+    }
+
+    #[rstest]
+    fn test_portfolio_greeks_filter_reenters_calculator_and_caches() {
+        let (calculator, position, now_ns) = portfolio_option_calculator();
+        let option_id = position.instrument_id;
+        let expected = InstrumentGreeksParams::builder()
+            .instrument_id(option_id)
+            .ts_event(now_ns)
+            .build()
+            .calculate(&calculator)
+            .unwrap();
+        let calculator = Rc::new(calculator);
+        let captured = calculator.clone();
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        let captured_observed = observed.clone();
+
+        let filter = GreeksFilterCallback::from_closure(move |data| {
+            InstrumentGreeksParams::builder()
+                .instrument_id(data.instrument_id)
+                .ts_event(now_ns)
+                .cache_greeks(true)
+                .build()
+                .calculate(&captured)
+                .unwrap();
+            captured_observed.borrow_mut().push(data.clone());
+            true
+        });
+
+        let result = PortfolioGreeksParams::builder()
+            .greeks_filter(filter)
+            .build()
+            .calculate(&calculator)
+            .unwrap();
+
+        let mut expected_position = expected.clone();
+        expected_position.pnl = expected_position.price - position.avg_px_open;
+        let expected_portfolio = position.signed_qty * &expected_position.to_portfolio_greeks();
+        assert_portfolio_greeks_eq(&result, &expected_portfolio);
+        assert_greeks_eq(
+            &calculator.cache.borrow().greeks(&option_id).unwrap(),
+            &expected,
+        );
+        expected_position.pnl = expected_portfolio.pnl;
+        expected_position.price = expected_portfolio.price;
+        expected_position.greeks = expected_portfolio.greeks;
+        let observed = observed.borrow();
+        assert_eq!(observed.len(), 1);
+        assert_greeks_eq(&observed[0], &expected_position);
+    }
+
+    fn portfolio_option_calculator() -> (GreeksCalculator, Position, UnixNanos) {
+        let (calculator, option_id, now_ns) = option_calculator();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock.borrow_mut().set_time(now_ns);
+        let calculator = GreeksCalculator::new(calculator.cache, clock);
+        let instrument = calculator
+            .cache
+            .borrow()
+            .instrument(&option_id)
+            .cloned()
+            .unwrap();
+        let position = position_from_fill(
+            &instrument,
+            "P-OPTION",
+            "O-OPTION",
+            "T-OPTION",
+            OrderSide::Buy,
+            3,
+            "9.00",
+        );
+        calculator
+            .cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+
+        (calculator, position, now_ns)
+    }
+
+    fn assert_greeks_eq(actual: &GreeksData, expected: &GreeksData) {
+        assert_eq!(actual.ts_init, expected.ts_init);
+        assert_eq!(actual.ts_event, expected.ts_event);
+        assert_eq!(actual.instrument_id, expected.instrument_id);
+        assert_eq!(actual.is_call, expected.is_call);
+        assert_eq!(actual.strike, expected.strike);
+        assert_eq!(actual.expiry, expected.expiry);
+        assert_eq!(actual.expiry_in_days, expected.expiry_in_days);
+        assert_eq!(actual.expiry_in_years, expected.expiry_in_years);
+        assert_eq!(actual.multiplier, expected.multiplier);
+        assert_eq!(actual.quantity, expected.quantity);
+        assert_eq!(actual.underlying_price, expected.underlying_price);
+        assert_eq!(actual.interest_rate, expected.interest_rate);
+        assert_eq!(actual.cost_of_carry, expected.cost_of_carry);
+        assert_eq!(actual.vol, expected.vol);
+        assert_eq!(actual.pnl, expected.pnl);
+        assert_eq!(actual.price, expected.price);
+        assert_eq!(actual.greeks, expected.greeks);
+        assert_eq!(actual.itm_prob, expected.itm_prob);
     }
 
     #[rstest]
