@@ -305,12 +305,13 @@ mod tests {
     #[tokio::test]
     async fn queued_recovery_waits_for_weight_without_expiring_its_deadline() {
         let (tracker, mut rx, tasks) = setup(600);
+
+        // Include setup time because weight refills before the recovery task starts
+        let started = std::time::Instant::now();
         tracker.pacer().acquire(600).await;
         let recovery = tracker.handle_update(instrument_id(), update(101)).unwrap();
         let fetches = Arc::new(AtomicUsize::new(0));
         let fetch_count = Arc::clone(&fetches);
-        let started = std::time::Instant::now();
-
         spawn_recovery(
             instrument_id(),
             Arc::clone(&recovery),
@@ -324,21 +325,27 @@ mod tests {
             &tasks.spawner().unwrap(),
         );
 
-        wait_until_async(
-            || {
-                let accepted = recovery.is_accepted();
-                async move { accepted }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let DataEvent::Data(Data::BookDeltas(deltas)) = event else {
+            panic!("expected order book deltas");
+        };
+
+        let expected = snapshot(100).deltas;
 
         assert!(started.elapsed() >= Duration::from_millis(80));
+        assert!(recovery.is_accepted());
         assert_eq!(fetches.load(Ordering::SeqCst), 1);
-        assert!(matches!(
-            rx.try_recv(),
-            Ok(DataEvent::Data(Data::BookDeltas(_)))
-        ));
+        assert_eq!(deltas.instrument_id, expected.instrument_id);
+        assert_eq!(deltas.deltas, expected.deltas);
+        assert_eq!(deltas.flags, expected.flags);
+        assert_eq!(deltas.sequence, expected.sequence);
+        assert_eq!(deltas.ts_event, expected.ts_event);
+        assert_eq!(deltas.ts_init, expected.ts_init);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
