@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Added Derive adapter support for API v3
 - Added Derive order book recovery for missing and stale snapshots
 - Added Interactive Brokers subscription idle events (#5041), thanks @faysou
+- Added Kraken Spot L2 checksum validation and resync on mismatch (#5219), thanks @zhaow-de
 - Added Lighter native transaction batching with automatic splitting for order lists and batch operations
 
 ### Breaking Changes
@@ -29,6 +30,7 @@ Released on TBD (UTC).
 - Removed Interactive Brokers `ErrorCategory` and `InteractiveBrokersErrorKind` exports (#5041), thanks @faysou
 - Replaced Interactive Brokers Rust symbology functions with `Symbology` methods (#5041), thanks @faysou
 - Changed Rust `PortfolioGreeks::from(GreeksData)` to apply the contract multiplier
+- Changed Rust `ReconciliationResult` literals; add empty `order_only_fill_keys` (#5114), thanks @zhaow-de
 - Changed Rust `VirtualTimer` and `LiveTimer` to store `interval: TimerInterval` instead of `interval_ns`;
   match `TimerInterval::Fixed` to read fixed intervals
 - Changed Rust `DataEngineConfig` and `LiveDataEngineConfig` struct literals to require `time_bars_time_zone`;
@@ -53,6 +55,7 @@ Released on TBD (UTC).
 - Changed Rust `DeriveWsMessage` to include `BookSubscription`; update exhaustive matches
 - Changed Interactive Brokers contract and security filters to reject unknown values (#5041), thanks @faysou
 - Changed Interactive Brokers Rust provider loaders; use `load_with_return_async` (#5041), thanks @faysou
+- Changed Rust `KrakenDataClientConfig` literals; add `validate_l2_checksum: true` (#5219), thanks @zhaow-de
 - Changed Rust `OKXAmendAlgoOrderRequest` literals to require `new_trigger_px_type`; use `None` to omit it
 
 ### Security
@@ -77,6 +80,7 @@ Released on TBD (UTC).
 - Fixed Python indicator constructors aborting the process on invalid periods or oversized capacities
 - Fixed reconciliation rejecting fills on a pending order when a `Filled` report exceeds its quantity
 - Fixed replacement reconciliation losing native fill IDs and duplicating inferred fills
+- Fixed reconciliation losing fills for orders spanning a flat position boundary (#5114), thanks @zhaow-de
 - Fixed calculated margin equity omitting option value (#5252), thanks for reporting @abhijeetvichare76
 - Fixed streaming Parquet promotion failing on `OrderBookDelta.clear()` snapshots (#5268), thanks for reporting @hellow-star
 - Fixed simulated bracket exits rejected as reduce-only before entry fills reached the cache (#5248), thanks @awss1i
@@ -102,9 +106,12 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers account balances and margins remaining stale after connect (#5041), thanks @faysou
 - Fixed Interactive Brokers spread fills arriving before their leg fills (#5041), thanks @faysou
 - Fixed Interactive Brokers execution queries replaying historical fills as live fills (#5041), thanks @faysou
+- Fixed Interactive Brokers order ID reuse after completed orders (#5284), thanks @honvl
 - Fixed Kraken spot and futures wallets retaining balances reported at zero (#5186), thanks @zhaow-de
 - Fixed Kraken futures margin currencies, aggregation, and maintenance requirements (#5199), thanks @zhaow-de
 - Fixed Kraken futures reads silently omitting unresolved live orders and positions (#5217), thanks @zhaow-de
+- Fixed Kraken futures startup reconciliation omitting order history (#5114), thanks @zhaow-de
+- Fixed Kraken futures order-history parsing and filled-order pricing (#5247), thanks @zhaow-de
 - Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
 - Fixed Lighter single and batch modify failures remaining pending after admission
@@ -121,7 +128,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Added `BacktestNode` book delta replay benchmark comparing batched and individual dispatch
-- Refined shared pointer cloning in infrastructure, CLI, and event store code (#5236), thanks @mirooon
+- Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
 - Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Ported the Interactive Brokers adapter to the `ibapi` v5.0.0 API (#5041), thanks @faysou
 - Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
@@ -137,11 +144,13 @@ Released on TBD (UTC).
 - Optimized Python `Portfolio` queries to avoid copying account event history (#5260), thanks @XBeg9
 - Upgraded Rust (MSRV) to 1.99.0
 - Upgraded `cargo-hawk` tool to v0.1.15
-- Upgraded `prek` tool to v0.5.4
+- Upgraded `cargo-nextest` tool to v0.9.148
+- Upgraded `prek` tool to v0.5.5
 - Upgraded Socket CLI tool to v1.5.0
-- Upgraded `uv` tool and pre-commit hook to v0.12.22
+- Upgraded `uv` tool and pre-commit hook to v0.12.24
 - Upgraded `typos` pre-commit hook to v1.51.1
 - Upgraded `databento` crate to v0.63.0
+- Upgraded `datafusion` crate to v55.2.0
 - Upgraded `either` crate to v1.19.0
 - Upgraded `h2` crate to v0.4.20
 - Upgraded `hyper` crate to v1.12.0

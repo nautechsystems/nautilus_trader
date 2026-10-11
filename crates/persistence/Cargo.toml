@@ -78,7 +78,9 @@ log = { workspace = true }
 object_store = { workspace = true }
 parquet = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+
+# Replay identity hashes depend on JSON field insertion order
+serde_json = { workspace = true, features = ["preserve_order"] }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

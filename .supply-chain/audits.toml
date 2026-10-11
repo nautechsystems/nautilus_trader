@@ -1946,6 +1946,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-catalog]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1958,6 +1964,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-catalog]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-catalog-listing]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1969,6 +1981,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-catalog-listing]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1982,6 +2000,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Adds checked batch and union schema adaptation, rejecting incompatible field sets and union modes before constructing arrays. Preserves empty struct scalars during default creation and compaction. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-common-runtime]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1993,6 +2017,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-common-runtime]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-datasource]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2006,6 +2036,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-datasource]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-datasource-arrow]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2017,6 +2053,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-datasource-arrow]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-datasource-csv]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2030,6 +2072,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-datasource-csv]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-datasource-json]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2041,6 +2089,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-datasource-json]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-datasource-parquet]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2054,6 +2108,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-datasource-parquet]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. INT96 schema coercion carries existing field metadata through rebuilt struct, list, and map fields; regression coverage checks nested field IDs and arbitrary metadata. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-doc]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2066,6 +2126,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-doc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-execution]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2077,6 +2143,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-execution]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-expr]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2090,6 +2162,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Corrects cast and try-cast field metadata: type-only casts strip extension metadata and explicit fields supply target metadata. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-expr]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. PostgreSQL JSON plan display serializes typed nodes and ordered field pairs through serde, preserving child and schema output without depending on serde_json preserve_order. The added serde dependency uses the existing resolved version. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-expr-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2101,6 +2179,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-expr-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-functions]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2114,6 +2198,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Keeps same-type arrow_cast and arrow_try_cast expressions when extension metadata must be stripped. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-functions]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-functions-aggregate]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2125,6 +2215,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-aggregate]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-functions-aggregate-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2138,6 +2234,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-functions-aggregate-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-functions-nested]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2149,6 +2251,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-nested]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-functions-table]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2162,6 +2270,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-functions-table]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-functions-window]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2173,6 +2287,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-window]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-functions-window-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2186,6 +2306,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-functions-window-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2198,6 +2324,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-optimizer]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2209,6 +2341,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-optimizer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-physical-expr]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2222,6 +2360,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Separates explicit cast targets from type-only targets, preserves metadata and nullability through expression rebuilding, and adds field-aware try-casts. Adds a direct arrow-schema dependency already present in the workspace. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-physical-expr]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-physical-expr-adapter]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2234,6 +2378,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Narrows nested struct casts to selected literal field paths, returns typed nulls for missing fields, and preserves casts for unresolved or non-struct paths. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-physical-expr-adapter]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-physical-expr-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2245,6 +2395,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-physical-expr-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-physical-optimizer]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2258,6 +2414,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Handles RightMark joins in sort pushdown using the right-side field mapping. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-physical-optimizer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Distribution and sorting rewrites retain fetched row-selection boundaries; replacing a fetched ordered merge retains its ordering and limit in a sort above coalescing. Unfetched distribution-only operators remain replaceable. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-physical-plan]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2270,6 +2432,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Adapts memory batches to compatible declared schemas, preserves projection metadata across rewrites, and chunks non-recursive unnest input with output batch splitting. Recursive or individually oversized lists still materialize their expansion. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-physical-plan]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. PostgreSQL JSON plan display serializes typed nodes and insertion-ordered extra metrics through serde, retaining optional schema, row counts, timing, and child plans without serde_json preserve_order. The serde dependency uses the existing resolved version. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-pruning]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2281,6 +2449,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-pruning]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.datafusion-session]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2294,6 +2468,12 @@ criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-session]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
 [[audits.datafusion-sql]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2305,6 +2485,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.0.0 -> 55.1.0"
 notes = "Reviewed the published 55.0.0 to 55.1.0 crate delta. Runtime source is unchanged; release metadata and DataFusion family dependency versions advance together. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-sql]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.1.0 -> 55.2.0"
+notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
