@@ -83,11 +83,13 @@ pub fn nautilus_order_to_ib_order(
     };
 
     apply_expire_time_policy(&mut ib_order, order);
-    apply_quantity_policy(&mut ib_order, order, instrument_provider)?;
     apply_trailing_order_policy(&mut ib_order, order, price_magnifier)?;
     apply_display_quantity_policy(&mut ib_order, order);
 
     apply_ib_order_tags(&mut ib_order, order.tags())?;
+
+    // Runs after the tags so it validates the order type IB receives
+    apply_quantity_policy(&mut ib_order, order, instrument_provider)?;
 
     Ok(ib_order)
 }
@@ -194,6 +196,7 @@ mod tests {
     fn create_quote_quantity_crypto_order(
         order_type: OrderType,
         time_in_force: NautilusTimeInForce,
+        tags_json: Option<&str>,
     ) -> (OrderAny, InteractiveBrokersInstrumentProvider) {
         let instrument_id =
             InstrumentId::new(NautilusSymbol::from("BTC/USD"), Venue::from("PAXOS"));
@@ -240,13 +243,17 @@ mod tests {
             builder.price(Price::from("87306.25"));
         }
 
+        if let Some(tags_json) = tags_json {
+            builder.tags(vec![Ustr::from(&format!("IBOrderTags:{tags_json}"))]);
+        }
+
         (builder.build(), provider)
     }
 
     #[rstest]
     fn test_quote_quantity_crypto_market_buy_maps_to_cash_qty() {
         let (order, provider) =
-            create_quote_quantity_crypto_order(OrderType::Market, NautilusTimeInForce::Gtc);
+            create_quote_quantity_crypto_order(OrderType::Market, NautilusTimeInForce::Gtc, None);
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("cash quantity is valid for a crypto MARKET BUY");
@@ -259,7 +266,7 @@ mod tests {
     fn test_quote_quantity_limit_order_is_rejected_before_submission() {
         // IB rejects `cashQty` on non-MARKET orders with error 10244; deny locally instead
         let (order, provider) =
-            create_quote_quantity_crypto_order(OrderType::Limit, NautilusTimeInForce::Gtc);
+            create_quote_quantity_crypto_order(OrderType::Limit, NautilusTimeInForce::Gtc, None);
 
         let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect_err("cash quantity must not be sent on a LIMIT order");
@@ -272,8 +279,11 @@ mod tests {
     #[rstest]
     fn test_quote_quantity_market_at_the_close_is_rejected_before_submission() {
         // MARKET with AT_THE_CLOSE is sent to IB as MOC, which also rejects `cashQty`
-        let (order, provider) =
-            create_quote_quantity_crypto_order(OrderType::Market, NautilusTimeInForce::AtTheClose);
+        let (order, provider) = create_quote_quantity_crypto_order(
+            OrderType::Market,
+            NautilusTimeInForce::AtTheClose,
+            None,
+        );
 
         let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect_err("cash quantity must not be sent on a MOC order");
@@ -281,6 +291,25 @@ mod tests {
         let message = format!("{err:#}");
         assert!(
             message.contains("sent as MOC"),
+            "unexpected reason: {message}"
+        );
+    }
+
+    #[rstest]
+    fn test_quote_quantity_market_tagged_as_limit_is_rejected_before_submission() {
+        // IBOrderTags can override the IB order type, so the check must see the tagged type
+        let (order, provider) = create_quote_quantity_crypto_order(
+            OrderType::Market,
+            NautilusTimeInForce::Gtc,
+            Some(r#"{"orderType":"LMT"}"#),
+        );
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("cash quantity must not be sent on a tagged LMT order");
+
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("sent as LMT"),
             "unexpected reason: {message}"
         );
     }

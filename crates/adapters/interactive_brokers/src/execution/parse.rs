@@ -143,9 +143,9 @@ pub(crate) fn fill_missing_avg_px(
 /// quantity minus the window's net quantity. Once that replay passes through flat, or flips,
 /// every later fill is known, and the entry price is the netting average of the fills after the
 /// last flat crossing. A position that still carries a pre-window remnant keeps IB's average
-/// cost, which position recovery prices from. So does a position whose fills include opposite
-/// sides at the same timestamp: fill reports arrive in commission order, so their execution
-/// order, and with it any flat crossing, is unknown.
+/// cost, which position recovery prices from. So does a position whose fills sharing a
+/// timestamp include opposite sides or flip it: fill reports arrive in commission order, so the
+/// execution order of those fills, and with it the entry price, is unknown.
 pub(crate) fn fill_position_avg_px_from_fills(
     position_reports: &mut [PositionStatusReport],
     fill_reports: &[FillReport],
@@ -162,12 +162,6 @@ pub(crate) fn fill_position_avg_px_from_fills(
             .collect();
 
         fills.sort_by_key(|fill| fill.ts_event);
-
-        if fills.windows(2).any(|pair| {
-            pair[0].ts_event == pair[1].ts_event && pair[0].order_side != pair[1].order_side
-        }) {
-            continue;
-        }
 
         let window_qty: Decimal = fills.iter().map(|fill| signed_fill_qty(fill)).sum();
         let pre_window_qty = report.signed_decimal_qty - window_qty;
@@ -191,26 +185,49 @@ fn signed_fill_qty(fill: &FillReport) -> Decimal {
 // price of the position left at the end, when that position was opened within the window.
 // Fills on the open side average in, reducing fills keep the entry price, and a flip opens at
 // the flipping fill's price; a lot that predates the window has no known entry price until the
-// replay passes through flat.
+// replay passes through flat. Fills sharing a timestamp have no known order, so a group of them
+// that mixes sides or flips the position makes the entry price unknown.
 fn entry_price_after_window(pre_window_qty: Decimal, fills: &[&FillReport]) -> Option<Decimal> {
     let mut quantity = pre_window_qty;
     let mut entry: Option<Decimal> = None;
 
-    for fill in fills {
-        let last_qty = fill.last_qty.as_decimal();
-        let last_px = fill.last_px.as_decimal();
-        let signed_qty = signed_fill_qty(fill);
+    for group in fills.chunk_by(|a, b| a.ts_event == b.ts_event) {
+        if group.len() > 1 {
+            if group
+                .iter()
+                .any(|fill| fill.order_side != group[0].order_side)
+            {
+                return None;
+            }
 
-        if quantity.is_zero() {
-            entry = Some(last_px);
-        } else if quantity.is_sign_negative() == signed_qty.is_sign_negative() {
-            let open_qty = quantity.abs();
-            entry = entry.map(|px| (px * open_qty + last_px * last_qty) / (open_qty + last_qty));
-        } else if last_qty > quantity.abs() {
-            entry = Some(last_px);
+            let group_qty: Decimal = group.iter().map(|fill| signed_fill_qty(fill)).sum();
+            let end_qty = quantity + group_qty;
+
+            if !quantity.is_zero()
+                && !end_qty.is_zero()
+                && quantity.is_sign_negative() != end_qty.is_sign_negative()
+            {
+                return None;
+            }
         }
 
-        quantity += signed_qty;
+        for fill in group {
+            let last_qty = fill.last_qty.as_decimal();
+            let last_px = fill.last_px.as_decimal();
+            let signed_qty = signed_fill_qty(fill);
+
+            if quantity.is_zero() {
+                entry = Some(last_px);
+            } else if quantity.is_sign_negative() == signed_qty.is_sign_negative() {
+                let open_qty = quantity.abs();
+                entry =
+                    entry.map(|px| (px * open_qty + last_px * last_qty) / (open_qty + last_qty));
+            } else if last_qty > quantity.abs() {
+                entry = Some(last_px);
+            }
+
+            quantity += signed_qty;
+        }
     }
 
     if quantity.is_zero() {
@@ -1046,57 +1063,79 @@ mod tests {
     }
 
     #[rstest]
-    #[case::buy_first(true)]
-    #[case::sell_first(false)]
-    fn test_fill_position_avg_px_from_fills_keeps_venue_average_for_same_timestamp_opposite_fills(
-        #[case] buy_first: bool,
+    #[case::opposite_sides(
+        PositionSide::Long,
+        "1",
+        vec![(OrderSide::Buy, "2", "110.00"), (OrderSide::Sell, "2", "120.00")],
+        "107.50",
+        "107.50"
+    )]
+    #[case::same_side_flip(
+        PositionSide::Long,
+        "2",
+        vec![(OrderSide::Buy, "1", "100.00"), (OrderSide::Buy, "2", "110.00")],
+        "106.00",
+        "106.00"
+    )]
+    #[case::same_side_from_flat(
+        PositionSide::Long,
+        "2",
+        vec![(OrderSide::Buy, "1", "100.00"), (OrderSide::Buy, "1", "110.00")],
+        "105.20",
+        "105.00"
+    )]
+    fn test_fill_position_avg_px_from_fills_same_timestamp_fills_ignore_delivery_order(
+        #[case] position_side: PositionSide,
+        #[case] quantity: &str,
+        #[case] fills: Vec<(OrderSide, &str, &str)>,
+        #[case] venue_avg_px: &str,
+        #[case] expected: &str,
+        #[values(false, true)] reversed: bool,
     ) {
-        // Long 1 before the window, then BUY 2 and SELL 2 at one timestamp leave long 1. Fill
-        // reports arrive in commission order, so the replay would report a flat crossing in one
-        // delivery order and none in the other; the venue average stands for both.
+        // Fill reports arrive in commission order, so fills sharing a timestamp have no known
+        // execution order. Opposite sides (long 1 before the window, BUY 2 and SELL 2) and a
+        // same-side flip (short 1 before the window, BUY 1 and BUY 2) reconstruct differently
+        // per delivery order, so the venue average stands. Same-side fills from flat average to
+        // 105.00 in either order.
         let instrument_id = InstrumentId::from("SOL/USD.PAXOS");
         let account_id = AccountId::from("IB-DUR151935");
         let mut reports = vec![PositionStatusReport::new(
             account_id,
             instrument_id,
-            PositionSide::Long,
-            Quantity::from("1"),
+            position_side,
+            Quantity::from(quantity),
             UnixNanos::default(),
             UnixNanos::default(),
             None,
             None,
-            Some(Decimal::from_str("105.00").unwrap()),
+            Some(Decimal::from_str(venue_avg_px).unwrap()),
         )];
         let ts_event = 1_790_845_000_000_000_000;
-        let buy = crypto_fill(
-            account_id,
-            instrument_id,
-            OrderSide::Buy,
-            "2",
-            "110.00",
-            "T-1",
-            ts_event,
-        );
-        let sell = crypto_fill(
-            account_id,
-            instrument_id,
-            OrderSide::Sell,
-            "2",
-            "120.00",
-            "T-2",
-            ts_event,
-        );
-        let fill_reports = if buy_first {
-            vec![buy, sell]
-        } else {
-            vec![sell, buy]
-        };
+        let mut fill_reports: Vec<_> = fills
+            .into_iter()
+            .enumerate()
+            .map(|(i, (side, qty, px))| {
+                crypto_fill(
+                    account_id,
+                    instrument_id,
+                    side,
+                    qty,
+                    px,
+                    &format!("T-{i}"),
+                    ts_event,
+                )
+            })
+            .collect();
+
+        if reversed {
+            fill_reports.reverse();
+        }
 
         fill_position_avg_px_from_fills(&mut reports, &fill_reports);
 
         assert_eq!(
             reports[0].avg_px_open,
-            Some(Decimal::from_str("105.00").unwrap())
+            Some(Decimal::from_str(expected).unwrap())
         );
     }
 
