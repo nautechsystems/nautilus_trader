@@ -1388,6 +1388,14 @@ fn handle_rejected(
         return DispatchOutcome::Skip;
     }
 
+    // A rejected replacement never became the bound order. Its original leg's
+    // cancellation closes the order once the failed modify releases any held cancel.
+    if let Some(bound) = state.cached_venue_order_id(&client_order_id)
+        && bound != report.venue_order_id
+    {
+        return DispatchOutcome::Skip;
+    }
+
     if !claim_terminal_order(client_order_id, state, report.order_status) {
         return DispatchOutcome::Skip;
     }
@@ -1916,6 +1924,83 @@ mod tests {
         assert!(held);
         assert_eq!(released_while_targeted, vec![]);
         assert_eq!(released_cancels(&state), vec![canceled]);
+        assert!(!state.has_pending_modify(&cid));
+    }
+
+    #[rstest]
+    #[case::response_cancel_reject(["response", "cancel", "reject"])]
+    #[case::response_reject_cancel(["response", "reject", "cancel"])]
+    #[case::cancel_response_reject(["cancel", "response", "reject"])]
+    #[case::cancel_reject_response(["cancel", "reject", "response"])]
+    #[case::reject_response_cancel(["reject", "response", "cancel"])]
+    #[case::reject_cancel_response(["reject", "cancel", "response"])]
+    fn test_failed_modify_closes_original_once(
+        #[case] sequence: [&str; 3],
+        #[values(false, true)] filled: bool,
+    ) {
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-MODIFY-REJECT");
+        let original = VenueOrderId::new("100");
+        state.register_context(make_context(cid));
+        state.record_venue_order_id(cid, original);
+        state.insert_accepted(cid);
+        if filled {
+            state.record_filled_qty(cid, Quantity::from("0.00004"));
+        }
+
+        let generation = state.mark_pending_modify(cid, original, Quantity::from("0.0001"));
+        let mut canceled = canceled_report(cid, "100");
+        canceled.ts_last = UnixNanos::from(100);
+        let mut rejected = canceled_report(cid, "101");
+        rejected.order_status = OrderStatus::Rejected;
+        rejected.ts_last = UnixNanos::from(200);
+
+        for action in sequence {
+            match action {
+                "response" => state.clear_modify_generation(&cid, generation),
+                "cancel" => {
+                    dispatch_order_event(&canceled, &state, &emitter, UnixNanos::default());
+                }
+                "reject" => {
+                    dispatch_order_event(&rejected, &state, &emitter, UnixNanos::default());
+                }
+                _ => unreachable!(),
+            }
+
+            for report in released_cancels(&state) {
+                dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
+            }
+        }
+
+        let canceled_replay =
+            dispatch_order_event(&canceled, &state, &emitter, UnixNanos::default());
+        let rejected_replay =
+            dispatch_order_event(&rejected, &state, &emitter, UnixNanos::default());
+        let event = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::Canceled(event)) = event else {
+            panic!("expected OrderCanceled, received {event:?}");
+        };
+
+        assert_eq!(event.trader_id, emitter.trader_id());
+        assert_eq!(event.strategy_id, StrategyId::from("S-001"));
+        assert_eq!(
+            event.instrument_id,
+            InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")
+        );
+        assert_eq!(event.client_order_id, cid);
+        assert_eq!(event.venue_order_id, Some(original));
+        assert_eq!(event.account_id, Some(canceled.account_id));
+        assert_eq!(event.ts_event, canceled.ts_last);
+        assert_eq!(event.ts_init, UnixNanos::default());
+        assert!(!event.reconciliation);
+        assert_eq!(event.reason, None);
+        assert_eq!(event.causation_id, None);
+        assert!(rx.try_recv().is_err());
+        assert_eq!(canceled_replay, DispatchOutcome::Skip);
+        assert_eq!(rejected_replay, DispatchOutcome::Skip);
+        assert!(state.lookup_context(&cid).is_none());
         assert!(!state.has_pending_modify(&cid));
     }
 

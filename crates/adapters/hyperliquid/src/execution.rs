@@ -2729,7 +2729,7 @@ impl HyperliquidExecutionClient {
                                     ExecutionReport::Order(_) => None,
                                 };
 
-                                let (cancel_skipped, corrective) = handle_execution_report(
+                                let (terminal_skipped, corrective) = handle_execution_report(
                                     report,
                                     &dispatch_state,
                                     &emitter,
@@ -2768,7 +2768,7 @@ impl HyperliquidExecutionClient {
                                 }
 
                                 if let Some((parent_id, ts_event)) =
-                                    staged_parent_terminal.filter(|_| !cancel_skipped)
+                                    staged_parent_terminal.filter(|_| !terminal_skipped)
                                 {
                                     let children =
                                         staged_brackets.lock().cancel_for_parent(&parent_id);
@@ -2802,7 +2802,7 @@ impl HyperliquidExecutionClient {
                                 }
 
                                 if let Some(client_order_id) =
-                                    active_child_terminal.filter(|_| !cancel_skipped)
+                                    active_child_terminal.filter(|_| !terminal_skipped)
                                 {
                                     let sibling = staged_brackets
                                         .lock()
@@ -4187,8 +4187,8 @@ impl PostRejectionRoute {
 /// dispatch module; external / untracked orders fall back to the raw report
 /// so the engine can reconcile. Cloid-mapping cleanup is handled here so
 /// long-running sessions do not leak mapping entries. Returns whether dispatch
-/// skipped a cancel, which then ends no order, and any corrective reduce the
-/// dispatch queued.
+/// skipped a cancel or non-submission rejection, so bracket handling must not react,
+/// and any corrective reduce the dispatch queued.
 fn handle_execution_report(
     report: ExecutionReport,
     dispatch_state: &WsDispatchState,
@@ -4201,9 +4201,16 @@ fn handle_execution_report(
     match report {
         ExecutionReport::Order(order_report) => {
             let is_filled_marker = matches!(order_report.order_status, OrderStatus::Filled);
-            let is_cancel = order_report.order_status == OrderStatus::Canceled;
             let is_terminal = order_report.order_status.is_closed();
             let client_order_id = order_report.client_order_id;
+
+            let skip_terminal = match order_report.order_status {
+                OrderStatus::Canceled => true,
+                OrderStatus::Rejected => {
+                    !client_order_id.is_some_and(|id| dispatch_state.submission_pending(&id))
+                }
+                _ => false,
+            };
 
             let outcome = dispatch_order_event(&order_report, dispatch_state, emitter, ts_init);
 
@@ -4244,8 +4251,10 @@ fn handle_execution_report(
                     .map(|corrective| (id, corrective))
             });
 
-            // Dispatch skips a held or superseded cancel, so bracket handling must not react
-            (is_cancel && outcome == DispatchOutcome::Skip, corrective)
+            (
+                skip_terminal && outcome == DispatchOutcome::Skip,
+                corrective,
+            )
         }
         ExecutionReport::Fill(fill_report) => {
             let client_order_id = fill_report.client_order_id;
@@ -5053,7 +5062,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_execution_report_skip_keeps_cloid_mapping() {
+    #[case::canceled(OrderStatus::Canceled)]
+    #[case::rejected(OrderStatus::Rejected)]
+    fn test_handle_execution_report_skip_keeps_cloid_mapping(#[case] status: OrderStatus) {
         // Regression guard for GH-3827: when the dispatch returns Skip (e.g.
         // the stale cancel leg of a cancel-replace), the cloid mapping must
         // stay in place so the still-open replacement order can still be
@@ -5070,9 +5081,9 @@ mod tests {
 
         ws_client.cache_cloid_mapping(cloid_for("O-HER-SKIP"), cid);
 
-        let stale_cancel = make_status_report(Some("O-HER-SKIP"), "old-voi", OrderStatus::Canceled);
-        handle_execution_report(
-            ExecutionReport::Order(stale_cancel),
+        let report = make_status_report(Some("O-HER-SKIP"), "old-voi", status);
+        let (terminal_skipped, corrective) = handle_execution_report(
+            ExecutionReport::Order(report),
             &state,
             &emitter,
             &ws_client,
@@ -5081,6 +5092,8 @@ mod tests {
             UnixNanos::default(),
         );
 
+        assert!(terminal_skipped);
+        assert!(corrective.is_none());
         assert!(drain_events(&mut rx).is_empty());
         assert_eq!(
             ws_client.get_cloid_mapping(&cloid_for("O-HER-SKIP")),
@@ -5090,10 +5103,51 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_execution_report_tracked_terminal_evicts_cloid() {
-        // A tracked CANCELED that reaches a genuine terminal state should
-        // emit OrderCanceled and evict the cloid mapping so long-running
-        // sessions do not leak.
+    #[case::pending_rejection(OrderStatus::Rejected)]
+    #[case::filled_replay(OrderStatus::Filled)]
+    fn test_handle_execution_report_skipped_terminal_keeps_bracket_handling(
+        #[case] status: OrderStatus,
+    ) {
+        let ws_client = make_ws_client();
+        let (emitter, mut rx) = test_emitter();
+        let state = WsDispatchState::new();
+        let mut pending_cloids: FifoCache<ClientOrderId, 10_000> = FifoCache::new();
+        let cid = ClientOrderId::from("O-HER-BRACKET");
+        state.register_context(test_context(cid));
+        match status {
+            OrderStatus::Rejected => state.mark_submission_pending(cid),
+            OrderStatus::Filled => {
+                state.insert_filled(cid);
+                state.cleanup_terminal(&cid);
+            }
+            _ => unreachable!(),
+        }
+
+        ws_client.cache_cloid_mapping(cloid_for("O-HER-BRACKET"), cid);
+        let report = make_status_report(Some("O-HER-BRACKET"), "v-bracket", status);
+        let (terminal_skipped, corrective) = handle_execution_report(
+            ExecutionReport::Order(report),
+            &state,
+            &emitter,
+            &ws_client,
+            &make_http_client(),
+            &mut pending_cloids,
+            UnixNanos::default(),
+        );
+
+        assert!(!terminal_skipped);
+        assert!(corrective.is_none());
+        assert!(drain_events(&mut rx).is_empty());
+        assert_eq!(
+            ws_client.get_cloid_mapping(&cloid_for("O-HER-BRACKET")),
+            Some(cid)
+        );
+    }
+
+    #[rstest]
+    #[case::canceled(OrderStatus::Canceled)]
+    #[case::rejected(OrderStatus::Rejected)]
+    fn test_handle_execution_report_tracked_terminal_evicts_cloid(#[case] status: OrderStatus) {
         let ws_client = make_ws_client();
         let (emitter, mut rx) = test_emitter();
         let state = WsDispatchState::new();
@@ -5106,8 +5160,8 @@ mod tests {
 
         ws_client.cache_cloid_mapping(cloid_for("O-HER-CANCEL"), cid);
 
-        let report = make_status_report(Some("O-HER-CANCEL"), "v-cancel", OrderStatus::Canceled);
-        handle_execution_report(
+        let report = make_status_report(Some("O-HER-CANCEL"), "v-cancel", status);
+        let (terminal_skipped, corrective) = handle_execution_report(
             ExecutionReport::Order(report),
             &state,
             &emitter,
@@ -5118,16 +5172,28 @@ mod tests {
         );
 
         let events = drain_events(&mut rx);
+        assert!(!terminal_skipped);
+        assert!(corrective.is_none());
         assert_eq!(events.len(), 1);
-        assert!(matches!(
-            events[0],
-            ExecutionEvent::Order(OrderEventAny::Canceled(_))
-        ));
+
+        match status {
+            OrderStatus::Canceled => assert!(matches!(
+                events[0],
+                ExecutionEvent::Order(OrderEventAny::Canceled(_))
+            )),
+            OrderStatus::Rejected => assert!(matches!(
+                events[0],
+                ExecutionEvent::Order(OrderEventAny::Rejected(_))
+            )),
+            _ => unreachable!(),
+        }
         assert_eq!(
             ws_client.get_cloid_mapping(&cloid_for("O-HER-CANCEL")),
             None
         );
         assert!(state.filled_orders.contains(&cid));
+        assert!(state.lookup_context(&cid).is_none());
+        assert_eq!(state.cached_venue_order_id(&cid), None);
     }
 
     #[rstest]
