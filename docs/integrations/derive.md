@@ -100,11 +100,10 @@ trade field shapes the parser and execution paths are pinned to.
 ### Spot behavior
 
 :::warning
-Before the v3 migration, testnet accepted and canceled passive `ETH-USDC` limit orders, and mainnet
-place/cancel was exercised manually. Live v3 spot trading, including place/cancel, trade frames,
-tracked fill commissions, and restart reconciliation, remains unverified. The current `ETH-USDC`
-minimum amount is `0.1 ETH`. An empty spot book does not provide a bounded way to close a
-minimum-size fill.
+V3 testnet accepts and cancels passive `ETH-USDC` limit orders. Public spot trade frames, tracked
+fill commissions, and spot restart reconciliation remain unverified on v3. Mainnet place/cancel
+was exercised manually before the v3 migration. The current `ETH-USDC` minimum amount is `0.1 ETH`.
+An empty spot book does not provide a bounded way to close a minimum-size fill.
 :::
 
 - **Sparse trades:** public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
