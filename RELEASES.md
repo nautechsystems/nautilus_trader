@@ -107,6 +107,7 @@ Released on TBD (UTC).
 - Fixed Polymarket modify canceling a working order when the signed replacement is below the market minimum
 - Fixed Polymarket free balance treating BUY fill spend as available before the venue collateral total reflects it
 - Fixed Polymarket recovered BUY overfills being rejected instead of raising order quantity
+- Fixed sandbox cached quote and trade replay replenishing consumed liquidity on order submissions
 
 ### Internal Improvements
 
