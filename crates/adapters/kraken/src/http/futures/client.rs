@@ -1760,12 +1760,12 @@ impl KrakenFuturesHttpClient {
 
     /// Requests order status reports, also reporting whether the set is complete.
     ///
-    /// An in-scope open order whose instrument cannot be resolved fails the read. The flag is
-    /// `false` when a record cannot be parsed, a historical record's instrument cannot be
-    /// resolved, a history row could not be represented, or the history page hands back a
-    /// continuation token: the read takes one page, since every Kraken `/history` endpoint draws
-    /// on one pool of 100 tokens, replenished at 100 every 10 minutes, at a token per page.
-    /// `ExecutionMassStatus::set_report_window` records the flag for bounded history.
+    /// An in-scope open order whose instrument cannot be resolved, or that cannot be parsed, fails
+    /// the read. The flag is `false` when a history row cannot be parsed, a historical record's
+    /// instrument cannot be resolved, a history row could not be represented, or the history page
+    /// hands back a continuation token: the read takes one page, since every Kraken `/history`
+    /// endpoint draws on one pool of 100 tokens, replenished at 100 every 10 minutes, at a token
+    /// per page. `ExecutionMassStatus::set_report_window` records the flag for bounded history.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -1855,20 +1855,22 @@ impl KrakenFuturesHttpClient {
                     None
                 };
 
-                match parse_futures_order_status_report(
+                // An in-scope open order the client cannot parse fails the read: dropped, it reads
+                // to reconciliation as an order the venue does not have.
+                let report = parse_futures_order_status_report(
                     order,
                     &instrument,
                     account_id,
                     position_size,
                     ts_init,
-                ) {
-                    Ok(report) => all_reports.push(report),
-                    Err(e) => {
-                        let order_id = &order.order_id;
-                        log::warn!("Failed to parse futures order {order_id}: {e}");
-                        complete = false;
-                    }
-                }
+                )
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "OpenOrders: failed to parse futures order {}: {e}",
+                        order.order_id
+                    )
+                })?;
+                all_reports.push(report);
             } else {
                 // An in-scope open order the client cannot resolve fails the read, as the spot
                 // client's does: dropped, it reads to reconciliation as an order the venue never had.
