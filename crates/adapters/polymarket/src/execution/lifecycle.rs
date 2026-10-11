@@ -78,6 +78,13 @@ const HEARTBEAT_REQUEST_FAILURE_LIMIT: u32 = 2;
 const TASK_SESSION_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 const TASK_ABORT_TIMEOUT: Duration = Duration::from_secs(2);
 
+// LiveNode's default disconnect timeout is 10s and drops this future if it is
+// still running, teardown is capped at 6s and the abort join follows for 1s,
+// and a command that does not finish stays pending rather than reported as
+// canceled.
+const DISCONNECT_BUDGET: Duration = Duration::from_secs(6);
+const DISCONNECT_ABORT_JOIN: Duration = Duration::from_secs(1);
+
 /// Sweep interval for retrying targeted terminal REST resolution.
 const RESOLUTION_SWEEP_INTERVAL: Duration = Duration::from_millis(500);
 /// Delay before the first retry of a trade's targeted REST read.
@@ -92,6 +99,28 @@ const UNCERTAIN_ORDER_READS_PER_SWEEP: usize = 10;
 /// How far before an uncertain order's venue `created_at` its trades are read, because the venue
 /// can stamp an order that matches on submit after its trades' `match_time`.
 const UNCERTAIN_ORDER_TRADE_LOOKBACK: Duration = Duration::from_secs(60);
+
+struct DisconnectGuard<'a> {
+    client: &'a mut PolymarketExecutionClient,
+    armed: bool,
+}
+
+impl Drop for DisconnectGuard<'_> {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+
+        self.client.pending_tasks.abort();
+        self.client.session_tasks.abort();
+        self.client.ws_client.abort();
+        self.client.core.set_disconnected();
+        log::warn!(
+            "Polymarket execution disconnect was canceled before completion; marked the client \
+             disconnected"
+        );
+    }
+}
 
 impl PolymarketExecutionClient {
     fn start_heartbeat_task(&self) -> anyhow::Result<()> {
@@ -320,37 +349,43 @@ impl PolymarketExecutionClient {
             )
             .await;
 
-        if self.pending_tasks.all_finished() {
-            let unfinished = self.ws_dispatch_state.lock().finish_unsubmitted_modifies();
-            let ts_event = self.clock.get_time_ns();
-
-            for (client_order_id, venue_order_id, cancel_ts) in unfinished {
-                let Some(order) = self.core.cache().order_owned(&client_order_id) else {
-                    log::error!(
-                        "Cannot finish interrupted Polymarket modification for {client_order_id}: order not found in cache"
-                    );
-                    continue;
-                };
-
-                self.emitter.emit_order_modify_rejected(
-                    &order,
-                    Some(venue_order_id),
-                    "Polymarket modification was interrupted during shutdown",
-                    ts_event,
-                );
-
-                if let Some(cancel_ts) = cancel_ts
-                    && !self.fill_tracker.is_fully_filled(&venue_order_id)
-                {
-                    self.emitter
-                        .emit_order_canceled(&order, Some(venue_order_id), cancel_ts);
-                }
-            }
-        }
+        self.finish_interrupted_modifies();
 
         result
             .map_err(|e| anyhow::anyhow!("Failed to terminate Polymarket execution tasks: {e}"))?;
         Ok(())
+    }
+
+    fn finish_interrupted_modifies(&self) {
+        if !self.pending_tasks.all_finished() {
+            return;
+        }
+
+        let unfinished = self.ws_dispatch_state.lock().finish_unsubmitted_modifies();
+        let ts_event = self.clock.get_time_ns();
+
+        for (client_order_id, venue_order_id, cancel_ts) in unfinished {
+            let Some(order) = self.core.cache().order_owned(&client_order_id) else {
+                log::error!(
+                    "Cannot finish interrupted Polymarket modification for {client_order_id}: order not found in cache"
+                );
+                continue;
+            };
+
+            self.emitter.emit_order_modify_rejected(
+                &order,
+                Some(venue_order_id),
+                "Polymarket modification was interrupted during shutdown",
+                ts_event,
+            );
+
+            if let Some(cancel_ts) = cancel_ts
+                && !self.fill_tracker.is_fully_filled(&venue_order_id)
+            {
+                self.emitter
+                    .emit_order_canceled(&order, Some(venue_order_id), cancel_ts);
+            }
+        }
     }
 
     pub(super) async fn await_session_tasks(&self) -> anyhow::Result<()> {
@@ -974,10 +1009,85 @@ impl PolymarketExecutionClient {
     pub(super) async fn disconnect_client(&mut self) -> anyhow::Result<()> {
         log::info!("Disconnecting Polymarket execution client");
 
-        self.teardown_partial_connect().await?;
+        let mut guard = DisconnectGuard {
+            client: self,
+            armed: true,
+        };
 
-        log::info!("Disconnected: client_id={}", self.core.client_id);
-        Ok(())
+        let result =
+            tokio::time::timeout(DISCONNECT_BUDGET, guard.client.teardown_partial_connect()).await;
+
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => {
+                let outstanding = guard.client.pending_tasks.len();
+                guard.client.force_stop_transports().await;
+                if !guard.client.shutdown_errors.is_empty() {
+                    let errors = std::mem::take(&mut guard.client.shutdown_errors);
+                    log::warn!(
+                        "Polymarket execution disconnect dropped earlier shutdown errors: {}",
+                        errors.join("; ")
+                    );
+                }
+
+                if outstanding > 0 {
+                    log::warn!(
+                        "Polymarket execution disconnect reached its budget with {outstanding} \
+                         in-flight commands; unconfirmed commands stay pending"
+                    );
+                } else {
+                    log::warn!(
+                        "Polymarket execution disconnect reached its budget; marked the client \
+                         disconnected"
+                    );
+                }
+
+                Ok(())
+            }
+        };
+
+        guard.armed = false;
+
+        if result.is_ok() {
+            log::info!("Disconnected: client_id={}", guard.client.core.client_id);
+        }
+
+        result
+    }
+
+    async fn force_stop_transports(&mut self) {
+        self.pending_tasks.abort();
+        self.session_tasks.abort();
+        self.ws_client.abort();
+
+        let join_deadline = tokio::time::Instant::now() + DISCONNECT_ABORT_JOIN;
+
+        let pending_finished = matches!(
+            tokio::time::timeout_at(
+                join_deadline,
+                self.pending_tasks
+                    .finish_shutdown(Duration::ZERO, DISCONNECT_ABORT_JOIN),
+            )
+            .await,
+            Ok(Ok(())),
+        );
+
+        if !pending_finished {
+            log::warn!(
+                "Polymarket execution disconnect stopped before in-flight commands finished; \
+                 confirmed modify cancels stay open until the next startup reconciliation"
+            );
+        }
+
+        let _ = tokio::time::timeout_at(
+            join_deadline,
+            self.session_tasks
+                .finish_shutdown(Duration::ZERO, DISCONNECT_ABORT_JOIN),
+        )
+        .await;
+        let _ = tokio::time::timeout_at(join_deadline, self.ws_client.disconnect()).await;
+        self.finish_interrupted_modifies();
+        self.core.set_disconnected();
     }
 
     pub(super) fn on_instrument_update(&self, instrument: &InstrumentAny) {
@@ -4059,5 +4169,69 @@ mod tests {
                 .client_order_id,
             unresolved_client_order_id,
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn force_stop_closes_confirmed_modify_cancel() {
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("TEST", false, false);
+        let instrument_id = instrument.id();
+
+        let abandoned_order = {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(instrument).unwrap();
+            cache_accepted_open_order(&mut cache, instrument_id)
+        };
+
+        let abandoned_client_order_id = abandoned_order.client_order_id();
+        let abandoned_venue_order_id = abandoned_order.venue_order_id().unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        {
+            let mut state = client.ws_dispatch_state.lock();
+            assert!(state.begin_modify(
+                abandoned_client_order_id,
+                abandoned_venue_order_id,
+                instrument_id,
+            ));
+            assert!(state.confirm_modify_cancel(
+                abandoned_client_order_id,
+                abandoned_venue_order_id,
+                UnixNanos::from(123),
+            ));
+        }
+
+        client
+            .pending_tasks
+            .spawn(std::future::pending::<()>())
+            .unwrap();
+        client.force_stop_transports().await;
+
+        let event = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .expect("forced shutdown should emit a modify outcome")
+            .expect("execution event channel should remain open");
+
+        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event else {
+            panic!("expected ModifyRejected, was {event:?}");
+        };
+
+        assert_eq!(rejected.client_order_id, abandoned_client_order_id);
+        assert_eq!(rejected.venue_order_id, Some(abandoned_venue_order_id));
+
+        let event = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+            .await
+            .expect("confirmed cancel should close the old venue leg")
+            .expect("execution event channel should remain open");
+
+        let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = event else {
+            panic!("expected Canceled, was {event:?}");
+        };
+
+        assert_eq!(canceled.client_order_id, abandoned_client_order_id);
+        assert_eq!(canceled.venue_order_id, Some(abandoned_venue_order_id));
+        assert_eq!(canceled.ts_event, UnixNanos::from(123));
     }
 }

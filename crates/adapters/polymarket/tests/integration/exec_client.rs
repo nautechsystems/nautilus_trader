@@ -18185,6 +18185,272 @@ async fn test_disconnect_waits_for_shutdown_cancel_response() {
     assert_order_event(event, "CancelRejected");
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_disconnect_applies_cancel_response_inside_shutdown_budget() {
+    let state = TestServerState::default();
+    let venue_order_id = "0xvenue-disconnect-budget-applied";
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [],
+        "not_canceled": {(venue_order_id): "order not found"}
+    }));
+    state.cancel_request_gate.enable();
+
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.http_timeout_secs = 60;
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut order = make_limit_order(
+        "O-DISCONNECT-BUDGET-APPLIED",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id);
+    mark_pending_cancel(&cache, &mut order);
+    client
+        .cancel_order(make_cancel_cmd(
+            "O-DISCONNECT-BUDGET-APPLIED",
+            instrument_id,
+        ))
+        .unwrap();
+    wait_until_async(
+        || {
+            let gate = state.cancel_request_gate.clone();
+            async move { gate.started() == 1 }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let mut disconnect = Box::pin(client.disconnect());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), disconnect.as_mut())
+            .await
+            .is_err(),
+        "disconnect should still be waiting when the cancel response is released"
+    );
+    let started = tokio::time::Instant::now();
+    state.cancel_request_gate.release();
+    disconnect.await.unwrap();
+
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "a cancel response inside the shutdown budget should be applied, elapsed {:?}",
+        started.elapsed()
+    );
+    assert!(!client.is_connected());
+    let event = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("in-budget cancel response should be processed")
+        .expect("execution event channel should remain open");
+    assert_order_event(event, "CancelRejected");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_disconnect_bounds_unconfirmed_cancel() {
+    let state = TestServerState::default();
+    let venue_order_id = "0xvenue-disconnect-budget-held";
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [venue_order_id],
+        "not_canceled": {}
+    }));
+    state.cancel_request_gate.enable();
+
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.http_timeout_secs = 60;
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut order = make_limit_order(
+        "O-DISCONNECT-BUDGET-HELD",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id);
+    mark_pending_cancel(&cache, &mut order);
+    client
+        .cancel_order(make_cancel_cmd("O-DISCONNECT-BUDGET-HELD", instrument_id))
+        .unwrap();
+    wait_until_async(
+        || {
+            let gate = state.cancel_request_gate.clone();
+            async move { gate.started() == 1 }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let started = tokio::time::Instant::now();
+    tokio::time::timeout(Duration::from_secs(12), client.disconnect())
+        .await
+        .expect("disconnect should finish inside the node disconnect timeout")
+        .unwrap();
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(9),
+        "disconnect took {elapsed:?}, past the bounded shutdown budget"
+    );
+    assert!(
+        elapsed >= Duration::from_secs(5),
+        "disconnect returned in {elapsed:?}, before the shutdown budget"
+    );
+    assert!(!client.is_connected());
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .expect("order should remain cached")
+            .status(),
+        OrderStatus::PendingCancel
+    );
+    state.cancel_request_gate.release();
+    tokio::task::yield_now().await;
+    assert_no_terminal_cancel(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_dropped_disconnect_marks_client_disconnected_without_cancel() {
+    let state = TestServerState::default();
+    let venue_order_id = "0xvenue-disconnect-dropped";
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [venue_order_id],
+        "not_canceled": {}
+    }));
+    state.cancel_request_gate.enable();
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut order = make_limit_order(
+        "O-DISCONNECT-DROPPED",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    submit_and_accept_order(&cache, &mut order, venue_order_id);
+    mark_pending_cancel(&cache, &mut order);
+    client
+        .cancel_order(make_cancel_cmd("O-DISCONNECT-DROPPED", instrument_id))
+        .unwrap();
+    wait_until_async(
+        || {
+            let gate = state.cancel_request_gate.clone();
+            async move { gate.started() == 1 }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let mut disconnect = Box::pin(client.disconnect());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(1_200), disconnect.as_mut())
+            .await
+            .is_err(),
+        "disconnect should still be waiting when the future is dropped"
+    );
+    drop(disconnect);
+
+    assert!(!client.is_connected());
+    state.cancel_request_gate.release();
+    tokio::task::yield_now().await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_no_terminal_cancel(&mut rx).await;
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .expect("order should remain cached")
+            .status(),
+        OrderStatus::PendingCancel
+    );
+}
+
+fn mark_pending_cancel(cache: &Rc<RefCell<Cache>>, order: &mut OrderAny) {
+    let pending_cancel = OrderPendingCancel::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(AccountId::from("POLYMARKET-001")),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        order.venue_order_id(),
+    );
+    *order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingCancel(pending_cancel))
+        .unwrap();
+}
+
+async fn assert_no_terminal_cancel(rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>) {
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(200);
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return;
+        }
+
+        match tokio::time::timeout(remaining, rx.recv()).await {
+            Err(_) => return,
+            Ok(None) => panic!("execution event channel closed"),
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Canceled(event)))) => {
+                panic!("unconfirmed cancel was reported as canceled: {event:?}")
+            }
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::CancelRejected(event)))) => {
+                panic!("unconfirmed cancel was reported as rejected: {event:?}")
+            }
+            Ok(Some(_)) => {}
+        }
+    }
+}
+
 fn submit_and_pending_cancel(cache: &Rc<RefCell<Cache>>, order: &mut OrderAny) {
     let account_id = AccountId::from("POLYMARKET-001");
     let submitted = TestOrderEventStubs::submitted(order, account_id);

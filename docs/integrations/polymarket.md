@@ -641,9 +641,15 @@ Polymarket operates as a prediction market with a more limited set of order type
 :::tip
 For Polymarket live execution, set both the disconnection timeout and post-stop delay to 30
 seconds with `with_timeout_disconnection_secs(30)` and `with_delay_post_stop_secs(30)`. The delay
-allows residual order and cancellation events to arrive before disconnection, while the timeout
-gives each client time to shut down cleanly.
+allows residual order and cancellation events to arrive before disconnection. Execution disconnect
+finishes inside that timeout and does not wait out the HTTP timeout for an in-flight command.
 :::
+
+A cancel that is still in flight when disconnect finishes leaves the order `PENDING_CANCEL`. The
+adapter emits neither `OrderCanceled` nor `OrderCancelRejected`. The venue may or may not have
+applied the cancel. Startup reconciliation on the next run resolves it. A strategy cancel does not,
+because the order is already pending cancel. Other in-flight submit and modify commands stop on the
+same bound, and an unconfirmed one stays unresolved.
 
 ### Order types
 
