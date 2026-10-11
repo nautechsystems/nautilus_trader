@@ -792,46 +792,51 @@ impl InteractiveBrokersExecutionClient {
     }
 
     async fn get_highest_completed_order_id(&self, client: &Client) -> anyhow::Result<Option<i32>> {
-        let timeout_dur = Duration::from_secs(self.config.request_timeout);
-        let subscription = tokio::time::timeout(timeout_dur, client.completed_orders(false))
+        let deadline =
+            tokio::time::Instant::now() + Duration::from_secs(self.config.request_timeout);
+        let subscription = tokio::time::timeout_at(deadline, client.completed_orders(false))
             .await
             .context("Timeout requesting completed orders for next order ID initialization")??;
 
-        Ok(Self::highest_completed_order_id(subscription, self.config.client_id).await)
+        Self::highest_completed_order_id(subscription, self.config.client_id, deadline).await
     }
 
     // IB lists completed orders for a limited period only. A completed order's API order ID is on
-    // the order itself because its top-level order ID is unset
+    // the order itself because its top-level order ID is unset. A snapshot that fails or does not
+    // reach IB's end marker by the deadline is an error, since a missing order could hold the
+    // highest ID
     pub(super) async fn highest_completed_order_id<S>(
         subscription: S,
         client_id: i32,
-    ) -> Option<i32>
+        deadline: tokio::time::Instant,
+    ) -> anyhow::Result<Option<i32>>
     where
         S: futures_util::Stream<Item = Result<SubscriptionItem<Orders>, ibapi::Error>> + Unpin,
     {
-        let mut subscription = subscription.filter_data();
-        let mut highest_order_id = None;
+        let read_snapshot = async {
+            let mut subscription = subscription.filter_data();
+            let mut highest_order_id = None;
 
-        while let Some(order_result) = subscription.next().await {
-            match order_result {
-                Ok(Orders::OrderData(data)) => {
-                    let order_id = data.order.order_id;
-                    if data.order.client_id == client_id
-                        && Self::is_order_id_in_client_partition(order_id, client_id)
-                    {
-                        highest_order_id = highest_order_id.max(Some(order_id));
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::debug!(
-                        "Ignoring completed-order event while initializing next order ID: {e}"
-                    );
+            while let Some(order_result) = subscription.next().await {
+                let Orders::OrderData(data) = order_result? else {
+                    continue;
+                };
+
+                let order_id = data.order.order_id;
+                if data.order.client_id == client_id
+                    && Self::is_order_id_in_client_partition(order_id, client_id)
+                {
+                    highest_order_id = highest_order_id.max(Some(order_id));
                 }
             }
-        }
 
-        highest_order_id
+            Ok::<Option<i32>, ibapi::Error>(highest_order_id)
+        };
+
+        tokio::time::timeout_at(deadline, read_snapshot)
+            .await
+            .context("Timeout reading completed orders for next order ID initialization")?
+            .context("Failed to read completed orders for next order ID initialization")
     }
 
     fn begin_task_shutdown(&self) {

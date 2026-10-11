@@ -314,14 +314,71 @@ async fn highest_completed_order_id_reads_client_partition(
             .unwrap();
     }
     drop(sender);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
 
     let highest = InteractiveBrokersExecutionClient::highest_completed_order_id(
         ChannelSubscription::new(receiver),
         7760,
+        deadline,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(highest, expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn highest_completed_order_id_fails_on_interrupted_snapshot() {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    sender
+        .send(Ok(Orders::OrderData(create_test_completed_order(
+            760_000_015,
+            7760,
+        ))))
+        .unwrap();
+    sender.send(Err(ibapi::Error::ConnectionReset)).unwrap();
+    drop(sender);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    let result = InteractiveBrokersExecutionClient::highest_completed_order_id(
+        ChannelSubscription::new(receiver),
+        7760,
+        deadline,
     )
     .await;
 
-    assert_eq!(highest, expected);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Failed to read completed orders for next order ID initialization"
+    );
+}
+
+#[rstest]
+#[tokio::test(start_paused = true)]
+async fn highest_completed_order_id_fails_on_stalled_snapshot() {
+    // The sender stays open, so the snapshot never reaches its end marker
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    sender
+        .send(Ok(Orders::OrderData(create_test_completed_order(
+            760_000_015,
+            7760,
+        ))))
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    let result = InteractiveBrokersExecutionClient::highest_completed_order_id(
+        ChannelSubscription::new(receiver),
+        7760,
+        deadline,
+    )
+    .await;
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Timeout reading completed orders for next order ID initialization"
+    );
+    assert_eq!(tokio::time::Instant::now(), deadline);
 }
 
 #[rstest]
