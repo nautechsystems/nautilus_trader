@@ -134,7 +134,7 @@ impl DeriveDataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error when the HTTP client cannot be initialized.
+    /// Returns an error if the HTTP client cannot be initialized.
     pub fn new(client_id: ClientId, config: DeriveDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();

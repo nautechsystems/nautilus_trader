@@ -210,7 +210,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns a [`crate::config::ConfigError`] if the cache configuration is invalid.
+    /// Returns an error if the cache configuration is invalid.
     pub fn try_new(
         config: Option<CacheConfig>,
         database: Option<Box<dyn CacheDatabaseAdapter>>,
@@ -4716,7 +4716,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`OrderLookupError::NotFound`] when the order is not present in the cache.
+    /// Returns an error if the order is not present in the cache.
     pub fn try_order_ref(
         &self,
         client_order_id: &ClientOrderId,
@@ -4733,7 +4733,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`OrderLookupError::NotFound`] when the order is not present in the cache.
+    /// Returns an error if the order is not present in the cache.
     pub fn try_order(
         &self,
         client_order_id: &ClientOrderId,
@@ -4772,7 +4772,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`OrderLookupError::NotFound`] when the order is not present in the cache.
+    /// Returns an error if the order is not present in the cache.
     pub fn try_order_owned(
         &self,
         client_order_id: &ClientOrderId,
@@ -5326,7 +5326,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`OrderListLookupError::NotFound`] when the order list is not present in the cache.
+    /// Returns an error if the order list is not present in the cache.
     pub fn try_order_list(
         &self,
         order_list_id: &OrderListId,
@@ -5482,7 +5482,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`PositionLookupError::NotFound`] when the position is not present in the cache.
+    /// Returns an error if the position is not present in the cache.
     pub fn try_position_ref(
         &self,
         position_id: &PositionId,
@@ -5499,7 +5499,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`PositionLookupError::NotFound`] when the position is not present in the cache.
+    /// Returns an error if the position is not present in the cache.
     pub fn try_position(
         &self,
         position_id: &PositionId,
@@ -5967,7 +5967,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`OrderBookLookupError::NotFound`] when the order book is not present in the cache.
+    /// Returns an error if the order book is not present in the cache.
     pub fn try_order_book(
         &self,
         instrument_id: &InstrumentId,
@@ -5993,8 +5993,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`OwnOrderBookLookupError::NotFound`] when the own order book is not present in the
-    /// cache.
+    /// Returns an error if the own order book is not present in the cache.
     pub fn try_own_order_book(
         &self,
         instrument_id: &InstrumentId,
@@ -6244,8 +6243,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error when the cached quotes cannot form a valid exchange
-    /// rate calculation.
+    /// Returns an error if the cached quotes cannot form a valid exchange rate calculation.
     pub fn try_get_xrate(
         &self,
         venue: Venue,
@@ -6411,7 +6409,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`CurrencyLookupError::NotFound`] when the currency is not present in the cache.
+    /// Returns an error if the currency is not present in the cache.
     pub fn try_currency(&self, code: &Ustr) -> Result<&Currency, CurrencyLookupError> {
         self.currencies
             .get(code)
@@ -6430,7 +6428,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`InstrumentLookupError::NotFound`] when the instrument is not present in the cache.
+    /// Returns an error if the instrument is not present in the cache.
     pub fn try_instrument(
         &self,
         instrument_id: &InstrumentId,
@@ -6517,8 +6515,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`SyntheticInstrumentLookupError::NotFound`] when the synthetic instrument is not
-    /// present in the cache.
+    /// Returns an error if the synthetic instrument is not present in the cache.
     pub fn try_synthetic(
         &self,
         instrument_id: &InstrumentId,
@@ -6562,7 +6559,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`AccountLookupError::NotFound`] when the account is not present in the cache.
+    /// Returns an error if the account is not present in the cache.
     pub fn try_account_ref(
         &self,
         account_id: &AccountId,
@@ -6579,7 +6576,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns [`AccountLookupError::NotFound`] when the account is not present in the cache.
+    /// Returns an error if the account is not present in the cache.
     pub fn try_account(
         &self,
         account_id: &AccountId,

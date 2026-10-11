@@ -149,8 +149,8 @@ impl CatalogParamKind {
 ///
 /// # Errors
 ///
-/// Returns an error naming the catalog and the key if a key is not accepted or its value has the
-/// wrong kind.
+/// Returns an error if a key is not accepted or its value has the wrong kind. The error names the
+/// catalog and the key.
 pub fn validate_catalog_params(
     catalog: &str,
     params: Option<&Params>,

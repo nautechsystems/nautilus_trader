@@ -42,7 +42,7 @@ use pyo3::{prelude::*, pymodule};
 ///
 /// # Errors
 ///
-/// Returns a Python exception if adding any indicator class fails.
+/// Returns an error if adding any indicator class fails.
 #[pymodule]
 pub fn indicators(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Average

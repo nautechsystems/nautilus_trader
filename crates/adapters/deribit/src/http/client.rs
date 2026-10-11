@@ -379,8 +379,8 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The HTTP client cannot be created
-    /// - Credentials are not provided and environment variables are not set
+    /// - The HTTP client cannot be created.
+    /// - Credentials are not provided and environment variables are not set.
     #[expect(clippy::too_many_arguments)]
     pub fn new_with_env(
         api_key: Option<String>,
@@ -694,9 +694,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
-    /// - Authentication fails (invalid signature, expired timestamp)
-    /// - The request fails or the response cannot be parsed
+    /// - Credentials are missing.
+    /// - Authentication fails (invalid signature, expired timestamp).
+    /// - The request fails or the response cannot be parsed.
     pub async fn get_account_summaries(
         &self,
         params: GetAccountSummariesParams,
@@ -723,9 +723,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
-    /// - Authentication fails (invalid signature, expired timestamp)
-    /// - The request fails or the response cannot be parsed
+    /// - Credentials are missing.
+    /// - Authentication fails (invalid signature, expired timestamp).
+    /// - The request fails or the response cannot be parsed.
     pub async fn get_order_state(
         &self,
         params: GetOrderStateParams,
@@ -739,9 +739,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
-    /// - Authentication fails (invalid signature, expired timestamp)
-    /// - The request fails or the response cannot be parsed
+    /// - Credentials are missing.
+    /// - Authentication fails (invalid signature, expired timestamp).
+    /// - The request fails or the response cannot be parsed.
     pub async fn get_open_orders(
         &self,
         params: GetOpenOrdersParams,
@@ -755,9 +755,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
-    /// - Authentication fails (invalid signature, expired timestamp)
-    /// - The request fails or the response cannot be parsed
+    /// - Credentials are missing.
+    /// - Authentication fails (invalid signature, expired timestamp).
+    /// - The request fails or the response cannot be parsed.
     pub async fn get_open_orders_by_instrument(
         &self,
         params: GetOpenOrdersByInstrumentParams,
@@ -771,9 +771,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
-    /// - Authentication fails (invalid signature, expired timestamp)
-    /// - The request fails or the response cannot be parsed
+    /// - Credentials are missing.
+    /// - Authentication fails (invalid signature, expired timestamp).
+    /// - The request fails or the response cannot be parsed.
     pub async fn get_order_history_by_instrument(
         &self,
         params: GetOrderHistoryByInstrumentParams,
@@ -787,9 +787,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
-    /// - Authentication fails (invalid signature, expired timestamp)
-    /// - The request fails or the response cannot be parsed
+    /// - Credentials are missing.
+    /// - Authentication fails (invalid signature, expired timestamp).
+    /// - The request fails or the response cannot be parsed.
     pub async fn get_order_history_by_currency(
         &self,
         params: GetOrderHistoryByCurrencyParams,
@@ -803,9 +803,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
-    /// - Authentication fails (invalid signature, expired timestamp)
-    /// - The request fails or the response cannot be parsed
+    /// - Credentials are missing.
+    /// - Authentication fails (invalid signature, expired timestamp).
+    /// - The request fails or the response cannot be parsed.
     pub async fn get_user_trades_by_instrument_and_time(
         &self,
         params: GetUserTradesByInstrumentAndTimeParams,
@@ -823,9 +823,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
-    /// - Authentication fails (invalid signature, expired timestamp)
-    /// - The request fails or the response cannot be parsed
+    /// - Credentials are missing.
+    /// - Authentication fails (invalid signature, expired timestamp).
+    /// - The request fails or the response cannot be parsed.
     pub async fn get_user_trades_by_currency_and_time(
         &self,
         params: GetUserTradesByCurrencyAndTimeParams,
@@ -864,9 +864,9 @@ impl DeribitRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Credentials are missing ([`DeribitHttpError::MissingCredentials`])
-    /// - Authentication fails (invalid signature, expired timestamp)
-    /// - The request fails or the response cannot be parsed
+    /// - Credentials are missing.
+    /// - Authentication fails (invalid signature, expired timestamp).
+    /// - The request fails or the response cannot be parsed.
     pub async fn get_positions(
         &self,
         params: GetPositionsParams,
@@ -969,8 +969,8 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The HTTP client cannot be created
-    /// - Credentials are not provided and environment variables are not set
+    /// - The HTTP client cannot be created.
+    /// - Credentials are not provided and environment variables are not set.
     #[expect(clippy::too_many_arguments)]
     pub fn new_with_env(
         api_key: Option<String>,
@@ -1080,9 +1080,9 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument name format is invalid (error code `-32602`)
-    /// - The instrument doesn't exist (error code `13020`)
-    /// - Network or API errors occur
+    /// - The instrument name format is invalid (error code `-32602`).
+    /// - The instrument doesn't exist (error code `13020`).
+    /// - Network or API errors occur.
     pub async fn request_instrument(
         &self,
         instrument_id: InstrumentId,
@@ -1233,9 +1233,9 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument is not found in cache
-    /// - The request fails
-    /// - Trade parsing fails
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Trade parsing fails.
     ///
     /// # Pagination
     ///
@@ -1357,10 +1357,10 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Aggregation source is not EXTERNAL
-    /// - Bar aggregation type is not supported by Deribit
-    /// - The instrument is not found in cache
-    /// - The request fails or response cannot be parsed
+    /// - Aggregation source is not EXTERNAL.
+    /// - Bar aggregation type is not supported by Deribit.
+    /// - The instrument is not found in cache.
+    /// - The request fails or response cannot be parsed.
     ///
     /// # Supported Resolutions
     ///
@@ -1476,9 +1476,9 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument is not found in cache
-    /// - The request fails
-    /// - Order book parsing fails
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Order book parsing fails.
     pub async fn request_book_snapshot(
         &self,
         instrument_id: InstrumentId,
@@ -1529,8 +1529,8 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The request fails
-    /// - Currency conversion fails
+    /// - The request fails.
+    /// - Currency conversion fails.
     pub async fn request_account_state(
         &self,
         account_id: AccountId,

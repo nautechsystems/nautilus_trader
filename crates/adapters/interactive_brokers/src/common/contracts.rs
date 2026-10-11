@@ -255,8 +255,8 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
 ///
 /// # Errors
 ///
-/// Returns an error when a known field has the wrong JSON type, a numeric field is out of
-/// range, or an enum value is unknown.
+/// Returns an error if a known field has the wrong JSON type, a numeric field is out of range, or
+/// an enum value is unknown.
 pub fn parse_configured_contract_from_json(json: &Value) -> anyhow::Result<ConfiguredContract> {
     let obj = json
         .as_object()

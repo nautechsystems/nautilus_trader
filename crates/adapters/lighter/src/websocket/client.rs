@@ -345,8 +345,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns [`LighterWsError::Client`] if the connection does not reach
-    /// the active state within the configured timeout.
+    /// Returns an error if the connection does not reach the active state within the configured
+    /// timeout.
     pub async fn wait_until_active(&self) -> Result<(), LighterWsError> {
         let timeout_secs = self.ws_timeout_secs;
         let timeout = Duration::from_secs(timeout_secs);
@@ -658,7 +658,8 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// This function currently completes best-effort shutdown and returns `Ok(())`.
+    /// Returns an error if the handler task fails or does not stop after being aborted. Shutdown
+    /// still clears the connection mode and deregisters the socket control.
     pub async fn disconnect(&mut self) -> Result<(), LighterWsError> {
         self.connection_generation.fetch_add(1, Ordering::AcqRel);
         self.initial_connect_cancellation.load().cancel();

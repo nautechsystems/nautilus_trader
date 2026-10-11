@@ -130,7 +130,7 @@ fn instrument_type_name(instrument: &InstrumentAny) -> &'static str {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowError> {
     let mut instrument_id = StringBuilder::new();
     let mut symbol = StringBuilder::new();

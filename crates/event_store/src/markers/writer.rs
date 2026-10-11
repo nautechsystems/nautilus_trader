@@ -153,8 +153,8 @@ mod imp {
         ///
         /// # Errors
         ///
-        /// Returns [`EventStoreError::Backend`] when the backend has no open run or when the
-        /// writer thread cannot be spawned.
+        /// Returns an error if the backend has no open run or when the writer thread cannot be
+        /// spawned.
         pub fn spawn(
             backend: Box<dyn MarkerBackend + Send>,
             _clock: &'static AtomicTime,
@@ -190,8 +190,8 @@ mod imp {
         ///
         /// # Errors
         ///
-        /// Returns [`EventStoreError::Closed`] when the writer is closed, and
-        /// [`EventStoreError::Backend`] when `msg` is not a `Snapshot` or `HiFi` marker.
+        /// Returns an error if the writer is closed, or if `msg` is not a `Snapshot` or `HiFi`
+        /// marker.
         pub fn submit(&self, msg: MarkerMsg, marker_seq: u64) -> Result<bool, EventStoreError> {
             if self.closed.load(Ordering::Acquire) {
                 return Err(EventStoreError::Closed);
@@ -241,7 +241,7 @@ mod imp {
         ///
         /// # Errors
         ///
-        /// Returns [`EventStoreError::Closed`] when the writer is closed.
+        /// Returns an error if the writer is closed.
         pub fn put_dict(&self, entry: StreamDictEntry) -> Result<bool, EventStoreError> {
             if self.closed.load(Ordering::Acquire) {
                 return Err(EventStoreError::Closed);
@@ -445,7 +445,7 @@ mod imp {
         ///
         /// # Errors
         ///
-        /// Returns [`EventStoreError::Backend`] when the backend has no open run.
+        /// Returns an error if the backend has no open run.
         pub fn spawn(
             backend: Box<dyn MarkerBackend + Send>,
             _clock: &'static AtomicTime,
@@ -465,8 +465,8 @@ mod imp {
         ///
         /// # Errors
         ///
-        /// Returns [`EventStoreError::Closed`] when the writer is closed, and
-        /// [`EventStoreError::Backend`] when `msg` is not a `Snapshot` or `HiFi` marker.
+        /// Returns an error if the writer is closed, or if `msg` is not a `Snapshot` or `HiFi`
+        /// marker.
         pub fn submit(&self, msg: MarkerMsg, marker_seq: u64) -> Result<bool, EventStoreError> {
             let mut inner = self.inner.lock();
 
@@ -496,7 +496,7 @@ mod imp {
         ///
         /// # Errors
         ///
-        /// Returns [`EventStoreError::Closed`] when the writer is closed.
+        /// Returns an error if the writer is closed.
         #[expect(
             clippy::needless_pass_by_value,
             reason = "matches the threaded writer API, which transfers ownership"

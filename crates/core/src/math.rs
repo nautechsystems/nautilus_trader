@@ -63,8 +63,9 @@ macro_rules! approx_eq {
 ///
 /// # Panics
 ///
-/// - If any input is NaN or infinite.
-/// - If `x1` and `x2` are too close relative to their magnitude, which would
+/// Panics if:
+/// - Any input is NaN or infinite.
+/// - `x1` and `x2` are too close relative to their magnitude, which would
 ///   cause division by zero or numerical instability.
 #[inline]
 #[must_use]
@@ -122,8 +123,9 @@ pub fn pos_search(x: f64, xs: &[f64]) -> usize {
 ///
 /// # Panics
 ///
-/// - If any input is NaN or infinite.
-/// - If any two abscissas are too close relative to their magnitude, which would
+/// Panics if:
+/// - Any input is NaN or infinite.
+/// - Any two abscissas are too close relative to their magnitude, which would
 ///   cause division by zero or numerical instability.
 #[inline]
 #[must_use]

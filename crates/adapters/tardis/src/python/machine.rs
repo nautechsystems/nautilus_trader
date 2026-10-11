@@ -292,7 +292,7 @@ impl TardisMachineClient {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if reading the config file or replay execution fails.
+/// Returns an error if reading the config file or replay execution fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(name = "run_tardis_machine_replay")]

@@ -65,7 +65,7 @@ fn extract_blockchain_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn blockchain(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::config::BlockchainDataClientConfig>()?;

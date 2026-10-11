@@ -76,7 +76,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns `Error.Auth` if required environment variables are not set.
+    /// Returns an error if required environment variables are not set.
     #[staticmethod]
     #[pyo3(name = "from_env", signature = (environment=HyperliquidEnvironment::Mainnet, include_builder_attribution=true))]
     fn py_from_env(
@@ -92,7 +92,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns `Error.Auth` if the private key is invalid or cannot be parsed.
+    /// Returns an error if the private key is invalid or cannot be parsed.
     #[staticmethod]
     #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, environment=HyperliquidEnvironment::Mainnet, timeout_secs=60, proxy_url=None, include_builder_attribution=true))]
     fn py_from_credentials(
@@ -144,7 +144,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns `Error.Auth` if the client has no signer configured.
+    /// Returns an error if the client has no signer configured.
     #[pyo3(name = "get_user_address")]
     fn py_get_user_address(&self) -> PyResult<String> {
         self.get_user_address().map_err(to_pyvalue_err)

@@ -119,7 +119,7 @@ impl MessageHeader {
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short or schema mismatch.
+/// Returns an error if buffer is too short or schema mismatch.
 pub fn decode_ping(buf: &[u8]) -> Result<(), SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let header = MessageHeader::decode_cursor(&mut cursor)?;
@@ -139,7 +139,7 @@ pub fn decode_ping(buf: &[u8]) -> Result<(), SbeDecodeError> {
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short or schema mismatch.
+/// Returns an error if buffer is too short or schema mismatch.
 pub fn decode_server_time(buf: &[u8]) -> Result<i64, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let header = MessageHeader::decode_cursor(&mut cursor)?;
@@ -158,7 +158,7 @@ pub fn decode_server_time(buf: &[u8]) -> Result<i64, SbeDecodeError> {
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or group size exceeded.
+/// Returns an error if buffer is too short, schema mismatch, or group size exceeded.
 pub fn decode_depth(buf: &[u8]) -> Result<BinanceDepth, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let header = MessageHeader::decode_cursor(&mut cursor)?;
@@ -203,7 +203,7 @@ pub fn decode_depth(buf: &[u8]) -> Result<BinanceDepth, SbeDecodeError> {
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or group size exceeded.
+/// Returns an error if buffer is too short, schema mismatch, or group size exceeded.
 pub fn decode_trades(buf: &[u8]) -> Result<BinanceTrades, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let header = MessageHeader::decode_cursor(&mut cursor)?;
@@ -240,7 +240,7 @@ pub fn decode_trades(buf: &[u8]) -> Result<BinanceTrades, SbeDecodeError> {
 ///
 /// # Errors
 ///
-/// Returns an error for an invalid header, template, or group payload.
+/// Returns an error if the header, template, or group payload is invalid.
 pub fn decode_agg_trades(buf: &[u8]) -> Result<BinanceAggTrades, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let header = MessageHeader::decode_cursor(&mut cursor)?;
@@ -282,7 +282,7 @@ const KLINES_BLOCK_LENGTH: u16 = 120;
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or group size exceeded.
+/// Returns an error if buffer is too short, schema mismatch, or group size exceeded.
 pub fn decode_klines(buf: &[u8]) -> Result<BinanceKlines, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let header = MessageHeader::decode_cursor(&mut cursor)?;
@@ -423,7 +423,7 @@ fn read_trailing_expiry_reason(
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or decode error.
+/// Returns an error if buffer is too short, schema mismatch, or decode error.
 #[allow(dead_code)]
 pub fn decode_new_order_full(buf: &[u8]) -> Result<BinanceNewOrderResponse, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
@@ -508,7 +508,7 @@ pub fn decode_new_order_full(buf: &[u8]) -> Result<BinanceNewOrderResponse, SbeD
 ///
 /// # Errors
 ///
-/// Returns an error for a malformed wrapper or an unsuccessful replacement.
+/// Returns an error if the wrapper is malformed or the replacement is unsuccessful.
 pub fn decode_cancel_replace(buf: &[u8]) -> Result<BinanceNewOrderResponse, SbeDecodeError> {
     let (_, replacement) = decode_cancel_replace_payloads(buf)?;
     decode_new_order_full(replacement)
@@ -560,7 +560,7 @@ fn decode_cancel_replace_payloads(buf: &[u8]) -> Result<(&[u8], &[u8]), SbeDecod
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or decode error.
+/// Returns an error if buffer is too short, schema mismatch, or decode error.
 #[allow(dead_code)]
 pub fn decode_cancel_order(buf: &[u8]) -> Result<BinanceCancelOrderResponse, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
@@ -748,7 +748,7 @@ fn decode_cancel_order_list(buf: &[u8]) -> Result<BinanceCancelOrderListResponse
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or decode error.
+/// Returns an error if buffer is too short, schema mismatch, or decode error.
 #[allow(dead_code)]
 pub fn decode_order(buf: &[u8]) -> Result<BinanceOrderResponse, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
@@ -766,7 +766,7 @@ pub fn decode_order(buf: &[u8]) -> Result<BinanceOrderResponse, SbeDecodeError> 
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or decode error.
+/// Returns an error if buffer is too short, schema mismatch, or decode error.
 #[allow(dead_code)]
 pub fn decode_orders(buf: &[u8]) -> Result<Vec<BinanceOrderResponse>, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
@@ -870,7 +870,7 @@ fn decode_order_block(
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or decode error.
+/// Returns an error if buffer is too short, schema mismatch, or decode error.
 #[allow(dead_code)]
 pub fn decode_cancel_open_orders(
     buf: &[u8],
@@ -936,7 +936,7 @@ const BALANCE_BLOCK_LENGTH: u16 = 17;
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or decode error.
+/// Returns an error if buffer is too short, schema mismatch, or decode error.
 #[allow(dead_code)]
 pub fn decode_account(buf: &[u8]) -> Result<BinanceAccountInfo, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
@@ -1018,7 +1018,7 @@ const ACCOUNT_TRADE_BLOCK_LENGTH: u16 = 70;
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or decode error.
+/// Returns an error if buffer is too short, schema mismatch, or decode error.
 #[allow(dead_code)]
 pub fn decode_account_trades(buf: &[u8]) -> Result<Vec<BinanceAccountTrade>, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
@@ -1138,12 +1138,12 @@ const SYMBOL_BLOCK_LENGTH: usize = 19;
 ///
 /// # Errors
 ///
-/// Returns error if buffer is too short, schema mismatch, or template ID mismatch.
+/// Returns an error if buffer is too short, schema mismatch, or template ID mismatch.
 ///
 /// # Panics
 ///
-/// This function will panic if filter byte slices cannot be converted to fixed-size arrays,
-/// which should not occur if the SBE data is well-formed.
+/// Panics if filter byte slices cannot be converted to fixed-size arrays, which should not occur if
+/// the SBE data is well-formed.
 pub fn decode_exchange_info(buf: &[u8]) -> Result<BinanceExchangeInfoSbe, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let header = MessageHeader::decode_cursor(&mut cursor)?;

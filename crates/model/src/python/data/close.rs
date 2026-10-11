@@ -195,7 +195,7 @@ impl InstrumentClose {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if any element conversion fails or the data is not monotonically increasing.
+/// Returns an error if any element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_instrument_closes(
     data: Vec<Bound<'_, PyAny>>,
 ) -> PyResult<Vec<InstrumentClose>> {

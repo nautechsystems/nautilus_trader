@@ -135,9 +135,8 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] for unclassified backend failures,
-    /// [`EventStoreError::Corrupted`] for header-region damage, and
-    /// [`EventStoreError::Disk`] for disk pressure during creation.
+    /// Returns an error if the backend fails, the header region is damaged, or disk pressure
+    /// prevents creation.
     fn open_run(&mut self, manifest: RunManifest) -> Result<(), EventStoreError>;
 
     /// Appends a batch of `(entry, index_keys)` pairs in a single backend transaction.
@@ -153,11 +152,9 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Closed`] when the run is sealed,
-    /// [`EventStoreError::OutOfOrder`] when the first seq is not exactly
-    /// `high_watermark + 1` or a within-batch seq is not contiguous,
-    /// [`EventStoreError::Disk`] when the backing storage refuses the write, and
-    /// [`EventStoreError::Backend`] for unclassified backend failures.
+    /// Returns an error if the run is sealed, if the first seq is not exactly `high_watermark + 1`
+    /// or a within-batch seq is not contiguous, if the backing storage refuses the write, or if the
+    /// backend fails.
     fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError>;
 
     /// Scans entries by `seq` over the inclusive range `[from, to]`.
@@ -168,9 +165,8 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::HashMismatch`] when a row's recomputed hash diverges
-    /// from the stored value, [`EventStoreError::Gap`] when the scan observes a missing
-    /// `seq`, and [`EventStoreError::Backend`] for unclassified backend failures.
+    /// Returns an error if a row's recomputed hash diverges from the stored value, if the scan
+    /// observes a missing `seq`, or if the backend fails.
     fn scan_range(
         &self,
         from: u64,
@@ -182,7 +178,7 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// See [`EventStore::scan_range`].
+    /// Returns an error if [`EventStore::scan_range`] fails.
     fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError>;
 
     /// Looks up the first `seq` recorded under the given index key.
@@ -191,7 +187,7 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] for unclassified backend failures.
+    /// Returns an error if the backend fails.
     fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError>;
 
     /// Enumerates every `(key, seq)` pair stored under the given secondary index.
@@ -202,7 +198,7 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] for unclassified backend failures.
+    /// Returns an error if the backend fails.
     fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError>;
 
     /// Records the latest cache snapshot anchor for the open run.
@@ -214,9 +210,8 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open, when the backend does
-    /// not support snapshot anchors, or when the anchor is invalid for the current
-    /// high-watermark; returns [`EventStoreError::Closed`] when the run is sealed.
+    /// Returns an error if no run is open, when the backend does not support snapshot anchors, or
+    /// when the anchor is invalid for the current high-watermark, or if the run is sealed.
     fn record_snapshot_anchor(&mut self, _anchor: SnapshotAnchor) -> Result<(), EventStoreError> {
         Err(EventStoreError::Backend(
             "snapshot anchors are not supported by this backend".to_string(),
@@ -232,8 +227,7 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open and
-    /// [`EventStoreError::Corrupted`] when a stored anchor fails to decode.
+    /// Returns an error if no run is open or a stored anchor fails to decode.
     fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
         Ok(None)
     }
@@ -244,15 +238,14 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] for unclassified backend failures and
-    /// [`EventStoreError::Disk`] for disk pressure during the seal commit.
+    /// Returns an error if the backend fails or disk pressure prevents the seal commit.
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError>;
 
     /// Returns the current manifest snapshot.
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open.
+    /// Returns an error if no run is open.
     fn manifest(&self) -> Result<RunManifest, EventStoreError>;
 
     /// Returns the largest `seq` durably acknowledged for the open run.
@@ -262,6 +255,6 @@ pub trait EventStore: Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open.
+    /// Returns an error if no run is open.
     fn high_watermark(&self) -> Result<u64, EventStoreError>;
 }

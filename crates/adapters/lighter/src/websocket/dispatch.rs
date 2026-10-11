@@ -1290,8 +1290,8 @@ impl WsDispatchState {
     ///
     /// # Errors
     ///
-    /// Returns an error when every bounded probe candidate is occupied. No
-    /// existing mapping is changed on failure.
+    /// Returns an error if every bounded probe candidate is occupied. No existing mapping is
+    /// changed on failure.
     pub(crate) fn register_cloid(&self, index: i64, cloid: ClientOrderId) -> anyhow::Result<i64> {
         let mut candidate = index;
         for attempt in 0..=CLOID_INDEX_PROBE_LIMIT {
@@ -1349,7 +1349,7 @@ impl WsDispatchState {
     ///
     /// # Errors
     ///
-    /// Returns an error when the cached order does not carry the same venue order ID, the client
+    /// Returns an error if the cached order does not carry the same venue order ID, the client
     /// index is outside the venue-safe range, or the binding conflicts with existing local state.
     pub(crate) fn restore_reconciled_order(
         &self,

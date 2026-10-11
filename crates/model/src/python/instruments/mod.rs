@@ -220,7 +220,7 @@ macro_rules! impl_instrument_common_pymethods {
             ///
             /// # Errors
             ///
-            /// Returns a Python `ValueError` if `num_ticks` exceeds the supported range.
+            /// Returns an error if `num_ticks` exceeds the supported range.
             #[pyo3(name = "next_bid_prices")]
             #[pyo3(signature = (value, num_ticks=100))]
             fn py_next_bid_prices(
@@ -242,7 +242,7 @@ macro_rules! impl_instrument_common_pymethods {
             ///
             /// # Errors
             ///
-            /// Returns a Python `ValueError` if `num_ticks` exceeds the supported range.
+            /// Returns an error if `num_ticks` exceeds the supported range.
             #[pyo3(name = "next_ask_prices")]
             #[pyo3(signature = (value, num_ticks=100))]
             fn py_next_ask_prices(
@@ -603,7 +603,7 @@ pub mod tokenized_asset;
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if conversion to a Python object fails.
+/// Returns an error if conversion to a Python object fails.
 pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<Py<PyAny>> {
     match instrument {
         InstrumentAny::Betting(inst) => inst.into_py_any(py),
@@ -631,7 +631,7 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if extraction fails or the instrument type is unsupported.
+/// Returns an error if extraction fails or the instrument type is unsupported.
 #[expect(clippy::needless_pass_by_value)]
 pub fn pyobject_to_instrument_any(py: Python, instrument: Py<PyAny>) -> PyResult<InstrumentAny> {
     match instrument.getattr(py, "type_name")?.extract::<&str>(py)? {

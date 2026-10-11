@@ -55,7 +55,8 @@ pub type ArrowDecoder = Box<
 ///
 /// # Errors
 ///
-/// Returns an error naming the first opaque byte field.
+/// Returns an error if an unsupported opaque byte field is found. The error names the first such
+/// field.
 #[cfg(feature = "arrow")]
 pub fn validate_custom_arrow_schema(
     type_name: &str,
@@ -146,8 +147,11 @@ pub fn register_json_deserializer(
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 pub fn ensure_json_deserializer_registered(
     type_name: &str,
     deserializer: JsonDeserializer,
@@ -240,8 +244,11 @@ pub fn register_arrow(
 /// registered. If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "arrow")]
 pub fn ensure_arrow_registered(
     type_name: &str,
@@ -344,8 +351,11 @@ pub fn register_py_extractor(type_name: &str, extractor: PyExtractor) -> Result<
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "python")]
 pub fn ensure_py_extractor_registered(
     type_name: &str,
@@ -409,8 +419,11 @@ pub fn register_rust_extractor_factory(
 /// registered. If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module load).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "python")]
 pub fn ensure_rust_extractor_factory_registered(
     type_name: &str,
@@ -447,8 +460,11 @@ where
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module load).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "python")]
 pub fn ensure_rust_extractor_registered<T>() -> Result<(), anyhow::Error>
 where

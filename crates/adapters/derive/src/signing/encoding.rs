@@ -50,8 +50,7 @@ pub enum HexConstError {
 ///
 /// # Errors
 ///
-/// Returns [`SystemTimeError`](std::time::SystemTimeError) if the system clock
-/// is before the UNIX epoch.
+/// Returns an error if the system clock is before the UNIX epoch.
 pub fn utc_now_ms() -> Result<u64, std::time::SystemTimeError> {
     nautilus_core::time::wall_clock_now()
         .duration_since(UNIX_EPOCH)
@@ -110,9 +109,8 @@ pub fn decimal_to_scaled_u256(value: Decimal) -> Result<U256, &'static str> {
 ///
 /// # Errors
 ///
-/// Returns [`HexConstError::Placeholder`] if `value` still contains the
-/// `<paste_` marker, or [`HexConstError::InvalidHex`] if it is not valid
-/// 20-byte hex.
+/// Returns an error if `value` still contains the `<paste_` marker, or if it is not valid 20-byte
+/// hex.
 pub fn parse_address_const(value: &str, name: &'static str) -> Result<Address, HexConstError> {
     if value.contains("<paste_") {
         return Err(HexConstError::Placeholder { name });
@@ -132,9 +130,8 @@ pub fn parse_address_const(value: &str, name: &'static str) -> Result<Address, H
 ///
 /// # Errors
 ///
-/// Returns [`HexConstError::Placeholder`] if `value` still contains the
-/// `<paste_` marker, or [`HexConstError::InvalidHex`] if it is not valid
-/// 32-byte hex.
+/// Returns an error if `value` still contains the `<paste_` marker, or if it is not valid 32-byte
+/// hex.
 pub fn parse_b256_const(value: &str, name: &'static str) -> Result<B256, HexConstError> {
     if value.contains("<paste_") {
         return Err(HexConstError::Placeholder { name });

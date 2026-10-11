@@ -48,7 +48,7 @@ pub const DERIVE_POST_ONLY_CROSS_MARKET_ERROR_CODE: i64 = 11008;
 ///
 /// # Errors
 ///
-/// Returns an error when the venue symbol is empty or contains only whitespace.
+/// Returns an error if the venue symbol is empty or contains only whitespace.
 pub fn format_instrument_id(venue_symbol: impl AsRef<str>) -> anyhow::Result<InstrumentId> {
     let symbol =
         Symbol::new_checked(venue_symbol.as_ref()).context("invalid Derive instrument_name")?;
@@ -59,7 +59,7 @@ pub fn format_instrument_id(venue_symbol: impl AsRef<str>) -> anyhow::Result<Ins
 ///
 /// # Errors
 ///
-/// Returns an error when `instrument_id` is not for the Derive venue.
+/// Returns an error if `instrument_id` is not for the Derive venue.
 pub fn format_venue_symbol(instrument_id: &InstrumentId) -> anyhow::Result<Ustr> {
     anyhow::ensure!(
         instrument_id.venue == *DERIVE_VENUE,
@@ -74,7 +74,7 @@ pub fn format_venue_symbol(instrument_id: &InstrumentId) -> anyhow::Result<Ustr>
 ///
 /// # Errors
 ///
-/// Returns an error when the value is not a JSON array.
+/// Returns an error if the value is not a JSON array.
 pub fn deserialize_salvaged_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -143,7 +143,7 @@ pub fn order_side_to_derive(side: OrderSide) -> DeriveOrderSide {
 ///
 /// # Errors
 ///
-/// Returns an error for order types Derive does not accept.
+/// Returns an error if Derive does not accept the order type.
 pub fn order_type_to_derive(order_type: OrderType) -> anyhow::Result<DeriveOrderType> {
     match order_type {
         OrderType::Limit => Ok(DeriveOrderType::Limit),
@@ -156,7 +156,7 @@ pub fn order_type_to_derive(order_type: OrderType) -> anyhow::Result<DeriveOrder
 ///
 /// # Errors
 ///
-/// Returns an error for order types not supported by Derive trigger orders.
+/// Returns an error if Derive trigger orders do not support the order type.
 pub fn trigger_order_type_to_derive(order_type: OrderType) -> anyhow::Result<DeriveOrderType> {
     match order_type {
         OrderType::StopMarket | OrderType::MarketIfTouched => Ok(DeriveOrderType::Market),
@@ -171,7 +171,7 @@ pub fn trigger_order_type_to_derive(order_type: OrderType) -> anyhow::Result<Der
 ///
 /// # Errors
 ///
-/// Returns an error for order types not supported by Derive trigger orders.
+/// Returns an error if Derive trigger orders do not support the order type.
 pub fn trigger_type_to_derive(order_type: OrderType) -> anyhow::Result<DeriveTriggerType> {
     match order_type {
         OrderType::StopMarket | OrderType::StopLimit => Ok(DeriveTriggerType::Stoploss),
@@ -186,8 +186,8 @@ pub fn trigger_type_to_derive(order_type: OrderType) -> anyhow::Result<DeriveTri
 ///
 /// # Errors
 ///
-/// Returns an error unless the trigger source maps to mark price, which is the
-/// only source Derive currently accepts for trigger orders.
+/// Returns an error if the trigger source does not map to mark price, which is the only source
+/// Derive accepts for trigger orders.
 pub fn trigger_price_type_to_derive(
     trigger_type: Option<TriggerType>,
 ) -> anyhow::Result<DeriveTriggerPriceType> {
@@ -209,7 +209,7 @@ pub fn trigger_price_type_to_derive(
 ///
 /// # Errors
 ///
-/// Returns an error for time-in-force flags Derive does not accept.
+/// Returns an error if Derive does not accept the time-in-force flag.
 pub fn time_in_force_to_derive(
     tif: TimeInForce,
     post_only: bool,
@@ -239,7 +239,7 @@ pub fn derive_order_side_to_nautilus(side: DeriveOrderSide) -> OrderSide {
 ///
 /// # Errors
 ///
-/// Returns an error for an unmodeled order type.
+/// Returns an error if the order type is unmodeled.
 pub fn derive_order_type_to_nautilus(order_type: DeriveOrderType) -> anyhow::Result<OrderType> {
     match order_type {
         DeriveOrderType::Limit => Ok(OrderType::Limit),
@@ -252,7 +252,7 @@ pub fn derive_order_type_to_nautilus(order_type: DeriveOrderType) -> anyhow::Res
 ///
 /// # Errors
 ///
-/// Returns an error for an unmodeled order or trigger type.
+/// Returns an error if the order or trigger type is unmodeled.
 pub fn derive_order_type_to_nautilus_for_order(
     order_type: DeriveOrderType,
     trigger_type: Option<DeriveTriggerType>,
@@ -275,7 +275,7 @@ pub fn derive_order_type_to_nautilus_for_order(
 ///
 /// # Errors
 ///
-/// Returns an error for an unmodeled trigger price source.
+/// Returns an error if the trigger price source is unmodeled.
 pub fn derive_trigger_price_type_to_nautilus(
     trigger_price_type: DeriveTriggerPriceType,
 ) -> anyhow::Result<TriggerType> {
@@ -290,7 +290,7 @@ pub fn derive_trigger_price_type_to_nautilus(
 ///
 /// # Errors
 ///
-/// Returns an error for an unmodeled time-in-force flag.
+/// Returns an error if the time-in-force flag is unmodeled.
 pub fn derive_tif_to_nautilus(tif: DeriveTimeInForce) -> anyhow::Result<TimeInForce> {
     match tif {
         DeriveTimeInForce::Gtc | DeriveTimeInForce::PostOnly => Ok(TimeInForce::Gtc),
@@ -305,7 +305,7 @@ pub fn derive_tif_to_nautilus(tif: DeriveTimeInForce) -> anyhow::Result<TimeInFo
 ///
 /// # Errors
 ///
-/// Returns an error for an unmodeled order status.
+/// Returns an error if the order status is unmodeled.
 pub fn derive_status_to_nautilus(
     status: DeriveOrderStatus,
     filled_qty: Decimal,
@@ -354,8 +354,8 @@ pub fn derive_rejection_due_post_only(code: Option<i64>, reason: &str) -> bool {
 ///
 /// # Errors
 ///
-/// Returns an error when a Derive instrument is missing required details or
-/// contains invalid price, quantity, or timestamp fields.
+/// Returns an error if a Derive instrument is missing required details or contains invalid price,
+/// quantity, or timestamp fields.
 pub fn parse_derive_instrument_any(
     instrument: &DeriveInstrument,
     ts_init: UnixNanos,

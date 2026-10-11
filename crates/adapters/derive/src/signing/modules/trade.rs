@@ -74,8 +74,8 @@ impl TradeModuleData {
     ///
     /// # Errors
     ///
-    /// Returns [`TradeEncodeError::DecimalOverflow`] when any input exceeds
-    /// 12 fractional digits or scales outside the signed/unsigned 256-bit range.
+    /// Returns an error if any input exceeds 12 fractional digits or scales outside the
+    /// signed/unsigned 256-bit range.
     pub fn encode(&self) -> Result<Vec<u8>, TradeEncodeError> {
         let limit_price = decimal_to_scaled_i256(self.limit_price).map_err(|reason| {
             TradeEncodeError::DecimalOverflow {

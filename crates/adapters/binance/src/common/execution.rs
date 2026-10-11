@@ -62,7 +62,7 @@ pub fn abort_pending_tasks(pending_tasks: &TaskGroup) {
 ///
 /// # Errors
 ///
-/// Returns an error when bounded task shutdown fails.
+/// Returns an error if bounded task shutdown fails.
 pub async fn await_pending_tasks(pending_tasks: &TaskGroup) -> anyhow::Result<()> {
     pending_tasks.begin_shutdown();
     pending_tasks

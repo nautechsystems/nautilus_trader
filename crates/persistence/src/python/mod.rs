@@ -32,7 +32,7 @@ use pyo3::prelude::*;
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     ensure_custom_data_registered::<crate::test_data::RustTestCustomData>();

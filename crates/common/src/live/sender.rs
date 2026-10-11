@@ -49,7 +49,7 @@ impl<T> DispatchSender<T> {
     ///
     /// # Errors
     ///
-    /// Returns the undelivered envelope if the receiver is closed.
+    /// Returns an error if the receiver is closed. The error contains the undelivered envelope.
     ///
     /// # Panics
     ///

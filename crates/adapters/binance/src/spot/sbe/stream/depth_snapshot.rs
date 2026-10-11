@@ -60,8 +60,8 @@ impl DepthSnapshotStreamEvent {
     ///
     /// # Errors
     ///
-    /// Returns error if buffer is too short, group size exceeds limits,
-    /// or data is otherwise invalid.
+    /// Returns an error if buffer is too short, group size exceeds limits, or data is otherwise
+    /// invalid.
     pub fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
         let header = MessageHeader::decode(buf)?;
         header.validate_schema()?;

@@ -177,7 +177,7 @@ impl ArcherMovingAveragesTrends {
     /// Updates the indicator with a new raw price value.
     ///
     /// # Panics
-    /// This method will panic if the `slow_ma` is not initialized yet.
+    /// Panics if the `slow_ma` is not initialized yet.
     pub fn update_raw(&mut self, close: f64) {
         self.fast_ma.update_raw(close);
         self.slow_ma.update_raw(close);

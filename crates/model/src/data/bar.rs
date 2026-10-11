@@ -1225,7 +1225,7 @@ impl Bar {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `high` is not >= `open`.
     /// - `high` is not >= `low`.
     /// - `high` is not >= `close`.

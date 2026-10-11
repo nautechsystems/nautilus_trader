@@ -78,8 +78,7 @@ pub enum Error {
 ///
 /// # Errors
 ///
-/// Returns `Error::EmptyOptions` if no options provided,
-/// or `Error::ConnectFailed`/`Error::ConnectRejected` if connection fails.
+/// Returns an error if no options are provided or the connection fails.
 pub async fn replay_normalized(
     base_url: &str,
     options: Vec<ReplayNormalizedRequestOptions>,
@@ -103,9 +102,7 @@ pub async fn replay_normalized(
 ///
 /// # Errors
 ///
-/// Returns `Error::EmptyOptions` if no options are provided,
-/// `Error::UnsupportedStreamingExchange` for BitMEX,
-/// or `Error::ConnectFailed`/`Error::ConnectRejected` if connection fails.
+/// Returns an error if no options are provided, the exchange is BitMEX, or the connection fails.
 pub async fn stream_normalized(
     base_url: &str,
     options: Vec<StreamNormalizedRequestOptions>,

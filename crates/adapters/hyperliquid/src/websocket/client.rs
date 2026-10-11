@@ -846,9 +846,9 @@ impl HyperliquidWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error for any quote-denominated quantity: this raw path has
-    /// no cached market data for a quote-to-base conversion, so such orders
-    /// must be submitted through the execution client instead.
+    /// Returns an error if any quantity is quote-denominated: this raw path has no cached market
+    /// data for a quote-to-base conversion, so such orders must be submitted through the execution
+    /// client instead.
     pub async fn submit_orders(
         &self,
         signer: &HyperliquidHttpClient,

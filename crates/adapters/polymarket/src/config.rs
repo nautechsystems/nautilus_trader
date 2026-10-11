@@ -423,7 +423,7 @@ impl PolymarketDataClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error when the URL is malformed, has no host, or does not use HTTP or HTTPS.
+    /// Returns an error if the URL is malformed, has no host, or does not use HTTP or HTTPS.
     pub fn validated_proxy_url(&self) -> Result<Option<ProxyUrl>, TransportError> {
         validated_proxy_url(self.proxy_url.as_ref())
     }
@@ -590,7 +590,7 @@ impl PolymarketExecutionClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error when the URL is malformed, has no host, or does not use HTTP or HTTPS.
+    /// Returns an error if the URL is malformed, has no host, or does not use HTTP or HTTPS.
     pub fn validated_proxy_url(&self) -> Result<Option<ProxyUrl>, TransportError> {
         validated_proxy_url(self.proxy_url.as_ref())
     }

@@ -451,9 +451,9 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 /// # Errors
 ///
 /// Returns an error if:
-/// - The string format is not a valid ISO 8601 format
-/// - The timestamp is out of range for `UnixNanos`
-/// - The date/time values are invalid
+/// - The string format is not a valid ISO 8601 format.
+/// - The timestamp is out of range for `UnixNanos`.
+/// - The date/time values are invalid.
 #[inline]
 pub fn iso8601_to_unix_nanos(date_string: &str) -> anyhow::Result<UnixNanos> {
     date_string

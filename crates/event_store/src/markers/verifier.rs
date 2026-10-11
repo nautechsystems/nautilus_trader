@@ -42,7 +42,7 @@ impl MarkerVerifier {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError`] when the backend cannot scan a marker table or manifest.
+    /// Returns an error if the backend cannot scan a marker table or manifest.
     pub fn scan(
         backend: &dyn MarkerBackend,
         entry_high_watermark: u64,

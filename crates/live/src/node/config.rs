@@ -860,7 +860,7 @@ impl LiveNodeConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error when a config field would otherwise be ignored at runtime, or when a
+    /// Returns an error if a config field would otherwise be ignored at runtime, or when a
     /// supported field holds a value that cannot be converted to its engine-side representation.
     pub(crate) fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();

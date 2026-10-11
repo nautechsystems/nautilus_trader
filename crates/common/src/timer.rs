@@ -286,7 +286,7 @@ impl TimeEventCallback {
     ///
     /// # Panics
     ///
-    /// Panics from Rust callbacks propagate to the caller.
+    /// Panics if a Rust callback panics. The panic propagates to the caller.
     pub fn call(&self, event: TimeEvent) {
         match self {
             #[cfg(feature = "python")]
@@ -357,7 +357,7 @@ impl TimeEventHandler {
     ///
     /// # Panics
     ///
-    /// Panics from the message-bus tap or a Rust callback propagate to the caller.
+    /// Panics if the message-bus tap or a Rust callback panics. The panic propagates to the caller.
     pub fn run(self) {
         let Self { event, callback } = self;
         crate::msgbus::dispatch_tap_time_event(&event);

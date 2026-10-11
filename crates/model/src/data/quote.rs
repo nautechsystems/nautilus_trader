@@ -113,7 +113,7 @@ impl QuoteTick {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `bid_price.precision` does not equal `ask_price.precision`.
     /// - `bid_size.precision` does not equal `ask_size.precision`.
     #[must_use]

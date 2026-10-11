@@ -426,7 +426,8 @@ impl AsyncRunner {
     ///
     /// # Errors
     ///
-    /// Returns a callback dispatch failure, retaining pending channel messages and the failure latch.
+    /// Returns an error if callback dispatch fails. Pending channel messages and the failure latch
+    /// are retained.
     pub async fn run(&mut self) -> anyhow::Result<()> {
         self.bind_senders();
 

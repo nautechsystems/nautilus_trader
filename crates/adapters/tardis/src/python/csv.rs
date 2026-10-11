@@ -79,7 +79,7 @@ fn options_chain_data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyA
 
 /// # Errors
 ///
-/// Returns a Python error if loading or parsing the CSV file fails.
+/// Returns an error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_deltas")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -102,7 +102,7 @@ pub fn py_load_tardis_deltas(
 
 /// # Errors
 ///
-/// Returns a Python error if loading or parsing the CSV file fails.
+/// Returns an error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_depth_from_snapshot5")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -125,7 +125,7 @@ pub fn py_load_tardis_depth_from_snapshot5(
 
 /// # Errors
 ///
-/// Returns a Python error if loading or parsing the CSV file fails.
+/// Returns an error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_depth_from_snapshot25")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -148,7 +148,7 @@ pub fn py_load_tardis_depth_from_snapshot25(
 
 /// # Errors
 ///
-/// Returns a Python error if loading or parsing the CSV file fails.
+/// Returns an error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_quotes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -171,7 +171,7 @@ pub fn py_load_tardis_quotes(
 
 /// # Errors
 ///
-/// Returns a Python error if loading or parsing the CSV file fails.
+/// Returns an error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_trades")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -194,7 +194,7 @@ pub fn py_load_tardis_trades(
 
 /// # Errors
 ///
-/// Returns a Python error if loading or parsing the CSV file fails.
+/// Returns an error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_funding_rates")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, instrument_id=None, limit=None))]
@@ -208,7 +208,7 @@ pub fn py_load_tardis_funding_rates(
 
 /// # Errors
 ///
-/// Returns a Python error if loading or parsing the CSV file fails.
+/// Returns an error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_options_chain")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, underlyings=None, price_precision=None, size_precision=None, limit=None))]
@@ -237,7 +237,7 @@ pub fn py_load_tardis_options_chain(
 ///
 /// # Errors
 ///
-/// Returns a Python error if parsing, instrument derivation, or catalog writing fails.
+/// Returns an error if parsing, instrument derivation, or catalog writing fails.
 #[pyfunction(name = "convert_tardis_options_chain_csv")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepaths, catalog_path, underlyings=None, snapshot_interval_ms=None, extract_bbo_as_quotes=true, write_instruments=true, price_precision=None, size_precision=None))]
@@ -281,8 +281,8 @@ impl_tardis_stream_iterator!(
 ///
 /// # Errors
 ///
-/// Returns a Python `ValueError` if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing
-/// the CSV file fails.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing the CSV
+/// file fails.
 #[pyfunction(name = "stream_tardis_deltas")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -341,8 +341,8 @@ impl TardisBatchedDeltasStreamIterator {
 ///
 /// # Errors
 ///
-/// Returns a Python `ValueError` if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing
-/// the CSV file fails.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing the CSV
+/// file fails.
 #[pyfunction(name = "stream_tardis_batched_deltas")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -379,8 +379,8 @@ impl_tardis_stream_iterator!(
 ///
 /// # Errors
 ///
-/// Returns a Python `ValueError` if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing
-/// the CSV file fails.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing the CSV
+/// file fails.
 #[pyfunction(name = "stream_tardis_quotes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -443,8 +443,8 @@ impl TardisOptionsChainStreamIterator {
 ///
 /// # Errors
 ///
-/// Returns a Python `ValueError` if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing
-/// the CSV file fails.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing the CSV
+/// file fails.
 #[pyfunction(name = "stream_tardis_options_chain")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, underlyings=None, price_precision=None, size_precision=None, limit=None))]
@@ -481,8 +481,8 @@ impl_tardis_stream_iterator!(
 ///
 /// # Errors
 ///
-/// Returns a Python `ValueError` if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing
-/// the CSV file fails.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing the CSV
+/// file fails.
 #[pyfunction(name = "stream_tardis_trades")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -519,8 +519,8 @@ impl_tardis_stream_iterator!(
 ///
 /// # Errors
 ///
-/// Returns a Python `ValueError` if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing
-/// the CSV file fails.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing the CSV
+/// file fails.
 #[pyfunction(name = "stream_tardis_depth_from_snapshot5")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -551,8 +551,8 @@ pub fn py_stream_tardis_depth_from_snapshot5(
 ///
 /// # Errors
 ///
-/// Returns a Python `ValueError` if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing
-/// the CSV file fails.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing the CSV
+/// file fails.
 #[pyfunction(name = "stream_tardis_depth_from_snapshot25")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
@@ -589,8 +589,8 @@ impl_tardis_stream_iterator!(
 ///
 /// # Errors
 ///
-/// Returns a Python `ValueError` if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing
-/// the CSV file fails.
+/// Returns an error if `chunk_size` is outside `[1, 1_000_000]`, or if loading or parsing the CSV
+/// file fails.
 #[pyfunction(name = "stream_tardis_funding_rates")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, instrument_id=None, limit=None))]

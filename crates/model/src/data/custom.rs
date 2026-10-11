@@ -240,7 +240,7 @@ pub fn get_python_data_class(py: Python<'_>, type_name: &str) -> Option<Py<PyAny
 ///
 /// # Errors
 ///
-/// Returns a Python error if no class is registered for `type_name` or JSON parsing fails.
+/// Returns an error if no class is registered for `type_name` or JSON parsing fails.
 #[cfg(feature = "python")]
 pub fn reconstruct_python_custom_data(
     py: Python<'_>,
@@ -267,7 +267,7 @@ pub fn reconstruct_python_custom_data(
 ///
 /// # Errors
 ///
-/// Returns any conversion error reported by PyO3.
+/// Returns an error if PyO3 conversion fails.
 #[cfg(feature = "python")]
 pub fn clone_pyclass_to_pyobject<T>(value: &T, py: Python<'_>) -> PyResult<Py<PyAny>>
 where
@@ -358,8 +358,11 @@ pub fn register_custom_data_json<T: CustomDataTrait + Sized>() -> anyhow::Result
 /// Registers a custom data type for JSON deserialization if not already registered.
 /// Idempotent: safe to call multiple times for the same type (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 pub fn ensure_custom_data_json_registered<T: CustomDataTrait + Sized>() -> anyhow::Result<()> {
     let type_name = T::type_name_static();
     ensure_json_deserializer_registered(type_name, Box::new(|value| T::from_json(value)))

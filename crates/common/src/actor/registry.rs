@@ -212,8 +212,9 @@ pub fn deregister_actor(id: &Ustr) {
 ///
 /// # Panics
 ///
-/// - Panics if no actor with the specified `id` is found in the registry.
-/// - Panics if the stored actor is not of type `T`.
+/// Panics if:
+/// - No actor with the specified `id` is found in the registry.
+/// - The stored actor is not of type `T`.
 #[must_use]
 pub fn get_actor_unchecked<T: Actor>(id: &Ustr) -> ActorRef<T> {
     let actor_rc = with_actor_registry(|registry| registry.get(id))

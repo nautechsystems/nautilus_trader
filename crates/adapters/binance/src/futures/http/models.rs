@@ -1218,7 +1218,7 @@ impl BinanceFuturesOrderType {
     ///
     /// # Errors
     ///
-    /// Returns an error for an unknown order type.
+    /// Returns an error if the order type is unknown.
     pub fn to_nautilus_order_type(&self) -> anyhow::Result<OrderType> {
         (*self).try_into()
     }
@@ -1229,7 +1229,7 @@ impl BinanceTimeInForce {
     ///
     /// # Errors
     ///
-    /// Returns an error for an unknown time in force.
+    /// Returns an error if the time in force is unknown.
     pub fn to_nautilus_time_in_force(&self) -> anyhow::Result<TimeInForce> {
         Ok(match self {
             Self::Gtc => TimeInForce::Gtc,
@@ -1248,7 +1248,7 @@ impl BinanceOrderStatus {
     ///
     /// # Errors
     ///
-    /// Returns an error for an unknown order status.
+    /// Returns an error if the order status is unknown.
     pub fn to_nautilus_order_status(
         &self,
         treat_expired_as_canceled: bool,

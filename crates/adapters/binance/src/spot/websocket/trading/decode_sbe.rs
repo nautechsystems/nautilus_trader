@@ -60,8 +60,8 @@ const EXECUTION_REPORT_VAR_DATA_FIELDS: [&str; 6] = [
 ///
 /// # Errors
 ///
-/// Returns error if the buffer is too short, the template ID is wrong,
-/// the schema ID does not match, or variable-length data is malformed.
+/// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
+/// match, or variable-length data is malformed.
 pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecutionReport> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -245,8 +245,8 @@ fn execution_report_min_block_length(version: u16) -> usize {
 ///
 /// # Errors
 ///
-/// Returns error if the buffer is too short, the template ID is wrong,
-/// the schema ID does not match, or balances framing is malformed.
+/// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
+/// match, or balances framing is malformed.
 pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccountPositionMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -368,8 +368,8 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
 ///
 /// # Errors
 ///
-/// Returns error if the buffer is too short, the template ID is wrong,
-/// the schema ID does not match, or asset framing is malformed.
+/// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
+/// match, or asset framing is malformed.
 pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUpdateMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(

@@ -61,8 +61,7 @@ impl ProxyUrl {
     ///
     /// # Errors
     ///
-    /// Returns [`TransportError::InvalidUrl`] when the URL is malformed, has no host, or uses an
-    /// unsupported scheme.
+    /// Returns an error if the URL is malformed, has no host, or uses an unsupported scheme.
     pub fn parse(value: impl Into<String>) -> Result<Self, TransportError> {
         let value = value.into();
         ProxyTarget::parse(&value)?;
@@ -178,8 +177,8 @@ impl WsTarget {
     ///
     /// # Errors
     ///
-    /// Returns [`TransportError::InvalidUrl`] when the URL fails to parse,
-    /// is missing a hostname, or uses a scheme other than `ws`/`wss`.
+    /// Returns an error if the URL fails to parse, is missing a hostname, or uses a scheme other
+    /// than `ws`/`wss`.
     pub fn parse(url: &str) -> Result<Self, TransportError> {
         let parsed = Url::parse(url)
             .map_err(|e| TransportError::InvalidUrl(format!("invalid WebSocket URL: {e}")))?;
@@ -236,7 +235,7 @@ impl ProxyKind {
     ///
     /// # Errors
     ///
-    /// See [`ProxyTarget::parse`] for the underlying validation.
+    /// Returns an error if [`ProxyTarget::parse`] fails.
     pub fn parse(url: &str) -> Result<Self, TransportError> {
         let parsed = Url::parse(url)
             .map_err(|e| TransportError::InvalidUrl(format!("invalid proxy URL: {e}")))?;
@@ -299,8 +298,8 @@ impl ProxyTarget {
     ///
     /// # Errors
     ///
-    /// Returns [`TransportError::InvalidUrl`] for malformed URLs, missing
-    /// hosts, or any scheme other than `http`/`https`.
+    /// Returns an error if the URL is malformed, the host is missing, or the scheme is neither
+    /// `http` nor `https`.
     pub fn parse(url: &str) -> Result<Self, TransportError> {
         let parsed = Url::parse(url)
             .map_err(|e| TransportError::InvalidUrl(format!("invalid proxy URL: {e}")))?;
@@ -372,10 +371,9 @@ fn decode_userinfo(value: &str) -> String {
 ///
 /// # Errors
 ///
-/// Returns a [`TransportError`] when:
-/// - The TCP connection to the proxy fails ([`TransportError::Io`]).
-/// - The TLS layer to the proxy or upstream cannot be established
-///   ([`TransportError::Tls`]).
+/// Returns an error if:
+/// - The TCP connection to the proxy fails.
+/// - The TLS layer to the proxy or upstream cannot be established.
 /// - The proxy returns a non-success status, malformed headers, or closes the
 ///   stream before completing the response.
 pub async fn tunnel_via_proxy(

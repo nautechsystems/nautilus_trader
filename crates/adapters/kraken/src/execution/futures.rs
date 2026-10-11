@@ -1920,8 +1920,8 @@ fn is_unpriced_terminal_report(report: &OrderStatusReport) -> bool {
 ///
 /// # Errors
 ///
-/// Returns the covered quantity, leaving the report unpriced, when neither source covers the
-/// report's filled quantity exactly.
+/// Returns an error if neither source covers the report's filled quantity exactly. The error
+/// contains the covered quantity, and the report remains unpriced.
 fn price_from_fills(
     report: &mut OrderStatusReport,
     cached: Option<&OrderAny>,

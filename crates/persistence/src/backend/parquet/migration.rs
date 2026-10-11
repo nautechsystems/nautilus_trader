@@ -54,8 +54,8 @@ pub struct ParquetMigrationConfig {
 ///
 /// # Errors
 ///
-/// Returns an error for overlapping locations, invalid schemas, a nonempty destination,
-/// or an object-store read or write failure.
+/// Returns an error if locations overlap, schemas are invalid, the destination is nonempty, or an
+/// object-store read or write fails.
 pub fn migrate_parquet_catalog(
     config: ParquetMigrationConfig,
 ) -> anyhow::Result<CatalogMigrationReport> {

@@ -90,8 +90,8 @@ pub struct RetentionPlan {
 ///
 /// # Errors
 ///
-/// Returns [`EventStoreError`] when the run directory cannot be listed, a manifest cannot
-/// be decoded, or a sealed run file cannot be opened to inspect its snapshot anchor.
+/// Returns an error if the run directory cannot be listed, a manifest cannot be decoded, or a
+/// sealed run file cannot be opened to inspect its snapshot anchor.
 pub fn plan_redb_retention(
     base_dir: &Path,
     instance_id: &str,
@@ -110,7 +110,7 @@ pub fn plan_redb_retention(
 ///
 /// # Errors
 ///
-/// Returns [`EventStoreError`] when manifest listing or sealed-run anchor inspection fails.
+/// Returns an error if manifest listing or sealed-run anchor inspection fails.
 pub fn list_redb_sealed_runs(
     base_dir: &Path,
     instance_id: &str,

@@ -570,9 +570,9 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No credentials are available from either source
-    /// - The HTTP request fails
-    /// - The credentials are invalid
+    /// - No credentials are available from either source.
+    /// - The HTTP request fails.
+    /// - The credentials are invalid.
     pub async fn authenticate_auto(
         &self,
         expiration_seconds: i32,
@@ -1340,9 +1340,9 @@ impl AxHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No credentials are available from either source
-    /// - The HTTP request fails
-    /// - The credentials are invalid
+    /// - No credentials are available from either source.
+    /// - The HTTP request fails.
+    /// - The credentials are invalid.
     pub async fn authenticate_auto(
         &self,
         expiration_seconds: i32,

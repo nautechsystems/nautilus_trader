@@ -79,8 +79,8 @@ impl NonceManager {
     ///
     /// # Errors
     ///
-    /// Returns an error when the system clock is invalid, the timestamp
-    /// cannot be encoded, or rollback places the nonce outside the order window.
+    /// Returns an error if the system clock is invalid, the timestamp cannot be encoded, or
+    /// rollback places the nonce outside the order window.
     pub fn next_nonce(&self, wallet: &str, subaccount_id: u64) -> Result<u64, NonceError> {
         let now_ns = nautilus_core::time::wall_clock_now()
             .duration_since(UNIX_EPOCH)
@@ -96,8 +96,8 @@ impl NonceManager {
     ///
     /// # Errors
     ///
-    /// Returns an error on overflow or when rollback places the next nonce
-    /// outside the inclusive order window.
+    /// Returns an error if overflow occurs or rollback places the next nonce outside the inclusive
+    /// order window.
     pub fn next_nonce_at(
         &self,
         wallet: &str,

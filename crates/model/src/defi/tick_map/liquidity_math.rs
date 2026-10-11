@@ -20,8 +20,8 @@ use crate::defi::{pool_analysis::error::LiquidityMathError, tick_map::tick::Pool
 ///
 /// # Errors
 ///
-/// Returns [`LiquidityMathError::Overflow`] when adding a positive delta wraps past
-/// `u128::MAX`, or [`LiquidityMathError::Underflow`] when subtracting wraps below zero.
+/// Returns an error if adding a positive delta wraps past `u128::MAX`, or if subtracting wraps
+/// below zero.
 pub fn try_liquidity_math_add(x: u128, y: i128) -> Result<u128, LiquidityMathError> {
     if y < 0 {
         let delta = y.unsigned_abs();
@@ -53,7 +53,7 @@ pub fn try_liquidity_math_add(x: u128, y: i128) -> Result<u128, LiquidityMathErr
 ///
 /// # Panics
 ///
-/// This function panics if:
+/// Panics if:
 /// - Adding positive delta causes overflow.
 /// - Subtracting causes underflow.
 #[must_use]

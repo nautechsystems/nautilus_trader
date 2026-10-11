@@ -113,9 +113,8 @@ impl DeriveCredential {
     ///
     /// # Errors
     ///
-    /// Returns an error when any of the wallet address, session key, or
-    /// subaccount ID cannot be resolved from either source, or when the
-    /// subaccount id env var is not a valid `u64`.
+    /// Returns an error if any of the wallet address, session key, or subaccount ID cannot be
+    /// resolved from either source, or when the subaccount id env var is not a valid `u64`.
     pub fn resolve(
         wallet_address: Option<String>,
         session_key: Option<String>,

@@ -49,7 +49,7 @@ impl HttpResponseStream {
     ///
     /// # Errors
     ///
-    /// Returns an error on a transport failure or when the original request deadline expires.
+    /// Returns an error if the transport fails or the original request deadline expires.
     pub async fn chunk(&mut self) -> Result<Option<Bytes>, HttpClientError> {
         read_chunk(self.response.body_mut(), self.deadline)
             .await

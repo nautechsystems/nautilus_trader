@@ -401,7 +401,7 @@ impl OKXHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The API request fails.
     /// - The instrument is not found.
     /// - Failed to parse instrument data.

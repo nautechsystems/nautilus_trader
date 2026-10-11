@@ -84,7 +84,7 @@ impl HurstVpinDirectionalConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if either rolling window is outside `[1, 16_384]`.
+    /// Returns an error if either rolling window is outside `[1, 16_384]`.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 

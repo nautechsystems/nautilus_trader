@@ -490,7 +490,7 @@ pub(crate) fn signed_limit_order_quantity(quantity: Decimal) -> Decimal {
 ///
 /// # Errors
 ///
-/// Returns an error when an immediate buy cannot derive a positive share quantity.
+/// Returns an error if an immediate buy cannot derive a positive share quantity.
 pub(crate) fn posted_limit_share_quantity(
     side: PolymarketOrderSide,
     price: Decimal,
@@ -654,9 +654,11 @@ fn compute_quote_buy_maker_taker_amounts(
 
 /// Generates a random salt for order construction.
 ///
-/// # Panics
-///
-/// Cannot panic: UUID v4 always produces 16 bytes, so the 8-byte slice conversion is infallible.
+/// UUID v4 always produces 16 bytes, so converting the 8-byte slice cannot panic.
+#[allow(
+    clippy::missing_panics_doc,
+    reason = "a UUID always contains enough bytes for the 8-byte slice"
+)]
 pub fn generate_salt() -> u64 {
     let bytes = uuid::Uuid::new_v4().into_bytes();
     u64::from_le_bytes(bytes[..8].try_into().unwrap()) & ((1u64 << 53) - 1)

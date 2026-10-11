@@ -93,9 +93,9 @@ pub const OKX_MAX_CLORDID_LEN: usize = 32;
 ///
 /// # Errors
 ///
-/// Returns a human-readable reason when the ID exceeds
-/// [`OKX_MAX_CLORDID_LEN`] characters or contains non-alphanumeric characters
-/// (such as hyphens or underscores).
+/// Returns an error if the ID exceeds [`OKX_MAX_CLORDID_LEN`] characters or contains
+/// non-alphanumeric characters (such as hyphens or underscores). The error gives a human-readable
+/// reason.
 pub fn validate_okx_client_order_id(cl_ord_id: &str) -> Result<(), String> {
     let len = cl_ord_id.len();
     if len > OKX_MAX_CLORDID_LEN {
@@ -122,7 +122,7 @@ pub fn validate_okx_client_order_id(cl_ord_id: &str) -> Result<(), String> {
 ///
 /// # Errors
 ///
-/// Returns an error when OKX cannot enforce reduce-only for the selected product or when a
+/// Returns an error if OKX cannot enforce reduce-only for the selected product or when a
 /// long/short-mode order would increase the selected position side.
 pub(crate) fn okx_reduce_only_wire_value(
     instrument_type: OKXInstrumentType,
@@ -287,8 +287,8 @@ pub const OKX_FEATURE_USDC_ORDER_BOOK: &str = "1";
 ///
 /// # Errors
 ///
-/// Returns an error when `configured` is set and `available` is empty, or when
-/// `configured` is not present in `available`.
+/// Returns an error if `configured` is set and `available` is empty, or when `configured` is not
+/// present in `available`.
 pub fn spot_trade_quote_ccy_wire_value(
     instrument_type: OKXInstrumentType,
     configured: Option<&str>,

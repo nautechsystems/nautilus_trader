@@ -59,7 +59,7 @@ pub(crate) fn decimal_from_json(raw: &RawValue) -> anyhow::Result<Decimal> {
 ///
 /// # Errors
 ///
-/// Returns an error for an unsupported JSON shape or a value that cannot be represented exactly.
+/// Returns an error if the JSON shape is unsupported or a value cannot be represented exactly.
 pub fn deserialize_decimal_from_str<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
 where
     D: Deserializer<'de>,
@@ -72,7 +72,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns an error for an unsupported JSON shape or a value that cannot be represented exactly.
+/// Returns an error if the JSON shape is unsupported or a value cannot be represented exactly.
 pub fn deserialize_optional_decimal_from_str<'de, D>(
     deserializer: D,
 ) -> Result<Option<Decimal>, D::Error>

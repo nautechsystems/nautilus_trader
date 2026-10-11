@@ -94,7 +94,7 @@ pub trait TestDefault {
 ///
 /// # Panics
 ///
-/// This function panics if:
+/// Panics if:
 /// - The liquidity side is `NoLiquiditySide`.
 /// - `fee_rate` cannot be converted to `f64`.
 #[must_use]

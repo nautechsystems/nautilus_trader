@@ -193,12 +193,9 @@ impl<'a, M: ModuleData> SignedAction<'a, M> {
     ///
     /// # Errors
     ///
-    /// Returns [`TypedDataError::ExpiryTooSoon`] when the configured expiry is
-    /// closer to `now` than the venue minimum, [`TypedDataError::ClockBeforeEpoch`]
-    /// when the system clock is invalid, [`TypedDataError::ModuleEncoding`]
-    /// when the per-module ABI encoder rejects the payload, and
-    /// [`TypedDataError::SigningFailed`] when the underlying secp256k1 signer
-    /// errors.
+    /// Returns an error if the configured expiry is closer to `now` than the venue minimum, if the
+    /// system clock is invalid, if the per-module ABI encoder rejects the payload, or if the
+    /// underlying secp256k1 signer errors.
     pub fn sign(&mut self, signer: &PrivateKeySigner) -> Result<[u8; 65], TypedDataError> {
         self.validate_expiry()?;
 

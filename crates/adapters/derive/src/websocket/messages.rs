@@ -433,7 +433,7 @@ impl DeriveOrderbookData {
     ///
     /// # Errors
     ///
-    /// Returns an error when the venue symbol is empty or contains only whitespace.
+    /// Returns an error if the venue symbol is empty or contains only whitespace.
     pub fn instrument_id(&self) -> anyhow::Result<InstrumentId> {
         format_instrument_id(self.instrument_name)
     }
@@ -718,8 +718,7 @@ impl DeriveTickerData {
     ///
     /// # Errors
     ///
-    /// Returns an error when a compact ticker is received on an invalid
-    /// channel.
+    /// Returns an error if a compact ticker is received on an invalid channel.
     pub fn apply_channel_context(&mut self, channel: &str) -> Result<(), String> {
         let Self::SlimEnvelope {
             instrument_ticker, ..
@@ -742,7 +741,7 @@ impl DeriveTickerData {
     ///
     /// # Errors
     ///
-    /// Returns an error when the venue symbol is empty or contains only whitespace.
+    /// Returns an error if the venue symbol is empty or contains only whitespace.
     pub fn instrument_id(&self) -> anyhow::Result<InstrumentId> {
         format_instrument_id(self.instrument_name())
     }
@@ -832,7 +831,7 @@ impl DeriveWsFrame {
     ///
     /// # Errors
     ///
-    /// Returns [`serde_json::Error`] when `text` is not valid JSON.
+    /// Returns an error if `text` is not valid JSON.
     pub fn parse(text: &str) -> serde_json::Result<Self> {
         match parse_frame(text)? {
             ParsedFrame::Response { id, result, error } => Ok(Self::Response { id, result, error }),

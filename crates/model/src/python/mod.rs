@@ -79,7 +79,7 @@ pub fn currency_lookup_error_to_pyvalue_err(e: CurrencyLookupError) -> PyErr {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types

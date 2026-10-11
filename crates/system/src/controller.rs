@@ -159,7 +159,7 @@ impl Controller {
     ///
     /// # Errors
     ///
-    /// Always returns an unsupported command error.
+    /// Returns an error if called. The command is unsupported.
     #[cfg(not(feature = "python"))]
     pub fn create_actor_from_config(
         &self,
@@ -232,7 +232,7 @@ impl Controller {
     ///
     /// # Errors
     ///
-    /// Always returns an unsupported command error.
+    /// Returns an error if called. The command is unsupported.
     #[cfg(not(feature = "python"))]
     pub fn create_strategy_from_config(
         &self,

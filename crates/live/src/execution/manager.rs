@@ -208,7 +208,7 @@ impl ExecutionManager {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`](nautilus_common::config::ConfigError) if `config` fails validation.
+    /// Returns an error if `config` fails validation.
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,

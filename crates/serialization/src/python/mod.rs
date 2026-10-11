@@ -29,7 +29,7 @@ use pyo3::prelude::*;
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 // Allow unused `m` when no feature-gated content registers on the module
 #[allow(deprecated, unused_variables)]
 #[pymodule]

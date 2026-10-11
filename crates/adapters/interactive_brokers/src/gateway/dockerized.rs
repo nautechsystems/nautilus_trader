@@ -180,8 +180,8 @@ impl DockerizedIBGateway {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Username or password is not provided and not available in environment variables
-    /// - Docker client creation fails
+    /// - Username or password is not provided and not available in environment variables.
+    /// - Docker client creation fails.
     pub fn new(mut config: DockerizedIBGatewayConfig) -> anyhow::Result<Self> {
         let username = config
             .username

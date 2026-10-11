@@ -372,7 +372,7 @@ impl DataType {
     ///
     /// # Errors
     ///
-    /// Returns a JSON serialization error if the data cannot be serialized.
+    /// Returns an error if the data cannot be serialized.
     pub fn to_persistence_json(&self) -> Result<String, serde_json::Error> {
         let mut map = serde_json::Map::new();
         map.insert(

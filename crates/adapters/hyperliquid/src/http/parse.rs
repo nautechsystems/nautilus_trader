@@ -741,8 +741,8 @@ pub fn get_usdh_currency() -> Currency {
 ///
 /// # Errors
 ///
-/// Returns an error when an outcome side token carries a non-zero fee, or when
-/// `fee_token` cannot be resolved and `fee_amount` is non-zero.
+/// Returns an error if an outcome side token carries a non-zero fee, or when `fee_token` cannot be
+/// resolved and `fee_amount` is non-zero.
 pub fn resolve_fee_currency(
     fee_token: &str,
     fee_amount: Decimal,

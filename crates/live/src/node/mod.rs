@@ -357,7 +357,7 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error when plug-ins are configured without host-side support.
+    /// Returns an error if plug-ins are configured without host-side support.
     pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
         if self.config.plugins.is_empty() {
             return Ok(());
@@ -372,7 +372,7 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error because dynamic plug-in hosting lives in the host-side integration.
+    /// Returns an error if called. Dynamic plug-in hosting lives in the host-side integration.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "signature mirrors the host-enabled API"
@@ -2979,8 +2979,8 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error without changing the cache if the cache is already borrowed, the request
-    /// repeats an instrument, or any requested instrument already has a claim.
+    /// Returns an error if the cache is already borrowed, the request repeats an instrument, or any
+    /// requested instrument already has a claim. The cache remains unchanged.
     pub fn register_external_order_claims(
         &self,
         strategy_id: StrategyId,

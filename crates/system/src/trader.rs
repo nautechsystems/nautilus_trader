@@ -1627,7 +1627,8 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// Returns an error containing every component callback or persistence failure.
+    /// Returns an error if any component callback or persistence operation fails. The error
+    /// contains every such failure.
     pub(crate) fn save_state(trader: &Rc<RefCell<Self>>) -> anyhow::Result<()> {
         let (cache, actor_callbacks, strategy_callbacks) = {
             let trader = trader.borrow();

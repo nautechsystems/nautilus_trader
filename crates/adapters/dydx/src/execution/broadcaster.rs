@@ -166,7 +166,7 @@ impl TxBroadcaster {
     ///
     /// # Errors
     ///
-    /// Returns error if all retries are exhausted or a non-retryable error occurs.
+    /// Returns an error if all retries are exhausted or a non-retryable error occurs.
     pub async fn broadcast_with_retry(
         &self,
         tx_manager: &TransactionManager,
@@ -274,7 +274,7 @@ impl TxBroadcaster {
     ///
     /// # Errors
     ///
-    /// Returns error if building or broadcasting fails (excluding benign cancel errors).
+    /// Returns an error if building or broadcasting fails (excluding benign cancel errors).
     pub async fn broadcast_short_term(
         &self,
         tx_manager: &TransactionManager,
@@ -320,7 +320,7 @@ impl TxBroadcaster {
     ///
     /// # Errors
     ///
-    /// Returns error if the gRPC broadcast fails.
+    /// Returns an error if the gRPC broadcast fails.
     pub async fn broadcast_once(
         &self,
         prepared: &PreparedTransaction,

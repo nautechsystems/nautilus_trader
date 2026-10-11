@@ -26,7 +26,7 @@ use serde::{Deserialize, Deserializer};
 ///
 /// # Errors
 ///
-/// Returns a `std::num::ParseIntError` if:
+/// Returns an error if:
 /// - The input string contains non-hexadecimal characters.
 /// - The hexadecimal value is too large to fit in a u64.
 /// - The hex string is longer than 16 characters (excluding 0x prefix).
@@ -72,8 +72,8 @@ where
 ///
 /// # Errors
 ///
-/// Returns a [`serde::de::Error`] if the provided string is not valid hexadecimal or if the value
-/// is larger than the `u64` range.
+/// Returns an error if the provided string is not valid hexadecimal or if the value is larger than
+/// the `u64` range.
 pub fn deserialize_opt_hex_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: Deserializer<'de>,
@@ -95,7 +95,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns a [`serde::de::Error`] if the string is not valid hex or cannot be parsed into `U256`.
+/// Returns an error if the string is not valid hex or cannot be parsed into `U256`.
 pub fn deserialize_opt_hex_u256<'de, D>(deserializer: D) -> Result<Option<U256>, D::Error>
 where
     D: Deserializer<'de>,

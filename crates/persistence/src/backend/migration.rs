@@ -304,7 +304,8 @@ impl CatalogMigrationPlan {
     ///
     /// # Errors
     ///
-    /// Returns one summary error containing every schema conflict and unresolved schema.
+    /// Returns an error if any schema conflicts or unresolved schemas remain. The error summarizes
+    /// every schema conflict and unresolved schema.
     pub fn ensure_ready(&self) -> anyhow::Result<()> {
         if !self.has_errors() {
             return Ok(());
@@ -453,8 +454,8 @@ pub fn read_planned_migration_file(
 ///
 /// # Errors
 ///
-/// Returns an error when an identifier column is not string-like, a batch cannot be sliced or
-/// rebuilt with current identifier metadata, or a built-in batch fails its current decoder.
+/// Returns an error if an identifier column is not string-like, a batch cannot be sliced or rebuilt
+/// with current identifier metadata, or a built-in batch fails its current decoder.
 pub fn prepare_migration_parts(
     file: &PlannedMigrationFile,
     batches: Vec<RecordBatch>,
@@ -493,7 +494,7 @@ pub fn prepare_migration_parts(
 ///
 /// # Errors
 ///
-/// Returns an error when the separator or either side is absent.
+/// Returns an error if the separator or either side is absent.
 pub fn parse_storage_option(option: &str) -> Result<(String, String), String> {
     let (key, value) = option
         .split_once('=')

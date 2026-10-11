@@ -201,7 +201,7 @@ impl DatabentoDataLoader {
     ///
     /// # Errors
     ///
-    /// Returns an error when no precision is available.
+    /// Returns an error if no precision is available.
     fn resolve_price_precision(
         &self,
         instrument_id: &InstrumentId,

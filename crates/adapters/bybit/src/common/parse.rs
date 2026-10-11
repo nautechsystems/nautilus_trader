@@ -1027,7 +1027,7 @@ pub fn resolve_position_idx(
 ///
 /// # Errors
 ///
-/// This function returns an error if:
+/// Returns an error if:
 /// - Required price or quantity fields cannot be parsed.
 /// - The execution timestamp cannot be parsed.
 /// - Numeric conversions fail.
@@ -1106,7 +1106,7 @@ pub fn parse_fill_report(
 ///
 /// # Errors
 ///
-/// This function returns an error if:
+/// Returns an error if:
 /// - Position quantity or price fields cannot be parsed.
 /// - The position timestamp cannot be parsed.
 /// - Numeric conversions fail.
@@ -1697,7 +1697,7 @@ pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
 ///
 /// # Errors
 ///
-/// Returns an error for any value outside the four types Bybit accepts on an order.
+/// Returns an error if the value falls outside the four types Bybit accepts on an order.
 pub fn parse_smp_type(s: &str) -> anyhow::Result<BybitOrderSmpType> {
     match s.to_ascii_lowercase().as_str() {
         "none" => Ok(BybitOrderSmpType::None),
@@ -1717,7 +1717,7 @@ pub fn parse_smp_type(s: &str) -> anyhow::Result<BybitOrderSmpType> {
 ///
 /// # Errors
 ///
-/// Returns an error for any value outside the four types Bybit accepts on an order.
+/// Returns an error if the value falls outside the four types Bybit accepts on an order.
 pub fn deserialize_optional_smp_type<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<Option<BybitOrderSmpType>, D::Error> {

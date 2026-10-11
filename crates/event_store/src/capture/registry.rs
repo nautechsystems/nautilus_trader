@@ -347,8 +347,7 @@ impl EncoderRegistry {
     ///
     /// # Errors
     ///
-    /// Returns the encoder's [`EncodeError`] when an encoder is registered but rejects
-    /// the message.
+    /// Returns an error if an encoder is registered but rejects the message.
     pub fn encode<T: 'static>(
         &self,
         message: &T,
@@ -370,8 +369,7 @@ impl EncoderRegistry {
     ///
     /// # Errors
     ///
-    /// Returns the encoder's [`EncodeError`] when an encoder is registered for the
-    /// concrete type but rejects the message.
+    /// Returns an error if an encoder is registered for the concrete type but rejects the message.
     pub fn encode_any(
         &self,
         message: &dyn Any,

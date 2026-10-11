@@ -3650,7 +3650,7 @@ fn order_normal_tpsl_submission(
 ///
 /// # Errors
 ///
-/// Returns an error describing the first validation failure encountered.
+/// Returns an error if validation fails. The error describes the first failure encountered.
 pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
     let instrument_id = order.instrument_id();
     let symbol = instrument_id.symbol.as_str();

@@ -371,8 +371,8 @@ impl CustomDataDecoder {
     ///
     /// # Errors
     ///
-    /// Returns an `EncodingError` if the type is unregistered, decoding fails, or a registered
-    /// decoder yields a non-custom row.
+    /// Returns an error if the type is unregistered, decoding fails, or a registered decoder yields
+    /// a non-custom row.
     pub fn decode_custom_batch(
         metadata: &std::collections::HashMap<String, String>,
         record_batch: &RecordBatch,

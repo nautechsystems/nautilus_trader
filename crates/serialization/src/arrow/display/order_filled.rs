@@ -68,7 +68,7 @@ pub fn order_filled_schema() -> Schema {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_order_fills(data: &[OrderFilled]) -> Result<RecordBatch, ArrowError> {
     let mut trader_id = StringBuilder::new();
     let mut strategy_id = StringBuilder::new();

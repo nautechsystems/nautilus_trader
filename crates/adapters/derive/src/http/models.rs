@@ -617,8 +617,8 @@ impl DeriveReplaceResult {
     ///
     /// # Errors
     ///
-    /// Returns an error for contradictory fields, an unexpected cancellation record, or an
-    /// invalid replacement state.
+    /// Returns an error if fields contradict each other, a cancellation record is unexpected, or
+    /// the replacement state is invalid.
     pub(crate) fn into_outcome(
         self,
         expected_cancel_order_id: &str,

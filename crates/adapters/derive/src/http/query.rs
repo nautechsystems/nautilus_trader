@@ -479,10 +479,9 @@ impl DeriveGetPositionsParams {
 ///
 /// # Errors
 ///
-/// Returns an error when the order is not a Limit or Market order, when the
-/// instrument's `base_asset_address` cannot be parsed, when decimal scaling
-/// fails, when a Market order is submitted without an `explicit_price`, or
-/// when EIP-712 signing fails.
+/// Returns an error if the order is not a Limit or Market order, when the instrument's
+/// `base_asset_address` cannot be parsed, when decimal scaling fails, when a Market order is
+/// submitted without an `explicit_price`, or when EIP-712 signing fails.
 #[expect(clippy::too_many_arguments)]
 pub fn order_to_derive_payload(
     order: &OrderAny,
@@ -530,9 +529,9 @@ pub fn order_to_derive_payload(
 ///
 /// # Errors
 ///
-/// Returns an error when the order is not one of StopMarket, StopLimit,
-/// MarketIfTouched, or LimitIfTouched, when the trigger source is not
-/// MarkPrice, when required prices are absent, or when EIP-712 signing fails.
+/// Returns an error if the order is not one of StopMarket, StopLimit, MarketIfTouched, or
+/// LimitIfTouched, when the trigger source is not MarkPrice, when required prices are absent, or
+/// when EIP-712 signing fails.
 #[expect(clippy::too_many_arguments)]
 pub fn trigger_order_to_derive_payload(
     order: &OrderAny,
@@ -603,10 +602,9 @@ pub fn trigger_order_to_derive_payload(
 ///
 /// # Errors
 ///
-/// Returns an error when the order is not a Limit or Market order, when the
-/// instrument's `base_asset_address` cannot be parsed, when decimal scaling
-/// fails, when a Market order has no `explicit_price`, or when EIP-712 signing
-/// fails.
+/// Returns an error if the order is not a Limit or Market order, when the instrument's
+/// `base_asset_address` cannot be parsed, when decimal scaling fails, when a Market order has no
+/// `explicit_price`, or when EIP-712 signing fails.
 #[expect(clippy::too_many_arguments)]
 pub fn order_replace_to_derive_payload(
     order: &OrderAny,

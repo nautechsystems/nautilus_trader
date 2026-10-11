@@ -178,7 +178,7 @@ impl DeriveExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error when:
+    /// Returns an error if:
     /// - `max_fee_per_contract` is missing or not greater than zero.
     /// - Required credentials are not provided via config or environment.
     /// - Signing constants are still placeholders or cannot be parsed as hex.
@@ -314,7 +314,7 @@ impl DeriveExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error when instrument identity or price and size increments are invalid.
+    /// Returns an error if instrument identity or price and size increments are invalid.
     pub fn cache_instrument(&self, instrument: DeriveInstrument) -> anyhow::Result<()> {
         let instrument_id = format_instrument_id(instrument.instrument_name)?;
         anyhow::ensure!(

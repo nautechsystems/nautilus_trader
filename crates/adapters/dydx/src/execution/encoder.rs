@@ -169,8 +169,8 @@ impl ClientOrderIdEncoder {
     ///
     /// # Errors
     ///
-    /// Returns `EncoderError::CounterOverflow` if sequential counter exceeds safe limit.
-    /// Returns `EncoderError::ValueOverflow` if O-format values exceed bit limits.
+    /// Returns an error if sequential counter exceeds safe limit. Returns an error if O-format
+    /// values exceed bit limits.
     pub fn encode(&self, id: ClientOrderId) -> Result<EncodedClientOrderId, EncoderError> {
         // Fast path: already mapped (for non-deterministic IDs)
         if let Some(existing) = self.forward.get(&id) {

@@ -46,7 +46,7 @@ fn clamp_precision_with_log(len: usize, context: &str, input: &str) -> u8 {
 ///
 /// # Panics
 ///
-/// Panics when `strict` is true and the exponent is missing or non-numeric.
+/// Panics if `strict` is true and the exponent is missing or non-numeric.
 fn precision_from_scientific(
     s: &str,
     e_pos: usize,

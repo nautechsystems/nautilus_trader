@@ -47,8 +47,7 @@ pub mod sorted_hashset {
     ///
     /// # Errors
     ///
-    /// Returns any error produced by the underlying [`Serializer`] when writing
-    /// the sorted vector.
+    /// Returns an error if the underlying [`Serializer`] fails when writing the sorted vector.
     pub fn serialize<T, S>(set: &AHashSet<T>, s: S) -> Result<S::Ok, S::Error>
     where
         T: Serialize + Ord,
@@ -63,8 +62,7 @@ pub mod sorted_hashset {
     ///
     /// # Errors
     ///
-    /// Returns any error produced by the underlying [`Deserializer`] when reading
-    /// the source array.
+    /// Returns an error if the underlying [`Deserializer`] fails when reading the source array.
     pub fn deserialize<'de, T, D>(d: D) -> Result<AHashSet<T>, D::Error>
     where
         T: Deserialize<'de> + Eq + std::hash::Hash,
@@ -402,7 +400,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     ///
     /// # Errors
     ///
-    /// Returns serialization errors.
+    /// Returns an error if JSON deserialization fails.
     fn from_json_bytes(data: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(data)
     }
@@ -411,7 +409,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     ///
     /// # Errors
     ///
-    /// Returns serialization errors.
+    /// Returns an error if JSON serialization fails.
     fn to_json_bytes(&self) -> Result<Bytes, serde_json::Error> {
         serde_json::to_vec(self).map(Bytes::from)
     }
@@ -435,7 +433,7 @@ pub mod msgpack {
         ///
         /// # Errors
         ///
-        /// Returns serialization errors.
+        /// Returns an error if MessagePack deserialization fails.
         fn from_msgpack_bytes(data: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
             rmp_serde::from_slice(data)
         }
@@ -447,7 +445,7 @@ pub mod msgpack {
         ///
         /// # Errors
         ///
-        /// Returns serialization errors.
+        /// Returns an error if MessagePack serialization fails.
         fn to_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
             rmp_serde::to_vec_named(self).map(Bytes::from)
         }

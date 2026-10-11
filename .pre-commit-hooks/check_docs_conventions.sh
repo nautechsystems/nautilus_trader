@@ -5,21 +5,22 @@
 # 1. `# Panics` on Result-returning functions with no panic tokens in body
 # 2. `# Panics` sections that say "does not panic" (self-contradictory)
 # 3. `# Errors` on functions that don't return Result/Option
+# 4. Nonstandard Errors/Panics lead-ins and condition bullets without periods
 #
 # Cargo features (crates/**/Cargo.toml):
-# 4. Every non-default feature is listed once, in alphabetical order, under
+# 5. Every non-default feature is listed once, in alphabetical order, under
 #    `Feature flags` in both README.md and the configured library source
 #
 # Suppress with `// panics-doc-ok` above the doc block for transitive panics.
 # Suppress with `// errors-doc-ok` above the doc block for special cases.
 #
 # Markdown (docs/**/*.md):
-# 5. Hyphen-split words in table rows (e.g., "configu- ration")
-# 6. Soft hyphens (U+00AD)
-# 7. Table lines ending with a trailing hyphen on a word fragment
+# 6. Hyphen-split words in table rows (e.g., "configu- ration")
+# 7. Soft hyphens (U+00AD)
+# 8. Table lines ending with a trailing hyphen on a word fragment
 #
 # Documentation site URLs (tracked sources, excluding RELEASES.md):
-# 8. `.html` suffix on a nautilustrader.io/docs URL, which the site does not serve
+# 9. `.html` suffix on a nautilustrader.io/docs URL, which the site does not serve
 
 set -euo pipefail
 
@@ -176,7 +177,7 @@ check_feature_docs() {
 # One awk pass reads every file with a matching heading and reports each
 # violation as a kind, line, function name, and path record; the path comes
 # last so a tab in it cannot split the fields.
-doc_section_files=$(rg -l '/// # (Panics|Errors)' crates --type rust --sort path 2> /dev/null) || true
+doc_section_files=$(rg -l '^[[:space:]]*/// # (Panics|Errors)[[:space:]]*$' crates --type rust --sort path 2> /dev/null) || true
 
 doc_section_output=""
 if [[ -n "$doc_section_files" ]]; then
@@ -189,8 +190,9 @@ if [[ -n "$doc_section_files" ]]; then
       return text
     }
 
-    # Line of the fn declaration within the 20 lines after the heading, or 0
+    # Line of the fn declaration within the 20 lines after the doc block, or 0
     function fn_line_after(i,    j) {
+      while (i + 1 <= total && lines[i + 1] ~ /^[[:space:]]*\/\/\//) i++
       for (j = i + 1; j <= i + 20 && j <= total; j++) {
         if (lines[j] ~ /^[[:space:]]*(pub(\([^)]*\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(fn|const fn)[[:space:]]/) return j
       }
@@ -272,6 +274,114 @@ if [[ -n "$doc_section_files" ]]; then
       if (signature_from(fn_line) !~ /->.*(Result|PyResult|Option)/) print "errors\t" i "\t" fn_name_of(lines[fn_line]) "\t" file
     }
 
+    function check_section_style(file, i,    j, text, section, intro, intro_done, intro_line, bullet, bullet_line, has_bullets, fence, fn_line, return_type) {
+      section = index(lines[i], "# Panics") > 0 ? "Panics" : "Errors"
+      intro = ""
+      intro_done = 0
+      intro_line = i
+      bullet = ""
+      has_bullets = 0
+      fence = ""
+      for (j = i + 1; j <= total; j++) {
+        if (lines[j] !~ /^[[:space:]]*\/\/\//) break
+        text = doc_text_of(lines[j])
+        if (fence != "") {
+          if (substr(text, 1, length(fence)) == fence) fence = ""
+          continue
+        }
+        if (text ~ /^#/) break
+        if (fence_of(text) != "") {
+          if (bullet != "" && bullet !~ /\.$/) print "bullet-period\t" bullet_line "\t" section "\t" file
+          bullet = ""
+          fence = fence_of(text)
+          if (intro != "") intro_done = 1
+          continue
+        }
+        if (text == "") {
+          if (bullet != "" && bullet !~ /\.$/) print "bullet-period\t" bullet_line "\t" section "\t" file
+          bullet = ""
+          if (intro != "") intro_done = 1
+          continue
+        }
+        if (text ~ /^[-*+][[:space:]]+/) {
+          intro_done = 1
+          has_bullets = 1
+          if (bullet != "" && bullet !~ /\.$/) print "bullet-period\t" bullet_line "\t" section "\t" file
+          bullet = text
+          bullet_line = j
+        } else if (!intro_done) {
+          if (intro == "") intro_line = j
+          intro = intro (intro == "" ? "" : " ") text
+        } else if (bullet != "") {
+          bullet = bullet " " text
+        }
+      }
+      if (bullet != "" && bullet !~ /\.$/) print "bullet-period\t" bullet_line "\t" section "\t" file
+      if (section == "Panics") {
+        if (intro !~ /^Panics if([[:space:]]|:)/) print "lead-in\t" intro_line "\t" section "\t" file
+      } else if (intro !~ /^Returns (an error|`None`) if([[:space:]]|:)/) {
+        print "lead-in\t" intro_line "\t" section "\t" file
+      } else {
+        fn_line = fn_line_after(i)
+        return_type = fn_line > 0 ? return_type_from(fn_line) : ""
+        if ((return_type == "Option" && intro !~ /^Returns `None` if/) ||
+            (return_type == "Result" && intro !~ /^Returns an error if/)) {
+          print "return-lead-in\t" intro_line "\t" return_type "\t" file
+        }
+      }
+      if ((has_bullets && intro != "Panics if:" && intro != "Returns an error if:" && intro != "Returns `None` if:") ||
+          (!has_bullets && intro ~ /^(Panics|Returns (an error|`None`)) if:/)) {
+        print "list-lead-in\t" intro_line "\t" section "\t" file
+      }
+    }
+
+    function return_type_from(fn_line,    signature, j, char, generics, parameters, tail, name) {
+      signature = signature_from(fn_line)
+      if (!match(signature, /fn[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*/)) return ""
+      signature = substr(signature, RSTART + RLENGTH)
+      generics = 0
+      parameters = 0
+      tail = ""
+      for (j = 1; j <= length(signature); j++) {
+        char = substr(signature, j, 1)
+        if (parameters > 0) {
+          if (char == "(") parameters++
+          else if (char == ")") {
+            parameters--
+            if (parameters == 0) {
+              tail = substr(signature, j + 1)
+              break
+            }
+          }
+        } else if (char == "<") generics++
+        else if (char == ">" && substr(signature, j - 1, 1) != "-") generics--
+        else if (char == "(" && generics == 0) parameters = 1
+      }
+      if (tail !~ /^[[:space:]]*->[[:space:]]*[a-zA-Z_][a-zA-Z0-9_:]*/) return ""
+      sub(/^[[:space:]]*->[[:space:]]*/, "", tail)
+      match(tail, /^[a-zA-Z_][a-zA-Z0-9_:]*/)
+      name = substr(tail, RSTART, RLENGTH)
+      sub(/^.*::/, "", name)
+      if (name == "Option") return "Option"
+      if (name ~ /Result$/) return "Result"
+      return ""
+    }
+
+    function doc_text_of(text) {
+      sub(/^[[:space:]]*\/\/\/[[:space:]]?/, "", text)
+      sub(/^[[:space:]]+/, "", text)
+      sub(/[[:space:]]+$/, "", text)
+      return text
+    }
+
+    function fence_of(text,    marker, fence) {
+      if (text !~ /^```/ && text !~ /^~~~/) return ""
+      marker = substr(text, 1, 1)
+      fence = ""
+      while (substr(text, length(fence) + 1, 1) == marker) fence = fence marker
+      return fence
+    }
+
     {
       file = $0
       total = 0
@@ -282,8 +392,21 @@ if [[ -n "$doc_section_files" ]]; then
         exit 1
       }
 
+      doc_fence = ""
       for (i = 1; i <= total; i++) {
-        if (lines[i] !~ /\/\/\/ # (Panics|Errors)/) continue
+        if (lines[i] !~ /^[[:space:]]*\/\/\//) {
+          doc_fence = ""
+          continue
+        }
+        text = doc_text_of(lines[i])
+        if (doc_fence != "") {
+          if (substr(text, 1, length(doc_fence)) == doc_fence) doc_fence = ""
+          continue
+        }
+        doc_fence = fence_of(text)
+        if (doc_fence != "") continue
+        if (lines[i] !~ /^[[:space:]]*\/\/\/ # (Panics|Errors)[[:space:]]*$/) continue
+        check_section_style(file, i)
         if (index(lines[i], "# Panics") > 0) check_panics(file, i)
         else check_errors(file, i)
       }
@@ -296,6 +419,34 @@ while IFS=$'\t' read -r kind line_num fn_name file; do
   [[ -z "$kind" ]] && continue
 
   case "$kind" in
+    lead-in)
+      echo -e "${RED}Error:${NC} Nonstandard \`# ${fn_name}\` lead-in in $file:$line_num"
+      if [[ "$fn_name" == "Panics" ]]; then
+        echo '  Start with "Panics if"'
+      else
+        echo "  Start with \"Returns an error if\" or \"Returns \`None\` if\" for Option"
+      fi
+      echo
+      ;;
+    return-lead-in)
+      echo -e "${RED}Error:${NC} Incorrect \`# Errors\` lead-in for $fn_name in $file:$line_num"
+      if [[ "$fn_name" == "Option" ]]; then
+        echo "  Start with \"Returns \`None\` if\""
+      else
+        echo '  Start with "Returns an error if"'
+      fi
+      echo
+      ;;
+    list-lead-in)
+      echo -e "${RED}Error:${NC} Nonstandard \`# ${fn_name}\` condition list lead-in in $file:$line_num"
+      echo '  Use the standard lead-in followed immediately by a colon and condition bullets'
+      echo
+      ;;
+    bullet-period)
+      echo -e "${RED}Error:${NC} Missing period on \`# ${fn_name}\` condition bullet in $file:$line_num"
+      echo '  End each complete bullet, including wrapped continuations, with a period'
+      echo
+      ;;
     contradictory)
       echo -e "${RED}Error:${NC} Self-contradictory \`# Panics\` doc on \`${fn_name}\` in $file:$line_num"
       echo "  Doc says function does not panic under a \`# Panics\` heading"

@@ -103,7 +103,7 @@ impl Swings {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `period` is less than or equal to 0.
     /// - `period` exceeds the maximum allowed value of `MAX_PERIOD`.
     #[must_use]

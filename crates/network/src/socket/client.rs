@@ -1083,7 +1083,7 @@ impl SocketClient {
     ///
     /// # Errors
     ///
-    /// Returns any error connecting to the server.
+    /// Returns an error if connecting to the server fails.
     #[builder(finish_fn = connect)]
     pub async fn builder(
         config: SocketConfig,
@@ -1296,8 +1296,7 @@ impl SocketClient {
     ///
     /// # Errors
     ///
-    /// Returns [`SendError::BufferFull`] if the writer capacity is exhausted, or an error
-    /// if the client cannot send.
+    /// Returns an error if the writer capacity is exhausted, or if the client cannot send.
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), SendError> {
         self.check_not_terminal()?;
         self.wait_for_active().await?;

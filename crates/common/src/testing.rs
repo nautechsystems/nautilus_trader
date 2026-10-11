@@ -51,7 +51,7 @@ pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow
 ///
 /// # Panics
 ///
-/// This function panics if the timeout duration is exceeded without the condition being met.
+/// Panics if the timeout duration is exceeded without the condition being met.
 ///
 /// # Examples
 ///

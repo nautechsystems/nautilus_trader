@@ -71,8 +71,7 @@ impl TryFrom<Message> for tungstenite::Message {
     ///
     /// # Errors
     ///
-    /// Returns [`TransportError::InvalidUtf8`] if a `Text` payload is not
-    /// valid UTF-8.
+    /// Returns an error if a `Text` payload is not valid UTF-8.
     fn try_from(value: Message) -> Result<Self, Self::Error> {
         Ok(match value {
             Message::Text(bytes) => match Utf8Bytes::try_from(bytes) {

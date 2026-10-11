@@ -343,7 +343,7 @@ impl HyperliquidRawHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if required environment variables are not set.
+    /// Returns an error if required environment variables are not set.
     pub fn from_env(environment: HyperliquidEnvironment) -> Result<Self> {
         let secrets = Secrets::from_env(environment)
             .map_err(|e| Error::auth(format!("missing credentials in environment: {e}")))?;
@@ -355,7 +355,7 @@ impl HyperliquidRawHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the private key is invalid or cannot be parsed.
+    /// Returns an error if the private key is invalid or cannot be parsed.
     pub fn from_credentials(
         private_key: &str,
         vault_address: Option<&str>,
@@ -395,7 +395,7 @@ impl HyperliquidRawHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured.
+    /// Returns an error if the client has no signer configured.
     pub fn get_user_address(&self) -> Result<String> {
         self.signer
             .as_ref()
@@ -414,7 +414,7 @@ impl HyperliquidRawHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured.
+    /// Returns an error if the client has no signer configured.
     pub fn get_account_address(&self) -> Result<String> {
         if let Some(vault) = &self.vault_address {
             Ok(vault.to_hex())
@@ -1124,7 +1124,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if required environment variables are not set.
+    /// Returns an error if required environment variables are not set.
     pub fn from_env(environment: HyperliquidEnvironment) -> Result<Self> {
         let raw_client = HyperliquidRawHttpClient::from_env(environment)?;
         Ok(Self {
@@ -1154,7 +1154,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if credentials are invalid.
+    /// Returns an error if credentials are invalid.
     pub fn with_credentials(
         private_key: Option<String>,
         vault_address: Option<String>,
@@ -1234,7 +1234,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the private key is invalid or cannot be parsed.
+    /// Returns an error if the private key is invalid or cannot be parsed.
     pub fn from_credentials(
         private_key: &str,
         vault_address: Option<&str>,
@@ -1308,7 +1308,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured.
+    /// Returns an error if the client has no signer configured.
     pub fn get_user_address(&self) -> Result<String> {
         self.inner.get_user_address()
     }
@@ -1340,8 +1340,8 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured and
-    /// no account_address override is set.
+    /// Returns an error if the client has no signer configured and no account_address override is
+    /// set.
     pub fn get_account_address(&self) -> Result<String> {
         if let Some(addr) = &self.account_address {
             return Ok(addr.clone());
@@ -3538,9 +3538,9 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error for quote-denominated quantities: this raw path has no
-    /// cached market data for a quote-to-base conversion, so the order must be
-    /// submitted through the execution client instead.
+    /// Returns an error if the quantity is quote-denominated: this raw path has no cached market
+    /// data for a quote-to-base conversion, so the order must be submitted through the execution
+    /// client instead.
     pub async fn submit_order_from_order_any(&self, order: &OrderAny) -> Result<OrderStatusReport> {
         if order.is_quote_quantity() {
             return Err(Error::bad_request(

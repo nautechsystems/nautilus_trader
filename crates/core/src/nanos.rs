@@ -881,9 +881,9 @@ impl From<UnixNanos> for u64 {
 ///
 /// # Panics
 ///
-/// This implementation will panic if the string cannot be parsed into a valid [`UnixNanos`].
-/// This is intentional fail-fast behavior where invalid timestamps indicate a critical
-/// logic error that should halt execution rather than silently propagate incorrect data.
+/// Panics if the string cannot be parsed into a valid [`UnixNanos`]. This is intentional fail-fast
+/// behavior where invalid timestamps indicate a critical logic error that should halt execution
+/// rather than silently propagate incorrect data.
 ///
 /// For error handling without panicking, use [`str::parse::<UnixNanos>()`] which returns
 /// a [`Result`].
@@ -899,9 +899,9 @@ impl From<&str> for UnixNanos {
 ///
 /// # Panics
 ///
-/// This implementation will panic if the string cannot be parsed into a valid [`UnixNanos`].
-/// This is intentional fail-fast behavior where invalid timestamps indicate a critical
-/// logic error that should halt execution rather than silently propagate incorrect data.
+/// Panics if the string cannot be parsed into a valid [`UnixNanos`]. This is intentional fail-fast
+/// behavior where invalid timestamps indicate a critical logic error that should halt execution
+/// rather than silently propagate incorrect data.
 ///
 /// For error handling without panicking, use [`str::parse::<UnixNanos>()`] which returns
 /// a [`Result`].
@@ -963,8 +963,8 @@ impl Sub for UnixNanos {
 ///
 /// # Panics
 ///
-/// Panics on overflow. Use [`UnixNanos::checked_add`] or [`UnixNanos::saturating_add`] for
-/// explicit overflow handling.
+/// Panics if the operation overflows. Use [`UnixNanos::checked_add`] or
+/// [`UnixNanos::saturating_add`] for explicit overflow handling.
 impl Add<DurationNanos> for UnixNanos {
     type Output = Self;
 
@@ -978,8 +978,8 @@ impl Add<DurationNanos> for UnixNanos {
 ///
 /// # Panics
 ///
-/// Panics on underflow. Use [`UnixNanos::checked_sub`] or [`UnixNanos::saturating_sub`] for
-/// explicit underflow handling.
+/// Panics if the operation underflows. Use [`UnixNanos::checked_sub`] or
+/// [`UnixNanos::saturating_sub`] for explicit underflow handling.
 impl Sub<DurationNanos> for UnixNanos {
     type Output = Self;
 
@@ -993,7 +993,8 @@ impl Sub<DurationNanos> for UnixNanos {
 ///
 /// # Panics
 ///
-/// Panics on overflow. This is intentional fail-fast behavior for timestamp arithmetic.
+/// Panics if the operation overflows. This is intentional fail-fast behavior for timestamp
+/// arithmetic.
 impl AddAssign<DurationNanos> for UnixNanos {
     fn add_assign(&mut self, rhs: DurationNanos) {
         *self = *self + rhs;
@@ -1004,7 +1005,8 @@ impl AddAssign<DurationNanos> for UnixNanos {
 ///
 /// # Panics
 ///
-/// Panics on underflow. This is intentional fail-fast behavior for timestamp arithmetic.
+/// Panics if the operation underflows. This is intentional fail-fast behavior for timestamp
+/// arithmetic.
 impl SubAssign<DurationNanos> for UnixNanos {
     fn sub_assign(&mut self, rhs: DurationNanos) {
         *self = *self - rhs;

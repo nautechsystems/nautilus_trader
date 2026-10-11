@@ -162,7 +162,7 @@ impl OptionContractSpec {
 ///
 /// # Errors
 ///
-/// Returns a typed error if a contract component is invalid, unsupported, or ambiguous.
+/// Returns an error if a contract component is invalid, unsupported, or ambiguous.
 pub fn compute_option_instrument_id(
     spec: &OptionContractSpec,
     scheme: &OptionSymbologyScheme,
@@ -205,7 +205,7 @@ pub fn compute_option_instrument_id(
 ///
 /// # Errors
 ///
-/// Returns a typed error if:
+/// Returns an error if:
 /// - The futures code, root, or midcurve tenor is unsupported.
 /// - The expiry is on a weekend, a nominal WTI monthly date, or an ambiguous micro date.
 /// - The strike is non-positive or cannot fit the supported integral symbol scale.
@@ -262,7 +262,7 @@ pub fn cme_globex_option_symbol(
 ///
 /// # Errors
 ///
-/// Returns a typed error if:
+/// Returns an error if:
 /// - The root is outside one to six ASCII alphanumeric characters.
 /// - The expiry year is outside `[2000, 2099]`.
 /// - The strike cannot fit eight digits of exact non-negative thousandths.

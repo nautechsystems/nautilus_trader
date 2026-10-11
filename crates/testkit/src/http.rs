@@ -33,6 +33,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 ///
 /// # Panics
 ///
+/// Panics if:
 /// - Binding a listener or reading its local address fails.
 /// - `send` panics or takes more than five seconds.
 /// - The response status is not 307 or the destination receives a request.

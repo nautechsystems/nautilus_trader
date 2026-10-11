@@ -112,7 +112,7 @@ impl DeriveWsCredentials {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::Transport`] when the session-key hex cannot be parsed.
+    /// Returns an error if the session-key hex cannot be parsed.
     pub fn new(wallet_address: impl Into<String>, session_key_hex: &str) -> Result<Self> {
         let signer: PrivateKeySigner = session_key_hex
             .parse()
@@ -345,9 +345,7 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::Transport`] for handshake failures and
-    /// propagates [`DeriveWsError::Auth`] / [`DeriveWsError::JsonRpc`] when
-    /// the login flow fails.
+    /// Returns an error if the WebSocket handshake or login flow fails.
     pub async fn connect(&mut self) -> Result<()> {
         // Fast path requires authenticated session when creds are configured;
         // otherwise fall through and rebuild so `Ok` always implies authenticated.
@@ -608,8 +606,8 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::Transport`] when the disconnect command
-    /// cannot be enqueued; the handler still tears down on signal.
+    /// Returns an error if the disconnect command cannot be enqueued; the handler still tears down
+    /// on signal.
     pub async fn disconnect(&mut self) -> Result<()> {
         log::debug!("Disconnecting Derive WebSocket");
         self.begin_shutdown();
@@ -621,8 +619,7 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn subscribe_ticker(&self, instrument_name: &str, interval: &str) -> Result<()> {
         self.subscription_handle()
             .subscribe_ticker(instrument_name, interval)
@@ -633,8 +630,7 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn unsubscribe_ticker(&self, instrument_name: &str, interval: &str) -> Result<()> {
         self.subscription_handle()
             .unsubscribe_ticker(instrument_name, interval)
@@ -645,8 +641,7 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn subscribe_orderbook(
         &self,
         instrument_name: &str,
@@ -662,8 +657,7 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn unsubscribe_orderbook(
         &self,
         instrument_name: &str,
@@ -679,8 +673,7 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn subscribe_trades(&self, instrument_type: &str, currency: &str) -> Result<()> {
         self.subscription_handle()
             .subscribe_trades(instrument_type, currency)
@@ -691,8 +684,7 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn unsubscribe_trades(&self, instrument_type: &str, currency: &str) -> Result<()> {
         self.subscription_handle()
             .unsubscribe_trades(instrument_type, currency)
@@ -707,8 +699,7 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn subscribe_channels<C>(&self, channels: Vec<C>) -> Result<()>
     where
         C: Into<DeriveWsChannel>,
@@ -723,8 +714,7 @@ impl DeriveWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn unsubscribe_channels<C>(&self, channels: Vec<C>) -> Result<()>
     where
         C: Into<DeriveWsChannel>,
@@ -1007,8 +997,7 @@ impl DeriveWebSocketSubscriptionHandle {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn subscribe_ticker(&self, instrument_name: &str, interval: &str) -> Result<()> {
         let params = ticker_subscribe_params(instrument_name, interval);
         self.subscribe_channels(params.channels).await
@@ -1018,8 +1007,7 @@ impl DeriveWebSocketSubscriptionHandle {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn unsubscribe_ticker(&self, instrument_name: &str, interval: &str) -> Result<()> {
         let channel = ticker_channel(instrument_name, interval);
         self.send_unsubscribe(channel).await
@@ -1029,8 +1017,7 @@ impl DeriveWebSocketSubscriptionHandle {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn subscribe_orderbook(
         &self,
         instrument_name: &str,
@@ -1045,8 +1032,7 @@ impl DeriveWebSocketSubscriptionHandle {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn unsubscribe_orderbook(
         &self,
         instrument_name: &str,
@@ -1061,8 +1047,7 @@ impl DeriveWebSocketSubscriptionHandle {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn subscribe_trades(&self, instrument_type: &str, currency: &str) -> Result<()> {
         let params = trades_subscribe_params(instrument_type, currency);
         self.subscribe_channels(params.channels).await
@@ -1072,8 +1057,7 @@ impl DeriveWebSocketSubscriptionHandle {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn unsubscribe_trades(&self, instrument_type: &str, currency: &str) -> Result<()> {
         let channel = trades_channel(instrument_type, currency);
         self.send_unsubscribe(channel).await
@@ -1083,8 +1067,7 @@ impl DeriveWebSocketSubscriptionHandle {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn subscribe_channels<C>(&self, channels: Vec<C>) -> Result<()>
     where
         C: Into<DeriveWsChannel>,
@@ -1123,8 +1106,7 @@ impl DeriveWebSocketSubscriptionHandle {
     ///
     /// # Errors
     ///
-    /// Propagates JSON-RPC errors raised by the venue and transport-level
-    /// failures.
+    /// Returns an error if the venue raises a JSON-RPC error or the transport fails.
     pub async fn unsubscribe_channels<C>(&self, channels: Vec<C>) -> Result<()>
     where
         C: Into<DeriveWsChannel>,
@@ -1175,10 +1157,8 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections or local
-    /// throttling before dispatch, and
-    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
-    /// outcome is ambiguous.
+    /// Returns an error if the venue rejects the request, local throttling prevents dispatch, or
+    /// the submission outcome is ambiguous.
     pub async fn submit_order(&self, params: &DeriveOrderParams) -> Result<DeriveOrder> {
         let reservation = self
             .reserve_matching_request(methods::PRIVATE_ORDER, &params.instrument_name)
@@ -1213,10 +1193,8 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections or local
-    /// throttling before dispatch, and
-    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
-    /// outcome is ambiguous.
+    /// Returns an error if the venue rejects the request, local throttling prevents dispatch, or
+    /// the submission outcome is ambiguous.
     pub async fn submit_trigger_order(
         &self,
         params: &DeriveTriggerOrderParams,
@@ -1246,10 +1224,8 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections or local
-    /// throttling before dispatch, and
-    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
-    /// outcome is ambiguous.
+    /// Returns an error if the venue rejects the request, local throttling prevents dispatch, or
+    /// the submission outcome is ambiguous.
     pub async fn modify_order(&self, params: &DeriveReplaceParams) -> Result<DeriveReplaceOutcome> {
         let reservation = self
             .reserve_matching_request(methods::PRIVATE_REPLACE, &params.order.instrument_name)
@@ -1300,9 +1276,7 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
-    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
-    /// outcome is ambiguous.
+    /// Returns an error if the venue rejects the request or the submission outcome is ambiguous.
     pub async fn cancel_order(&self, params: &DeriveCancelParams) -> Result<()> {
         self.require_authenticated(methods::PRIVATE_CANCEL).await?;
         let cmd_tx = self.cmd_tx.read().await.clone();
@@ -1322,9 +1296,7 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
-    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
-    /// outcome is ambiguous.
+    /// Returns an error if the venue rejects the request or the submission outcome is ambiguous.
     pub async fn cancel_by_instrument(
         &self,
         params: &DeriveCancelByInstrumentParams,
@@ -1347,9 +1319,7 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
-    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
-    /// outcome is ambiguous.
+    /// Returns an error if the venue rejects the request or the submission outcome is ambiguous.
     pub async fn cancel_trigger_order(
         &self,
         params: &DeriveCancelTriggerOrderParams,
@@ -1401,9 +1371,7 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
-    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
-    /// outcome is ambiguous.
+    /// Returns an error if the venue rejects the request or the submission outcome is ambiguous.
     pub async fn cancel_by_label(
         &self,
         params: &DeriveCancelByLabelParams,
@@ -1426,9 +1394,7 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
-    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
-    /// outcome is ambiguous.
+    /// Returns an error if the venue rejects the request or the submission outcome is ambiguous.
     pub async fn get_trigger_orders(
         &self,
         params: &DeriveGetTriggerOrdersParams,
@@ -1451,9 +1417,7 @@ impl DeriveWsExecutionHandle {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
-    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
-    /// outcome is ambiguous.
+    /// Returns an error if the venue rejects the request or the submission outcome is ambiguous.
     pub async fn cancel_all_orders(&self, params: &DeriveCancelAllParams) -> Result<()> {
         self.require_authenticated(methods::PRIVATE_CANCEL_ALL)
             .await?;

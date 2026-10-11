@@ -42,8 +42,8 @@ const MAX_COLLECTION_COUNT: usize = 1_048_576;
 ///
 /// # Errors
 ///
-/// Returns [`CodecError`] if `value`'s [`Serialize`] impl drives the format outside the
-/// supported positional model, such as an unbounded sequence whose length is not known up front.
+/// Returns an error if `value`'s [`Serialize`] impl drives the format outside the supported
+/// positional model, such as an unbounded sequence whose length is not known up front.
 pub fn encode_to_vec<T: Serialize>(value: &T) -> Result<Vec<u8>, CodecError> {
     let mut encoder = Encoder { out: Vec::new() };
     encoder.out.extend_from_slice(&MAGIC);
@@ -59,8 +59,8 @@ pub fn encode_to_vec<T: Serialize>(value: &T) -> Result<Vec<u8>, CodecError> {
 ///
 /// # Errors
 ///
-/// Returns [`CodecError`] on a bad or short header, malformed body, a self-describing deserialize
-/// request, or unconsumed trailing bytes.
+/// Returns an error if the header is bad or short, the body is malformed, the deserialize request
+/// is self-describing, or trailing bytes remain unconsumed.
 pub fn decode_from_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, CodecError> {
     let mut decoder = Decoder {
         input: bytes,

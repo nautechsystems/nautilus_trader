@@ -476,8 +476,7 @@ impl OwnOrderBook {
     ///
     /// # Errors
     ///
-    /// Returns [`BookViewError::OppositeInstrumentMatch`] if `self` and `opposite` have the
-    /// same instrument ID.
+    /// Returns an error if `self` and `opposite` have the same instrument ID.
     pub fn combined_with_opposite(&self, opposite: &Self) -> Result<Self, BookViewError> {
         if self.instrument_id == opposite.instrument_id {
             return Err(BookViewError::OppositeInstrumentMatch(

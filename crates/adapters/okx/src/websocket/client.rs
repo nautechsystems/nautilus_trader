@@ -1002,7 +1002,7 @@ impl OKXWebSocketClient {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - The websocket is not connected.
     /// - `stream_data` has already been called somewhere else (stream receiver is then taken).
     pub fn stream(&mut self) -> impl Stream<Item = OKXWsMessage> + 'static {
@@ -1502,8 +1502,8 @@ impl OKXWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Subscription request fails
-    /// - depth is 50 but VIP level is below 4
+    /// - Subscription request fails.
+    /// - Depth is 50 but VIP level is below 4.
     pub async fn subscribe_book_with_depth(
         &self,
         instrument_id: InstrumentId,

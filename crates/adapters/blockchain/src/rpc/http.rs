@@ -858,8 +858,8 @@ impl BlockchainHttpRpcClient {
     ///
     /// # Errors
     ///
-    /// Returns a [`BroadcastError`] classifying the failure. Errors are sanitized: they carry
-    /// the numeric RPC code only, never the endpoint URL or the signed payload.
+    /// Returns an error if broadcasting fails. The error classifies the failure and is sanitized:
+    /// it carries the numeric RPC code only, never the endpoint URL or the signed payload.
     pub async fn send_raw_transaction(
         &self,
         raw_tx: &[u8],

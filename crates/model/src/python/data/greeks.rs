@@ -309,7 +309,7 @@ pub fn py_black_scholes_greeks(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if implied volatility calculation fails.
+/// Returns an error if implied volatility calculation fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(name = "imply_vol")]

@@ -53,8 +53,8 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns an error when the venue order identifier is invalid or the amount or
-/// filled amount cannot be converted to a Nautilus `Quantity`.
+/// Returns an error if the venue order identifier is invalid or the amount or filled amount cannot
+/// be converted to a Nautilus `Quantity`.
 pub fn parse_derive_order_to_report(
     order: &DeriveOrder,
     account_id: AccountId,
@@ -219,8 +219,8 @@ fn limit_if_touched_prices_are_valid(
 ///
 /// # Errors
 ///
-/// Returns an error when a nonempty required identifier is invalid or a decimal field
-/// cannot be converted to a Nautilus `Price`, `Quantity`, or `Money`.
+/// Returns an error if a nonempty required identifier is invalid or a decimal field cannot be
+/// converted to a Nautilus `Price`, `Quantity`, or `Money`.
 pub fn parse_derive_trade_to_fill_report(
     trade: &DeriveTrade,
     account_id: AccountId,
@@ -306,8 +306,8 @@ pub(crate) fn parse_derive_trade_to_fill_report_with_precision(
 ///
 /// # Errors
 ///
-/// Returns an error when the position amount cannot be converted to a
-/// Nautilus `Quantity` without changing its value.
+/// Returns an error if the position amount cannot be converted to a Nautilus `Quantity` without
+/// changing its value.
 pub fn parse_derive_position_to_report(
     position: &DerivePosition,
     account_id: AccountId,
@@ -382,8 +382,8 @@ pub(crate) fn parse_derive_position_to_report_with_precision(
 ///
 /// # Errors
 ///
-/// Returns an error when the venue marks the snapshot `failed_to_fetch`, an embedded position
-/// cannot be represented exactly, a balance exceeds the native range, or aggregate requirements overflow.
+/// Returns an error if the venue marks the snapshot `failed_to_fetch`, an embedded position cannot
+/// be represented exactly, a balance exceeds the native range, or aggregate requirements overflow.
 pub fn parse_derive_subaccount_to_balances(
     subaccount: &DeriveSubaccount,
 ) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>, Params)> {

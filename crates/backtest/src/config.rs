@@ -372,8 +372,7 @@ impl<S: simulated_venue_config_builder::IsComplete> SimulatedVenueConfigBuilder<
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`SimulatedVenueConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`SimulatedVenueConfig::validate`]).
     pub fn build(self) -> ConfigResult<SimulatedVenueConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -386,8 +385,8 @@ impl SimulatedVenueConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
@@ -555,8 +554,7 @@ impl<S: backtest_venue_config_builder::IsComplete> BacktestVenueConfigBuilder<S>
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`BacktestVenueConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`BacktestVenueConfig::validate`]).
     pub fn build(self) -> ConfigResult<BacktestVenueConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -569,8 +567,8 @@ impl BacktestVenueConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
@@ -850,8 +848,7 @@ impl<S: backtest_data_config_builder::IsComplete> BacktestDataConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`BacktestDataConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`BacktestDataConfig::validate`]).
     pub fn build(self) -> ConfigResult<BacktestDataConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -871,8 +868,8 @@ impl BacktestDataConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
@@ -1133,8 +1130,7 @@ impl<S: backtest_run_config_builder::IsComplete> BacktestRunConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`BacktestRunConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`BacktestRunConfig::validate`]).
     pub fn build(self) -> ConfigResult<BacktestRunConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -1147,8 +1143,8 @@ impl BacktestRunConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 

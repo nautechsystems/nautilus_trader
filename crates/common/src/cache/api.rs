@@ -331,9 +331,9 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`OrderLookupError::NotFound`] when the order is not present in the cache.
-    /// - [`OrderLookupError::Access`] if the cache is already mutably borrowed.
+    /// Returns an error if:
+    /// - The order is not present in the cache.
+    /// - The cache is already mutably borrowed.
     pub fn try_order(&self, client_order_id: &ClientOrderId) -> Result<OrderAny, OrderLookupError> {
         self.try_cache("try_order")?
             .try_order_owned(client_order_id)
@@ -823,9 +823,9 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`OrderListLookupError::NotFound`] when the order list is not present in the cache.
-    /// - [`OrderListLookupError::Access`] if the cache is already mutably borrowed.
+    /// Returns an error if:
+    /// - The order list is not present in the cache.
+    /// - The cache is already mutably borrowed.
     pub fn try_order_list(
         &self,
         order_list_id: &OrderListId,
@@ -969,9 +969,9 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`PositionLookupError::NotFound`] when the position is not present in the cache.
-    /// - [`PositionLookupError::Access`] if the cache is already mutably borrowed.
+    /// Returns an error if:
+    /// - The position is not present in the cache.
+    /// - The cache is already mutably borrowed.
     pub fn try_position(&self, position_id: &PositionId) -> Result<Position, PositionLookupError> {
         self.try_cache("try_position")?
             .try_position_ref(position_id)
@@ -1227,7 +1227,7 @@ impl<'a> CacheApi<'a> {
     ///
     /// Returns an error if:
     /// - The `key` is invalid.
-    /// - The cache is already mutably borrowed ([`ComponentAccessError`]).
+    /// - The cache is already mutably borrowed.
     pub fn get(&self, key: &str) -> anyhow::Result<Option<Bytes>> {
         let cache = self.try_cache("get")?;
         let value = cache.get(key)?;
@@ -1337,9 +1337,9 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`OrderBookLookupError::NotFound`] when the order book is not present in the cache.
-    /// - [`OrderBookLookupError::Access`] if the cache is already mutably borrowed.
+    /// Returns an error if:
+    /// - The order book is not present in the cache.
+    /// - The cache is already mutably borrowed.
     pub fn try_order_book(
         &self,
         instrument_id: &InstrumentId,
@@ -1363,9 +1363,9 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`OwnOrderBookLookupError::NotFound`] when the own order book is not present in the cache.
-    /// - [`OwnOrderBookLookupError::Access`] if the cache is already mutably borrowed.
+    /// Returns an error if:
+    /// - The own order book is not present in the cache.
+    /// - The cache is already mutably borrowed.
     pub fn try_own_order_book(
         &self,
         instrument_id: &InstrumentId,
@@ -1732,9 +1732,9 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`CurrencyLookupError::NotFound`] when the currency is not present in the cache.
-    /// - [`CurrencyLookupError::Access`] if the cache is already mutably borrowed.
+    /// Returns an error if:
+    /// - The currency is not present in the cache.
+    /// - The cache is already mutably borrowed.
     pub fn try_currency(&self, code: &Ustr) -> Result<Currency, CurrencyLookupError> {
         self.try_cache("try_currency")?.try_currency(code).copied()
     }
@@ -1753,9 +1753,9 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`InstrumentLookupError::NotFound`] when the instrument is not present in the cache.
-    /// - [`InstrumentLookupError::Access`] if the cache is already mutably borrowed.
+    /// Returns an error if:
+    /// - The instrument is not present in the cache.
+    /// - The cache is already mutably borrowed.
     pub fn try_instrument(
         &self,
         instrument_id: &InstrumentId,
@@ -1846,10 +1846,10 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`SyntheticInstrumentLookupError::NotFound`] when the synthetic instrument is not present
+    /// Returns an error if:
+    /// - The synthetic instrument is not present
     ///   in the cache.
-    /// - [`SyntheticInstrumentLookupError::Access`] if the cache is already mutably borrowed.
+    /// - The cache is already mutably borrowed.
     pub fn try_synthetic(
         &self,
         instrument_id: &InstrumentId,
@@ -1963,9 +1963,9 @@ impl<'a> CacheApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`AccountLookupError::NotFound`] when the account is not present in the cache.
-    /// - [`AccountLookupError::Access`] if the cache is already mutably borrowed.
+    /// Returns an error if:
+    /// - The account is not present in the cache.
+    /// - The cache is already mutably borrowed.
     pub fn try_account(&self, account_id: &AccountId) -> Result<AccountAny, AccountLookupError> {
         self.try_cache("try_account")?
             .try_account(account_id)

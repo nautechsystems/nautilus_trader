@@ -64,7 +64,7 @@ pub fn config_error_to_pyvalue_err(e: ConfigError) -> PyErr {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[rustfmt::skip]
 #[pymodule]
 pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {

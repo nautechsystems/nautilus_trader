@@ -156,9 +156,9 @@ impl CursorWalk {
     ///
     /// # Errors
     ///
-    /// Returns an error when the cursor stops advancing or repeats one already followed. Stopping
-    /// with the rows gathered so far would hand the caller a truncated result it cannot
-    /// distinguish from a complete one.
+    /// Returns an error if the cursor stops advancing or repeats one already followed. Stopping
+    /// with the rows gathered so far would hand the caller a truncated result it cannot distinguish
+    /// from a complete one.
     fn advance(
         &mut self,
         endpoint: &str,
@@ -1590,7 +1590,7 @@ impl BybitRawHttpClient {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -4475,7 +4475,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function returns an error if the request fails.
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -4589,8 +4589,8 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function returns an error if the request fails, or if SPOT position reports are enabled
-    /// and no instrument is specified, because wallet balances carry no pair identity.
+    /// Returns an error if the request fails, or if SPOT position reports are enabled and no
+    /// instrument is specified, because wallet balances carry no pair identity.
     ///
     /// # References
     ///

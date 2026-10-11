@@ -79,7 +79,7 @@ fn extract_databento_data_config(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_databento_custom_data();

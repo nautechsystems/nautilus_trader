@@ -448,7 +448,7 @@ impl MessageBus {
     ///
     /// # Errors
     ///
-    /// Returns a [`crate::config::ConfigError`] if the config selects an unsupported encoding.
+    /// Returns an error if the config selects an unsupported encoding.
     pub fn set_external_egress_config(
         &mut self,
         external_egress: Box<dyn MessageBusExternalEgress>,
@@ -723,9 +723,11 @@ impl MessageBus {
 
     /// Close the message bus which will close the sender channel and join the thread.
     ///
-    /// # Errors
-    ///
-    /// This function never returns an error (TBD once backing database added).
+    /// This function does not return an error.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "closing the in-memory message bus returns no errors"
+    )]
     pub fn close(&mut self) -> anyhow::Result<()> {
         if let Some(external_egress) = self.external_egress.take() {
             external_egress.borrow_mut().close();

@@ -408,7 +408,7 @@ impl UniswapV3PoolContract {
     ///
     /// # Errors
     ///
-    /// Returns error if any RPC calls fail or data cannot be decoded.
+    /// Returns an error if any RPC calls fail or data cannot be decoded.
     #[expect(clippy::too_many_arguments)]
     pub async fn fetch_snapshot(
         &self,

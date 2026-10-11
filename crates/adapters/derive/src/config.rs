@@ -260,8 +260,7 @@ impl DeriveExecutionClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error when `max_fee_per_contract` is missing or not greater
-    /// than zero.
+    /// Returns an error if `max_fee_per_contract` is missing or not greater than zero.
     pub fn validate(&self) -> anyhow::Result<()> {
         let Some(max_fee_per_contract) = self.max_fee_per_contract else {
             anyhow::bail!("max_fee_per_contract is required");

@@ -91,7 +91,7 @@ impl<'a> BorrowedStr<'a> {
     ///
     /// # Errors
     ///
-    /// Returns an error when the bytes are not valid UTF-8.
+    /// Returns an error if the bytes are not valid UTF-8.
     ///
     /// # Safety
     ///
@@ -375,7 +375,8 @@ impl<T> PluginResult<T> {
     ///
     /// # Errors
     ///
-    /// Returns the contained [`PluginError`] when the boundary result is `Err`.
+    /// Returns an error if the boundary result is `Err`. The error is taken from the boundary
+    /// result.
     pub fn into_result(self) -> Result<T, PluginError> {
         match self {
             Self::Ok(t) => Ok(t),

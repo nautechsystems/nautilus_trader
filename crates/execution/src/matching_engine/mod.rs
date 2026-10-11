@@ -1613,9 +1613,10 @@ impl OrderMatchingEngine {
     ///
     /// # Errors
     ///
-    /// - If delta order price precision does not match the instrument (for Add/Update actions).
-    /// - If delta order size precision does not match the instrument (for Add/Update actions).
-    /// - If applying the delta to the book fails.
+    /// Returns an error if:
+    /// - Delta order price precision does not match the instrument (for Add/Update actions).
+    /// - Delta order size precision does not match the instrument (for Add/Update actions).
+    /// - Applying the delta to the book fails.
     pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) -> anyhow::Result<()> {
         log::debug!("Processing {delta}");
 
@@ -1668,9 +1669,10 @@ impl OrderMatchingEngine {
     ///
     /// # Errors
     ///
-    /// - If any delta order price precision does not match the instrument (for Add/Update actions).
-    /// - If any delta order size precision does not match the instrument (for Add/Update actions).
-    /// - If applying the deltas to the book fails.
+    /// Returns an error if:
+    /// - Any delta order price precision does not match the instrument (for Add/Update actions).
+    /// - Any delta order size precision does not match the instrument (for Add/Update actions).
+    /// - Applying the deltas to the book fails.
     pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         log::debug!("Processing {deltas}");
 
@@ -1717,10 +1719,11 @@ impl OrderMatchingEngine {
     ///
     /// # Errors
     ///
-    /// - If any bid/ask price precision does not match the instrument.
-    /// - If any bid/ask size precision does not match the instrument.
-    /// - If applying the depth to the book fails.
-    /// - If updating the L1 order book with the top-of-book quote fails.
+    /// Returns an error if:
+    /// - Any bid/ask price precision does not match the instrument.
+    /// - Any bid/ask size precision does not match the instrument.
+    /// - Applying the depth to the book fails.
+    /// - Updating the L1 order book with the top-of-book quote fails.
     pub fn process_order_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
         log::debug!("Processing OrderBookDepth for {}", depth.instrument_id);
 
@@ -1871,7 +1874,8 @@ impl OrderMatchingEngine {
     ///
     /// # Panics
     ///
-    /// - If the bar type configuration is missing a time delta.
+    /// Panics if:
+    /// - The bar type configuration is missing a time delta.
     pub fn process_bar(&mut self, bar: &Bar) {
         log::debug!("Processing {bar}");
 

@@ -79,8 +79,7 @@ pub struct WsLogin {
 ///
 /// # Errors
 ///
-/// Returns [`AuthError::ClockBeforeEpoch`] if the system clock is invalid,
-/// or [`AuthError::SigningFailed`] when the underlying secp256k1 signer errors.
+/// Returns an error if the system clock is invalid, or if the underlying secp256k1 signer errors.
 pub fn build_rest_auth_headers(
     wallet: &str,
     signer: &PrivateKeySigner,
@@ -94,8 +93,7 @@ pub fn build_rest_auth_headers(
 ///
 /// # Errors
 ///
-/// Returns [`AuthError::SigningFailed`] when the underlying secp256k1 signer
-/// errors.
+/// Returns an error if the underlying secp256k1 signer errors.
 pub fn build_rest_auth_headers_at(
     wallet: &str,
     signer: &PrivateKeySigner,
@@ -114,8 +112,7 @@ pub fn build_rest_auth_headers_at(
 ///
 /// # Errors
 ///
-/// Returns [`AuthError::ClockBeforeEpoch`] if the system clock is invalid,
-/// or [`AuthError::SigningFailed`] when the underlying secp256k1 signer errors.
+/// Returns an error if the system clock is invalid, or if the underlying secp256k1 signer errors.
 pub fn build_ws_login(wallet: &str, signer: &PrivateKeySigner) -> Result<WsLogin, AuthError> {
     let now = utc_now_ms().map_err(|_| AuthError::ClockBeforeEpoch)?;
     build_ws_login_at(wallet, signer, now)
@@ -125,8 +122,7 @@ pub fn build_ws_login(wallet: &str, signer: &PrivateKeySigner) -> Result<WsLogin
 ///
 /// # Errors
 ///
-/// Returns [`AuthError::SigningFailed`] when the underlying secp256k1 signer
-/// errors.
+/// Returns an error if the underlying secp256k1 signer errors.
 pub fn build_ws_login_at(
     wallet: &str,
     signer: &PrivateKeySigner,

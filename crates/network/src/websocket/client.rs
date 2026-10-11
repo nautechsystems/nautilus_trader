@@ -585,11 +585,10 @@ impl WebSocketClientInner {
     ///
     /// # Errors
     ///
-    /// Returns a [`TransportError`] if the URL is invalid, headers fail to
-    /// parse, the TCP / TLS layer cannot be established, the proxy refuses
-    /// the tunnel, or the WebSocket handshake is rejected by the peer. When
-    /// the Sockudo backend is selected without the `transport-sockudo`
-    /// feature, returns [`TransportError::Other`].
+    /// Returns an error if the URL is invalid, headers fail to parse, the TCP / TLS layer cannot be
+    /// established, the proxy refuses the tunnel, or the WebSocket handshake is rejected by the
+    /// peer. Also returns an error if the Sockudo backend is selected without the
+    /// `transport-sockudo` feature.
     #[inline]
     pub async fn connect_with_server(
         url: &str,
@@ -3431,8 +3430,7 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns [`SendError::BufferFull`] if the writer capacity is exhausted, or an error
-    /// if the client cannot send.
+    /// Returns an error if the writer capacity is exhausted, or if the client cannot send.
     #[allow(unused_variables)]
     pub async fn send_text(&self, data: String, keys: Option<&[Ustr]>) -> Result<(), SendError> {
         self.check_not_terminal()?;
@@ -3453,13 +3451,13 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - [`SendError::BufferFull`] if the shared control allowance is full.
-    /// - [`SendError::Closed`] if the client closes.
-    /// - [`SendError::Timeout`] if the active wait times out before the write starts.
-    /// - [`SendError::ConnectionChanged`] if the expected connection no longer owns the writer.
-    /// - [`SendError::BrokenPipe`] if the command or transport write fails.
-    /// - [`SendError::WriteTimeout`] if the write starts but does not complete within the write
+    /// Returns an error if:
+    /// - The shared control allowance is full.
+    /// - The client closes.
+    /// - The active wait times out before the write starts.
+    /// - The expected connection no longer owns the writer.
+    /// - The command or transport write fails.
+    /// - The write starts but does not complete within the write
     ///   deadline. Delivery is undetermined in that case: the message is not replayed, and it
     ///   must not be resent blindly.
     pub async fn send_text_on_connection(
@@ -3568,8 +3566,7 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns [`SendError::BufferFull`] if the writer capacity is exhausted, or an error
-    /// if the client cannot send.
+    /// Returns an error if the writer capacity is exhausted, or if the client cannot send.
     #[allow(unused_variables)]
     pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<&[Ustr]>) -> Result<(), SendError> {
         self.check_not_terminal()?;
@@ -3587,8 +3584,7 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns [`SendError::BufferFull`] if the shared control allowance is full, or an error
-    /// if the client cannot send.
+    /// Returns an error if the shared control allowance is full, or if the client cannot send.
     pub async fn send_close_message(&self) -> Result<(), SendError> {
         self.wait_for_active().await?;
 

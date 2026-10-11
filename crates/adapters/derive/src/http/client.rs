@@ -90,8 +90,7 @@ impl DeriveCredentials {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::Auth`] when the session-key hex cannot be
-    /// parsed.
+    /// Returns an error if the session-key hex cannot be parsed.
     pub fn new(wallet_address: impl Into<String>, session_key_hex: &str) -> Result<Self> {
         let signer: PrivateKeySigner = session_key_hex
             .parse()
@@ -137,8 +136,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::Transport`] when the underlying HTTP client
-    /// (proxy URL, TLS init) cannot be constructed.
+    /// Returns an error if the underlying HTTP client (proxy URL, TLS init) cannot be constructed.
     pub fn new(
         base_url: impl Into<String>,
         timeout_secs: Option<u64>,
@@ -165,8 +163,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::Transport`] when the underlying HTTP client
-    /// cannot be constructed.
+    /// Returns an error if the underlying HTTP client cannot be constructed.
     pub fn with_credentials(
         base_url: impl Into<String>,
         credentials: DeriveCredentials,
@@ -210,7 +207,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates transport, HTTP, and JSON-RPC errors. See [`DeriveHttpError`].
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn send_public<P, R>(&self, method: &str, params: &P) -> Result<R>
     where
         P: Serialize + ?Sized,
@@ -228,9 +225,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when the client was
-    /// built without credentials. Other variants propagate from the transport
-    /// or the venue.
+    /// Returns an error if the client was built without credentials. Other variants propagate from
+    /// the transport or the venue.
     pub async fn send_private<P, R>(&self, method: &str, params: &P) -> Result<R>
     where
         P: Serialize + ?Sized,
@@ -264,9 +260,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when the client was
-    /// built without credentials. Other variants propagate from the transport
-    /// or the venue.
+    /// Returns an error if the client was built without credentials. Other variants propagate from
+    /// the transport or the venue.
     pub async fn send_private_once<P, R>(&self, method: &str, params: &P) -> Result<R>
     where
         P: Serialize + ?Sized,
@@ -313,9 +308,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
-    /// Returns a decode error for invalid pagination counts or a page count
-    /// that exceeds the collection limit.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails. Returns a decode error
+    /// for invalid pagination counts or a page count that exceeds the collection limit.
     pub async fn get_instruments(
         &self,
         currency: &str,
@@ -364,8 +358,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
-    /// Returns a decode error when the response names a different instrument.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails. Returns a decode error
+    /// when the response names a different instrument.
     pub async fn get_instrument(&self, instrument_name: &str) -> Result<DeriveInstrument> {
         let params = serde_json::json!({
             "instrument_name": instrument_name,
@@ -391,7 +385,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn get_trade_history(
         &self,
         instrument_name: &str,
@@ -423,7 +417,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn get_funding_rate_history(
         &self,
         instrument_name: &str,
@@ -459,7 +453,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn get_candles(
         &self,
         instrument_name: &str,
@@ -485,7 +479,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn get_tickers(
         &self,
         instrument_type: DeriveInstrumentType,
@@ -518,8 +512,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, JSON-RPC failures,
-    /// or when the response omits the requested instrument.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails, or the response omits the
+    /// requested instrument.
     pub async fn get_ticker(&self, instrument_name: &str) -> Result<DeriveTickerSnapshot> {
         let request = ticker_request(instrument_name)?;
         let result = self
@@ -550,8 +544,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn submit_order(&self, params: &DeriveOrderParams) -> Result<DeriveOrder> {
         let result: DeriveOrderResult = self
             .send_private_write("private/order", params, params.instrument_name)
@@ -563,8 +557,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn cancel_order(&self, params: &DeriveCancelParams) -> Result<DeriveEmptyResult> {
         self.send_private_write("private/cancel", params, params.instrument_name)
             .await
@@ -575,8 +569,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn cancel_all(&self, params: &DeriveCancelAllParams) -> Result<DeriveEmptyResult> {
         self.send_private_once("private/cancel_all", params).await
     }
@@ -585,8 +579,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn cancel_by_label(
         &self,
         params: &DeriveCancelByLabelParams,
@@ -602,8 +596,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn replace_order(
         &self,
         params: &DeriveReplaceParams,
@@ -626,9 +620,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
-    /// Returns a decode error if a response subaccount ID differs from the request.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_subaccount(
         &self,
         params: &DeriveGetSubaccountParams,
@@ -643,9 +636,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
-    /// Returns a decode error if a response subaccount ID differs from the request.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_open_orders(
         &self,
         params: &DeriveGetOpenOrdersParams,
@@ -661,9 +653,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
-    /// Returns a decode error if a response subaccount ID differs from the request.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_trigger_orders(
         &self,
         params: &DeriveGetTriggerOrdersParams,
@@ -680,9 +671,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
-    /// Returns a decode error if a response subaccount ID differs from the request.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_order(&self, params: &DeriveGetOrderParams) -> Result<DeriveOrder> {
         let result: DeriveOrder = self.send_private("private/get_order", params).await?;
         validate_subaccount_id(params.subaccount_id, result.subaccount_id)?;
@@ -697,9 +687,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
-    /// Returns a decode error if a response subaccount ID differs from the request.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_order_history(
         &self,
         params: &DeriveGetOrderHistoryParams,
@@ -716,9 +705,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
-    /// Returns a decode error if a response subaccount ID differs from the request.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_private_trade_history(
         &self,
         params: &DeriveGetTradeHistoryParams,
@@ -738,9 +726,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
-    /// Returns a decode error if a response subaccount ID differs from the request.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_positions(
         &self,
         params: &DeriveGetPositionsParams,

@@ -367,8 +367,8 @@ impl InteractiveBrokersDataClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not connected
-    /// - The provider batch_load fails
+    /// - The client is not connected.
+    /// - The provider batch_load fails.
     pub async fn batch_load_instruments(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -397,8 +397,8 @@ impl InteractiveBrokersDataClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not connected
-    /// - The provider method fails
+    /// - The client is not connected.
+    /// - The provider method fails.
     pub async fn fetch_option_chain_by_range(
         &self,
         underlying_symbol: &str,
@@ -454,8 +454,8 @@ impl InteractiveBrokersDataClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not connected
-    /// - The provider method fails
+    /// - The client is not connected.
+    /// - The provider method fails.
     pub async fn fetch_futures_chain(
         &self,
         symbol: &str,
@@ -496,8 +496,8 @@ impl InteractiveBrokersDataClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not connected
-    /// - The provider method fails
+    /// - The client is not connected.
+    /// - The provider method fails.
     pub async fn fetch_bag_contract(
         &self,
         bag_contract: &ibapi::contracts::Contract,

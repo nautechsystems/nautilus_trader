@@ -124,7 +124,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already mutably borrowed.
+    /// Panics if native backing is used and the clock is already mutably borrowed.
     #[must_use]
     pub fn timestamp_ns(&self) -> UnixNanos {
         match &self.backing {
@@ -137,7 +137,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already mutably borrowed.
+    /// Panics if native backing is used and the clock is already mutably borrowed.
     #[must_use]
     pub fn timestamp_us(&self) -> u64 {
         match &self.backing {
@@ -150,7 +150,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already mutably borrowed.
+    /// Panics if native backing is used and the clock is already mutably borrowed.
     #[must_use]
     pub fn timestamp_ms(&self) -> u64 {
         match &self.backing {
@@ -163,7 +163,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already mutably borrowed.
+    /// Panics if native backing is used and the clock is already mutably borrowed.
     #[must_use]
     pub fn timestamp(&self) -> f64 {
         match &self.backing {
@@ -178,7 +178,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already mutably borrowed.
+    /// Panics if native backing is used and the clock is already mutably borrowed.
     #[must_use]
     pub fn utc_now(&self) -> Timestamp {
         match &self.backing {
@@ -193,10 +193,10 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - An error if the timestamp cannot be converted to [`UnixNanos`] or the backing clock
+    /// Returns an error if:
+    /// - The timestamp cannot be converted to [`UnixNanos`] or the backing clock
     ///   rejects the alert.
-    /// - [`ComponentAccessError`] if the native clock is already borrowed.
+    /// - The native clock is already borrowed.
     pub fn set_time_alert(
         &self,
         name: &str,
@@ -222,9 +222,9 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - An error if the backing clock rejects the alert.
-    /// - [`ComponentAccessError`] if the native clock is already borrowed.
+    /// Returns an error if:
+    /// - The backing clock rejects the alert.
+    /// - The native clock is already borrowed.
     pub fn set_time_alert_ns(
         &self,
         name: &str,
@@ -247,10 +247,10 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - An error if the interval exceeds `u64::MAX` nanoseconds, a timestamp cannot be
+    /// Returns an error if:
+    /// - The interval exceeds `u64::MAX` nanoseconds, a timestamp cannot be
     ///   converted to [`UnixNanos`], or the backing clock rejects the timer.
-    /// - [`ComponentAccessError`] if the native clock is already borrowed.
+    /// - The native clock is already borrowed.
     #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
     pub fn set_timer(
         &self,
@@ -290,9 +290,9 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - An error if the backing clock rejects the timer.
-    /// - [`ComponentAccessError`] if the native clock is already borrowed.
+    /// Returns an error if:
+    /// - The backing clock rejects the timer.
+    /// - The native clock is already borrowed.
     #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
     pub fn set_timer_ns(
         &self,
@@ -332,9 +332,9 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - An error if the backing clock rejects the schedule, or operation handlers back this API.
-    /// - [`ComponentAccessError`] if the native clock is already borrowed.
+    /// Returns an error if:
+    /// - The backing clock rejects the schedule, or operation handlers back this API.
+    /// - The native clock is already borrowed.
     pub fn set_timer_schedule(
         &self,
         name: &str,
@@ -368,11 +368,11 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Errors
     ///
-    /// Returns:
-    /// - An error if the interval is not positive, or start or stop timestamps are outside
+    /// Returns an error if:
+    /// - The interval is not positive, or start or stop timestamps are outside
     ///   the [`UnixNanos`] range.
-    /// - An error if the backing clock rejects the schedule, or operation handlers back this API.
-    /// - [`ComponentAccessError`] if the native clock is already borrowed.
+    /// - The backing clock rejects the schedule, or operation handlers back this API.
+    /// - The native clock is already borrowed.
     #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
     pub fn set_timer_zoned(
         &self,
@@ -399,7 +399,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already mutably borrowed.
+    /// Panics if native backing is used and the clock is already mutably borrowed.
     #[must_use]
     pub fn timer_names(&self) -> Vec<String> {
         match &self.backing {
@@ -416,7 +416,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already mutably borrowed.
+    /// Panics if native backing is used and the clock is already mutably borrowed.
     #[must_use]
     pub fn timer_count(&self) -> usize {
         match &self.backing {
@@ -429,7 +429,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already mutably borrowed.
+    /// Panics if native backing is used and the clock is already mutably borrowed.
     #[must_use]
     pub fn timer_exists(&self, name: &str) -> bool {
         match &self.backing {
@@ -446,7 +446,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already mutably borrowed.
+    /// Panics if native backing is used and the clock is already mutably borrowed.
     #[must_use]
     pub fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
         match &self.backing {
@@ -459,7 +459,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already borrowed.
+    /// Panics if native backing is used and the clock is already borrowed.
     pub fn cancel_timer(&self, name: &str) {
         match &self.backing {
             ClockApiBacking::Native(clock) => clock_mut(clock, "cancel_timer")
@@ -473,7 +473,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// With native backing, panics if the clock is already borrowed.
+    /// Panics if native backing is used and the clock is already borrowed.
     pub fn cancel_timers(&self) {
         match &self.backing {
             ClockApiBacking::Native(clock) => clock_mut(clock, "cancel_timers")

@@ -88,8 +88,9 @@ impl Bias {
     ///
     /// # Panics
     ///
-    /// - If `period` is less than or equal to 0.
-    /// - If `period` exceeds `MAX_PERIOD`.
+    /// Panics if:
+    /// - `period` is less than or equal to 0.
+    /// - `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         Self::new_checked(period, ma_type).expect(FAILED)

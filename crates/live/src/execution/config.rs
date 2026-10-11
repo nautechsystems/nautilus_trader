@@ -115,8 +115,8 @@ impl ExecutionManagerConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::with_capacity(3);
 

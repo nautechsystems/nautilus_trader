@@ -172,7 +172,7 @@ impl<'py, T> IntoPyObjectNautilusExt<'py> for T where T: IntoPyObjectExt<'py> {}
 ///
 /// # Errors
 ///
-/// Returns a error if accessing the type name fails.
+/// Returns an error if accessing the type name fails.
 pub fn get_pytype_name<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyString>> {
     obj.get_type().name()
 }
@@ -221,7 +221,7 @@ pub fn to_pynotimplemented_err(e: impl Display) -> PyErr {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 #[rustfmt::skip]
 pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -574,7 +574,7 @@ impl FuturesOrderHistoryResponse {
     ///
     /// # Errors
     ///
-    /// Returns an error when the body carries a venue error or has no `elements` array.
+    /// Returns an error if the body carries a venue error or has no `elements` array.
     pub fn into_order_events(self) -> Result<FuturesOrderEventsResponse, KrakenHttpError> {
         if let Some(error) = self.error {
             return Err(KrakenHttpError::ApiError(vec![error]));

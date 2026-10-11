@@ -613,7 +613,12 @@ Use Title Case for Rustdoc section headings:
 - `# Thread Safety`
 - `# Feature Flags`
 
-Use one sentence for a single error or panic condition:
+Start `# Errors` descriptions with `Returns an error if`, or ``Returns `None` if`` for an `Option`
+return. Start `# Panics` descriptions with `Panics if`. Describe the failure conditions without
+repeating concrete error types from the signature. Keep distinctions that affect caller behavior,
+such as retryable versus permanent failures.
+
+Use one sentence ending with a period for a single condition:
 
 ```rust
 /// # Errors
@@ -621,7 +626,10 @@ Use one sentence for a single error or panic condition:
 /// Returns an error if the currency conversion fails.
 ```
 
-Use bullets with terminating periods for multiple conditions:
+For multiple conditions, use the same lead-in followed immediately by a colon:
+`Returns an error if:`, ``Returns `None` if:``, or `Panics if:`. Put each condition in a bullet that
+starts with a capital letter and ends with a period. A wrapped bullet needs its period at the end
+of its final line.
 
 ```rust
 /// # Errors
@@ -630,6 +638,19 @@ Use bullets with terminating periods for multiple conditions:
 /// - The market price cannot be found.
 /// - The conversion rate calculation fails.
 ```
+
+```rust
+/// # Panics
+///
+/// Panics if:
+/// - The quantity is zero.
+/// - The quantity exceeds the supported range.
+```
+
+The documentation hook checks these lead-ins and bullet periods in `# Errors` and `# Panics`
+sections. It skips fenced code blocks and stops at the next section heading or the end of the doc
+block. The suppression markers below exempt contract checks only; they do not exempt wording or
+punctuation checks.
 
 Use `# Errors` only on a function that returns `Result`, `PyResult`, or `Option`. Use `# Panics` only
 when the function can panic, and remove the section instead of saying that the function does not

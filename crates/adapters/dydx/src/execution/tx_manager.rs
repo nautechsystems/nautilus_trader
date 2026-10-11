@@ -99,7 +99,7 @@ impl TransactionManager {
     ///
     /// # Errors
     ///
-    /// Returns error if wallet creation from private key fails.
+    /// Returns an error if wallet creation from private key fails.
     pub fn new(
         grpc_client: DydxGrpcClient,
         private_key: &str,
@@ -129,7 +129,7 @@ impl TransactionManager {
     ///
     /// # Errors
     ///
-    /// Returns error if chain query fails.
+    /// Returns an error if chain query fails.
     pub async fn initialize_sequence(&self) -> Result<u64, DydxError> {
         let mut grpc = self.grpc_client.clone();
         let base_account = grpc.get_account(&self.wallet_address).await.map_err(|e| {
@@ -154,10 +154,10 @@ impl TransactionManager {
     ///
     /// # Errors
     ///
-    /// Returns error if:
-    /// - Using permissioned key but no authenticators found for main account
-    /// - No authenticator matches the wallet's public key
-    /// - gRPC query fails
+    /// Returns an error if:
+    /// - Using permissioned key but no authenticators found for main account.
+    /// - No authenticator matches the wallet's public key.
+    /// - GRPC query fails.
     pub async fn resolve_authenticators(&self) -> Result<(), DydxError> {
         // Check if we already have authenticator IDs configured
         {
@@ -322,7 +322,7 @@ impl TransactionManager {
     ///
     /// # Errors
     ///
-    /// Returns error if chain query fails during initialization.
+    /// Returns an error if chain query fails during initialization.
     pub async fn allocate_sequence(&self) -> Result<u64, DydxError> {
         loop {
             let current = self.sequence_number.load(Ordering::SeqCst);
@@ -354,7 +354,7 @@ impl TransactionManager {
     ///
     /// # Errors
     ///
-    /// Returns error if chain query fails during initialization.
+    /// Returns an error if chain query fails during initialization.
     ///
     /// # Example
     ///
@@ -421,7 +421,7 @@ impl TransactionManager {
     ///
     /// # Errors
     ///
-    /// Returns error if chain query fails.
+    /// Returns an error if chain query fails.
     pub async fn resync_sequence(&self) -> Result<(), DydxError> {
         let mut grpc = self.grpc_client.clone();
         let base_account = grpc.get_account(&self.wallet_address).await.map_err(|e| {
@@ -448,7 +448,7 @@ impl TransactionManager {
     ///
     /// # Errors
     ///
-    /// Returns error if chain query fails during initialization.
+    /// Returns an error if chain query fails during initialization.
     pub async fn get_cached_sequence(&self) -> Result<u64, DydxError> {
         let current = self.sequence_number.load(Ordering::SeqCst);
         if current == SEQUENCE_UNINITIALIZED {
@@ -470,7 +470,7 @@ impl TransactionManager {
     ///
     /// # Errors
     ///
-    /// Returns error if account lookup fails or transaction building fails.
+    /// Returns an error if account lookup fails or transaction building fails.
     pub async fn build_transaction(
         &self,
         msgs: Vec<Any>,
@@ -597,7 +597,7 @@ impl TransactionManager {
     ///
     /// # Errors
     ///
-    /// Returns error if sequence allocation or transaction building fails.
+    /// Returns an error if sequence allocation or transaction building fails.
     pub async fn prepare_transaction(
         &self,
         msgs: Vec<Any>,

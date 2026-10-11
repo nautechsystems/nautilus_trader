@@ -26,7 +26,7 @@ use crate::{DataTesterConfig, ExecTesterConfig};
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn testkit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DataTesterConfig>()?;

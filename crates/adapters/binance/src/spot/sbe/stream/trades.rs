@@ -53,7 +53,7 @@ impl Trade {
     ///
     /// # Errors
     ///
-    /// Returns error if buffer is too short.
+    /// Returns an error if buffer is too short.
     fn decode(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
         Ok(Self {
             id: cursor.read_i64_le()?,
@@ -89,8 +89,8 @@ impl TradesStreamEvent {
     ///
     /// # Errors
     ///
-    /// Returns error if buffer is too short, group size exceeds limits,
-    /// or data is otherwise invalid.
+    /// Returns an error if buffer is too short, group size exceeds limits, or data is otherwise
+    /// invalid.
     pub fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
         let header = MessageHeader::decode(buf)?;
         header.validate_schema()?;

@@ -958,8 +958,7 @@ impl OKXRawHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`OKXHttpError::MissingCredentials`] if no credentials are set
-    /// but the request requires authentication.
+    /// Returns an error if no credentials are set but the request requires authentication.
     fn sign_request(
         &self,
         method: &Method,
@@ -2734,7 +2733,7 @@ impl OKXHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The API request fails.
     /// - The instrument is not found.
     /// - Failed to parse instrument data.

@@ -1032,8 +1032,8 @@ impl KrakenSpotWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The stream receiver has already been taken
-    /// - Other clones of this client still hold references to the receiver
+    /// - The stream receiver has already been taken.
+    /// - Other clones of this client still hold references to the receiver.
     pub fn stream(
         &mut self,
     ) -> Result<impl futures_util::Stream<Item = KrakenSpotWsMessage> + use<>, KrakenWsError> {

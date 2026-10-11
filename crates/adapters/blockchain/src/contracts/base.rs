@@ -228,7 +228,7 @@ impl BaseContract {
 ///
 /// # Errors
 ///
-/// Returns an `BlockchainRpcClientError::AbiDecodingError` if the hex decoding fails.
+/// Returns an error if the hex decoding fails.
 pub fn decode_hex_response(encoded_response: &str) -> Result<Vec<u8>, BlockchainRpcClientError> {
     // Remove the "0x" prefix if present
     let encoded_str = encoded_response

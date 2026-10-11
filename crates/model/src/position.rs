@@ -1327,8 +1327,8 @@ impl Position {
     ///
     /// # Errors
     ///
-    /// Returns an error when the allocation is stale, duplicated, exceeds known fragments,
-    /// or has a commission currency that differs from those fragments.
+    /// Returns an error if the allocation is stale, duplicated, exceeds known fragments, or has a
+    /// commission currency that differs from those fragments.
     pub fn apply_fill_void(
         &mut self,
         event: OrderFillVoided,

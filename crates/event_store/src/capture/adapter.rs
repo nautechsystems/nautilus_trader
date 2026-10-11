@@ -195,12 +195,12 @@ impl BusCaptureAdapter {
     ///
     /// # Errors
     ///
-    /// Returns:
+    /// Returns an error if:
     ///
-    /// - [`CaptureError::Halted`] when a prior capture already observed a writer failure
+    /// - A prior capture already observed a writer failure
     ///   and the adapter has fail-stopped.
-    /// - [`CaptureError::Encode`] when the registered encoder rejects the message.
-    /// - [`CaptureError::Submit`] when the writer rejects the submit; the adapter halt
+    /// - The registered encoder rejects the message.
+    /// - The writer rejects the submit; the adapter halt
     ///   callback fires before this error returns.
     pub fn capture<T: 'static>(
         &self,
@@ -221,7 +221,7 @@ impl BusCaptureAdapter {
     ///
     /// # Errors
     ///
-    /// See [`Self::capture`].
+    /// Returns an error if [`Self::capture`] fails.
     pub fn capture_any(
         &self,
         topic: Topic,

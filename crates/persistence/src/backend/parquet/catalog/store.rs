@@ -648,9 +648,9 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// Returns an error for remote catalogs when `path` is a full URI whose scheme/host
-    /// does not match the catalog's own root (cross-bucket misuse). Without this guard
-    /// the caller could silently write to or read from the wrong bucket.
+    /// Returns an error if the catalog is remote and `path` is a full URI whose scheme/host does
+    /// not match the catalog's own root (cross-bucket misuse). Without this guard the caller could
+    /// silently write to or read from the wrong bucket.
     ///
     /// # Examples
     ///
@@ -685,8 +685,8 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// Returns an error for the same cross-bucket case as [`Self::to_object_path`], or
-    /// when the resulting string fails [`ObjectPath::parse`].
+    /// Returns an error if the same cross-bucket condition as [`Self::to_object_path`] occurs or
+    /// the resulting string fails [`ObjectPath::parse`].
     pub fn to_object_path_parsed(&self, path: &str) -> anyhow::Result<ObjectPath> {
         let to_parse = self.object_store_path(path)?;
         ObjectPath::parse(&to_parse).map_err(anyhow::Error::from)

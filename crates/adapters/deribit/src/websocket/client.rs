@@ -945,9 +945,9 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No credentials are configured
-    /// - The authentication request fails
-    /// - The authentication times out
+    /// - No credentials are configured.
+    /// - The authentication request fails.
+    /// - The authentication times out.
     pub async fn authenticate(&self, session_name: Option<&str>) -> DeribitWsResult<()> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             DeribitWsError::Authentication("API credentials not configured".to_string())
@@ -1583,8 +1583,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn submit_order(
         &self,
         order_side: OrderSide,
@@ -1642,8 +1642,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn modify_order(
         &self,
         params: DeribitEditParams,
@@ -1687,8 +1687,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn cancel_order(
         &self,
         order_id: &str,
@@ -1731,8 +1731,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn cancel_all_orders(
         &self,
         instrument_id: InstrumentId,
@@ -1771,8 +1771,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn query_order(
         &self,
         order_id: &str,

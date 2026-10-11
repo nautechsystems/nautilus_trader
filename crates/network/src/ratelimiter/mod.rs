@@ -124,7 +124,7 @@ pub trait StateStore {
     ///
     /// # Errors
     ///
-    /// Returns `Err(E)` if the closure returns an error or the request is rate-limited.
+    /// Returns an error if the closure returns an error or the request is rate-limited.
     fn measure_and_replace<T, F, E>(&self, key: &Self::Key, f: F) -> Result<T, E>
     where
         F: Fn(Option<Nanos>) -> Result<(T, Nanos), E>;
@@ -245,7 +245,7 @@ where
     ///
     /// # Errors
     ///
-    /// Returns `Err(NotUntil)` if the key is rate-limited, indicating when it will be allowed.
+    /// Returns an error if the key is rate-limited, indicating when it will be allowed.
     pub fn check_key(&self, key: &K) -> Result<(), NotUntil<C::Instant>> {
         let _guard = self.decision_lock.lock();
 

@@ -1741,7 +1741,7 @@ impl PyLiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error because dynamic plug-in hosting lives in the host-side integration.
+    /// Returns an error if called. Dynamic plug-in hosting lives in the host-side integration.
     #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
     fn py_add_plugin(
         &self,

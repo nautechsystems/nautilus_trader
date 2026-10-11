@@ -29,10 +29,10 @@ use crate::opt::{DatabaseCommand, DatabaseOpt};
 /// # Errors
 ///
 /// Returns an error if:
-/// - Database connection fails
-/// - Schema initialization fails
-/// - Database dropping operation fails
-/// - Any PostgreSQL operation encounters an error
+/// - Database connection fails.
+/// - Schema initialization fails.
+/// - Database dropping operation fails.
+/// - Any PostgreSQL operation encounters an error.
 pub(crate) async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
     let command = opt.command.clone();
 

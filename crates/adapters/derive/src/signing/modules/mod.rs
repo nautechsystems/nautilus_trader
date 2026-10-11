@@ -40,9 +40,8 @@ pub trait ModuleData {
     ///
     /// # Errors
     ///
-    /// Returns a [`ModuleEncodeError`] when the payload contains a value the
-    /// venue contract cannot accept (e.g. a negative `max_fee` for trades or
-    /// a decimal that overflows the 1e18-scaled signed/unsigned 256-bit
-    /// range).
+    /// Returns an error if the payload contains a value the venue contract cannot accept (e.g. a
+    /// negative `max_fee` for trades or a decimal that overflows the 1e18-scaled signed/unsigned
+    /// 256-bit range).
     fn to_abi_encoded(&self) -> Result<Vec<u8>, ModuleEncodeError>;
 }

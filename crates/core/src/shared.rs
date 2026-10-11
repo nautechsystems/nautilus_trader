@@ -85,7 +85,7 @@ impl<T> SharedCell<T> {
     ///
     /// # Errors
     ///
-    /// Returns [`BorrowError`] if the value is currently mutably borrowed.
+    /// Returns an error if the value is currently mutably borrowed.
     #[inline]
     pub fn try_borrow(&self) -> Result<Ref<'_, T>, BorrowError> {
         self.0.try_borrow()
@@ -95,8 +95,7 @@ impl<T> SharedCell<T> {
     ///
     /// # Errors
     ///
-    /// Returns [`BorrowMutError`] if the value is currently borrowed
-    /// (mutably or immutably).
+    /// Returns an error if the value is currently borrowed (mutably or immutably).
     #[inline]
     pub fn try_borrow_mut(&self) -> Result<RefMut<'_, T>, BorrowMutError> {
         self.0.try_borrow_mut()

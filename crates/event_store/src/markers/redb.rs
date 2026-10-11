@@ -118,7 +118,7 @@ impl RedbMarkerBackend {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open.
+    /// Returns an error if no run is open.
     pub fn current_path(&self) -> Result<&Path, EventStoreError> {
         Ok(self.state()?.file_path.as_path())
     }
@@ -130,8 +130,8 @@ impl RedbMarkerBackend {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when the marker file is missing, and
-    /// [`EventStoreError::Corrupted`] when the file lacks a marker manifest or fails to decode.
+    /// Returns an error if the marker file is missing, or if the file lacks a marker manifest or
+    /// fails to decode.
     pub fn open_read_only_file(path: impl Into<PathBuf>) -> Result<Self, EventStoreError> {
         let path = path.into();
         if !path.exists() {

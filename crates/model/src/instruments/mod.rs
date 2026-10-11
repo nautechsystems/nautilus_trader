@@ -405,7 +405,7 @@ pub trait Instrument: 'static + Send {
     ///
     /// # Errors
     ///
-    /// Returns an error when `price` is a sentinel value or would require rounding.
+    /// Returns an error if `price` is a sentinel value or would require rounding.
     #[inline(always)]
     fn try_normalize_price(&self, price: Price) -> CorrectnessResult<Price> {
         if price == ERROR_PRICE {
@@ -530,7 +530,7 @@ pub trait Instrument: 'static + Send {
     ///
     /// # Errors
     ///
-    /// Returns an error when `quantity` is undefined or would require rounding.
+    /// Returns an error if `quantity` is undefined or would require rounding.
     #[inline(always)]
     fn try_normalize_qty(&self, quantity: Quantity) -> CorrectnessResult<Quantity> {
         if quantity.is_undefined() {

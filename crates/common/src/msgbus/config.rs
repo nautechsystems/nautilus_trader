@@ -91,8 +91,8 @@ impl MessageBusConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] when the default encoding cannot carry custom payloads, or when
-    /// a category override selects an encoding unsupported by any payload type in that category.
+    /// Returns an error if the default encoding cannot carry custom payloads, or when a category
+    /// override selects an encoding unsupported by any payload type in that category.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
