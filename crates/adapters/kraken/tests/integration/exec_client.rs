@@ -144,6 +144,8 @@ struct TestServerState {
     last_batch_cancel_body: Arc<tokio::sync::Mutex<Option<String>>>,
     collection_request_ts: Arc<tokio::sync::Mutex<Option<UnixNanos>>>,
     orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// Served by `/derivatives/api/v3/orders/status` one per request, ahead of the override.
+    orders_status_sequence: Arc<tokio::sync::Mutex<VecDeque<String>>>,
     orders_status_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/derivatives/api/v3/openorders` returns this JSON.
@@ -195,6 +197,7 @@ impl Default for TestServerState {
             last_batch_cancel_body: Arc::new(tokio::sync::Mutex::new(None)),
             collection_request_ts: Arc::new(tokio::sync::Mutex::new(None)),
             orders_status_response: Arc::new(tokio::sync::Mutex::new(None)),
+            orders_status_sequence: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
             fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             futures_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
@@ -316,6 +319,10 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             let body = to_bytes(req.into_body(), 1024 * 1024).await.unwrap();
             *state.orders_status_request_body.lock().await =
                 Some(String::from_utf8_lossy(&body).to_string());
+
+            if let Some(response) = state.orders_status_sequence.lock().await.pop_front() {
+                return json_response(response);
+            }
             let response = state.orders_status_response.lock().await;
             json_response(
                 response
@@ -4144,6 +4151,14 @@ fn mark_cached_order_pending_cancel_while_held(cache: &Rc<RefCell<Cache>>, order
 
 /// An `/orders/status` body with one entry per `(orderId, cliOrdId, symbol, side, status, filled)`.
 fn orders_status_body(entries: &[(&str, &str, &str, &str, &str, u32)]) -> String {
+    orders_status_body_updated_at(entries, "2026-09-12T04:05:06.300Z")
+}
+
+/// As `orders_status_body`, with every entry last updated at `last_update`.
+fn orders_status_body_updated_at(
+    entries: &[(&str, &str, &str, &str, &str, u32)],
+    last_update: &str,
+) -> String {
     let orders: Vec<Value> = entries
         .iter()
         .map(|(order_id, cli_ord_id, symbol, side, status, filled)| {
@@ -4159,7 +4174,7 @@ fn orders_status_body(entries: &[(&str, &str, &str, &str, &str, u32)]) -> String
                     "limitPrice": 50000.0,
                     "reduceOnly": false,
                     "timestamp": "2026-09-12T04:05:06.100Z",
-                    "lastUpdateTimestamp": "2026-09-12T04:05:06.300Z",
+                    "lastUpdateTimestamp": last_update,
                     "algoId": null,
                     "priceTriggerOptions": null,
                     "triggerTime": null
@@ -4662,6 +4677,149 @@ async fn test_futures_orders_status_window_report_names_an_order_placed_after_it
         .map(|report| report.client_order_id)
         .collect();
     assert_eq!(reported, expected);
+}
+
+/// When the venue-ID and client-order-ID requests both return one order, one report survives,
+/// the order's latest state by status and venue update rather than by request order, and the
+/// rules that follow apply to it: a fully executed one is withheld and leaves mass status
+/// incomplete.
+#[rstest]
+#[case::later_request_cancels(
+    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
+    ("CANCELLED", 0, "2026-09-12T04:05:06.400Z"),
+    Some((OrderStatus::Canceled, "0")),
+)]
+#[case::closed_state_outranks_a_later_open_update(
+    ("CANCELLED", 0, "2026-09-12T04:05:06.300Z"),
+    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.400Z"),
+    Some((OrderStatus::Canceled, "0")),
+)]
+#[case::later_update_carries_a_fill(
+    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
+    ("ENTERED_BOOK", 2, "2026-09-12T04:05:06.400Z"),
+    Some((OrderStatus::PartiallyFilled, "2")),
+)]
+#[case::earlier_request_updated_later(
+    ("ENTERED_BOOK", 2, "2026-09-12T04:05:06.400Z"),
+    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
+    Some((OrderStatus::PartiallyFilled, "2")),
+)]
+#[case::equal_updates_keep_the_larger_fill(
+    ("ENTERED_BOOK", 2, "2026-09-12T04:05:06.300Z"),
+    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
+    Some((OrderStatus::PartiallyFilled, "2")),
+)]
+#[case::later_request_fully_executes(
+    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
+    ("FULLY_EXECUTED", 5, "2026-09-12T04:05:06.400Z"),
+    None,
+)]
+#[case::same_state(
+    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
+    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
+    Some((OrderStatus::Accepted, "0")),
+)]
+#[tokio::test]
+async fn test_futures_orders_status_window_keeps_the_latest_state_both_requests_return(
+    #[case] by_venue_order_id: (&str, u32, &str),
+    #[case] by_client_order_id: (&str, u32, &str),
+    #[case] expected: Option<(OrderStatus, &str)>,
+    #[values(false, true)] mass_status: bool,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let held = add_limit_order_to_cache(&cache, ClientOrderId::new(LONG_CLIENT_ORDER_ID));
+    mark_cached_order_pending_cancel_while_held(&cache, &held);
+    // Accepted with a venue order ID, its client order ID shortens as the held order's does
+    let accepted =
+        add_limit_order_to_cache(&cache, ClientOrderId::new(LONG_CLIENT_ORDER_ID_OTHER_DAY));
+    set_venue_order_id_on_cached_order(&cache, &accepted, "V-HELD-012");
+
+    let (status, filled, last_update) = by_venue_order_id;
+    let (later_status, later_filled, later_update) = by_client_order_id;
+    state.orders_status_sequence.lock().await.extend([
+        orders_status_body_updated_at(
+            &[(
+                "V-HELD-012",
+                SHORTENED_CLIENT_ORDER_ID,
+                "PI_XBTUSD",
+                "buy",
+                status,
+                filled,
+            )],
+            last_update,
+        ),
+        orders_status_body_updated_at(
+            &[
+                (
+                    "V-HELD-011",
+                    SHORTENED_CLIENT_ORDER_ID,
+                    "PI_XBTUSD",
+                    "buy",
+                    "ENTERED_BOOK",
+                    0,
+                ),
+                (
+                    "V-HELD-012",
+                    SHORTENED_CLIENT_ORDER_ID,
+                    "PI_XBTUSD",
+                    "buy",
+                    later_status,
+                    later_filled,
+                ),
+            ],
+            later_update,
+        ),
+    ]);
+
+    let kept: Vec<(OrderStatus, Quantity)> = if mass_status {
+        let mass_status = client
+            .generate_mass_status(None)
+            .await
+            .unwrap()
+            .expect("mass status available");
+        assert_eq!(mass_status.reports_complete(), expected.is_some());
+        mass_status
+            .order_reports()
+            .get(&VenueOrderId::from("V-HELD-012"))
+            .map(|report| (report.order_status, report.filled_qty))
+            .into_iter()
+            .collect()
+    } else {
+        let cmd = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        client
+            .generate_order_status_reports(&cmd)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|report| report.venue_order_id == VenueOrderId::from("V-HELD-012"))
+            .map(|report| (report.order_status, report.filled_qty))
+            .collect()
+    };
+
+    let expected: Vec<(OrderStatus, Quantity)> = expected
+        .map(|(status, filled)| (status, Quantity::from(filled)))
+        .into_iter()
+        .collect();
+    assert_eq!(kept, expected);
+
+    // The venue-ID request ran first, the client-order-ID request last
+    let body = state
+        .orders_status_request_body
+        .lock()
+        .await
+        .clone()
+        .expect("orders-status request recorded");
+    assert_eq!(body, format!("cliOrdIds={SHORTENED_CLIENT_ORDER_ID}"));
 }
 
 /// A window report the mass status withholds, a fully executed one or one it cannot attribute to

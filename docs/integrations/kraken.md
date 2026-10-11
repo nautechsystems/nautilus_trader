@@ -539,6 +539,13 @@ order's creation, which allows for clock skew. Any other window report is left
 out with a warning naming the reason, since it cannot be tied to exactly one
 cached order.
 
+The venue order ID and client order ID requests run one after the other, so an
+order asked about by venue order ID can come back from the client order ID
+request too, through a shortened ID it shares, in a different state. Those runs
+keep one report per order, its latest state: a closed state over an open one,
+else the later venue update, else the larger filled quantity. The rules here
+and below apply to that report.
+
 In those runs the window carries no fill price, so a fully executed order is
 left out with a warning rather than having its executions inferred at the order
 price; a targeted single-order query prices it from recent fills instead, or

@@ -24,6 +24,7 @@ use std::{
 
 use anyhow::Context;
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::{
     cache::{Cache, InstrumentLookupError},
@@ -73,7 +74,8 @@ use crate::{
     http::{
         KrakenFuturesHttpClient, KrakenHttpError,
         futures::{
-            client::KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND, models::FuturesBatchCancelStatus,
+            client::{KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND, supersedes},
+            models::FuturesBatchCancelStatus,
             query::KrakenFuturesBatchCancelItem,
         },
     },
@@ -1882,7 +1884,7 @@ impl KrakenFuturesExecutionClient {
         Ok(attribute_orders_status_reports(
             &self.core.cache(),
             &queried_by_cli_ord_id,
-            reports,
+            latest_report_per_order(reports),
         ))
     }
 
@@ -1917,8 +1919,31 @@ struct HeldOrder {
     ts_init: UnixNanos,
 }
 
+/// Keeps one report per venue order ID, the one describing the order's latest state.
+///
+/// The venue-ID and client-order-ID requests run one after the other, so both can return one order
+/// in different states. `supersedes` decides between them rather than the order the requests ran
+/// in: a closed state over an open one, else the later venue update, else the larger filled
+/// quantity.
+fn latest_report_per_order(reports: Vec<OrderStatusReport>) -> Vec<OrderStatusReport> {
+    let mut latest: IndexMap<VenueOrderId, OrderStatusReport> =
+        IndexMap::with_capacity(reports.len());
+
+    for report in reports {
+        match latest.get(&report.venue_order_id) {
+            Some(existing) if !supersedes(&report, existing) => {}
+            _ => {
+                latest.insert(report.venue_order_id, report);
+            }
+        }
+    }
+
+    latest.into_values().collect()
+}
+
 /// Names each `/orders/status` report by the client order ID of the cached order it describes,
-/// returning the reports it attributes and whether it withheld any.
+/// returning the reports it attributes and whether it withheld any. `reports` holds one report per
+/// venue order ID.
 ///
 /// The venue echoes the client order ID the adapter submitted, which `truncate_cl_ord_id` shortens
 /// past 18 characters, and reconciliation matches a report carrying a client order ID by that ID
@@ -1990,14 +2015,8 @@ fn attribute_orders_status_reports(
 
     let mut attributed = Vec::with_capacity(reports.len());
     let mut withheld = false;
-    // The venue-ID and client-order-ID queries can both return one order
-    let mut seen = HashSet::new();
 
     for mut report in reports {
-        if !seen.insert(report.venue_order_id) {
-            continue;
-        }
-
         let named = match indexed(&report) {
             Some(client_order_id) => Ok(client_order_id),
             None => by_shortened_id(&report),

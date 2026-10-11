@@ -3285,7 +3285,7 @@ fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut AmountsB
 /// open state stamped later, such as a refused edit logged after a cancel, describes the order as
 /// it stood before it closed. Between two states of the same kind the later `ts_last` wins, and on
 /// a tie, which the venue's millisecond stamps allow, the larger filled quantity.
-fn supersedes(candidate: &OrderStatusReport, existing: &OrderStatusReport) -> bool {
+pub(crate) fn supersedes(candidate: &OrderStatusReport, existing: &OrderStatusReport) -> bool {
     match (
         candidate.order_status.is_closed(),
         existing.order_status.is_closed(),
