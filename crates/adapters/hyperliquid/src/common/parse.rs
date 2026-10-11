@@ -1225,6 +1225,11 @@ pub(crate) fn determine_order_list_grouping(orders: &[OrderAny]) -> HyperliquidE
     }
 }
 
+pub(crate) fn is_false_or_none(value: &Option<bool>) -> bool {
+    // Hyperliquid rejects cancel actions hashed with an explicit false fast flag
+    *value != Some(true)
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

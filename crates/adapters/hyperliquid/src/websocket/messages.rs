@@ -40,10 +40,13 @@ use serde_json::value::RawValue;
 use ustr::Ustr;
 
 use crate::{
-    common::enums::{
-        HyperliquidBarInterval, HyperliquidFillDirection, HyperliquidLiquidationMethod,
-        HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
-        HyperliquidTimeInForce, HyperliquidTpSl, HyperliquidTwapStatus,
+    common::{
+        enums::{
+            HyperliquidBarInterval, HyperliquidFillDirection, HyperliquidLiquidationMethod,
+            HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
+            HyperliquidTimeInForce, HyperliquidTpSl, HyperliquidTwapStatus,
+        },
+        parse::is_false_or_none,
     },
     http::models::{HyperliquidExchangeAction, HyperliquidExchangeRequest, LeverageInfo},
 };
@@ -168,6 +171,8 @@ pub struct SignatureData {
 }
 
 /// Action request types.
+///
+/// Fast-cancel flags are serialized only when true.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "lowercase")]
@@ -180,13 +185,13 @@ pub enum ActionRequest {
     /// Cancel orders.
     Cancel {
         cancels: Vec<CancelRequest>,
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "f", skip_serializing_if = "is_false_or_none")]
         fast: Option<bool>,
     },
     /// Cancel orders by client order ID.
     CancelByCloid {
         cancels: Vec<CancelByCloidRequest>,
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "f", skip_serializing_if = "is_false_or_none")]
         fast: Option<bool>,
     },
     /// Modify orders.
@@ -972,6 +977,45 @@ mod tests {
 
     use super::*;
     use crate::common::enums::HyperliquidLeverageType;
+
+    #[rstest]
+    fn test_cancel_action_serialization(
+        #[values(None, Some(false), Some(true))] fast: Option<bool>,
+        #[values(false, true)] by_cloid: bool,
+    ) {
+        let (action, name) = if by_cloid {
+            (
+                ActionRequest::CancelByCloid {
+                    cancels: vec![CancelByCloidRequest {
+                        asset: 7,
+                        cloid: "0x0123456789abcdef0123456789abcdef".to_string(),
+                    }],
+                    fast,
+                },
+                "ws_cancel_by_cloid",
+            )
+        } else {
+            (
+                ActionRequest::Cancel {
+                    cancels: vec![CancelRequest { a: 7, o: 12345 }],
+                    fast,
+                },
+                "cancel",
+            )
+        };
+
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/cancel_actions.json")).unwrap();
+        let expected = &fixtures[name][if fast == Some(true) { "fast" } else { "normal" }];
+        let json = serde_json::to_value(&action).unwrap();
+        let msgpack = rmp_serde::to_vec_named(&action).unwrap();
+
+        assert_eq!(json, expected["json"]);
+        assert_eq!(
+            nautilus_core::hex::encode(msgpack),
+            expected["msgpack"].as_str().unwrap()
+        );
+    }
 
     #[rstest]
     #[case("cross", HyperliquidLeverageType::Cross)]

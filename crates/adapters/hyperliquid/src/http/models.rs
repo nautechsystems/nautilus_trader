@@ -31,7 +31,7 @@ use crate::common::{
         HyperliquidSide, HyperliquidTimeInForce,
     },
     parse::{
-        deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
+        deserialize_decimal_from_str, deserialize_optional_decimal_from_str, is_false_or_none,
         serialize_decimal_as_str, serialize_optional_decimal_as_str,
     },
 };
@@ -1232,50 +1232,42 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cancel_action_serializes_fast_flag() {
-        let action = HyperliquidExchangeAction::Cancel {
-            cancels: vec![HyperliquidExchangeCancelOrderRequest {
-                asset: 0,
-                oid: 12345,
-            }],
-            fast: Some(true),
+    fn test_cancel_action_serialization(
+        #[values(None, Some(false), Some(true))] fast: Option<bool>,
+        #[values(false, true)] by_cloid: bool,
+    ) {
+        let (action, name) = if by_cloid {
+            (
+                HyperliquidExchangeAction::CancelByCloid {
+                    cancels: vec![HyperliquidExchangeCancelByCloidRequest {
+                        asset: 7,
+                        cloid: Cloid::from_hex("0x0123456789abcdef0123456789abcdef").unwrap(),
+                    }],
+                    fast,
+                },
+                "cancel_by_cloid",
+            )
+        } else {
+            (
+                HyperliquidExchangeAction::Cancel {
+                    cancels: vec![HyperliquidExchangeCancelOrderRequest {
+                        asset: 7,
+                        oid: 12345,
+                    }],
+                    fast,
+                },
+                "cancel",
+            )
         };
 
-        let value = serde_json::to_value(action).unwrap();
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/cancel_actions.json")).unwrap();
+        let expected = &fixtures[name][if fast == Some(true) { "fast" } else { "normal" }];
+        let json = serde_json::to_value(&action).unwrap();
+        let msgpack = rmp_serde::to_vec_named(&action).unwrap();
 
-        assert_eq!(
-            value,
-            json!({
-                "type": "cancel",
-                "cancels": [{"a": 0, "o": 12345}],
-                "f": true,
-            })
-        );
-    }
-
-    #[rstest]
-    fn test_cancel_by_cloid_action_serializes_fast_flag() {
-        let action = HyperliquidExchangeAction::CancelByCloid {
-            cancels: vec![HyperliquidExchangeCancelByCloidRequest {
-                asset: 0,
-                cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
-            }],
-            fast: Some(true),
-        };
-
-        let value = serde_json::to_value(action).unwrap();
-
-        assert_eq!(
-            value,
-            json!({
-                "type": "cancelByCloid",
-                "cancels": [{
-                    "asset": 0,
-                    "cloid": "0x00000000000000000000000000000000",
-                }],
-                "f": true,
-            })
-        );
+        assert_eq!(json, expected["json"]);
+        assert_eq!(hex::encode(msgpack), expected["msgpack"].as_str().unwrap());
     }
 
     #[rstest]
@@ -1852,8 +1844,8 @@ pub enum HyperliquidExchangeAction {
     Cancel {
         /// Orders to cancel.
         cancels: Vec<HyperliquidExchangeCancelOrderRequest>,
-        /// Optional fast-cancel flag.
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        /// Optional fast-cancel flag, serialized only when true.
+        #[serde(rename = "f", skip_serializing_if = "is_false_or_none")]
         fast: Option<bool>,
     },
 
@@ -1862,8 +1854,8 @@ pub enum HyperliquidExchangeAction {
     CancelByCloid {
         /// Orders to cancel by CLOID.
         cancels: Vec<HyperliquidExchangeCancelByCloidRequest>,
-        /// Optional fast-cancel flag.
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        /// Optional fast-cancel flag, serialized only when true.
+        #[serde(rename = "f", skip_serializing_if = "is_false_or_none")]
         fast: Option<bool>,
     },
 

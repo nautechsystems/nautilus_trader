@@ -25,6 +25,12 @@ This directory contains API response samples and documented error messages for t
 These messages are copied from the documentation, including its placeholders, rather than captured
 from live responses. Tests use them in both whole-request and per-order rejection responses.
 
+### Cancel action serialization
+
+`cancel_actions.json` contains independently constructed JSON and named MessagePack vectors for
+cancel actions with absent, false, and true fast flags. These synthetic vectors are not captured
+from the venue.
+
 ## Capturing New Test Data
 
 ### HTTP Data
