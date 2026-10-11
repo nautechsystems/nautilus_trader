@@ -15,7 +15,10 @@
 
 #![cfg(all(feature = "simulation", madsim))]
 
-use std::time::{Duration, UNIX_EPOCH};
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, UNIX_EPOCH},
+};
 
 use alloy::signers::local::PrivateKeySigner;
 use futures_util::{SinkExt, StreamExt};
@@ -46,15 +49,20 @@ const SESSION_KEY: &str = "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a
 
 #[madsim::test]
 async fn signing_uses_virtual_wall_clock_and_monotonic_nonces() {
+    // Madsim reruns share the process-wide nonce registry, even for the same seed
+    static SUBACCOUNT_NEXT: AtomicU64 = AtomicU64::new(75101);
+    let subaccount_id = SUBACCOUNT_NEXT.fetch_add(1, Ordering::Relaxed);
     let clock = madsim::time::TimeHandle::try_current().unwrap();
     let now = clock.now_time().duration_since(UNIX_EPOCH).unwrap();
     let manager = NonceManager::new();
-    let first = manager.next_nonce(WALLET, 75101).unwrap();
-    let second = manager.next_nonce(WALLET, 75101).unwrap();
+    let first = manager.next_nonce(WALLET, subaccount_id).unwrap();
+    let second = NonceManager::new()
+        .next_nonce(WALLET, subaccount_id)
+        .unwrap();
     let milliseconds = utc_now_ms().unwrap();
     madsim::time::sleep(Duration::from_secs(2)).await;
     let later_time = clock.now_time().duration_since(UNIX_EPOCH).unwrap();
-    let later = manager.next_nonce(WALLET, 75101).unwrap();
+    let later = manager.next_nonce(WALLET, subaccount_id).unwrap();
 
     assert_eq!(first, u64::try_from(now.as_nanos()).unwrap());
     assert_eq!(second, first + 1);
