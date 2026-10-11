@@ -534,9 +534,10 @@ characters. Mass status and open-only report runs therefore name each window
 report by the cached order it describes: by venue order ID when the cache holds
 it, else by a shortened ID that exactly one order queried by client order ID
 holds and exactly one report with an unknown venue order ID carries, on the
-order's instrument and side and placed no earlier than the order's creation,
-give or take five seconds of clock skew. Any other window report is left out
-with a warning, since it cannot be tied to exactly one cached order.
+order's instrument and side and placed no more than five seconds before the
+order's creation, which allows for clock skew. Any other window report is left
+out with a warning naming the reason, since it cannot be tied to exactly one
+cached order.
 
 In those runs the window carries no fill price, so a fully executed order is
 left out with a warning rather than having its executions inferred at the order

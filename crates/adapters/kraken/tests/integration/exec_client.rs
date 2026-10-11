@@ -4485,8 +4485,8 @@ async fn test_futures_orders_status_window_report_carries_the_full_client_order_
 
 /// A shortened client order ID names an order queried by client order ID only when exactly one
 /// queried order and exactly one report without an indexed venue order ID hold it, and the report's
-/// instrument and side are the order's. Any other report is withheld, since under the venue's ID it
-/// names no cached order. A report whose venue order ID the cache indexes keeps that order's ID.
+/// instrument and side are the order's. Any other report is withheld, since it cannot be tied to
+/// exactly one cached order. A report whose venue order ID the cache indexes keeps that order's ID.
 #[rstest]
 #[case::one_queried_order_and_one_report(
     &[LONG_CLIENT_ORDER_ID],
@@ -4604,15 +4604,15 @@ async fn test_futures_orders_status_window_report_names_only_an_unambiguous_orde
 /// The window entry's placement time, 2026-09-12T04:05:06.100Z.
 const WINDOW_ENTRY_PLACED_NS: u64 = 1_789_185_906_100_000_000;
 
-/// A shortened client order ID names only a venue order placed no earlier than the cached order's
-/// creation, allowing five seconds for skew between the node's and the venue's clocks, so an older
-/// order whose client order ID shortens alike is withheld.
+/// A shortened client order ID names only a venue order placed no more than five seconds, the
+/// allowance for skew between the node's and the venue's clocks, before the cached order's
+/// creation, so an older order whose client order ID shortens alike is withheld.
 #[rstest]
 #[case::created_before_placement(WINDOW_ENTRY_PLACED_NS - 1_000_000_000, true)]
 #[case::created_at_placement(WINDOW_ENTRY_PLACED_NS, true)]
 #[case::created_within_clock_skew(WINDOW_ENTRY_PLACED_NS + 200_000_000, true)]
 #[case::created_at_clock_skew_bound(WINDOW_ENTRY_PLACED_NS + 5_000_000_000, true)]
-#[case::created_past_clock_skew(WINDOW_ENTRY_PLACED_NS + 6_000_000_000, false)]
+#[case::created_past_clock_skew(WINDOW_ENTRY_PLACED_NS + 5_000_000_001, false)]
 #[case::created_a_day_after_placement(WINDOW_ENTRY_PLACED_NS + 86_400_000_000_000, false)]
 #[tokio::test]
 async fn test_futures_orders_status_window_report_names_an_order_placed_after_its_creation(

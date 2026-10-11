@@ -89,8 +89,8 @@ const FUTURES_BATCH_CANCEL_LIMIT: usize = 50;
 const FUTURES_ORDERS_STATUS_LIMIT: usize = 50;
 
 /// Allowance for skew between the node's clock, which stamps an order's creation, and the venue's,
-/// which stamps its placement. An older order whose client order ID shortens alike comes from
-/// another session and was created long before.
+/// which stamps its placement, kept short so an older order whose client order ID shortens alike
+/// stays withheld.
 const ORDERS_STATUS_CLOCK_SKEW: DurationNanos = DurationNanos::from_secs(5);
 
 /// Kraken Futures execution client.
@@ -1925,10 +1925,10 @@ struct HeldOrder {
 /// alone. A report takes the ID of the cached order indexing its venue order ID. Otherwise its
 /// shortened ID names an order queried by client order ID only when exactly one such order holds
 /// it, exactly one report without an indexed venue order ID carries it, the report's instrument
-/// and side are the order's, and the venue placed it no earlier than the order's creation, give or
-/// take `ORDERS_STATUS_CLOCK_SKEW`, which keeps out an older order whose ID shortens alike. Any
-/// other report is withheld with a warning, since it cannot be tied to exactly one cached order:
-/// reconciliation would take it for an external order or for the wrong one.
+/// and side are the order's, and the venue placed it no more than `ORDERS_STATUS_CLOCK_SKEW` before
+/// the order's creation, which keeps out an older order whose ID shortens alike. Any other report
+/// is withheld with a warning naming the reason, since it cannot be tied to exactly one cached
+/// order: reconciliation would take it for an external order or for the wrong one.
 fn attribute_orders_status_reports(
     cache: &Cache,
     queried_by_cli_ord_id: &[HeldOrder],
@@ -1959,6 +1959,35 @@ fn attribute_orders_status_reports(
         }
     }
 
+    let by_shortened_id = |report: &OrderStatusReport| -> Result<ClientOrderId, &'static str> {
+        let echoed = report
+            .client_order_id
+            .ok_or("it carries no client order ID")?;
+        if unindexed
+            .get(&echoed)
+            .is_none_or(|venue_order_ids| venue_order_ids.len() != 1)
+        {
+            return Err("several reports carry its client order ID");
+        }
+        let order = held
+            .get(echoed.as_str())
+            .ok_or("no order queried by client order ID holds its client order ID")?
+            .ok_or("several queried orders hold its client order ID")?;
+
+        if report.instrument_id != order.instrument_id || report.order_side != Some(order.side) {
+            return Err("its instrument or side is not the queried order's");
+        }
+
+        if report.ts_accepted.saturating_add(ORDERS_STATUS_CLOCK_SKEW) < order.ts_init {
+            return Err(
+                "the venue placed it before the queried order's creation, beyond the clock skew \
+                 allowance; check the node clock if the order is recent",
+            );
+        }
+
+        Ok(order.client_order_id)
+    };
+
     let mut attributed = Vec::with_capacity(reports.len());
     let mut withheld = false;
     // The venue-ID and client-order-ID queries can both return one order
@@ -1969,32 +1998,24 @@ fn attribute_orders_status_reports(
             continue;
         }
 
-        let named = indexed(&report).or_else(|| {
-            let echoed = report.client_order_id?;
-            if unindexed
-                .get(&echoed)
-                .is_none_or(|venue_order_ids| venue_order_ids.len() != 1)
-            {
-                return None;
-            }
-            let order = (*held.get(echoed.as_str())?)?;
-            (report.instrument_id == order.instrument_id
-                && report.order_side == Some(order.side)
-                && report.ts_accepted.saturating_add(ORDERS_STATUS_CLOCK_SKEW) >= order.ts_init)
-                .then_some(order.client_order_id)
-        });
+        let named = match indexed(&report) {
+            Some(client_order_id) => Ok(client_order_id),
+            None => by_shortened_id(&report),
+        };
 
-        if let Some(client_order_id) = named {
-            report.client_order_id = Some(client_order_id);
-            attributed.push(report);
-        } else {
-            log::warn!(
-                "Withholding orders-status report {} with client order ID {:?}: it names no \
-                 queried order unambiguously",
-                report.venue_order_id,
-                report.client_order_id,
-            );
-            withheld = true;
+        match named {
+            Ok(client_order_id) => {
+                report.client_order_id = Some(client_order_id);
+                attributed.push(report);
+            }
+            Err(reason) => {
+                log::warn!(
+                    "Withholding orders-status report {} with client order ID {:?}: {reason}",
+                    report.venue_order_id,
+                    report.client_order_id,
+                );
+                withheld = true;
+            }
         }
     }
 
