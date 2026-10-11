@@ -274,6 +274,173 @@ fn apply_client_order_id_floor(
 }
 
 #[rstest]
+#[case::foreign_next_id_without_used_ids(770_000_006, None, 760_000_006)]
+#[case::foreign_next_id_below_used_ids(770_000_006, Some(760_000_017), 760_000_018)]
+#[case::own_next_id_above_used_ids(760_000_020, Some(760_000_017), 760_000_020)]
+fn initial_order_id_clears_used_order_ids(
+    #[case] next_id: i32,
+    #[case] highest_used_order_id: Option<i32>,
+    #[case] expected: i32,
+) {
+    assert_eq!(
+        InteractiveBrokersExecutionClient::initial_order_id(next_id, 7760, highest_used_order_id),
+        expected
+    );
+}
+
+fn create_test_completed_order(order_id: i32, client_id: i32) -> IBOrderData {
+    let mut data = create_test_open_order(-1, "Cancelled", "");
+    data.order.order_id = order_id;
+    data.order.client_id = client_id;
+    data
+}
+
+#[rstest]
+#[case::own_partition(vec![(760_000_015, 7760), (760_000_017, 7760)], Some(760_000_017))]
+#[case::other_client_in_partition(vec![(760_000_015, 7760), (760_000_030, 1760)], Some(760_000_015))]
+#[case::other_partition(vec![(770_000_005, 7770)], None)]
+#[case::unset_order_id(vec![(0, 7760)], None)]
+#[tokio::test]
+async fn highest_completed_order_id_reads_client_partition(
+    #[case] orders: Vec<(i32, i32)>,
+    #[case] expected: Option<i32>,
+) {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    for (order_id, client_id) in orders {
+        sender
+            .send(Ok(Orders::OrderData(create_test_completed_order(
+                order_id, client_id,
+            ))))
+            .unwrap();
+    }
+    drop(sender);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    let highest = InteractiveBrokersExecutionClient::highest_completed_order_id(
+        ChannelSubscription::new(receiver),
+        7760,
+        deadline,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(highest, expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn highest_completed_order_id_fails_on_interrupted_snapshot() {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    sender
+        .send(Ok(Orders::OrderData(create_test_completed_order(
+            760_000_015,
+            7760,
+        ))))
+        .unwrap();
+    sender.send(Err(ibapi::Error::ConnectionReset)).unwrap();
+    drop(sender);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    let result = InteractiveBrokersExecutionClient::highest_completed_order_id(
+        ChannelSubscription::new(receiver),
+        7760,
+        deadline,
+    )
+    .await;
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Failed to read completed orders for next order ID initialization"
+    );
+}
+
+#[rstest]
+#[tokio::test(start_paused = true)]
+async fn highest_completed_order_id_fails_on_stalled_snapshot() {
+    // The sender stays open, so the snapshot never reaches its end marker
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    sender
+        .send(Ok(Orders::OrderData(create_test_completed_order(
+            760_000_015,
+            7760,
+        ))))
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    let result = InteractiveBrokersExecutionClient::highest_completed_order_id(
+        ChannelSubscription::new(receiver),
+        7760,
+        deadline,
+    )
+    .await;
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Timeout reading completed orders for next order ID initialization"
+    );
+    assert_eq!(tokio::time::Instant::now(), deadline);
+}
+
+fn create_test_snapshot_with_notice(
+    code: i32,
+    message: &str,
+) -> impl futures_util::Stream<Item = Result<SubscriptionItem<Orders>, ibapi::Error>> + Unpin {
+    futures_util::stream::iter(vec![
+        Ok(SubscriptionItem::Data(Orders::OrderData(
+            create_test_completed_order(760_000_015, 7760),
+        ))),
+        Ok(SubscriptionItem::Notice(ibapi::Notice {
+            request_id: None,
+            code,
+            message: message.to_string(),
+            error_time: None,
+            advanced_order_reject_json: String::new(),
+        })),
+        Ok(SubscriptionItem::Data(Orders::OrderData(
+            create_test_completed_order(760_000_016, 7760),
+        ))),
+    ])
+}
+
+#[rstest]
+#[tokio::test]
+async fn highest_completed_order_id_fails_on_dropped_records() {
+    let snapshot = create_test_snapshot_with_notice(
+        ibapi::SUBSCRIPTION_LAG_CODE,
+        "order stream fell behind; 3 frames dropped",
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    let result =
+        InteractiveBrokersExecutionClient::highest_completed_order_id(snapshot, 7760, deadline)
+            .await;
+
+    let error = result.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Failed to read completed orders for next order ID initialization"
+    );
+    assert_eq!(
+        error.root_cause().to_string(),
+        "Completed orders snapshot dropped records: [-6] order stream fell behind; 3 frames dropped"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn highest_completed_order_id_reads_past_warning_notice() {
+    let snapshot = create_test_snapshot_with_notice(2109, "Order Event Warning");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    let highest =
+        InteractiveBrokersExecutionClient::highest_completed_order_id(snapshot, 7760, deadline)
+            .await
+            .unwrap();
+
+    assert_eq!(highest, Some(760_000_016));
+}
+
+#[rstest]
 fn stop_cancels_execution_lifecycle_and_aborts_tracked_tasks() {
     let (mut client, _receiver, _cache) = create_test_execution_client();
     client.is_connected.store(true, Ordering::Relaxed);
