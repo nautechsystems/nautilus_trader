@@ -135,7 +135,7 @@ impl SettlementLeg {
 
 /// Effects the caller must execute after a registry transition.
 #[derive(Debug)]
-#[expect(clippy::large_enum_variant)]
+#[cfg_attr(feature = "high-precision", expect(clippy::large_enum_variant))]
 pub(crate) enum SettlementAction {
     /// Apply the leg by emitting an `OrderFilled` through the established emission machinery.
     ApplyLeg {

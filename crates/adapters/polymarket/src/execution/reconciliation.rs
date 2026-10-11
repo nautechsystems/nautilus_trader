@@ -923,7 +923,7 @@ fn build_target_fill_reports(
     Ok((reports, discards))
 }
 
-#[expect(clippy::large_enum_variant)]
+#[cfg_attr(feature = "high-precision", expect(clippy::large_enum_variant))]
 enum TargetTrade {
     Unrelated,
     Pending,

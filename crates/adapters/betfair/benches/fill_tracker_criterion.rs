@@ -69,7 +69,7 @@ fn seeded_tracker() -> FillTracker {
 }
 
 fn report(tracker: &mut FillTracker, order: &UnmatchedOrder) {
-    tracker.maybe_fill_report(
+    let _ = black_box(tracker.maybe_fill_report(
         order,
         Decimal::from(4),
         InstrumentId::from("1.234567-123456-0.0.BETFAIR"),
@@ -77,7 +77,7 @@ fn report(tracker: &mut FillTracker, order: &UnmatchedOrder) {
         Currency::GBP(),
         UnixNanos::default(),
         UnixNanos::default(),
-    );
+    ));
 }
 
 fn bench_order_update(c: &mut Criterion) {
@@ -90,7 +90,7 @@ fn bench_order_update(c: &mut Criterion) {
         b.iter_batched_ref(
             || seeded.clone(),
             |tracker| {
-                black_box(report(tracker, black_box(&same)));
+                report(tracker, black_box(&same));
             },
             BatchSize::SmallInput,
         );
@@ -100,7 +100,7 @@ fn bench_order_update(c: &mut Criterion) {
         b.iter_batched_ref(
             || seeded.clone(),
             |tracker| {
-                black_box(report(tracker, black_box(&increased)));
+                report(tracker, black_box(&increased));
             },
             BatchSize::SmallInput,
         );
