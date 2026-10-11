@@ -19892,14 +19892,19 @@ async fn test_account_refresh_uses_own_order_reservations(#[case] fill_remaining
     let ExecutionEvent::Account(event) = event else {
         panic!("Expected account state");
     };
-    assert_eq!(
-        event.balances,
-        vec![AccountBalance::new(
-            Money::from("98.4 pUSD"),
-            Money::from("0 pUSD"),
-            Money::from("98.4 pUSD"),
-        )]
+
+    let expected_locked = if fill_remaining {
+        Money::from("2.4 pUSD")
+    } else {
+        Money::from("0 pUSD")
+    };
+
+    let expected_balance = AccountBalance::new(
+        Money::from("98.4 pUSD"),
+        expected_locked,
+        Money::from("98.4 pUSD") - expected_locked,
     );
+    assert_eq!(event.balances, vec![expected_balance]);
     let handle = registry
         .handle(*POLYMARKET_CLIENT_ID, Ustr::from("polymarket-user-streams"))
         .unwrap();
@@ -19914,14 +19919,8 @@ async fn test_account_refresh_uses_own_order_reservations(#[case] fill_remaining
     let ExecutionEvent::Account(event) = event else {
         panic!("Expected reconnect account state");
     };
-    assert_eq!(
-        event.balances,
-        vec![AccountBalance::new(
-            Money::from("98.4 pUSD"),
-            Money::from("0 pUSD"),
-            Money::from("98.4 pUSD"),
-        )]
-    );
+
+    assert_eq!(event.balances, vec![expected_balance]);
     assert_eq!(state.orders_get_count.load(Ordering::Acquire), 0);
     client.disconnect().await.unwrap();
 }

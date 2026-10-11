@@ -27,6 +27,7 @@ pub(crate) mod submitter;
 pub(crate) mod types;
 
 mod cancellations;
+mod collateral;
 mod lifecycle;
 mod orders;
 mod reports;
@@ -34,7 +35,6 @@ mod responses;
 
 use std::sync::{Arc, atomic::AtomicBool};
 
-use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -116,7 +116,7 @@ pub struct PolymarketExecutionClient {
     pending_submits: PendingSubmitTracker,
     pending_cancels: PendingCancelTracker,
     order_contexts: Arc<OrderContextRegistry>,
-    order_reservations: Arc<Mutex<AHashMap<ClientOrderId, Money>>>,
+    collateral_locks: Arc<Mutex<collateral::CollateralLocks>>,
     fill_tracker: Arc<OrderFillTrackerMap>,
     settlement: Arc<SettlementRegistry>,
     ws_dispatch_state: Arc<Mutex<WsDispatchState>>,
@@ -249,7 +249,7 @@ impl PolymarketExecutionClient {
             pending_submits: PendingSubmitTracker::default(),
             pending_cancels: PendingCancelTracker::default(),
             order_contexts: Arc::new(OrderContextRegistry::default()),
-            order_reservations: Arc::new(Mutex::new(AHashMap::new())),
+            collateral_locks: Arc::new(Mutex::new(collateral::CollateralLocks::default())),
             fill_tracker: Arc::new(OrderFillTrackerMap::new()),
             settlement,
             ws_dispatch_state: Arc::new(Mutex::new(WsDispatchState::default())),

@@ -32,11 +32,11 @@ use nautilus_core::{collections::AtomicMap, string::secret::SecretString, time::
 use nautilus_live::{ExecutionClientCore, execution::context::OrderContext, task::TaskGroupGuard};
 use nautilus_model::{
     enums::OrderSide,
-    events::{OrderEventAny, PositionEvent},
+    events::{OrderEventAny, OrderFillVoided, OrderFilled, PositionEvent},
     identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
-    types::Money,
+    types::{Money, Price, Quantity},
 };
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -46,9 +46,10 @@ use super::PolymarketExecutionClient;
 use crate::{
     common::enums::PolymarketOrderStatus,
     execution::{
+        collateral::CollateralLocks,
         context::OrderContextRegistry,
         reconciliation::venue_leg_filled_before_and_quantity,
-        reports::fetch_and_emit_account_state,
+        reports::{fetch_and_emit_account_state, get_pusd_currency},
         settlement::{SettlementRegistry, UncertainOrder, UncertainOrderKind},
     },
     http::{
@@ -118,7 +119,7 @@ impl PolymarketExecutionClient {
         let clock = self.clock;
         let shared_token_instruments = self.shared_token_instruments.clone();
         let neg_risk_index = self.neg_risk_index.clone();
-        let order_reservations = self.order_reservations.clone();
+        let collateral_locks = self.collateral_locks.clone();
         let order_contexts = self.order_contexts.clone();
         let pending_submits = self.pending_submits.clone();
         let settlement = self.settlement.clone();
@@ -144,7 +145,7 @@ impl PolymarketExecutionClient {
                 order_contexts.set_closed(event.client_order_id(), order.is_closed());
             }
 
-            update_order_reservation(&core, &order_reservations, event.client_order_id());
+            apply_collateral_event(&core, &collateral_locks, &settlement, event);
             update_open_order(&core, &order_contexts, &settlement, event.client_order_id());
             if !is_terminal_order_event(event) {
                 return;
@@ -367,7 +368,7 @@ impl PolymarketExecutionClient {
             &self.emitter,
             self.clock,
             self.config.signature_type,
-            &self.order_reservations,
+            &self.collateral_locks,
         )
         .await
     }
@@ -431,7 +432,7 @@ impl PolymarketExecutionClient {
         };
 
         let emitter = self.emitter.clone();
-        let order_reservations = self.order_reservations.clone();
+        let collateral_locks = self.collateral_locks.clone();
         let token_instruments = self.shared_token_instruments.clone();
         let account_id = self.core.account_id;
         let http_client = self.http_client.clone();
@@ -482,7 +483,7 @@ impl PolymarketExecutionClient {
                         if refresh.is_some() {
                             let http = http_client.clone();
                             let emit = emitter.clone();
-                            let reservations = order_reservations.clone();
+                            let reservations = collateral_locks.clone();
                             let session_spawner = session_spawner.clone();
 
                             let future = async move {
@@ -520,7 +521,7 @@ impl PolymarketExecutionClient {
 
                         let http = http_client.clone();
                         let emit = emitter.clone();
-                        let reservations = order_reservations.clone();
+                        let reservations = collateral_locks.clone();
                         let future = async move {
                             match fetch_and_emit_account_state(&http, &emit, clock, signature_type, &reservations)
                                 .await
@@ -610,7 +611,7 @@ impl PolymarketExecutionClient {
         let order_contexts = self.order_contexts.clone();
         let ws_dispatch_state = self.ws_dispatch_state.clone();
         let token_instruments = self.shared_token_instruments.clone();
-        let order_reservations = self.order_reservations.clone();
+        let collateral_locks = self.collateral_locks.clone();
         let clock = self.clock;
         let signer_type = self.config.signer_type;
         let signature_type = self.config.signature_type;
@@ -674,7 +675,7 @@ impl PolymarketExecutionClient {
                         &emitter,
                         clock,
                         signature_type,
-                        &order_reservations,
+                        &collateral_locks,
                     )
                     .await
                 {
@@ -737,14 +738,13 @@ impl PolymarketExecutionClient {
             .collect();
         drop(cache);
 
-        self.order_reservations.lock().clear();
-
-        for order in &orders {
-            update_order_reservation(
-                &self.core,
-                &self.order_reservations,
-                order.client_order_id(),
-            );
+        {
+            let mut locks = self.collateral_locks.lock();
+            locks.discard_inflight_refreshes();
+            locks.reservations.clear();
+            for order in &orders {
+                update_order_reservation(&self.core, &mut locks, order.client_order_id());
+            }
         }
 
         for order in &orders {
@@ -874,7 +874,7 @@ impl PolymarketExecutionClient {
         self.clear_settlement_observers();
         self.shared_token_instruments.store(AHashMap::new());
         self.neg_risk_index.store(AHashMap::new());
-        self.order_reservations.lock().clear();
+        self.collateral_locks.lock().clear_session();
         self.ws_dispatch_state.lock().reset_session();
         self.settlement.clear();
     }
@@ -1410,9 +1410,47 @@ fn resolution_backoff(completed_attempts: u32) -> Duration {
         })
 }
 
+fn apply_collateral_event(
+    core: &ExecutionClientCore,
+    locks: &Mutex<CollateralLocks>,
+    settlement: &SettlementRegistry,
+    event: &OrderEventAny,
+) {
+    let buy_spend = match event {
+        OrderEventAny::Filled(fill)
+            if fill.order_side == OrderSide::Buy
+                && fill.account_id == core.account_id
+                && !settlement.settled_on_arrival(&fill.trade_id) =>
+        {
+            buy_fill_spend(core, fill)
+                .map(|spend| (fill.trade_id, spend, fill.ts_event, fill.reconciliation))
+        }
+        _ => None,
+    };
+
+    let voided_spend = match event {
+        OrderEventAny::FillVoided(voided)
+            if voided.order_side == OrderSide::Buy && voided.account_id == core.account_id =>
+        {
+            buy_void_spend(core, voided).map(|spend| (voided.trade_id, spend))
+        }
+        _ => None,
+    };
+
+    let mut locks = locks.lock();
+    update_order_reservation(core, &mut locks, event.client_order_id());
+    if let Some((trade_id, spend, ts_event, reconciliation)) = buy_spend {
+        locks.note_buy_spend(trade_id, spend, ts_event, reconciliation);
+    }
+
+    if let Some((trade_id, spend)) = voided_spend {
+        locks.note_voided_spend(trade_id, spend);
+    }
+}
+
 fn update_order_reservation(
     core: &ExecutionClientCore,
-    reservations: &Mutex<AHashMap<ClientOrderId, Money>>,
+    locks: &mut CollateralLocks,
     client_order_id: ClientOrderId,
 ) {
     let cache = core.cache();
@@ -1424,11 +1462,11 @@ fn update_order_reservation(
             && order.ts_accepted().is_some()
             && order.order_side() == OrderSide::Buy
     }) else {
-        reservations.lock().remove(&client_order_id);
+        locks.reservations.remove(&client_order_id);
         return;
     };
     let Some(price) = order.price() else {
-        reservations.lock().remove(&client_order_id);
+        locks.reservations.remove(&client_order_id);
         return;
     };
     let Some(instrument) = cache.instrument(&order.instrument_id()) else {
@@ -1438,9 +1476,107 @@ fn update_order_reservation(
 
     match instrument.try_calculate_notional_value(order.leaves_qty(), price, None) {
         Ok(locked) => {
-            reservations.lock().insert(client_order_id, locked);
+            locks.reservations.insert(client_order_id, locked);
         }
         Err(e) => log::error!("Cannot calculate Polymarket reservation for {client_order_id}: {e}"),
+    }
+}
+
+fn buy_fill_spend(core: &ExecutionClientCore, fill: &OrderFilled) -> Option<Money> {
+    let notional = collateral_notional(core, fill.instrument_id, fill.last_qty, fill.last_px)?;
+    let pusd = get_pusd_currency();
+    if notional.currency != pusd {
+        log::error!(
+            "Cannot lock Polymarket unsettled buy spend for {}: notional currency is {}",
+            fill.client_order_id,
+            notional.currency
+        );
+        return None;
+    }
+
+    let commission = match fill.commission {
+        Some(commission) if commission.currency == pusd => commission,
+        Some(commission) => {
+            log::error!(
+                "Cannot add Polymarket commission {commission} to unsettled buy spend for {}",
+                fill.client_order_id
+            );
+            Money::zero(pusd)
+        }
+        None => Money::zero(pusd),
+    };
+
+    match notional.checked_add(commission) {
+        Some(spend) => Some(spend),
+        None => {
+            log::error!(
+                "Cannot calculate Polymarket unsettled buy spend for {}: notional plus commission overflow",
+                fill.client_order_id
+            );
+            None
+        }
+    }
+}
+
+fn buy_void_spend(core: &ExecutionClientCore, voided: &OrderFillVoided) -> Option<Money> {
+    let notional = collateral_notional(
+        core,
+        voided.instrument_id,
+        voided.voided_qty,
+        voided.last_px,
+    )?;
+    let pusd = get_pusd_currency();
+    if notional.currency != pusd {
+        log::error!(
+            "Cannot reverse Polymarket unsettled buy spend for {}: notional currency is {}",
+            voided.client_order_id,
+            notional.currency
+        );
+        return None;
+    }
+
+    let commission = match voided.commission_voided {
+        Some(commission) if commission.currency == pusd => commission,
+        Some(commission) => {
+            log::error!(
+                "Cannot reverse Polymarket commission {commission} for {}",
+                voided.client_order_id
+            );
+            Money::zero(pusd)
+        }
+        None => Money::zero(pusd),
+    };
+
+    notional.checked_add(commission).or_else(|| {
+        log::error!(
+            "Cannot reverse Polymarket unsettled buy spend for {}: notional plus commission overflow",
+            voided.client_order_id
+        );
+        None
+    })
+}
+
+fn collateral_notional(
+    core: &ExecutionClientCore,
+    instrument_id: InstrumentId,
+    quantity: Quantity,
+    price: Price,
+) -> Option<Money> {
+    let cache = core.cache();
+
+    let Some(instrument) = cache.instrument(&instrument_id) else {
+        log::error!(
+            "Cannot calculate Polymarket collateral spend: no instrument for {instrument_id}"
+        );
+        return None;
+    };
+
+    match instrument.try_calculate_notional_value(quantity, price, None) {
+        Ok(notional) => Some(notional),
+        Err(e) => {
+            log::error!("Cannot calculate Polymarket collateral spend for {instrument_id}: {e}");
+            None
+        }
     }
 }
 
@@ -2734,7 +2870,7 @@ mod tests {
     }
 
     #[rstest]
-    fn order_reservations_follow_acceptance_and_reconciled_updates() {
+    fn collateral_locks_follow_acceptance_and_reconciled_updates() {
         let (mut client, cache) = test_client();
         let instrument = test_binary_option("0xRESERVATION", false, false);
         cache
@@ -2753,7 +2889,7 @@ mod tests {
             &accepted,
         );
         assert_eq!(
-            *client.order_reservations.lock(),
+            client.collateral_locks.lock().reservations,
             AHashMap::from([(order.client_order_id(), Money::from("5 pUSD"))])
         );
 
@@ -2779,9 +2915,391 @@ mod tests {
             );
         }
         assert_eq!(
-            *client.order_reservations.lock(),
+            client.collateral_locks.lock().reservations,
             AHashMap::from([(order.client_order_id(), Money::from("8.4 pUSD"))])
         );
+    }
+
+    #[rstest]
+    fn buy_fill_reduces_free_until_drained_refresh() {
+        use nautilus_model::types::AccountBalance;
+
+        use crate::execution::collateral::AppliedBalance;
+
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xUNSETTLED_BUY", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        client.ensure_order_event_subscription();
+        let order = cache_accepted_open_order(&mut cache.borrow_mut(), instrument.id());
+        let topic = msgbus::switchboard::get_event_order_topic(order.strategy_id());
+
+        let apply = |client: &PolymarketExecutionClient, total: &str, now: u64| {
+            let ticket = client.collateral_locks.lock().begin_refresh();
+            match client
+                .collateral_locks
+                .lock()
+                .apply_refresh(
+                    ticket,
+                    Money::from(format!("{total} pUSD").as_str()),
+                    UnixNanos::from(now),
+                )
+                .unwrap()
+            {
+                AppliedBalance::Fresh(balance) => balance,
+                AppliedBalance::Stale => panic!("refresh was stale"),
+            }
+        };
+
+        let baseline = apply(&client, "100", 1);
+        let filled = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from("BUY-FILL")),
+            None,
+            Some(Price::from("0.5000")),
+            Some(Quantity::from("10")),
+            None,
+            Some(Money::from("0.125 pUSD")),
+            Some(UnixNanos::from(2_u64)),
+            Some(client.core.account_id),
+        );
+        cache.borrow_mut().update_order(&filled).unwrap();
+        publish_order_event(topic, &filled);
+        let still_included = apply(&client, "100", 3);
+        let drained = apply(&client, "94.875", 4);
+
+        assert!(client.collateral_locks.lock().reservations.is_empty());
+        assert_eq!(
+            baseline,
+            AccountBalance::new(
+                Money::from("100 pUSD"),
+                Money::from("0 pUSD"),
+                Money::from("100 pUSD")
+            )
+        );
+        assert_eq!(
+            still_included,
+            AccountBalance::new(
+                Money::from("100 pUSD"),
+                Money::from("5.125 pUSD"),
+                Money::from("94.875 pUSD")
+            )
+        );
+        assert_eq!(
+            drained,
+            AccountBalance::new(
+                Money::from("94.875 pUSD"),
+                Money::from("0 pUSD"),
+                Money::from("94.875 pUSD")
+            )
+        );
+    }
+
+    #[rstest]
+    fn load_orders_from_cache_keeps_unsettled_buy_spend() {
+        use nautilus_model::types::AccountBalance;
+
+        use crate::execution::collateral::AppliedBalance;
+
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xRECONNECT_BUY", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        client.ensure_order_event_subscription();
+        let order = cache_accepted_open_order(&mut cache.borrow_mut(), instrument.id());
+        let topic = msgbus::switchboard::get_event_order_topic(order.strategy_id());
+
+        let apply = |client: &PolymarketExecutionClient, total: &str, now: u64| {
+            let ticket = client.collateral_locks.lock().begin_refresh();
+            match client
+                .collateral_locks
+                .lock()
+                .apply_refresh(
+                    ticket,
+                    Money::from(format!("{total} pUSD").as_str()),
+                    UnixNanos::from(now),
+                )
+                .unwrap()
+            {
+                AppliedBalance::Fresh(balance) => balance,
+                AppliedBalance::Stale => panic!("refresh was stale"),
+            }
+        };
+
+        apply(&client, "100", 1);
+        let filled = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from("BUY-FILL")),
+            None,
+            Some(Price::from("0.5000")),
+            Some(Quantity::from("10")),
+            None,
+            Some(Money::from("0.125 pUSD")),
+            Some(UnixNanos::from(2_u64)),
+            Some(client.core.account_id),
+        );
+        cache.borrow_mut().update_order(&filled).unwrap();
+        publish_order_event(topic, &filled);
+        let stale = client.collateral_locks.lock().begin_refresh();
+
+        client.load_orders_from_cache();
+        let discarded = client
+            .collateral_locks
+            .lock()
+            .apply_refresh(stale, Money::from("90 pUSD"), UnixNanos::from(3_u64))
+            .unwrap();
+        let kept = apply(&client, "100", 4);
+
+        assert!(matches!(discarded, AppliedBalance::Stale));
+        assert!(client.collateral_locks.lock().reservations.is_empty());
+        assert_eq!(
+            kept,
+            AccountBalance::new(
+                Money::from("100 pUSD"),
+                Money::from("5.125 pUSD"),
+                Money::from("94.875 pUSD")
+            )
+        );
+    }
+
+    #[rstest]
+    fn terminal_rest_buy_fill_is_not_locked() {
+        use nautilus_model::types::AccountBalance;
+
+        use crate::execution::collateral::AppliedBalance;
+
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xREST_BUY", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        client.ensure_order_event_subscription();
+        let trade_id = TradeId::from("REST-BUY");
+        client.settlement.admit_rest_result(&AdmittedTrade {
+            venue_trade_id: "REST-BUY".to_string(),
+            status: PolymarketTradeStatus::Confirmed,
+            legs: vec![AdmittedLeg {
+                venue_order_id: VenueOrderId::from("V-001"),
+                trade_id,
+                instrument_id: instrument.id(),
+                order_side: OrderSide::Buy,
+                liquidity_side: LiquiditySide::Taker,
+                last_qty: Quantity::from("10"),
+                last_px: Price::from("0.5000"),
+                commission: Money::from("0.125 pUSD"),
+                taker_fee_basis: None,
+                ts_event: UnixNanos::from(2_u64),
+            }],
+        });
+
+        let ticket = client.collateral_locks.lock().begin_refresh();
+        client
+            .collateral_locks
+            .lock()
+            .apply_refresh(ticket, Money::from("100 pUSD"), UnixNanos::from(20_u64))
+            .unwrap();
+        let filled = OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(TraderId::from("TESTER-001"))
+                .strategy_id(StrategyId::from("S-001"))
+                .instrument_id(instrument.id())
+                .account_id(client.core.account_id)
+                .trade_id(trade_id)
+                .order_side(OrderSide::Buy)
+                .last_qty(Quantity::from("10"))
+                .last_px(Price::from("0.5000"))
+                .currency(Currency::pUSD())
+                .commission(Money::from("0.125 pUSD"))
+                .ts_event(UnixNanos::from(2_u64))
+                .build(),
+        );
+        publish_order_event(
+            msgbus::switchboard::get_event_order_topic(StrategyId::from("S-001")),
+            &filled,
+        );
+        let ticket = client.collateral_locks.lock().begin_refresh();
+
+        let after_fill = match client
+            .collateral_locks
+            .lock()
+            .apply_refresh(ticket, Money::from("100 pUSD"), UnixNanos::from(21_u64))
+            .unwrap()
+        {
+            AppliedBalance::Fresh(balance) => balance,
+            AppliedBalance::Stale => panic!("refresh was stale"),
+        };
+
+        assert!(client.settlement.settled_on_arrival(&trade_id));
+        assert_eq!(
+            after_fill,
+            AccountBalance::new(
+                Money::from("100 pUSD"),
+                Money::from("0 pUSD"),
+                Money::from("100 pUSD")
+            )
+        );
+    }
+
+    #[rstest]
+    fn confirmed_fill_report_is_not_locked() {
+        use nautilus_model::types::AccountBalance;
+
+        use crate::execution::collateral::AppliedBalance;
+
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xREPORT_BUY", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        client.ensure_order_event_subscription();
+        let trade_id = TradeId::from("REPORT-BUY");
+
+        let leg = AdmittedLeg {
+            venue_order_id: VenueOrderId::from("V-001"),
+            trade_id,
+            instrument_id: instrument.id(),
+            order_side: OrderSide::Buy,
+            liquidity_side: LiquiditySide::Taker,
+            last_qty: Quantity::from("10"),
+            last_px: Price::from("0.5000"),
+            commission: Money::from("0.125 pUSD"),
+            taker_fee_basis: None,
+            ts_event: UnixNanos::from(19_000_000_000_u64),
+        };
+
+        client
+            .settlement
+            .build_fill_report("REPORT-BUY", &leg, UnixNanos::from(1))
+            .unwrap();
+        let ticket = client.collateral_locks.lock().begin_refresh();
+        client
+            .collateral_locks
+            .lock()
+            .apply_refresh(
+                ticket,
+                Money::from("100 pUSD"),
+                UnixNanos::from(20_000_000_000_u64),
+            )
+            .unwrap();
+        let filled = OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(TraderId::from("TESTER-001"))
+                .strategy_id(StrategyId::from("S-001"))
+                .instrument_id(instrument.id())
+                .account_id(client.core.account_id)
+                .trade_id(trade_id)
+                .order_side(OrderSide::Buy)
+                .last_qty(Quantity::from("10"))
+                .last_px(Price::from("0.5000"))
+                .currency(Currency::pUSD())
+                .commission(Money::from("0.125 pUSD"))
+                .ts_event(UnixNanos::from(19_000_000_000_u64))
+                .reconciliation(true)
+                .build(),
+        );
+        publish_order_event(
+            msgbus::switchboard::get_event_order_topic(StrategyId::from("S-001")),
+            &filled,
+        );
+        let ticket = client.collateral_locks.lock().begin_refresh();
+
+        let after_fill = match client
+            .collateral_locks
+            .lock()
+            .apply_refresh(
+                ticket,
+                Money::from("100 pUSD"),
+                UnixNanos::from(21_000_000_000_u64),
+            )
+            .unwrap()
+        {
+            AppliedBalance::Fresh(balance) => balance,
+            AppliedBalance::Stale => panic!("refresh was stale"),
+        };
+
+        assert!(client.settlement.settled_on_arrival(&trade_id));
+        assert_eq!(
+            after_fill,
+            AccountBalance::new(
+                Money::from("100 pUSD"),
+                Money::from("0 pUSD"),
+                Money::from("100 pUSD")
+            )
+        );
+    }
+
+    #[rstest]
+    fn sell_fill_does_not_lock_unsettled_collateral() {
+        use nautilus_model::types::AccountBalance;
+
+        use crate::execution::collateral::AppliedBalance;
+
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("0xSELL_FILL", false, false);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        client.ensure_order_event_subscription();
+        let ticket = client.collateral_locks.lock().begin_refresh();
+
+        let baseline = match client
+            .collateral_locks
+            .lock()
+            .apply_refresh(ticket, Money::from("100 pUSD"), UnixNanos::from(1_u64))
+            .unwrap()
+        {
+            AppliedBalance::Fresh(balance) => balance,
+            AppliedBalance::Stale => panic!("refresh was stale"),
+        };
+
+        let fill = OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(TraderId::from("TESTER-001"))
+                .strategy_id(StrategyId::from("S-001"))
+                .instrument_id(instrument.id())
+                .account_id(client.core.account_id)
+                .trade_id(TradeId::from("SELL-FILL"))
+                .order_side(OrderSide::Sell)
+                .last_qty(Quantity::from("10"))
+                .last_px(Price::from("0.5000"))
+                .currency(Currency::pUSD())
+                .commission(Money::from("0.125 pUSD"))
+                .build(),
+        );
+        publish_order_event(
+            msgbus::switchboard::get_event_order_topic(StrategyId::from("S-001")),
+            &fill,
+        );
+        let ticket = client.collateral_locks.lock().begin_refresh();
+
+        let after_sell = match client
+            .collateral_locks
+            .lock()
+            .apply_refresh(ticket, Money::from("100 pUSD"), UnixNanos::from(2_u64))
+            .unwrap()
+        {
+            AppliedBalance::Fresh(balance) => balance,
+            AppliedBalance::Stale => panic!("refresh was stale"),
+        };
+
+        assert_eq!(
+            baseline,
+            AccountBalance::new(
+                Money::from("100 pUSD"),
+                Money::from("0 pUSD"),
+                Money::from("100 pUSD")
+            )
+        );
+        assert_eq!(after_sell, baseline);
     }
 
     #[rstest]
@@ -2894,7 +3412,7 @@ mod tests {
     #[case::accepted_cancel(true, true)]
     #[case::unaccepted_update(false, false)]
     #[case::accepted_update(true, false)]
-    fn order_reservations_require_acceptance_in_pending_states(
+    fn collateral_locks_require_acceptance_in_pending_states(
         #[case] accepted: bool,
         #[case] cancel: bool,
     ) {
@@ -2954,11 +3472,16 @@ mod tests {
         } else {
             AHashMap::new()
         };
-        assert_eq!(*client.order_reservations.lock(), expected);
+
+        assert_eq!(client.collateral_locks.lock().reservations, expected);
     }
 
     #[rstest]
     fn reset_clears_subscriptions_and_lookup_state() {
+        use nautilus_model::types::AccountBalance;
+
+        use crate::execution::collateral::AppliedBalance;
+
         let (mut client, _cache) = test_client();
         let expired = test_binary_option("0xRESET", true, true);
         client.upsert_execution_lookup(&expired);
@@ -2966,14 +3489,42 @@ mod tests {
         client.ensure_position_event_subscription();
         client.settlement.quarantine_invalid_trade("trade-1");
 
-        client
-            .order_reservations
-            .lock()
-            .insert(ClientOrderId::from("RESET-ORDER"), Money::from("5 pUSD"));
+        {
+            let mut locks = client.collateral_locks.lock();
+            locks
+                .reservations
+                .insert(ClientOrderId::from("RESET-ORDER"), Money::from("5 pUSD"));
+            locks.note_buy_spend(
+                TradeId::from("RESET-FILL"),
+                Money::from("4 pUSD"),
+                UnixNanos::from(2_u64),
+                false,
+            );
+        }
 
         client.reset_client();
 
-        assert!(client.order_reservations.lock().is_empty());
+        let ticket = client.collateral_locks.lock().begin_refresh();
+
+        let balance = match client
+            .collateral_locks
+            .lock()
+            .apply_refresh(ticket, Money::from("100 pUSD"), UnixNanos::from(3_u64))
+            .unwrap()
+        {
+            AppliedBalance::Fresh(balance) => balance,
+            AppliedBalance::Stale => panic!("refresh was stale"),
+        };
+
+        assert!(client.collateral_locks.lock().reservations.is_empty());
+        assert_eq!(
+            balance,
+            AccountBalance::new(
+                Money::from("100 pUSD"),
+                Money::from("0 pUSD"),
+                Money::from("100 pUSD")
+            )
+        );
         assert!(client.order_event_handler.is_none());
         assert!(client.position_event_handler.is_none());
         assert!(

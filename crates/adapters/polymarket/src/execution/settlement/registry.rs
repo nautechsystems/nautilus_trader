@@ -66,6 +66,7 @@ struct RegistryInner {
     records: AHashMap<String, SettlementRecord>,
     leg_trade_ids: AHashMap<TradeId, String>,
     unbound_legs: AHashMap<TradeId, SettlementLeg>,
+    settled_on_arrival: AHashSet<TradeId>,
     uncertain_orders: AHashMap<VenueOrderId, UncertainOrder>,
     hydrated: usize,
     account_refresh_requested: bool,
@@ -83,6 +84,7 @@ impl Default for RegistryInner {
             records: AHashMap::new(),
             leg_trade_ids: AHashMap::new(),
             unbound_legs: AHashMap::new(),
+            settled_on_arrival: AHashSet::new(),
             uncertain_orders: AHashMap::new(),
             hydrated: 0,
             account_refresh_requested: false,
@@ -573,6 +575,14 @@ impl SettlementRegistry {
         std::mem::take(&mut self.inner.lock().account_refresh_requested)
     }
 
+    /// Returns whether this leg was first applied from terminal REST evidence.
+    ///
+    /// Those fills are admitted only after the trade is confirmed, so collateral accounting does
+    /// not lock them against a snapshot that may already exclude the spend.
+    pub(crate) fn settled_on_arrival(&self, trade_id: &TradeId) -> bool {
+        self.inner.lock().settled_on_arrival.contains(trade_id)
+    }
+
     /// Returns whether the trade reached a confirmed settlement (stream or REST).
     ///
     /// A hard fault does not clear this outcome. Terminal bookkeeping uses
@@ -648,7 +658,7 @@ impl SettlementRegistry {
         incoming: &AdmittedLeg,
         ts_init: UnixNanos,
     ) -> anyhow::Result<FillReport> {
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
         anyhow::ensure!(
             inner.client_fault.is_none(),
             "settlement registry is faulted"
@@ -703,6 +713,9 @@ impl SettlementRegistry {
             }
         }
 
+        // Reconciliation emits this report after the trade is confirmed, so collateral must not
+        // lock it against a snapshot that already excludes the spend.
+        inner.settled_on_arrival.insert(incoming.trade_id);
         Ok(report)
     }
 
@@ -1103,6 +1116,7 @@ fn enter_rest_confirmed(
     record.settlement = SettlementState::RestConfirmed;
 
     let mut new_trade_ids = Vec::new();
+    let mut settled_on_arrival = Vec::new();
     let mut divergent_order = None;
 
     for incoming in admitted {
@@ -1115,6 +1129,7 @@ fn enter_rest_confirmed(
             leg.authorized = true;
             record.legs.push(leg);
             new_trade_ids.push(incoming.trade_id);
+            settled_on_arrival.push(incoming.trade_id);
             actions.push(SettlementAction::ApplyLeg {
                 venue_trade_id: key.to_string(),
                 leg: incoming.clone(),
@@ -1131,6 +1146,7 @@ fn enter_rest_confirmed(
                 .insert(incoming.trade_id, key.to_string());
             *leg = SettlementLeg::from_admitted(incoming);
             leg.authorized = true;
+            settled_on_arrival.push(incoming.trade_id);
             actions.push(SettlementAction::ApplyLeg {
                 venue_trade_id: key.to_string(),
                 leg: incoming.clone(),
@@ -1154,7 +1170,10 @@ fn enter_rest_confirmed(
              order {venue_order_id}"
         );
         hard_fault(inner, key, reason);
+        return;
     }
+
+    inner.settled_on_arrival.extend(settled_on_arrival);
 }
 
 fn enter_rest_failed(
@@ -1991,6 +2010,21 @@ pub(crate) mod tests {
             registry.inner.lock().records[TRADE].terminal_rest_legs,
             Some(vec![first, second])
         );
+    }
+
+    #[rstest]
+    fn test_terminal_rest_apply_marks_leg_settled_on_arrival() {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker-a");
+
+        let actions =
+            registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![leg.clone()]));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [SettlementAction::ApplyLeg { .. }]
+        ));
+        assert!(registry.settled_on_arrival(&leg.trade_id));
     }
 
     #[rstest]

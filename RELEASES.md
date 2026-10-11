@@ -103,6 +103,7 @@ Released on TBD (UTC).
 - Fixed Polymarket bounded restarts marking cached closed orders as incomplete
 - Fixed Polymarket bounded restarts omitting confirmed partial fills from resting orders
 - Fixed Polymarket modify canceling a working order when the signed replacement is below the market minimum
+- Fixed Polymarket free balance treating BUY fill spend as available before the venue collateral total reflects it
 - Fixed Polymarket recovered BUY overfills being rejected instead of raising order quantity
 
 ### Internal Improvements
