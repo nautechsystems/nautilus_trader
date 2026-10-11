@@ -194,6 +194,8 @@ struct TestServerState {
     referral_use_requests: Arc<tokio::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
     next_referral_use_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     active_orders_calls: Arc<AtomicUsize>,
+    active_orders_response_blocked: Arc<AtomicBool>,
+    active_orders_response_release: Arc<tokio::sync::Notify>,
     tx_calls: Arc<AtomicUsize>,
     inactive_orders_calls: Arc<AtomicUsize>,
     trades_calls: Arc<AtomicUsize>,
@@ -201,7 +203,9 @@ struct TestServerState {
     active_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     active_orders_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     tx_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
+    tx_responses_by_nonce: Arc<tokio::sync::Mutex<std::collections::HashMap<i64, Value>>>,
     tx_response_blocked: Arc<AtomicBool>,
+    tx_response_waiters: Arc<AtomicUsize>,
     tx_response_release: Arc<tokio::sync::Notify>,
     inactive_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     inactive_orders_unscoped_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -241,6 +245,8 @@ impl Default for TestServerState {
             referral_use_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             next_referral_use_response: Arc::new(tokio::sync::Mutex::new(None)),
             active_orders_calls: Arc::new(AtomicUsize::new(0)),
+            active_orders_response_blocked: Arc::new(AtomicBool::new(false)),
+            active_orders_response_release: Arc::new(tokio::sync::Notify::new()),
             tx_calls: Arc::new(AtomicUsize::new(0)),
             inactive_orders_calls: Arc::new(AtomicUsize::new(0)),
             trades_calls: Arc::new(AtomicUsize::new(0)),
@@ -248,7 +254,11 @@ impl Default for TestServerState {
             active_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             active_orders_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             tx_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            tx_responses_by_nonce: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             tx_response_blocked: Arc::new(AtomicBool::new(false)),
+            tx_response_waiters: Arc::new(AtomicUsize::new(0)),
             tx_response_release: Arc::new(tokio::sync::Notify::new()),
             inactive_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             inactive_orders_unscoped_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -411,15 +421,30 @@ async fn account_active_orders(
     State(state): State<Arc<TestServerState>>,
     Query(_query): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
-    state.active_orders_calls.fetch_add(1, Ordering::Relaxed);
-    if let Some(body) = state.active_orders_responses.lock().await.pop_front() {
-        return (StatusCode::OK, body.to_string()).into_response();
+    let queued = state.active_orders_responses.lock().await.pop_front();
+
+    let body = if let Some(body) = queued {
+        body
+    } else {
+        state
+            .active_orders_response
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| json!({"code":200,"orders":[]}))
+    };
+
+    if state.active_orders_response_blocked.load(Ordering::Acquire) {
+        let release = state.active_orders_response_release.notified();
+        tokio::pin!(release);
+        release.as_mut().enable();
+        state.active_orders_calls.fetch_add(1, Ordering::Release);
+        release.await;
+    } else {
+        state.active_orders_calls.fetch_add(1, Ordering::Release);
     }
 
-    if let Some(body) = state.active_orders_response.lock().await.clone() {
-        return (StatusCode::OK, body.to_string()).into_response();
-    }
-    (StatusCode::OK, json!({"code":200,"orders":[]}).to_string()).into_response()
+    (StatusCode::OK, body.to_string()).into_response()
 }
 
 async fn tx(
@@ -428,13 +453,6 @@ async fn tx(
 ) -> Response {
     state.tx_calls.fetch_add(1, Ordering::Relaxed);
 
-    let Some(mut body) = state.tx_responses.lock().await.pop_front() else {
-        return (
-            StatusCode::BAD_REQUEST,
-            json!({"code":21500,"message":"transaction not found"}).to_string(),
-        )
-            .into_response();
-    };
     let Some(tx_hash) = query
         .get("value")
         .filter(|_| query.get("by").map(String::as_str) == Some("hash"))
@@ -446,7 +464,25 @@ async fn tx(
             .into_response();
     };
     let frames = state.send_txs.lock().await;
-    let Some(frame) = frames.last() else {
+
+    let matched = frames.iter().rev().find_map(|frame| {
+        let transactions: Vec<_> = if frame["type"] == "jsonapi/sendtxbatch" {
+            let types: Vec<u8> =
+                serde_json::from_str(frame["data"]["tx_types"].as_str().unwrap()).unwrap();
+            types.into_iter().zip(batch_tx_infos(frame)).collect()
+        } else {
+            vec![(send_tx_type(frame), send_tx_info(frame))]
+        };
+
+        transactions.into_iter().find(|(kind, info)| {
+            matches!(kind, 14 | 15 | 17)
+                && order_tx_hash(*kind, info, state.chain_id.load(Ordering::Relaxed)) == *tx_hash
+        })
+    });
+
+    drop(frames);
+
+    let Some((tx_type, info)) = matched else {
         return (
             StatusCode::BAD_REQUEST,
             json!({"code":21500,"message":"transaction not found"}).to_string(),
@@ -454,34 +490,49 @@ async fn tx(
             .into_response();
     };
 
-    let (info, tx_type) = if frame["type"] == "jsonapi/sendtxbatch" {
-        (
-            batch_cancel_infos(frame)
-                .into_iter()
-                .find(|info| {
-                    cancel_tx_hash(info, state.chain_id.load(Ordering::Relaxed)) == *tx_hash
-                })
-                .expect("known batch hash"),
-            15,
-        )
+    let nonce = info["Nonce"].as_i64().unwrap();
+    let keyed = state
+        .tx_responses_by_nonce
+        .lock()
+        .await
+        .get(&nonce)
+        .cloned();
+
+    let Some(mut body) = (if keyed.is_some() {
+        keyed
     } else {
-        (send_tx_info(frame), 14)
+        state.tx_responses.lock().await.pop_front()
+    }) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            json!({"code":21500,"message":"transaction not found"}).to_string(),
+        )
+            .into_response();
     };
 
     let object = body
         .as_object_mut()
         .expect("transaction fixture must be an object");
     object.insert("code".to_string(), json!(200));
-    object.insert("hash".to_string(), json!(tx_hash));
-    object.insert("type".to_string(), json!(tx_type));
+    object.entry("hash").or_insert_with(|| json!(tx_hash));
+    object.entry("type").or_insert_with(|| json!(tx_type));
     object.insert("info".to_string(), json!(info.to_string()));
-    object.insert("account_index".to_string(), info["AccountIndex"].clone());
-    object.insert("api_key_index".to_string(), info["ApiKeyIndex"].clone());
-    object.insert("nonce".to_string(), info["Nonce"].clone());
-    drop(frames);
+    object
+        .entry("account_index")
+        .or_insert_with(|| info["AccountIndex"].clone());
+    object
+        .entry("api_key_index")
+        .or_insert_with(|| info["ApiKeyIndex"].clone());
+    object
+        .entry("nonce")
+        .or_insert_with(|| info["Nonce"].clone());
 
     if state.tx_response_blocked.load(Ordering::Acquire) {
-        state.tx_response_release.notified().await;
+        let release = state.tx_response_release.notified();
+        tokio::pin!(release);
+        release.as_mut().enable();
+        state.tx_response_waiters.fetch_add(1, Ordering::Release);
+        release.await;
     }
 
     (StatusCode::OK, body.to_string()).into_response()
@@ -8939,4 +8990,602 @@ fn assert_order_batches(
     }
 
     infos
+}
+
+#[rstest]
+#[case::failed_status(0, "")]
+#[case::application_error(2, "invalid order price")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acknowledged_modify_failure_recovers_rejection(
+    #[case] status: i64,
+    #[case] app_error: &str,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-ACK-MODIFY-FAILED");
+    let (_, venue_id) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510114",
+    )
+    .await;
+    state.tx_responses.lock().await.push_back(json!({
+        "status": status, "event_info": json!({"ae": app_error}).to_string(),
+    }));
+
+    let modify = || {
+        ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            id,
+            Some(venue_id),
+            Some(Quantity::from("0.0100")),
+            Some(Price::from("2400.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    };
+
+    client.modify_order(modify()).unwrap();
+    await_send_tx_count(&state, 2).await;
+    let first_nonce = send_tx_info(&state.send_txs().await[1])["Nonce"]
+        .as_i64()
+        .unwrap();
+    let event = next_order_event(&mut rx, Duration::from_secs(8))
+        .await
+        .expect("admitted modify failure must emit OrderModifyRejected");
+
+    let OrderEventAny::ModifyRejected(event) = event else {
+        panic!("expected ModifyRejected, was {event:?}");
+    };
+
+    assert_eq!(event.trader_id, trader_id());
+    assert_eq!(event.strategy_id, strategy_id());
+    assert_eq!(event.instrument_id, eth_perp_id());
+    assert_eq!(event.client_order_id, id);
+    assert_eq!(event.venue_order_id, Some(venue_id));
+    assert_eq!(
+        event.reason.as_str(),
+        if app_error.is_empty() {
+            "Lighter modify transaction failed: transaction failed without an application error"
+                .to_string()
+        } else {
+            format!("Lighter modify transaction failed: {app_error}")
+        }
+    );
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none()
+    );
+    client.modify_order(modify()).unwrap();
+    await_send_tx_count(&state, 3).await;
+    assert_eq!(
+        send_tx_info(&state.send_txs().await[2])["Nonce"].as_i64(),
+        Some(first_nonce + 1)
+    );
+    client.disconnect().await.unwrap();
+}
+
+fn modify_command(id: ClientOrderId, venue: VenueOrderId, price: &str) -> ModifyOrder {
+    ModifyOrder::new(
+        trader_id(),
+        Some(client_id()),
+        strategy_id(),
+        eth_perp_id(),
+        id,
+        Some(venue),
+        Some(Quantity::from("0.0100")),
+        Some(Price::from(price)),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acknowledged_modify_batch_isolates_outcomes() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let mut identities = Vec::new();
+
+    for i in 0..3 {
+        let id = ClientOrderId::from(format!("O-ACK-MODIFY-MIXED-{i}"));
+        let (index, venue) = seed_open_order(
+            &client,
+            &cache,
+            &state,
+            &mut rx,
+            id.as_str(),
+            &format!("{}", 281_476_929_510_600_i64 + i),
+        )
+        .await;
+        identities.push((id, index, venue));
+    }
+
+    let first_nonce = TEST_NEXT_NONCE + 3;
+    state.tx_responses_by_nonce.lock().await.extend([
+        (
+            first_nonce,
+            json!({"status":2,"event_info":json!({"ae":"invalid order price"}).to_string()}),
+        ),
+        (
+            first_nonce + 1,
+            json!({"status":2,"event_info":json!({"ae":""}).to_string()}),
+        ),
+        (
+            first_nonce + 2,
+            json!({"status":3,"event_info":json!({"ae":""}).to_string()}),
+        ),
+    ]);
+    client
+        .batch_modify_orders(BatchModifyOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            identities
+                .iter()
+                .map(|(id, _, venue)| modify_command(*id, *venue, "2400.00"))
+                .collect(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, 4).await;
+    await_tx_calls(&state, 3).await;
+    let rejected = next_order_event(&mut rx, Duration::from_secs(3))
+        .await
+        .unwrap();
+
+    let OrderEventAny::ModifyRejected(rejected) = rejected else {
+        panic!("expected ModifyRejected, was {rejected:?}")
+    };
+
+    assert_eq!(rejected.client_order_id, identities[0].0);
+    assert_eq!(rejected.trader_id, trader_id());
+    assert_eq!(rejected.strategy_id, strategy_id());
+    assert_eq!(rejected.instrument_id, eth_perp_id());
+    assert_eq!(rejected.venue_order_id, Some(identities[0].2));
+    assert_eq!(
+        rejected.reason.as_str(),
+        "Lighter modify transaction failed: invalid order price"
+    );
+    let (id, index, venue) = identities[1];
+    let mut entry =
+        account_all_orders_open_entry(index, venue.as_str(), &index.to_string(), TEST_ORDER_NONCE);
+    entry["price"] = json!("2400.00");
+    entry["base_price"] = json!(240_000);
+    entry["initial_base_amount"] = json!("0.0100");
+    entry["remaining_base_amount"] = json!("0.0100");
+    entry["base_size"] = json!(100);
+    let frame = json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}});
+    state.push_frame(&frame);
+    let updated = next_order_event(&mut rx, Duration::from_secs(3))
+        .await
+        .unwrap();
+
+    let OrderEventAny::Updated(updated) = updated else {
+        panic!("expected Updated, was {updated:?}")
+    };
+
+    assert_eq!(updated.client_order_id, id);
+    assert_eq!(updated.venue_order_id, Some(venue));
+    assert_eq!(updated.quantity, Quantity::from("0.0100"));
+    assert_eq!(updated.price, Some(Price::from("2400.00")));
+    assert_eq!(updated.strategy_id, strategy_id());
+    assert_eq!(updated.instrument_id, eth_perp_id());
+    state.push_frame(&frame);
+    let infos = batch_tx_infos(&state.send_txs().await[3]);
+    let hash = order_tx_hash(17, &infos[0], state.chain_id.load(Ordering::Relaxed));
+    state.push_frame(&json!({"type":"jsonapi/sendtx", "code":21702,"message":"duplicate rejection","tx_hash":hash}));
+    await_tx_calls(&state, 5).await;
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(250))
+            .await
+            .is_none()
+    );
+    assert_eq!(state.send_txs().await.len(), 4);
+    assert_eq!(
+        infos
+            .iter()
+            .map(|info| info["Nonce"].as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![first_nonce, first_nonce + 1, first_nonce + 2]
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::newer_modify(false, false)]
+#[case::confirmed_success(true, false)]
+#[case::newer_partial_modify(false, true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acknowledged_modify_ignores_delayed_failure(
+    #[case] confirmed: bool,
+    #[case] partial: bool,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-ACK-MODIFY-DELAYED");
+    let (index, venue) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510115",
+    )
+    .await;
+    state
+        .tx_responses
+        .lock()
+        .await
+        .push_back(json!({"status":0,"event_info":json!({"ae":"old failure"}).to_string()}));
+    state.tx_response_blocked.store(true, Ordering::Release);
+    client
+        .modify_order(modify_command(id, venue, "2400.00"))
+        .unwrap();
+    await_tx_calls(&state, 1).await;
+
+    if confirmed {
+        let mut entry = account_all_orders_open_entry(
+            index,
+            venue.as_str(),
+            &index.to_string(),
+            TEST_ORDER_NONCE,
+        );
+        entry["price"] = json!("2400.00");
+        entry["base_price"] = json!(240_000);
+        entry["initial_base_amount"] = json!("0.0100");
+        entry["remaining_base_amount"] = json!("0.0100");
+        entry["base_size"] = json!(100);
+        state.push_frame(&json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}}));
+        let event = next_order_event(&mut rx, Duration::from_secs(3))
+            .await
+            .unwrap();
+
+        let OrderEventAny::Updated(event) = event else {
+            panic!("expected Updated, was {event:?}")
+        };
+
+        assert_eq!(event.client_order_id, id);
+        assert_eq!(event.price, Some(Price::from("2400.00")));
+        assert_eq!(event.quantity, Quantity::from("0.0100"));
+    } else {
+        let mut command = modify_command(id, venue, "2401.00");
+        if partial {
+            command.price = None;
+        }
+
+        client.modify_order(command).unwrap();
+        await_send_tx_count(&state, 3).await;
+
+        if partial {
+            assert_eq!(
+                send_tx_info(&state.send_txs().await[2])["Price"],
+                json!(236_131)
+            );
+        }
+
+        let nonce = send_tx_info(&state.send_txs().await[2])["Nonce"]
+            .as_i64()
+            .unwrap();
+        state.tx_responses_by_nonce.lock().await.insert(
+            nonce,
+            json!({"status":0,"event_info":json!({"ae":"new failure"}).to_string()}),
+        );
+        // The older private success must leave the newer intent pending.
+        let mut entry = account_all_orders_open_entry(
+            index,
+            venue.as_str(),
+            &index.to_string(),
+            TEST_ORDER_NONCE,
+        );
+        entry["price"] = json!("2400.00");
+        entry["base_price"] = json!(240_000);
+        entry["initial_base_amount"] = json!("0.0100");
+        entry["remaining_base_amount"] = json!("0.0100");
+        entry["base_size"] = json!(100);
+        state.push_frame(&json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}}));
+        assert!(matches!(
+            next_order_event(&mut rx, Duration::from_secs(3)).await,
+            Some(OrderEventAny::Updated(_))
+        ));
+    }
+
+    state.tx_response_blocked.store(false, Ordering::Release);
+    state.tx_response_release.notify_one();
+
+    if !confirmed {
+        let event = next_order_event(&mut rx, Duration::from_secs(8))
+            .await
+            .unwrap();
+
+        let OrderEventAny::ModifyRejected(event) = event else {
+            panic!("expected ModifyRejected, was {event:?}")
+        };
+
+        assert_eq!(event.client_order_id, id);
+        assert_eq!(event.venue_order_id, Some(venue));
+        assert_eq!(
+            event.reason.as_str(),
+            "Lighter modify transaction failed: new failure"
+        );
+    }
+
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(500))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acknowledged_modify_unavailable_retains_outcome() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-ACK-MODIFY-MISSING");
+    let (index, venue) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510116",
+    )
+    .await;
+    client
+        .modify_order(modify_command(id, venue, "2400.00"))
+        .unwrap();
+    await_tx_calls(&state, 3).await;
+    assert_eq!(state.send_txs().await.len(), 2);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none()
+    );
+    // Supply the unchanged resting order after the bounded transaction lookups.
+    *state.active_orders_response.lock().await = Some(http_orders_payload(
+        &[http_order_fixture(
+            venue.as_str(),
+            &index.to_string(),
+            "open",
+            "0.0000",
+        )],
+        None,
+    ));
+    let report = client
+        .generate_order_status_report(&GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(eth_perp_id()),
+            Some(id),
+            Some(venue),
+            None,
+            None,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(report.client_order_id, Some(id));
+    assert_eq!(report.venue_order_id, venue);
+    assert_eq!(report.order_status, OrderStatus::PendingUpdate);
+    assert_eq!(state.send_txs().await.len(), 2);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes() {
+    let (addr, state) = start_server().await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| build_client(addr));
+    client.connect().await.unwrap();
+    let mut modifies = Vec::new();
+
+    for i in 0..16 {
+        let id = ClientOrderId::from(format!("O-MODIFY-RECONNECT-{i}"));
+        let (_, venue) = seed_open_order(
+            &client,
+            &cache,
+            &state,
+            &mut rx,
+            id.as_str(),
+            &format!("{}", 281_476_929_511_000_i64 + i),
+        )
+        .await;
+        modifies.push(modify_command(id, venue, "2400.00"));
+    }
+
+    let first_nonce = TEST_NEXT_NONCE + 16;
+    state.tx_responses_by_nonce.lock().await.extend([
+        (
+            first_nonce,
+            json!({"status":0,"event_info":json!({"ae":"stale failure"}).to_string()}),
+        ),
+        (
+            first_nonce + 1,
+            json!({"status":0,"event_info":json!({"ae":"stale failure"}).to_string()}),
+        ),
+        (
+            first_nonce + 15,
+            json!({"status":0,"event_info":json!({"ae":"current failure"}).to_string()}),
+        ),
+    ]);
+    state.tx_response_blocked.store(true, Ordering::Release);
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
+    client
+        .batch_modify_orders(BatchModifyOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            modifies.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, 17).await;
+    let first_batch = state.send_txs().await[16].clone();
+    let infos = batch_tx_infos(&first_batch);
+    let hashes: Vec<_> = infos[..2]
+        .iter()
+        .map(|info| order_tx_hash(17, info, state.chain_id.load(Ordering::Relaxed)))
+        .collect();
+    state.push_frame(&json!({"type":"jsonapi/sendtxbatch", "id":first_batch["data"]["id"],"code":200,"tx_hash":hashes}));
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.tx_response_waiters.load(Ordering::Acquire) == 2 }
+        },
+        Duration::from_secs(8),
+    )
+    .await;
+
+    assert_eq!(state.send_txs().await.len(), 17);
+    state.next_nonce.store(first_nonce + 15, Ordering::Release);
+    let subs = state.subscribes().await.len();
+    let handle = registry
+        .handle(client_id(), Ustr::from("lighter-user-streams"))
+        .unwrap();
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    await_subscribe_count(&state, subs + 4).await;
+    state.tx_response_blocked.store(false, Ordering::Release);
+    state.tx_response_release.notify_waiters();
+    await_send_tx_count(&state, 18).await;
+    let event = next_order_event(&mut rx, Duration::from_secs(8))
+        .await
+        .unwrap();
+
+    let OrderEventAny::ModifyRejected(event) = event else {
+        panic!("expected ModifyRejected, was {event:?}")
+    };
+
+    assert_eq!(event.client_order_id, modifies[15].client_order_id);
+    assert_eq!(event.venue_order_id, modifies[15].venue_order_id);
+    assert_eq!(
+        event.reason.as_str(),
+        "Lighter modify transaction failed: current failure"
+    );
+    assert_eq!(event.instrument_id, eth_perp_id());
+    assert_eq!(event.strategy_id, strategy_id());
+    let frames = state.send_txs().await;
+    assert_order_batches(&frames[16..], &[15, 1], 17, first_nonce);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(500))
+            .await
+            .is_none()
+    );
+    assert_eq!(state.send_txs().await.len(), 18);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_acknowledged_modify_ignores_delayed_terminal_report() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-MODIFY-OLD-REPORT");
+    let (index, venue) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510117",
+    )
+    .await;
+    *state.inactive_orders_response.lock().await = Some(http_orders_payload(
+        &[http_order_fixture(
+            venue.as_str(),
+            &index.to_string(),
+            "canceled",
+            "0.0000",
+        )],
+        None,
+    ));
+    state
+        .tx_responses
+        .lock()
+        .await
+        .push_back(json!({"status":2,"event_info":json!({"ae":""}).to_string()}));
+    state
+        .active_orders_response_blocked
+        .store(true, Ordering::Release);
+    client
+        .modify_order(modify_command(id, venue, "2400.00"))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.active_orders_calls.load(Ordering::Acquire) == 1 }
+        },
+        Duration::from_secs(8),
+    )
+    .await;
+
+    client
+        .modify_order(modify_command(id, venue, "2401.00"))
+        .unwrap();
+    await_send_tx_count(&state, 3).await;
+    let nonce = send_tx_info(&state.send_txs().await[2])["Nonce"]
+        .as_i64()
+        .unwrap();
+    state.tx_responses_by_nonce.lock().await.insert(
+        nonce,
+        json!({"status":0,"event_info":json!({"ae":"new failure"}).to_string()}),
+    );
+    state
+        .active_orders_response_blocked
+        .store(false, Ordering::Release);
+    state.active_orders_response_release.notify_one();
+    let event = next_order_event(&mut rx, Duration::from_secs(8))
+        .await
+        .unwrap();
+
+    let OrderEventAny::ModifyRejected(event) = event else {
+        panic!("expected ModifyRejected, was {event:?}")
+    };
+
+    assert_eq!(event.client_order_id, id);
+    assert_eq!(event.venue_order_id, Some(venue));
+    assert_eq!(
+        event.reason.as_str(),
+        "Lighter modify transaction failed: new failure"
+    );
+    assert_eq!(event.instrument_id, eth_perp_id());
+    assert_eq!(event.strategy_id, strategy_id());
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(250))
+            .await
+            .is_none()
+    );
+    assert_eq!(state.send_txs().await.len(), 3);
+    client.disconnect().await.unwrap();
 }

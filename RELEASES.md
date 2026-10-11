@@ -106,6 +106,7 @@ Released on TBD (UTC).
 - Fixed Kraken futures reads silently omitting unresolved live orders and positions (#5217), thanks @zhaow-de
 - Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
+- Fixed Lighter single and batch modify failures remaining pending after admission
 - Fixed Lighter transaction nonce send ordering under concurrent preparation
 - Fixed OKX conditional order amendments dropping prices (#5275), thanks for reporting @ProfitChef
 - Fixed Polymarket bounded restarts marking cached closed orders as incomplete

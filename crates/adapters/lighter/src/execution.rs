@@ -72,7 +72,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    orders::{Order, OrderAny},
+    orders::{LIMIT_ORDER_TYPES, Order, OrderAny, STOP_ORDER_TYPES},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Quantity},
 };
@@ -92,6 +92,7 @@ use crate::{
             LighterAccountTier, LighterPositionMarginMode, LighterProductType, LighterTxStatus,
             LighterTxType,
         },
+        parse::{parse_price_from_ticks, parse_quantity_from_ticks},
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
         symbol::{MarketRegistry, product_type_from_instrument_id},
     },
@@ -118,9 +119,9 @@ use crate::{
         client::{LighterWebSocketClient, RetainedTaskSlot, TaskRetentionGuard},
         dispatch::{
             LIGHTER_INSTRUMENT_CACHE, MAX_RECONCILIATION_PAGES, OrderIdentity, OrderReportLookup,
-            PendingOrderAction, PendingSendTx, PendingSendTxKind, TradeDedupSource,
-            WsDispatchState, cache_instruments_for_reports, collect_order_status_report,
-            derive_market_order_price_ticks, evict_terminal_mappings,
+            OrderShapeSnapshot, PendingOrderAction, PendingSendTx, PendingSendTxKind,
+            TradeDedupSource, WsDispatchState, cache_instruments_for_reports,
+            collect_order_status_report, derive_market_order_price_ticks, evict_terminal_mappings,
             lookup_create_order_status_report, lookup_order_status_report,
             nautilus_to_lighter_order_type, nautilus_to_lighter_tif, order_expiry_for,
             parse_http_order_to_report, price_to_ticks, quantity_to_ticks,
@@ -1881,15 +1882,13 @@ impl LighterExecutionClient {
     }
 
     fn dispatch_signed_modify_order(&self, cmd: &ModifyOrder, credential: &Credential) {
-        self.dispatch
-            .set_pending_order_action(cmd.client_order_id, PendingOrderAction::Modify);
+        self.dispatch.set_pending_modify_action(cmd);
+
         let prepared = match self.prepare_signed_modify_order(cmd, credential) {
             Ok(prepared) => prepared,
             Err(e) => {
-                self.dispatch.clear_pending_order_action_if(
-                    &cmd.client_order_id,
-                    PendingOrderAction::Modify,
-                );
+                self.dispatch
+                    .clear_pending_modify_if_command(&cmd.client_order_id, cmd.command_id);
                 let reason = format!("Lighter modify_order failed: {e}");
                 log::warn!("{reason} for {}", cmd.client_order_id);
                 self.emitter.emit_order_modify_rejected_event(
@@ -1956,19 +1955,23 @@ impl LighterExecutionClient {
                 } else {
                     log::warn!("{reason} for {client_order_id}; diagnostic={e:?}");
                     dispatch.remove_pending_sendtx_by_nonce(connection_epoch, nonce);
-                    dispatch.clear_pending_order_action_if(
+                    let current = dispatch.clear_pending_modify_if_nonce(
                         &client_order_id,
-                        PendingOrderAction::Modify,
+                        connection_epoch,
+                        nonce,
                     );
                     rollback_tx_dispatch(&dispatch, &credential, None, nonce);
-                    emitter.emit_order_modify_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        venue_order_id,
-                        reason,
-                        clock.get_time_ns(),
-                    );
+
+                    if current {
+                        emitter.emit_order_modify_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            reason,
+                            clock.get_time_ns(),
+                        );
+                    }
                 }
             }
             send_reservation.release();
@@ -2075,8 +2078,23 @@ impl LighterExecutionClient {
             );
         }
         validate_order_amount(&instrument, new_qty, price_ticks, price_precision)?;
+        self.dispatch.set_pending_modify_shape(
+            cmd,
+            OrderShapeSnapshot {
+                quantity: parse_quantity_from_ticks(base_amount, instrument.size_precision())?,
+                price: LIMIT_ORDER_TYPES
+                    .contains(&order.order_type())
+                    .then(|| parse_price_from_ticks(price_ticks, price_precision))
+                    .transpose()?,
+                trigger_price: STOP_ORDER_TYPES
+                    .contains(&order.order_type())
+                    .then(|| parse_price_from_ticks(trigger_price_ticks, price_precision))
+                    .transpose()?,
+            },
+        );
 
         Ok(ModifyOrderPlan {
+            command_id: cmd.command_id,
             client_order_id: cmd.client_order_id,
             strategy_id: cmd.strategy_id,
             instrument_id: cmd.instrument_id,
@@ -2781,18 +2799,19 @@ impl FanoutDispatchContext {
                     .emit_order_denied(&plan.order, &reason.to_string());
             }
             BatchOrderPlan::Modify(plan) => {
-                self.dispatch.clear_pending_order_action_if(
-                    &plan.client_order_id,
-                    PendingOrderAction::Modify,
-                );
-                self.emitter.emit_order_modify_rejected_event(
-                    plan.strategy_id,
-                    plan.instrument_id,
-                    plan.client_order_id,
-                    plan.venue_order_id,
-                    &format!("Lighter modify_order failed: {error}"),
-                    self.clock.get_time_ns(),
-                );
+                if self
+                    .dispatch
+                    .clear_pending_modify_if_command(&plan.client_order_id, plan.command_id)
+                {
+                    self.emitter.emit_order_modify_rejected_event(
+                        plan.strategy_id,
+                        plan.instrument_id,
+                        plan.client_order_id,
+                        plan.venue_order_id,
+                        &format!("Lighter modify_order failed: {error}"),
+                        self.clock.get_time_ns(),
+                    );
+                }
             }
             BatchOrderPlan::Cancel(plan, emit) => {
                 self.dispatch.clear_pending_order_action_if(
@@ -3084,6 +3103,12 @@ impl FanoutDispatchContext {
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter modify tx_info JSON")?;
 
+        self.dispatch.set_pending_modify_nonce(
+            &plan.client_order_id,
+            plan.command_id,
+            send_reservation.connection_epoch,
+            captured_nonce,
+        );
         rollback_guard.disarm();
 
         Ok(PreparedModifyOrder {
@@ -3394,6 +3419,7 @@ struct PreparedModifyOrder {
 }
 
 struct ModifyOrderPlan {
+    command_id: UUID4,
     client_order_id: ClientOrderId,
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
@@ -3697,14 +3723,16 @@ fn handle_send_tx_batch_result(
 }
 
 fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeContext) {
-    let Some(probe) = AckedOrderProbe::from_pending(pending) else {
+    let action = (matches!(pending.kind, PendingSendTxKind::Modify { .. })
+        || (pending.batch_id.is_some()
+            && matches!(pending.kind, PendingSendTxKind::Cancel { .. })))
+    .then(|| pending.clone());
+    let probe = AckedOrderProbe::from_pending(pending);
+    if action.is_none() && probe.is_none() {
         return;
-    };
+    }
 
     let pending_tasks = context.pending_tasks.clone();
-    let batch_cancel = (pending.batch_id.is_some()
-        && matches!(pending.kind, PendingSendTxKind::Cancel { .. }))
-    .then(|| pending.clone());
 
     let future = async move {
         tokio::select! {
@@ -3712,15 +3740,17 @@ fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeCont
             () = tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY) => {}
         }
 
-        if let Some(pending) = batch_cancel {
-            if let Err(e) = probe_acked_cancel(&pending, &context).await {
-                log::warn!("Lighter acknowledged batch cancel probe failed: {e}");
+        if let Some(pending) = action {
+            if let Err(e) = probe_acked_action(&pending, &context).await {
+                log::warn!("Lighter acknowledged action probe failed: {e}");
             }
 
             return;
         }
 
-        if let Err(e) = probe_acked_order(probe, &context).await {
+        if let Some(probe) = probe
+            && let Err(e) = probe_acked_order(probe, &context).await
+        {
             log::warn!("Lighter acknowledged order probe failed: {e:?}");
         }
     };
@@ -3744,33 +3774,24 @@ struct AckedOrderProbeContext {
     pending_tasks: TaskSpawner,
 }
 
-async fn probe_acked_cancel(
+async fn probe_acked_action(
     pending: &PendingSendTx,
     context: &AckedOrderProbeContext,
 ) -> anyhow::Result<()> {
-    let PendingSendTxKind::Cancel {
-        client_order_id, ..
-    } = pending.kind
-    else {
-        return Ok(());
-    };
-
+    let (client_order_id, _) = acked_action_identity(pending)?;
     for attempt in 1..=ACKED_ORDER_PROBE_ATTEMPTS {
-        if context.connection_epoch.load(Ordering::Acquire) != pending.connection_epoch
-            || context.dispatch.pending_cancel_nonce(&client_order_id)
-                != Some((pending.connection_epoch, pending.nonce))
-        {
+        if !acked_action_is_pending(pending, context) {
             return Ok(());
         }
 
         match context.http_client.get_tx(pending.tx_hash.clone()).await {
             Ok(tx) => {
-                if resolve_acked_cancel(pending, context, tx).await? {
+                if resolve_acked_action(pending, context, tx).await? {
                     return Ok(());
                 }
             }
             Err(LighterHttpError::Venue { code: 21500, .. }) => {}
-            Err(e) => log::warn!("Lighter batch cancel transaction lookup failed: {e}"),
+            Err(e) => log::warn!("Lighter acknowledged action transaction lookup failed: {e}"),
         }
 
         if attempt < ACKED_ORDER_PROBE_ATTEMPTS {
@@ -3782,65 +3803,134 @@ async fn probe_acked_cancel(
     }
 
     log::warn!(
-        "Lighter batch cancel outcome unresolved for {client_order_id}; retaining pending action for reconciliation"
+        "Lighter acknowledged action outcome unresolved for {client_order_id}; retaining pending action for reconciliation"
     );
     Ok(())
 }
 
-async fn resolve_acked_cancel(
+fn acked_action_identity(
+    pending: &PendingSendTx,
+) -> anyhow::Result<(ClientOrderId, LighterTxType)> {
+    match pending.kind {
+        PendingSendTxKind::Cancel {
+            client_order_id, ..
+        } => Ok((client_order_id, LighterTxType::CancelOrder)),
+        PendingSendTxKind::Modify {
+            client_order_id, ..
+        } => Ok((client_order_id, LighterTxType::ModifyOrder)),
+        _ => anyhow::bail!("acknowledged action requires a cancel or modify transaction"),
+    }
+}
+
+fn acked_action_is_pending(pending: &PendingSendTx, context: &AckedOrderProbeContext) -> bool {
+    let submission = match pending.kind {
+        PendingSendTxKind::Cancel {
+            client_order_id, ..
+        } => context.dispatch.pending_cancel_nonce(&client_order_id),
+        PendingSendTxKind::Modify {
+            client_order_id, ..
+        } => context.dispatch.pending_modify_nonce(&client_order_id),
+        _ => return false,
+    };
+
+    context.connection_epoch.load(Ordering::Acquire) == pending.connection_epoch
+        && submission == Some((pending.connection_epoch, pending.nonce))
+}
+
+async fn resolve_acked_action(
     pending: &PendingSendTx,
     context: &AckedOrderProbeContext,
     tx: LighterTx,
 ) -> anyhow::Result<bool> {
+    let (_, tx_type) = acked_action_identity(pending)?;
     anyhow::ensure!(
         tx_hash_matches(&tx.hash, &pending.tx_hash)
-            && tx.tx_type == LighterTxType::CancelOrder as u8
+            && tx.tx_type == tx_type as u8
             && tx.account_index == context.credential.account_index()
             && tx.api_key_index == pending.api_key_index
             && tx.nonce == pending.nonce,
-        "Lighter transaction lookup did not match acknowledged cancel identity"
+        "Lighter transaction lookup did not match acknowledged action identity"
     );
-    let event = parse_acked_tx_event(&tx.event_info)?;
 
-    if context.connection_epoch.load(Ordering::Acquire) != pending.connection_epoch {
+    let is_modify = tx_type == LighterTxType::ModifyOrder;
+
+    let current = if is_modify {
+        acked_action_is_pending(pending, context)
+    } else {
+        context.connection_epoch.load(Ordering::Acquire) == pending.connection_epoch
+    };
+
+    if !current {
         return Ok(true);
     }
 
+    let event = match parse_acked_tx_event(&tx.event_info) {
+        Ok(event) => event,
+        Err(e) if tx.status == LighterTxStatus::Failed && tx_type == LighterTxType::ModifyOrder => {
+            log::warn!("Lighter failed transaction carried invalid event_info: {e}");
+            AckedTxEvent::default()
+        }
+        Err(e) => return Err(e),
+    };
+
     if tx.status == LighterTxStatus::Failed || !event.app_error.is_empty() {
-        let reason = format!("Lighter cancel transaction failed: {}", event.app_error);
+        let (action, detail) = if is_modify {
+            ("modify", acked_tx_error_detail(&event.app_error))
+        } else {
+            ("cancel", event.app_error.as_str())
+        };
+
+        let reason = format!("Lighter {action} transaction failed: {detail}");
         log::warn!("{reason} for nonce={}", pending.nonce);
-        reject_cancel_order(
-            &context.dispatch,
-            &context.emitter,
-            pending,
-            &reason,
-            context.clock.get_time_ns(),
-        );
+
+        match pending.kind {
+            PendingSendTxKind::Modify { .. } => reject_modify_order(
+                &context.dispatch,
+                &context.emitter,
+                pending,
+                &reason,
+                context.clock.get_time_ns(),
+            ),
+            PendingSendTxKind::Cancel { .. } => reject_cancel_order(
+                &context.dispatch,
+                &context.emitter,
+                pending,
+                &reason,
+                context.clock.get_time_ns(),
+            ),
+            _ => unreachable!("validated acknowledged action"),
+        }
 
         // Execution failures consume their nonce, unlike pre-admission rejections
         return Ok(true);
     }
 
     if tx.status == LighterTxStatus::Executed {
-        recover_acked_cancel_report(pending, context).await?;
+        recover_acked_action_report(pending, context).await?;
         return Ok(true);
     }
 
     Ok(false)
 }
 
-async fn recover_acked_cancel_report(
+async fn recover_acked_action_report(
     pending: &PendingSendTx,
     context: &AckedOrderProbeContext,
 ) -> anyhow::Result<()> {
-    let PendingSendTxKind::Cancel {
-        instrument_id,
-        client_order_id,
-        venue_order_id,
-        ..
-    } = pending.kind
-    else {
-        return Ok(());
+    let (instrument_id, client_order_id, venue_order_id) = match pending.kind {
+        PendingSendTxKind::Cancel {
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            ..
+        }
+        | PendingSendTxKind::Modify {
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            ..
+        } => (instrument_id, client_order_id, venue_order_id),
+        _ => return Ok(()),
     };
 
     let lookup = OrderReportLookup::new(
@@ -3860,7 +3950,7 @@ async fn recover_acked_cancel_report(
     )
     .await?;
 
-    if context.connection_epoch.load(Ordering::Acquire) != pending.connection_epoch {
+    if !acked_action_is_pending(pending, context) {
         return Ok(());
     }
 
@@ -3869,6 +3959,21 @@ async fn recover_acked_cancel_report(
     };
 
     let report = lookup.translate(&context.dispatch, report);
+    if matches!(pending.kind, PendingSendTxKind::Modify { .. }) {
+        if report.order_status.is_closed()
+            && !context.dispatch.clear_pending_modify_if_nonce(
+                &client_order_id,
+                pending.connection_epoch,
+                pending.nonce,
+            )
+        {
+            return Ok(());
+        }
+
+        context.dispatch.seed_accepted_from_report(&report);
+        return Ok(());
+    }
+
     let current = if report.order_status.is_closed() {
         context.dispatch.clear_pending_cancel_if_nonce(
             &client_order_id,
@@ -4012,11 +4117,7 @@ async fn probe_acked_create(
                 });
 
                 if tx.status == LighterTxStatus::Failed || !event.app_error.is_empty() {
-                    let detail = if event.app_error.is_empty() {
-                        "transaction failed without an application error".to_string()
-                    } else {
-                        event.app_error
-                    };
+                    let detail = acked_tx_error_detail(&event.app_error);
                     let reason = format!(
                         "Lighter sequencer rejected acknowledged create transaction {tx_hash}: {detail}",
                     );
@@ -4028,7 +4129,7 @@ async fn probe_acked_create(
                         nonce,
                         &reason,
                         context.clock.get_time_ns(),
-                        lighter_reason_indicates_post_only_rejection(&detail),
+                        lighter_reason_indicates_post_only_rejection(detail),
                         Some((&context.connection_epoch, connection_epoch)),
                     );
                     return Ok(());
@@ -4121,7 +4222,16 @@ fn parse_acked_tx_event(event_info: &str) -> anyhow::Result<AckedTxEvent> {
     if event_info.trim().is_empty() {
         return Ok(AckedTxEvent::default());
     }
-    serde_json::from_str(event_info).context("failed to parse Lighter create transaction event")
+
+    serde_json::from_str(event_info).context("failed to parse Lighter transaction event")
+}
+
+fn acked_tx_error_detail(app_error: &str) -> &str {
+    if app_error.is_empty() {
+        "transaction failed without an application error"
+    } else {
+        app_error
+    }
 }
 
 fn warn_if_acked_order_missing(probe: &AckedOrderProbe, order_found: bool) {
@@ -4138,13 +4248,6 @@ fn warn_if_acked_order_missing(probe: &AckedOrderProbe, order_found: bool) {
                 "Lighter cancel_order outcome unresolved: order not found after venue ack for {client_order_id}",
             );
         }
-        AckedOrderProbe::Modify {
-            client_order_id, ..
-        } => {
-            log::warn!(
-                "Lighter modify_order outcome unresolved: order not found after venue ack for {client_order_id}",
-            );
-        }
     }
 }
 
@@ -4159,11 +4262,6 @@ enum AckedOrderProbe {
         tx_hash: String,
     },
     Cancel {
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        venue_order_id: Option<VenueOrderId>,
-    },
-    Modify {
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
@@ -4194,26 +4292,14 @@ impl AckedOrderProbe {
                 client_order_id: *client_order_id,
                 venue_order_id: *venue_order_id,
             }),
-            PendingSendTxKind::Modify {
-                instrument_id,
-                client_order_id,
-                venue_order_id,
-                ..
-            } => Some(Self::Modify {
-                instrument_id: *instrument_id,
-                client_order_id: *client_order_id,
-                venue_order_id: *venue_order_id,
-            }),
-            PendingSendTxKind::Other => None,
+            PendingSendTxKind::Modify { .. } | PendingSendTxKind::Other => None,
         }
     }
 
     fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::Create { order, .. } => order.instrument_id(),
-            Self::Cancel { instrument_id, .. } | Self::Modify { instrument_id, .. } => {
-                *instrument_id
-            }
+            Self::Cancel { instrument_id, .. } => *instrument_id,
         }
     }
 
@@ -4222,9 +4308,6 @@ impl AckedOrderProbe {
             Self::Create { order, .. } => order.client_order_id(),
             Self::Cancel {
                 client_order_id, ..
-            }
-            | Self::Modify {
-                client_order_id, ..
             } => *client_order_id,
         }
     }
@@ -4232,9 +4315,7 @@ impl AckedOrderProbe {
     fn venue_order_id(&self) -> Option<VenueOrderId> {
         match self {
             Self::Create { .. } => None,
-            Self::Cancel { venue_order_id, .. } | Self::Modify { venue_order_id, .. } => {
-                *venue_order_id
-            }
+            Self::Cancel { venue_order_id, .. } => *venue_order_id,
         }
     }
 }
@@ -4365,21 +4446,8 @@ fn reject_pending_sendtx(
         PendingSendTxKind::Cancel { .. } => {
             reject_cancel_order(dispatch, emitter, pending, reason, now);
         }
-        PendingSendTxKind::Modify {
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-        } => {
-            dispatch.clear_pending_order_action_if(client_order_id, PendingOrderAction::Modify);
-            emitter.emit_order_modify_rejected_event(
-                *strategy_id,
-                *instrument_id,
-                *client_order_id,
-                *venue_order_id,
-                reason,
-                now,
-            );
+        PendingSendTxKind::Modify { .. } => {
+            reject_modify_order(dispatch, emitter, pending, reason, now);
         }
         PendingSendTxKind::Other => {}
     }
@@ -4410,6 +4478,39 @@ fn reject_cancel_order(
     ) && emit_cancel_rejected
     {
         emitter.emit_order_cancel_rejected_event(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            reason,
+            now,
+        );
+    }
+}
+
+fn reject_modify_order(
+    dispatch: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    pending: &PendingSendTx,
+    reason: &str,
+    now: UnixNanos,
+) {
+    let PendingSendTxKind::Modify {
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+    } = pending.kind
+    else {
+        return;
+    };
+
+    if dispatch.clear_pending_modify_if_nonce(
+        &client_order_id,
+        pending.connection_epoch,
+        pending.nonce,
+    ) {
+        emitter.emit_order_modify_rejected_event(
             strategy_id,
             instrument_id,
             client_order_id,
@@ -5065,15 +5166,14 @@ impl ExecutionClient for LighterExecutionClient {
         let context = self.fanout_dispatch_context(credential)?;
         let mut plans = Vec::with_capacity(cmd.modifies.len());
         for modify in &cmd.modifies {
-            self.dispatch
-                .set_pending_order_action(modify.client_order_id, PendingOrderAction::Modify);
+            self.dispatch.set_pending_modify_action(modify);
 
             match self.prepare_modify_order_plan(modify) {
                 Ok(plan) => plans.push(BatchOrderPlan::Modify(plan)),
                 Err(e) => {
-                    self.dispatch.clear_pending_order_action_if(
+                    self.dispatch.clear_pending_modify_if_command(
                         &modify.client_order_id,
-                        PendingOrderAction::Modify,
+                        modify.command_id,
                     );
                     self.emitter.emit_order_modify_rejected_event(
                         modify.strategy_id,
@@ -6953,7 +7053,7 @@ fn dispatch_tracked_order_event(
             // `Open`; `accepted_was_emitted` already gated parsing to
             // produce `Updated` instead of duplicate `Accepted`. No need
             // to re-synthesize the accept here.
-            dispatch.clear_pending_order_action_if(&cloid, PendingOrderAction::Modify);
+            dispatch.clear_pending_modify_if_update(&cloid, e.quantity, e.price, e.trigger_price);
             is_terminal = false;
             emitter.send_order_event(OrderEventAny::Updated(e));
         }
@@ -6972,7 +7072,12 @@ fn dispatch_tracked_order_event(
                 dispatch,
                 ts_init,
             );
-            dispatch.clear_pending_order_action_if(&cloid, PendingOrderAction::Modify);
+            dispatch.clear_pending_modify_if_update(
+                &cloid,
+                updated.quantity,
+                updated.price,
+                updated.trigger_price,
+            );
             is_terminal = false;
             emitter.send_order_event(OrderEventAny::Updated(updated));
             emitter.send_order_event(OrderEventAny::Triggered(triggered));
@@ -11868,8 +11973,31 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::Accepted(_)),
         ));
 
-        rig.dispatch
-            .set_pending_order_action(rig.cloid, PendingOrderAction::Modify);
+        let command = ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            rig.instrument_id,
+            rig.cloid,
+            Some(VenueOrderId::new("281476929510110")),
+            Some(Quantity::from("0.0075")),
+            Some(Price::from("2400.00")),
+            Some(Price::from("2390.00")),
+            UUID4::new(),
+            UnixNanos::from(2),
+            None,
+            None,
+        );
+        rig.dispatch.set_pending_modify_action(&command);
+        rig.dispatch.set_pending_modify_shape(
+            &command,
+            OrderShapeSnapshot {
+                quantity: command.quantity.unwrap(),
+                price: command.price,
+                trigger_price: command.trigger_price,
+            },
+        );
+
         let mut triggered = order;
         triggered.status = LighterOrderStatus::Open;
         triggered.trigger_status = LighterTriggerStatus::Ready;
@@ -11972,8 +12100,31 @@ mod tests {
         );
         assert_eq!(drain_events(&mut rig.rx).len(), 1);
 
-        rig.dispatch
-            .set_pending_order_action(rig.cloid, PendingOrderAction::Modify);
+        let command = ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            rig.instrument_id,
+            rig.cloid,
+            Some(VenueOrderId::new("281476929510110")),
+            Some(Quantity::from("0.0075")),
+            Some(Price::from("2400.00")),
+            Some(Price::from("2390.00")),
+            UUID4::new(),
+            UnixNanos::from(2),
+            None,
+            None,
+        );
+        rig.dispatch.set_pending_modify_action(&command);
+        rig.dispatch.set_pending_modify_shape(
+            &command,
+            OrderShapeSnapshot {
+                quantity: command.quantity.unwrap(),
+                price: command.price,
+                trigger_price: command.trigger_price,
+            },
+        );
+
         order.status = LighterOrderStatus::Open;
         order.trigger_status = LighterTriggerStatus::Ready;
         dispatch_lighter_order(
@@ -11995,7 +12146,7 @@ mod tests {
 
         assert!(
             rig.dispatch
-                .clear_pending_order_action_if(&rig.cloid, PendingOrderAction::Modify,)
+                .clear_pending_modify_if_command(&rig.cloid, command.command_id)
         );
         dispatch_lighter_order(
             &order,
@@ -13298,6 +13449,34 @@ mod tests {
         venue_order_id: VenueOrderId,
         nonce: i64,
     ) {
+        let command = ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            Some(Quantity::from("0.2000")),
+            Some(Price::from("2362.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.dispatch.set_pending_modify_action(&command);
+        client.dispatch.set_pending_modify_shape(
+            &command,
+            OrderShapeSnapshot {
+                quantity: command.quantity.unwrap(),
+                price: command.price,
+                trigger_price: command.trigger_price,
+            },
+        );
+
+        client
+            .dispatch
+            .set_pending_modify_nonce(&client_order_id, command.command_id, 0, nonce);
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
             batch_id: None,
             connection_epoch: 0,
@@ -13312,6 +13491,252 @@ mod tests {
             api_key_index: TEST_API_KEY_INDEX,
             tx_hash: format!("hash{nonce:02x}"),
         });
+    }
+
+    fn acked_probe_context(client: &LighterExecutionClient) -> AckedOrderProbeContext {
+        AckedOrderProbeContext {
+            http_client: client.http_client.clone(),
+            registry: Arc::clone(&client.registry),
+            credential: test_credential(),
+            dispatch: client.dispatch.clone(),
+            account_id: client.core.account_id,
+            clock: client.clock,
+            emitter: client.emitter.clone(),
+            connection_epoch: client.ws_client.connection_epoch_atomic(),
+            cancellation_token: client.cancellation_token.clone(),
+            pending_tasks: client.pending_tasks.spawner().unwrap(),
+        }
+    }
+
+    fn failed_modify_tx(pending: &PendingSendTx) -> LighterTx {
+        LighterTx {
+            code: 200,
+            message: None,
+            hash: pending.tx_hash.clone(),
+            tx_type: LighterTxType::ModifyOrder as u8,
+            info: String::new(),
+            event_info: serde_json::json!({"ae":"invalid order price"}).to_string(),
+            status: LighterTxStatus::Failed,
+            account_index: TEST_ACCOUNT_INDEX_I64,
+            nonce: pending.nonce,
+            api_key_index: pending.api_key_index,
+        }
+    }
+
+    #[rstest]
+    #[case::hash("hash")]
+    #[case::type_mismatch("type")]
+    #[case::account("account")]
+    #[case::key("key")]
+    #[case::nonce("nonce")]
+    #[tokio::test]
+    async fn acknowledged_modify_requires_exact_transaction_identity(#[case] mismatch: &str) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let id = ClientOrderId::from("MODIFY-IDENTITY");
+        enqueue_modify(&client, instrument, id, VenueOrderId::from("789"), 23);
+        let pending = client.dispatch.pop_pending_sendtx_head().unwrap();
+        let mut tx = failed_modify_tx(&pending);
+        match mismatch {
+            "hash" => tx.hash = "different".to_string(),
+            "type" => tx.tx_type = LighterTxType::CancelOrder as u8,
+            "account" => tx.account_index += 1,
+            "key" => tx.api_key_index += 1,
+            "nonce" => tx.nonce += 1,
+            _ => unreachable!(),
+        }
+
+        let result = resolve_acked_action(&pending, &acked_probe_context(&client), tx).await;
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Lighter transaction lookup did not match acknowledged action identity"
+        );
+        assert_eq!(client.dispatch.pending_modify_nonce(&id), Some((0, 23)));
+        assert_eq!(
+            client.dispatch.pending_order_action(&id),
+            Some(PendingOrderAction::Modify)
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::failed_status(LighterTxStatus::Failed, "", true)]
+    #[case::malformed_failed_status(LighterTxStatus::Failed, "invalid json", true)]
+    #[case::application_error(LighterTxStatus::Executed, "application", true)]
+    #[case::pending(LighterTxStatus::Pending, "", false)]
+    #[case::pending_final(LighterTxStatus::PendingFinal, "", false)]
+    #[tokio::test]
+    async fn acknowledged_modify_outcomes_consume_only_matching_action(
+        #[case] status: LighterTxStatus,
+        #[case] event_info: &str,
+        #[case] failed: bool,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let id = ClientOrderId::from("MODIFY-OUTCOME");
+        let venue = VenueOrderId::from("789");
+        let nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        enqueue_modify(&client, instrument, id, venue, nonce);
+        let pending = client.dispatch.pop_pending_sendtx_head().unwrap();
+        let context = acked_probe_context(&client);
+        let mut tx = failed_modify_tx(&pending);
+        tx.status = status;
+
+        tx.event_info = if event_info == "application" {
+            serde_json::json!({"ae":"invalid order price"}).to_string()
+        } else {
+            event_info.to_string()
+        };
+
+        let resolved = resolve_acked_action(&pending, &context, tx.clone())
+            .await
+            .unwrap();
+        assert_eq!(resolved, failed);
+
+        if failed {
+            let OrderEventAny::ModifyRejected(event) = recv_order_event(&mut rx).await else {
+                panic!("expected ModifyRejected")
+            };
+
+            assert_eq!(event.client_order_id, id);
+            assert_eq!(event.venue_order_id, Some(venue));
+            assert_eq!(event.instrument_id, instrument);
+            assert_eq!(event.strategy_id, strategy_id());
+            assert_eq!(
+                event.reason.as_str(),
+                if event_info == "application" {
+                    "Lighter modify transaction failed: invalid order price"
+                } else {
+                    "Lighter modify transaction failed: transaction failed without an application error"
+                }
+            );
+            assert_eq!(client.dispatch.pending_modify_nonce(&id), None);
+            assert_eq!(client.dispatch.pending_order_action(&id), None);
+            assert!(resolve_acked_action(&pending, &context, tx).await.unwrap());
+        } else {
+            assert_eq!(client.dispatch.pending_modify_nonce(&id), Some((0, nonce)));
+        }
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            nonce + 1
+        );
+    }
+
+    #[rstest]
+    #[case::newer_nonce(false)]
+    #[case::reconnected(true)]
+    #[tokio::test]
+    async fn acknowledged_modify_does_not_consume_newer_submission(#[case] reconnected: bool) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let id = ClientOrderId::from("MODIFY-NEWER");
+        let venue = VenueOrderId::from("789");
+        enqueue_modify(&client, instrument, id, venue, 23);
+        let pending = client.dispatch.pop_pending_sendtx_head().unwrap();
+        let context = acked_probe_context(&client);
+        if reconnected {
+            context.connection_epoch.store(1, Ordering::Release);
+        } else {
+            enqueue_modify(&client, instrument, id, venue, 24);
+        }
+
+        assert!(
+            resolve_acked_action(&pending, &context, failed_modify_tx(&pending))
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            client.dispatch.pending_modify_nonce(&id),
+            Some((0, if reconnected { 23 } else { 24 }))
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn queued_modify_cannot_bind_a_newer_command() {
+        let (client, cache, _rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let id = ClientOrderId::from("MODIFY-QUEUED");
+
+        let mut cmd = ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument,
+            id,
+            Some(VenueOrderId::from("789")),
+            Some(Quantity::from("0.2000")),
+            Some(Price::from("2362.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        let old_command = cmd.command_id;
+        let old_cmd = cmd.clone();
+        client.dispatch.set_pending_modify_action(&cmd);
+        cmd.command_id = UUID4::new();
+        cmd.price = Some(Price::from("2363.00"));
+        client.dispatch.set_pending_modify_action(&cmd);
+        client.dispatch.set_pending_modify_shape(
+            &cmd,
+            OrderShapeSnapshot {
+                quantity: cmd.quantity.unwrap(),
+                price: cmd.price,
+                trigger_price: cmd.trigger_price,
+            },
+        );
+
+        client.dispatch.set_pending_modify_shape(
+            &old_cmd,
+            OrderShapeSnapshot {
+                quantity: old_cmd.quantity.unwrap(),
+                price: old_cmd.price,
+                trigger_price: old_cmd.trigger_price,
+            },
+        );
+
+        client
+            .dispatch
+            .set_pending_modify_nonce(&id, old_command, 0, 23);
+        assert_eq!(client.dispatch.pending_modify_nonce(&id), None);
+        assert!(
+            !client
+                .dispatch
+                .clear_pending_modify_if_command(&id, old_command)
+        );
+        assert_eq!(
+            client.dispatch.pending_order_action(&id),
+            Some(PendingOrderAction::Modify)
+        );
+        client
+            .dispatch
+            .set_pending_modify_nonce(&id, cmd.command_id, 0, 24);
+        client.dispatch.clear_pending_modify_if_update(
+            &id,
+            Quantity::from("0.2000"),
+            Some(Price::from("2362.00")),
+            None,
+        );
+        assert_eq!(client.dispatch.pending_modify_nonce(&id), Some((0, 24)));
+        client.dispatch.clear_pending_modify_if_update(
+            &id,
+            Quantity::from("0.2000"),
+            Some(Price::from("2363.00")),
+            None,
+        );
+        assert_eq!(client.dispatch.pending_order_action(&id), None);
     }
 
     #[tokio::test]
@@ -13676,10 +14101,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_send_tx_ack_returns_modify_for_noop_probe() {
+    async fn handle_send_tx_ack_retains_modify_for_transaction_probe() {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
-        let client_order_id = ClientOrderId::from("ACK-MODIFY-NOOP");
+        let client_order_id = ClientOrderId::from("ACK-MODIFY-TX");
         let venue_order_id = VenueOrderId::from("456");
         enqueue_modify(&client, instrument_id, client_order_id, venue_order_id, 13);
 
@@ -13690,26 +14115,36 @@ mod tests {
             Some("hash0d"),
         )
         .expect("acked modify pending entry");
-        let probe = AckedOrderProbe::from_pending(&acked).expect("modify should schedule probe");
+        assert!(AckedOrderProbe::from_pending(&acked).is_none());
 
-        match probe {
-            AckedOrderProbe::Modify {
+        match acked.kind {
+            PendingSendTxKind::Modify {
                 instrument_id: actual_instrument_id,
                 client_order_id: actual_client_order_id,
                 venue_order_id: actual_venue_order_id,
+                ..
             } => {
                 assert_eq!(actual_instrument_id, instrument_id);
                 assert_eq!(actual_client_order_id, client_order_id);
                 assert_eq!(actual_venue_order_id, Some(venue_order_id));
             }
-            other => panic!("expected modify probe, was {other:?}"),
+            other => panic!("expected acknowledged modify, was {other:?}"),
         }
+
+        assert_eq!(acked.connection_epoch, 0);
+        assert_eq!(acked.nonce, 13);
+        assert_eq!(acked.api_key_index, TEST_API_KEY_INDEX);
+        assert_eq!(acked.tx_hash, "hash0d");
+        assert_eq!(
+            client.dispatch.pending_modify_nonce(&client_order_id),
+            Some((0, 13))
+        );
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
         assert!(
             tokio::time::timeout(Duration::from_millis(50), rx.recv())
                 .await
                 .is_err(),
-            "ack itself must not emit before the no-op probe runs",
+            "ack itself must not emit before the transaction probe runs",
         );
     }
 
@@ -13731,27 +14166,6 @@ mod tests {
                 .await
                 .is_err(),
             "one missing lookup must not become CancelRejected",
-        );
-    }
-
-    #[tokio::test]
-    async fn ack_noop_probe_missing_modify_leaves_outcome_unresolved() {
-        let (client, cache, mut rx) = create_execution_client();
-        let instrument_id = register_test_instrument(&client, &cache);
-        let client_order_id = ClientOrderId::from("ACK-MODIFY-MISSING");
-        let venue_order_id = VenueOrderId::from("456");
-        let probe = AckedOrderProbe::Modify {
-            instrument_id,
-            client_order_id,
-            venue_order_id: Some(venue_order_id),
-        };
-
-        warn_if_acked_order_missing(&probe, false);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(50), rx.recv())
-                .await
-                .is_err(),
-            "one missing lookup must not become ModifyRejected",
         );
     }
 
@@ -14608,20 +15022,13 @@ mod tests {
             .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
             .unwrap();
 
-        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
-            batch_id: None,
-            connection_epoch: 0,
-            kind: PendingSendTxKind::Modify {
-                strategy_id: strategy_id(),
-                instrument_id,
-                client_order_id,
-                venue_order_id: Some(venue_order_id),
-            },
-            submitted_at: UnixNanos::from(1_000_000_000),
+        enqueue_modify(
+            &client,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
             nonce,
-            api_key_index: TEST_API_KEY_INDEX,
-            tx_hash: format!("hash{nonce:02x}"),
-        });
+        );
 
         handle_send_tx_rejection(
             &client.dispatch,
@@ -14646,6 +15053,72 @@ mod tests {
         }
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
         assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[rstest]
+    #[case::newer_modify(PendingOrderAction::Modify)]
+    #[case::newer_cancel(PendingOrderAction::Cancel)]
+    fn handle_send_tx_rejection_preserves_superseding_modify_action(
+        #[case] action: PendingOrderAction,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let id = ClientOrderId::from("REJECT-MODIFY-SUPERSEDED");
+        let venue = VenueOrderId::from("456");
+        let nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        enqueue_modify(&client, instrument, id, venue, nonce);
+        let current_nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+
+        if action == PendingOrderAction::Modify {
+            enqueue_modify(&client, instrument, id, venue, current_nonce);
+        } else {
+            client.dispatch.set_pending_order_action(id, action);
+            client
+                .dispatch
+                .set_pending_cancel_nonce(&id, 0, current_nonce, true);
+        }
+
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "older modify rejected by venue",
+            Some(&format!("hash{nonce:02x}")),
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(client.dispatch.pending_order_action(&id), Some(action));
+        assert_eq!(
+            client.dispatch.pending_modify_nonce(&id),
+            (action == PendingOrderAction::Modify).then_some((0, current_nonce))
+        );
+        assert_eq!(
+            client.dispatch.pending_cancel_nonce(&id),
+            (action == PendingOrderAction::Cancel).then_some((0, current_nonce))
+        );
+        assert_eq!(
+            client.dispatch.pending_sendtx_len(),
+            usize::from(action == PendingOrderAction::Modify)
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            current_nonce + 1
+        );
     }
 
     #[tokio::test]

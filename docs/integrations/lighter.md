@@ -630,11 +630,17 @@ acceptance, modification, or cancellation. Individual transactions can fail afte
 others in the batch succeed. Failures while applying a transaction consume its nonce; sequencer
 rejections before application can leave the nonce unconsumed and invalidate later nonces on that
 key. See [nonce consumption](https://apidocs.lighter.xyz/docs/core-concepts#when-a-rejected-transaction-consumes-its-nonce).
-Order updates and transaction lookups resolve create and cancel children. Modify children rely on order updates;
-the acknowledgement probe checks order status only, so failures after admission can remain pending
-and require reconciliation. Cancellation recovery includes orders not in `PendingCancel`, such as
-those selected by `CancelAllOrders`. For cached orders, the adapter emits `OrderCancelRejected` only
-if the order is `PendingCancel` when the cancel is dispatched; otherwise it logs the failure.
+Order updates and transaction lookups resolve create, modify, and cancel children. For single and batch
+modifications, a definitively failed admitted transaction emits one `OrderModifyRejected` and clears
+its matching pending action without rolling back the consumed nonce. Recovery validates the transaction
+hash, type, account, API key, nonce, and connection epoch. Recovery makes up to three transaction
+lookups at two-second intervals while the same connection and pending action remain current.
+Delayed outcomes cannot clear a newer modification or reject one already confirmed by an order update.
+Unknown or unavailable transaction outcomes retain pending state for reconciliation without resending
+the modification.
+Cancellation recovery includes orders not in `PendingCancel`, such as those selected by `CancelAllOrders`.
+For cached orders, the adapter emits `OrderCancelRejected` only if the order is `PendingCancel` when the cancel
+is dispatched; otherwise it logs the failure.
 Ambiguous delivery retains pending state for reconciliation instead of resending the batch.
 Before signing the next chunk, the adapter waits up to 10 seconds for the current chunk's
 acknowledgements. On timeout, dispatch continues and retains unacknowledged entries for reconciliation.

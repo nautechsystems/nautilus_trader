@@ -34,7 +34,8 @@ use std::{
 use ahash::{AHashMap, AHashSet, RandomState};
 use anyhow::Context;
 use dashmap::{DashMap, DashSet};
-use nautilus_core::{AtomicTime, UnixNanos, string::secret::SecretString};
+use nautilus_common::messages::execution::ModifyOrder;
+use nautilus_core::{AtomicTime, UUID4, UnixNanos, string::secret::SecretString};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
@@ -470,6 +471,13 @@ impl PendingOrderAction {
 struct PendingOrderActionState {
     action: PendingOrderAction,
     submission: Option<(u64, i64)>,
+    modify: Option<PendingModify>,
+}
+
+#[derive(Debug)]
+struct PendingModify {
+    command_id: UUID4,
+    shape: Option<OrderShapeSnapshot>,
 }
 
 #[derive(Debug)]
@@ -977,8 +985,105 @@ impl WsDispatchState {
             PendingOrderActionState {
                 action,
                 submission: None,
+                modify: None,
             },
         );
+    }
+
+    pub(crate) fn set_pending_modify_action(&self, cmd: &ModifyOrder) {
+        self.pending_order_actions.insert(
+            cmd.client_order_id,
+            PendingOrderActionState {
+                action: PendingOrderAction::Modify,
+                submission: None,
+                modify: Some(PendingModify {
+                    command_id: cmd.command_id,
+                    shape: None,
+                }),
+            },
+        );
+    }
+
+    pub(crate) fn set_pending_modify_shape(&self, cmd: &ModifyOrder, shape: OrderShapeSnapshot) {
+        if let Some(mut state) = self.pending_order_actions.get_mut(&cmd.client_order_id)
+            && let Some(modify) = state.modify.as_mut()
+            && modify.command_id == cmd.command_id
+        {
+            modify.shape = Some(shape);
+        }
+    }
+
+    pub(crate) fn set_pending_modify_nonce(
+        &self,
+        cloid: &ClientOrderId,
+        command_id: UUID4,
+        connection_epoch: u64,
+        nonce: i64,
+    ) {
+        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
+            && state
+                .modify
+                .as_ref()
+                .is_some_and(|modify| modify.command_id == command_id)
+        {
+            state.submission = Some((connection_epoch, nonce));
+        }
+    }
+
+    pub(crate) fn pending_modify_nonce(&self, cloid: &ClientOrderId) -> Option<(u64, i64)> {
+        self.pending_order_actions
+            .get(cloid)
+            .filter(|state| state.action == PendingOrderAction::Modify)
+            .and_then(|state| state.submission)
+    }
+
+    pub(crate) fn clear_pending_modify_if_nonce(
+        &self,
+        cloid: &ClientOrderId,
+        connection_epoch: u64,
+        nonce: i64,
+    ) -> bool {
+        self.pending_order_actions
+            .remove_if(cloid, |_, state| {
+                state.action == PendingOrderAction::Modify
+                    && state.submission == Some((connection_epoch, nonce))
+            })
+            .is_some()
+    }
+
+    pub(crate) fn clear_pending_modify_if_command(
+        &self,
+        cloid: &ClientOrderId,
+        command_id: UUID4,
+    ) -> bool {
+        self.pending_order_actions
+            .remove_if(cloid, |_, state| {
+                state
+                    .modify
+                    .as_ref()
+                    .is_some_and(|modify| modify.command_id == command_id)
+            })
+            .is_some()
+    }
+
+    pub(crate) fn clear_pending_modify_if_update(
+        &self,
+        cloid: &ClientOrderId,
+        quantity: Quantity,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+    ) {
+        self.pending_order_actions.remove_if(cloid, |_, state| {
+            state.action == PendingOrderAction::Modify
+                && state.modify.as_ref().is_some_and(|modify| {
+                    modify.shape.as_ref()
+                        == Some(&OrderShapeSnapshot {
+                            quantity,
+                            price,
+                            trigger_price,
+                        })
+                })
+        });
     }
 
     pub(crate) fn pending_order_action(&self, cloid: &ClientOrderId) -> Option<PendingOrderAction> {
