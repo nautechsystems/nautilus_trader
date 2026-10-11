@@ -1815,11 +1815,11 @@ impl KrakenFuturesHttpClient {
                     .map(|position| (position.symbol, position.size))
                     .collect::<AHashMap<_, _>>()),
                 Ok(response) => {
-                    let error = response
+                    let reason = response
                         .error
                         .unwrap_or_else(|| "Unknown error".to_string());
-                    log::warn!("Failed to get open positions for order quantities: {error}");
-                    Err(error)
+                    log::warn!("Failed to get open positions for order quantities: {reason}");
+                    Err(reason)
                 }
                 Err(e) => {
                     log::warn!("Failed to get open positions for order quantities: {e}");
@@ -1862,10 +1862,10 @@ impl KrakenFuturesHttpClient {
                 // futures order read while it rests, so it is skipped, its history rows with it;
                 // a failed positions read leaves its size unknown instead, which fails the read.
                 if sized_by_position && position_size.is_none() {
-                    if let Err(error) = &position_sizes {
+                    if let Err(reason) = &position_sizes {
                         anyhow::bail!(
                             "OpenOrders: futures order {} lists no unfilled size and the open \
-                             positions read failed: {error}",
+                             positions read failed: {reason}",
                             order.order_id
                         );
                     }
