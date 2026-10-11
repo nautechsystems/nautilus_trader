@@ -4679,51 +4679,52 @@ async fn test_futures_orders_status_window_report_names_an_order_placed_after_it
     assert_eq!(reported, expected);
 }
 
-/// When the venue-ID and client-order-ID requests both return one order, one report survives,
-/// the order's latest state by status and venue update rather than by request order, and the
-/// rules that follow apply to it: a fully executed one is withheld and leaves mass status
-/// incomplete.
+/// When the venue-ID and client-order-ID requests both return one order, one report survives, the
+/// order's latest window state whichever request ran later: a closed state over an open one, else
+/// the later venue update, else the larger filled quantity. The rules that follow apply to it, so a
+/// fully executed one is withheld and leaves mass status incomplete.
 #[rstest]
 #[case::later_request_cancels(
-    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
-    ("CANCELLED", 0, "2026-09-12T04:05:06.400Z"),
-    Some((OrderStatus::Canceled, "0")),
+    ("ENTERED_BOOK", 0, 300),
+    ("CANCELLED", 0, 400),
+    Some((OrderStatus::Canceled, "0", 400)),
 )]
 #[case::closed_state_outranks_a_later_open_update(
-    ("CANCELLED", 0, "2026-09-12T04:05:06.300Z"),
-    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.400Z"),
-    Some((OrderStatus::Canceled, "0")),
+    ("CANCELLED", 0, 300),
+    ("ENTERED_BOOK", 0, 400),
+    Some((OrderStatus::Canceled, "0", 300)),
 )]
 #[case::later_update_carries_a_fill(
-    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
-    ("ENTERED_BOOK", 2, "2026-09-12T04:05:06.400Z"),
-    Some((OrderStatus::PartiallyFilled, "2")),
+    ("ENTERED_BOOK", 0, 300),
+    ("ENTERED_BOOK", 2, 400),
+    Some((OrderStatus::PartiallyFilled, "2", 400)),
+)]
+#[case::later_update_without_a_fill(
+    ("ENTERED_BOOK", 0, 300),
+    ("ENTERED_BOOK", 0, 400),
+    Some((OrderStatus::Accepted, "0", 400)),
 )]
 #[case::earlier_request_updated_later(
-    ("ENTERED_BOOK", 2, "2026-09-12T04:05:06.400Z"),
-    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
-    Some((OrderStatus::PartiallyFilled, "2")),
+    ("ENTERED_BOOK", 0, 400),
+    ("ENTERED_BOOK", 0, 300),
+    Some((OrderStatus::Accepted, "0", 400)),
 )]
 #[case::equal_updates_keep_the_larger_fill(
-    ("ENTERED_BOOK", 2, "2026-09-12T04:05:06.300Z"),
-    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
-    Some((OrderStatus::PartiallyFilled, "2")),
+    ("ENTERED_BOOK", 0, 300),
+    ("ENTERED_BOOK", 2, 300),
+    Some((OrderStatus::PartiallyFilled, "2", 300)),
 )]
-#[case::later_request_fully_executes(
-    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
-    ("FULLY_EXECUTED", 5, "2026-09-12T04:05:06.400Z"),
-    None,
-)]
+#[case::later_request_fully_executes(("ENTERED_BOOK", 0, 300), ("FULLY_EXECUTED", 5, 400), None)]
 #[case::same_state(
-    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
-    ("ENTERED_BOOK", 0, "2026-09-12T04:05:06.300Z"),
-    Some((OrderStatus::Accepted, "0")),
+    ("ENTERED_BOOK", 0, 300),
+    ("ENTERED_BOOK", 0, 300),
+    Some((OrderStatus::Accepted, "0", 300)),
 )]
 #[tokio::test]
 async fn test_futures_orders_status_window_keeps_the_latest_state_both_requests_return(
-    #[case] by_venue_order_id: (&str, u32, &str),
-    #[case] by_client_order_id: (&str, u32, &str),
-    #[case] expected: Option<(OrderStatus, &str)>,
+    #[case] by_venue_order_id: (&str, u32, u64),
+    #[case] by_client_order_id: (&str, u32, u64),
+    #[case] expected: Option<(OrderStatus, &str, u64)>,
     #[values(false, true)] mass_status: bool,
 ) {
     let (client, _rx, cache, state) =
@@ -4735,8 +4736,10 @@ async fn test_futures_orders_status_window_keeps_the_latest_state_both_requests_
         add_limit_order_to_cache(&cache, ClientOrderId::new(LONG_CLIENT_ORDER_ID_OTHER_DAY));
     set_venue_order_id_on_cached_order(&cache, &accepted, "V-HELD-012");
 
-    let (status, filled, last_update) = by_venue_order_id;
-    let (later_status, later_filled, later_update) = by_client_order_id;
+    // Each update stamp is a millisecond within the window entry's placement second
+    let updated_at = |ms: u64| format!("2026-09-12T04:05:06.{ms:03}Z");
+    let (status, filled, update_ms) = by_venue_order_id;
+    let (later_status, later_filled, later_update_ms) = by_client_order_id;
     state.orders_status_sequence.lock().await.extend([
         orders_status_body_updated_at(
             &[(
@@ -4747,7 +4750,7 @@ async fn test_futures_orders_status_window_keeps_the_latest_state_both_requests_
                 status,
                 filled,
             )],
-            last_update,
+            &updated_at(update_ms),
         ),
         orders_status_body_updated_at(
             &[
@@ -4768,11 +4771,11 @@ async fn test_futures_orders_status_window_keeps_the_latest_state_both_requests_
                     later_filled,
                 ),
             ],
-            later_update,
+            &updated_at(later_update_ms),
         ),
     ]);
 
-    let kept: Vec<(OrderStatus, Quantity)> = if mass_status {
+    let kept: Vec<(OrderStatus, Quantity, UnixNanos)> = if mass_status {
         let mass_status = client
             .generate_mass_status(None)
             .await
@@ -4782,7 +4785,7 @@ async fn test_futures_orders_status_window_keeps_the_latest_state_both_requests_
         mass_status
             .order_reports()
             .get(&VenueOrderId::from("V-HELD-012"))
-            .map(|report| (report.order_status, report.filled_qty))
+            .map(|report| (report.order_status, report.filled_qty, report.ts_last))
             .into_iter()
             .collect()
     } else {
@@ -4802,12 +4805,19 @@ async fn test_futures_orders_status_window_keeps_the_latest_state_both_requests_
             .unwrap()
             .iter()
             .filter(|report| report.venue_order_id == VenueOrderId::from("V-HELD-012"))
-            .map(|report| (report.order_status, report.filled_qty))
+            .map(|report| (report.order_status, report.filled_qty, report.ts_last))
             .collect()
     };
 
-    let expected: Vec<(OrderStatus, Quantity)> = expected
-        .map(|(status, filled)| (status, Quantity::from(filled)))
+    // The placement stamp is the window entry's 100th millisecond
+    let expected: Vec<(OrderStatus, Quantity, UnixNanos)> = expected
+        .map(|(status, filled, update_ms)| {
+            (
+                status,
+                Quantity::from(filled),
+                UnixNanos::from(WINDOW_ENTRY_PLACED_NS - 100_000_000 + update_ms * 1_000_000),
+            )
+        })
         .into_iter()
         .collect();
     assert_eq!(kept, expected);
