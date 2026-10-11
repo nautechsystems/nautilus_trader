@@ -1797,9 +1797,11 @@ async fn test_futures_mass_status_skips_an_unsized_trigger_only_on_a_flat_contra
     *state.futures_open_orders_json.lock().await = Some(load_test_data(
         "http_futures_open_orders_unsized_trigger.json",
     ));
+
     if let Some(fixture) = positions_fixture {
         *state.futures_open_positions_json.lock().await = Some(load_test_data(fixture));
     }
+
     if history_row {
         // A zero-quantity placement would read as filled were it reported from history
         *state.futures_order_history_json.lock().await =
