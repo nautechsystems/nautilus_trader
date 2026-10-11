@@ -1715,9 +1715,8 @@ async fn test_spot_mass_status_skips_an_unparsable_closed_order_as_incomplete() 
     assert!(!mass_status.reports_complete());
 }
 
-/// An in-scope futures open order that resolves but cannot be parsed fails the read on every path,
-/// including an untouched reduce-only trigger the venue lists without an unfilled size while no
-/// open position sizes it. A read scoped to another contract leaves it out of scope.
+/// An in-scope futures open order that resolves but cannot be parsed fails the read on every path.
+/// A read scoped to another contract leaves it out of scope.
 #[rstest]
 #[case::bulk_unscoped(
     "http_futures_open_orders_unparsable.json",
@@ -1734,11 +1733,6 @@ async fn test_spot_mass_status_skips_an_unparsable_closed_order_as_incomplete() 
     "http_futures_open_orders_unparsable.json",
     OpenOrderRead::MassStatus,
     Err("OpenOrders: failed to parse futures order V-UNPARSABLE")
-)]
-#[case::unsized_trigger_without_a_position(
-    "http_futures_open_orders_unsized_trigger.json",
-    OpenOrderRead::Bulk(None),
-    Err("OpenOrders: failed to parse futures order V-TRIGGER")
 )]
 #[tokio::test]
 async fn test_futures_open_order_reads_fail_on_an_unparsable_order(
@@ -1764,6 +1758,49 @@ async fn test_futures_open_order_reads_fail_on_an_unparsable_order(
             let error = result.expect_err("the unparsable open order fails the read");
             assert!(format!("{error:#}").contains(message), "{error:#}");
         }
+    }
+}
+
+/// An untouched reduce-only trigger the venue lists without an unfilled size takes its size from
+/// the open position. With no position on its contract it has no size to report, so the read skips
+/// it and leaves the set incomplete rather than failing every futures order read; when the open
+/// positions read fails, its size is unknown and the read fails.
+#[rstest]
+#[case::flat_contract(None, true)]
+#[case::positions_read_fails(Some("http_futures_open_positions_error.json"), false)]
+#[tokio::test]
+async fn test_futures_mass_status_skips_an_unsized_trigger_only_on_a_flat_contract(
+    #[case] positions_fixture: Option<&str>,
+    #[case] skipped: bool,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(load_test_data(
+        "http_futures_open_orders_unsized_trigger.json",
+    ));
+    if let Some(fixture) = positions_fixture {
+        *state.futures_open_positions_json.lock().await = Some(load_test_data(fixture));
+    }
+
+    let result = client.generate_mass_status(None).await;
+
+    if skipped {
+        let mass_status = result.unwrap().expect("mass status available");
+        assert!(
+            !mass_status
+                .order_reports()
+                .contains_key(&VenueOrderId::from("V-TRIGGER"))
+        );
+        assert!(!mass_status.reports_complete());
+    } else {
+        let error = result.expect_err("an unsized trigger with no positions read fails the read");
+        assert!(
+            format!("{error:#}").contains(
+                "OpenOrders: futures order V-TRIGGER lists no unfilled size and the open \
+                 positions read failed"
+            ),
+            "{error:#}"
+        );
     }
 }
 

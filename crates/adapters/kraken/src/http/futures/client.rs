@@ -1761,11 +1761,13 @@ impl KrakenFuturesHttpClient {
     /// Requests order status reports, also reporting whether the set is complete.
     ///
     /// An in-scope open order whose instrument cannot be resolved, or that cannot be parsed, fails
-    /// the read. The flag is `false` when a history row cannot be parsed, a historical record's
-    /// instrument cannot be resolved, a history row could not be represented, or the history page
-    /// hands back a continuation token: the read takes one page, since every Kraken `/history`
-    /// endpoint draws on one pool of 100 tokens, replenished at 100 every 10 minutes, at a token
-    /// per page. `ExecutionMassStatus::set_report_window` records the flag for bounded history.
+    /// the read, except an untouched reduce-only trigger listed without an unfilled size that no
+    /// open position sizes, which is skipped. The flag is `false` when such a trigger is skipped, a
+    /// history row cannot be parsed, a historical record's instrument cannot be resolved, a history
+    /// row could not be represented, or the history page hands back a continuation token: the read
+    /// takes one page, since every Kraken `/history` endpoint draws on one pool of 100 tokens,
+    /// replenished at 100 every 10 minutes, at a token per page.
+    /// `ExecutionMassStatus::set_report_window` records the flag for bounded history.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -1801,6 +1803,7 @@ impl KrakenFuturesHttpClient {
             anyhow::bail!("Failed to get open orders: {error_msg}");
         }
 
+        let mut positions_error = None;
         let position_sizes = if response
             .open_orders
             .iter()
@@ -1817,10 +1820,12 @@ impl KrakenFuturesHttpClient {
                         .error
                         .unwrap_or_else(|| "Unknown error".to_string());
                     log::warn!("Failed to get open positions for order quantities: {error}");
+                    positions_error = Some(error);
                     AHashMap::new()
                 }
                 Err(e) => {
                     log::warn!("Failed to get open positions for order quantities: {e}");
+                    positions_error = Some(e.to_string());
                     AHashMap::new()
                 }
             }
@@ -1839,7 +1844,7 @@ impl KrakenFuturesHttpClient {
             }
 
             if let Some(instrument) = resolved {
-                let position_size = if order.unfilled_size.is_none()
+                let sized_by_position = order.unfilled_size.is_none()
                     && matches!(
                         order.order_type,
                         KrakenFuturesOrderType::Stop
@@ -1848,12 +1853,34 @@ impl KrakenFuturesHttpClient {
                             | KrakenFuturesOrderType::TakeProfit
                     )
                     && order.status == KrakenFuturesOrderStatus::Untouched
-                    && order.reduce_only == Some(true)
-                {
+                    && order.reduce_only == Some(true);
+                let position_size = if sized_by_position {
                     position_sizes.get(&order.symbol).copied()
                 } else {
                     None
                 };
+
+                // Such a trigger has no size of its own until it fires. With no open position on
+                // its contract it has none to report, and failing the read would block every
+                // futures order read until it is canceled, so it is skipped; a failed positions
+                // read leaves its size unknown instead, which fails the read.
+                if sized_by_position && position_size.is_none() {
+                    if let Some(error) = &positions_error {
+                        anyhow::bail!(
+                            "OpenOrders: futures order {} lists no unfilled size and the open \
+                             positions read failed: {error}",
+                            order.order_id
+                        );
+                    }
+                    log::warn!(
+                        "Skipping futures order {} on {}: the venue lists no unfilled size and no \
+                         open position sizes it; the set is incomplete",
+                        order.order_id,
+                        order.symbol
+                    );
+                    complete = false;
+                    continue;
+                }
 
                 // An in-scope open order the client cannot parse fails the read: dropped, it reads
                 // to reconciliation as an order the venue does not have.
