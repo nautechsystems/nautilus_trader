@@ -614,16 +614,16 @@ clients, as the adapter guide's scope table requires: dropped, it would read to 
 order or position the venue never had. An in-scope open order or position that cannot be parsed
 fails the read on both clients for the same reason. One futures order is skipped instead: an
 untouched reduce-only stop or take-profit order the venue lists without an unfilled size has no size
-until it fires, and with no open position on its contract to size it, the read skips it with a
-warning and leaves the set incomplete; when the open positions read fails, the read fails. A read
-scoped to an instrument the client does not hold returns no rows rather than failing, since the spot
-and futures clients share the venue and the engine may ask either one about an order it has not
-routed. The completeness flag covers the other gaps: a closed or historical order record or a fill
-record that cannot be parsed marks the set incomplete on both clients, and so does a historical
-order or fill record whose instrument could not be resolved. Position records do not contribute to
-the flag. The single-order status lookup and `query_order` read only the queried instrument's orders
-on both clients, so an unresolvable or unparsable order on another pair or contract is out of scope
-for them rather than failing them.
+until it fires, and with no open position on its contract to size it, the read skips it and its
+order-history rows with a warning and leaves the set incomplete; when the open positions read fails,
+the read fails. A read scoped to an instrument the client does not hold returns no rows rather than
+failing, since the spot and futures clients share the venue and the engine may ask either one about
+an order it has not routed. The completeness flag covers the other gaps: a closed or historical
+order record or a fill record that cannot be parsed marks the set incomplete on both clients, and so
+does a historical order or fill record whose instrument could not be resolved. Position records do
+not contribute to the flag. The single-order status lookup and `query_order` read only the orders of
+the instrument the command names on both clients, so an unresolvable or unparsable order on another
+pair or contract is out of scope for them rather than failing them.
 
 Spot closed-order and fill reads page through an offset until the venue returns an empty page, and
 stop after 500 pages. A read cut short by that cap logs a warning, and how it surfaces depends on

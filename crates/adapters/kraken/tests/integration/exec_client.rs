@@ -1761,17 +1761,36 @@ async fn test_futures_open_order_reads_fail_on_an_unparsable_order(
     }
 }
 
+/// What a futures read makes of an unsized trigger.
+#[derive(Clone, Copy, Debug)]
+enum UnsizedTrigger {
+    Skipped,
+    SizedAt(&'static str),
+    FailsTheRead,
+}
+
 /// An untouched reduce-only trigger the venue lists without an unfilled size takes its size from
-/// the open position. With no position on its contract it has no size to report, so the read skips
-/// it and leaves the set incomplete rather than failing every futures order read; when the open
-/// positions read fails, its size is unknown and the read fails.
+/// the open position on its contract. With none it has no size to report, so the read skips it,
+/// its history rows with it, and leaves the set incomplete rather than failing every futures order
+/// read; when the open positions read fails, its size is unknown and the read fails.
 #[rstest]
-#[case::flat_contract(None, true)]
-#[case::positions_read_fails(Some("http_futures_open_positions_error.json"), false)]
+#[case::flat_contract(None, false, UnsizedTrigger::Skipped)]
+#[case::flat_contract_with_a_history_row(None, true, UnsizedTrigger::Skipped)]
+#[case::sized_by_its_contract_position(
+    Some("http_futures_open_positions_xbtusd.json"),
+    false,
+    UnsizedTrigger::SizedAt("8000")
+)]
+#[case::positions_read_fails(
+    Some("http_futures_open_positions_error.json"),
+    false,
+    UnsizedTrigger::FailsTheRead
+)]
 #[tokio::test]
 async fn test_futures_mass_status_skips_an_unsized_trigger_only_on_a_flat_contract(
     #[case] positions_fixture: Option<&str>,
-    #[case] skipped: bool,
+    #[case] history_row: bool,
+    #[case] expected: UnsizedTrigger,
 ) {
     let (client, _rx, _cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
@@ -1781,26 +1800,51 @@ async fn test_futures_mass_status_skips_an_unsized_trigger_only_on_a_flat_contra
     if let Some(fixture) = positions_fixture {
         *state.futures_open_positions_json.lock().await = Some(load_test_data(fixture));
     }
+    if history_row {
+        // A zero-quantity placement would read as filled were it reported from history
+        *state.futures_order_history_json.lock().await =
+            Some(futures_order_history_json(&[futures_history_element(
+                "OrderPlaced",
+                "e1",
+                "V-TRIGGER",
+                "PI_XBTUSD",
+                "0",
+                "0",
+                1680877245500,
+            )]));
+    }
 
     let result = client.generate_mass_status(None).await;
 
-    if skipped {
-        let mass_status = result.unwrap().expect("mass status available");
-        assert!(
-            !mass_status
-                .order_reports()
-                .contains_key(&VenueOrderId::from("V-TRIGGER"))
-        );
-        assert!(!mass_status.reports_complete());
-    } else {
-        let error = result.expect_err("an unsized trigger with no positions read fails the read");
-        assert!(
-            format!("{error:#}").contains(
-                "OpenOrders: futures order V-TRIGGER lists no unfilled size and the open \
-                 positions read failed"
-            ),
-            "{error:#}"
-        );
+    match expected {
+        UnsizedTrigger::Skipped => {
+            let mass_status = result.unwrap().expect("mass status available");
+            assert!(
+                !mass_status
+                    .order_reports()
+                    .contains_key(&VenueOrderId::from("V-TRIGGER"))
+            );
+            assert!(!mass_status.reports_complete());
+        }
+        UnsizedTrigger::SizedAt(quantity) => {
+            let mass_status = result.unwrap().expect("mass status available");
+            let order_reports = mass_status.order_reports();
+            let report = order_reports
+                .get(&VenueOrderId::from("V-TRIGGER"))
+                .expect("the sized trigger is reported");
+            assert_eq!(report.quantity, Quantity::from(quantity));
+        }
+        UnsizedTrigger::FailsTheRead => {
+            let error =
+                result.expect_err("an unsized trigger with no positions read fails the read");
+            assert!(
+                format!("{error:#}").contains(
+                    "OpenOrders: futures order V-TRIGGER lists no unfilled size and the open \
+                     positions read failed"
+                ),
+                "{error:#}"
+            );
+        }
     }
 }
 

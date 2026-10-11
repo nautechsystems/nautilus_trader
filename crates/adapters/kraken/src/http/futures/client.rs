@@ -1803,35 +1803,33 @@ impl KrakenFuturesHttpClient {
             anyhow::bail!("Failed to get open orders: {error_msg}");
         }
 
-        let mut positions_error = None;
         let position_sizes = if response
             .open_orders
             .iter()
             .any(|order| order.unfilled_size.is_none())
         {
             match self.inner.get_open_positions().await {
-                Ok(response) if response.result == KrakenApiResult::Success => response
+                Ok(response) if response.result == KrakenApiResult::Success => Ok(response
                     .open_positions
                     .into_iter()
                     .map(|position| (position.symbol, position.size))
-                    .collect::<AHashMap<_, _>>(),
+                    .collect::<AHashMap<_, _>>()),
                 Ok(response) => {
                     let error = response
                         .error
                         .unwrap_or_else(|| "Unknown error".to_string());
                     log::warn!("Failed to get open positions for order quantities: {error}");
-                    positions_error = Some(error);
-                    AHashMap::new()
+                    Err(error)
                 }
                 Err(e) => {
                     log::warn!("Failed to get open positions for order quantities: {e}");
-                    positions_error = Some(e.to_string());
-                    AHashMap::new()
+                    Err(e.to_string())
                 }
             }
         } else {
-            AHashMap::new()
+            Ok(AHashMap::new())
         };
+        let mut skipped_open_order_ids = AHashSet::new();
 
         for order in &response.open_orders {
             // Resolve the row and compare instrument ids, so a scoped read cannot match on a
@@ -1854,18 +1852,17 @@ impl KrakenFuturesHttpClient {
                     )
                     && order.status == KrakenFuturesOrderStatus::Untouched
                     && order.reduce_only == Some(true);
-                let position_size = if sized_by_position {
-                    position_sizes.get(&order.symbol).copied()
-                } else {
-                    None
+                let position_size = match &position_sizes {
+                    Ok(sizes) if sized_by_position => sizes.get(&order.symbol).copied(),
+                    _ => None,
                 };
 
                 // Such a trigger has no size of its own until it fires. With no open position on
-                // its contract it has none to report, and failing the read would block every
-                // futures order read until it is canceled, so it is skipped; a failed positions
-                // read leaves its size unknown instead, which fails the read.
+                // its contract it has none to report, and failing would fail every unscoped
+                // futures order read while it rests, so it is skipped, its history rows with it;
+                // a failed positions read leaves its size unknown instead, which fails the read.
                 if sized_by_position && position_size.is_none() {
-                    if let Some(error) = &positions_error {
+                    if let Err(error) = &position_sizes {
                         anyhow::bail!(
                             "OpenOrders: futures order {} lists no unfilled size and the open \
                              positions read failed: {error}",
@@ -1879,6 +1876,7 @@ impl KrakenFuturesHttpClient {
                         order.symbol
                     );
                     complete = false;
+                    skipped_open_order_ids.insert(VenueOrderId::new(order.order_id.as_str()));
                     continue;
                 }
 
@@ -1938,9 +1936,12 @@ impl KrakenFuturesHttpClient {
             // The history lists every lifecycle event, so an order appears once per event. Each
             // report reconciles against the same cached state, so the read hands back one report
             // per order: the open-order snapshot when the venue still lists it, else the latest
-            // history state.
-            let open_order_ids: AHashSet<VenueOrderId> =
-                all_reports.iter().map(|r| r.venue_order_id).collect();
+            // history state. An open order the snapshot skips is not reported from its history.
+            let open_order_ids: AHashSet<VenueOrderId> = all_reports
+                .iter()
+                .map(|r| r.venue_order_id)
+                .chain(skipped_open_order_ids.iter().copied())
+                .collect();
             let mut latest: IndexMap<VenueOrderId, OrderStatusReport> = IndexMap::new();
 
             if response.skipped_rows > 0 {
