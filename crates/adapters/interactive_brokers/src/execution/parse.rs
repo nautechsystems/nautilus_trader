@@ -143,12 +143,17 @@ pub(crate) fn fill_missing_avg_px(
 /// quantity minus the window's net quantity. Once that replay passes through flat, or flips,
 /// every later fill is known, and the entry price is the netting average of the fills after the
 /// last flat crossing. A position that still carries a pre-window remnant keeps IB's average
-/// cost, which position recovery prices from. So does a position whose fills sharing a
-/// timestamp include opposite sides or flip it: fill reports arrive in commission order, so the
-/// execution order of those fills, and with it the entry price, is unknown.
+/// cost, which position recovery prices from. Fill reports arrive in commission order, so fills
+/// sharing a timestamp have no known execution order: when they include opposite sides or flip
+/// the position, the entry price is unknown until a later fill opens from flat or flips.
+///
+/// `combo_leg_fill_reports` holds the leg executions of combo orders, which the fill reports
+/// drop in favor of the spread fill. They still change the leg positions, so the replay counts
+/// them; otherwise their quantity would be read as a pre-window position.
 pub(crate) fn fill_position_avg_px_from_fills(
     position_reports: &mut [PositionStatusReport],
     fill_reports: &[FillReport],
+    combo_leg_fill_reports: &[FillReport],
 ) {
     for report in position_reports
         .iter_mut()
@@ -156,6 +161,7 @@ pub(crate) fn fill_position_avg_px_from_fills(
     {
         let mut fills: Vec<_> = fill_reports
             .iter()
+            .chain(combo_leg_fill_reports)
             .filter(|fill| {
                 fill.account_id == report.account_id && fill.instrument_id == report.instrument_id
             })
@@ -186,28 +192,27 @@ fn signed_fill_qty(fill: &FillReport) -> Decimal {
 // Fills on the open side average in, reducing fills keep the entry price, and a flip opens at
 // the flipping fill's price; a lot that predates the window has no known entry price until the
 // replay passes through flat. Fills sharing a timestamp have no known order, so a group of them
-// that mixes sides or flips the position makes the entry price unknown.
+// that mixes sides or flips the position leaves the entry price unknown until a later fill
+// opens from flat or flips.
 fn entry_price_after_window(pre_window_qty: Decimal, fills: &[&FillReport]) -> Option<Decimal> {
     let mut quantity = pre_window_qty;
     let mut entry: Option<Decimal> = None;
 
     for group in fills.chunk_by(|a, b| a.ts_event == b.ts_event) {
         if group.len() > 1 {
-            if group
-                .iter()
-                .any(|fill| fill.order_side != group[0].order_side)
-            {
-                return None;
-            }
-
             let group_qty: Decimal = group.iter().map(|fill| signed_fill_qty(fill)).sum();
             let end_qty = quantity + group_qty;
-
-            if !quantity.is_zero()
+            let mixes_sides = group
+                .iter()
+                .any(|fill| fill.order_side != group[0].order_side);
+            let flips = !quantity.is_zero()
                 && !end_qty.is_zero()
-                && quantity.is_sign_negative() != end_qty.is_sign_negative()
-            {
-                return None;
+                && quantity.is_sign_negative() != end_qty.is_sign_negative();
+
+            if mixes_sides || flips {
+                quantity = end_qty;
+                entry = None;
+                continue;
             }
         }
 
@@ -941,7 +946,7 @@ mod tests {
 
         fill_reports.push(other_fill);
 
-        fill_position_avg_px_from_fills(&mut reports, &fill_reports);
+        fill_position_avg_px_from_fills(&mut reports, &fill_reports, &[]);
 
         assert_eq!(
             reports[0].avg_px_open,
@@ -1006,7 +1011,7 @@ mod tests {
             1_790_790_301_000_000_000,
         )];
 
-        fill_position_avg_px_from_fills(&mut reports, &fill_reports);
+        fill_position_avg_px_from_fills(&mut reports, &fill_reports, &[]);
 
         assert_eq!(
             reports[0].avg_px_open,
@@ -1054,7 +1059,7 @@ mod tests {
             ),
         ];
 
-        fill_position_avg_px_from_fills(&mut reports, &fill_reports);
+        fill_position_avg_px_from_fills(&mut reports, &fill_reports, &[]);
 
         assert_eq!(
             reports[0].avg_px_open,
@@ -1131,11 +1136,132 @@ mod tests {
             fill_reports.reverse();
         }
 
-        fill_position_avg_px_from_fills(&mut reports, &fill_reports);
+        fill_position_avg_px_from_fills(&mut reports, &fill_reports, &[]);
 
         assert_eq!(
             reports[0].avg_px_open,
             Some(Decimal::from_str(expected).unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_fill_position_avg_px_from_fills_reopens_after_ambiguous_timestamp_group(
+        #[values(false, true)] reversed: bool,
+    ) {
+        // Starting flat, tied BUY 1 and SELL 1 leave the entry price unknown, but they net to
+        // flat, so the later BUY 1 opens the current lot at 110.00 in either delivery order
+        let instrument_id = InstrumentId::from("SOL/USD.PAXOS");
+        let account_id = AccountId::from("IB-DUR151935");
+        let mut reports = vec![PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from("1"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            Some(Decimal::from_str("110.15").unwrap()),
+        )];
+        let ts_event = 1_790_845_000_000_000_000;
+        let mut tied = vec![
+            crypto_fill(
+                account_id,
+                instrument_id,
+                OrderSide::Buy,
+                "1",
+                "100.00",
+                "T-1",
+                ts_event,
+            ),
+            crypto_fill(
+                account_id,
+                instrument_id,
+                OrderSide::Sell,
+                "1",
+                "105.00",
+                "T-2",
+                ts_event,
+            ),
+        ];
+
+        if reversed {
+            tied.reverse();
+        }
+
+        let mut fill_reports = tied;
+        fill_reports.push(crypto_fill(
+            account_id,
+            instrument_id,
+            OrderSide::Buy,
+            "1",
+            "110.00",
+            "T-3",
+            ts_event + 1_000_000_000,
+        ));
+
+        fill_position_avg_px_from_fills(&mut reports, &fill_reports, &[]);
+
+        assert_eq!(
+            reports[0].avg_px_open,
+            Some(Decimal::from_str("110.00").unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_fill_position_avg_px_from_fills_counts_combo_leg_fills() {
+        // Starting flat, SELL 2 at 5 and BUY 1 at 3 leave short 1 at 5, then a combo leg BUY 2
+        // at 4 flips to long 1 at 4. The fill reports drop that leg in favor of the spread fill;
+        // read as a pre-window short 1, it would report 3.00 instead
+        let instrument_id = InstrumentId::from("SOL/USD.PAXOS");
+        let account_id = AccountId::from("IB-DUR151935");
+        let mut reports = vec![PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from("1"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            Some(Decimal::from_str("4.15").unwrap()),
+        )];
+        let ts_event = 1_790_845_000_000_000_000;
+        let fill_reports = vec![
+            crypto_fill(
+                account_id,
+                instrument_id,
+                OrderSide::Sell,
+                "2",
+                "5.00",
+                "T-1",
+                ts_event,
+            ),
+            crypto_fill(
+                account_id,
+                instrument_id,
+                OrderSide::Buy,
+                "1",
+                "3.00",
+                "T-2",
+                ts_event + 1_000_000_000,
+            ),
+        ];
+        let combo_leg_fill_reports = vec![crypto_fill(
+            account_id,
+            instrument_id,
+            OrderSide::Buy,
+            "2",
+            "4.00",
+            "T-3",
+            ts_event + 2_000_000_000,
+        )];
+
+        fill_position_avg_px_from_fills(&mut reports, &fill_reports, &combo_leg_fill_reports);
+
+        assert_eq!(
+            reports[0].avg_px_open,
+            Some(Decimal::from_str("4.00").unwrap())
         );
     }
 

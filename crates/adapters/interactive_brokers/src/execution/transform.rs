@@ -315,6 +315,25 @@ mod tests {
     }
 
     #[rstest]
+    fn test_quote_quantity_buy_tagged_as_sell_is_rejected_before_submission() {
+        // IBOrderTags can override the IB action, so the check must see the tagged action
+        let (order, provider) = create_quote_quantity_crypto_order(
+            OrderType::Market,
+            NautilusTimeInForce::Gtc,
+            Some(r#"{"action":"SELL"}"#),
+        );
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("cash quantity must not be sent on a tagged SELL order");
+
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("only accepts a quote quantity (`cash_qty`) for BUY orders"),
+            "unexpected reason: {message}"
+        );
+    }
+
+    #[rstest]
     fn test_quote_quantity_without_crypto_or_inverse_contract_is_rejected() {
         let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
         let provider = InteractiveBrokersInstrumentProvider::new(

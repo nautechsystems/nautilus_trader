@@ -366,6 +366,16 @@ impl IbReportClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
+        let (reports, _) = self.generate_fill_reports_with_combo_legs(cmd).await?;
+        Ok(reports)
+    }
+
+    /// Returns the fill reports, and separately the combo leg executions they drop in favor of
+    /// the spread fills, which still change the leg positions.
+    pub(super) async fn generate_fill_reports_with_combo_legs(
+        &self,
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<(Vec<FillReport>, Vec<FillReport>)> {
         let client = self.client.as_ref();
 
         let filter =
@@ -438,12 +448,14 @@ impl IbReportClient {
                 .join(", ")
         );
 
-        if !combo_executions.is_empty() {
+        let combo_leg_reports = if combo_executions.is_empty() {
+            Vec::new()
+        } else {
             self.resolve_combo_fill_reports(&cmd, client, combo_executions, &mut reports, ts_init)
-                .await?;
-        }
+                .await?
+        };
 
-        Ok(reports)
+        Ok((reports, combo_leg_reports))
     }
 
     /// Inserts `report`, replacing an earlier report for the same account, instrument, and
@@ -594,8 +606,9 @@ impl IbReportClient {
     // A combo-level execution carries a generic BAG contract without its legs, so its spread
     // resolves through the combo order's contract by permanent ID. It becomes the spread
     // order's fill with zero commission, as on the live path, and the combo's leg executions
-    // are dropped: they share its order IDs, so they would fill the spread order at leg prices,
-    // and startup reconciles leg positions from IB's position reports.
+    // are removed from `reports` and returned: they share its order IDs, so they would fill the
+    // spread order at leg prices, and startup reconciles leg positions from IB's position
+    // reports.
     async fn resolve_combo_fill_reports(
         &self,
         cmd: &GenerateFillReports,
@@ -603,7 +616,7 @@ impl IbReportClient {
         combo_executions: Vec<ExecutionData>,
         reports: &mut Vec<FillReport>,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<FillReport>> {
         let combo_perm_ids: AHashSet<i64> = combo_executions
             .iter()
             .map(|exec_data| exec_data.execution.perm_id)
@@ -613,7 +626,11 @@ impl IbReportClient {
             .iter()
             .map(|perm_id| ib_venue_order_id(0, *perm_id))
             .collect();
-        reports.retain(|report| !combo_venue_order_ids.contains(&report.venue_order_id));
+        let combo_leg_reports: Vec<FillReport> = reports
+            .extract_if(.., |report| {
+                combo_venue_order_ids.contains(&report.venue_order_id)
+            })
+            .collect();
 
         for exec_data in combo_executions {
             let perm_id = exec_data.execution.perm_id;
@@ -642,7 +659,7 @@ impl IbReportClient {
             }
         }
 
-        Ok(())
+        Ok(combo_leg_reports)
     }
 
     async fn combo_order_contracts(

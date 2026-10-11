@@ -467,10 +467,13 @@ alone by creating its internal reconciliation fill. This preserves the report bo
 reports venue state, while the engine owns inferred state needed to reconcile its cache.
 
 IB's position average cost includes commissions, while a position rebuilt from fills averages their
-prices. When the reported fills of an instrument net to exactly its position quantity, the position
-report carries the entry price of those fills instead, so a position held across a restart
-reconciles. Otherwise the report keeps IB's average cost, which the engine's reconciliation fill
-uses.
+prices. The adapter replays an instrument's fills, including the leg executions of combo orders,
+from the quantity held before the fill window. When the replay passes through flat or flips, the
+position report carries the average price of the fills after the last crossing, so a position held
+across a restart reconciles. Fills that share a timestamp have no known execution order, so a group
+of them that mixes sides or flips the position leaves the entry price unknown until a later fill
+opens from flat or flips. Otherwise the report keeps IB's average cost, which the engine's
+reconciliation fill uses.
 
 On connect, the execution client resolves the instrument of every open position in the account and
 publishes any the cache does not hold, so a position in a contract outside the provider's `load_ids`
