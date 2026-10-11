@@ -93,6 +93,8 @@ Released on TBD (UTC).
 - Fixed Kraken spot and futures wallets retaining balances reported at zero (#5186), thanks @zhaow-de
 - Fixed Kraken futures margin currencies, aggregation, and maintenance requirements (#5199), thanks @zhaow-de
 - Fixed Kraken futures reads silently omitting unresolved live orders and positions (#5217), thanks @zhaow-de
+- Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
+- Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
 - Fixed Polymarket bounded restarts marking cached closed orders as incomplete
 - Fixed Polymarket bounded restarts omitting confirmed partial fills from resting orders
 - Fixed Polymarket recovered BUY overfills being rejected instead of raising order quantity
@@ -146,6 +148,7 @@ Released on TBD (UTC).
 - Fixed Binance and Hyperliquid custom data examples to unwrap `CustomData` (#5246), thanks @Martingale42
 - Updated Derive integration guide for API v3 setup, margin models, and recovery limits
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
+- Clarified Lighter cancel-all scope and batch cancellation failure handling
 
 ### Deprecations
 

@@ -420,9 +420,7 @@ async fn tx(
     Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     state.tx_calls.fetch_add(1, Ordering::Relaxed);
-    if state.tx_response_blocked.load(Ordering::Acquire) {
-        state.tx_response_release.notified().await;
-    }
+
     let Some(mut body) = state.tx_responses.lock().await.pop_front() else {
         return (
             StatusCode::BAD_REQUEST,
@@ -471,6 +469,12 @@ async fn tx(
     object.insert("account_index".to_string(), info["AccountIndex"].clone());
     object.insert("api_key_index".to_string(), info["ApiKeyIndex"].clone());
     object.insert("nonce".to_string(), info["Nonce"].clone());
+    drop(frames);
+
+    if state.tx_response_blocked.load(Ordering::Acquire) {
+        state.tx_response_release.notified().await;
+    }
+
     (StatusCode::OK, body.to_string()).into_response()
 }
 
@@ -3725,6 +3729,262 @@ async fn test_cancel_all_orders_venue_rejection_suppresses_cancel_rejected_for_o
     );
 
     client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::failed_transaction(true)]
+#[case::unresolved_transaction(false)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_preserves_live_updates(#[case] failed: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-CANCEL-LIVE");
+    let (index, venue_id) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510124",
+    )
+    .await;
+
+    if failed {
+        state.tx_responses.lock().await.push_back(json!({
+            "status": 0, "event_info": json!({"ae":"invalid client order index"}).to_string(),
+        }));
+    }
+
+    client
+        .cancel_all_orders(CancelAllOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_tx_calls(&state, 1).await;
+    let mut entry = account_all_orders_open_entry(
+        index,
+        venue_id.as_str(),
+        &index.to_string(),
+        TEST_ORDER_NONCE,
+    );
+    entry["price"] = json!("2362.31");
+    entry["base_price"] = json!(236_231);
+    state.push_frame(&json!({
+        "type": "update/account_all_orders",
+        "channel": format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+        "orders": {"0": [entry]},
+    }));
+
+    match next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .expect("live update after cancel-all")
+    {
+        OrderEventAny::Updated(event) => {
+            assert_eq!(event.client_order_id, id);
+            assert_eq!(event.venue_order_id, Some(venue_id));
+            assert_eq!(event.instrument_id, eth_perp_id());
+            assert_eq!(event.strategy_id, strategy_id());
+            assert_eq!(event.price, Some(Price::from("2362.31")));
+            assert_eq!(event.quantity, Quantity::from("0.0050"));
+        }
+        other => panic!("expected update without an invalid cancel rejection, was {other:?}"),
+    }
+
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_ignores_stale_terminal_probe() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-CANCEL-STALE");
+    let (index, venue_id) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510125",
+    )
+    .await;
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[], None));
+    *state.inactive_orders_response.lock().await = Some(http_orders_payload(
+        &[http_order_fixture(
+            venue_id.as_str(),
+            &index.to_string(),
+            "canceled",
+            "0.0000",
+        )],
+        None,
+    ));
+    state.tx_responses.lock().await.push_back(json!({
+        "status": 2, "event_info": json!({"ae":""}).to_string(),
+    }));
+    state.tx_response_blocked.store(true, Ordering::Release);
+
+    let cancel = || {
+        CancelAllOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    };
+
+    client.cancel_all_orders(cancel()).unwrap();
+    await_tx_calls(&state, 1).await;
+    client.cancel_all_orders(cancel()).unwrap();
+    await_send_tx_count(&state, 3).await;
+    state.tx_response_blocked.store(false, Ordering::Release);
+    state.tx_response_release.notify_one();
+    assert!(
+        next_event_matching(&mut rx, Duration::from_secs(3), |event| {
+            matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_)))
+        })
+        .await
+        .is_none(),
+        "an older cancel probe must not report over a newer cancel"
+    );
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 1);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::cancel_all(false)]
+#[case::explicit_batch(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_batch_cancel_recovers_terminal_rest_report(#[case] explicit: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-CANCEL-REST");
+    let (index, venue_id) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510123",
+    )
+    .await;
+
+    if explicit {
+        let event = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+            trader_id(),
+            strategy_id(),
+            eth_perp_id(),
+            id,
+            Some(account_id()),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_id),
+        ));
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[], None));
+    *state.inactive_orders_response.lock().await = Some(http_orders_payload(
+        &[http_order_fixture(
+            venue_id.as_str(),
+            &index.to_string(),
+            "canceled",
+            "0.0000",
+        )],
+        None,
+    ));
+    state.tx_responses.lock().await.push_back(json!({
+        "status": 2, "event_info": json!({"ae":""}).to_string(),
+    }));
+
+    if explicit {
+        client
+            .batch_cancel_orders(BatchCancelOrders::new(
+                trader_id(),
+                Some(client_id()),
+                strategy_id(),
+                eth_perp_id(),
+                vec![CancelOrder::new(
+                    trader_id(),
+                    Some(client_id()),
+                    strategy_id(),
+                    eth_perp_id(),
+                    id,
+                    Some(venue_id),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )],
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+    } else {
+        client
+            .cancel_all_orders(CancelAllOrders::new(
+                trader_id(),
+                Some(client_id()),
+                strategy_id(),
+                eth_perp_id(),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+    }
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(8), |event| {
+        matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_)))
+    })
+    .await
+    .expect("terminal REST recovery without an account stream cancellation");
+
+    match event {
+        ExecutionEvent::Report(ExecutionReport::Order(report)) => {
+            assert_eq!(report.client_order_id, Some(id));
+            assert_eq!(report.venue_order_id, venue_id);
+            assert_eq!(report.account_id, account_id());
+            assert_eq!(report.instrument_id, eth_perp_id());
+            assert_eq!(report.order_status, OrderStatus::Canceled);
+        }
+        other => panic!("expected terminal order report, was {other:?}"),
+    }
+
+    assert_eq!(state.tx_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 1);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

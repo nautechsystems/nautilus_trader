@@ -97,9 +97,9 @@ The adapter has these limits:
   not implemented. Batch submit does not use `CreateGroupedOrders`.
 - Order lists submit up to 15 independent transactions sequentially over WebSocket. Explicit batch
   cancellation also accepts at most 15 transactions per command.
-- The execution client implements `CancelAllOrders` from cached open orders filtered by the requested
-  instrument and optional `order_side`, across strategies. Each cancellation retains the order's
-  owning strategy. The native cancel-all transaction cannot enforce the side filter, and the local
+- The execution client implements `CancelAllOrders` from cached open orders on its account, filtered
+  by the requested instrument and optional `order_side`, across strategies. Each cancellation retains
+  the order's owning strategy. The native cancel-all transaction cannot enforce the side filter, and the local
   signing schema has no market restriction. Explicit per-order cancellations preserve these filters
   and are sent in WebSocket batches of up to 15 transactions.
 - Spot trading supports market and limit orders. Conditional stop-loss and take-profit orders are
@@ -599,8 +599,10 @@ the request ID and each signed transaction hash.
 A pre-admission rejection fails the whole batch without consuming its nonces; an invalid-nonce
 response also triggers nonce refresh. An acknowledgement confirms transaction admission, not order
 cancellation. Individual cancellations can fail after admission while other transactions in the batch
-succeed; these execution failures consume their nonces. Order updates and transaction lookups
-resolve cancellation outcomes.
+succeed; these execution failures consume their nonces. Order updates and transaction lookups resolve
+each batched cancellation, including orders not in `PendingCancel`, such as those selected by
+`CancelAllOrders`. For cached orders, the adapter emits `OrderCancelRejected` only if the order is
+`PendingCancel` when the cancel is dispatched; otherwise it logs the failure.
 Ambiguous delivery retains pending state for reconciliation instead of resending the batch.
 Before signing the next chunk, the adapter waits up to 10 seconds for the current chunk's
 acknowledgements. On timeout, dispatch continues and retains unacknowledged entries for reconciliation.

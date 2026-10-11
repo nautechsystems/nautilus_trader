@@ -99,7 +99,7 @@ use crate::{
     http::{
         client::{LIGHTER_REST_PAGE_SIZE, LighterHttpClient, LighterRawHttpClient},
         error::LighterHttpError,
-        models::{LighterAccountDetail, LighterSendTxRequest},
+        models::{LighterAccountDetail, LighterSendTxRequest, LighterTx},
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
             LighterSortDirection, LighterTradeSortBy, LighterTradesQuery,
@@ -1777,35 +1777,23 @@ impl LighterExecutionClient {
 
         let context = self.fanout_dispatch_context(credential)?;
 
-        for cancel in cancels {
-            self.dispatch
-                .set_pending_order_action(cancel.client_order_id, PendingOrderAction::Cancel);
-        }
-
         let emit_cancel_rejected: Vec<bool> = cancels
             .iter()
             .map(|cancel| self.can_emit_order_cancel_rejected(&cancel.client_order_id))
             .collect();
 
-        for (cancel, emit) in cancels.iter().zip(&emit_cancel_rejected) {
-            if !emit {
-                self.dispatch.clear_pending_order_action_if(
-                    &cancel.client_order_id,
-                    PendingOrderAction::Cancel,
-                );
-            }
-        }
-
         let mut plans = Vec::with_capacity(cancels.len());
 
         for (cancel, emit_cancel_rejected) in cancels.iter().zip(emit_cancel_rejected) {
+            let action = PendingOrderAction::cancel(emit_cancel_rejected);
+            self.dispatch
+                .set_pending_order_action(cancel.client_order_id, action);
+
             match self.prepare_cancel_order_plan(cancel) {
                 Ok(plan) => plans.push((plan, emit_cancel_rejected)),
                 Err(e) => {
-                    self.dispatch.clear_pending_order_action_if(
-                        &cancel.client_order_id,
-                        PendingOrderAction::Cancel,
-                    );
+                    self.dispatch
+                        .clear_pending_order_action_if(&cancel.client_order_id, action);
                     let reason = format!("Lighter cancel_order failed: {e}");
 
                     if emit_cancel_rejected {
@@ -1882,7 +1870,7 @@ impl LighterExecutionClient {
                         Err(e) => {
                             context.dispatch.clear_pending_order_action_if(
                                 &failure.2,
-                                PendingOrderAction::Cancel,
+                                PendingOrderAction::CancelUnmarked,
                             );
 
                             log::warn!(
@@ -3176,12 +3164,14 @@ impl FanoutDispatchContext {
             &prepared.client_order_id,
             prepared.send_reservation.connection_epoch,
             prepared.nonce,
+            emit_cancel_rejected,
         );
         self.dispatch.enqueue_pending_sendtx(PendingSendTx {
             batch_id: batch_id.map(str::to_string),
             connection_epoch: prepared.send_reservation.connection_epoch,
-            kind: if emit_cancel_rejected {
+            kind: if emit_cancel_rejected || batch_id.is_some() {
                 PendingSendTxKind::Cancel {
+                    emit_cancel_rejected,
                     strategy_id: prepared.strategy_id,
                     instrument_id: prepared.instrument_id,
                     client_order_id: prepared.client_order_id,
@@ -3223,11 +3213,14 @@ impl FanoutDispatchContext {
             prepared.send_reservation.connection_epoch,
             prepared.nonce,
         );
-        self.dispatch
-            .clear_pending_order_action_if(&prepared.client_order_id, PendingOrderAction::Cancel);
+        let current = self.dispatch.clear_pending_cancel_if_nonce(
+            &prepared.client_order_id,
+            prepared.send_reservation.connection_epoch,
+            prepared.nonce,
+        );
         rollback_tx_dispatch(&self.dispatch, &self.credential, None, prepared.nonce);
 
-        if emit_cancel_rejected {
+        if current && emit_cancel_rejected {
             self.emitter.emit_order_cancel_rejected_event(
                 prepared.strategy_id,
                 prepared.instrument_id,
@@ -3517,10 +3510,7 @@ async fn probe_acked_cancel(
     context: &AckedOrderProbeContext,
 ) -> anyhow::Result<()> {
     let PendingSendTxKind::Cancel {
-        strategy_id,
-        instrument_id,
-        client_order_id,
-        venue_order_id,
+        client_order_id, ..
     } = pending.kind
     else {
         return Ok(());
@@ -3536,61 +3526,7 @@ async fn probe_acked_cancel(
 
         match context.http_client.get_tx(pending.tx_hash.clone()).await {
             Ok(tx) => {
-                anyhow::ensure!(
-                    tx_hash_matches(&tx.hash, &pending.tx_hash)
-                        && tx.tx_type == LighterTxType::CancelOrder as u8
-                        && tx.account_index == context.credential.account_index()
-                        && tx.api_key_index == pending.api_key_index
-                        && tx.nonce == pending.nonce,
-                    "Lighter transaction lookup did not match acknowledged cancel identity"
-                );
-                let event = parse_acked_tx_event(&tx.event_info)?;
-
-                if context.connection_epoch.load(Ordering::Acquire) != pending.connection_epoch {
-                    return Ok(());
-                }
-
-                if tx.status == LighterTxStatus::Failed || !event.app_error.is_empty() {
-                    if context.dispatch.clear_pending_cancel_if_nonce(
-                        &client_order_id,
-                        pending.connection_epoch,
-                        pending.nonce,
-                    ) {
-                        context.emitter.emit_order_cancel_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            venue_order_id,
-                            &format!("Lighter cancel transaction failed: {}", event.app_error),
-                            context.clock.get_time_ns(),
-                        );
-                    }
-
-                    // Execution failures consume their nonce, unlike pre-admission rejections
-                    return Ok(());
-                }
-
-                if tx.status == LighterTxStatus::Executed {
-                    if let Some(report) = lookup_order_status_report(
-                        &context.http_client,
-                        &context.registry,
-                        &context.credential,
-                        context.account_id,
-                        Some(instrument_id),
-                        Some(&client_order_id),
-                        venue_order_id.as_ref(),
-                        &context.dispatch,
-                        context.clock,
-                    )
-                    .await?
-                        && context.connection_epoch.load(Ordering::Acquire)
-                            == pending.connection_epoch
-                        && context.dispatch.pending_cancel_nonce(&client_order_id)
-                            == Some((pending.connection_epoch, pending.nonce))
-                    {
-                        context.emitter.send_order_status_report(report);
-                    }
-
+                if resolve_acked_cancel(pending, context, tx).await? {
                     return Ok(());
                 }
             }
@@ -3609,6 +3545,113 @@ async fn probe_acked_cancel(
     log::warn!(
         "Lighter batch cancel outcome unresolved for {client_order_id}; retaining pending action for reconciliation"
     );
+    Ok(())
+}
+
+async fn resolve_acked_cancel(
+    pending: &PendingSendTx,
+    context: &AckedOrderProbeContext,
+    tx: LighterTx,
+) -> anyhow::Result<bool> {
+    anyhow::ensure!(
+        tx_hash_matches(&tx.hash, &pending.tx_hash)
+            && tx.tx_type == LighterTxType::CancelOrder as u8
+            && tx.account_index == context.credential.account_index()
+            && tx.api_key_index == pending.api_key_index
+            && tx.nonce == pending.nonce,
+        "Lighter transaction lookup did not match acknowledged cancel identity"
+    );
+    let event = parse_acked_tx_event(&tx.event_info)?;
+
+    if context.connection_epoch.load(Ordering::Acquire) != pending.connection_epoch {
+        return Ok(true);
+    }
+
+    if tx.status == LighterTxStatus::Failed || !event.app_error.is_empty() {
+        let reason = format!("Lighter cancel transaction failed: {}", event.app_error);
+        log::warn!("{reason} for nonce={}", pending.nonce);
+        reject_cancel_order(
+            &context.dispatch,
+            &context.emitter,
+            pending,
+            &reason,
+            context.clock.get_time_ns(),
+        );
+
+        // Execution failures consume their nonce, unlike pre-admission rejections
+        return Ok(true);
+    }
+
+    if tx.status == LighterTxStatus::Executed {
+        recover_acked_cancel_report(pending, context).await?;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+async fn recover_acked_cancel_report(
+    pending: &PendingSendTx,
+    context: &AckedOrderProbeContext,
+) -> anyhow::Result<()> {
+    let PendingSendTxKind::Cancel {
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        ..
+    } = pending.kind
+    else {
+        return Ok(());
+    };
+
+    let lookup = OrderReportLookup::new(
+        &context.registry,
+        &context.dispatch,
+        Some(instrument_id),
+        Some(&client_order_id),
+        venue_order_id.as_ref(),
+    )?;
+    let report = collect_order_status_report(
+        &context.http_client,
+        &context.registry,
+        &context.credential,
+        context.account_id,
+        &lookup,
+        context.clock,
+    )
+    .await?;
+
+    if context.connection_epoch.load(Ordering::Acquire) != pending.connection_epoch {
+        return Ok(());
+    }
+
+    let Some(report) = report else {
+        return Ok(());
+    };
+
+    let report = lookup.translate(&context.dispatch, report);
+    let current = if report.order_status.is_closed() {
+        context.dispatch.clear_pending_cancel_if_nonce(
+            &client_order_id,
+            pending.connection_epoch,
+            pending.nonce,
+        )
+    } else {
+        context.dispatch.pending_cancel_nonce(&client_order_id)
+            == Some((pending.connection_epoch, pending.nonce))
+    };
+
+    if !current {
+        return Ok(());
+    }
+
+    let report = if report.order_status.is_closed() {
+        report
+    } else {
+        context.dispatch.preserve_pending_order_status(report)
+    };
+
+    context.emitter.send_order_status_report(report);
     Ok(())
 }
 
@@ -4060,10 +4103,7 @@ fn handle_send_tx_rejection_for_connection(
             );
         }
         PendingSendTxKind::Cancel {
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
+            client_order_id, ..
         } => {
             log::error!(
                 "{reason} attributed to cancel cloid={client_order_id} nonce={} api_key_index={}; diagnostic_code={code:?} diagnostic_message={message:?}",
@@ -4078,15 +4118,8 @@ fn handle_send_tx_rejection_for_connection(
                     pending.nonce,
                 );
             }
-            dispatch.clear_pending_order_action_if(client_order_id, PendingOrderAction::Cancel);
-            emitter.emit_order_cancel_rejected_event(
-                *strategy_id,
-                *instrument_id,
-                *client_order_id,
-                *venue_order_id,
-                reason,
-                now,
-            );
+
+            reject_cancel_order(dispatch, emitter, &pending, reason, now);
         }
         PendingSendTxKind::Modify {
             strategy_id,
@@ -4134,6 +4167,41 @@ fn handle_send_tx_rejection_for_connection(
     }
 
     needs_nonce_resync
+}
+
+fn reject_cancel_order(
+    dispatch: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    pending: &PendingSendTx,
+    reason: &str,
+    now: UnixNanos,
+) {
+    let PendingSendTxKind::Cancel {
+        emit_cancel_rejected,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+    } = pending.kind
+    else {
+        return;
+    };
+
+    if dispatch.clear_pending_cancel_if_nonce(
+        &client_order_id,
+        pending.connection_epoch,
+        pending.nonce,
+    ) && emit_cancel_rejected
+    {
+        emitter.emit_order_cancel_rejected_event(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            reason,
+            now,
+        );
+    }
 }
 
 fn lighter_reason_indicates_post_only_rejection(reason: &str) -> bool {
@@ -4808,7 +4876,13 @@ impl ExecutionClient for LighterExecutionClient {
         let cancels: Vec<_> = self
             .core
             .cache()
-            .orders_open(None, Some(&cmd.instrument_id), None, None, cmd.order_side)
+            .orders_open(
+                None,
+                Some(&cmd.instrument_id),
+                None,
+                Some(&self.core.account_id),
+                cmd.order_side,
+            )
             .into_iter()
             .map(|order| {
                 cancel_order_from_cancel_all(&cmd, order.client_order_id(), order.strategy_id())
@@ -8800,22 +8874,75 @@ mod tests {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
         let other_instrument_id = InstrumentId::from("BTC-PERP.LIGHTER");
+        let selected_account = account_id();
+        let other_account = AccountId::from("LIGHTER-002");
         let mut orders = Vec::new();
 
-        for (index, (instrument, owner, side, open)) in [
-            (instrument_id, "S-001", OrderSide::Buy, true),
-            (instrument_id, "S-001", OrderSide::Sell, true),
-            (instrument_id, "S-002", OrderSide::Buy, true),
-            (instrument_id, "S-002", OrderSide::Sell, true),
-            (other_instrument_id, "S-001", OrderSide::Buy, true),
-            (other_instrument_id, "S-002", OrderSide::Sell, true),
-            (instrument_id, "S-001", OrderSide::Buy, false),
-            (instrument_id, "S-002", OrderSide::Sell, false),
+        for (index, (instrument, owner, side, open, account)) in [
+            (
+                instrument_id,
+                "S-001",
+                OrderSide::Buy,
+                true,
+                selected_account,
+            ),
+            (
+                instrument_id,
+                "S-001",
+                OrderSide::Sell,
+                true,
+                selected_account,
+            ),
+            (
+                instrument_id,
+                "S-002",
+                OrderSide::Buy,
+                true,
+                selected_account,
+            ),
+            (
+                instrument_id,
+                "S-002",
+                OrderSide::Sell,
+                true,
+                selected_account,
+            ),
+            (
+                other_instrument_id,
+                "S-001",
+                OrderSide::Buy,
+                true,
+                selected_account,
+            ),
+            (
+                other_instrument_id,
+                "S-002",
+                OrderSide::Sell,
+                true,
+                selected_account,
+            ),
+            (
+                instrument_id,
+                "S-001",
+                OrderSide::Buy,
+                false,
+                selected_account,
+            ),
+            (
+                instrument_id,
+                "S-002",
+                OrderSide::Sell,
+                false,
+                selected_account,
+            ),
+            (instrument_id, "S-001", OrderSide::Buy, true, other_account),
+            (instrument_id, "S-002", OrderSide::Sell, true, other_account),
         ]
         .into_iter()
         .enumerate()
         {
             if empty
+                && account == selected_account
                 && instrument == instrument_id
                 && open
                 && order_side.is_none_or(|filter| filter == side)
@@ -8833,7 +8960,7 @@ mod tests {
                 .price(Price::from("2361.31"))
                 .build();
             let venue_order_id = VenueOrderId::from(format!("{}", 123 + index));
-            let accepted = TestOrderEventStubs::accepted(&order, account_id(), venue_order_id);
+            let accepted = TestOrderEventStubs::accepted(&order, account, venue_order_id);
             cache_order(&cache, order.clone());
             cache.borrow_mut().update_order(&accepted).unwrap();
             client
@@ -8847,7 +8974,7 @@ mod tests {
                     order.strategy_id(),
                     instrument,
                     order.client_order_id(),
-                    Some(account_id()),
+                    Some(account),
                     UUID4::new(),
                     UnixNanos::default(),
                     UnixNanos::default(),
@@ -8855,7 +8982,7 @@ mod tests {
                     Some(venue_order_id),
                 ))
             } else {
-                TestOrderEventStubs::canceled(&order, account_id(), Some(venue_order_id))
+                TestOrderEventStubs::canceled(&order, account, Some(venue_order_id))
             };
 
             cache.borrow_mut().update_order(&event).unwrap();
@@ -9287,10 +9414,14 @@ mod tests {
             client
                 .dispatch
                 .set_pending_order_action(client_order_id, PendingOrderAction::Cancel);
+            client
+                .dispatch
+                .set_pending_cancel_nonce(&client_order_id, 0, nonce, true);
             client.dispatch.enqueue_pending_sendtx(PendingSendTx {
                 batch_id: Some(if i == 0 { "batch-b" } else { "batch-a" }.to_string()),
                 connection_epoch: 0,
                 kind: PendingSendTxKind::Cancel {
+                    emit_cancel_rejected: true,
                     strategy_id: strategy_id(),
                     instrument_id,
                     client_order_id,
@@ -12358,10 +12489,17 @@ mod tests {
         venue_order_id: VenueOrderId,
         nonce: i64,
     ) {
+        client
+            .dispatch
+            .set_pending_order_action(client_order_id, PendingOrderAction::Cancel);
+        client
+            .dispatch
+            .set_pending_cancel_nonce(&client_order_id, 0, nonce, true);
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
             batch_id: None,
             connection_epoch: 0,
             kind: PendingSendTxKind::Cancel {
+                emit_cancel_rejected: true,
                 strategy_id: strategy_id(),
                 instrument_id,
                 client_order_id,
@@ -12721,6 +12859,7 @@ mod tests {
             batch_id: None,
             connection_epoch: 0,
             kind: PendingSendTxKind::Cancel {
+                emit_cancel_rejected: true,
                 strategy_id: strategy_id(),
                 instrument_id,
                 client_order_id: ClientOrderId::from("ACK-RETAINED"),
@@ -13474,6 +13613,149 @@ mod tests {
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
     }
 
+    #[rstest]
+    #[case::explicit_enqueued(true)]
+    #[case::explicit_waiting(false)]
+    #[tokio::test]
+    async fn unmarked_cancel_enqueue_preserves_explicit_rejection(#[case] explicit_enqueued: bool) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "CANCEL-ELIGIBILITY");
+        let id = order.client_order_id();
+        let venue_id = VenueOrderId::from("123");
+        cache_pending_cancel_order(&cache, order, venue_id);
+        let context = client
+            .fanout_dispatch_context(client.credential.as_ref().unwrap())
+            .unwrap();
+
+        let plan = CancelOrderPlan {
+            client_order_id: id,
+            strategy_id: strategy_id(),
+            instrument_id,
+            venue_order_id: Some(venue_id),
+            market_index: TEST_MARKET_INDEX,
+            venue_index: 123,
+        };
+
+        let first = context.sign_cancel_order(&plan).unwrap();
+        let second = context.sign_cancel_order(&plan).unwrap();
+        let (explicit, batch) = if explicit_enqueued {
+            (first, second)
+        } else {
+            (second, first)
+        };
+
+        client
+            .dispatch
+            .set_pending_order_action(id, PendingOrderAction::Cancel);
+
+        if explicit_enqueued {
+            context.enqueue_cancel_order(&explicit, true, None);
+        }
+
+        context.enqueue_cancel_order(&batch, false, Some("batch-unmarked"));
+        assert_eq!(
+            client.dispatch.pending_cancel_nonce(&id),
+            explicit_enqueued.then_some((0, explicit.nonce))
+        );
+
+        if !explicit_enqueued {
+            context.enqueue_cancel_order(&explicit, true, None);
+        }
+
+        handle_send_tx_rejection_for_connection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            0,
+            UnixNanos::default(),
+            SendTxRejectionSource::Ack,
+            Some(21727),
+            "unmarked batch failed",
+            Some(&batch.tx_hash),
+        );
+        assert_eq!(
+            client.dispatch.pending_cancel_nonce(&id),
+            Some((0, explicit.nonce))
+        );
+        assert!(rx.try_recv().is_err());
+        handle_send_tx_rejection_for_connection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            0,
+            UnixNanos::default(),
+            SendTxRejectionSource::Ack,
+            Some(21727),
+            "explicit cancel failed",
+            Some(&explicit.tx_hash),
+        );
+        let event = recv_order_event(&mut rx).await;
+        cache.borrow_mut().update_order(&event).unwrap();
+        match event {
+            OrderEventAny::CancelRejected(event) => {
+                assert_eq!(event.client_order_id, id);
+                assert_eq!(event.venue_order_id, Some(venue_id));
+                assert_eq!(event.instrument_id, instrument_id);
+                assert_eq!(event.strategy_id, strategy_id());
+                assert_eq!(event.reason, "LIGHTER_21727: explicit cancel failed");
+            }
+            other => panic!("expected explicit cancel rejection, was {other:?}"),
+        }
+
+        assert_eq!(
+            cache.borrow().order(&id).unwrap().status(),
+            OrderStatus::Accepted
+        );
+        assert_eq!(client.dispatch.pending_cancel_nonce(&id), None);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+    }
+
+    #[rstest]
+    #[case::pending(PendingOrderAction::Cancel, true)]
+    #[case::unmarked(PendingOrderAction::CancelUnmarked, false)]
+    #[tokio::test]
+    async fn cancel_rejection_preserves_newer_nonce(
+        #[case] action: PendingOrderAction,
+        #[case] emit_cancel_rejected: bool,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let id = ClientOrderId::from("CANCEL-NEWER");
+
+        let pending = PendingSendTx {
+            batch_id: Some("batch-old".to_string()),
+            connection_epoch: 3,
+            kind: PendingSendTxKind::Cancel {
+                emit_cancel_rejected,
+                strategy_id: strategy_id(),
+                instrument_id,
+                client_order_id: id,
+                venue_order_id: Some(VenueOrderId::from("123")),
+            },
+            submitted_at: UnixNanos::default(),
+            nonce: 41,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: "old-hash".to_string(),
+        };
+
+        client.dispatch.set_pending_order_action(id, action);
+        client
+            .dispatch
+            .set_pending_cancel_nonce(&id, 3, 42, emit_cancel_rejected);
+        reject_cancel_order(
+            &client.dispatch,
+            &client.emitter,
+            &pending,
+            "old failure",
+            UnixNanos::default(),
+        );
+        assert_eq!(client.dispatch.pending_cancel_nonce(&id), Some((3, 42)));
+        assert_eq!(client.dispatch.pending_order_action(&id), Some(action));
+        assert!(rx.try_recv().is_err());
+    }
+
     #[tokio::test]
     async fn handle_send_tx_rejection_cancel_emits_cancel_rejected() {
         let (client, cache, mut rx) = create_execution_client();
@@ -13486,10 +13768,17 @@ mod tests {
             .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
             .unwrap();
 
+        client
+            .dispatch
+            .set_pending_order_action(client_order_id, PendingOrderAction::Cancel);
+        client
+            .dispatch
+            .set_pending_cancel_nonce(&client_order_id, 0, nonce, true);
         client.dispatch.enqueue_pending_sendtx(PendingSendTx {
             batch_id: None,
             connection_epoch: 0,
             kind: PendingSendTxKind::Cancel {
+                emit_cancel_rejected: true,
                 strategy_id: strategy_id(),
                 instrument_id,
                 client_order_id,

@@ -288,8 +288,9 @@ pub(crate) enum PendingSendTxKind {
         order: Box<OrderAny>,
         client_order_index: i64,
     },
-    /// Cancel-order submit. On rejection: emit `OrderCancelRejected`.
+    /// Cancel-order submit. Emit a rejection only for a pending cancellation.
     Cancel {
+        emit_cancel_rejected: bool,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
@@ -452,6 +453,17 @@ pub(crate) enum TradeDedupSource {
 pub(crate) enum PendingOrderAction {
     Modify,
     Cancel,
+    CancelUnmarked,
+}
+
+impl PendingOrderAction {
+    pub(crate) fn cancel(emit_cancel_rejected: bool) -> Self {
+        if emit_cancel_rejected {
+            Self::Cancel
+        } else {
+            Self::CancelUnmarked
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -990,9 +1002,10 @@ impl WsDispatchState {
         cloid: &ClientOrderId,
         connection_epoch: u64,
         nonce: i64,
+        emit_cancel_rejected: bool,
     ) {
         if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
-            && state.action == PendingOrderAction::Cancel
+            && state.action == PendingOrderAction::cancel(emit_cancel_rejected)
         {
             state.submission = Some((connection_epoch, nonce));
         }
@@ -1001,7 +1014,12 @@ impl WsDispatchState {
     pub(crate) fn pending_cancel_nonce(&self, cloid: &ClientOrderId) -> Option<(u64, i64)> {
         self.pending_order_actions
             .get(cloid)
-            .filter(|state| state.action == PendingOrderAction::Cancel)
+            .filter(|state| {
+                matches!(
+                    state.action,
+                    PendingOrderAction::Cancel | PendingOrderAction::CancelUnmarked
+                )
+            })
             .and_then(|state| state.submission)
     }
 
@@ -1013,8 +1031,10 @@ impl WsDispatchState {
     ) -> bool {
         self.pending_order_actions
             .remove_if(cloid, |_, state| {
-                state.action == PendingOrderAction::Cancel
-                    && state.submission == Some((connection_epoch, nonce))
+                matches!(
+                    state.action,
+                    PendingOrderAction::Cancel | PendingOrderAction::CancelUnmarked
+                ) && state.submission == Some((connection_epoch, nonce))
             })
             .is_some()
     }
@@ -1521,7 +1541,7 @@ impl WsDispatchState {
         report.order_status = match self.pending_order_action(&cloid) {
             Some(PendingOrderAction::Modify) => OrderStatus::PendingUpdate,
             Some(PendingOrderAction::Cancel) => OrderStatus::PendingCancel,
-            None => return report,
+            Some(PendingOrderAction::CancelUnmarked) | None => return report,
         };
         report
     }
@@ -1938,13 +1958,21 @@ impl OrderReportLookup {
         dispatch: &WsDispatchState,
         (report, supplied): (OrderStatusReport, Option<ClientOrderId>),
     ) -> OrderStatusReport {
+        dispatch.preserve_pending_order_status(self.translate(dispatch, (report, supplied)))
+    }
+
+    pub(crate) fn translate(
+        &self,
+        dispatch: &WsDispatchState,
+        (report, supplied): (OrderStatusReport, Option<ClientOrderId>),
+    ) -> OrderStatusReport {
         let mut report = dispatch.translate_order_cloid(report);
 
         if let Some(cloid) = supplied {
             report = report.with_client_order_id(cloid);
         }
 
-        dispatch.preserve_pending_order_status(report)
+        report
     }
 }
 
@@ -4220,22 +4248,27 @@ mod tests {
         );
     }
     #[rstest]
-    fn pending_cancel_nonce_does_not_clear_a_newer_action() {
+    #[case(PendingOrderAction::Cancel, true)]
+    #[case(PendingOrderAction::CancelUnmarked, false)]
+    fn pending_cancel_nonce_does_not_clear_a_newer_action(
+        #[case] action: PendingOrderAction,
+        #[case] emit_cancel_rejected: bool,
+    ) {
         let state = WsDispatchState::new();
         let id = ClientOrderId::from("CANCEL-GENERATION");
-        state.set_pending_order_action(id, PendingOrderAction::Cancel);
-        state.set_pending_cancel_nonce(&id, 3, 41);
+        state.set_pending_order_action(id, action);
+        state.set_pending_cancel_nonce(&id, 3, 41, emit_cancel_rejected);
         assert_eq!(state.pending_cancel_nonce(&id), Some((3, 41)));
-        state.set_pending_order_action(id, PendingOrderAction::Cancel);
+        state.set_pending_order_action(id, action);
         assert_eq!(state.pending_cancel_nonce(&id), None);
-        state.set_pending_cancel_nonce(&id, 3, 42);
+        state.set_pending_cancel_nonce(&id, 3, 42, emit_cancel_rejected);
         assert!(!state.clear_pending_cancel_if_nonce(&id, 3, 41));
         assert!(!state.clear_pending_cancel_if_nonce(&id, 2, 42));
         assert_eq!(state.pending_cancel_nonce(&id), Some((3, 42)));
         assert!(state.clear_pending_cancel_if_nonce(&id, 3, 42));
         assert_eq!(state.pending_order_action(&id), None);
         state.set_pending_order_action(id, PendingOrderAction::Modify);
-        state.set_pending_cancel_nonce(&id, 3, 43);
+        state.set_pending_cancel_nonce(&id, 3, 43, emit_cancel_rejected);
         assert_eq!(state.pending_cancel_nonce(&id), None);
         assert!(!state.clear_pending_cancel_if_nonce(&id, 3, 43));
         assert_eq!(
