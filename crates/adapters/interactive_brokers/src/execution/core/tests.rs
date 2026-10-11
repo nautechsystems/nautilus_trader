@@ -381,6 +381,65 @@ async fn highest_completed_order_id_fails_on_stalled_snapshot() {
     assert_eq!(tokio::time::Instant::now(), deadline);
 }
 
+fn create_test_snapshot_with_notice(
+    code: i32,
+    message: &str,
+) -> impl futures_util::Stream<Item = Result<SubscriptionItem<Orders>, ibapi::Error>> + Unpin {
+    futures_util::stream::iter(vec![
+        Ok(SubscriptionItem::Data(Orders::OrderData(
+            create_test_completed_order(760_000_015, 7760),
+        ))),
+        Ok(SubscriptionItem::Notice(ibapi::Notice {
+            request_id: None,
+            code,
+            message: message.to_string(),
+            error_time: None,
+            advanced_order_reject_json: String::new(),
+        })),
+        Ok(SubscriptionItem::Data(Orders::OrderData(
+            create_test_completed_order(760_000_016, 7760),
+        ))),
+    ])
+}
+
+#[rstest]
+#[tokio::test]
+async fn highest_completed_order_id_fails_on_dropped_records() {
+    let snapshot = create_test_snapshot_with_notice(
+        ibapi::SUBSCRIPTION_LAG_CODE,
+        "order stream fell behind; 3 frames dropped",
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    let result =
+        InteractiveBrokersExecutionClient::highest_completed_order_id(snapshot, 7760, deadline)
+            .await;
+
+    let error = result.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Failed to read completed orders for next order ID initialization"
+    );
+    assert_eq!(
+        error.root_cause().to_string(),
+        "Completed orders snapshot dropped records: [-6] order stream fell behind; 3 frames dropped"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn highest_completed_order_id_reads_past_warning_notice() {
+    let snapshot = create_test_snapshot_with_notice(2109, "Order Event Warning");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+    let highest =
+        InteractiveBrokersExecutionClient::highest_completed_order_id(snapshot, 7760, deadline)
+            .await
+            .unwrap();
+
+    assert_eq!(highest, Some(760_000_016));
+}
+
 #[rstest]
 fn stop_cancels_execution_lifecycle_and_aborts_tracked_tasks() {
     let (mut client, _receiver, _cache) = create_test_execution_client();

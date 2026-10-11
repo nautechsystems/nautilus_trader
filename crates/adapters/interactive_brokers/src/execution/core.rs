@@ -802,11 +802,11 @@ impl InteractiveBrokersExecutionClient {
     }
 
     // IB lists completed orders for a limited period only. A completed order's API order ID is on
-    // the order itself because its top-level order ID is unset. A snapshot that fails or does not
-    // reach IB's end marker by the deadline is an error, since a missing order could hold the
-    // highest ID
+    // the order itself because its top-level order ID is unset. A snapshot that fails, drops
+    // records, or does not reach IB's end marker by the deadline is an error, since a missing
+    // order could hold the highest ID
     pub(super) async fn highest_completed_order_id<S>(
-        subscription: S,
+        mut subscription: S,
         client_id: i32,
         deadline: tokio::time::Instant,
     ) -> anyhow::Result<Option<i32>>
@@ -814,12 +814,21 @@ impl InteractiveBrokersExecutionClient {
         S: futures_util::Stream<Item = Result<SubscriptionItem<Orders>, ibapi::Error>> + Unpin,
     {
         let read_snapshot = async {
-            let mut subscription = subscription.filter_data();
             let mut highest_order_id = None;
 
-            while let Some(order_result) = subscription.next().await {
-                let Orders::OrderData(data) = order_result? else {
-                    continue;
+            while let Some(item) = subscription.next().await {
+                let data = match item? {
+                    SubscriptionItem::Data(Orders::OrderData(data)) => data,
+                    SubscriptionItem::Data(_) => continue,
+                    SubscriptionItem::Notice(notice)
+                        if notice.code == ibapi::SUBSCRIPTION_LAG_CODE =>
+                    {
+                        anyhow::bail!("Completed orders snapshot dropped records: {notice}");
+                    }
+                    SubscriptionItem::Notice(notice) => {
+                        tracing::warn!("IB notice on completed orders snapshot: {notice}");
+                        continue;
+                    }
                 };
 
                 let order_id = data.order.order_id;
@@ -830,7 +839,7 @@ impl InteractiveBrokersExecutionClient {
                 }
             }
 
-            Ok::<Option<i32>, ibapi::Error>(highest_order_id)
+            Ok(highest_order_id)
         };
 
         tokio::time::timeout_at(deadline, read_snapshot)
