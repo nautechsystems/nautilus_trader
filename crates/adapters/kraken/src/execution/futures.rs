@@ -1831,11 +1831,12 @@ impl KrakenFuturesExecutionClient {
                         }
                     }
                     None => {
-                        queried_by_cli_ord_id.push((
-                            order.client_order_id(),
-                            order.instrument_id(),
-                            order.order_side(),
-                        ));
+                        queried_by_cli_ord_id.push(HeldOrder {
+                            client_order_id: order.client_order_id(),
+                            instrument_id: order.instrument_id(),
+                            side: order.order_side(),
+                            ts_init: order.ts_init(),
+                        });
                     }
                 }
             }
@@ -1847,7 +1848,7 @@ impl KrakenFuturesExecutionClient {
 
         let cli_ord_ids: Vec<String> = queried_by_cli_ord_id
             .iter()
-            .map(|(client_order_id, ..)| truncate_cl_ord_id(client_order_id))
+            .map(|order| truncate_cl_ord_id(&order.client_order_id))
             .collect();
 
         log::debug!(
@@ -1902,6 +1903,15 @@ fn cached_order_for_report(cache: &Cache, report: &OrderStatusReport) -> Option<
     cache.order(client_order_id).map(|order| order.clone())
 }
 
+/// An open order the orders-status window is asked about by its shortened client order ID.
+#[derive(Clone, Copy, Debug)]
+struct HeldOrder {
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    ts_init: UnixNanos,
+}
+
 /// Names each `/orders/status` report by the client order ID of the cached order it describes,
 /// returning the reports it attributes and whether it withheld any.
 ///
@@ -1909,20 +1919,21 @@ fn cached_order_for_report(cache: &Cache, report: &OrderStatusReport) -> Option<
 /// past 18 characters, and reconciliation matches a report carrying a client order ID by that ID
 /// alone. A report takes the ID of the cached order indexing its venue order ID. Otherwise its
 /// shortened ID names an order queried by client order ID only when exactly one such order holds
-/// it, exactly one report without an indexed venue order ID carries it, and the report's instrument
-/// and side are the order's. Any other report is withheld with a warning: under the venue's ID it
-/// would name no cached order, and reconciliation would take it for an external order.
+/// it, exactly one report without an indexed venue order ID carries it, the report's instrument
+/// and side are the order's, and the venue placed it no earlier than the order was created, which
+/// rules out an older order whose ID shortens alike. Any other report is withheld with a warning:
+/// under the venue's ID it would name no cached order, and reconciliation would take it for an
+/// external order.
 fn attribute_orders_status_reports(
     cache: &Cache,
-    queried_by_cli_ord_id: &[(ClientOrderId, InstrumentId, OrderSide)],
+    queried_by_cli_ord_id: &[HeldOrder],
     reports: Vec<OrderStatusReport>,
 ) -> (Vec<OrderStatusReport>, bool) {
     // None marks a shortened ID that several queried orders share
-    let mut held: HashMap<String, Option<(ClientOrderId, InstrumentId, OrderSide)>> =
-        HashMap::new();
+    let mut held: HashMap<String, Option<HeldOrder>> = HashMap::new();
 
     for order in queried_by_cli_ord_id {
-        held.entry(truncate_cl_ord_id(&order.0))
+        held.entry(truncate_cl_ord_id(&order.client_order_id))
             .and_modify(|named| *named = None)
             .or_insert(Some(*order));
     }
@@ -1945,8 +1956,14 @@ fn attribute_orders_status_reports(
 
     let mut attributed = Vec::with_capacity(reports.len());
     let mut withheld = false;
+    // The venue-ID and client-order-ID queries can both return one order
+    let mut seen = HashSet::new();
 
     for mut report in reports {
+        if !seen.insert(report.venue_order_id) {
+            continue;
+        }
+
         let named = indexed(&report).or_else(|| {
             let echoed = report.client_order_id?;
             if unindexed
@@ -1955,9 +1972,11 @@ fn attribute_orders_status_reports(
             {
                 return None;
             }
-            let (client_order_id, instrument_id, side) = (*held.get(echoed.as_str())?)?;
-            (report.instrument_id == instrument_id && report.order_side == Some(side))
-                .then_some(client_order_id)
+            let order = (*held.get(echoed.as_str())?)?;
+            (report.instrument_id == order.instrument_id
+                && report.order_side == Some(order.side)
+                && report.ts_accepted >= order.ts_init)
+                .then_some(order.client_order_id)
         });
 
         if let Some(client_order_id) = named {

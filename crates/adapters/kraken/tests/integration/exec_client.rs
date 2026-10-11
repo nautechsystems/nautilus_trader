@@ -3493,6 +3493,24 @@ fn add_futures_limit_order_to_cache(
     side: OrderSide,
     strategy_id: StrategyId,
 ) -> OrderAny {
+    add_futures_limit_order_created_at(
+        cache,
+        client_order_id,
+        instrument_id,
+        side,
+        strategy_id,
+        UnixNanos::default(),
+    )
+}
+
+fn add_futures_limit_order_created_at(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    strategy_id: StrategyId,
+    ts_init: UnixNanos,
+) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
         strategy_id,
@@ -3518,7 +3536,7 @@ fn add_futures_limit_order_to_cache(
         None,
         None,
         UUID4::new(),
-        UnixNanos::default(),
+        ts_init,
     );
 
     let order_any = OrderAny::Limit(order);
@@ -4450,6 +4468,19 @@ async fn test_futures_orders_status_window_report_carries_the_full_client_order_
     assert_eq!(report.order_status, OrderStatus::Canceled);
     assert_eq!(report.filled_qty, Quantity::from("2"));
     assert_eq!(report.avg_px, None);
+
+    let body = state
+        .orders_status_request_body
+        .lock()
+        .await
+        .clone()
+        .expect("orders-status request recorded");
+    let expected_body = if has_venue_order_id {
+        "orderIds=V-HELD-010".to_string()
+    } else {
+        format!("cliOrdIds={SHORTENED_CLIENT_ORDER_ID}")
+    };
+    assert_eq!(body, expected_body);
 }
 
 /// A shortened client order ID names an order queried by client order ID only when exactly one
@@ -4485,8 +4516,14 @@ async fn test_futures_orders_status_window_report_carries_the_full_client_order_
         ("V-HELD-011", SHORTENED_CLIENT_ORDER_ID, "PI_XBTUSD", "buy"),
         ("V-HELD-012", SHORTENED_CLIENT_ORDER_ID, "PI_XBTUSD", "buy"),
     ],
-    // Both requests, by venue order ID and by client order ID, return both entries
-    &[("V-HELD-011", Some(LONG_CLIENT_ORDER_ID), 2), ("V-HELD-012", Some(LONG_CLIENT_ORDER_ID_OTHER_DAY), 2)],
+    // Both requests return both entries, which the response holds once each
+    &[("V-HELD-011", Some(LONG_CLIENT_ORDER_ID), 1), ("V-HELD-012", Some(LONG_CLIENT_ORDER_ID_OTHER_DAY), 1)],
+)]
+#[case::unshortened_client_order_id(
+    &["futures-held-014"],
+    &[],
+    &[("V-HELD-014", "futures-held-014", "PI_XBTUSD", "buy")],
+    &[("V-HELD-014", Some("futures-held-014"), 1)],
 )]
 #[case::another_instrument(
     &[LONG_CLIENT_ORDER_ID],
@@ -4562,6 +4599,65 @@ async fn test_futures_orders_status_window_report_names_only_an_unambiguous_orde
         let expected_named = vec![client_order_id.map(ClientOrderId::from); *count];
         assert_eq!(named, expected_named, "{venue_order_id}");
     }
+}
+
+/// The window entry's placement time, 2026-09-12T04:05:06.100Z.
+const WINDOW_ENTRY_PLACED_NS: u64 = 1_789_185_906_100_000_000;
+
+/// A shortened client order ID names only a venue order placed no earlier than the cached order
+/// was created, so an older order whose client order ID shortens alike is withheld.
+#[rstest]
+#[case::created_before_placement(WINDOW_ENTRY_PLACED_NS - 1_000_000_000, true)]
+#[case::created_at_placement(WINDOW_ENTRY_PLACED_NS, true)]
+#[case::created_after_placement(WINDOW_ENTRY_PLACED_NS + 86_400_000_000_000, false)]
+#[tokio::test]
+async fn test_futures_orders_status_window_report_names_an_order_placed_after_its_creation(
+    #[case] created_ns: u64,
+    #[case] named: bool,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_futures_limit_order_created_at(
+        &cache,
+        ClientOrderId::new(LONG_CLIENT_ORDER_ID),
+        test_instrument_id(),
+        OrderSide::Buy,
+        test_strategy_id(),
+        UnixNanos::from(created_ns),
+    );
+    mark_cached_order_pending_cancel_while_held(&cache, &order);
+    *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+        "V-HELD-015",
+        SHORTENED_CLIENT_ORDER_ID,
+        "PI_XBTUSD",
+        "buy",
+        "ENTERED_BOOK",
+        0,
+    )]));
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    let expected: Vec<Option<ClientOrderId>> = if named {
+        vec![Some(ClientOrderId::from(LONG_CLIENT_ORDER_ID))]
+    } else {
+        Vec::new()
+    };
+    let reported: Vec<Option<ClientOrderId>> = reports
+        .iter()
+        .filter(|report| report.venue_order_id == VenueOrderId::from("V-HELD-015"))
+        .map(|report| report.client_order_id)
+        .collect();
+    assert_eq!(reported, expected);
 }
 
 /// A window report the mass status withholds, a fully executed one or one it cannot attribute to
