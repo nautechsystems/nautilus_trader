@@ -943,11 +943,14 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 .reports_for_open_orders_absent_from_venue(account_id, cmd.instrument_id, &reports)
                 .await?;
 
+            // The window carries no fill price, so a filled report would be inferred at the
+            // order price. A canceled one with executions passes, since reconciliation waits for
+            // its fills rather than infer them.
             for report in extension {
                 if report.order_status == OrderStatus::Filled {
-                    log::debug!(
-                        "Deferring fully executed order {} from the bulk response: fills-paired \
-                         pricing applies",
+                    log::warn!(
+                        "Withholding fully executed order {} from the bulk response: the \
+                         orders-status window carries no fill price",
                         report.venue_order_id,
                     );
                     continue;
@@ -1050,12 +1053,14 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .reports_for_open_orders_absent_from_venue(account_id, None, &order_reports)
             .await?;
 
-        // Snapshot recon would infer uncovered fills at the order price
+        // The window carries no fill price, so a filled report would be inferred at the order
+        // price. A canceled one with executions passes, since reconciliation waits for its fills
+        // rather than infer them.
         for report in extension {
             if report.order_status == OrderStatus::Filled {
-                log::debug!(
-                    "Deferring fully executed order {} from mass status: fills-paired \
-                     pricing applies",
+                log::warn!(
+                    "Withholding fully executed order {} from mass status: the orders-status \
+                     window carries no fill price",
                     report.venue_order_id,
                 );
                 continue;
@@ -1781,7 +1786,8 @@ impl KrakenFuturesExecutionClient {
     /// its 5-second `/orders/status` window. Orders without a venue order ID
     /// yet (their submit acknowledgement is still inside the hold window) are
     /// queried by their truncated client order ID, the only venue handle that
-    /// exists during the window.
+    /// exists during the window. Each report is named by the cached order it
+    /// describes, as `name_orders_status_reports` resolves it.
     ///
     /// # Errors
     ///
@@ -1795,6 +1801,7 @@ impl KrakenFuturesExecutionClient {
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let mut order_ids = Vec::new();
         let mut cli_ord_ids = Vec::new();
+        let mut queried_by_cli_ord_id = Vec::new();
 
         {
             let cache = self.core.cache();
@@ -1823,6 +1830,7 @@ impl KrakenFuturesExecutionClient {
                     }
                     None => {
                         cli_ord_ids.push(truncate_cl_ord_id(&order.client_order_id()));
+                        queried_by_cli_ord_id.push(order.client_order_id());
                     }
                 }
             }
@@ -1855,6 +1863,8 @@ impl KrakenFuturesExecutionClient {
             );
         }
 
+        name_orders_status_reports(&self.core.cache(), &queried_by_cli_ord_id, &mut reports);
+
         Ok(reports)
     }
 
@@ -1878,6 +1888,60 @@ impl KrakenFuturesExecutionClient {
 fn cached_order_for_report(cache: &Cache, report: &OrderStatusReport) -> Option<OrderAny> {
     let client_order_id = cache.client_order_id(&report.venue_order_id)?;
     cache.order(client_order_id).map(|order| order.clone())
+}
+
+/// Names each `/orders/status` report by the client order ID of the cached order it describes.
+///
+/// The venue echoes the client order ID the adapter submitted, which `truncate_cl_ord_id` shortens
+/// past 18 characters, and reconciliation matches a report that carries a client order ID by that
+/// ID alone. A report whose venue order ID the cache indexes takes that order's ID. Otherwise its
+/// truncated ID names a queried order only when exactly one queried order and exactly one such
+/// report hold it, so a truncation collision can never apply one order's state to another; any
+/// other report keeps the venue's ID.
+fn name_orders_status_reports(
+    cache: &Cache,
+    queried_by_cli_ord_id: &[ClientOrderId],
+    reports: &mut [OrderStatusReport],
+) {
+    // None marks a truncated ID that several queried orders share
+    let mut queried: HashMap<String, Option<ClientOrderId>> = HashMap::new();
+    for client_order_id in queried_by_cli_ord_id {
+        queried
+            .entry(truncate_cl_ord_id(client_order_id))
+            .and_modify(|named| *named = None)
+            .or_insert(Some(*client_order_id));
+    }
+
+    let mut unindexed: HashMap<ClientOrderId, HashSet<VenueOrderId>> = HashMap::new();
+    for report in reports.iter() {
+        if cache.client_order_id(&report.venue_order_id).is_none()
+            && let Some(client_order_id) = report.client_order_id
+        {
+            unindexed
+                .entry(client_order_id)
+                .or_default()
+                .insert(report.venue_order_id);
+        }
+    }
+
+    for report in reports.iter_mut() {
+        if let Some(client_order_id) = cache.client_order_id(&report.venue_order_id) {
+            report.client_order_id = Some(*client_order_id);
+            continue;
+        }
+
+        let Some(echoed) = report.client_order_id else {
+            continue;
+        };
+
+        if unindexed
+            .get(&echoed)
+            .is_some_and(|venue_order_ids| venue_order_ids.len() == 1)
+            && let Some(Some(client_order_id)) = queried.get(echoed.as_str())
+        {
+            report.client_order_id = Some(*client_order_id);
+        }
+    }
 }
 
 /// Whether a combined order read failed because the venue refused its history page.

@@ -528,6 +528,16 @@ status, open-only report runs, and targeted single-order queries consult
 `POST /orders/status` before treating the order as missing. That window reports
 orders that are open or were filled or canceled in the last 5 seconds.
 
+The venue echoes the client order ID the adapter submitted, which is shortened
+to 18 characters unless it fits or is a UUID. Mass status and open-only report
+runs therefore name each window report by the cached order it describes: by
+venue order ID when the cache holds it, else by a shortened ID that exactly one
+queried order and exactly one report share. A report matching neither keeps the
+venue's ID. The window carries no fill price, so a fully executed order is left
+out with a warning rather than having its executions inferred at the order
+price. A canceled order with executions is reported, since reconciliation waits
+for its fills rather than infer them.
+
 A hold that fills after a cancel acknowledgement reconciles to its true
 terminal state with the venue's cumulative filled, not a premature cancellation.
 

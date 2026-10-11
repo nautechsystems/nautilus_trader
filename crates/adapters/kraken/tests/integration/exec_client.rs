@@ -66,7 +66,9 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
+    events::{
+        AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel, OrderSubmitted,
+    },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
         TradeId, TraderId, VenueOrderId,
@@ -4100,6 +4102,59 @@ fn mark_cached_order_submitted(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
         .unwrap();
 }
 
+/// Leaves a cached order open with no venue order ID, as a cancel sent while the venue holds a
+/// submission does, so the orders-status window can only be asked by client order ID.
+fn mark_cached_order_pending_cancel_while_held(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
+    mark_cached_order_submitted(cache, order);
+    let pending_cancel = OrderPendingCancel::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(test_account_id()),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        None,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingCancel(pending_cancel))
+        .unwrap();
+}
+
+/// An `/orders/status` body with one entry per `(orderId, cliOrdId, status, filled)`.
+fn orders_status_body(entries: &[(&str, &str, &str, u32)]) -> String {
+    let orders: Vec<Value> = entries
+        .iter()
+        .map(|(order_id, cli_ord_id, status, filled)| {
+            json!({
+                "order": {
+                    "type": "ORDER",
+                    "orderId": order_id,
+                    "cliOrdId": cli_ord_id,
+                    "symbol": "PI_XBTUSD",
+                    "side": "buy",
+                    "quantity": 5,
+                    "filled": filled,
+                    "limitPrice": 50000.0,
+                    "reduceOnly": false,
+                    "timestamp": "2026-09-12T04:05:06.100Z",
+                    "lastUpdateTimestamp": "2026-09-12T04:05:06.300Z",
+                    "algoId": null,
+                    "priceTriggerOptions": null,
+                    "triggerTime": null
+                },
+                "status": status,
+                "updateReason": null,
+                "error": null
+            })
+        })
+        .collect();
+    json!({ "result": "success", "orders": orders }).to_string()
+}
+
 /// Applies an `OrderAccepted` carrying the venue order ID, mirroring how the
 /// engine records a venue ID on a cached order once the venue acknowledges it.
 fn set_venue_order_id_on_cached_order(
@@ -4320,6 +4375,162 @@ async fn test_futures_open_order_reports_include_orders_status_window() {
 
     assert_eq!(part_filled.order_status, OrderStatus::PartiallyFilled);
     assert_eq!(part_filled.filled_qty, Quantity::from("1"));
+}
+
+/// A client order ID longer than 18 characters, which the adapter submits as `O` plus its last 17.
+const LONG_CLIENT_ORDER_ID: &str = "O-20260912-040506-001-001-1";
+/// Another order's ID that shortens to the same 18 characters.
+const LONG_CLIENT_ORDER_ID_OTHER_DAY: &str = "O-20260911-040506-001-001-1";
+const SHORTENED_CLIENT_ORDER_ID: &str = "O-040506-001-001-1";
+
+/// A window report carries the full client order ID of the cached order it describes, whether that
+/// order was asked about by venue order ID or, holding none, by its shortened client order ID:
+/// reconciliation matches a report carrying a client order ID by that ID alone. A canceled order
+/// with executions passes unpriced.
+#[rstest]
+#[case::bulk_by_venue_order_id(false, true)]
+#[case::bulk_by_client_order_id(false, false)]
+#[case::mass_status_by_venue_order_id(true, true)]
+#[case::mass_status_by_client_order_id(true, false)]
+#[tokio::test]
+async fn test_futures_orders_status_window_report_carries_the_full_client_order_id(
+    #[case] mass_status: bool,
+    #[case] has_venue_order_id: bool,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new(LONG_CLIENT_ORDER_ID));
+    if has_venue_order_id {
+        set_venue_order_id_on_cached_order(&cache, &order, "V-HELD-010");
+    } else {
+        mark_cached_order_pending_cancel_while_held(&cache, &order);
+    }
+    *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+        "V-HELD-010",
+        SHORTENED_CLIENT_ORDER_ID,
+        "CANCELLED",
+        2,
+    )]));
+
+    let reports: Vec<OrderStatusReport> = if mass_status {
+        let mass_status = client
+            .generate_mass_status(None)
+            .await
+            .unwrap()
+            .expect("mass status available");
+        mass_status.order_reports().values().cloned().collect()
+    } else {
+        let cmd = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        client.generate_order_status_reports(&cmd).await.unwrap()
+    };
+
+    let report = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("V-HELD-010"))
+        .expect("held order reported from the orders-status window");
+
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from(LONG_CLIENT_ORDER_ID))
+    );
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.filled_qty, Quantity::from("2"));
+    assert_eq!(report.avg_px, None);
+}
+
+/// A shortened client order ID names a queried order only when exactly one queried order and
+/// exactly one report the cache does not index hold it, so a collision leaves the venue's ID
+/// rather than apply one order's state to another. A report whose venue order ID the cache
+/// indexes keeps that order's ID.
+#[rstest]
+#[case::one_queried_order_and_one_report(
+    &[LONG_CLIENT_ORDER_ID],
+    &[],
+    &[("V-HELD-011", SHORTENED_CLIENT_ORDER_ID)],
+    &[("V-HELD-011", LONG_CLIENT_ORDER_ID)],
+)]
+#[case::two_queried_orders_share_it(
+    &[LONG_CLIENT_ORDER_ID, LONG_CLIENT_ORDER_ID_OTHER_DAY],
+    &[],
+    &[("V-HELD-011", SHORTENED_CLIENT_ORDER_ID)],
+    &[("V-HELD-011", SHORTENED_CLIENT_ORDER_ID)],
+)]
+#[case::two_reports_share_it(
+    &[LONG_CLIENT_ORDER_ID],
+    &[],
+    &[("V-HELD-011", SHORTENED_CLIENT_ORDER_ID), ("V-HELD-012", SHORTENED_CLIENT_ORDER_ID)],
+    &[("V-HELD-011", SHORTENED_CLIENT_ORDER_ID), ("V-HELD-012", SHORTENED_CLIENT_ORDER_ID)],
+)]
+#[case::indexed_report_keeps_its_order(
+    &[LONG_CLIENT_ORDER_ID],
+    &[(LONG_CLIENT_ORDER_ID_OTHER_DAY, "V-HELD-012")],
+    &[("V-HELD-011", SHORTENED_CLIENT_ORDER_ID), ("V-HELD-012", SHORTENED_CLIENT_ORDER_ID)],
+    &[("V-HELD-011", LONG_CLIENT_ORDER_ID), ("V-HELD-012", LONG_CLIENT_ORDER_ID_OTHER_DAY)],
+)]
+#[case::unqueried_report_keeps_the_venue_id(
+    &[LONG_CLIENT_ORDER_ID],
+    &[],
+    &[("V-HELD-013", "futures-held-013")],
+    &[("V-HELD-013", "futures-held-013")],
+)]
+#[tokio::test]
+async fn test_futures_orders_status_window_report_names_only_an_unambiguous_order(
+    #[case] held: &[&str],
+    #[case] accepted: &[(&str, &str)],
+    #[case] window: &[(&str, &str)],
+    #[case] expected: &[(&str, &str)],
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    for client_order_id in held {
+        let order = add_limit_order_to_cache(&cache, ClientOrderId::new(client_order_id));
+        mark_cached_order_pending_cancel_while_held(&cache, &order);
+    }
+    for (client_order_id, venue_order_id) in accepted {
+        let order = add_limit_order_to_cache(&cache, ClientOrderId::new(client_order_id));
+        set_venue_order_id_on_cached_order(&cache, &order, venue_order_id);
+    }
+    let entries: Vec<(&str, &str, &str, u32)> = window
+        .iter()
+        .map(|(venue_order_id, cli_ord_id)| (*venue_order_id, *cli_ord_id, "ENTERED_BOOK", 0))
+        .collect();
+    *state.orders_status_response.lock().await = Some(orders_status_body(&entries));
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    for (venue_order_id, client_order_id) in expected {
+        let named: Vec<Option<ClientOrderId>> = reports
+            .iter()
+            .filter(|report| report.venue_order_id == VenueOrderId::from(*venue_order_id))
+            .map(|report| report.client_order_id)
+            .collect();
+        assert!(!named.is_empty(), "{venue_order_id} reported");
+        assert!(
+            named
+                .iter()
+                .all(|named| *named == Some(ClientOrderId::from(*client_order_id))),
+            "{venue_order_id} named {named:?}, expected {client_order_id}",
+        );
+    }
 }
 
 #[rstest]
