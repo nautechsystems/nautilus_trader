@@ -48,7 +48,7 @@ use nautilus_model::{
         stubs::{TestOrderEventStubs, TestOrderStubs},
     },
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
@@ -60,6 +60,39 @@ use super::{ids::*, orders::*, positions::*, types::*};
 #[fixture]
 fn instrument() -> InstrumentAny {
     InstrumentAny::CurrencyPair(audusd_sim())
+}
+
+#[rstest]
+#[case::off_tick(dec!(2.4564), "2.4564")]
+#[case::instrument_precision(dec!(2), "2.00")]
+#[case::trailing_zeros(dec!(2.4564000000000000000000000000), "2.4564")]
+fn test_reconciliation_price_keeps_average_precision(
+    #[case] value: Decimal,
+    #[case] expected: Price,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+
+    let price = super::reconciliation_price(value, &instrument).unwrap();
+
+    assert_eq!(price, expected);
+    assert_eq!(price.precision, expected.precision);
+}
+
+#[rstest]
+fn test_reconciliation_price_rounds_at_fixed_precision() {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+
+    let price =
+        super::reconciliation_price(dec!(0.1234567890123456789012345678), &instrument).unwrap();
+
+    let expected = if FIXED_PRECISION == 16 {
+        dec!(0.1234567890123457)
+    } else {
+        dec!(0.123456789)
+    };
+
+    assert_eq!(price.as_decimal(), expected);
+    assert_eq!(price.precision, FIXED_PRECISION);
 }
 
 fn create_test_venue_order_id(value: &str) -> VenueOrderId {
@@ -7822,7 +7855,10 @@ fn test_incremental_inferred_fill_price_and_liquidity_matches_emitted_fill() {
         panic!("expected Filled event");
     };
 
-    assert_eq!(last_px, Price::from("33.33"));
+    assert_eq!(
+        last_px,
+        Price::from_decimal_dp(dec!(33.3333333333333333), FIXED_PRECISION).unwrap()
+    );
     assert_eq!(filled.last_px, last_px);
     assert_eq!(filled.liquidity_side, liquidity_side);
 }

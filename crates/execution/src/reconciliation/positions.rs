@@ -32,13 +32,14 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Money, Price, Quantity},
+    types::{Money, Quantity},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
 use super::{
     RECONCILIATION_ORDER_TAG,
     ids::{create_synthetic_trade_id, create_synthetic_venue_order_id},
+    reconciliation_price,
     types::{FillAdjustmentResult, FillSnapshot, ReconciliationResult, VenuePositionSnapshot},
 };
 
@@ -590,10 +591,7 @@ pub(super) fn create_synthetic_fill_report(
 ) -> anyhow::Result<FillReport> {
     let trade_id = create_synthetic_trade_id(fill);
     let qty = Quantity::from_decimal_dp(fill.qty, instrument.size_precision())?;
-    let px = Price::from_decimal_dp(
-        cap_price_at_instrument_max(fill.px, instrument),
-        instrument.price_precision(),
-    )?;
+    let px = reconciliation_price(cap_price_at_instrument_max(fill.px, instrument), instrument)?;
 
     Ok(FillReport::new(
         account_id,

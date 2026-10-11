@@ -40,6 +40,7 @@ use ustr::Ustr;
 use super::{
     ids::create_inferred_reconciliation_trade_id,
     positions::{cap_price_at_instrument_max, is_within_single_unit_tolerance},
+    reconciliation_price,
 };
 
 /// Generates reconciliation events for a live order status report.
@@ -1589,7 +1590,7 @@ fn calculate_incremental_fill_price(
             }
         };
 
-        return Price::from_decimal_dp(last_px_decimal, instrument.price_precision())
+        return reconciliation_price(last_px_decimal, instrument)
             .inspect_err(|e| {
                 log::warn!(
                     "Cannot price {} from incremental {last_px_decimal}, falling back: {e}",
@@ -1616,7 +1617,7 @@ fn resolve_fill_price(
     report
         .avg_px
         .and_then(|avg_px| {
-            Price::from_decimal_dp(avg_px, instrument.price_precision())
+            reconciliation_price(avg_px, instrument)
                 .inspect_err(|e| {
                     log::warn!(
                         "Cannot price {} from venue average {avg_px}, trying next source: {e}",
@@ -1635,7 +1636,7 @@ fn resolve_fill_price(
 /// function for why reconciliation needs to bound synthetic fill prices.
 fn clamp_inferred_fill_price(price: Price, instrument: &InstrumentAny) -> Price {
     let px = cap_price_at_instrument_max(price.as_decimal(), instrument);
-    Price::from_decimal_dp(px, instrument.price_precision()).unwrap_or(price)
+    Price::from_decimal_dp(px, price.precision.max(instrument.price_precision())).unwrap_or(price)
 }
 
 fn reconciliation_position_id(

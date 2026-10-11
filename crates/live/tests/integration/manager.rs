@@ -9849,7 +9849,7 @@ async fn test_mass_status_coarse_average_keeps_retained_position(
 
 #[rstest]
 #[case::marked_keeps_cached_average(Some(4), "0.560")]
-#[case::unmarked_solves_weighted_average(None, "0.060")]
+#[case::unmarked_solves_weighted_average(None, "0.0599")]
 #[tokio::test]
 async fn test_mass_status_coarse_average_prices_increase(
     #[case] avg_px_open_precision: Option<u8>,
@@ -9899,6 +9899,189 @@ async fn test_mass_status_coarse_average_prices_increase(
         )]
     );
     assert!(result.unresolved_positions.is_empty());
+}
+
+#[rstest]
+#[case::off_tick(dec!(2.4564), "0.001")]
+#[case::low_price(dec!(0.85237), "0.001")]
+#[case::fine_tick(dec!(0.123456), "0.0001")]
+#[case::within_tolerance(dec!(2.45621), "0.001")]
+#[case::high_price(dec!(84060.35), "0.1")]
+#[tokio::test]
+async fn test_mass_status_recovers_off_tick_position_average(
+    #[case] avg_px: Decimal,
+    #[case] price_increment: &str,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(false, true)] hedging: bool,
+) {
+    let mut ctx = TestContext::new();
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.price_increment = Price::from(price_increment);
+    instrument.price_precision = instrument.price_increment.precision;
+    instrument.max_price = None;
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument);
+    ctx.exec_engine.borrow_mut().register_oms_type(
+        StrategyId::external(),
+        if hedging {
+            OmsType::Hedging
+        } else {
+            OmsType::Netting
+        },
+    );
+
+    let position_side = if side == OrderSide::Buy {
+        PositionSide::Long
+    } else {
+        PositionSide::Short
+    };
+
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        position_side,
+        Quantity::from("3.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        hedging.then_some(PositionId::from("P-OFF-TICK")),
+        Some(avg_px),
+    );
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_eq!(
+        filled_events(&result.events),
+        vec![(
+            side,
+            Quantity::from("3.000"),
+            Price::from_decimal(avg_px).unwrap()
+        )]
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].side, position_side);
+    assert_eq!(positions[0].quantity, Quantity::from("3.000"));
+
+    // Position stores its average as f64, compare at the reported decimal precision
+    assert_eq!(
+        Decimal::from_str_exact(&positions[0].avg_px_open.to_string())
+            .unwrap()
+            .round_dp(avg_px.scale()),
+        avg_px
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_recovers_off_tick_average_with_partial_fill_history(
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let mut ctx = TestContext::new();
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.price_precision = 3;
+    instrument.price_increment = Price::from("0.001");
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument);
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(StrategyId::external(), OmsType::Netting);
+
+    let mut orders = Vec::new();
+    let mut fills = Vec::new();
+
+    for (id, quantity, price, ts) in [
+        ("1", "1.000", "2.456", 1_000_000),
+        ("2", "2.000", "2.457", 2_000_000),
+    ] {
+        let (order, fill) = create_bounded_fill_lifecycle(
+            instrument_id,
+            VenueOrderId::from(id),
+            TradeId::from(id),
+            side,
+            quantity,
+            price,
+            false,
+            UnixNanos::from(ts),
+        );
+        orders.push(order);
+        fills.push(fill);
+    }
+
+    let position_side = if side == OrderSide::Buy {
+        PositionSide::Long
+    } else {
+        PositionSide::Short
+    };
+
+    let avg_px = dec!(2.42568);
+
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        position_side,
+        Quantity::from("10.000"),
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+        None,
+        Some(avg_px),
+    );
+    let mut mass_status = create_mass_status(orders, fills);
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_eq!(
+        filled_events(&result.events),
+        vec![
+            (side, Quantity::from("7.000"), Price::from("2.4124")),
+            (side, Quantity::from("1.000"), Price::from("2.456")),
+            (side, Quantity::from("2.000"), Price::from("2.457")),
+        ]
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].side, position_side);
+    assert_eq!(positions[0].quantity, Quantity::from("10.000"));
+    assert_eq!(
+        Decimal::from_str_exact(&positions[0].avg_px_open.to_string())
+            .unwrap()
+            .round_dp(avg_px.scale()),
+        avg_px
+    );
 }
 
 #[rstest]

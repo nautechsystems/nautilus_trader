@@ -2902,6 +2902,22 @@ pub(crate) mod serial_tests {
         true,
         false
     )]
+    #[case::off_tick_long(
+        Some(PositionSide::Long),
+        Some(Decimal::new(24564, 4)),
+        false,
+        false,
+        true,
+        false
+    )]
+    #[case::off_tick_short(
+        Some(PositionSide::Short),
+        Some(Decimal::new(24564, 4)),
+        false,
+        false,
+        true,
+        false
+    )]
     #[case::flat(Some(PositionSide::Flat), None, false, false, true, false)]
     #[case::empty(None, None, false, false, true, false)]
     #[case::filtered(Some(PositionSide::Long), None, true, false, true, false)]

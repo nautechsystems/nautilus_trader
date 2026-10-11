@@ -5223,7 +5223,7 @@ mod tests {
             stubs::{btcusd_bybit, crypto_perpetual_ethusdt},
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
-        types::{AccountBalance, Currency, MarginBalance, Money, Price},
+        types::{AccountBalance, Currency, MarginBalance, Money, Price, fixed::FIXED_PRECISION},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -5654,7 +5654,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case::filled(OrderStatus::Filled, "10.0", "6.0", "33.33", 1)]
+    #[case::filled(
+        OrderStatus::Filled,
+        "10.0",
+        "6.0",
+        Price::from_decimal_dp(dec!(33.3333333333333333), FIXED_PRECISION).unwrap(),
+        1
+    )]
     #[case::canceled(OrderStatus::Canceled, "8.0", "4.0", "20.00", 2)]
     #[case::expired(OrderStatus::Expired, "8.0", "4.0", "20.00", 2)]
     fn test_cached_reconciliation_applies_explicit_fill_and_defers_failed_residual(
