@@ -2849,16 +2849,24 @@ impl ExecutionManager {
             || venue_reports
                 .iter()
                 .any(|venue_report| venue_report.venue_position_id.is_some());
-        let mapped_position_id = client_order_id
-            .and_then(|client_order_id| cache.position_id(&client_order_id))
-            .copied();
+        let flip = client_order_id
+            .map(|id| cache.hedging_flip_position_ids(id))
+            .transpose()?
+            .flatten();
+
+        let mapped_position_id = flip.map(|ids| ids[1]).or_else(|| {
+            client_order_id
+                .and_then(|client_order_id| cache.position_id(&client_order_id))
+                .copied()
+        });
 
         if hedge_context
             && let (Some(venue_position_id), Some(mapped_position_id)) =
                 (report.venue_position_id, mapped_position_id)
         {
             anyhow::ensure!(
-                venue_position_id == mapped_position_id,
+                venue_position_id == mapped_position_id
+                    || flip.is_some_and(|ids| ids.contains(&venue_position_id)),
                 "fill {} position ID {venue_position_id} conflicts with cached order position {mapped_position_id}",
                 report.trade_id,
             );
@@ -2872,6 +2880,11 @@ impl ExecutionManager {
 
         if fill_precedes_snapshot_reconciled_position(&cache, report) {
             return Ok(PositionFillReportPreparation::SnapshotOverlap);
+        }
+
+        if report.venue_position_id.is_none() && flip.is_some() {
+            report.venue_position_id = mapped_position_id;
+            return Ok(PositionFillReportPreparation::Ready);
         }
 
         if !hedge_context {
@@ -2946,6 +2959,21 @@ impl ExecutionManager {
         let client_order_id = report
             .client_order_id
             .or_else(|| cache.client_order_id(&report.venue_order_id).copied());
+
+        let flip = match client_order_id
+            .map(|id| cache.hedging_flip_position_ids(id))
+            .transpose()
+        {
+            Ok(flip) => flip.flatten(),
+            Err(_) => return false,
+        };
+
+        if let (Some(ids), Some(id)) = (flip, report.venue_position_id)
+            && !ids.contains(&id)
+        {
+            return false;
+        }
+
         let positions = cache.positions(
             None,
             Some(&report.instrument_id),
@@ -2958,53 +2986,30 @@ impl ExecutionManager {
         let mut commission = Money::zero(report.commission.currency);
 
         for position in positions {
-            if report
-                .venue_position_id
-                .is_some_and(|position_id| position.id != position_id)
-            {
+            if flip.map_or_else(
+                || report.venue_position_id.is_some_and(|id| position.id != id),
+                |ids| !ids.contains(&position.id),
+            ) {
                 continue;
             }
 
-            for replay_event in &position.replay_events {
-                let PositionReplayEvent::Filled(fill) = replay_event else {
-                    continue;
-                };
+            let Some((position_quantity, position_commission)) =
+                position_fill_report_totals(&position, report, client_order_id, flip.is_some())
+            else {
+                return false;
+            };
 
-                if fill.account_id != report.account_id
-                    || fill.instrument_id != report.instrument_id
-                    || fill.venue_order_id != report.venue_order_id
-                    || fill.trade_id != report.trade_id
-                    || fill.order_side != report.order_side
-                    || fill.last_px != report.last_px
-                    || fill.liquidity_side != report.liquidity_side
-                    || client_order_id.is_some_and(|id| fill.client_order_id != id)
-                    || report
-                        .venue_position_id
-                        .is_some_and(|id| fill.position_id != Some(id))
-                {
-                    continue;
-                }
+            let Some(next_quantity) = quantity.checked_add(position_quantity) else {
+                return false;
+            };
 
-                let Some(fill_commission) = fill.commission else {
-                    return false;
-                };
+            let Some(next_commission) = commission.checked_add(position_commission) else {
+                return false;
+            };
 
-                if fill_commission.currency != report.commission.currency {
-                    return false;
-                }
-
-                let Some(next_quantity) = quantity.checked_add(fill.last_qty) else {
-                    return false;
-                };
-
-                let Some(next_commission) = commission.checked_add(fill_commission) else {
-                    return false;
-                };
-
-                matched = true;
-                quantity = next_quantity;
-                commission = next_commission;
-            }
+            matched |= position_quantity.non_zero();
+            quantity = next_quantity;
+            commission = next_commission;
         }
 
         matched && quantity == report.last_qty && commission == report.commission
@@ -5137,6 +5142,70 @@ impl ExecutionManager {
 
         Some((event, fill_key))
     }
+}
+
+fn position_fill_report_totals(
+    position: &Position,
+    report: &FillReport,
+    client_order_id: Option<ClientOrderId>,
+    apply_voids: bool,
+) -> Option<(Quantity, Money)> {
+    let mut fills = position
+        .replay_events
+        .iter()
+        .filter_map(|event| match event {
+            PositionReplayEvent::Filled(fill)
+                if fill.position_id == Some(position.id)
+                    && fill.account_id == report.account_id
+                    && fill.instrument_id == report.instrument_id
+                    && fill.venue_order_id == report.venue_order_id
+                    && fill.trade_id == report.trade_id
+                    && fill.order_side == report.order_side
+                    && fill.last_px == report.last_px
+                    && fill.liquidity_side == report.liquidity_side
+                    && client_order_id.is_none_or(|id| fill.client_order_id == id) =>
+            {
+                Some(fill)
+            }
+            _ => None,
+        });
+
+    let (mut position_quantity, mut position_commission) = fills.try_fold(
+        (
+            Quantity::zero(report.last_qty.precision),
+            Money::zero(report.commission.currency),
+        ),
+        |(quantity, commission), fill| {
+            let fill_commission = fill.commission?;
+            if fill_commission.currency != report.commission.currency {
+                return None;
+            }
+
+            Some((
+                quantity.checked_add(fill.last_qty)?,
+                commission.checked_add(fill_commission)?,
+            ))
+        },
+    )?;
+
+    if apply_voids
+        && let Some(correction) = position.fill_voids.iter().rev().find(|correction| {
+            correction.event.trade_id == report.trade_id
+                && correction.event.venue_order_id == report.venue_order_id
+                && client_order_id.is_none_or(|id| correction.event.client_order_id == id)
+        })
+    {
+        let corrected_quantity = position_quantity.checked_sub(correction.voided_qty)?;
+        let corrected_commission = position_commission.checked_sub(
+            correction
+                .commission_voided
+                .unwrap_or(Money::zero(report.commission.currency)),
+        )?;
+        position_quantity = corrected_quantity;
+        position_commission = corrected_commission;
+    }
+
+    Some((position_quantity, position_commission))
 }
 
 #[cfg(test)]

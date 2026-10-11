@@ -1718,6 +1718,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let payload = self.serialize_position_event(position)?;
         self.replace_list(key, payload)?;
 
+        if position.requires_replay_state() {
+            self.add_position_snapshot(&PositionSnapshot::from_replay_state(position, None))?;
+        }
+
         let position_id_bytes = Bytes::from(position_id.to_string());
         self.database.insert(
             INDEX_POSITIONS.to_string(),

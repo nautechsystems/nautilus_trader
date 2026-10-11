@@ -75,8 +75,9 @@ use nautilus_model::{
         OrderEventAny, OrderFilled,
         account::state::AccountState,
         order::spec::{
-            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderModifyRejectedSpec,
-            OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderFillVoidedSpec,
+            OrderModifyRejectedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
+            OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -93,6 +94,7 @@ use nautilus_model::{
     },
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
+    stubs::TestDefault,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use parking_lot::Mutex;
@@ -425,6 +427,232 @@ fn test_fill_deduplication_new_fill_not_processed() {
         test_instrument_id(),
         trade_id
     ));
+}
+
+#[rstest]
+#[case::unchanged(None, "3.000", "0.75 USDT")]
+#[case::partial_opening(Some("0.500"), "2.500", "0.625 USDT")]
+#[case::entire_opening(Some("1.000"), "2.000", "0.50 USDT")]
+#[case::partial_closing(Some("1.500"), "1.500", "0.375 USDT")]
+fn test_position_fill_report_accounts_for_virtual_flip(
+    #[case] voided_qty: Option<&str>,
+    #[case] remaining_qty: &str,
+    #[case] remaining_commission: &str,
+    #[values(false, true)] rebuild_index: bool,
+) {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+    let position_id = PositionId::from("P-FLIP-SOURCE");
+    let position =
+        create_test_position(&instrument, position_id, OrderSide::Buy, "2.000", "3000.00");
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&position);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-FLIP-ROUTE"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("5.000"))
+        .build();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(order.strategy_id(), OmsType::Hedging);
+    ctx.add_order(order.clone());
+    ctx.exec_engine
+        .borrow_mut()
+        .process(&TestOrderEventStubs::submitted(&order, test_account_id()));
+    ctx.exec_engine
+        .borrow_mut()
+        .process(&TestOrderEventStubs::accepted(
+            &order,
+            test_account_id(),
+            VenueOrderId::from("V-FLIP-ROUTE"),
+        ));
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-FLIP-ROUTE")),
+        Some(position_id),
+        Some(Price::from("3100.00")),
+        Some(Quantity::from("3.000")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0.75 USDT")),
+        None,
+        Some(test_account_id()),
+    );
+    ctx.exec_engine.borrow_mut().process(&fill);
+
+    let OrderEventAny::Filled(fill) = fill else {
+        unreachable!()
+    };
+
+    let mut report = FillReport::new(
+        fill.account_id,
+        fill.instrument_id,
+        fill.venue_order_id,
+        fill.trade_id,
+        fill.order_side,
+        fill.last_qty,
+        fill.last_px,
+        fill.commission.unwrap(),
+        fill.liquidity_side,
+        Some(fill.client_order_id),
+        Some(position_id),
+        fill.ts_event,
+        fill.ts_init,
+        None,
+    );
+
+    if let Some(voided_qty) = voided_qty {
+        let voided_qty = Quantity::from(voided_qty);
+        let voided = OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(voided_qty)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .position_id(position_id)
+            .commission_voided(
+                Money::from_decimal(voided_qty.as_decimal() * dec!(0.25), Currency::USDT())
+                    .unwrap(),
+            )
+            .is_reopened(true)
+            .build();
+        ctx.exec_engine
+            .borrow_mut()
+            .process(&OrderEventAny::FillVoided(voided));
+        assert!(!ctx.manager.position_contains_fill_report(&report));
+        report.last_qty = Quantity::from(remaining_qty);
+        report.commission = Money::from(remaining_commission);
+    }
+
+    if rebuild_index {
+        let mut cache = ctx.cache.borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+
+    assert!(ctx.manager.position_contains_fill_report(&report));
+    ctx.manager
+        .prepare_position_fill_report(&mut report, &[])
+        .unwrap();
+    assert_eq!(report.venue_position_id, Some(position_id));
+
+    let accepted_report = report.clone();
+    report.last_qty = Quantity::from("1.000");
+    assert!(!ctx.manager.position_contains_fill_report(&report));
+    report = accepted_report.clone();
+    report.commission = Money::from("0.01 USDT");
+    assert!(!ctx.manager.position_contains_fill_report(&report));
+    report = accepted_report.clone();
+    report.venue_position_id = Some(PositionId::from("P-UNRELATED"));
+    assert!(!ctx.manager.position_contains_fill_report(&report));
+    assert!(
+        ctx.manager
+            .prepare_position_fill_report(&mut report, &[])
+            .is_err()
+    );
+    report = accepted_report;
+    report.venue_position_id = None;
+    ctx.manager
+        .prepare_position_fill_report(&mut report, &[])
+        .unwrap();
+    assert_eq!(
+        report.venue_position_id,
+        ctx.cache
+            .borrow()
+            .position_id(&fill.client_order_id)
+            .copied()
+    );
+    assert!(ctx.manager.position_contains_fill_report(&report));
+}
+
+#[rstest]
+fn test_position_fill_report_preserves_netting_void_behavior(
+    #[values(false, true)] rebuild_index: bool,
+) {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+
+    let position_id = PositionId::new(format!(
+        "{}-{}",
+        instrument.id(),
+        StrategyId::test_default()
+    ));
+    let position =
+        create_test_position(&instrument, position_id, OrderSide::Buy, "2.000", "3000.00");
+    let mut fill = position.events[0].clone();
+    fill.commission = Some(Money::from("0.50 USDT"));
+    let mut position = Position::new(&instrument, fill.clone());
+
+    let voided = OrderFillVoidedSpec::builder()
+        .trader_id(fill.trader_id)
+        .strategy_id(fill.strategy_id)
+        .instrument_id(fill.instrument_id)
+        .client_order_id(fill.client_order_id)
+        .venue_order_id(fill.venue_order_id)
+        .account_id(fill.account_id)
+        .trade_id(fill.trade_id)
+        .voided_qty(Quantity::from("1.000"))
+        .order_side(fill.order_side)
+        .order_type(fill.order_type)
+        .last_px(fill.last_px)
+        .currency(fill.currency)
+        .liquidity_side(fill.liquidity_side)
+        .position_id(position_id)
+        .commission_voided(Money::from("0.25 USDT"))
+        .is_reopened(true)
+        .build();
+    position
+        .apply_fill_void(
+            voided,
+            Quantity::from("1.000"),
+            Some(Money::from("0.25 USDT")),
+        )
+        .unwrap();
+    ctx.add_instrument(instrument);
+    ctx.cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    if rebuild_index {
+        let mut cache = ctx.cache.borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+
+    let report = FillReport::new(
+        fill.account_id,
+        fill.instrument_id,
+        fill.venue_order_id,
+        fill.trade_id,
+        fill.order_side,
+        fill.last_qty,
+        fill.last_px,
+        fill.commission.unwrap(),
+        fill.liquidity_side,
+        Some(fill.client_order_id),
+        None,
+        fill.ts_event,
+        fill.ts_init,
+        None,
+    );
+    let mut corrected_report = report.clone();
+    corrected_report.last_qty = Quantity::from("1.000");
+    corrected_report.commission = Money::from("0.25 USDT");
+
+    assert_eq!(position.quantity, Quantity::from("1.000"));
+    assert!(ctx.manager.position_contains_fill_report(&report));
+    assert!(!ctx.manager.position_contains_fill_report(&corrected_report));
 }
 
 #[rstest]

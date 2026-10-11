@@ -3580,7 +3580,21 @@ impl ExecutionEngine {
         order: Option<&OrderAny>,
     ) -> Option<PositionId> {
         let cache = self.cache.borrow();
-        let cached_position_id = cache.position_id(&fill.client_order_id()).copied();
+
+        let flip = match (oms_type == OmsType::Hedging)
+            .then(|| cache.hedging_flip_position_ids(fill.client_order_id))
+            .transpose()
+        {
+            Ok(flip) => flip.flatten(),
+            Err(e) => {
+                log::error!("Cannot route hedging fill {}: {e}", fill.trade_id);
+                return None;
+            }
+        };
+
+        let cached_position_id = flip
+            .map(|ids| ids[1])
+            .or_else(|| cache.position_id(&fill.client_order_id()).copied());
         drop(cache);
 
         if self.config.debug {
@@ -3595,17 +3609,19 @@ impl ExecutionEngine {
             && let Some(fill_position_id) = fill.position_id
             && cached_position_id != fill_position_id
         {
-            if oms_type == OmsType::Hedging {
-                if !self.is_flip_remainder(fill, cached_position_id, fill_position_id) {
-                    log::error!(
-                        "Cannot apply hedging fill {} for {}: venue position ID {fill_position_id} conflicts with cached position ID {cached_position_id}",
-                        fill.trade_id,
-                        fill.client_order_id(),
-                    );
+            if oms_type == OmsType::Hedging
+                && !flip.is_some_and(|ids| ids.contains(&fill_position_id))
+            {
+                log::error!(
+                    "Cannot apply hedging fill {} for {}: venue position ID {fill_position_id} conflicts with cached position ID {cached_position_id}",
+                    fill.trade_id,
+                    fill.client_order_id(),
+                );
 
-                    return None;
-                }
-            } else {
+                return None;
+            }
+
+            if oms_type != OmsType::Hedging {
                 log::warn!(
                     "Incorrect position ID assigned to fill: \
                      cached={cached_position_id}, assigned={fill_position_id}; \
@@ -3637,17 +3653,23 @@ impl ExecutionEngine {
             return None;
         }
 
+        self.index_exec_spawn_position(fill.client_order_id, order, position_id);
+
+        Some(position_id)
+    }
+
+    fn index_exec_spawn_position(
+        &self,
+        client_order_id: ClientOrderId,
+        order: Option<&OrderAny>,
+        position_id: PositionId,
+    ) {
         let order = if let Some(o) = order {
             o.clone()
         } else {
             let cache = self.cache.borrow();
-            cache.order(&fill.client_order_id()).map_or_else(
-                || {
-                    panic!(
-                        "Order for {} not found to determine position ID",
-                        fill.client_order_id()
-                    )
-                },
+            cache.order(&client_order_id).map_or_else(
+                || panic!("Order for {client_order_id} not found to determine position ID"),
                 |o| o.clone(),
             )
         };
@@ -3663,7 +3685,7 @@ impl ExecutionEngine {
                     "Primary exec spawn order {exec_spawn_id} not found, \
                      skipping position ID propagation"
                 );
-                return Some(position_id);
+                return;
             };
             let primary_already_indexed = cache.position_id(&primary.client_order_id()).is_some();
             drop(cache);
@@ -3681,8 +3703,6 @@ impl ExecutionEngine {
                 log::debug!("Assigned primary order {position_id}");
             }
         }
-
-        Some(position_id)
     }
 
     /// Returns whether `fill` may be applied to the position assigned to `position_id`.
@@ -3752,43 +3772,6 @@ impl ExecutionEngine {
         }
 
         true
-    }
-
-    /// Returns whether `fill` is a later fill of an order this engine already flipped.
-    ///
-    /// Flipping under `Hedging` closes the original virtual position with the reversing order
-    /// and opens a newly minted virtual position from the same order, moving the order's cache
-    /// index onto the new ID. Every later fill of that order still carries the original ID, so
-    /// the venue ID and the cached ID disagree for the rest of the order's life.
-    ///
-    /// The split is recognized from the two positions rather than from the order, because
-    /// applying a fill writes the determined ID onto the order and would erase the evidence for
-    /// the fill after it. Both halves must still name this order: the cached position was opened
-    /// by it, and the position the fill names was closed by it.
-    fn is_flip_remainder(
-        &self,
-        fill: &OrderFilled,
-        cached_position_id: PositionId,
-        fill_position_id: PositionId,
-    ) -> bool {
-        if !cached_position_id.is_virtual() || !fill_position_id.is_virtual() {
-            return false;
-        }
-
-        let cache = self.cache.borrow();
-        let client_order_id = fill.client_order_id();
-
-        let opened_by_order = cache
-            .position_ref(&cached_position_id)
-            .is_some_and(|flipped| flipped.opening_order_id == client_order_id);
-
-        let closed_by_order = cache
-            .position_ref(&fill_position_id)
-            .is_some_and(|original| {
-                original.is_closed() && original.closing_order_id == Some(client_order_id)
-            });
-
-        opened_by_order && closed_by_order
     }
 
     fn determine_hedging_position_id(
@@ -4734,7 +4717,8 @@ impl ExecutionEngine {
                 &position,
                 oms_type,
                 !is_orderless_leg,
-                self.config.carry_replay_events_on_reopen,
+                self.config.carry_replay_events_on_reopen
+                    || (oms_type == OmsType::Hedging && position_id.is_virtual()),
             )?;
         } else if is_orderless_leg {
             self.cache

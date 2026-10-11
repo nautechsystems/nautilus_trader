@@ -580,6 +580,11 @@ lookback window in seconds.
 - `cache.purge_account_events(ts_now, lookback_secs)`: account state events older than
   `lookback_secs`. A value of `0` purges all events.
 
+:::warning
+Keep the closed source position of a virtual `HEDGING` flip while its order can still receive fills.
+Purging it removes the history needed to route later fills and can cause the engine to reject them.
+:::
+
 #### Automatic purging in live trading
 
 `LiveExecutionEngineConfig` schedules the bulk purges on a timer. All purge intervals default to `None`,

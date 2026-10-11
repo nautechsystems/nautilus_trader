@@ -15,6 +15,9 @@
 
 #![warn(clippy::clone_on_ref_ptr)]
 
+#[cfg(any(feature = "redis", feature = "postgres"))]
+mod position_flip;
+
 mod test_cache_database_postgres;
 mod test_cache_postgres;
 mod test_cache_redis;

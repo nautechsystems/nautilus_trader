@@ -2075,12 +2075,14 @@ impl Position {
     ///
     /// Fill voids, settlements, and price restatements change state without a new
     /// quantity-bearing fill, so persistence must store the complete replay state.
+    /// Retained virtual position cycles also require the complete replay state.
     #[must_use]
     pub fn requires_replay_state(&self) -> bool {
         // A price restatement is stored only in replay, so equal lengths cannot contain one.
         !self.fill_voids.is_empty()
             || self.is_settled()
             || (self.replay_events.len() > self.events.len() && self.has_replay_price_restatement())
+            || (self.id.is_virtual() && self.replay_events.len() > self.events.len())
     }
 
     /// Returns the signed quantity as a `Decimal`.

@@ -87,7 +87,7 @@ use nautilus_model::{
         own::{OwnOrderBook, should_handle_own_book_order},
     },
     orders::{Order, OrderAny, OrderError, OrderList},
-    position::Position,
+    position::{Position, PositionReplayEvent},
     types::{
         Currency, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION, check_fixed_precision},
@@ -705,11 +705,11 @@ impl Cache {
             }
 
             // 3: Build index.order_position -> {ClientOrderId, PositionId}
-            if let Some(position_id) = order.position_id() {
-                self.index
-                    .order_position
-                    .insert(*client_order_id, position_id);
-            }
+            self.index.order_position.extend(
+                order
+                    .position_id()
+                    .map(|position_id| (*client_order_id, position_id)),
+            );
 
             // 4: Build index.order_strategy -> {ClientOrderId, StrategyId}
             self.index
@@ -862,6 +862,10 @@ impl Cache {
         }
 
         self.index_position_oms();
+        let client_order_ids: Vec<_> = self.orders.keys().copied().collect();
+        for client_order_id in client_order_ids {
+            self.reindex_hedging_position(client_order_id);
+        }
     }
 
     fn index_position_oms(&mut self) {
@@ -3463,6 +3467,10 @@ impl Cache {
 
         *order_cell.borrow_mut() = snapshot.clone();
 
+        if matches!(event, OrderEventAny::FillVoided(_)) {
+            self.reindex_hedging_position(client_order_id);
+        }
+
         if let Err(e) = self.refresh_order(&snapshot) {
             log::error!("Error updating order in cache: {e}");
         }
@@ -5559,6 +5567,201 @@ impl Cache {
     #[must_use]
     pub fn position_id(&self, client_order_id: &ClientOrderId) -> Option<&PositionId> {
         self.index.order_position.get(client_order_id)
+    }
+
+    /// Returns the proven virtual HEDGING flip IDs, with the current destination second.
+    ///
+    /// The route comes from the original fill and its causal split fragments, independently of
+    /// the order's mutable position ID. Returns `None` when no virtual split is recorded.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if split history is incomplete, conflicts, or a correction leaves both
+    /// sides of a split open.
+    pub fn hedging_flip_position_ids(
+        &self,
+        client_order_id: ClientOrderId,
+    ) -> anyhow::Result<Option<[PositionId; 2]>> {
+        let Some(order) = self.order_ref(&client_order_id) else {
+            return Ok(None);
+        };
+
+        let mut flip = None;
+        let mut corrected_source = None;
+
+        for event in order.events() {
+            let OrderEventAny::Filled(fill) = event else {
+                continue;
+            };
+
+            let Some(source_id) = fill.position_id.filter(PositionId::is_virtual) else {
+                continue;
+            };
+
+            let source = self.position_ref(&source_id);
+            if source.is_some() && self.oms_type(&source_id) != Some(OmsType::Hedging) {
+                continue;
+            }
+
+            if source.as_ref().is_some_and(|source| {
+                source.replay_events.iter().any(|event| {
+                    matches!(event, PositionReplayEvent::Filled(fragment) if fragment == fill)
+                })
+            }) {
+                continue;
+            }
+
+            let closing = source.as_ref().and_then(|source| {
+                source
+                    .fill_fragments(client_order_id, fill.trade_id)
+                    .into_iter()
+                    .find(|fragment| {
+                        fragment.event_id == fill.event_id && fragment.last_qty < fill.last_qty
+                    })
+                    .map(|closing| (source, closing))
+            });
+
+            let Some((source, closing)) = closing else {
+                let has_opening = self
+                    .positions_refs(
+                        None,
+                        Some(&fill.instrument_id),
+                        Some(&fill.strategy_id),
+                        Some(&fill.account_id),
+                        None,
+                    )
+                    .iter()
+                    .any(|position| {
+                        position.id != source_id
+                            && position.id.is_virtual()
+                            && self.oms_type(&position.id) == Some(OmsType::Hedging)
+                            && position.replay_events.iter().any(|event| {
+                                matches!(event, PositionReplayEvent::Filled(opening)
+                                if opening.causation_id == Some(fill.event_id)
+                                    && opening.client_order_id == client_order_id
+                                    && opening.trade_id == fill.trade_id)
+                            })
+                    });
+
+                anyhow::ensure!(
+                    !has_opening,
+                    "missing virtual flip source fragment for order {client_order_id}"
+                );
+                continue;
+            };
+
+            let (positions, corrected_closing) =
+                self.hedging_flip_destination(fill, source, closing)?;
+            anyhow::ensure!(
+                flip.is_none() || corrected_source == Some(source.id),
+                "ambiguous virtual flip history for order {client_order_id}"
+            );
+            flip = Some(positions);
+            corrected_source = corrected_closing.then_some(source.id);
+        }
+
+        Ok(flip)
+    }
+
+    fn hedging_flip_destination(
+        &self,
+        fill: &OrderFilled,
+        source: &Position,
+        closing: &OrderFilled,
+    ) -> anyhow::Result<([PositionId; 2], bool)> {
+        let positions = self.positions_refs(
+            None,
+            Some(&fill.instrument_id),
+            Some(&fill.strategy_id),
+            Some(&fill.account_id),
+            None,
+        );
+
+        let mut openings = positions.iter().flat_map(|position| {
+            position
+                .replay_events
+                .iter()
+                .filter_map(move |event| match event {
+                    PositionReplayEvent::Filled(opening)
+                        if opening.causation_id == Some(fill.event_id)
+                            && position.id != source.id =>
+                    {
+                        Some((position, opening))
+                    }
+                    _ => None,
+                })
+        });
+
+        let (destination, opening) = openings.next().ok_or_else(|| {
+            anyhow::anyhow!(
+                "missing virtual flip fragment for order {}",
+                fill.client_order_id
+            )
+        })?;
+
+        anyhow::ensure!(
+            openings.next().is_none(),
+            "ambiguous virtual flip fragments for order {}",
+            fill.client_order_id
+        );
+        anyhow::ensure!(
+            source.instrument_id == fill.instrument_id
+                && source.account_id == fill.account_id
+                && source.strategy_id == fill.strategy_id
+                && destination.id.is_virtual()
+                && self.oms_type(&destination.id) == Some(OmsType::Hedging),
+            "conflicting virtual flip positions for order {}",
+            fill.client_order_id
+        );
+        let (expected_closing, expected_opening) =
+            fill.split_for_position_flip(closing.last_qty, Some(destination.id), opening.event_id)?;
+        anyhow::ensure!(
+            *closing == expected_closing && *opening == expected_opening,
+            "conflicting virtual flip provenance for order {}",
+            fill.client_order_id
+        );
+
+        let corrected_closing = source.fill_voids.iter().any(|correction| {
+            correction.event.client_order_id == fill.client_order_id
+                && correction.event.trade_id == fill.trade_id
+                && correction.voided_qty.non_zero()
+        });
+
+        if corrected_closing && source.is_open() {
+            anyhow::ensure!(
+                !destination.is_open(),
+                "ambiguous corrected virtual flip for order {}",
+                fill.client_order_id
+            );
+            return Ok(([destination.id, source.id], corrected_closing));
+        }
+
+        Ok(([source.id, destination.id], corrected_closing))
+    }
+
+    fn reindex_hedging_position(&mut self, client_order_id: ClientOrderId) {
+        match self.hedging_flip_position_ids(client_order_id) {
+            Ok(Some([_, position_id])) => {
+                let position = self
+                    .position_ref(&position_id)
+                    .expect("proven position is cached");
+                let venue = position.instrument_id.venue;
+                let strategy_id = position.strategy_id;
+                drop(position);
+
+                if let Err(e) =
+                    self.add_position_id(&position_id, &venue, &client_order_id, &strategy_id)
+                {
+                    log::error!("Failed to index virtual flip for order {client_order_id}: {e}");
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                self.index.order_position.remove(&client_order_id);
+
+                log::error!("Cannot index virtual flip for order {client_order_id}: {e}");
+            }
+        }
     }
 
     /// Returns borrows of all positions matching the optional filter parameters.

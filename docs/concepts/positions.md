@@ -215,6 +215,12 @@ In `HEDGING` mode, multiple positions can exist for the same instrument:
 - A virtual position flip creates a new ID and keeps the original closed position in the cache,
   so that path does not need a closed-cycle snapshot.
 
+After a virtual flip, later fills for the same order follow the destination position even if they
+carry the original position ID. The engine derives the destination from retained order and position
+history, including after cache recovery and fill-void corrections, and rejects fills when that history
+is incomplete or ambiguous. Virtual `HEDGING` positions always retain replay history across reopens,
+even when `carry_replay_events_on_reopen=False`, to preserve this routing when a position ID is reused.
+
 :::warning
 `HEDGING` can increase margin requirements when a venue maintains long and short positions
 independently. A venue with a `NETTING` OMS exposes only its net position, even when NautilusTrader

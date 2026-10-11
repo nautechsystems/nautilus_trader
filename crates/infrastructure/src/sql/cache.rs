@@ -1086,7 +1086,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let query = DatabaseQuery::AddPosition(position.id, event);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_position to database message handler: {e}")
-        })
+        })?;
+
+        if position.requires_replay_state() {
+            self.add_position_snapshot(&PositionSnapshot::from_replay_state(position, None))?;
+        }
+
+        Ok(())
     }
 
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {

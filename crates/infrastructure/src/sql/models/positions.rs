@@ -71,7 +71,9 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
         let avg_px_open = row.try_get::<f64, _>("avg_px_open")?;
         let avg_px_close = row.try_get::<Option<f64>, _>("avg_px_close")?;
         let realized_return = row.try_get::<Option<f64>, _>("realized_return")?;
-        let realized_pnl = row.try_get::<&str, _>("realized_pnl").map(Money::from)?;
+        let realized_pnl = row
+            .try_get::<Option<&str>, _>("realized_pnl")?
+            .map(Money::from);
         let unrealized_pnl = row
             .try_get::<Option<&str>, _>("unrealized_pnl")
             .ok()
@@ -117,7 +119,7 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
             avg_px_open,
             avg_px_close,
             realized_return,
-            realized_pnl: Some(realized_pnl), // TODO: Standardize
+            realized_pnl,
             unrealized_pnl,
             commissions,
             duration_ns,

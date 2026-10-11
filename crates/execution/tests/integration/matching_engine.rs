@@ -20,6 +20,7 @@ use std::{
     rc::Rc,
 };
 
+use ahash::AHashSet;
 use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_common::{
     cache::Cache,
@@ -19961,6 +19962,138 @@ fn test_triggered_passive_stop_limit_modified_into_market_fills_as_taker(
     assert_eq!(fills.len(), 1);
     assert_eq!(fills[0].liquidity_side, LiquiditySide::Taker);
     assert_eq!(fills[0].last_px, Price::from("1502.00"));
+}
+
+#[rstest]
+fn test_hedging_flip_across_multiple_book_levels(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+) {
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument_eth_usdt,
+        account_id,
+        OmsType::Hedging,
+        BookType::L2_MBP,
+        OrderMatchingEngineConfig::default(),
+    );
+    let source_id = PositionId::from("P-BOOK-FLIP-SOURCE");
+    let opening_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(ClientOrderId::from("O-BOOK-OPEN"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .build();
+    let opening_fill = TestOrderEventStubs::filled(
+        &opening_order,
+        &instrument_eth_usdt,
+        Some(TradeId::from("T-BOOK-OPEN")),
+        Some(source_id),
+        Some(Price::from("1500.00")),
+        None,
+        None,
+        Some(Money::from("0 USDT")),
+        None,
+        Some(account_id),
+    )
+    .into();
+    cache
+        .borrow_mut()
+        .add_position(
+            &Position::new(&instrument_eth_usdt, opening_fill),
+            OmsType::Hedging,
+        )
+        .unwrap();
+
+    for (price, quantity, order_id) in [
+        ("1499.00", "3.000", 1),
+        ("1498.00", "1.000", 2),
+        ("1497.00", "1.000", 3),
+    ] {
+        let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+            .book_action(BookAction::Add)
+            .book_order(BookOrder::new(
+                OrderSide::Buy,
+                Price::from(price),
+                Quantity::from(quantity),
+                order_id,
+            ))
+            .build();
+        engine.process_order_book_delta(&delta).unwrap();
+    }
+
+    let mut reversal = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .client_order_id(ClientOrderId::from("O-BOOK-FLIP"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("5.000"))
+        .price(Price::from("1497.00"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&reversal, account_id);
+    reversal.apply(submitted).unwrap();
+    reversal.set_position_id(Some(source_id));
+    cache
+        .borrow_mut()
+        .add_order(reversal.clone(), Some(source_id), None, false)
+        .unwrap();
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        engine.process_order(&mut reversal, account_id);
+    });
+
+    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    let cache = cache.borrow();
+    let destination_id = *cache.position_id(&reversal.client_order_id()).unwrap();
+    let source = cache.position(&source_id).unwrap();
+    let destination = cache.position(&destination_id).unwrap();
+    let order = cache.order(&reversal.client_order_id()).unwrap();
+    assert_eq!(
+        fills
+            .iter()
+            .map(|fill| (fill.last_qty, fill.last_px, fill.position_id))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                Quantity::from("3.000"),
+                Price::from("1499.00"),
+                Some(source_id)
+            ),
+            (
+                Quantity::from("1.000"),
+                Price::from("1498.00"),
+                Some(source_id)
+            ),
+            (
+                Quantity::from("1.000"),
+                Price::from("1497.00"),
+                Some(source_id)
+            ),
+        ]
+    );
+    assert_eq!(
+        fills.iter().map(|fill| fill.account_id).collect::<Vec<_>>(),
+        vec![account_id; 3]
+    );
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("5.000"));
+    assert_eq!(source.side, PositionSide::Flat);
+    assert_eq!(source.quantity, Quantity::from("0.000"));
+    assert_eq!(destination.side, PositionSide::Short);
+    assert_eq!(destination.quantity, Quantity::from("3.000"));
+    assert_eq!(
+        destination.trade_ids,
+        fills
+            .iter()
+            .map(|fill| fill.trade_id)
+            .collect::<AHashSet<_>>()
+    );
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 2);
 }
 
 #[rstest]
