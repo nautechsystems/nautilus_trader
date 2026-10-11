@@ -278,7 +278,7 @@ impl WebSocketClientInner {
             config.writer_capacity.unwrap_or(DEFAULT_WRITER_CAPACITY),
         );
         let write_task = Self::spawn_write_task(
-            connection_mode.clone(),
+            Arc::clone(&connection_mode),
             Arc::clone(&controller_notify),
             Arc::clone(&reconnect_published),
             writer,
@@ -291,7 +291,7 @@ impl WebSocketClientInner {
 
         let heartbeat_task = config.heartbeat_interval_secs.map(|heartbeat_interval| {
             Self::spawn_heartbeat_task(
-                connection_mode.clone(),
+                Arc::clone(&connection_mode),
                 heartbeat_interval,
                 config.heartbeat_payload.clone(),
                 writer_tx.clone(),
@@ -502,8 +502,8 @@ impl WebSocketClientInner {
         } else {
             let read_fence = ReadSessionFence::new();
             let read_task = Self::spawn_message_handler_task(
-                connection_mode.clone(),
-                state_notify.clone(),
+                Arc::clone(&connection_mode),
+                Arc::clone(&state_notify),
                 read_fence.clone(),
                 reader,
                 0,
@@ -524,7 +524,7 @@ impl WebSocketClientInner {
             config.writer_capacity.unwrap_or(DEFAULT_WRITER_CAPACITY),
         );
         let write_task = Self::spawn_write_task(
-            connection_mode.clone(),
+            Arc::clone(&connection_mode),
             Arc::clone(&controller_notify),
             Arc::clone(&reconnect_published),
             writer,
@@ -538,7 +538,7 @@ impl WebSocketClientInner {
         // Optionally spawn a heartbeat task to periodically ping server
         let heartbeat_task = config.heartbeat_interval_secs.map(|heartbeat_secs| {
             Self::spawn_heartbeat_task(
-                connection_mode.clone(),
+                Arc::clone(&connection_mode),
                 heartbeat_secs,
                 config.heartbeat_payload.clone(),
                 writer_tx.clone(),
@@ -1598,8 +1598,8 @@ impl WebSocketClientInner {
 
         let read_fence = ReadSessionFence::new();
         self.read_task = Some(Self::spawn_message_handler_task(
-            self.connection_mode.clone(),
-            self.state_notify.clone(),
+            Arc::clone(&self.connection_mode),
+            Arc::clone(&self.state_notify),
             read_fence.clone(),
             reader,
             connection_epoch,
@@ -2884,9 +2884,9 @@ impl WebSocketClient {
         let inner =
             WebSocketClientInner::new_with_writer_and_state_sink(config, writer, state_sink)?;
 
-        let connection_mode = inner.connection_mode.clone();
+        let connection_mode = Arc::clone(&inner.connection_mode);
         let connection_epoch = Arc::clone(&inner.connection_epoch);
-        let state_notify = inner.state_notify.clone();
+        let state_notify = Arc::clone(&inner.state_notify);
         let controller_notify = Arc::clone(&inner.controller_notify);
         let reconnect_published = Arc::clone(&inner.reconnect_published);
         let connect_timeout = inner.connect_timeout;
@@ -2900,8 +2900,8 @@ impl WebSocketClient {
 
         let controller_task = Self::spawn_controller_task(
             inner,
-            connection_mode.clone(),
-            state_notify.clone(),
+            Arc::clone(&connection_mode),
+            Arc::clone(&state_notify),
             Arc::clone(&auth_tracker),
             Arc::clone(&controller_lifecycle),
             Arc::clone(&controller_notify),
@@ -3154,9 +3154,9 @@ impl WebSocketClient {
             initial_connect_options,
         )
         .await?;
-        let connection_mode = inner.connection_mode.clone();
+        let connection_mode = Arc::clone(&inner.connection_mode);
         let connection_epoch = Arc::clone(&inner.connection_epoch);
-        let state_notify = inner.state_notify.clone();
+        let state_notify = Arc::clone(&inner.state_notify);
         let controller_notify = Arc::clone(&inner.controller_notify);
         let reconnect_published = Arc::clone(&inner.reconnect_published);
         let writer_tx = inner.writer_tx.clone();
@@ -3169,8 +3169,8 @@ impl WebSocketClient {
 
         let controller_task = Self::spawn_controller_task(
             inner,
-            connection_mode.clone(),
-            state_notify.clone(),
+            Arc::clone(&connection_mode),
+            Arc::clone(&state_notify),
             Arc::clone(&auth_tracker),
             Arc::clone(&controller_lifecycle),
             Arc::clone(&controller_notify),
@@ -5462,7 +5462,7 @@ mod tests {
         let mut handles = vec![];
 
         for i in 0..10 {
-            let client = client.clone();
+            let client = Arc::clone(&client);
             handles.push(task::spawn(async move {
                 client.send_text(format!("test{i}"), None).await.unwrap();
             }));
@@ -8156,7 +8156,7 @@ mod rust_tests {
             .unwrap();
 
         // Spawn a send that will block on rate limiter
-        let client_clone = client.clone();
+        let client_clone = Arc::clone(&client);
         let send_handle = task::spawn(async move {
             client_clone
                 .send_text("blocked".to_string(), Some(&[Ustr::from("rate_key")]))

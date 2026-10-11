@@ -46,7 +46,7 @@ async fn rejected_redirect_preserves_response_without_contacting_destination(#[c
     let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let target = destination.local_addr().unwrap();
     let destination_requests = Arc::new(AtomicUsize::new(0));
-    let requests = destination_requests.clone();
+    let requests = Arc::clone(&destination_requests);
 
     let destination_task = tokio::spawn(async move {
         let (mut stream, _) = destination.accept().await.unwrap();
