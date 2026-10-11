@@ -88,6 +88,11 @@ const FUTURES_BATCH_CANCEL_LIMIT: usize = 50;
 /// Maximum order IDs per `/orders/status` request for Kraken Futures API.
 const FUTURES_ORDERS_STATUS_LIMIT: usize = 50;
 
+/// Allowance for skew between the node's clock, which stamps an order's creation, and the venue's,
+/// which stamps its placement. An older order whose client order ID shortens alike comes from
+/// another session and was created long before.
+const ORDERS_STATUS_CLOCK_SKEW: DurationNanos = DurationNanos::from_secs(5);
+
 /// Kraken Futures execution client.
 ///
 /// Provides order management, account operations, and position management
@@ -1782,7 +1787,7 @@ fn handle_cancel_failure(
 
 impl KrakenFuturesExecutionClient {
     /// Returns `/orders/status` reports for cached-open orders the given
-    /// venue reports do not cover, and whether any report was withheld.
+    /// venue reports do not cover, and whether it withheld any report.
     ///
     /// A Maker Protection hold never reaches the book, so it is invisible to
     /// an open-orders snapshot while the venue still knows the order within
@@ -1920,10 +1925,10 @@ struct HeldOrder {
 /// alone. A report takes the ID of the cached order indexing its venue order ID. Otherwise its
 /// shortened ID names an order queried by client order ID only when exactly one such order holds
 /// it, exactly one report without an indexed venue order ID carries it, the report's instrument
-/// and side are the order's, and the venue placed it no earlier than the order was created, which
-/// rules out an older order whose ID shortens alike. Any other report is withheld with a warning:
-/// under the venue's ID it would name no cached order, and reconciliation would take it for an
-/// external order.
+/// and side are the order's, and the venue placed it no earlier than the order's creation, give or
+/// take `ORDERS_STATUS_CLOCK_SKEW`, which keeps out an older order whose ID shortens alike. Any
+/// other report is withheld with a warning, since it cannot be tied to exactly one cached order:
+/// reconciliation would take it for an external order or for the wrong one.
 fn attribute_orders_status_reports(
     cache: &Cache,
     queried_by_cli_ord_id: &[HeldOrder],
@@ -1975,7 +1980,7 @@ fn attribute_orders_status_reports(
             let order = (*held.get(echoed.as_str())?)?;
             (report.instrument_id == order.instrument_id
                 && report.order_side == Some(order.side)
-                && report.ts_accepted >= order.ts_init)
+                && report.ts_accepted.saturating_add(ORDERS_STATUS_CLOCK_SKEW) >= order.ts_init)
                 .then_some(order.client_order_id)
         });
 

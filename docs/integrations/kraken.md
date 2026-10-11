@@ -532,16 +532,18 @@ The venue echoes the client order ID the adapter submitted, which is shortened
 to 18 characters unless it fits or is a UUID, hyphenated or as 32 hex
 characters. Mass status and open-only report runs therefore name each window
 report by the cached order it describes: by venue order ID when the cache holds
-it, else by a shortened ID that exactly one queried order holds and exactly one
-report with an unknown venue order ID carries, on the order's instrument and
-side and placed no earlier than the order was created. Any other window report
-is left out with a warning, since under the venue's ID it names no cached order.
+it, else by a shortened ID that exactly one order queried by client order ID
+holds and exactly one report with an unknown venue order ID carries, on the
+order's instrument and side and placed no earlier than the order's creation,
+give or take five seconds of clock skew. Any other window report is left out
+with a warning, since it cannot be tied to exactly one cached order.
 
-The window carries no fill price, so a fully executed order is left out with a
-warning rather than having its executions inferred at the order price. Mass
-status marks the set incomplete when it leaves out a window report. A canceled
-order with executions is reported, since reconciliation waits for its fills
-rather than infer them.
+In those runs the window carries no fill price, so a fully executed order is
+left out with a warning rather than having its executions inferred at the order
+price; a targeted single-order query prices it from recent fills instead, or
+fails so reconciliation defers it. Mass status marks the set incomplete when it
+leaves out a window report. A canceled order with executions is reported, since
+reconciliation waits for its fills rather than infer them.
 
 A hold that fills after a cancel acknowledgement reconciles to its true
 terminal state with the venue's cumulative filled, not a premature cancellation.

@@ -4604,12 +4604,16 @@ async fn test_futures_orders_status_window_report_names_only_an_unambiguous_orde
 /// The window entry's placement time, 2026-09-12T04:05:06.100Z.
 const WINDOW_ENTRY_PLACED_NS: u64 = 1_789_185_906_100_000_000;
 
-/// A shortened client order ID names only a venue order placed no earlier than the cached order
-/// was created, so an older order whose client order ID shortens alike is withheld.
+/// A shortened client order ID names only a venue order placed no earlier than the cached order's
+/// creation, allowing five seconds for skew between the node's and the venue's clocks, so an older
+/// order whose client order ID shortens alike is withheld.
 #[rstest]
 #[case::created_before_placement(WINDOW_ENTRY_PLACED_NS - 1_000_000_000, true)]
 #[case::created_at_placement(WINDOW_ENTRY_PLACED_NS, true)]
-#[case::created_after_placement(WINDOW_ENTRY_PLACED_NS + 86_400_000_000_000, false)]
+#[case::created_within_clock_skew(WINDOW_ENTRY_PLACED_NS + 200_000_000, true)]
+#[case::created_at_clock_skew_bound(WINDOW_ENTRY_PLACED_NS + 5_000_000_000, true)]
+#[case::created_past_clock_skew(WINDOW_ENTRY_PLACED_NS + 6_000_000_000, false)]
+#[case::created_a_day_after_placement(WINDOW_ENTRY_PLACED_NS + 86_400_000_000_000, false)]
 #[tokio::test]
 async fn test_futures_orders_status_window_report_names_an_order_placed_after_its_creation(
     #[case] created_ns: u64,
