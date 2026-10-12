@@ -1,0 +1,37 @@
+{
+  "error": [],
+  "result": {
+    "open": {
+      "OABC12-XYZ34-KLMN56": {
+        "cl_ord_id": "9ce3b826-7c70-4bb6-a89e-d6370e5378f6",
+        "cost": "0.00000",
+        "descr": {
+          "aclass": "forex",
+          "close": "",
+          "leverage": "none",
+          "order": "buy 0.00010000 XBTUSDC @ limit 20000.00",
+          "ordertype": "limit",
+          "pair": "XBTUSDC",
+          "price": "20000.00",
+          "price2": "0",
+          "type": "buy"
+        },
+        "expiretm": 0,
+        "fee": "0.00000",
+        "limitprice": "0.00000",
+        "misc": "",
+        "oflags": "post,fciq",
+        "opentm": 1780582233.729133,
+        "price": "0.00000",
+        "refid": null,
+        "starttm": 0,
+        "status": "open",
+        "stopprice": "0.00000",
+        "time_in_force": "gtc",
+        "userref": null,
+        "vol": "0.00010000",
+        "vol_exec": "0.00000000"
+      }
+    }
+  }
+}

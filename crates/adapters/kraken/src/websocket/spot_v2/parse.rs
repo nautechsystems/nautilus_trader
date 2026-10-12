@@ -476,16 +476,9 @@ pub fn parse_ws_order_status_report(
         report = report.with_client_order_id(ClientOrderId::new(cl_ord_id));
     }
 
-    // Price fallback: limit_price -> avg_price -> last_price
-    // Note: pending_new messages may not include any price fields, which is fine for
-    // orders we submitted (engine already has the price from submission)
-    let price_value = exec
-        .limit_price
-        .filter(|p| *p > Decimal::ZERO)
-        .or(exec.avg_price.filter(|p| *p > Decimal::ZERO))
-        .or(exec.last_price.filter(|p| *p > Decimal::ZERO));
-
-    if let Some(px) = price_value {
+    // The order's price is its limit alone: a fill price is `avg_px`, and a frame without the
+    // limit states no price
+    if let Some(px) = exec.limit_price.filter(|p| *p > Decimal::ZERO) {
         let price =
             Price::from_decimal_dp(px, price_precision).context("Failed to parse order price")?;
         report = report.with_price(price);
@@ -904,6 +897,38 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.order_side, None);
+    }
+
+    /// A report's price is the order's limit alone, never a fill price: a trade frame, which
+    /// carries no limit, states no price, as does a market order's; Kraken's executions example
+    /// fills a sell limit at 26500.0 for an average of 26599.9.
+    #[rstest]
+    #[case::trade_frame_without_the_limit(KrakenOrderType::Limit, None, None)]
+    #[case::frame_with_the_limit(KrakenOrderType::Limit, Some(dec!(26500.0)), Some("26500.0"))]
+    #[case::market_order(KrakenOrderType::Market, None, None)]
+    fn test_parse_ws_order_status_report_prices_the_order_at_its_limit(
+        #[case] order_type: KrakenOrderType,
+        #[case] limit_price: Option<Decimal>,
+        #[case] expected_price: Option<&str>,
+    ) {
+        let mut execution = ws_execution_data(Some(KrakenOrderSide::Sell));
+        execution.exec_type = KrakenExecType::Trade;
+        execution.order_type = Some(order_type);
+        execution.limit_price = limit_price;
+        execution.avg_price = Some(dec!(26599.9));
+        execution.last_price = Some(dec!(26599.9));
+
+        let report = parse_ws_order_status_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.price, expected_price.map(Price::from));
+        assert_eq!(report.avg_px, Some(dec!(26599.9)));
     }
 
     #[rstest]
