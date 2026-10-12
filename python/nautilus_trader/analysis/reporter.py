@@ -177,9 +177,13 @@ class ReportProvider:
             if col in report.columns:
                 del report[col]
         report["ts_opened"] = [_ns_to_dt(ts) for ts in report["ts_opened"]]
+        # ts_closed values are re-read from the source dicts: pandas infers a
+        # column holding big integers and None as float64, which rounds
+        # nanosecond timestamps before _ns_to_dt converts them (#5287).
+        ts_closed_by_id = {d["position_id"]: d["ts_closed"] for d in data}
         report["ts_closed"] = [
             _ns_to_dt(ts) if ts is not None and not pd.isna(ts) else pd.NA
-            for ts in report["ts_closed"]
+            for ts in (ts_closed_by_id[position_id] for position_id in report.index)
         ]
         report["is_snapshot"] = report.index.isin(snapshot_ids)
         return report

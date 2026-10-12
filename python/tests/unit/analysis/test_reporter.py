@@ -429,3 +429,34 @@ def test_engine_generate_reports_match_reportprovider() -> None:
     assert isinstance(account, pd.DataFrame)
 
     engine.dispose()
+
+
+def test_generate_positions_report_ts_closed_precision() -> None:
+    """
+    An open position (ts_closed=None) makes pandas infer the ts_closed column
+    as float64, which rounds nanosecond timestamps before they are converted.
+    Values must survive exactly. See #5287.
+    """
+    ts_closed_exact = 1_760_000_000_123_456_789
+
+    opener = _make_fill(
+        client_order_id="O-001",
+        position_id="P-001",
+        order_side=OrderSide.BUY,
+        ts_event=1_760_000_000_000_000_000,
+    )
+    closed = Position(instrument=AUDUSD, fill=opener)
+    closer = _make_fill(
+        client_order_id="O-002",
+        position_id="P-001",
+        order_side=OrderSide.SELL,
+        ts_event=ts_closed_exact,
+    )
+    closed.apply(closer)
+
+    open_position = _make_position("O-003", "P-002")
+
+    report = ReportProvider.generate_positions_report([closed, open_position])
+
+    assert report.loc["P-001", "ts_closed"] == pd.Timestamp(ts_closed_exact, tz="UTC")
+    assert pd.isna(report.loc["P-002", "ts_closed"])
