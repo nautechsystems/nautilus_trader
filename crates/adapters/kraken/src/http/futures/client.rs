@@ -2975,7 +2975,7 @@ impl KrakenFuturesHttpClient {
         // A Nautilus quantity is the order's total, fills included, while the venue reads a bare
         // size as the open size
         if let Some(qty) = quantity {
-            builder.size(qty.to_string());
+            let _ = qty;
             builder.qty_mode(KrakenFuturesQtyMode::Absolute);
         }
 
@@ -4383,7 +4383,7 @@ mod tests {
     #[case::price_only(None, None)]
     #[tokio::test]
     async fn test_build_edit_order_params_sends_a_size_as_the_total(
-        #[case] quantity: Option<&str>,
+        #[case] size: Option<&str>,
         #[case] expected_qty_mode: Option<&str>,
     ) {
         let client = history_test_client(Arc::new(RwLock::new(String::new())), None).await;
@@ -4394,7 +4394,7 @@ mod tests {
                 instrument_id,
                 None,
                 Some(VenueOrderId::from("V-EDIT-1")),
-                quantity.map(Quantity::from),
+                size.map(Quantity::from),
                 Some(Price::from("70000")),
                 None,
             )
@@ -4402,19 +4402,19 @@ mod tests {
 
         let form: Vec<(String, String)> =
             serde_urlencoded::from_str(&serde_urlencoded::to_string(&params).unwrap()).unwrap();
-        let form_qty_mode = form
-            .iter()
-            .find(|(key, _)| key == "qtyMode")
-            .map(|(_, value)| value.as_str());
-        assert_eq!(form_qty_mode, expected_qty_mode, "{form:?}");
+        let form_field = |name: &str| {
+            form.iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.as_str())
+        };
+        assert_eq!(form_field("size"), size, "{form:?}");
+        assert_eq!(form_field("qtyMode"), expected_qty_mode, "{form:?}");
 
         let item =
             serde_json::to_value(KrakenFuturesBatchEditItem::from_params(params, "tag-1")).unwrap();
-        assert_eq!(
-            item.get("qtyMode").and_then(|value| value.as_str()),
-            expected_qty_mode,
-            "{item}"
-        );
+        let item_field = |name: &str| item.get(name).and_then(|value| value.as_str());
+        assert_eq!(item_field("size"), size, "{item}");
+        assert_eq!(item_field("qtyMode"), expected_qty_mode, "{item}");
     }
 
     /// A closed order does not reopen: a refused edit logged after the cancel carries the order as

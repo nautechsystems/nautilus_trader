@@ -482,8 +482,8 @@ time rather than silently coercing them.
 A modify's quantity is the order's new total, fills included, which is how Kraken
 Spot amends take `order_qty`. Kraken Futures reads a bare edit `size` as the open
 size, so the adapter sends `qtyMode=ABSOLUTE` with every futures edit that resizes
-the order, single or batch. Kraken does not document its answer to a total at or
-below the filled quantity.
+the order, single or batch. Kraken Futures does not document its answer to a
+total at or below the filled quantity.
 
 ### Position management
 
