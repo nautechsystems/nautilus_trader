@@ -2447,8 +2447,8 @@ impl Portfolio {
         let positions_open =
             cache.positions_open(None, Some(instrument_id), None, account_id, None);
 
-        if positions_open.is_empty() {
-            let currency = cache
+        if positions_open.is_empty()
+            && let Some(currency) = cache
                 .instrument(instrument_id)
                 .map(Instrument::cost_currency)
                 .or_else(|| {
@@ -2457,7 +2457,7 @@ impl Portfolio {
                         .first()
                         .map(|position| position.settlement_currency)
                 })
-                .ok_or(UnrealizedPnlError::Invalid)?;
+        {
             return Ok(Money::zero(output_currency.unwrap_or(currency)));
         }
 
@@ -2881,7 +2881,11 @@ impl Portfolio {
                         .map(|pnl| pnl.currency)
                 })
             })
-            .or_else(|| instrument.map(Instrument::cost_currency))?;
+            .or_else(|| instrument.map(Instrument::cost_currency))
+            .or_else(|| {
+                log::error!("Cannot calculate realized PnL: no instrument for {instrument_id}");
+                None
+            })?;
         let currency = conversion_currency.unwrap_or(currency);
 
         // Check if we need to use NETTING OMS logic

@@ -666,6 +666,12 @@ fn test_unrealized_pnl_for_instrument_when_no_instrument_returns_none(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
 ) {
+    portfolio.update_account(&get_margin_account(Some("SIM-001")));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .purge_instrument(instrument_audusd.id());
+
     let result = portfolio.unrealized_pnl(&instrument_audusd.id());
     assert!(result.is_none());
 }
@@ -684,6 +690,12 @@ fn test_realized_pnl_for_instrument_when_no_instrument_returns_none(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
 ) {
+    portfolio.update_account(&get_margin_account(Some("SIM-001")));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .purge_instrument(instrument_audusd.id());
+
     let result = portfolio.realized_pnl(&instrument_audusd.id());
     assert!(result.is_none());
 }
