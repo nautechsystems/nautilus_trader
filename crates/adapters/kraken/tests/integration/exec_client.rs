@@ -1766,6 +1766,8 @@ enum SpotLookupRead {
     PageCap,
     /// One closed order, `OCLOSED-0`, names a pair the client cannot resolve.
     UnresolvedClosedOrder,
+    /// One open order, `OUNRES-BBBBB-BBBBBB`, names a pair the client cannot resolve.
+    UnresolvedOpenOrder,
 }
 
 /// The spot lookup answers that the venue has no such order only from a read that rules the order
@@ -1808,6 +1810,16 @@ enum SpotLookupRead {
     Some("OCLOSED-0"),
     LookupAnswer::Deferred
 )]
+#[case::unresolved_open_row_of_another_order(
+    SpotLookupRead::UnresolvedOpenOrder,
+    Some("OTARGT-AAAAA-AAAAAA"),
+    LookupAnswer::Absent
+)]
+#[case::unresolved_open_row_of_the_order(
+    SpotLookupRead::UnresolvedOpenOrder,
+    Some("OUNRES-BBBBB-BBBBBB"),
+    LookupAnswer::Deferred
+)]
 #[tokio::test]
 async fn test_spot_order_lookup_reports_absence_only_from_a_read_that_rules_the_order_out(
     #[case] read: SpotLookupRead,
@@ -1839,6 +1851,11 @@ async fn test_spot_order_lookup_reports_absence_only_from_a_read_that_rules_the_
         }
         SpotLookupRead::UnresolvedClosedOrder => {
             *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["NOSUCHPAIR"]));
+        }
+        SpotLookupRead::UnresolvedOpenOrder => {
+            *state.spot_open_orders_json.lock().await =
+                Some(load_test_data("http_open_orders_held_and_unresolved.json"));
+            *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTUSDT"]));
         }
     }
 
@@ -1885,6 +1902,8 @@ enum FuturesLookupRead {
     SkippedTrigger,
     /// A history row of this order on a contract the client cannot resolve.
     UnresolvedRowOf(&'static str),
+    /// An open order, `V-UNRESOLVED`, on a contract the client cannot resolve.
+    UnresolvedOpenOrder,
 }
 
 /// The futures lookup answers that the venue has no such order only from a read that rules the
@@ -1953,6 +1972,16 @@ enum FuturesLookupRead {
 #[case::unresolved_row_of_the_order(
     FuturesLookupRead::UnresolvedRowOf("V-LOOKUP-1"),
     "V-LOOKUP-1",
+    LookupAnswer::Deferred
+)]
+#[case::unresolved_open_order_of_another_order(
+    FuturesLookupRead::UnresolvedOpenOrder,
+    "V-LOOKUP-1",
+    LookupAnswer::Absent
+)]
+#[case::unresolved_open_order_is_the_order(
+    FuturesLookupRead::UnresolvedOpenOrder,
+    "V-UNRESOLVED",
     LookupAnswer::Deferred
 )]
 #[tokio::test]
@@ -2034,6 +2063,11 @@ async fn test_futures_order_lookup_reports_absence_only_from_a_read_that_rules_t
             *state.futures_open_orders_json.lock().await = Some(load_test_data(
                 "http_futures_open_orders_unsized_trigger.json",
             ));
+            futures_order_history_json(&[])
+        }
+        FuturesLookupRead::UnresolvedOpenOrder => {
+            *state.futures_open_orders_json.lock().await =
+                Some(futures_open_orders_json("V-UNRESOLVED", "PF_NOSUCHUSD"));
             futures_order_history_json(&[])
         }
         FuturesLookupRead::UnresolvedRowOf(order_uid) => {
