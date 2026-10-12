@@ -96,6 +96,7 @@ Released on TBD (UTC).
 - Fixed Bybit failed quote subscriptions retaining shared order book references (#5258), thanks @Martingale42
 - Fixed Bybit incomplete position reports causing held positions to reconcile as flat
 - Fixed Deribit position reports failing on fractional leverage (#5240), thanks @abhijeetvichare76
+- Fixed Derive fill history marked complete when trades lack trade or venue order IDs
 - Fixed Hyperliquid account updates retaining balances reported at zero (#5210), thanks @XBeg9
 - Fixed Hyperliquid reduce-only filled order lookups overstating fill quantity (#5222), thanks @XBeg9
 - Fixed Hyperliquid HIP-4 outcome price and size precision (#5266), thanks @vignesh-chaturvedi

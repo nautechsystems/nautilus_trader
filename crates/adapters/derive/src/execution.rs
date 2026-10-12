@@ -2993,6 +2993,7 @@ impl DeriveReconciliationContext {
 
         for trade in all_trades {
             if let Some(target) = venue_order_id_filter.as_deref()
+                && !trade.order_id.is_empty()
                 && trade.order_id != target
             {
                 continue;
@@ -3030,7 +3031,7 @@ impl DeriveReconciliationContext {
 
                     reports.push(report);
                 }
-                Ok(None) => {}
+                Ok(None) => records_complete = false,
                 Err(e) if e.is::<CommissionError>() => {
                     return Err(e.context(format!(
                         "failed to construct Derive fill {:?} for order {:?} on {:?}",
