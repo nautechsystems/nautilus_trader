@@ -433,9 +433,7 @@ def test_engine_generate_reports_match_reportprovider() -> None:
 
 def test_generate_positions_report_ts_closed_precision() -> None:
     """
-    An open position (ts_closed=None) makes pandas infer the ts_closed column
-    as float64, which rounds nanosecond timestamps before they are converted.
-    Values must survive exactly. See #5287.
+    Test that ts_closed nanosecond values survive exactly. See #5287.
     """
     ts_closed_exact = 1_760_000_000_123_456_789
 
