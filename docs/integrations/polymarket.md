@@ -2159,6 +2159,13 @@ guard suppresses missing points at or before that symbol's newly emitted timesta
 snapshot can backfill other symbols whose latest timestamp has not advanced past the missing
 points. Sequence tracking resets on every reconnect.
 
+Subscription and unsubscription requests share a quota that admits one frame every 53 ms,
+leaving room under the venue's combined 20-frame-per-second limit. The feed batches recovery for
+all affected channels. Multiple pending gaps on a channel coalesce into one resubscription.
+Gaps detected during an in-flight resubscription, including its quota wait, queue a follow-up
+resubscription for the affected channel.
+Shutdown interrupts the server-drain reconnect delay, recovery retry delays, and quota waits.
+
 The venue's close codes follow their documented recovery policies:
 
 - `4001` (authentication failed) stops automatic reconnects. Recreate the data client with
@@ -2551,6 +2558,8 @@ Polymarket changes these quotas over time. As of 2026-08-04, the official limits
 
 The WebSocket quotas are not part of the published REST rate-limits table. The adapter enforces
 `ws_max_subscriptions` (default 200) by sharding subscriptions across a pool of market connections.
+The adapter also paces PolyBolt subscription and unsubscription requests under a shared quota; see
+[Subscriptions, snapshots, and reconnects](#subscriptions-snapshots-and-reconnects).
 
 :::warning
 Exceeding the IP-based limits triggers Cloudflare throttling. Requests are queued using sliding
