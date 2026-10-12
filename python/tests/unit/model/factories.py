@@ -50,7 +50,7 @@ from nautilus_trader.model import TriggerType
 from nautilus_trader.model import VenueOrderId
 
 
-def make_fill_report(instrument_id: InstrumentId) -> object:
+def make_fill_report(instrument_id: InstrumentId, *, info: dict[str, str] | None = None) -> object:
     """
     Make fill report.
     """
@@ -68,6 +68,7 @@ def make_fill_report(instrument_id: InstrumentId) -> object:
         ts_init=11,
         client_order_id=ClientOrderId("O-1"),
         venue_position_id=PositionId("P-1"),
+        info=info,
     )
 
 

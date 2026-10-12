@@ -65,9 +65,9 @@ use nautilus_common::{
         },
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
-            GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
-            GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-            SubmitOrderList,
+            ExecutionActionResult, GenerateFillReports, GenerateOrderStatusReport,
+            GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, QueryAccount,
+            QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
     python::clock::PyClock,
@@ -494,7 +494,9 @@ impl ClientOutput {
     fn py_event(&self, py: Python<'_>, event: Py<PyAny>) -> PyResult<()> {
         self.exec_sender()?;
 
-        let event = if event.bind(py).is_instance_of::<AccountState>() {
+        let event = if event.bind(py).is_instance_of::<ExecutionActionResult>() {
+            ExecutionEvent::Action(event.extract(py)?)
+        } else if event.bind(py).is_instance_of::<AccountState>() {
             ExecutionEvent::Account(event.extract(py)?)
         } else {
             ExecutionEvent::Order(pyobject_to_order_event(py, event)?)
@@ -885,6 +887,9 @@ impl ClientOutput {
         let trader_id = factory.trader_id();
 
         let valid = match &event {
+            ExecutionEvent::Action(event) => {
+                event.trader_id == trader_id && event.account_id == account_id
+            }
             ExecutionEvent::Account(event) => event.account_id == account_id,
             ExecutionEvent::Order(event) => {
                 event.trader_id() == trader_id

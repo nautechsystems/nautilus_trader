@@ -20,6 +20,7 @@
 
 use std::collections::HashSet;
 
+use indexmap::IndexMap;
 use nautilus_common::enums::LogColor;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -28,11 +29,11 @@ use nautilus_model::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
         OrderRejected, OrderTriggered, OrderUpdated,
     },
-    identifiers::{AccountId, PositionId, TradeId},
+    identifiers::{AccountId, PositionId, StrategyId, TradeId, TraderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
     reports::{FillReport, OrderStatusReport},
-    types::{Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -760,6 +761,59 @@ fn create_external_terminal_event(
         )),
         status => unreachable!("cannot create external terminal event for {status}"),
     }
+}
+
+/// Identifies fill metadata classified by the adapter as an execution action.
+#[must_use]
+pub(crate) fn is_execution_action_fill(info: Option<&IndexMap<Ustr, Ustr>>) -> bool {
+    info.is_some_and(|info| {
+        info.get(&Ustr::from("source")) == Some(&Ustr::from("execution_action"))
+    })
+}
+
+/// Identifies a venue-confirmed execution action report using the existing leg-fill convention.
+#[must_use]
+pub fn is_orderless_action(report: &FillReport) -> bool {
+    is_execution_action_fill(report.info.as_ref())
+        && report
+            .client_order_id
+            .is_some_and(|id| id.as_str().contains("-LEG-"))
+}
+
+/// Converts an orderless action report using actual venue quantities, prices, and fees.
+#[must_use]
+pub fn orderless_action_fill(
+    report: &FillReport,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    currency: Currency,
+) -> Option<OrderFilled> {
+    if !is_orderless_action(report) {
+        return None;
+    }
+
+    Some(OrderFilled::new(
+        trader_id,
+        strategy_id,
+        report.instrument_id,
+        report.client_order_id?,
+        report.venue_order_id,
+        report.account_id,
+        report.trade_id,
+        report.order_side,
+        OrderType::Market,
+        report.last_qty,
+        report.last_px,
+        currency,
+        report.liquidity_side,
+        report.report_id,
+        report.ts_event,
+        report.ts_init,
+        true,
+        report.venue_position_id,
+        Some(report.commission),
+        report.info.clone(),
+    ))
 }
 
 /// Creates an `OrderFilled` event from a `FillReport`.

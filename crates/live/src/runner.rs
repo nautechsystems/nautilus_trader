@@ -78,7 +78,7 @@ use nautilus_common::{
         DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent, data::DataCommand,
         execution::TradingCommand,
     },
-    msgbus::{self, MessagingSwitchboard},
+    msgbus::{self, MessagingSwitchboard, switchboard},
     runner::{
         DataCommandSender, TimeEventMessage, TimeEventSender, TradingCommandMessage,
         TradingCommandSender, replace_data_cmd_sender, replace_exec_cmd_sender,
@@ -575,6 +575,10 @@ impl AsyncRunner {
     #[inline]
     pub fn handle_exec_event(event: ExecutionEvent) {
         match event {
+            ExecutionEvent::Action(result) => {
+                let topic = switchboard::get_execution_action_result_topic(result.strategy_id);
+                msgbus::publish_execution_action_result(topic, &result);
+            }
             ExecutionEvent::Order(order_event) => {
                 msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), order_event);
             }

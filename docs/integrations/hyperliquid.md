@@ -560,9 +560,71 @@ Settlement is venue-driven; see [Settlement dispatch](#settlement-dispatch).
 
 #### Advanced workflows
 
-The full `userOutcome` action set is reachable directly on
-`HyperliquidHttpClient` (Rust and PyO3) for strategies that need to manage
-side-token inventory off-book:
+Strategies can route HIP-4 split and merge operations through the execution
+lifecycle. The returned command ID correlates the request with the later
+`on_execution_action_result` callback:
+
+```python
+from nautilus_trader.live import BinaryOptionAction
+from nautilus_trader.model import Quantity
+
+split = BinaryOptionAction.split(
+    yes_instrument_id=self.yes_instrument_id,
+    no_instrument_id=self.no_instrument_id,
+    quantity=Quantity.from_str("1.0"),
+)
+self._split_command_id = self.execute_action(
+    account_id=self.account_id,
+    action=split,
+)
+
+merge = BinaryOptionAction.merge(
+    yes_instrument_id=self.yes_instrument_id,
+    no_instrument_id=self.no_instrument_id,
+    quantity=Quantity.from_str("1.0"),
+)
+self._merge_command_id = self.execute_action(
+    account_id=self.account_id,
+    action=merge,
+)
+
+
+def on_execution_action_result(self, result):
+    if result.command_id == self._split_command_id:
+        self.log.info(f"Split delivery status: {result.status}")
+```
+
+The adapter requires the canonical Yes/No instrument IDs for one HIP-4 outcome and a positive
+quantity. It maps the pair to `splitOutcome` or `mergeOutcome` and rejects malformed or
+cross-outcome pairs before sending. Non-empty action `params` are unsupported and rejected.
+
+`Accepted` confirms only Hyperliquid's `ok/default` post response. `Rejected`
+means the request was provably not sent or Hyperliquid explicitly rejected it.
+`Ambiguous` means it may have reached the venue without a definitive response
+and must not be retried automatically. An unexpected success payload is also
+ambiguous. The strategy path uses a signed WebSocket post, not an HTTP action
+submission.
+
+Account and outcome-token state continue to converge through the existing
+account, fill, position, and reconciliation paths; the callback does not
+synthesize orders, fills, or positions.
+
+Venue-confirmed `Split Outcome` and `Merge Outcome` fills update positions through the existing
+orderless leg-fill path, without creating synthetic orders. External instrument claims associate
+these fills with a strategy through `set_external_order_instrument_ids`. The fills preserve venue quantities, prices, and fees rather than deriving them from the action ACK.
+
+The adapter classifies conversions from the raw venue `dir`, requiring an Outcome instrument
+and Buy for split or Sell for merge. It preserves provenance in optional `FillReport.info` and
+assigns an internal `-LEG-` identifier. Source recognition and report-to-event conversion belong
+to execution reconciliation, not the model. Ordinary fill conversion is unchanged.
+
+The existing orderless accounting path publishes `OrderFilled` as well as position events, so
+strategies can observe fill callbacks without a submitted/accepted order lifecycle. Account state
+is refreshed from authoritative venue balances, not inferred from the ACK. ACK and state updates
+may arrive in either order.
+
+The full `userOutcome` action set is also reachable directly on
+`HyperliquidHttpClient` (Rust and PyO3) for lower-level tooling:
 
 ```python
 from decimal import Decimal
@@ -589,9 +651,15 @@ await client.submit_negate_outcome(9, 52, Decimal("1.0"))
 | `submit_merge_question` | Close a full multi-outcome basket back to quote atomically                           |
 | `submit_negate_outcome` | Convert No shares of one outcome into Yes shares of every other in the same question |
 
-For directional bets the ordinary `SubmitOrder` path is sufficient; the
-methods above are only needed when you want to create or destroy side-token
-inventory off-book.
+For directional bets the ordinary `SubmitOrder` path is sufficient. Use the
+strategy execution-action path when a strategy needs a correlated split or
+merge delivery result. The direct client remains useful for administrative
+workflows and for `mergeQuestion` or `negateOutcome`, which are not in the
+strategy action allow-list.
+
+The live acknowledgement and conversion-fill reconciliation behavior are described in
+[Execution Actions](../developer_guide/execution_actions.md). Sandbox and backtest execution
+clients currently reject these actions; simulation support is a separate extension.
 
 ### Order constraints
 
@@ -1489,6 +1557,13 @@ Hyperliquid's clearinghouse state. Spot positions are reconstructed from held
 balances (long-only); HIP-4 side tokens reconcile against their matching
 `BinaryOption` instruments. See [HIP-3 reconciliation](#open-order-and-position-reconciliation) for
 per-dex open-order and position fan-out.
+
+`HyperliquidExecutionClientConfig.product_types` scopes submissions, execution reports, recovery,
+and position coverage independently of data subscriptions. The default includes `PERP`, `SPOT`,
+and `OUTCOME`; an empty scope is rejected when constructing the client. For outcome-only execution,
+set `product_types=[HyperliquidProductType.OUTCOME]`. Account balances remain unscoped. Successful
+position-report collection also refreshes authoritative account state, so conversion fills do not
+manually deduct cash or charge fees again. These are separate venue snapshots, not an atomic read.
 
 :::note
 Leverage is managed directly through the Hyperliquid web UI or API, not through the adapter.

@@ -32,8 +32,9 @@ use nautilus_common::{
     enums::ComponentState,
     logging::{CMD, EVT, RECV, SEND},
     messages::execution::{
-        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecuteAction,
+        ExecutionAction, ExecutionActionResult, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList, TradingCommand,
     },
     msgbus::{self, MessagingSwitchboard},
     timer::TimeEvent,
@@ -1281,6 +1282,44 @@ pub trait Strategy: DataActor {
         Ok(())
     }
 
+    /// Executes an action through the execution client.
+    ///
+    /// Returns the generated command ID. The execution client later delivers
+    /// one [`ExecutionActionResult`] through [`Self::on_execution_action_result`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy is not registered.
+    fn execute_action<A>(
+        &mut self,
+        account_id: AccountId,
+        client_id: Option<ClientId>,
+        action: A,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: StrategyNative,
+        A: Into<ExecutionAction>,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
+        let trader_id = registered_trader_id(core)?;
+        let strategy_id = registered_strategy_id(core)?;
+        let command_id = UUID4::new();
+        let ts_init = core.clock_mut().timestamp_ns();
+        let command = ExecuteAction::new(
+            trader_id,
+            client_id,
+            strategy_id,
+            account_id,
+            action.into(),
+            command_id,
+            ts_init,
+            None, // correlation_id
+        );
+
+        send_exec_command(TradingCommand::ExecuteAction(command));
+        Ok(command_id)
+    }
+
     /// Queries order state from the execution client.
     ///
     /// Creates a [`QueryOrder`] command and sends it to the execution engine,
@@ -1444,6 +1483,27 @@ pub trait Strategy: DataActor {
             OrderEventAny::FillVoided(e) => self.on_order_fill_voided(e),
         }
         self.on_order_event(event);
+    }
+
+    /// Handles an execution action result from the strategy's execution client.
+    fn handle_execution_action_result(&mut self, result: ExecutionActionResult)
+    where
+        Self: StrategyNative,
+    {
+        let state = {
+            let core = StrategyNative::strategy_core_mut(self);
+            let id = &core.actor.actor_id;
+
+            if core.actor.config.log_events {
+                log::info!("{id} {RECV}{EVT} {result}");
+            }
+
+            core.actor.state()
+        };
+
+        if state == ComponentState::Running {
+            self.on_execution_action_result(result);
+        }
     }
 
     fn dispatch_manager_actions(&mut self, actions: Vec<OrderManagerAction>)
@@ -1692,6 +1752,10 @@ pub trait Strategy: DataActor {
     /// Override this method to implement custom logic when a position is closed.
     #[allow(unused_variables)]
     fn on_position_closed(&mut self, event: PositionClosed) {}
+
+    /// Called when an execution action returns a correlated delivery result.
+    #[allow(unused_variables)]
+    fn on_execution_action_result(&mut self, result: ExecutionActionResult) {}
 
     /// Called when a market exit has been initiated.
     ///

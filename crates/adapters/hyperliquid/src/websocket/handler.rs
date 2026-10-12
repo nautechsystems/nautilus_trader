@@ -60,7 +60,7 @@ use super::{
         parse_ws_public_trade, parse_ws_quote_tick, parse_ws_trade_tick, parse_ws_twap_history_row,
         parse_ws_twap_slice_fill,
     },
-    post::PostRouter,
+    post::{PostRequestError, PostRouter},
     rate_limits::WebSocketRateLimits,
     trades::TradeStreamUses,
 };
@@ -70,6 +70,7 @@ use crate::{
         HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidDexAssetCtx,
         HyperliquidImpactPrices,
     },
+    http::error::Error as HyperliquidError,
 };
 
 const HEARTBEAT_MESSAGE: &str = r#"{"method":"ping"}"#;
@@ -432,11 +433,22 @@ impl FeedHandler {
                             deadline,
                             cancellation_token,
                         } => {
-                            if cancellation_token.is_cancelled()
-                                || tokio::time::Instant::now() >= deadline
-                            {
+                            if cancellation_token.is_cancelled() {
                                 self.post_router
                                     .cancel_registration(id, &cancellation_token)
+                                    .await;
+                                continue;
+                            }
+
+                            if tokio::time::Instant::now() >= deadline {
+                                self.post_router
+                                    .complete_failure(
+                                        id,
+                                        &cancellation_token,
+                                        PostRequestError::BeforeDispatch(
+                                            HyperliquidError::Timeout,
+                                        ),
+                                    )
                                     .await;
                                 continue;
                             }
@@ -468,22 +480,39 @@ impl FeedHandler {
                                             },
                                         )
                                         .await
-                                        .map_err(|e| anyhow::anyhow!("{e}"))
                                     } else {
-                                        Err(anyhow::anyhow!("No WebSocket client available"))
+                                        Err(PostSendError::NoWebSocketClient)
                                     };
 
-                                    if let Err(e) = result {
-                                        log::warn!("Error sending post request id={id}: {e}");
-                                        self.post_router
-                                            .cancel_registration(id, &cancellation_token)
-                                            .await;
+                                    match result {
+                                        Ok(()) => {}
+                                        Err(PostSendError::Retry(RetryError::Canceled)) => {
+                                            self.post_router
+                                                .cancel_registration(id, &cancellation_token)
+                                                .await;
+                                        }
+                                        Err(e) => {
+                                            log::warn!("Error sending post request id={id}: {e}");
+                                            self.post_router
+                                                .complete_failure(
+                                                    id,
+                                                    &cancellation_token,
+                                                    post_send_failure(&e),
+                                                )
+                                                .await;
+                                        }
                                     }
                                 }
                                 Err(e) => {
                                     log::error!("Error serializing post request id={id}: {e}");
                                     self.post_router
-                                        .cancel_registration(id, &cancellation_token)
+                                        .complete_failure(
+                                            id,
+                                            &cancellation_token,
+                                            PostRequestError::BeforeDispatch(
+                                                HyperliquidError::transport(e.to_string()),
+                                            ),
+                                        )
                                         .await;
                                 }
                             }
@@ -1544,12 +1573,39 @@ impl FeedHandler {
 
 #[derive(Debug, thiserror::Error)]
 enum PostSendError {
+    #[error("No WebSocket client available")]
+    NoWebSocketClient,
     #[error(transparent)]
     Transport(SendError),
     #[error(transparent)]
     Retry(RetryError),
-    #[error("Post deadline expired")]
-    Deadline,
+    #[error("Post deadline expired before dispatch")]
+    DeadlineBeforeDispatch,
+    #[error("Post deadline expired while dispatching")]
+    DeadlineDuringDispatch,
+}
+
+fn post_send_failure(error: &PostSendError) -> PostRequestError {
+    let reason = error.to_string();
+    match error {
+        PostSendError::NoWebSocketClient
+        | PostSendError::Transport(
+            SendError::InvalidInput(_)
+            | SendError::BufferFull
+            | SendError::Closed
+            | SendError::Timeout
+            | SendError::ConnectionChanged,
+        )
+        | PostSendError::DeadlineBeforeDispatch
+        | PostSendError::Retry(RetryError::InvalidConfiguration { .. }) => {
+            PostRequestError::BeforeDispatch(HyperliquidError::transport(reason))
+        }
+        PostSendError::Transport(SendError::WriteTimeout | SendError::BrokenPipe(_))
+        | PostSendError::Retry(_)
+        | PostSendError::DeadlineDuringDispatch => {
+            PostRequestError::AfterDispatch(HyperliquidError::transport(reason))
+        }
+    }
 }
 
 async fn send_post_with_retry<F, Fut>(
@@ -1579,7 +1635,7 @@ where
     tokio::select! {
         biased;
         () = tokio::time::sleep_until(deadline) => {
-            Err(PostSendError::Deadline)
+            Err(PostSendError::DeadlineDuringDispatch)
         }
         result = &mut invocation => result,
     }
@@ -1599,7 +1655,7 @@ where
     }
 
     if tokio::time::Instant::now() >= deadline {
-        return Err(PostSendError::Deadline);
+        return Err(PostSendError::DeadlineBeforeDispatch);
     }
 
     send().await
@@ -1760,11 +1816,11 @@ mod tests {
                 SharedAssetCtx, SpotAssetCtx, SubscriptionRequest, WsActiveAssetCtxData,
                 WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
             },
-            post::PostRouter,
+            post::{PostRequestError, PostRouter},
             rate_limits::WebSocketRateLimits,
         },
         AllMidsDataTypeCache, AssetContextCaches, FeedHandler, HandlerCommand, PostSendError,
-        send_post_before_deadline, send_post_with_retry, should_retry_post_send,
+        post_send_failure, send_post_before_deadline, send_post_with_retry, should_retry_post_send,
     };
     use crate::{
         common::consts::{
@@ -1774,6 +1830,18 @@ mod tests {
     };
 
     const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
+
+    #[rstest]
+    fn post_send_failure_preserves_writer_evidence() {
+        assert!(matches!(
+            post_send_failure(&PostSendError::Transport(SendError::Closed)),
+            PostRequestError::BeforeDispatch(_)
+        ));
+        assert!(matches!(
+            post_send_failure(&PostSendError::Transport(SendError::WriteTimeout)),
+            PostRequestError::AfterDispatch(_)
+        ));
+    }
 
     struct OutboundLogCapture {
         messages: Mutex<Vec<String>>,
@@ -1958,7 +2026,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_send_failure_cancels_router_waiter() {
+    async fn post_send_failure_reports_definitive_not_sent() {
         let signal = Arc::new(AtomicBool::new(false));
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2004,10 +2072,12 @@ mod tests {
         drop(cmd_tx);
         drop(raw_tx);
 
-        let closed = tokio::time::timeout(Duration::from_millis(100), rx)
+        let outcome = tokio::time::timeout(Duration::from_millis(100), rx)
             .await
-            .expect("post waiter should close without waiting for post timeout");
-        assert!(closed.is_err(), "post router cancel must close the waiter");
+            .expect("post waiter should complete without waiting for post timeout")
+            .expect("post router should report the failure");
+        let error = outcome.expect_err("expected definitive not-sent result");
+        assert!(matches!(error, PostRequestError::BeforeDispatch(_)));
         let _rx = post_router
             .register(id)
             .await
@@ -2136,7 +2206,7 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(matches!(error, PostSendError::Deadline));
+        assert!(matches!(error, PostSendError::DeadlineBeforeDispatch));
         assert_eq!(sends.load(Ordering::SeqCst), 0);
     }
 
@@ -2167,7 +2237,7 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(matches!(error, PostSendError::Deadline));
+        assert!(matches!(error, PostSendError::DeadlineDuringDispatch));
         assert_eq!(sends.load(Ordering::SeqCst), 0);
     }
 
@@ -2190,7 +2260,7 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(matches!(error, PostSendError::Deadline));
+        assert!(matches!(error, PostSendError::DeadlineDuringDispatch));
         assert_eq!(sends.load(Ordering::SeqCst), 1);
     }
 
@@ -2213,7 +2283,7 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(matches!(error, PostSendError::Deadline));
+        assert!(matches!(error, PostSendError::DeadlineDuringDispatch));
         assert_eq!(sends.load(Ordering::SeqCst), 1);
     }
 

@@ -98,7 +98,7 @@ use crate::{
         messages::{
             NautilusWsMessage, PostRequest, PostResponse, PostResponsePayload, SubscriptionRequest,
         },
-        post::{PostIds, PostRouter},
+        post::{PostIds, PostRequestError, PostRouter},
         rate_limits::{WebSocketRateLimits, shared_websocket_limits},
         trades::{TradeStreamRegistry, TradeStreamUse},
     },
@@ -1237,28 +1237,30 @@ impl HyperliquidWebSocketClient {
 
         self.await_post_response(id, rx, deadline, &cancellation_token)
             .await
-            .map_err(PostRequestError::AfterDispatch)
     }
 
     async fn await_post_response(
         &self,
         id: u64,
-        rx: tokio::sync::oneshot::Receiver<PostResponse>,
+        rx: tokio::sync::oneshot::Receiver<std::result::Result<PostResponse, PostRequestError>>,
         deadline: tokio::time::Instant,
         cancellation_token: &CancellationToken,
-    ) -> HyperliquidResult<PostResponse> {
+    ) -> Result<PostResponse, PostRequestError> {
         tokio::select! {
             biased;
             result = rx => match result {
-                Ok(response) => Ok(response),
+                Ok(Ok(response)) => Ok(response),
+                Ok(Err(e)) => Err(e),
                 Err(_closed) => {
                     self.cancel_post_registration(id, cancellation_token).await;
-                    Err(HyperliquidError::transport("post response channel closed"))
+                    Err(PostRequestError::AfterDispatch(HyperliquidError::transport(
+                        "post response channel closed",
+                    )))
                 },
             },
             () = tokio::time::sleep_until(deadline) => {
                 self.cancel_post_registration(id, cancellation_token).await;
-                Err(HyperliquidError::Timeout)
+                Err(PostRequestError::AfterDispatch(HyperliquidError::Timeout))
             },
         }
     }
@@ -2418,26 +2420,6 @@ impl Drop for HyperliquidWebSocketClient {
     }
 }
 
-#[derive(Debug)]
-pub(crate) enum PostRequestError {
-    BeforeDispatch(HyperliquidError),
-    AfterDispatch(HyperliquidError),
-    Rejected {
-        error: HyperliquidError,
-        reason: String,
-    },
-}
-
-impl PostRequestError {
-    fn into_error(self) -> HyperliquidError {
-        match self {
-            Self::BeforeDispatch(error)
-            | Self::AfterDispatch(error)
-            | Self::Rejected { error, .. } => error,
-        }
-    }
-}
-
 fn cancel_errors_for_requests(
     errors: Vec<Option<String>>,
     request_count: usize,
@@ -3318,6 +3300,73 @@ mod tests {
             panic!("expected info response");
         };
         assert_eq!(response_payload, payload);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn post_route_failures_preserve_dispatch_evidence() {
+        let client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let id = 1;
+        let cancellation_token = CancellationToken::new();
+        let rx = client
+            .post_router
+            .register_with_cancellation(id, &cancellation_token)
+            .await
+            .unwrap();
+        client
+            .post_router
+            .complete_failure(
+                id,
+                &cancellation_token,
+                PostRequestError::BeforeDispatch(HyperliquidError::transport("writer unavailable")),
+            )
+            .await;
+
+        let error = client
+            .await_post_response(
+                id,
+                rx,
+                tokio::time::Instant::now() + Duration::from_secs(1),
+                &cancellation_token,
+            )
+            .await
+            .expect_err("definitive post failure should not be ambiguous");
+
+        assert!(matches!(error, PostRequestError::BeforeDispatch(_)));
+
+        let id = 2;
+        let cancellation_token = CancellationToken::new();
+        let rx = client
+            .post_router
+            .register_with_cancellation(id, &cancellation_token)
+            .await
+            .unwrap();
+        client
+            .post_router
+            .complete_failure(
+                id,
+                &cancellation_token,
+                PostRequestError::AfterDispatch(HyperliquidError::transport("write timed out")),
+            )
+            .await;
+
+        let error = client
+            .await_post_response(
+                id,
+                rx,
+                tokio::time::Instant::now() + Duration::from_secs(1),
+                &cancellation_token,
+            )
+            .await
+            .expect_err("uncertain post failure should remain ambiguous");
+
+        assert!(matches!(error, PostRequestError::AfterDispatch(_)));
     }
 
     #[rstest]

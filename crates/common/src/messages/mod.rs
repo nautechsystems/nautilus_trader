@@ -79,6 +79,8 @@ pub enum SystemEvent {
 #[derive(Debug, Display)]
 pub enum ExecutionEvent {
     #[strum(transparent)]
+    Action(execution::ExecutionActionResult),
+    #[strum(transparent)]
     Order(OrderEventAny),
     #[strum(transparent)]
     OrderSubmittedBatch(OrderSubmittedBatch),
@@ -98,14 +100,18 @@ mod tests {
     use nautilus_model::{
         enums::AccountType,
         events::OrderInitialized,
-        identifiers::{AccountId, ClientId, TraderId, Venue},
+        identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId, Venue},
         reports::ExecutionMassStatus,
+        types::Quantity,
     };
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
-    use crate::messages::system::{ReconnectSocket, SocketState, SocketStateChange};
+    use crate::messages::{
+        execution::{ExecuteAction, ExecutionActionResult, ExecutionActionStatus},
+        system::{ReconnectSocket, SocketState, SocketStateChange},
+    };
 
     #[rstest]
     fn system_messages_delegate_display_to_inner() {
@@ -155,7 +161,33 @@ mod tests {
             UnixNanos::from(4),
             None,
         );
+        let action_command = ExecuteAction::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("HYPERLIQUID")),
+            StrategyId::from("STRATEGY-001"),
+            AccountId::from("HYPERLIQUID-001"),
+            execution::ExecutionAction::BinaryOption(execution::BinaryOptionAction::Split {
+                pair: execution::BinaryOptionPair::new(
+                    InstrumentId::from("42-YES-OUTCOME.HYPERLIQUID"),
+                    InstrumentId::from("42-NO-OUTCOME.HYPERLIQUID"),
+                )
+                .unwrap(),
+                quantity: Quantity::from("1"),
+                params: None,
+            }),
+            UUID4::from("00000000-0000-4000-8000-000000000003"),
+            UnixNanos::from(5),
+            None,
+        );
+        let action = ExecutionActionResult::new(
+            &action_command,
+            ExecutionActionStatus::Accepted,
+            None,
+            None,
+            UnixNanos::from(6),
+        );
         let cases = [
+            (ExecutionEvent::Action(action.clone()), action.to_string()),
             (ExecutionEvent::Order(order.clone()), order.to_string()),
             (
                 ExecutionEvent::OrderSubmittedBatch(submitted_batch.clone()),

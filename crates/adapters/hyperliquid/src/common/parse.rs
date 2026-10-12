@@ -67,21 +67,24 @@ pub use nautilus_core::serialization::{
 use nautilus_model::{
     data::{bar::BarType, quote::QuoteTick},
     enums::{
-        AggregationSource, BarAggregation, ContingencyType, OrderSide, OrderStatus, OrderType,
-        TimeInForce,
+        AggregationSource, BarAggregation, ContingencyType, LiquiditySide, OrderSide, OrderStatus,
+        OrderType, TimeInForce,
     },
     identifiers::{ClientOrderId, TradeId},
     orders::{Order, any::OrderAny},
+    reports::FillReport,
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use crate::{
     common::{
         enums::{
             HyperliquidAccountAbstraction,
             HyperliquidBarInterval::{self, *},
-            HyperliquidOrderStatus, HyperliquidTpSl,
+            HyperliquidFillDirection, HyperliquidOrderStatus, HyperliquidProductType,
+            HyperliquidTpSl,
         },
         types::HyperliquidAssetId,
     },
@@ -1228,6 +1231,68 @@ pub(crate) fn determine_order_list_grouping(orders: &[OrderAny]) -> HyperliquidE
 pub(crate) fn is_false_or_none(value: &Option<bool>) -> bool {
     // Hyperliquid rejects cancel actions hashed with an explicit false fast flag
     *value != Some(true)
+}
+
+/// Attaches provenance only when the venue identifies a binary conversion fill.
+/// ACKs are deliberately not used as evidence of inventory creation.
+pub(crate) fn annotate_outcome_action_fill(
+    report: &mut FillReport,
+    direction: &HyperliquidFillDirection,
+    hash: &str,
+) -> anyhow::Result<()> {
+    let (action, side, label) = match direction {
+        HyperliquidFillDirection::SplitOutcome => {
+            ("binary_option.split", OrderSide::Buy, "Split Outcome")
+        }
+        HyperliquidFillDirection::MergeOutcome => {
+            ("binary_option.merge", OrderSide::Sell, "Merge Outcome")
+        }
+        _ => return Ok(()),
+    };
+    anyhow::ensure!(
+        HyperliquidProductType::from_symbol(report.instrument_id.symbol.as_str())?
+            == HyperliquidProductType::Outcome,
+        "Conversion fill must reference an outcome instrument"
+    );
+    anyhow::ensure!(
+        report.order_side == side,
+        "Conversion fill direction and side disagree"
+    );
+    let leg = if report
+        .instrument_id
+        .symbol
+        .as_str()
+        .ends_with("-YES-OUTCOME")
+    {
+        "YES"
+    } else if report
+        .instrument_id
+        .symbol
+        .as_str()
+        .ends_with("-NO-OUTCOME")
+    {
+        "NO"
+    } else {
+        anyhow::bail!("Outcome conversion leg cannot be identified");
+    };
+    report.client_order_id = Some(ClientOrderId::new_checked(format!(
+        "HL-ACTION-{}-LEG-{leg}",
+        report.venue_order_id
+    ))?);
+    report.liquidity_side = LiquiditySide::NoLiquiditySide;
+    let info = [
+        ("source", "execution_action"),
+        ("action", action),
+        ("leg", if leg == "YES" { "yes" } else { "no" }),
+        ("transaction_hash", hash),
+        ("venue_fill_direction", label),
+    ]
+    .into_iter()
+    .map(|(key, value)| (Ustr::from(key), Ustr::from(value)))
+    .collect();
+
+    report.info = Some(info);
+    Ok(())
 }
 
 #[cfg(test)]

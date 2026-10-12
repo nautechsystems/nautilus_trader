@@ -35,7 +35,7 @@ use arc_swap::ArcSwapOption;
 use nautilus_common::{
     factories::OrderEventFactory,
     live::sender::EventSender,
-    messages::{ExecutionEvent, ExecutionReport},
+    messages::{ExecutionEvent, ExecutionReport, execution::ExecutionActionResult},
 };
 use nautilus_core::{Params, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_model::{
@@ -499,6 +499,25 @@ impl ExecutionEventEmitter {
     /// Returns an error if the sender is not initialized or the receiving channel is closed.
     pub fn try_send_execution_report(&self, report: ExecutionReport) -> anyhow::Result<()> {
         self.try_send(ExecutionEvent::Report(report), "execution report")
+    }
+
+    /// Emits an execution action result.
+    pub fn send_execution_action_result(&self, result: ExecutionActionResult) {
+        if let Err(e) = self.try_send_execution_action_result(result) {
+            log::warn!("{e}");
+        }
+    }
+
+    /// Emits an execution action result and returns any channel error to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is uninitialized or its receiver is closed.
+    pub fn try_send_execution_action_result(
+        &self,
+        result: ExecutionActionResult,
+    ) -> anyhow::Result<()> {
+        self.try_send(ExecutionEvent::Action(result), "execution action result")
     }
 
     /// Emits an order status report.

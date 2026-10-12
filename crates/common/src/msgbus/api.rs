@@ -48,10 +48,10 @@ use ustr::Ustr;
 pub use super::external::{process_external_typed_message, republish_external_message};
 use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, BusPayloadType,
-    DELTAS_HANDLERS, DEPTH_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
-    INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS,
-    OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS,
-    POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
+    DELTAS_HANDLERS, DEPTH_HANDLERS, EXECUTION_ACTION_RESULT_HANDLERS, FUNDING_RATE_HANDLERS,
+    GREEKS_HANDLERS, HANDLER_BUFFER_CAP, INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS,
+    MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS, OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS,
+    PORTFOLIO_SNAPSHOT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
     core::{MessageBus, Subscription},
     dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send,
     external::{forward_any_to_external_egress, forward_to_external_egress},
@@ -70,7 +70,7 @@ use crate::{
     actor::PublicationScope,
     messages::{
         data::{DataCommand, DataResponse},
-        execution::{ExecutionReport, TradingCommand},
+        execution::{ExecutionActionResult, ExecutionReport, TradingCommand},
     },
 };
 
@@ -461,6 +461,18 @@ pub fn subscribe_position_events(
         .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
+/// Subscribes a handler to execution action results matching a pattern.
+pub fn subscribe_execution_action_results(
+    pattern: MStr<Pattern>,
+    handler: TypedHandler<ExecutionActionResult>,
+    priority: Option<u32>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_execution_action_results
+        .subscribe(pattern, handler, priority.unwrap_or(0));
+}
+
 /// Subscribes a handler to positions matching a pattern.
 pub fn subscribe_positions(
     pattern: MStr<Pattern>,
@@ -717,6 +729,14 @@ pub fn remove_position_event_handler(pattern: MStr<Pattern>, handler_id: Ustr) {
     get_message_bus()
         .borrow_mut()
         .router_position_events
+        .remove_handler(pattern, handler_id);
+}
+
+/// Removes a specific execution action result handler by pattern and handler ID.
+pub fn remove_execution_action_result_handler(pattern: MStr<Pattern>, handler_id: Ustr) {
+    get_message_bus()
+        .borrow_mut()
+        .router_execution_action_results
         .remove_handler(pattern, handler_id);
 }
 
@@ -1196,6 +1216,21 @@ pub fn publish_position_event(topic: MStr<Topic>, event: &PositionEvent) {
     forward_to_external_egress(topic, BusPayloadType::PositionEvent, event);
 }
 
+/// Publishes an execution action result to subscribers on a topic.
+pub fn publish_execution_action_result(topic: MStr<Topic>, result: &ExecutionActionResult) {
+    publish_typed(
+        topic,
+        &EXECUTION_ACTION_RESULT_HANDLERS,
+        |bus, handlers| {
+            bus.router_execution_action_results
+                .fill_matching_handlers(topic, handlers);
+        },
+        result,
+    );
+
+    forward_to_external_egress(topic, BusPayloadType::ExecutionActionResult, result);
+}
+
 /// Publishes a DeFi block to subscribers on a topic.
 #[cfg(feature = "defi")]
 pub fn publish_defi_block(topic: MStr<Topic>, block: &Block) {
@@ -1638,7 +1673,11 @@ mod tests {
                 QuotesResponse, RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes,
                 TradesResponse, UnsubscribeCommand, UnsubscribeQuotes,
             },
-            execution::{CancelAllOrders, GenerateExecutionMassStatus, TradingCommand},
+            execution::{
+                BinaryOptionAction, BinaryOptionPair, CancelAllOrders, ExecuteAction,
+                ExecutionAction, ExecutionActionStatus, GenerateExecutionMassStatus,
+                TradingCommand,
+            },
         },
         msgbus::{
             BusMessage, BusTap, MessageBusConfig, MessageBusExternalEgress, SuppressExternalGuard,
@@ -3285,6 +3324,101 @@ mod tests {
         );
 
         assert!(publications.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    fn execution_action_result() -> ExecutionActionResult {
+        let command = ExecuteAction::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("HYPERLIQUID")),
+            StrategyId::from("STRATEGY-001"),
+            AccountId::from("HYPERLIQUID-001"),
+            ExecutionAction::BinaryOption(BinaryOptionAction::Split {
+                pair: BinaryOptionPair::new(
+                    InstrumentId::from("42-YES-OUTCOME.HYPERLIQUID"),
+                    InstrumentId::from("42-NO-OUTCOME.HYPERLIQUID"),
+                )
+                .unwrap(),
+                quantity: Quantity::from("1"),
+                params: None,
+            }),
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_000_000_000),
+            None,
+        );
+        ExecutionActionResult::new(
+            &command,
+            ExecutionActionStatus::Accepted,
+            None,
+            None,
+            UnixNanos::from(1_000_000_001),
+        )
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn execution_action_results_egress_but_never_republish_inbound(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let publications = install_capturing_external_stream_egress(encoding);
+        let result = execution_action_result();
+        let topic = "events.execution_action.STRATEGY-001";
+        let received = Rc::new(RefCell::new(Vec::<ExecutionActionResult>::new()));
+        let received_handler = received.clone();
+        subscribe_execution_action_results(
+            "events.execution_action.*".into(),
+            TypedHandler::from(move |value: &ExecutionActionResult| {
+                received_handler.borrow_mut().push(value.clone());
+            }),
+            None,
+        );
+
+        publish_execution_action_result(topic.into(), &result);
+
+        assert_eq!(*received.borrow(), vec![result.clone()]);
+        let message = {
+            let publications = publications.borrow();
+            assert_eq!(publications.len(), 1);
+            assert_eq!(publications[0].topic, topic);
+            assert_eq!(
+                publications[0].payload_type,
+                BusPayloadType::ExecutionActionResult
+            );
+            assert_eq!(publications[0].encoding, encoding);
+            let decoded: ExecutionActionResult = match encoding {
+                SerializationEncoding::Json => serde_json::from_slice(&publications[0].payload)
+                    .expect("JSON action result must decode"),
+                SerializationEncoding::MsgPack => rmp_serde::from_slice(&publications[0].payload)
+                    .expect("MessagePack action result must decode"),
+                SerializationEncoding::Sbe | SerializationEncoding::Capnp => unreachable!(),
+            };
+            assert_eq!(decoded, result);
+            BusMessage::with_str_topic(
+                publications[0].topic.clone(),
+                publications[0].payload_type,
+                publications[0].payload.clone(),
+                publications[0].encoding,
+            )
+        };
+        publications.borrow_mut().clear();
+        received.borrow_mut().clear();
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::ExecutionActionResult);
+
+        republish_external_message(&message).expect("inbound action result must be ignored");
+        assert!(received.borrow().is_empty());
+        assert!(publications.borrow().is_empty());
+
+        let mut processor_called = false;
+        process_external_typed_message(&message, &mut |_, _| {
+            processor_called = true;
+            Ok(())
+        })
+        .expect("inbound action result must be ignored before processing");
+        assert!(!processor_called);
+        assert!(received.borrow().is_empty());
         reset_message_bus();
     }
 

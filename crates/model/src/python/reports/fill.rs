@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use indexmap::IndexMap;
 use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
@@ -22,6 +23,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use crate::{
     enums::{LiquiditySide, OrderSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
+    orders::str_indexmap_to_ustr,
     reports::fill::FillReport,
     types::{Money, Price, Quantity},
 };
@@ -48,6 +50,7 @@ impl FillReport {
         venue_position_id=None,
         avg_px=None,
         report_id=None,
+        info=None,
     ))]
     fn py_new(
         account_id: AccountId,
@@ -65,6 +68,7 @@ impl FillReport {
         venue_position_id: Option<PositionId>,
         avg_px: Option<rust_decimal::Decimal>,
         report_id: Option<UUID4>,
+        info: Option<IndexMap<String, String>>,
     ) -> Self {
         let mut report = Self::new(
             account_id,
@@ -83,6 +87,7 @@ impl FillReport {
             report_id,
         );
         report.avg_px = avg_px;
+        report.info = info.map(str_indexmap_to_ustr);
         report
     }
 
@@ -192,6 +197,16 @@ impl FillReport {
         self.venue_position_id
     }
 
+    #[getter]
+    #[pyo3(name = "info")]
+    fn py_info(&self) -> Option<IndexMap<&str, &str>> {
+        self.info.as_ref().map(|info| {
+            info.iter()
+                .map(|(key, value)| (key.as_str(), value.as_str()))
+                .collect()
+        })
+    }
+
     /// Creates a `FillReport` from a Python dictionary.
     ///
     /// # Errors
@@ -228,6 +243,19 @@ impl FillReport {
         dict.set_item("report_id", self.report_id.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
+
+        match &self.info {
+            Some(info) => {
+                let py_info = PyDict::new(py);
+
+                for (key, value) in info {
+                    py_info.set_item(key.as_str(), value.as_str())?;
+                }
+
+                dict.set_item("info", py_info)?;
+            }
+            None => dict.set_item("info", py.None())?,
+        }
 
         match &self.client_order_id {
             Some(id) => dict.set_item("client_order_id", id.to_string())?,

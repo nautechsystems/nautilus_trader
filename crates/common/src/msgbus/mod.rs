@@ -95,7 +95,7 @@ pub use self::{
     },
     typed_router::{TopicRouter, TypedSubscription},
 };
-use crate::timer::TimeEvent;
+use crate::{messages::execution::ExecutionActionResult, timer::TimeEvent};
 
 /// Inline capacity for handler buffers before heap allocation.
 pub(super) const HANDLER_BUFFER_CAP: usize = 64;
@@ -147,6 +147,8 @@ thread_local! {
     pub(super) static ORDER_EVENT_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderEventAny>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
     pub(super) static POSITION_EVENT_HANDLERS: RefCell<SmallVec<[TypedHandler<PositionEvent>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static EXECUTION_ACTION_RESULT_HANDLERS: RefCell<SmallVec<[TypedHandler<ExecutionActionResult>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
     pub(super) static INSTRUMENT_HANDLERS: RefCell<SmallVec<[TypedHandler<InstrumentAny>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());

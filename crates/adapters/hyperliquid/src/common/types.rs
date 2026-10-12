@@ -60,6 +60,22 @@ impl HyperliquidAssetId {
         Self(HIP_4_OUTCOME_BASE + 10 * outcome + u32::from(side))
     }
 
+    /// Attempts to create an outcome (HIP-4) asset ID from `outcome` and `side`.
+    ///
+    /// Returns `None` when `side` is not binary or the HIP-4 encoding exceeds `u32`.
+    #[must_use]
+    pub fn try_outcome(outcome: u32, side: u8) -> Option<Self> {
+        (side <= 1)
+            .then(|| {
+                outcome
+                    .checked_mul(10)?
+                    .checked_add(u32::from(side))?
+                    .checked_add(HIP_4_OUTCOME_BASE)
+            })
+            .flatten()
+            .map(Self)
+    }
+
     /// Creates an outcome (HIP-4) asset ID from an encoded `10 * outcome + side` value.
     pub fn from_outcome_encoding(encoding: u32) -> Option<Self> {
         let raw = HIP_4_OUTCOME_BASE.checked_add(encoding)?;
@@ -198,6 +214,16 @@ mod tests {
         assert_eq!(asset_id.outcome_encoding(), Some(31));
         assert_eq!(asset_id.outcome_index(), Some(3));
         assert_eq!(asset_id.outcome_side(), Some(1));
+    }
+
+    #[rstest]
+    fn test_try_outcome_checks_side_and_overflow() {
+        assert_eq!(
+            HyperliquidAssetId::try_outcome(3, 1),
+            Some(HyperliquidAssetId::outcome(3, 1)),
+        );
+        assert_eq!(HyperliquidAssetId::try_outcome(3, 2), None);
+        assert_eq!(HyperliquidAssetId::try_outcome(u32::MAX, 0), None);
     }
 
     #[rstest]

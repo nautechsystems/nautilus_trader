@@ -1230,7 +1230,9 @@ impl SandboxInner {
             TradingCommand::CancelOrder(cmd) => self.apply_cancel_order(cmd),
             TradingCommand::CancelOrders(cmd) => self.apply_batch_cancel_orders(cmd),
             TradingCommand::CancelAllOrders(cmd) => self.apply_cancel_all_orders(cmd),
-            TradingCommand::QueryOrder(_) | TradingCommand::QueryAccount(_) => {}
+            TradingCommand::ExecuteAction(_)
+            | TradingCommand::QueryOrder(_)
+            | TradingCommand::QueryAccount(_) => {}
         }
         Ok(())
     }
@@ -1337,7 +1339,9 @@ impl SandboxInner {
             // `CancelAllOrders` names no orders and the strategy marks none `PENDING_CANCEL` for
             // it, so there is no pending state to release and the FSM would refuse a rejection.
             TradingCommand::CancelAllOrders(_) => {}
-            TradingCommand::QueryOrder(_) | TradingCommand::QueryAccount(_) => {}
+            TradingCommand::ExecuteAction(_)
+            | TradingCommand::QueryOrder(_)
+            | TradingCommand::QueryAccount(_) => {}
         }
     }
 
@@ -1639,7 +1643,9 @@ impl SandboxInner {
             TradingCommand::CancelOrder(_)
             | TradingCommand::CancelOrders(_)
             | TradingCommand::CancelAllOrders(_) => latency_model.get_delete_latency(),
-            TradingCommand::QueryOrder(_) | TradingCommand::QueryAccount(_) => DurationNanos::ZERO,
+            TradingCommand::ExecuteAction(_)
+            | TradingCommand::QueryOrder(_)
+            | TradingCommand::QueryAccount(_) => DurationNanos::ZERO,
         }
     }
 

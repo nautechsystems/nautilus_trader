@@ -18,6 +18,7 @@ Test reports behavior.
 
 from decimal import Decimal
 
+import pytest
 from tests.providers import TestInstrumentProvider
 from tests.unit.model.factories import make_fill_report
 from tests.unit.model.factories import make_market_order_snapshot_values
@@ -76,6 +77,38 @@ def test_fill_report_to_dict_and_from_dict_roundtrip(audusd_id: InstrumentId) ->
     assert restored == report
     assert restored.client_order_id == ClientOrderId("O-1")
     assert restored.venue_position_id == PositionId("P-1")
+
+
+@pytest.mark.parametrize(
+    "info",
+    [None, {}, {"source": "execution_action", "action": "binary_option.split", "leg": "yes"}],
+)
+def test_fill_report_info_roundtrip(audusd_id: InstrumentId, info: dict[str, str] | None) -> None:
+    """
+    Fill provenance survives dictionary and JSON serialization.
+    """
+    report = make_fill_report(audusd_id, info=info)
+
+    restored = FillReport.from_dict(report.to_dict())
+
+    assert report.info == info
+    assert report.to_dict()["info"] == info
+    assert restored == report
+    assert restored.info == info
+
+
+def test_fill_report_legacy_dict(audusd_id: InstrumentId) -> None:
+    """
+    Legacy fill dictionaries without provenance remain readable.
+    """
+    report = make_fill_report(audusd_id)
+    values = report.to_dict()
+    values.pop("info", None)
+
+    restored = FillReport.from_dict(values)
+
+    assert restored.info is None
+    assert restored == report
 
 
 def test_order_status_report_to_dict_and_from_dict_roundtrip(audusd_id: InstrumentId) -> None:

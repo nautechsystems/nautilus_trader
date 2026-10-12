@@ -37,7 +37,10 @@ use nautilus_model::{
     python::orders::order_any_to_pyobject,
     types::{Price, Quantity},
 };
-use pyo3::{prelude::*, types::PyDict};
+use pyo3::{
+    prelude::*,
+    types::{PyAny, PyDict},
+};
 
 use crate::{
     enums::LogLevel,
@@ -53,12 +56,13 @@ use crate::{
             UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
         execution::{
-            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
-            GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
-            GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-            SubmitOrderList,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecuteAction,
+            ExecutionActionResult, GenerateFillReports, GenerateOrderStatusReport,
+            GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, QueryAccount,
+            QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
+    python::execution_action::execution_action_to_pyobject,
 };
 
 #[pymethods]
@@ -2051,6 +2055,131 @@ impl QueryAccount {
     #[pyo3(name = "account_id")]
     fn py_account_id(&self) -> AccountId {
         self.account_id
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl ExecuteAction {
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_id")]
+    fn py_client_id(&self) -> Option<ClientId> {
+        self.client_id
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    fn py_account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    #[getter]
+    #[pyo3(name = "action")]
+    fn py_action(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        execution_action_to_pyobject(py, self.action.clone())
+    }
+
+    #[getter]
+    #[pyo3(name = "command_id")]
+    fn py_command_id(&self) -> UUID4 {
+        self.command_id
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "correlation_id")]
+    fn py_correlation_id(&self) -> Option<UUID4> {
+        self.correlation_id
+    }
+
+    #[getter]
+    #[pyo3(name = "causation_id")]
+    fn py_causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl ExecutionActionResult {
+    #[getter]
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    #[getter]
+    #[pyo3(name = "client_id")]
+    fn py_client_id(&self) -> Option<ClientId> {
+        self.client_id
+    }
+
+    #[getter]
+    #[pyo3(name = "strategy_id")]
+    fn py_strategy_id(&self) -> StrategyId {
+        self.strategy_id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    fn py_account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    #[getter]
+    #[pyo3(name = "action")]
+    fn py_action(&self) -> String {
+        self.action.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "command_id")]
+    fn py_command_id(&self) -> UUID4 {
+        self.command_id
+    }
+
+    #[getter]
+    #[pyo3(name = "status")]
+    fn py_status(&self) -> crate::messages::execution::ExecutionActionStatus {
+        self.status
+    }
+
+    #[getter]
+    #[pyo3(name = "reason")]
+    fn py_reason(&self) -> Option<String> {
+        self.reason.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "info")]
+    fn py_info(&self, py: Python<'_>) -> PyResult<Option<Py<PyDict>>> {
+        self.info
+            .as_ref()
+            .map(|info| params_to_pydict(py, info))
+            .transpose()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 }
 

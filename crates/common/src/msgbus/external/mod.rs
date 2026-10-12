@@ -44,7 +44,7 @@ use crate::{
     enums::SerializationEncoding,
     messages::{
         data::{SubscribeCommand, UnsubscribeCommand},
-        execution::{GenerateExecutionMassStatus, TradingCommand},
+        execution::{ExecutionActionResult, GenerateExecutionMassStatus, TradingCommand},
     },
 };
 
@@ -85,6 +85,11 @@ pub(super) fn forward_any_to_external_egress(topic: MStr<Topic>, message: &dyn A
             message,
         )
         || forward_downcast::<TradingCommand>(topic, BusPayloadType::TradingCommand, message)
+        || forward_downcast::<ExecutionActionResult>(
+            topic,
+            BusPayloadType::ExecutionActionResult,
+            message,
+        )
         || forward_downcast::<GenerateExecutionMassStatus>(
             topic,
             BusPayloadType::GenerateExecutionMassStatus,
@@ -185,6 +190,14 @@ where
 pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
     let topic =
         MStr::<Topic>::topic_from_ustr(message.topic).context("invalid external message topic")?;
+
+    // Action delivery results are local execution-client output. They are exposed externally for
+    // observation, but inbound payloads must never impersonate a venue/client acknowledgement to
+    // a strategy.
+    if message.payload_type == BusPayloadType::ExecutionActionResult {
+        log::warn!("Ignoring externally received execution action result");
+        return Ok(());
+    }
 
     if !is_registered_streaming_type(message) {
         return Ok(());
@@ -320,6 +333,9 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
         BusPayloadType::TradingCommand => {
             handle_json_msgpack_any::<TradingCommand>(topic, message)?;
         }
+        BusPayloadType::ExecutionActionResult => unreachable!(
+            "execution action results are ignored before external message republishing"
+        ),
         BusPayloadType::GenerateExecutionMassStatus => {
             handle_json_msgpack_any::<GenerateExecutionMassStatus>(topic, message)?;
         }
@@ -385,6 +401,7 @@ pub fn process_external_typed_message(
         BusPayloadType::SubscribeCommand => process_typed_payload::<SubscribeCommand>(topic, message, processor),
         BusPayloadType::UnsubscribeCommand => process_typed_payload::<UnsubscribeCommand>(topic, message, processor),
         BusPayloadType::TradingCommand => process_typed_payload::<TradingCommand>(topic, message, processor),
+        BusPayloadType::ExecutionActionResult => Ok(()),
         BusPayloadType::GenerateExecutionMassStatus => process_typed_payload::<GenerateExecutionMassStatus>(topic, message, processor),
         BusPayloadType::OrderStatusReport => process_typed_payload::<OrderStatusReport>(topic, message, processor),
         BusPayloadType::FillReport => process_typed_payload::<FillReport>(topic, message, processor),

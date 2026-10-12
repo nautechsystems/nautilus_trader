@@ -59,6 +59,7 @@ pub enum BusPayloadType {
     SubscribeCommand,
     UnsubscribeCommand,
     TradingCommand,
+    ExecutionActionResult,
     GenerateExecutionMassStatus,
     OrderStatusReport,
     FillReport,
@@ -95,6 +96,7 @@ impl BusPayloadType {
         Self::SubscribeCommand,
         Self::UnsubscribeCommand,
         Self::TradingCommand,
+        Self::ExecutionActionResult,
         Self::GenerateExecutionMassStatus,
         Self::OrderStatusReport,
         Self::FillReport,
@@ -137,6 +139,7 @@ impl BusPayloadType {
             Self::SubscribeCommand => "SubscribeCommand",
             Self::UnsubscribeCommand => "UnsubscribeCommand",
             Self::TradingCommand => "TradingCommand",
+            Self::ExecutionActionResult => "ExecutionActionResult",
             Self::GenerateExecutionMassStatus => "GenerateExecutionMassStatus",
             Self::OrderStatusReport => "OrderStatusReport",
             Self::FillReport => "FillReport",
@@ -200,6 +203,7 @@ impl BusPayloadType {
             "SubscribeCommand" => Some(Self::SubscribeCommand),
             "UnsubscribeCommand" => Some(Self::UnsubscribeCommand),
             "TradingCommand" => Some(Self::TradingCommand),
+            "ExecutionActionResult" => Some(Self::ExecutionActionResult),
             "GenerateExecutionMassStatus" => Some(Self::GenerateExecutionMassStatus),
             "OrderStatusReport" => Some(Self::OrderStatusReport),
             "FillReport" => Some(Self::FillReport),
@@ -217,6 +221,7 @@ impl BusPayloadType {
             Self::SubscribeCommand
                 | Self::UnsubscribeCommand
                 | Self::TradingCommand
+                | Self::ExecutionActionResult
                 | Self::GenerateExecutionMassStatus
                 | Self::OrderStatusReport
                 | Self::FillReport
@@ -235,7 +240,8 @@ impl BusPayloadType {
                 Self::AccountState
                 | Self::OrderEvent
                 | Self::PositionEvent
-                | Self::PortfolioSnapshot => BusPayloadCategory::BuiltIn,
+                | Self::PortfolioSnapshot
+                | Self::ExecutionActionResult => BusPayloadCategory::BuiltIn,
                 _ => BusPayloadCategory::Other,
             }
         }
@@ -451,6 +457,7 @@ mod tests {
     #[case(BusPayloadType::OrderBookDeltas, BusPayloadCategory::MarketData)]
     #[case(BusPayloadType::AccountState, BusPayloadCategory::BuiltIn)]
     #[case(BusPayloadType::OrderEvent, BusPayloadCategory::BuiltIn)]
+    #[case(BusPayloadType::ExecutionActionResult, BusPayloadCategory::BuiltIn)]
     #[case(BusPayloadType::Instrument, BusPayloadCategory::Other)]
     #[case(BusPayloadType::OptionGreeks, BusPayloadCategory::MarketData)]
     #[case(
@@ -539,6 +546,10 @@ mod tests {
             (BusPayloadType::UnsubscribeCommand, "UnsubscribeCommand"),
             (BusPayloadType::TradingCommand, "TradingCommand"),
             (
+                BusPayloadType::ExecutionActionResult,
+                "ExecutionActionResult",
+            ),
+            (
                 BusPayloadType::GenerateExecutionMassStatus,
                 "GenerateExecutionMassStatus",
             ),
@@ -572,7 +583,14 @@ mod tests {
             );
             assert!(payload_type.is_typed_message());
             assert!(!custom_payload_type.is_typed_message());
-            assert_eq!(payload_type.category(), BusPayloadCategory::Other);
+            assert_eq!(
+                payload_type.category(),
+                if payload_type == BusPayloadType::ExecutionActionResult {
+                    BusPayloadCategory::BuiltIn
+                } else {
+                    BusPayloadCategory::Other
+                }
+            );
             assert!(payload_type.supports(SerializationEncoding::Json));
             assert!(payload_type.supports(SerializationEncoding::MsgPack));
             assert!(!payload_type.supports(SerializationEncoding::Sbe));

@@ -15,9 +15,11 @@
 
 use std::fmt::Display;
 
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::{
     enums::{LiquiditySide, OrderSide},
@@ -67,6 +69,9 @@ pub struct FillReport {
     pub client_order_id: Option<ClientOrderId>,
     /// The position ID (assigned by the venue).
     pub venue_position_id: Option<PositionId>,
+    /// Venue execution provenance, including orderless execution actions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub info: Option<IndexMap<Ustr, Ustr>>,
 }
 
 impl FillReport {
@@ -105,6 +110,7 @@ impl FillReport {
             ts_init,
             client_order_id,
             venue_position_id,
+            info: None,
         }
     }
 
@@ -265,6 +271,23 @@ mod tests {
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: FillReport = serde_json::from_str(&json).unwrap();
         assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_fill_report_info_roundtrip() {
+        let mut report = test_fill_report();
+        report.info = Some(IndexMap::from([
+            (Ustr::from("source"), Ustr::from("execution_action")),
+            (
+                Ustr::from("venue_fill_direction"),
+                Ustr::from("Split Outcome"),
+            ),
+            (Ustr::from("transaction_hash"), Ustr::from("0x1234")),
+        ]));
+
+        let restored: FillReport =
+            serde_json::from_str(&serde_json::to_string(&report).unwrap()).unwrap();
+        assert_eq!(restored, report);
     }
 
     #[rstest]

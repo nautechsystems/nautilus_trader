@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::{
     consts::{info_url, ws_url},
-    enums::HyperliquidEnvironment,
+    enums::{HyperliquidEnvironment, HyperliquidProductType},
 };
 
 /// Configuration for the Hyperliquid data client.
@@ -176,6 +176,10 @@ impl HyperliquidDataClientConfig {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
 )]
 pub struct HyperliquidExecutionClientConfig {
+    /// Products routed to this execution client and covered by reconciliation.
+    /// Defaults to all products for backward compatibility, independent of data subscriptions.
+    #[builder(default = vec![HyperliquidProductType::Perp, HyperliquidProductType::Spot, HyperliquidProductType::Outcome])]
+    pub product_types: Vec<HyperliquidProductType>,
     /// Account identifier for the execution client.
     #[builder(default = AccountId::from("HYPERLIQUID-001"))]
     pub account_id: AccountId,
@@ -250,6 +254,7 @@ pub struct HyperliquidExecutionClientConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(HyperliquidExecutionClientConfig {
+    product_types: Vec<HyperliquidProductType>,
     account_id: AccountId,
     vault_address: Option<String>,
     account_address: Option<String>,

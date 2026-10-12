@@ -28,9 +28,10 @@ use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
     live::runner::get_exec_event_sender,
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        BatchCancelOrders, CancelAllOrders, CancelOrder, ExecuteAction, ExecutionActionResult,
+        ExecutionActionStatus, GenerateFillReports, GenerateOrderStatusReport,
+        GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, QueryAccount,
+        QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -58,6 +59,7 @@ use nautilus_model::{
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
@@ -82,21 +84,25 @@ use crate::{
         models::{
             ClearinghouseState, Cloid, HyperliquidExchangeAction,
             HyperliquidExchangeCancelByCloidRequest, HyperliquidExchangeCancelOrderRequest,
-            HyperliquidExchangeGrouping, HyperliquidExchangeModifyOrderRequest,
-            HyperliquidExchangeModifyTarget, HyperliquidExchangeOrderKind,
-            HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTpSl, HyperliquidFills,
+            HyperliquidExchangeGrouping, HyperliquidExchangeMergeOutcomeParams,
+            HyperliquidExchangeModifyOrderRequest, HyperliquidExchangeModifyTarget,
+            HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest,
+            HyperliquidExchangeResponse, HyperliquidExchangeSplitOutcomeParams,
+            HyperliquidExchangeTpSl, HyperliquidExchangeUserOutcomeOp, HyperliquidFills,
             HyperliquidOrderStatusEntry, SpotClearinghouseState,
         },
         parse::derive_outcome_settlements,
     },
+    outcome_actions::{HyperliquidOutcomeAction, hyperliquid_outcome_action},
     outcome_settlement::{OutcomeSettlementTracker, build_settlement_fills},
     websocket::{
         ExecutionReport, NautilusWsMessage, USER_STREAMS_ENDPOINT,
-        client::{HyperliquidWebSocketClient, PostRequestError},
+        client::HyperliquidWebSocketClient,
         dispatch::{
             CorrectiveReduce, DispatchOutcome, WsDispatchState, dispatch_order_event,
             dispatch_order_fill, promote_replacement_from_query, venue_oid,
         },
+        post::PostRequestError,
     },
 };
 
@@ -109,6 +115,89 @@ const RECONNECT_RECOVERY_MARGIN: DurationNanos = DurationNanos::from_secs(30);
 
 // The history endpoints can lag the live state by seconds, so recovery reads them again after this
 const RECONNECT_FOLLOW_UP_DELAY: Duration = Duration::from_secs(5);
+
+fn outcome_action_from_command(
+    command: &ExecuteAction,
+) -> anyhow::Result<HyperliquidExchangeAction> {
+    let action = command.action.binary_option().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Execution action '{}' is not supported by Hyperliquid",
+            command.action.name()
+        )
+    })?;
+    let action = hyperliquid_outcome_action(action)?;
+    let op = match action {
+        HyperliquidOutcomeAction::Split { outcome, amount } => {
+            HyperliquidExchangeUserOutcomeOp::SplitOutcome(HyperliquidExchangeSplitOutcomeParams {
+                outcome,
+                amount,
+            })
+        }
+        HyperliquidOutcomeAction::Merge { outcome, amount } => {
+            HyperliquidExchangeUserOutcomeOp::MergeOutcome(HyperliquidExchangeMergeOutcomeParams {
+                outcome,
+                amount: Some(amount),
+            })
+        }
+    };
+
+    Ok(HyperliquidExchangeAction::UserOutcome { op })
+}
+
+fn is_default_action_response(response: &HyperliquidExchangeResponse) -> bool {
+    matches!(
+        response,
+        HyperliquidExchangeResponse::Status { status, response }
+            if status == "ok" && response.get("type").and_then(serde_json::Value::as_str) == Some("default")
+    )
+}
+
+fn execution_action_result_from_post_outcome(
+    cmd: &ExecuteAction,
+    outcome: Result<HyperliquidExchangeResponse, CommandFailure>,
+    ts_event: UnixNanos,
+) -> ExecutionActionResult {
+    match outcome {
+        Ok(response) if is_default_action_response(&response) => {
+            ExecutionActionResult::new(cmd, ExecutionActionStatus::Accepted, None, None, ts_event)
+        }
+        Ok(response) => ExecutionActionResult::new(
+            cmd,
+            ExecutionActionStatus::Ambiguous,
+            Some(format!(
+                "Unexpected Hyperliquid action response: {response:?}"
+            )),
+            None,
+            ts_event,
+        ),
+        Err(CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason)) => {
+            ExecutionActionResult::new(
+                cmd,
+                ExecutionActionStatus::Rejected,
+                Some(reason),
+                None,
+                ts_event,
+            )
+        }
+        Err(CommandFailure::Ambiguous(reason)) => ExecutionActionResult::new(
+            cmd,
+            ExecutionActionStatus::Ambiguous,
+            Some(reason),
+            None,
+            ts_event,
+        ),
+    }
+}
+
+fn emit_execution_action_result_if_current_generation(
+    cancellation: &CancellationToken,
+    emitter: &ExecutionEventEmitter,
+    result: ExecutionActionResult,
+) {
+    if !cancellation.is_cancelled() {
+        emitter.send_execution_action_result(result);
+    }
+}
 
 #[derive(Debug)]
 pub struct HyperliquidExecutionClient {
@@ -162,7 +251,12 @@ impl HyperliquidExecutionClient {
     }
 
     fn validate_order_submission(&self, order: &OrderAny) -> anyhow::Result<()> {
-        validate_order_for_hyperliquid(order)
+        validate_order_for_hyperliquid(order)?;
+        anyhow::ensure!(
+            self.http_client.allows_instrument(order.instrument_id()),
+            "Order outside execution product scope"
+        );
+        Ok(())
     }
 
     fn order_request(
@@ -170,7 +264,7 @@ impl HyperliquidExecutionClient {
         order: &OrderAny,
         slippage_bps: u32,
     ) -> anyhow::Result<HyperliquidExchangePlaceOrderRequest> {
-        validate_order_for_hyperliquid(order)?;
+        self.validate_order_submission(order)?;
 
         let symbol = order.instrument_id().symbol.inner();
         let asset = self
@@ -413,6 +507,7 @@ impl HyperliquidExecutionClient {
         )
         .context("failed to create Hyperliquid HTTP client")?;
 
+        http_client.set_product_types(config.product_types.clone())?;
         http_client.set_account_id(core.account_id);
         http_client.set_account_address(account_address);
         http_client.set_normalize_prices(config.normalize_prices);
@@ -590,6 +685,7 @@ impl HyperliquidExecutionClient {
         Ok(HyperliquidReportClient {
             http_client: self.http_client.clone(),
             account_address: self.get_account_address()?,
+            emitter: self.emitter.clone(),
         })
     }
 
@@ -858,6 +954,65 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.core.set_disconnected();
 
         log::info!("Hyperliquid execution client stopped");
+        Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        log::debug!(
+            "Resetting Hyperliquid execution client {}",
+            self.core.client_id
+        );
+
+        self.session_tasks.abort();
+        self.abort_pending_tasks();
+        self.ws_client.begin_shutdown();
+        self.core.set_disconnected();
+
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        log::debug!(
+            "Disposing Hyperliquid execution client {}",
+            self.core.client_id
+        );
+        self.stop()
+    }
+
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        self.http_client.allows_instrument(instrument_id)
+    }
+
+    fn execute_action(&self, cmd: ExecuteAction) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.config
+                .product_types
+                .contains(&HyperliquidProductType::Outcome),
+            "Outcome actions outside execution product scope"
+        );
+        let action = outcome_action_from_command(&cmd)?;
+        let task_spawner = self.pending_tasks.spawner().map_err(|e| {
+            anyhow::anyhow!("Cannot execute Hyperliquid action after shutdown began: {e}")
+        })?;
+        let signer = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        let cancellation = task_spawner.cancellation_token();
+
+        task_spawner
+            .spawn(async move {
+                let outcome = ws_client
+                    .post_action_command(&signer, &action)
+                    .await
+                    .map_err(classify_post_failure);
+                let result =
+                    execution_action_result_from_post_outcome(&cmd, outcome, clock.get_time_ns());
+
+                emit_execution_action_result_if_current_generation(&cancellation, &emitter, result);
+            })
+            .map_err(|e| anyhow::anyhow!("Cannot schedule Hyperliquid execution action: {e}"))?;
+
         Ok(())
     }
 
@@ -2267,6 +2422,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
 struct HyperliquidReportClient {
     http_client: HyperliquidHttpClient,
     account_address: String,
+    emitter: ExecutionEventEmitter,
 }
 
 impl HyperliquidReportClient {
@@ -2414,6 +2570,18 @@ impl HyperliquidReportClient {
             .request_position_status_reports(account_address, cmd.instrument_id)
             .await
             .context("failed to generate position status reports")?;
+
+        // Reported accounts do not calculate balances from fills. Refresh the
+        // authoritative account snapshot alongside periodic position reconciliation.
+        // A failed account refresh must not discard a valid position snapshot.
+        match self
+            .http_client
+            .request_account_state(account_address)
+            .await
+        {
+            Ok(state) => self.emitter.send_account_state(state),
+            Err(e) => log::warn!("Failed to refresh account during position reconciliation: {e}"),
+        }
 
         log::debug!("Generated {} position status reports", reports.len());
         Ok(reports)
@@ -2653,6 +2821,14 @@ impl HyperliquidExecutionClient {
                     Some(msg) => match msg {
                         NautilusWsMessage::ExecutionReports(reports) => {
                             for report in reports {
+                                let instrument_id = match &report {
+                                    ExecutionReport::Fill(report) => report.instrument_id,
+                                    ExecutionReport::Order(report) => report.instrument_id,
+                                };
+
+                                if !http_client.allows_instrument(instrument_id) {
+                                    continue;
+                                }
                                 ts_last_report = ts_last_report.max(ts_venue(&report));
 
                                 let staged_parent_fill = match &report {
@@ -4433,7 +4609,10 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clock::VirtualClock,
-        messages::{ExecutionEvent, ExecutionReport as EngineExecutionReport},
+        messages::{
+            ExecutionEvent, ExecutionReport as EngineExecutionReport,
+            execution::{BinaryOptionAction, BinaryOptionPair, ExecutionAction},
+        },
     };
     use nautilus_core::{
         UUID4, UnixNanos, string::secret::SecretString, time::get_atomic_clock_realtime,
@@ -4470,18 +4649,21 @@ mod tests {
     use zeroize::Zeroizing;
 
     use super::{
-        CancelEntry, ExecutionClient, ExecutionClientCore, ExecutionReport, FifoCache,
-        HyperliquidExecutionClient, HyperliquidExecutionClientConfig, HyperliquidHttpClient,
-        HyperliquidWebSocketClient, PostRejectionRoute, StagedBracketChild, StagedBracketState,
-        WsDispatchState, attach_known_client_order_id, build_ouo_resize_request,
-        can_fast_cancel_order, classify_post_failure, determine_order_list_grouping,
-        handle_execution_report, reconnect_reports_from_history, register_order_context_into,
+        CancelEntry, ExecuteAction, ExecutionActionStatus, ExecutionClient, ExecutionClientCore,
+        ExecutionReport, FifoCache, HyperliquidExecutionClient, HyperliquidExecutionClientConfig,
+        HyperliquidHttpClient, HyperliquidWebSocketClient, PostRejectionRoute, StagedBracketChild,
+        StagedBracketState, WsDispatchState, attach_known_client_order_id,
+        build_ouo_resize_request, can_fast_cancel_order, classify_post_failure,
+        determine_order_list_grouping, emit_execution_action_result_if_current_generation,
+        execution_action_result_from_post_outcome, handle_execution_report,
+        outcome_action_from_command, reconnect_reports_from_history, register_order_context_into,
         resolve_order_legs, split_fast_cancel_requests, ts_venue, validate_order_for_hyperliquid,
     };
     use crate::{
         common::{
             consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
             enums::HyperliquidEnvironment,
+            outcome_pair_instrument_ids,
             parse::make_fill_trade_id,
             testing::load_test_data,
         },
@@ -4490,13 +4672,102 @@ mod tests {
                 Cloid, HyperliquidExchangeAction, HyperliquidExchangeCancelOrderRequest,
                 HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
                 HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest,
-                HyperliquidExchangeTif, HyperliquidFill, HyperliquidOrderStatusEntry, PerpMeta,
+                HyperliquidExchangeResponse, HyperliquidExchangeTif, HyperliquidFill,
+                HyperliquidOrderStatusEntry, PerpMeta,
             },
             parse::{create_instrument_from_def, parse_perp_instruments},
         },
     };
 
     const TEST_INSTRUMENT_ID: &str = "BTC-USD-PERP.HYPERLIQUID";
+
+    fn outcome_action_command(action: BinaryOptionAction) -> ExecuteAction {
+        ExecuteAction::new(
+            TraderId::from("TRADER-001"),
+            Some(*HYPERLIQUID_CLIENT_ID),
+            StrategyId::from("STRATEGY-001"),
+            AccountId::from("HYPERLIQUID-001"),
+            ExecutionAction::BinaryOption(action),
+            UUID4::new(),
+            UnixNanos::from(1),
+            None,
+        )
+    }
+
+    fn outcome_pair() -> BinaryOptionPair {
+        let [yes_instrument_id, no_instrument_id] = outcome_pair_instrument_ids(42).unwrap();
+        BinaryOptionPair::new(yes_instrument_id, no_instrument_id).unwrap()
+    }
+
+    fn split_action() -> BinaryOptionAction {
+        BinaryOptionAction::Split {
+            pair: outcome_pair(),
+            quantity: Quantity::from("1.25"),
+            params: None,
+        }
+    }
+
+    #[rstest]
+    fn test_outcome_action_from_command_builds_split_request() {
+        let action = outcome_action_from_command(&outcome_action_command(split_action())).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(action).unwrap(),
+            serde_json::json!({
+                "type": "userOutcome",
+                "splitOutcome": {"outcome": 42, "amount": "1.25"},
+            }),
+        );
+    }
+
+    #[rstest]
+    fn test_outcome_action_from_command_builds_merge_request() {
+        let action =
+            outcome_action_from_command(&outcome_action_command(BinaryOptionAction::Merge {
+                pair: outcome_pair(),
+                quantity: Quantity::from("1.25"),
+                params: None,
+            }))
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(action).unwrap(),
+            serde_json::json!({
+                "type": "userOutcome",
+                "mergeOutcome": {"outcome": 42, "amount": "1.25"},
+            }),
+        );
+    }
+
+    #[rstest]
+    fn test_execution_action_result_preserves_post_delivery_evidence() {
+        let command = outcome_action_command(split_action());
+        let accepted = execution_action_result_from_post_outcome(
+            &command,
+            Ok(HyperliquidExchangeResponse::Status {
+                status: "ok".to_string(),
+                response: serde_json::json!({"type": "default"}),
+            }),
+            UnixNanos::from(2),
+        );
+        assert_eq!(accepted.status, ExecutionActionStatus::Accepted);
+
+        let rejected = execution_action_result_from_post_outcome(
+            &command,
+            Err(CommandFailure::not_sent("writer unavailable")),
+            UnixNanos::from(2),
+        );
+        assert_eq!(rejected.status, ExecutionActionStatus::Rejected);
+        assert_eq!(rejected.reason.as_deref(), Some("writer unavailable"));
+
+        let ambiguous = execution_action_result_from_post_outcome(
+            &command,
+            Err(CommandFailure::ambiguous("write timed out")),
+            UnixNanos::from(2),
+        );
+        assert_eq!(ambiguous.status, ExecutionActionStatus::Ambiguous);
+        assert_eq!(ambiguous.reason.as_deref(), Some("write timed out"));
+    }
 
     fn test_emitter() -> (
         ExecutionEventEmitter,
@@ -4561,6 +4832,50 @@ mod tests {
             .build();
 
         HyperliquidExecutionClient::new(core, config).unwrap()
+    }
+
+    #[rstest]
+    fn reset_and_dispose_cancel_execution_task_generations() {
+        let mut client = make_execution_client();
+
+        client.reset().unwrap();
+
+        assert!(!client.pending_tasks.is_open());
+        assert!(!client.session_tasks.is_open());
+        assert!(client.core.is_disconnected());
+
+        client.dispose().unwrap();
+
+        assert!(client.core.is_stopped());
+        assert!(client.core.is_disconnected());
+    }
+
+    #[rstest]
+    fn reset_drops_late_execution_action_result() {
+        let mut client = make_execution_client();
+        let (emitter, mut receiver) = test_emitter();
+        client.emitter = emitter;
+        let cancellation = client
+            .pending_tasks
+            .spawner()
+            .expect("initial task generation must be open")
+            .cancellation_token();
+        let result = execution_action_result_from_post_outcome(
+            &outcome_action_command(split_action()),
+            Ok(HyperliquidExchangeResponse::Status {
+                status: "ok".to_string(),
+                response: serde_json::json!({"type": "default"}),
+            }),
+            UnixNanos::from(2),
+        );
+
+        client.reset().unwrap();
+        assert!(cancellation.is_cancelled());
+
+        // Simulate a post response that raced the reset from the retired generation.
+        emit_execution_action_result_if_current_generation(&cancellation, &client.emitter, result);
+
+        assert!(receiver.try_recv().is_err());
     }
 
     // Matches the order built by `limit_order_with_flags` so registration

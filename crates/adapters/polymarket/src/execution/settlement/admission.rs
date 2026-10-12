@@ -156,6 +156,7 @@ impl AdmittedLeg {
             ts_init,
             client_order_id: None,
             venue_position_id: None,
+            info: None,
         }
     }
 }

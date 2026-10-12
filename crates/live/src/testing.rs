@@ -487,6 +487,8 @@ const EVENT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 /// Classifies which branch of the live execution routing fork handles an event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoutedKind {
+    /// Execution action result path.
+    Action,
     /// Typed order-event path.
     Order,
     /// Reconciliation-report path.
@@ -498,6 +500,7 @@ pub enum RoutedKind {
 impl RoutedKind {
     fn of(event: &ExecutionEvent) -> Self {
         match event {
+            ExecutionEvent::Action(_) => Self::Action,
             ExecutionEvent::Report(_) => Self::Report,
             ExecutionEvent::Account(_) => Self::Account,
             _ => Self::Order,

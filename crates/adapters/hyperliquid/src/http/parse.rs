@@ -1273,7 +1273,7 @@ pub fn parse_fill_report(
     let ts_event = UnixNanos::from(fill.time * 1_000_000);
     let report_id = UUID4::new();
 
-    let report = FillReport::new(
+    let mut report = FillReport::new(
         account_id,
         instrument_id,
         venue_order_id,
@@ -1290,6 +1290,7 @@ pub fn parse_fill_report(
         Some(report_id),
     );
 
+    crate::common::parse::annotate_outcome_action_fill(&mut report, &fill.dir, &fill.hash)?;
     Ok(report)
 }
 

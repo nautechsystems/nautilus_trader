@@ -18468,6 +18468,110 @@ fn test_reconcile_fill_report_bootstraps_external_order(mut execution_engine: Ex
 }
 
 #[rstest]
+#[case::claimed(true)]
+#[case::external(false)]
+fn test_reconcile_orderless_action_lifecycle(
+    mut execution_engine: ExecutionEngine,
+    #[case] claimed: bool,
+) {
+    let instrument = audusd_sim();
+    let strategy_id = if claimed {
+        StrategyId::from("ACTION-001")
+    } else {
+        StrategyId::external()
+    };
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.add_instrument(instrument.clone().into()).unwrap();
+        cache
+            .add_account(cash_account_for(AccountId::test_default()).into())
+            .unwrap();
+    }
+    execution_engine.register_oms_type(strategy_id, OmsType::Netting);
+
+    if claimed {
+        execution_engine
+            .register_external_order_claims(strategy_id, &HashSet::from([instrument.id()]))
+            .unwrap();
+    }
+
+    let received = Rc::new(RefCell::new(Vec::<PositionEvent>::new()));
+    let handler = TypedHandler::from({
+        let received = Rc::clone(&received);
+        move |event: &PositionEvent| received.borrow_mut().push(event.clone())
+    });
+    msgbus::subscribe_position_events(
+        switchboard::get_event_position_topic(strategy_id).into(),
+        handler,
+        None,
+    );
+    let mut split = create_fill_report(
+        instrument.id(),
+        Some(ClientOrderId::from("ACTION-1-LEG-YES")),
+        VenueOrderId::from("1"),
+        TradeId::from("ACTION-1"),
+        Quantity::from(1),
+        Price::from("0.5"),
+    );
+    split.info = Some(
+        [
+            (Ustr::from("source"), Ustr::from("execution_action")),
+            (Ustr::from("action"), Ustr::from("binary_option.split")),
+        ]
+        .into_iter()
+        .collect(),
+    );
+    let mut merge = split.clone();
+    merge.client_order_id = Some(ClientOrderId::from("ACTION-2-LEG-YES"));
+    merge.venue_order_id = VenueOrderId::from("2");
+    merge.trade_id = TradeId::from("ACTION-2");
+    merge.order_side = OrderSide::Sell;
+    merge.ts_event = UnixNanos::from(2_000_000);
+    merge
+        .info
+        .as_mut()
+        .unwrap()
+        .insert(Ustr::from("action"), Ustr::from("binary_option.merge"));
+    let mut next_split = split.clone();
+    next_split.client_order_id = Some(ClientOrderId::from("ACTION-3-LEG-YES"));
+    next_split.venue_order_id = VenueOrderId::from("3");
+    next_split.trade_id = TradeId::from("ACTION-3");
+    next_split.ts_event = UnixNanos::from(3_000_000);
+
+    execution_engine.reconcile_fill_report(&split);
+    execution_engine.reconcile_fill_report(&split);
+    execution_engine.reconcile_fill_report(&merge);
+    execution_engine.reconcile_fill_report(&split);
+    execution_engine.reconcile_fill_report(&next_split);
+    execution_engine.reconcile_fill_report(&split);
+
+    let cache = execution_engine.cache().borrow();
+    let positions =
+        cache.positions_open(None, Some(&instrument.id()), Some(&strategy_id), None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(1));
+    assert!(positions[0].trade_ids.contains(&next_split.trade_id));
+    assert!(!positions[0].trade_ids.contains(&split.trade_id));
+    assert!(
+        !cache
+            .position_snapshots(Some(&positions[0].id), Some(&split.account_id))
+            .is_empty()
+    );
+    assert!(!cache.order_exists(&split.client_order_id.unwrap()));
+    assert!(!cache.order_exists(&merge.client_order_id.unwrap()));
+    assert!(!cache.order_exists(&next_split.client_order_id.unwrap()));
+    let received = received.borrow();
+    assert!(matches!(
+        received.as_slice(),
+        [
+            PositionEvent::PositionOpened(_),
+            PositionEvent::PositionClosed(_),
+            PositionEvent::PositionOpened(_)
+        ]
+    ));
+}
+
+#[rstest]
 fn test_reconcile_fill_report_bootstrap_uses_claimed_strategy(
     mut execution_engine: ExecutionEngine,
 ) {
