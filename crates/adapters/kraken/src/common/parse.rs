@@ -1998,8 +1998,9 @@ mod tests {
     /// order and `limitprice` for a triggered trailing-stop-limit order; a market,
     /// settle-position, stop-loss, take-profit, trailing-stop or untriggered trailing-stop-limit
     /// order carries none. The trigger comes from `stopprice`, or, for a non-trailing conditional
-    /// order with none, from `descr.price`. An empty, zero or relative price reads as none. The
-    /// base row is a live OpenOrders capture of an unfilled limit buy at 20000.00.
+    /// order with none, from `descr.price`, which never stands in for a trailing order's. An
+    /// empty, zero or relative price reads as none. The base row is a live OpenOrders capture of
+    /// an unfilled limit buy at 20000.00.
     #[rstest]
     #[case::unfilled_limit(json!({}), Some("20000.00"), None, None)]
     #[case::limit_filled_below_its_limit(
@@ -2038,6 +2039,12 @@ mod tests {
         Some("19000.00"),
         None
     )]
+    #[case::take_profit_limit(
+        json!({"descr": {"ordertype": "take-profit-limit", "price": "21000.00", "price2": "21010.00"}}),
+        Some("21010.00"),
+        Some("21000.00"),
+        None
+    )]
     #[case::take_profit_limit_with_its_stop_price(
         json!({"descr": {"ordertype": "take-profit-limit", "price": "21000.00", "price2": "21010.00"}, "stopprice": "21005.00"}),
         Some("21010.00"),
@@ -2050,6 +2057,12 @@ mod tests {
         Some("19950.00"),
         None
     )]
+    #[case::trailing_stop_without_its_stop_price(
+        json!({"descr": {"ordertype": "trailing-stop", "price": "50.00"}}),
+        None,
+        None,
+        None
+    )]
     #[case::untriggered_trailing_stop_limit(
         json!({"descr": {"ordertype": "trailing-stop-limit", "price": "+50.00", "price2": "+0"}}),
         None,
@@ -2057,7 +2070,7 @@ mod tests {
         None
     )]
     #[case::triggered_trailing_stop_limit(
-        json!({"descr": {"ordertype": "trailing-stop-limit", "price": "+50.00", "price2": "+0"}, "stopprice": "19960.00", "limitprice": "19950.00"}),
+        json!({"descr": {"ordertype": "trailing-stop-limit", "price": "+50.00", "price2": "-10.00"}, "stopprice": "19960.00", "limitprice": "19950.00"}),
         Some("19950.00"),
         Some("19960.00"),
         None
