@@ -2026,6 +2026,61 @@ async fn test_futures_order_lookup_reports_absence_only_from_a_read_that_rules_t
     assert_lookup_answer(result, expected, venue_order_id);
 }
 
+/// An order adopted from a venue report is created on the node after the venue accepted it, so the
+/// lookup sets its acceptance, the earlier time, against how far back a cut-short read reached.
+#[rstest]
+#[case::page_reaching_past_the_acceptance(-61, LookupAnswer::Absent)]
+#[case::page_starting_between_acceptance_and_creation(30, LookupAnswer::Deferred)]
+#[tokio::test]
+async fn test_futures_order_lookup_dates_an_adopted_order_from_its_acceptance(
+    #[case] page_starts_after_acceptance_secs: i64,
+    #[case] expected: LookupAnswer,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let client_order_id = ClientOrderId::new("futures-lookup-adopted");
+    let accepted_ms = FUTURES_LOOKUP_ORDER_MS;
+    let order = add_futures_limit_order_created_at(
+        &cache,
+        client_order_id,
+        test_instrument_id(),
+        OrderSide::Buy,
+        test_strategy_id(),
+        UnixNanos::from((accepted_ms + 120_000) as u64 * 1_000_000),
+    );
+    accept_cached_order_at(
+        &cache,
+        &order,
+        "V-ADOPTED-1",
+        UnixNanos::from(accepted_ms as u64 * 1_000_000),
+    );
+    *state.futures_order_history_json.lock().await =
+        Some(futures_order_history_json_with_token(&[
+            futures_history_element(
+                "OrderCancelled",
+                "e-other",
+                "V-OTHER-2",
+                "PI_XBTUSD",
+                "1000",
+                "0",
+                accepted_ms + page_starts_after_acceptance_secs * 1_000,
+            ),
+        ]));
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        Some(client_order_id),
+        Some(VenueOrderId::from("V-ADOPTED-1")),
+        None,
+        None,
+    );
+    let result = client.generate_order_status_report(&cmd).await;
+
+    assert_lookup_answer(result, expected, "V-ADOPTED-1");
+}
+
 /// Without a cached order the futures lookup has no placement time to set against a cut-short
 /// read, so it reports the order absent only from a complete one.
 #[rstest]
