@@ -1764,11 +1764,14 @@ enum SpotLookupRead {
     UnparsableClosedOrder,
     /// The venue never returns an empty page, so the walk stops at its cap.
     PageCap,
+    /// One closed order, `OCLOSED-0`, names a pair the client cannot resolve.
+    UnresolvedClosedOrder,
 }
 
 /// The spot lookup answers that the venue has no such order only from a read that rules the order
-/// out: a closed order that cannot be parsed rules out every other order with a venue order ID,
-/// but not itself nor an order without one, and a walk cut short at its page cap rules out none.
+/// out: a closed order that cannot be parsed or resolved rules out every other order with a venue
+/// order ID, but not itself nor an order without one, and a walk cut short at its page cap rules
+/// out none.
 #[rstest]
 #[case::complete_read(
     SpotLookupRead::Complete,
@@ -1793,6 +1796,16 @@ enum SpotLookupRead {
 #[case::page_cap(
     SpotLookupRead::PageCap,
     Some("OTARGT-AAAAA-AAAAAA"),
+    LookupAnswer::Deferred
+)]
+#[case::unresolved_row_of_another_order(
+    SpotLookupRead::UnresolvedClosedOrder,
+    Some("OTARGT-AAAAA-AAAAAA"),
+    LookupAnswer::Absent
+)]
+#[case::unresolved_row_of_the_order(
+    SpotLookupRead::UnresolvedClosedOrder,
+    Some("OCLOSED-0"),
     LookupAnswer::Deferred
 )]
 #[tokio::test]
@@ -1823,6 +1836,9 @@ async fn test_spot_order_lookup_reports_absence_only_from_a_read_that_rules_the_
         SpotLookupRead::PageCap => {
             state.closed_orders_repeat.store(true, Ordering::Relaxed);
             *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTUSDT"]));
+        }
+        SpotLookupRead::UnresolvedClosedOrder => {
+            *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["NOSUCHPAIR"]));
         }
     }
 
@@ -1867,14 +1883,16 @@ enum FuturesLookupRead {
     UndecodableRowOf(&'static str),
     /// The open orders list an unsized reduce-only trigger, `V-TRIGGER`, the read skips.
     SkippedTrigger,
+    /// A history row of this order on a contract the client cannot resolve.
+    UnresolvedRowOf(&'static str),
 }
 
 /// The futures lookup answers that the venue has no such order only from a read that rules the
 /// order out. A history page handed back with a continuation token holds the newest events, so it
 /// rules out an order placed after its oldest event by more than the clock skew allowance, and a
-/// page with no events rules out none. A skipped row rules out every other order with a venue
-/// order ID, and a row naming no order rules out none. An order the cut-short read returns is
-/// reported.
+/// page with no events rules out none. A skipped row, one the client cannot resolve included,
+/// rules out every other order with a venue order ID, and a row naming no order rules out none. An
+/// order the cut-short read returns is reported.
 #[rstest]
 #[case::complete_read(FuturesLookupRead::Complete, "V-LOOKUP-1", LookupAnswer::Absent)]
 #[case::token_page_reaching_past_the_order(
@@ -1925,6 +1943,16 @@ enum FuturesLookupRead {
 #[case::skipped_trigger_is_the_order(
     FuturesLookupRead::SkippedTrigger,
     "V-TRIGGER",
+    LookupAnswer::Deferred
+)]
+#[case::unresolved_row_of_another_order(
+    FuturesLookupRead::UnresolvedRowOf("V-OTHER-1"),
+    "V-LOOKUP-1",
+    LookupAnswer::Absent
+)]
+#[case::unresolved_row_of_the_order(
+    FuturesLookupRead::UnresolvedRowOf("V-LOOKUP-1"),
+    "V-LOOKUP-1",
     LookupAnswer::Deferred
 )]
 #[tokio::test]
@@ -2008,6 +2036,17 @@ async fn test_futures_order_lookup_reports_absence_only_from_a_read_that_rules_t
             ));
             futures_order_history_json(&[])
         }
+        FuturesLookupRead::UnresolvedRowOf(order_uid) => {
+            futures_order_history_json(&[futures_history_element(
+                "OrderCancelled",
+                "e-unresolved",
+                order_uid,
+                "PF_NOSUCHUSD",
+                "1000",
+                "0",
+                FUTURES_LOOKUP_ORDER_MS,
+            )])
+        }
     };
     *state.futures_order_history_json.lock().await = Some(history);
 
@@ -2079,6 +2118,43 @@ async fn test_futures_order_lookup_dates_an_adopted_order_from_its_acceptance(
     let result = client.generate_order_status_report(&cmd).await;
 
     assert_lookup_answer(result, expected, "V-ADOPTED-1");
+}
+
+/// Spot and Futures share the `KRAKEN` venue, so each client is asked about the other's orders and
+/// answers that it has none. An instrument of its own product the listing lacks reads nothing, so
+/// a lookup there rules out nothing and defers.
+#[rstest]
+#[case::spot_client_other_product(false, "PI_XBTUSD.KRAKEN", LookupAnswer::Absent)]
+#[case::spot_client_own_product_unlisted(false, "DOGE/EUR.KRAKEN", LookupAnswer::Deferred)]
+#[case::futures_client_other_product(true, "BTC/USDT.KRAKEN", LookupAnswer::Absent)]
+#[case::futures_client_own_product_unlisted(true, "PF_NOSUCHUSD.KRAKEN", LookupAnswer::Deferred)]
+#[tokio::test]
+async fn test_order_lookup_on_an_instrument_the_client_does_not_hold(
+    #[case] futures: bool,
+    #[case] instrument_id: &str,
+    #[case] expected: LookupAnswer,
+) {
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from(instrument_id)),
+        None,
+        Some(VenueOrderId::from("V-UNHELD-1")),
+        None,
+        None,
+    );
+
+    let result = if futures {
+        let (client, _rx, _cache, _state) =
+            connected_client_with_command_responses(CommandResponses::default()).await;
+        client.generate_order_status_report(&cmd).await
+    } else {
+        let (client, _rx, _cache, _state) =
+            connected_spot_client_with_command_responses(CommandResponses::default()).await;
+        client.generate_order_status_report(&cmd).await
+    };
+
+    assert_lookup_answer(result, expected, "V-UNHELD-1");
 }
 
 /// Without a cached order the futures lookup has no placement time to set against a cut-short

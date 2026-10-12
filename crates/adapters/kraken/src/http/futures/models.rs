@@ -1632,8 +1632,25 @@ mod tests {
     }
 
     /// A page reaches back to its oldest event whatever the projection keeps, so the oldest time
-    /// counts skipped, undocumented and not-found elements. A skipped row names its order when it
-    /// carries one; an undocumented kind names none.
+    /// counts a not-found or undocumented element as well as a kept one.
+    #[rstest]
+    #[case::not_found(r#"{"OrderNotFound":{"orderId":"gone"}}"#)]
+    #[case::undocumented(r#"{"OrderSomethingNew":{"order":{"uid":"x"}}}"#)]
+    fn test_parse_futures_order_events_oldest_time_counts_every_element(#[case] oldest: &str) {
+        let kept = r#"{"OrderPlaced":{"order":{"uid":"o1","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250},"reason":"new_user_order"}}"#;
+        let data = format!(
+            r#"{{"elements":[{{"uid":"e2","timestamp":1680876931000,"event":{kept}}},{{"uid":"e1","timestamp":1680876930000,"event":{oldest}}}]}}"#
+        );
+
+        let response = order_history_events_from(&data);
+
+        assert_eq!(response.order_events.len(), 1);
+        assert_eq!(response.oldest_event_ms, Some(1_680_876_930_000));
+    }
+
+    /// A page reaches back to its oldest event whatever the projection keeps, so a skipped row
+    /// counts toward the oldest time. A skipped row names its order when it carries one; an
+    /// undocumented kind names none.
     #[rstest]
     fn test_parse_futures_order_events_reports_what_the_page_covers() {
         let response = order_history_events("http_futures_order_events_unknown.json");

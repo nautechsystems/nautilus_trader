@@ -66,7 +66,7 @@ use crate::{
         enums::{
             KrakenApiResult, KrakenEnvironment, KrakenFuturesOrderStatus, KrakenFuturesOrderType,
             KrakenFuturesQtyMode, KrakenOrderSide, KrakenProductType, KrakenSendStatus,
-            KrakenTriggerSignal,
+            KrakenTriggerSignal, product_type_from_symbol,
         },
         parse::{
             bar_type_to_futures_resolution, normalize_asset_key, parse_bar,
@@ -813,6 +813,11 @@ impl KrakenFuturesRawHttpClient {
         if let Some(token) = continuation_token {
             query_params.push(format!("continuation_token={token}"));
         }
+
+        // A page that hands back a continuation token must hold the newest events, which the
+        // single-order lookup relies on to tell how far back the page reaches, so the order is
+        // pinned rather than left to the venue default
+        query_params.push("sort=desc".to_string());
 
         // Build URL with query params
         let query_string = query_params.join("&");
@@ -1782,12 +1787,17 @@ impl KrakenFuturesHttpClient {
         let mut coverage = ReportCoverage::default();
 
         // A scoped read for an instrument this client does not hold can match nothing, so
-        // return before the request rather than reporting every instrument's rows.
+        // return before the request rather than reporting every instrument's rows. A spot
+        // instrument names none of this client's orders, so that read is complete; a futures one
+        // the listing lacks read nothing, so it rules out none of its orders.
         if let Some(ref target_id) = instrument_id
             && self
                 .get_cached_instrument(&target_id.symbol.inner())
                 .is_none()
         {
+            if product_type_from_symbol(target_id.symbol.as_str()) == KrakenProductType::Futures {
+                coverage.truncate(None);
+            }
             return Ok((Vec::new(), coverage));
         }
         let ts_init = self.generate_ts_init();
@@ -1838,10 +1848,16 @@ impl KrakenFuturesHttpClient {
             // Resolve the row and compare instrument ids, so a scoped read cannot match on a
             // spelling and cannot fall through to every instrument when the id is not held.
             let resolved = self.get_instrument_by_raw_symbol(&order.symbol);
-            if let Some(ref target_id) = instrument_id
-                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-            {
-                continue;
+            if let Some(ref target_id) = instrument_id {
+                match &resolved {
+                    Some(inst) if inst.id() != *target_id => continue,
+                    // Unresolved, the row may be the scoped instrument's own
+                    None => {
+                        coverage.skip(&order.order_id);
+                        continue;
+                    }
+                    Some(_) => {}
+                }
             }
 
             if let Some(instrument) = resolved {
@@ -1938,9 +1954,7 @@ impl KrakenFuturesHttpClient {
                 coverage.truncate(
                     response
                         .oldest_event_ms
-                        .and_then(|ms| u64::try_from(ms).ok())
-                        .and_then(|ms| ms.checked_mul(1_000_000))
-                        .map(UnixNanos::from),
+                        .and_then(UnixNanos::from_millis_checked),
                 );
             }
 
@@ -1976,10 +1990,16 @@ impl KrakenFuturesHttpClient {
                 // Resolve the row and compare instrument ids, so a scoped read cannot match on a
                 // spelling and cannot fall through to every instrument when the id is not held.
                 let resolved = self.get_instrument_by_history_tradeable(&event.symbol);
-                if let Some(ref target_id) = instrument_id
-                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-                {
-                    continue;
+                if let Some(ref target_id) = instrument_id {
+                    match &resolved {
+                        Some(inst) if inst.id() != *target_id => continue,
+                        // Unresolved, the row may be the scoped instrument's own
+                        None => {
+                            coverage.skip(&event.order_id);
+                            continue;
+                        }
+                        Some(_) => {}
+                    }
                 }
 
                 if let Some(instrument) = resolved {
@@ -4518,6 +4538,58 @@ mod tests {
         assert_eq!(report.quantity, Quantity::from("2"));
         assert_eq!(report.filled_qty, Quantity::from("0.5"));
         assert_eq!(report.price, Some(Price::from("69500")));
+    }
+
+    /// The order history request asks for the newest events first rather than relying on the
+    /// venue default, since a page with a continuation token is read as reaching back to its
+    /// oldest event.
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_order_events_asks_for_the_newest_events_first() {
+        use axum::{Router, extract::RawQuery, routing::any};
+
+        let query: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
+        let recorded = query.clone();
+        let app = Router::new().route(
+            "/api/history/v3/orders",
+            any(move |RawQuery(raw): RawQuery| {
+                let recorded = recorded.clone();
+                async move {
+                    *recorded.write() = raw;
+                    r#"{"elements":[]}"#
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+
+        client
+            .inner
+            .get_order_events(None, None, None)
+            .await
+            .unwrap();
+
+        let query = query.read().clone().unwrap_or_default();
+        assert!(
+            query.split('&').any(|param| param == "sort=desc"),
+            "{query}"
+        );
     }
 
     fn cache_test_futures_instrument(client: &KrakenFuturesHttpClient) -> InstrumentId {

@@ -691,7 +691,8 @@ Both clients return no rows for a query scoped to an instrument they do not hold
 Spot and Futures share the `KRAKEN` venue, so either client can receive a query for an
 order it did not route. Single-order status lookups and `query_order` inspect only
 the command's instrument; unresolved or unparsable records on another instrument
-cannot fail that scoped read.
+cannot fail that scoped read, though a lookup cannot rule out an order such a record
+may name.
 
 Other gaps mark the set incomplete: closed or historical orders and fills that
 cannot be parsed, or whose instruments cannot be resolved. Position records do not
@@ -704,10 +705,16 @@ has no such order, and reconciliation resolves the order on that answer. The loo
 gives that answer only from a read that rules the order out, and otherwise fails, so
 reconciliation defers the order:
 
-- A complete read rules out any order.
-- A read that skipped a row rules out an order with a venue order ID that no skipped
-  row carries. A skipped row that names no order, such as an undocumented history
-  event kind, rules out none.
+- A complete read rules out any order it could have returned. A held futures order
+  shows only in the orders-status window, which the Futures lookup reads for a cached
+  order before answering.
+- A read that skipped a row, including one whose instrument the client cannot
+  resolve, rules out an order with a venue order ID that no skipped row carries. A
+  skipped row that names no order, such as an undocumented history event kind, rules
+  out none.
+- A lookup on an instrument of the other product reads complete, since the other
+  client answers for its orders. One on an instrument of the client's own product
+  that it does not hold reads nothing and rules out none.
 - A read cut short rules out an order placed after the oldest event it holds, by more
   than a 60-second clock skew allowance, taking the earlier of the order's creation
   and acceptance times. Futures history pages are newest first, so a page that hands

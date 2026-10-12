@@ -63,10 +63,10 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    cached_order_for_status_command, command_failure_from_cancel_error,
+    absent_unless_unread, cached_order_for_status_command, command_failure_from_cancel_error,
     command_failure_from_modify_error, command_failure_from_spot_batch_error,
     command_failure_from_spot_batch_item, command_failure_from_spot_cancel_error,
-    command_failure_from_submit_error, earliest_venue_time,
+    command_failure_from_submit_error, earliest_venue_time, status_command_label,
 };
 use crate::{
     common::{
@@ -1256,14 +1256,11 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .venue_order_id
             .or_else(|| cached.as_ref().and_then(|order| order.venue_order_id()));
 
-        if coverage.rules_out(venue_order_id, cached.as_ref().map(earliest_venue_time)) {
-            return Ok(None);
-        }
-        anyhow::bail!(
-            "No report for client order ID {:?}, venue order ID {:?} in an order read that does not \
-             rule the order out; deferring rather than reporting it missing",
-            cmd.client_order_id,
+        absent_unless_unread(
+            &coverage,
             venue_order_id,
+            cached.as_ref().map(earliest_venue_time),
+            &status_command_label(cmd, venue_order_id),
         )
     }
 

@@ -38,12 +38,17 @@ pub use futures::KrakenFuturesExecutionClient;
 use nautilus_common::{cache::Cache, messages::execution::GenerateOrderStatusReport};
 use nautilus_core::UnixNanos;
 use nautilus_live::execution::failure::CommandFailure;
-use nautilus_model::orders::{Order, OrderAny};
+use nautilus_model::{
+    identifiers::VenueOrderId,
+    orders::{Order, OrderAny},
+    reports::OrderStatusReport,
+};
 pub use spot::KrakenSpotExecutionClient;
 
 use crate::{
     common::enums::KrakenApiResult,
     http::{
+        coverage::ReportCoverage,
         error::{
             KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
         },
@@ -65,6 +70,36 @@ fn cached_order_for_status_command(
     let venue_order_id = cmd.venue_order_id?;
     let client_order_id = *cache.client_order_id(&venue_order_id)?;
     cache.order(&client_order_id).map(|o| o.clone())
+}
+
+/// Answers a single-order lookup that found no report of `order`: absent only when the read rules
+/// the order out, else an error so reconciliation defers rather than resolving an order the read
+/// may have missed.
+fn absent_unless_unread(
+    coverage: &ReportCoverage,
+    venue_order_id: Option<VenueOrderId>,
+    placed_from: Option<UnixNanos>,
+    order: &str,
+) -> anyhow::Result<Option<OrderStatusReport>> {
+    if coverage.rules_out(venue_order_id, placed_from) {
+        return Ok(None);
+    }
+    anyhow::bail!(
+        "No report for order {order} in an order read that does not rule it out; deferring rather \
+         than reporting it missing"
+    )
+}
+
+/// Names the order a status command asks about: its client order ID, else its venue order ID.
+fn status_command_label(
+    cmd: &GenerateOrderStatusReport,
+    venue_order_id: Option<VenueOrderId>,
+) -> String {
+    match (cmd.client_order_id, venue_order_id) {
+        (Some(client_order_id), _) => client_order_id.to_string(),
+        (None, Some(venue_order_id)) => venue_order_id.to_string(),
+        (None, None) => "with neither ID".to_string(),
+    }
 }
 
 /// The earliest time an order can carry at the venue: its creation, or its acceptance when the

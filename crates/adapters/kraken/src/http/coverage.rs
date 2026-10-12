@@ -27,8 +27,8 @@ const COVERAGE_CLOCK_SKEW: DurationNanos = DurationNanos::from_secs(60);
 /// What an order report read covered: the rows it skipped and how far back it reached.
 ///
 /// A complete read rules out any order it did not return. An incomplete one rules out only an
-/// order that none of its skipped rows can be and that was placed after the earliest time from
-/// which the read is complete.
+/// order that none of its skipped rows can be and that the venue placed after the earliest time
+/// from which the read is complete.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ReportCoverage {
     skipped: AHashSet<VenueOrderId>,
@@ -38,7 +38,7 @@ pub(crate) struct ReportCoverage {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Truncation {
-    /// Every row from this time on was read.
+    /// The read holds every row from this time on.
     Since(UnixNanos),
     /// The read stopped at a point it cannot place in time.
     Unplaced,
@@ -73,7 +73,7 @@ impl ReportCoverage {
         };
     }
 
-    /// Whether the read skipped no row and was not cut short.
+    /// Whether the read skipped no row and reached its end.
     pub(crate) fn is_complete(&self) -> bool {
         self.skipped.is_empty() && !self.skipped_unidentified && self.truncation.is_none()
     }
@@ -116,7 +116,7 @@ mod tests {
     const SINCE_NS: u64 = 1_700_000_000_000_000_000;
     const SKEW_NS: u64 = 60_000_000_000;
 
-    /// How a test read was cut short.
+    /// Where a test read stops.
     #[derive(Clone, Copy, Debug)]
     enum Cut {
         Whole,

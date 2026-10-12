@@ -70,7 +70,7 @@ use crate::{
         credential::KrakenCredential,
         enums::{
             KrakenAssetClass, KrakenEnvironment, KrakenOrderSide, KrakenOrderType,
-            KrakenProductType,
+            KrakenProductType, product_type_from_symbol,
         },
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, normalize_spot_symbol, parse_bar,
@@ -2239,11 +2239,16 @@ impl KrakenSpotHttpClient {
 
         // A scoped read for an instrument this client does not hold can match nothing, so return
         // before the request rather than falling through and reporting every instrument's rows.
+        // A futures instrument names none of this client's orders, so that read is complete; a
+        // spot one the listing lacks read nothing, so it rules out none of its orders.
         if let Some(ref target_id) = instrument_id
             && self
                 .get_cached_instrument(&target_id.symbol.inner())
                 .is_none()
         {
+            if product_type_from_symbol(target_id.symbol.as_str()) == KrakenProductType::Spot {
+                coverage.truncate(None);
+            }
             return Ok((all_reports, coverage));
         }
 
@@ -2253,10 +2258,16 @@ impl KrakenSpotHttpClient {
             // Kraken spells a pair two ways, so resolve the row and compare instrument ids rather
             // than the row's spelling against the cached `raw_symbol`.
             let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
-            if let Some(ref target_id) = instrument_id
-                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-            {
-                continue;
+            if let Some(ref target_id) = instrument_id {
+                match &resolved {
+                    Some(inst) if inst.id() != *target_id => continue,
+                    // Unresolved, the row may be the scoped instrument's own
+                    None => {
+                        coverage.skip(order_id);
+                        continue;
+                    }
+                    Some(_) => {}
+                }
             }
 
             let instrument = resolved.ok_or_else(|| {
@@ -2309,10 +2320,16 @@ impl KrakenSpotHttpClient {
 
             for (order_id, order) in &closed_orders {
                 let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
-                if let Some(ref target_id) = instrument_id
-                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-                {
-                    continue;
+                if let Some(ref target_id) = instrument_id {
+                    match &resolved {
+                        Some(inst) if inst.id() != *target_id => continue,
+                        // Unresolved, the row may be the scoped instrument's own
+                        None => {
+                            coverage.skip(order_id);
+                            continue;
+                        }
+                        Some(_) => {}
+                    }
                 }
 
                 // A historical record can reference an instrument absent from the current

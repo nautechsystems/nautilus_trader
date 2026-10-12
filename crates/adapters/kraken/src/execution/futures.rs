@@ -59,9 +59,10 @@ use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    cached_order_for_status_command, command_failure_from_cancel_error,
+    absent_unless_unread, cached_order_for_status_command, command_failure_from_cancel_error,
     command_failure_from_futures_batch_error, command_failure_from_futures_batch_item,
     command_failure_from_modify_error, command_failure_from_submit_error, earliest_venue_time,
+    status_command_label,
 };
 use crate::{
     common::{
@@ -818,14 +819,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         // Absence answers that the venue has no such order, so it needs a read that rules the
         // order out; otherwise reconciliation defers.
         let Some(order) = cached_order_for_status_command(&self.core.cache(), cmd) else {
-            if coverage.rules_out(cmd.venue_order_id, None) {
-                return Ok(None);
-            }
-            anyhow::bail!(
-                "No report for client order ID {:?}, venue order ID {:?} in an order read that \
-                 does not rule the order out; deferring rather than reporting it missing",
-                cmd.client_order_id,
+            return absent_unless_unread(
+                &coverage,
                 cmd.venue_order_id,
+                None,
+                &status_command_label(cmd, cmd.venue_order_id),
             );
         };
 
@@ -892,18 +890,12 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                  fills; deferring until the fills feed prices it",
                 order.client_order_id(),
             ),
-            (None, None) => {
-                let venue_order_id = cmd.venue_order_id.or(order.venue_order_id());
-
-                if coverage.rules_out(venue_order_id, Some(earliest_venue_time(&order))) {
-                    return Ok(None);
-                }
-                anyhow::bail!(
-                    "No report for order {} in an order read that does not rule it out; \
-                     deferring rather than reporting it missing",
-                    order.client_order_id(),
-                )
-            }
+            (None, None) => absent_unless_unread(
+                &coverage,
+                cmd.venue_order_id.or(order.venue_order_id()),
+                Some(earliest_venue_time(&order)),
+                order.client_order_id().as_str(),
+            ),
         }
     }
 
