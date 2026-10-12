@@ -7851,6 +7851,152 @@ fn test_submit_order_counts_approved_orders_not_yet_reflected_in_free_balance(
     assert_eq!(commands, vec![first_command]);
 }
 
+#[rstest]
+fn test_submit_order_reserves_initial_margin_across_commands(
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument_eth_usdt.clone()).unwrap();
+    let mut account = margin_account_with_usdt_balance("100 USDT", "0 USDT", "100 USDT");
+    account.set_default_leverage(dec!(10));
+    cache.add_account(AccountAny::Margin(account)).unwrap();
+
+    let orders = [("O-001", "6.000"), ("O-002", "1.000"), ("O-003", "4.000")].map(
+        |(client_order_id, qty)| {
+            OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument_eth_usdt.id())
+                .client_order_id(ClientOrderId::from(client_order_id))
+                .side(side)
+                .quantity(Quantity::from(qty))
+                .price(Price::from("100.00"))
+                .build()
+        },
+    );
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let approved = vec![
+        submit_order_command(&orders[0]),
+        submit_order_command(&orders[1]),
+    ];
+
+    for command in &approved {
+        risk_engine.execute(command.clone());
+    }
+
+    risk_engine.execute(submit_order_command(&orders[2]));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    let reason = OrderDeniedReason::InitialMarginExceedsFreeBalance {
+        free_balance: Money::from("30 USDT"),
+        initial_margin: Money::from("40 USDT"),
+    };
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type(), OrderEventType::Denied);
+    assert_eq!(events[0].client_order_id(), orders[2].client_order_id());
+    assert_eq!(events[0].message(), Some(Ustr::from(&reason.to_string())));
+    assert_eq!(commands, approved);
+
+    let cache = risk_engine.cache().borrow();
+    let account = cache.account(&AccountId::from("BINANCE-001")).unwrap();
+    assert_eq!(
+        account.balance_free(Some(Currency::USDT())),
+        Some(Money::from("100 USDT"))
+    );
+    assert_eq!(
+        account.balance_locked(Some(Currency::USDT())),
+        Some(Money::from("0 USDT"))
+    );
+
+    for order in &orders {
+        let cached = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Initialized);
+    }
+}
+
+#[rstest]
+#[case::fixed_precision(FIXED_PRECISION)]
+#[case::native_precision(sell_balance_precision())]
+fn test_submit_order_reserves_base_asset_sell_across_commands(
+    #[case] precision: u8,
+    #[values(false, true)] wallet: bool,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+) {
+    let mut cache = Cache::default();
+    let (instrument_id, total) =
+        configure_sell_balance(&mut cache, precision, precision, wallet, false);
+
+    let orders = [
+        ("O-001", dec!(6.001)),
+        ("O-002", dec!(1.002)),
+        ("O-003", dec!(3)),
+    ]
+    .map(|(client_order_id, qty)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from_decimal_dp(qty, precision).unwrap())
+            .price(Price::from("2.00"))
+            .reduce_only(false)
+            .build()
+    });
+
+    for order in &orders {
+        cache.add_order(order.clone(), None, None, false).unwrap();
+    }
+
+    let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
+    let approved = vec![
+        submit_order_command(&orders[0]),
+        submit_order_command(&orders[1]),
+    ];
+
+    for command in &approved {
+        risk_engine.execute(command.clone());
+    }
+
+    risk_engine.execute(submit_order_command(&orders[2]));
+
+    let events = get_process_order_event_handler_messages(&process_order_event_handler);
+    let commands = get_execute_order_event_handler_messages(&execute_order_event_handler);
+
+    let reason = OrderDeniedReason::CumulativeNotionalExceedsFreeBalance {
+        free_balance: Money::from_decimal(dec!(2.997), total.currency).unwrap(),
+        cumulative_notional: Money::from_decimal(dec!(3), total.currency).unwrap(),
+    };
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type(), OrderEventType::Denied);
+    assert_eq!(events[0].client_order_id(), orders[2].client_order_id());
+    assert_eq!(events[0].message(), Some(Ustr::from(&reason.to_string())));
+    assert_eq!(commands, approved);
+
+    let cache = risk_engine.cache().borrow();
+    let account = cache.account(&AccountId::from("BINANCE-001")).unwrap();
+    assert_eq!(account.balance_free(Some(total.currency)), Some(total));
+    assert_eq!(
+        account.balance_locked(Some(total.currency)),
+        Some(Money::zero(total.currency))
+    );
+
+    for order in &orders {
+        let cached = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Initialized);
+        assert!(!cached.is_reduce_only());
+    }
+}
+
 // A wallet can observe a token at a different precision than the instrument uses for the same
 // currency code, so reservations are held at the observed balance precision
 #[rstest]
