@@ -346,6 +346,77 @@ mod tests {
     }
 
     #[rstest]
+    #[case("limit")]
+    #[case("trigger")]
+    #[case("batch_modify")]
+    fn test_order_decimal_signing_matches_python_sdk(
+        #[case] case_name: &str,
+        #[values(false, true)] is_testnet: bool,
+    ) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/order_decimal_signing.json"))
+                .unwrap();
+        let case = fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == case_name)
+            .unwrap();
+        let action: HyperliquidExchangeAction =
+            serde_json::from_value(case["input"].clone()).unwrap();
+        let action_bytes = rmp_serde::to_vec_named(&action).unwrap();
+        let key = EvmPrivateKey::new(
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
+        .unwrap();
+        let signer = HyperliquidEip712Signer::new(&key).unwrap();
+
+        let request = SignRequest {
+            action: None,
+            action_bytes: Some(action_bytes.clone()),
+            time_nonce: TimeNonce::from_millis(i128::from(fixture["nonce"].as_u64().unwrap())),
+            action_type: HyperliquidActionType::L1,
+            is_testnet,
+            vault_address: None,
+            expires_after: None,
+        };
+
+        let connection_id = signer.compute_connection_id(&request).unwrap();
+        let signature = signer.sign_l1_action(&request).unwrap();
+
+        let expected_signature = &case[if is_testnet {
+            "testnet_signature"
+        } else {
+            "mainnet_signature"
+        }];
+
+        let expected_r = format!(
+            "0x{:0>64}",
+            expected_signature["r"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("0x")
+        );
+        let expected_s = format!(
+            "0x{:0>64}",
+            expected_signature["s"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("0x")
+        );
+
+        assert_eq!(serde_json::to_value(&action).unwrap(), case["action"]);
+        assert_eq!(hex::encode(action_bytes), case["msgpack"].as_str().unwrap());
+        assert_eq!(
+            hex::encode(connection_id),
+            case["connection_id"].as_str().unwrap()
+        );
+        assert_eq!(signature.r.expose_secret(), expected_r);
+        assert_eq!(signature.s.expose_secret(), expected_s);
+        assert_eq!(signature.v, expected_signature["v"].as_u64().unwrap());
+    }
+
+    #[rstest]
     fn test_sign_user_signed_returns_error() {
         let private_key = EvmPrivateKey::new(
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",

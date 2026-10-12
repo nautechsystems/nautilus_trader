@@ -31,6 +31,15 @@ from live responses. Tests use them in both whole-request and per-order rejectio
 cancel actions with absent, false, and true fast flags. These synthetic vectors are not captured
 from the venue.
 
+### Order decimal serialization
+
+`order_decimal_signing.json` contains synthetic JSON, named MessagePack, connection IDs, and signature
+vectors generated with `hyperliquid-python-sdk` 0.24.0. Its signing implementation matches
+[revision 2fdb18f](https://github.com/hyperliquid-dex/hyperliquid-python-sdk/blob/2fdb18f9517675ea03695a0962bd19eece9c83f0/hyperliquid/utils/signing.py).
+The inputs retain decimal trailing zeros for limit orders, trigger orders, and fractional batch
+modifications. The vectors use nonce `1680000000000` and the deterministic key already used by the
+Rust signing tests. They are generated offline rather than captured from the venue.
+
 ## Capturing New Test Data
 
 ### HTTP Data

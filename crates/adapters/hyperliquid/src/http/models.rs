@@ -1475,6 +1475,74 @@ mod tests {
         assert_eq!(value["oid"], json!("0x1234567890abcdef1234567890abcdef"));
     }
 
+    #[rstest]
+    #[case("51000.00", "0.2500", "52000.000", "51000", "0.25", "52000")]
+    #[case("0.00", "0.0000", "-0.000", "0", "0", "0")]
+    #[case("-12.3400", "2.500", "-10.0100", "-12.34", "2.5", "-10.01")]
+    #[case(
+        "0.0000000000000000000000000001",
+        "1.000",
+        "10.0100",
+        "0.0000000000000000000000000001",
+        "1",
+        "10.01"
+    )]
+    #[case(
+        "79228162514264337593543950335",
+        "0.2500",
+        "52000.00",
+        "79228162514264337593543950335",
+        "0.25",
+        "52000"
+    )]
+    fn test_order_decimals_serialize_without_trailing_zeros(
+        #[case] price: &str,
+        #[case] size: &str,
+        #[case] trigger_price: &str,
+        #[case] expected_price: &str,
+        #[case] expected_size: &str,
+        #[case] expected_trigger_price: &str,
+        #[values(false, true)] is_market: bool,
+    ) {
+        let request = HyperliquidExchangePlaceOrderRequest {
+            asset: 7,
+            is_buy: false,
+            price: price.parse().unwrap(),
+            size: size.parse().unwrap(),
+            reduce_only: true,
+            kind: HyperliquidExchangeOrderKind::Trigger {
+                trigger: HyperliquidExchangeTriggerParams {
+                    is_market,
+                    trigger_px: trigger_price.parse().unwrap(),
+                    tpsl: HyperliquidExchangeTpSl::Tp,
+                },
+            },
+            cloid: Some(Cloid::from_hex("0x1234567890abcdef1234567890abcdef").unwrap()),
+        };
+
+        let expected = json!({
+            "a": 7, "b": false, "p": expected_price, "s": expected_size, "r": true,
+            "t": {"trigger": {"isMarket": is_market, "triggerPx": expected_trigger_price, "tpsl": "tp"}},
+            "c": "0x1234567890abcdef1234567890abcdef",
+        });
+        let canonical: HyperliquidExchangePlaceOrderRequest =
+            serde_json::from_value(expected.clone()).unwrap();
+        let json = serde_json::to_value(&request).unwrap();
+        let msgpack = rmp_serde::to_vec_named(&request).unwrap();
+        let decoded: serde_json::Value = rmp_serde::from_slice(&msgpack).unwrap();
+
+        assert_eq!(json, expected);
+        assert_eq!(decoded, expected);
+        assert_eq!(msgpack, rmp_serde::to_vec_named(&canonical).unwrap());
+        assert_eq!(
+            serde_json::to_vec(&request).unwrap(),
+            serde_json::to_vec(&canonical).unwrap()
+        );
+        assert_eq!(request.price.to_string(), price);
+        assert_eq!(request.size.to_string(), size);
+        assert_eq!(canonical, request);
+    }
+
     fn modify_request_with_target(
         oid: HyperliquidExchangeModifyTarget,
     ) -> HyperliquidExchangeModifyOrderRequest {
@@ -1568,9 +1636,9 @@ pub struct HyperliquidExchangeLimitParams {
 pub struct HyperliquidExchangeTriggerParams {
     /// Whether to use market price when triggered.
     pub is_market: bool,
-    /// Trigger price as a string.
+    /// Trigger price as a string with no trailing zeros.
     #[serde(
-        serialize_with = "serialize_decimal_as_str",
+        serialize_with = "serialize_order_decimal_as_str",
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub trigger_px: Decimal,
@@ -1607,14 +1675,14 @@ pub struct HyperliquidExchangePlaceOrderRequest {
     /// Price as a string with no trailing zeros.
     #[serde(
         rename = "p",
-        serialize_with = "serialize_decimal_as_str",
+        serialize_with = "serialize_order_decimal_as_str",
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub price: Decimal,
     /// Size as a string with no trailing zeros.
     #[serde(
         rename = "s",
-        serialize_with = "serialize_decimal_as_str",
+        serialize_with = "serialize_order_decimal_as_str",
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub size: Decimal,
@@ -2381,4 +2449,11 @@ pub struct CrossMarginSummary {
         deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub withdrawable: Option<Decimal>,
+}
+
+fn serialize_order_decimal_as_str<S>(decimal: &Decimal, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serialize_decimal_as_str(&decimal.normalize(), serializer)
 }

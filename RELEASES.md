@@ -102,7 +102,8 @@ Released on TBD (UTC).
 - Fixed Hyperliquid recovery sending corrective reductions for canceled replacement orders
 - Fixed Hyperliquid dropping late fill reports after orders close
 - Fixed Hyperliquid stop-market replacement updates causing order-state panics
-- Fixed Hyperliquid Rust cancel actions to omit explicit `fast: Some(false)` flags
+- Fixed Hyperliquid cancel actions to omit explicit `fast: Some(false)` flags
+- Fixed Hyperliquid place and modify requests retaining trailing zeros in signed order values
 - Fixed Interactive Brokers account balances and margins remaining stale after connect (#5041), thanks @faysou
 - Fixed Interactive Brokers spread fills arriving before their leg fills (#5041), thanks @faysou
 - Fixed Interactive Brokers execution queries replaying historical fills as live fills (#5041), thanks @faysou
