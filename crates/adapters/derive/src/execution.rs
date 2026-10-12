@@ -1048,7 +1048,7 @@ impl ExecutionClient for DeriveExecutionClient {
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let context = self.reconciliation_context();
         let mut reports = context
-            .generate_order_status_reports(cmd, false)
+            .generate_order_status_reports(cmd)
             .await?
             .into_complete("order")?;
 
@@ -1056,7 +1056,7 @@ impl ExecutionClient for DeriveExecutionClient {
             let mut active_cmd = cmd.clone();
             active_cmd.open_only = true;
             let active = context
-                .generate_order_status_reports(&active_cmd, false)
+                .generate_order_status_reports(&active_cmd)
                 .await?
                 .into_complete("active order")?;
             reports.extend(active);
@@ -2440,19 +2440,16 @@ impl DeriveReconciliationContext {
 
     async fn prime_order_bindings(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         for open_only in [true, false] {
-            self.generate_order_status_reports(
-                &GenerateOrderStatusReports::new(
-                    UUID4::new(),
-                    self.clock.get_time_ns(),
-                    open_only,
-                    Some(instrument_id),
-                    None,
-                    (!open_only).then(|| self.clock.get_time_ns()),
-                    None,
-                    None,
-                ),
-                false,
-            )
+            self.generate_order_status_reports(&GenerateOrderStatusReports::new(
+                UUID4::new(),
+                self.clock.get_time_ns(),
+                open_only,
+                Some(instrument_id),
+                None,
+                (!open_only).then(|| self.clock.get_time_ns()),
+                None,
+                None,
+            ))
             .await?;
         }
 
@@ -2563,13 +2560,28 @@ impl DeriveReconciliationContext {
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
-        normalize_history_client_order_ids: bool,
     ) -> anyhow::Result<CollectedReports<OrderStatusReport>> {
         self.ensure_order_context()?;
         self.resolve_pending_modifies(cmd.instrument_id).await?;
+        let orders = self.collect_order_records(cmd).await?;
+
+        let mut reports = self
+            .generate_order_status_reports_from_records(cmd, orders, &AHashSet::new(), false)
+            .await?;
+        retain_order_status_reports(&mut reports.reports, cmd);
+        Ok(reports)
+    }
+
+    async fn generate_order_status_reports_from_records(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+        orders: Vec<DeriveOrder>,
+        ambiguous_client_order_ids: &AHashSet<Ustr>,
+        strict: bool,
+    ) -> anyhow::Result<CollectedReports<OrderStatusReport>> {
+        self.ensure_order_context()?;
         let mut complete = true;
         let mut records_complete = true;
-        let orders = self.collect_order_records(cmd).await?;
 
         let ts_init = self.clock.get_time_ns();
 
@@ -2582,12 +2594,6 @@ impl DeriveReconciliationContext {
                 })
             })
             .collect();
-
-        let ambiguous_client_order_ids = if normalize_history_client_order_ids {
-            ambiguous_history_client_order_ids(&orders)
-        } else {
-            AHashSet::new()
-        };
 
         let mut reports = Vec::with_capacity(orders.len());
 
@@ -2631,6 +2637,7 @@ impl DeriveReconciliationContext {
                         order.order_id, order.instrument_name,
                     )));
                 }
+                Err(e) if strict => return Err(e),
                 Err(e) => {
                     records_complete = false;
                     log::warn!(
@@ -2644,8 +2651,7 @@ impl DeriveReconciliationContext {
         }
 
         self.ensure_order_context()?;
-        let mut reports = deduplicate_order_status_reports(reports)?;
-        retain_order_status_reports(&mut reports, cmd);
+        let reports = deduplicate_order_status_reports(reports)?;
         Ok(CollectedReports {
             reports,
             complete: complete && records_complete,
@@ -3141,8 +3147,28 @@ impl DeriveReconciliationContext {
             GeneratePositionStatusReports::new(UUID4::new(), ts_now, None, None, None, None, None);
 
         let (history, open, fills, positions) = tokio::join!(
-            self.generate_order_status_reports(&history_order_cmd, true),
-            self.generate_order_status_reports(&open_order_cmd, false),
+            async {
+                self.ensure_order_context()?;
+                self.resolve_pending_modifies(None).await?;
+                self.collect_order_records(&history_order_cmd)
+                    .await
+                    .map(|reports| CollectedReports {
+                        reports,
+                        complete: true,
+                        records_complete: true,
+                    })
+            },
+            async {
+                self.ensure_order_context()?;
+                self.resolve_pending_modifies(None).await?;
+                self.collect_order_records(&open_order_cmd)
+                    .await
+                    .map(|reports| CollectedReports {
+                        reports,
+                        complete: true,
+                        records_complete: true,
+                    })
+            },
             self.generate_fill_reports(fill_cmd),
             self.generate_position_status_snapshot(&position_cmd),
         );
@@ -3184,20 +3210,66 @@ impl DeriveReconciliationContext {
             && positions_complete;
         let mut reports_complete =
             history.complete && open.complete && fills.complete && positions_complete;
-        let history_order_reports = history.reports;
-        let open_order_reports = open.reports;
         let mut fill_reports = fills.reports;
+        let fill_order_ids: AHashSet<_> = fill_reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect();
         let companions = self
-            .collect_companion_order_reports(
-                history_order_reports,
-                &open_order_reports,
-                &fill_reports,
-                ts_now,
-            )
+            .collect_companion_order_records(&history, &open.reports, &fill_reports)
             .await?;
         reports_complete &= companions.complete;
         records_complete &= companions.records_complete;
-        let history_order_reports = companions.reports;
+        let ambiguous_client_order_ids = ambiguous_history_client_order_ids(
+            history
+                .reports
+                .iter()
+                .chain(open.reports.iter())
+                .chain(companions.reports.iter()),
+        );
+        let ambiguous_open_client_order_ids = AHashSet::new();
+        let (history, open, companions) = tokio::join!(
+            self.generate_order_status_reports_from_records(
+                &history_order_cmd,
+                history.reports,
+                &ambiguous_client_order_ids,
+                false,
+            ),
+            self.generate_order_status_reports_from_records(
+                &open_order_cmd,
+                open.reports,
+                &ambiguous_open_client_order_ids,
+                false,
+            ),
+            self.generate_order_status_reports_from_records(
+                &history_order_cmd,
+                companions.reports,
+                &ambiguous_client_order_ids,
+                true,
+            ),
+        );
+        let history = collect_mass_reports(history, "order history", start.is_some())?;
+        let open = collect_mass_reports(open, "open orders", start.is_some())?;
+        let companions = companions?;
+        reports_complete &= history.complete && open.complete && companions.complete;
+        records_complete &=
+            history.records_complete && open.records_complete && companions.records_complete;
+        let open_order_reports = open.reports;
+        let (mut history_order_reports, retained_companion_reports): (Vec<_>, Vec<_>) = history
+            .reports
+            .into_iter()
+            .partition(|report| !fill_order_ids.contains(&report.venue_order_id));
+        retain_order_status_reports(&mut history_order_reports, &history_order_cmd);
+        history_order_reports.extend(retained_companion_reports);
+        history_order_reports.extend(companions.reports);
+        history_order_reports.sort_by_key(|report| {
+            let is_current = report
+                .client_order_id
+                .and_then(|cid| self.order_binding(cid))
+                .is_some_and(|binding| binding.venue_order_id == Some(report.venue_order_id));
+            (is_current, report.ts_last)
+        });
+
         let order_evidence: AHashSet<_> = history_order_reports
             .iter()
             .chain(open_order_reports.iter())
@@ -3222,14 +3294,15 @@ impl DeriveReconciliationContext {
             "incomplete unbounded Derive report coverage"
         );
 
-        let detached_history_order_ids: AHashSet<VenueOrderId> = history_order_reports
+        let detached_order_ids: AHashSet<VenueOrderId> = history_order_reports
             .iter()
+            .chain(open_order_reports.iter())
             .filter(|report| report.client_order_id.is_none())
             .map(|report| report.venue_order_id)
             .collect();
 
         for report in &mut fill_reports {
-            if detached_history_order_ids.contains(&report.venue_order_id) {
+            if detached_order_ids.contains(&report.venue_order_id) {
                 report.client_order_id = None;
             }
         }
@@ -3299,89 +3372,144 @@ impl DeriveReconciliationContext {
         Ok(mass_status)
     }
 
-    async fn collect_companion_order_reports(
+    async fn collect_companion_order_records(
         &self,
-        mut reports: Vec<OrderStatusReport>,
-        open_reports: &[OrderStatusReport],
+        history: &CollectedReports<DeriveOrder>,
+        open: &[DeriveOrder],
         fills: &[FillReport],
-        ts_init: UnixNanos,
-    ) -> anyhow::Result<CollectedReports<OrderStatusReport>> {
-        let mut order_evidence = AHashSet::new();
-        let mut companion_orders = AHashMap::new();
-        let mut complete = true;
-
-        for report in reports.iter().chain(open_reports.iter()) {
-            order_evidence.insert((report.venue_order_id, report.instrument_id));
-
-            if let Some(client_order_id) = report.client_order_id
-                && let Some(binding) = self.order_binding(client_order_id)
-                && binding.identity.instrument_id == report.instrument_id
-            {
-                for id in binding.venue_order_legs {
-                    companion_orders.insert((id, report.instrument_id), client_order_id);
-                }
-            }
+    ) -> anyhow::Result<CollectedReports<DeriveOrder>> {
+        if !history.records_complete {
+            return Ok(CollectedReports {
+                reports: Vec::new(),
+                complete: false,
+                records_complete: false,
+            });
         }
+
+        let order_evidence: AHashSet<_> = history
+            .reports
+            .iter()
+            .chain(open.iter())
+            .filter_map(|order| VenueOrderId::new_checked(&order.order_id).ok())
+            .collect();
+        let mut queried_orders: AHashMap<VenueOrderId, Option<usize>> = AHashMap::new();
+        let mut orders = Vec::new();
+        let mut records_complete = true;
 
         for fill in fills {
-            let key = (fill.venue_order_id, fill.instrument_id);
-            if order_evidence.contains(&key) {
+            if order_evidence.contains(&fill.venue_order_id) {
                 continue;
             }
 
-            let Some(client_order_id) = companion_orders.get(&key).copied() else {
-                continue;
+            let client_order_id = self
+                .orders
+                .iter()
+                .find(|(_, binding)| binding.venue_order_legs.contains(&fill.venue_order_id))
+                .map(|(cid, _)| *cid)
+                .or_else(|| {
+                    fill.client_order_id.filter(|cid| {
+                        self.order_binding(*cid).is_some_and(|binding| {
+                            binding.venue_order_legs.contains(&fill.venue_order_id)
+                        })
+                    })
+                });
+
+            let index = match queried_orders.get(&fill.venue_order_id) {
+                Some(Some(index)) => *index,
+                Some(None) => continue,
+                None => {
+                    let order = match fetch_order_record(
+                        &self.http_client,
+                        self.subaccount_id,
+                        fill.venue_order_id,
+                        Some(fill.instrument_id),
+                    )
+                    .await
+                    {
+                        Ok(order) => order,
+                        Err(e)
+                            if client_order_id.is_none()
+                                && e.downcast_ref::<DeriveHttpError>().is_some_and(|cause| {
+                                    matches!(cause, DeriveHttpError::JsonRpc { code: 11006, .. })
+                                }) =>
+                        {
+                            records_complete = false;
+                            queried_orders.insert(fill.venue_order_id, None);
+                            log::warn!(
+                                "Derive fill companion {} on {} is unavailable: {e:#}",
+                                fill.venue_order_id,
+                                fill.instrument_id,
+                            );
+                            continue;
+                        }
+                        Err(e) => return Err(e),
+                    };
+
+                    let index = orders.len();
+                    orders.push(order);
+                    queried_orders.insert(fill.venue_order_id, Some(index));
+                    index
+                }
             };
 
-            let order = fetch_order_record(
-                &self.http_client,
-                self.dispatch_state.subaccount_id(),
-                fill.venue_order_id,
-                Some(fill.instrument_id),
-            )
-            .await?;
-            anyhow::ensure!(
-                order_response_matches(
-                    &order,
-                    client_order_id,
-                    fill.instrument_id,
-                    &self.dispatch_state
-                ) && order.order_id == fill.venue_order_id.as_str(),
-                "Native companion order identity does not match",
-            );
-            let (price_precision, size_precision) = self.order_precision(&order)?;
-            complete &= price_precision.is_some();
-            let report = parse_derive_order_to_report_with_precision(
-                &order,
-                self.account_id,
-                price_precision,
-                size_precision,
-                ts_init,
-            )?;
-            validate_report_binding(
-                &self.dispatch_state,
-                report.client_order_id,
-                report.venue_order_id,
-                report.instrument_id,
-            )?;
-            let report = self.project_order_report(&order, report).await?;
-            reports.push(report);
-            order_evidence.insert(key);
+            self.validate_companion_order(&orders[index], fill, client_order_id)?;
         }
 
-        reports.sort_by_key(|report| {
-            let is_current = report
-                .client_order_id
-                .and_then(|cid| self.order_binding(cid))
-                .is_some_and(|binding| binding.venue_order_id == Some(report.venue_order_id));
-            (is_current, report.ts_last)
-        });
-
         Ok(CollectedReports {
-            reports,
-            complete,
-            records_complete: true,
+            reports: orders,
+            complete: records_complete,
+            records_complete,
         })
+    }
+
+    fn validate_companion_order(
+        &self,
+        order: &DeriveOrder,
+        fill: &FillReport,
+        client_order_id: Option<ClientOrderId>,
+    ) -> anyhow::Result<()> {
+        let order_side = match order.direction {
+            DeriveOrderSide::Buy => OrderSide::Buy,
+            DeriveOrderSide::Sell => OrderSide::Sell,
+        };
+
+        anyhow::ensure!(
+            order.order_id == fill.venue_order_id.as_str()
+                && self.dispatch_state.owns_subaccount(order.subaccount_id)
+                && format_instrument_id(order.instrument_name)? == fill.instrument_id
+                && order_side == fill.order_side,
+            "Native companion order identity does not match",
+        );
+
+        if let Some(client_order_id) = client_order_id {
+            let binding = self
+                .order_binding(client_order_id)
+                .ok_or(UnresolvedOrderBinding(client_order_id))?;
+            anyhow::ensure!(
+                order_response_matches(
+                    order,
+                    client_order_id,
+                    binding.identity.instrument_id,
+                    &self.dispatch_state,
+                ) && fill
+                    .client_order_id
+                    .is_none_or(|cid| cid == client_order_id),
+                "Native companion order identity does not match",
+            );
+            let current = binding
+                .venue_order_id
+                .ok_or(UnresolvedOrderBinding(client_order_id))?;
+            validate_replacement_order(
+                order,
+                client_order_id,
+                binding.identity,
+                &self.dispatch_state,
+                fill.venue_order_id,
+                current,
+            )?;
+        }
+
+        Ok(())
     }
 
     fn order_precision(&self, order: &DeriveOrder) -> anyhow::Result<(Option<u8>, Option<u8>)> {
@@ -3413,7 +3541,9 @@ impl DeriveReconciliationContext {
     }
 }
 
-fn ambiguous_history_client_order_ids(orders: &[DeriveOrder]) -> AHashSet<Ustr> {
+fn ambiguous_history_client_order_ids<'a>(
+    orders: impl Iterator<Item = &'a DeriveOrder>,
+) -> AHashSet<Ustr> {
     let mut orders_by_label: AHashMap<Ustr, AHashMap<&str, Option<&str>>> = AHashMap::new();
 
     for order in orders {

@@ -7990,6 +7990,9 @@ async fn test_mass_status_fill_order_linkage_controls_completeness(
         "trades": [sample_trade_json("trade-link", fill_order_id, fill_instrument)],
         "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
     });
+    *rest_state.get_order_response.lock().await = json!({
+        "id": 1, "error": {"code": 11006, "message": "Does not exist", "data": null},
+    });
     let mut tc = build_report_client(rest_state.clone(), WsState::default()).await;
     tc.client.connect().await.unwrap();
     let mass = tc
@@ -8014,8 +8017,703 @@ async fn test_mass_status_fill_order_linkage_controls_completeness(
         Money::from_decimal(dec!(0.5), Currency::USDC()).unwrap()
     );
     assert_eq!(rest_state.get_instrument_calls.lock().await.len(), 0);
-    assert_eq!(rest_state.get_order_calls.lock().await.len(), 0);
+    assert_eq!(
+        rest_state.get_order_calls.lock().await.len(),
+        usize::from(fill_order_id == "ord-orphan")
+    );
     tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case("STRAT-GAP", Some(ClientOrderId::from("STRAT-GAP")))]
+#[case("external-\u{03bb}", None)]
+#[tokio::test]
+async fn test_mass_status_recovers_order_omitted_from_history(
+    #[case] label: &str,
+    #[case] expected_client_order_id: Option<ClientOrderId>,
+    #[values(None, Some(10_000_000))] lookback: Option<u64>,
+) {
+    let rest_state = RestState::default();
+    *rest_state.open_orders_response.lock().await =
+        json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
+    *rest_state.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    *rest_state.order_history_response.lock().await = json!({
+        "orders": [], "pagination": {"count": 0, "num_pages": 0},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut order = order_json_with(
+        "ord-gap",
+        label,
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_100,
+        "filled",
+    );
+    order["order_type"] = json!("market");
+    order["time_in_force"] = json!("ioc");
+    order["filled_amount"] = json!("1");
+    order["average_price"] = json!("3506.2");
+    rest_state
+        .get_order_responses
+        .lock()
+        .await
+        .insert("ord-gap".to_string(), order);
+    let mut first = trade_json_with_label("trade-gap-first", "ord-gap", "ETH-PERP", label);
+    first["trade_amount"] = json!("0.4");
+    first["trade_fee"] = json!("0.3125");
+    first["batch_status"] = json!("Batching");
+    let mut second = trade_json_with_label("trade-gap-second", "ord-gap", "ETH-PERP", label);
+    second["trade_amount"] = json!("0.6");
+    second["trade_price"] = json!("3507");
+    second["trade_fee"] = json!("0.875");
+    second["timestamp"] = json!(1_700_000_002_100_i64);
+    second["batch_status"] = json!("Batching");
+    *rest_state.trade_history_response.lock().await = json!({
+        "trades": [first, second], "pagination": {"count": 2, "num_pages": 1},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_report_client(rest_state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let mass = tc
+        .client
+        .generate_mass_status(lookback)
+        .await
+        .unwrap()
+        .unwrap();
+    let orders = mass.order_reports();
+    let fills = mass.fill_reports();
+    let report = &orders[&VenueOrderId::from("ord-gap")];
+
+    assert!(mass.reports_complete());
+    assert_eq!(orders.len(), 1);
+    assert_eq!(report.account_id, AccountId::from("DERIVE-001"));
+    assert_eq!(report.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+    assert_eq!(report.client_order_id, expected_client_order_id);
+    assert_eq!(report.venue_order_id, VenueOrderId::from("ord-gap"));
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
+    assert_eq!(report.order_type, OrderType::Market);
+    assert_eq!(report.time_in_force, TimeInForce::Ioc);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.quantity.as_decimal(), dec!(1));
+    assert_eq!(report.filled_qty.as_decimal(), dec!(1));
+    assert_eq!(report.avg_px, Some(dec!(3506.2)));
+    assert_eq!(
+        report.ts_accepted,
+        UnixNanos::from(1_700_000_000_000_000_000)
+    );
+    assert_eq!(report.ts_last, UnixNanos::from(1_700_000_002_100_000_000));
+    assert_eq!(fills.len(), 1);
+    let fills = &fills[&VenueOrderId::from("ord-gap")];
+    assert_eq!(fills.len(), 2);
+
+    for (fill, id, amount, price, fee, timestamp) in [
+        (
+            &fills[0],
+            "trade-gap-first",
+            dec!(0.4),
+            dec!(3505),
+            dec!(0.3125),
+            1_700_000_002_000_000_000,
+        ),
+        (
+            &fills[1],
+            "trade-gap-second",
+            dec!(0.6),
+            dec!(3507),
+            dec!(0.875),
+            1_700_000_002_100_000_000,
+        ),
+    ] {
+        assert_eq!(fill.account_id, AccountId::from("DERIVE-001"));
+        assert_eq!(fill.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+        assert_eq!(fill.client_order_id, expected_client_order_id);
+        assert_eq!(fill.venue_order_id, VenueOrderId::from("ord-gap"));
+        assert_eq!(fill.trade_id, TradeId::from(id));
+        assert_eq!(fill.order_side, OrderSide::Buy);
+        assert_eq!(fill.last_qty.as_decimal(), amount);
+        assert_eq!(fill.last_px.as_decimal(), price);
+        assert_eq!(
+            fill.commission,
+            Money::from_decimal(fee, Currency::USDC()).unwrap()
+        );
+        assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(fill.ts_event, UnixNanos::from(timestamp));
+    }
+
+    assert_eq!(
+        *rest_state.get_order_calls.lock().await,
+        vec![json!({"subaccount_id": TEST_SUBACCOUNT, "order_id": "ord-gap"})],
+    );
+    tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_unavailable_companion_remains_incomplete(
+    #[values(None, Some(10_000_000))] lookback: Option<u64>,
+) {
+    let state = RestState::default();
+    *state.open_orders_response.lock().await =
+        json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({
+        "orders": [], "pagination": {"count": 0, "num_pages": 0}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *state.trade_history_response.lock().await = json!({
+        "trades": [sample_trade_json("missing-first", "ord-missing", "ETH-PERP"),
+                   sample_trade_json("missing-second", "ord-missing", "ETH-PERP")],
+        "pagination": {"count": 2, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *state.get_order_response.lock().await = json!({
+        "id": 1, "error": {"code": 11006, "message": "Does not exist", "data": null},
+    });
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let result = tc.client.generate_mass_status(lookback).await;
+    tc.client.disconnect().await.unwrap();
+
+    if lookback.is_some() {
+        let mass = result.unwrap().unwrap();
+        assert!(!mass.reports_complete());
+        assert!(mass.order_reports().is_empty());
+        let fills = &mass.fill_reports()[&VenueOrderId::from("ord-missing")];
+        assert_eq!(fills.len(), 2);
+        assert_eq!(fills[0].trade_id, TradeId::from("missing-first"));
+        assert_eq!(fills[1].trade_id, TradeId::from("missing-second"));
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "incomplete unbounded Derive report coverage"
+        );
+    }
+
+    assert_eq!(
+        *state.get_order_calls.lock().await,
+        vec![json!({"subaccount_id": TEST_SUBACCOUNT, "order_id": "ord-missing"})],
+    );
+}
+
+#[rstest]
+#[case::venue_order("order_id", json!("another-order"))]
+#[case::instrument("instrument_name", json!("BTC-PERP"))]
+#[case::side("direction", json!("sell"))]
+#[case::subaccount("subaccount_id", json!(TEST_SUBACCOUNT + 1))]
+#[case::upstream_error("error", json!({"code": 12345, "message": "Unavailable", "data": null}))]
+#[tokio::test]
+async fn test_mass_status_rejects_contradictory_companion(
+    #[case] field: &str,
+    #[case] value: Value,
+    #[values(None, Some(10_000_000))] lookback: Option<u64>,
+) {
+    let state = RestState::default();
+    *state.open_orders_response.lock().await =
+        json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({
+        "orders": [], "pagination": {"count": 0, "num_pages": 0}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *state.trade_history_response.lock().await = json!({
+        "trades": [sample_trade_json("identity-fill", "ord-identity", "ETH-PERP")],
+        "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut order = order_json_with(
+        "ord-identity",
+        "EXTERNAL",
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_000,
+        "filled",
+    );
+
+    if field == "error" {
+        order = json!({"id": 1, "error": value});
+    } else {
+        order[field] = value;
+    }
+
+    *state.get_order_response.lock().await = order;
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let error = tc.client.generate_mass_status(lookback).await.unwrap_err();
+    tc.client.disconnect().await.unwrap();
+
+    let message = error.to_string();
+
+    match field {
+        "subaccount_id" => assert!(message.contains("subaccount"), "{message}"),
+        "error" => assert!(message.contains("12345"), "{message}"),
+        _ => assert_eq!(message, "Native companion order identity does not match"),
+    }
+
+    assert_eq!(state.get_order_calls.lock().await.len(), 1);
+}
+
+#[rstest]
+#[case::valid("label", json!("CACHED-GAP"), true)]
+#[case::label("label", json!("EXTERNAL"), false)]
+#[case::side("direction", json!("sell"), false)]
+#[case::instrument("instrument_name", json!("BTC-PERP"), false)]
+#[case::order_type("order_type", json!("market"), false)]
+#[case::malformed_price("limit_price", json!("0"), false)]
+#[case::unavailable("error", json!({"code": 11006, "message": "Does not exist", "data": null}), false)]
+#[tokio::test]
+async fn test_mass_status_companion_validates_cached_identity(
+    #[case] field: &str,
+    #[case] value: Value,
+    #[case] valid: bool,
+    #[values(None, Some(10_000_000))] lookback: Option<u64>,
+) {
+    let state = RestState::default();
+    *state.open_orders_response.lock().await =
+        json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({
+        "orders": [], "pagination": {"count": 0, "num_pages": 0}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut order = order_json_with(
+        "ord-cached-gap",
+        "CACHED-GAP",
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_000,
+        "filled",
+    );
+    order["filled_amount"] = json!("1");
+    order[field] = value;
+    let mut trade = trade_json_with_label(
+        "cached-gap-fill",
+        "ord-cached-gap",
+        "ETH-PERP",
+        "CACHED-GAP",
+    );
+    trade["direction"] = order["direction"].clone();
+    trade["instrument_name"] = order["instrument_name"].clone();
+    *state.trade_history_response.lock().await = json!({
+        "trades": [trade], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *state.get_order_response.lock().await = order;
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let cached = accepted_order(
+        build_limit_order(
+            InstrumentId::from("ETH-PERP.DERIVE"),
+            ClientOrderId::from("CACHED-GAP"),
+            OrderSide::Buy,
+            Price::from("3500.00"),
+            Quantity::from("1.000"),
+        ),
+        VenueOrderId::from("ord-cached-gap"),
+        AccountId::from("DERIVE-001"),
+    );
+    add_order_to_cache(&tc.cache, cached, Some(ClientId::from("DERIVE")));
+    let result = tc.client.generate_mass_status(lookback).await;
+    tc.client.disconnect().await.unwrap();
+
+    if valid {
+        let mass = result.unwrap().unwrap();
+        assert!(mass.reports_complete());
+        let orders = mass.order_reports();
+        let order = &orders[&VenueOrderId::from("ord-cached-gap")];
+        assert_eq!(
+            order.client_order_id,
+            Some(ClientOrderId::from("CACHED-GAP"))
+        );
+        assert_eq!(order.order_side, Some(OrderSide::Buy));
+        assert_eq!(order.order_type, OrderType::Limit);
+        assert_eq!(order.order_status, OrderStatus::Filled);
+        assert_eq!(order.quantity, Quantity::from("1.000"));
+        assert_eq!(order.filled_qty, Quantity::from("1.000"));
+    } else {
+        let expected = match field {
+            "label" | "instrument_name" => "Native companion order identity does not match",
+            "direction" => "Native replacement order side does not match",
+            "order_type" => "Native replacement order type does not match",
+            "limit_price" => "Derive limit_price must be positive",
+            "error" => "JSON-RPC error 11006: Does not exist",
+            _ => unreachable!(),
+        };
+
+        assert_eq!(result.unwrap_err().to_string(), expected);
+    }
+
+    assert_eq!(state.get_order_calls.lock().await.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_normalizes_recovered_reused_labels(
+    #[values(false, true)] first_in_history: bool,
+) {
+    let state = RestState::default();
+    *state.open_orders_response.lock().await =
+        json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    let mut orders = Vec::new();
+    let mut trades = Vec::new();
+
+    for (id, qty, price, fee, timestamp) in [
+        (
+            "reuse-first",
+            "0.2",
+            "3505",
+            "0.03125",
+            1_700_000_002_000_i64,
+        ),
+        (
+            "reuse-second",
+            "0.3",
+            "3507",
+            "0.0625",
+            1_700_000_002_100_i64,
+        ),
+    ] {
+        let mut order = order_json_with(id, "REUSED", "buy", "ETH-PERP", timestamp, "filled");
+        order["amount"] = json!(qty);
+        order["filled_amount"] = json!(qty);
+        order["average_price"] = json!(price);
+        state
+            .get_order_responses
+            .lock()
+            .await
+            .insert(id.to_string(), order.clone());
+        orders.push(order);
+        let mut trade = trade_json_with_label(id, id, "ETH-PERP", "REUSED");
+        trade["trade_amount"] = json!(qty);
+        trade["trade_price"] = json!(price);
+        trade["trade_fee"] = json!(fee);
+        trade["timestamp"] = json!(timestamp);
+        trades.push(trade);
+    }
+
+    let history = if first_in_history {
+        vec![orders.remove(0)]
+    } else {
+        vec![]
+    };
+
+    *state.order_history_response.lock().await = json!({
+        "orders": history, "pagination": {"count": history.len(), "num_pages": usize::from(first_in_history)},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *state.trade_history_response.lock().await = json!({
+        "trades": trades, "pagination": {"count": 2, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let mass = tc.client.generate_mass_status(None).await.unwrap().unwrap();
+    tc.client.disconnect().await.unwrap();
+    let reports = mass.order_reports();
+    let fills = mass.fill_reports();
+
+    assert!(mass.reports_complete());
+    assert_eq!(reports.len(), 2);
+    assert_eq!(fills.len(), 2);
+
+    for (id, qty, price, fee) in [
+        ("reuse-first", dec!(0.2), dec!(3505), dec!(0.03125)),
+        ("reuse-second", dec!(0.3), dec!(3507), dec!(0.0625)),
+    ] {
+        let order = &reports[&VenueOrderId::from(id)];
+        assert_eq!(order.client_order_id, None);
+        assert_eq!(order.quantity.as_decimal(), qty);
+        assert_eq!(order.filled_qty.as_decimal(), qty);
+        assert_eq!(order.avg_px, Some(price));
+        let fill = &fills[&VenueOrderId::from(id)][0];
+        assert_eq!(fill.client_order_id, None);
+        assert_eq!(fill.trade_id, TradeId::from(id));
+        assert_eq!(fill.last_qty.as_decimal(), qty);
+        assert_eq!(fill.last_px.as_decimal(), price);
+        assert_eq!(
+            fill.commission,
+            Money::from_decimal(fee, Currency::USDC()).unwrap()
+        );
+    }
+
+    assert_eq!(
+        state.get_order_calls.lock().await.len(),
+        if first_in_history { 1 } else { 2 }
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_retains_companion_outside_history_window(
+    #[values(false, true)] companion_in_history: bool,
+) {
+    let state = RestState::default();
+    *state.open_orders_response.lock().await =
+        json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    let mut companion = order_json_with(
+        "old-companion",
+        "OLD-COMPANION",
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_000,
+        "filled",
+    );
+    companion["filled_amount"] = json!("1");
+    let unrelated = order_json_with(
+        "old-unrelated",
+        "OLD-UNRELATED",
+        "buy",
+        "ETH-PERP",
+        1_700_000_001_000,
+        "cancelled",
+    );
+    let mut orders = vec![unrelated];
+    if companion_in_history {
+        orders.push(companion.clone());
+    }
+
+    *state.get_order_response.lock().await = companion;
+    *state.order_history_response.lock().await = json!({
+        "orders": orders, "pagination": {"count": orders.len(), "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut trade =
+        trade_json_with_label("recent-fill", "old-companion", "ETH-PERP", "OLD-COMPANION");
+    trade["timestamp"] = json!(get_atomic_clock_realtime().get_time_ms());
+    *state.trade_history_response.lock().await = json!({
+        "trades": [trade], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let mass = tc
+        .client
+        .generate_mass_status(Some(1))
+        .await
+        .unwrap()
+        .unwrap();
+    tc.client.disconnect().await.unwrap();
+    let reports = mass.order_reports();
+    let fills = mass.fill_reports();
+
+    assert!(mass.reports_complete());
+    assert_eq!(reports.len(), 1);
+    let report = &reports[&VenueOrderId::from("old-companion")];
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("OLD-COMPANION"))
+    );
+    assert_eq!(report.ts_last, UnixNanos::from(1_700_000_002_000_000_000));
+    assert_eq!(report.filled_qty.as_decimal(), dec!(1));
+    assert_eq!(fills.len(), 1);
+    assert_eq!(
+        fills[&VenueOrderId::from("old-companion")][0].trade_id,
+        TradeId::from("recent-fill")
+    );
+    assert_eq!(
+        state.get_order_calls.lock().await.len(),
+        usize::from(!companion_in_history)
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_history_processing_obeys_bounded_source_policy(
+    #[values(None, Some(10_000_000))] lookback: Option<u64>,
+) {
+    let state = RestState::default();
+    *state.open_orders_response.lock().await = json!({
+        "orders": [order_json_with("valid-open", "VALID-OPEN", "buy", "ETH-PERP", 1_700_000_002_000, "open")],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *state.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.trade_history_response.lock().await = json!({
+        "trades": [], "pagination": {"count": 0, "num_pages": 0}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *state.order_history_response.lock().await = json!({
+        "orders": [order_json_with("missing-metadata", "MISSING-METADATA", "buy", "UNLOADED-PERP", 1_700_000_001_000, "open")],
+        "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let result = tc.client.generate_mass_status(lookback).await;
+    tc.client.disconnect().await.unwrap();
+
+    if lookback.is_some() {
+        let mass = result.unwrap().unwrap();
+        assert!(!mass.reports_complete());
+        assert_eq!(mass.order_reports().len(), 1);
+        let report = &mass.order_reports()[&VenueOrderId::from("valid-open")];
+        assert_eq!(report.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("VALID-OPEN"))
+        );
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.quantity.as_decimal(), dec!(1));
+        assert!(mass.fill_reports().is_empty());
+        assert_eq!(mass.position_reports().len(), 1);
+        assert_eq!(
+            mass.position_reports()[&InstrumentId::from("ETH-PERP.DERIVE")][0].signed_decimal_qty,
+            dec!(0)
+        );
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "missing Derive instrument metadata for UNLOADED-PERP.DERIVE"
+        );
+    }
+
+    assert!(state.get_order_calls.lock().await.is_empty());
+}
+
+#[rstest]
+#[case::side("direction", json!("sell"))]
+#[case::instrument("instrument_name", json!("BTC-PERP"))]
+#[tokio::test]
+async fn test_mass_status_rejects_contradictory_later_companion_fill(
+    #[case] field: &str,
+    #[case] value: Value,
+    #[values(None, Some(10_000_000))] lookback: Option<u64>,
+) {
+    let state = RestState::default();
+    *state.open_orders_response.lock().await =
+        json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({
+        "orders": [], "pagination": {"count": 0, "num_pages": 0}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut order = order_json_with(
+        "multi-fill",
+        "MULTI-FILL",
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_100,
+        "filled",
+    );
+    order["filled_amount"] = json!("1");
+    *state.get_order_response.lock().await = order;
+    let mut first = trade_json_with_label("first-fill", "multi-fill", "ETH-PERP", "MULTI-FILL");
+    first["trade_amount"] = json!("0.4");
+    let mut second = trade_json_with_label("second-fill", "multi-fill", "ETH-PERP", "MULTI-FILL");
+    second["trade_amount"] = json!("0.6");
+    second["timestamp"] = json!(1_700_000_002_100_i64);
+    second[field] = value;
+    *state.trade_history_response.lock().await = json!({
+        "trades": [first, second], "pagination": {"count": 2, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let error = tc.client.generate_mass_status(lookback).await.unwrap_err();
+    tc.client.disconnect().await.unwrap();
+
+    assert_eq!(
+        error.to_string(),
+        "Native companion order identity does not match"
+    );
+    assert_eq!(
+        *state.get_order_calls.lock().await,
+        vec![json!({"subaccount_id": TEST_SUBACCOUNT, "order_id": "multi-fill"})]
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_recovered_label_considers_open_order_ancestry(
+    #[values(false, true)] linear_chain: bool,
+) {
+    let state = RestState::default();
+    let mut open = order_json_with(
+        "open-current",
+        "SHARED-LABEL",
+        "buy",
+        "ETH-PERP",
+        1_700_000_003_000,
+        "open",
+    );
+    open["creation_timestamp"] = json!(1_700_000_002_500_i64);
+    if linear_chain {
+        open["replaced_order_id"] = json!("recovered-filled");
+    }
+
+    open["filled_amount"] = json!("0.2");
+    *state.open_orders_response.lock().await =
+        json!({"orders": [open], "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({
+        "orders": [], "pagination": {"count": 0, "num_pages": 0}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut closed = order_json_with(
+        "recovered-filled",
+        "SHARED-LABEL",
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_000,
+        "filled",
+    );
+    closed["amount"] = json!("0.1");
+    closed["filled_amount"] = json!("0.1");
+    *state.get_order_response.lock().await = closed;
+    let mut trade = trade_json_with_label(
+        "shared-label-fill",
+        "recovered-filled",
+        "ETH-PERP",
+        "SHARED-LABEL",
+    );
+    trade["trade_amount"] = json!("0.1");
+    let mut open_trade = trade_json_with_label(
+        "open-label-fill",
+        "open-current",
+        "ETH-PERP",
+        "SHARED-LABEL",
+    );
+    open_trade["trade_amount"] = json!("0.2");
+    open_trade["trade_price"] = json!("3506");
+    open_trade["trade_fee"] = json!("0.125");
+    open_trade["timestamp"] = json!(1_700_000_003_000_i64);
+    *state.trade_history_response.lock().await = json!({
+        "trades": [trade, open_trade], "pagination": {"count": 2, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let mass = tc.client.generate_mass_status(None).await.unwrap().unwrap();
+    tc.client.disconnect().await.unwrap();
+    let expected_cid = linear_chain.then_some(ClientOrderId::from("SHARED-LABEL"));
+    let orders = mass.order_reports();
+    let fills = mass.fill_reports();
+
+    assert!(mass.reports_complete());
+    assert_eq!(orders.len(), 2);
+    let open = &orders[&VenueOrderId::from("open-current")];
+    assert_eq!(
+        open.client_order_id,
+        Some(ClientOrderId::from("SHARED-LABEL"))
+    );
+    assert_eq!(open.order_status, OrderStatus::PartiallyFilled);
+    assert_eq!(open.quantity.as_decimal(), dec!(1));
+    assert_eq!(open.filled_qty.as_decimal(), dec!(0.2));
+    let closed = &orders[&VenueOrderId::from("recovered-filled")];
+    assert_eq!(closed.client_order_id, expected_cid);
+    assert_eq!(closed.order_status, OrderStatus::Filled);
+    assert_eq!(closed.filled_qty.as_decimal(), dec!(0.1));
+    assert_eq!(fills.len(), 2);
+    let fill = &fills[&VenueOrderId::from("recovered-filled")][0];
+    assert_eq!(fill.client_order_id, expected_cid);
+    assert_eq!(fill.trade_id, TradeId::from("shared-label-fill"));
+    assert_eq!(fill.last_qty.as_decimal(), dec!(0.1));
+    assert_eq!(fill.last_px.as_decimal(), dec!(3505));
+    assert_eq!(fill.commission, Money::from("0.5 USDC"));
+    let open_fill = &fills[&VenueOrderId::from("open-current")][0];
+    assert_eq!(
+        open_fill.client_order_id,
+        Some(ClientOrderId::from("SHARED-LABEL"))
+    );
+    assert_eq!(open_fill.trade_id, TradeId::from("open-label-fill"));
+    assert_eq!(open_fill.last_qty.as_decimal(), dec!(0.2));
+    assert_eq!(open_fill.last_px.as_decimal(), dec!(3506));
+    assert_eq!(open_fill.commission, Money::from("0.125 USDC"));
+    assert_eq!(state.get_order_calls.lock().await.len(), 1);
 }
 
 #[rstest]
@@ -15151,6 +15849,7 @@ async fn test_startup_owned_order_ignores_unrelated_historical_metadata() {
 #[case::position_failure(2)]
 #[case::salvaged_trade(3)]
 #[case::open_failure(4)]
+#[case::history_failure_with_fill(5)]
 #[tokio::test]
 async fn test_mass_status_partial_sources_obey_report_window(
     #[case] source: u8,
@@ -15170,10 +15869,20 @@ async fn test_mass_status_partial_sources_obey_report_window(
             *state.trade_history_response.lock().await = json!({"trades": [sample_trade_json("valid-source-trade", "partial-source-order", "ETH-PERP"), trade], "pagination": {"count": 2, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
         }
         4 => *state.open_orders_response.lock().await = error,
+        5 => {
+            *state.order_history_response.lock().await = error;
+            *state.trade_history_response.lock().await = json!({
+                "trades": [sample_trade_json("orphan-source-trade", "closed-source-order", "ETH-PERP")],
+                "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+            });
+            *state.get_order_response.lock().await = json!({
+                "id": 1, "error": {"code": 11006, "message": "Does not exist", "data": null},
+            });
+        }
         _ => unreachable!(),
     }
 
-    let mut tc = build_report_client(state, WsState::default()).await;
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
     tc.client.connect().await.unwrap();
 
     let result = tc.client.generate_mass_status(lookback).await;
@@ -15190,11 +15899,50 @@ async fn test_mass_status_partial_sources_obey_report_window(
             )
         );
         assert_eq!(mass.order_reports().len(), usize::from(source != 4));
-        assert_eq!(mass.fill_reports().len(), usize::from(source == 3));
+        assert_eq!(
+            mass.fill_reports().len(),
+            usize::from(source == 3 || source == 5)
+        );
         assert_eq!(
             mass.position_reports().len(),
             usize::from(source != 2 && source != 4)
         );
+
+        if source == 5 {
+            let fills = &mass.fill_reports()[&VenueOrderId::from("closed-source-order")];
+            assert_eq!(fills.len(), 1);
+            assert_eq!(fills[0].account_id, AccountId::from("DERIVE-001"));
+            assert_eq!(fills[0].trade_id, TradeId::from("orphan-source-trade"));
+            assert_eq!(
+                fills[0].instrument_id,
+                InstrumentId::from("ETH-PERP.DERIVE")
+            );
+            assert_eq!(
+                fills[0].venue_order_id,
+                VenueOrderId::from("closed-source-order")
+            );
+            assert_eq!(
+                fills[0].client_order_id,
+                Some(ClientOrderId::from("STRAT-O-1"))
+            );
+            assert_eq!(fills[0].order_side, OrderSide::Buy);
+            assert_eq!(fills[0].last_qty.as_decimal(), dec!(1));
+            assert_eq!(fills[0].last_px.as_decimal(), dec!(3505));
+            assert_eq!(
+                fills[0].commission,
+                Money::from_decimal(dec!(0.5), Currency::USDC()).unwrap()
+            );
+            assert_eq!(fills[0].liquidity_side, LiquiditySide::Taker);
+            assert_eq!(fills[0].avg_px, None);
+            assert_eq!(fills[0].venue_position_id, None);
+            assert_eq!(
+                fills[0].ts_event,
+                UnixNanos::from(1_700_000_002_000_000_000_u64)
+            );
+            assert_eq!(state.get_order_calls.lock().await.len(), 0);
+            assert_eq!(state.order_history_calls.lock().await.len(), 1);
+        }
+
         return;
     }
 
