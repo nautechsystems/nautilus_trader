@@ -4107,6 +4107,12 @@ criteria = "safe-to-deploy"
 delta = "0.29.0 -> 0.30.0"
 notes = "Bumps tungstenite to 0.30.0, raises MSRV to 1.85, and documents read cancel safety. No new runtime logic, build script, filesystem, process, or network destination behavior in the wrapper."
 
+[[audits.tokio-util]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.7.19 -> 0.7.20"
+notes = "Reviewed the published 0.7.19 -> 0.7.20 source delta: cancellation notifications move outside tree locks; framing, EOF, interrupted I/O, and timer fixes; LocalPoolHandle uses LocalRuntime. Tokio minimum rises to 1.51 and Rust minimum to 1.85, both satisfied here. No new unsafe blocks, build scripts, network destinations, or credential handling."
+
 [[audits.toml]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
