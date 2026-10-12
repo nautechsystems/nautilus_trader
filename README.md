@@ -109,6 +109,7 @@ The following integrations are available or planned; see [docs/integrations/](ht
 | [AX Exchange](https://architect.exchange)                  | `AX`                  | Derivatives Exchange    | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/architect_ax.md)        |
 | [Betfair](https://betfair.com)                             | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/betfair.md)             |
 | [Binance](https://binance.com)                             | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/binance.md)             |
+| [Blockchain](docs/integrations/blockchain.md)              | `BLOCKCHAIN`          | DeFi Data Provider      | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/blockchain.md)          |
 | [Bybit](https://www.bybit.com)                             | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/bybit.md)               |
 | [CoinAPI](https://www.coinapi.io/?ref=nautilus)            | `COINAPI`             | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)       | [Guide](docs/integrations/coinapi.md)             |
 | [Coinbase](https://coinbase.com)                           | `COINBASE`            | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/coinbase.md)            |
@@ -116,9 +117,10 @@ The following integrations are available or planned; see [docs/integrations/](ht
 | [Deribit](https://www.deribit.com)                         | `DERIBIT`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/deribit.md)             |
 | [Derive](https://www.derive.xyz)                           | `DERIVE`              | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/derive.md)              |
 | [dYdX](https://dydx.trade)                                 | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/dydx.md)                |
-| [FinFeed API](https://www.finfeedapi.com/?ref=nautilus)    | `FINFEED`             | Data Provider           | ![status](https://img.shields.io/badge/planned-lightgrey) | -                                                 |
+| [FinFeed](https://www.finfeedapi.com/?ref=nautilus)        | `FINFEED`             | Data Provider           | ![status](https://img.shields.io/badge/planned-lightgrey) | -                                                 |
 | [Hyperliquid](https://hyperliquid.xyz)                     | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/hyperliquid.md)         |
 | [Interactive Brokers](https://www.interactivebrokers.com)  | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/interactive_brokers.md) |
+| [Kalshi](https://kalshi.com)                               | `KALSHI`              | Prediction Market (CEX) | ![status](https://img.shields.io/badge/planned-lightgrey) | -                                                 |
 | [Kraken](https://kraken.com)                               | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/kraken.md)              |
 | [Lighter](https://lighter.xyz)                             | `LIGHTER`             | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/lighter.md)             |
 | [Lighter on Robinhood](https://robinhoodchain.lighter.xyz) | `LIGHTER_ROBINHOOD`   | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](docs/integrations/lighter.md)             |
@@ -246,7 +248,7 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ```toml
 [dependencies]
-nautilus_model = { version = "*", features = ["high-precision"] }
+nautilus-model = { version = "*", features = ["high-precision"] }
 ```
 
 ## Installation
@@ -310,7 +312,8 @@ pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/si
 
 > [!TIP]
 >
-> Use `--extra-index-url` instead of `--index-url` if you want pip to fall back to PyPI automatically.
+> Use `--extra-index-url` instead of `--index-url` to search both PyPI and the Nautech Systems package index.
+> Pip selects the best matching version across both indexes without giving either index priority.
 
 #### Development wheels
 
@@ -546,7 +549,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 Indicators and strategies can be developed in Python or Rust. For performance and
 latency-sensitive applications, we recommend Rust. Below are some examples:
 
-- [indicator](https://github.com/nautechsystems/nautilus_trader/tree/develop/python/nautilus_trader/indicators/) implementations exposed through PyO3.
+- [indicator](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/indicators/src/) implementations exposed through PyO3.
 - [backtest](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/) examples using a `BacktestEngine` directly.
 - [EMA crossover backtest](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/backtest/examples/engine_ema_cross.rs) example written in Rust.
 
