@@ -2439,13 +2439,6 @@ impl Portfolio {
             return Err(UnrealizedPnlError::Invalid);
         };
 
-        let instrument = if let Some(instrument) = cache.instrument(instrument_id) {
-            instrument
-        } else {
-            log::error!("Cannot calculate unrealized PnL: no instrument for {instrument_id}");
-            return Err(UnrealizedPnlError::Invalid);
-        };
-
         let conversion_currency =
             target_currency.or_else(|| self.conversion_base_currency(&account));
         let allow_stale_xrate = target_currency.is_none();
@@ -2455,10 +2448,23 @@ impl Portfolio {
             cache.positions_open(None, Some(instrument_id), None, account_id, None);
 
         if positions_open.is_empty() {
-            return Ok(Money::zero(
-                output_currency.unwrap_or_else(|| instrument.cost_currency()),
-            ));
+            let currency = cache
+                .instrument(instrument_id)
+                .map(Instrument::cost_currency)
+                .or_else(|| {
+                    cache
+                        .positions(None, Some(instrument_id), None, account_id, None)
+                        .first()
+                        .map(|position| position.settlement_currency)
+                })
+                .ok_or(UnrealizedPnlError::Invalid)?;
+            return Ok(Money::zero(output_currency.unwrap_or(currency)));
         }
+
+        let Some(instrument) = cache.instrument(instrument_id) else {
+            log::error!("Cannot calculate unrealized PnL: no instrument for {instrument_id}");
+            return Err(UnrealizedPnlError::Invalid);
+        };
 
         let mut total_pnl = Decimal::ZERO;
 
@@ -2805,13 +2811,7 @@ impl Portfolio {
             return None;
         };
 
-        let instrument = if let Some(instrument) = cache.instrument(instrument_id) {
-            instrument
-        } else {
-            log::error!("Cannot calculate realized PnL: no instrument for {instrument_id}");
-            return None;
-        };
-
+        let instrument = cache.instrument(instrument_id);
         let positions = cache.positions(None, Some(instrument_id), None, account_id, None);
 
         // Filter snapshots by account when requested so closed-position PnL
@@ -2866,22 +2866,23 @@ impl Portfolio {
         let conversion_currency =
             target_currency.or_else(|| self.conversion_base_currency(&account));
         let allow_stale_xrate = target_currency.is_none();
-        let currency = conversion_currency.unwrap_or_else(|| {
-            positions
-                .first()
-                .map(|position| position.settlement_currency)
-                .or_else(|| {
-                    let inner = self.inner.borrow();
-                    snapshot_position_ids.iter().find_map(|position_id| {
-                        inner
-                            .snapshot_sum_per_position
-                            .get(position_id)
-                            .or_else(|| inner.snapshot_last_per_position.get(position_id))
-                            .map(|pnl| pnl.currency)
-                    })
+
+        // Recorded PnL retains its currency after the instrument definition is purged
+        let currency = positions
+            .first()
+            .map(|position| position.settlement_currency)
+            .or_else(|| {
+                let inner = self.inner.borrow();
+                snapshot_position_ids.iter().find_map(|position_id| {
+                    inner
+                        .snapshot_sum_per_position
+                        .get(position_id)
+                        .or_else(|| inner.snapshot_last_per_position.get(position_id))
+                        .map(|pnl| pnl.currency)
                 })
-                .unwrap_or_else(|| instrument.cost_currency())
-        });
+            })
+            .or_else(|| instrument.map(Instrument::cost_currency))?;
+        let currency = conversion_currency.unwrap_or(currency);
 
         // Check if we need to use NETTING OMS logic
         let is_netting = positions
@@ -2944,7 +2945,7 @@ impl Portfolio {
 
                     if let Some(conversion_currency) = conversion_currency {
                         let xrate = if let Some(xrate) = self.calculate_xrate(
-                            instrument.id().venue,
+                            instrument_id.venue,
                             sum_pnl.currency,
                             conversion_currency,
                             allow_stale_xrate,
@@ -2991,7 +2992,7 @@ impl Portfolio {
 
                     if let Some(conversion_currency) = conversion_currency {
                         let xrate = if let Some(xrate) = self.calculate_xrate(
-                            instrument.id().venue,
+                            instrument_id.venue,
                             realized_pnl.currency,
                             conversion_currency,
                             allow_stale_xrate,
@@ -3039,7 +3040,7 @@ impl Portfolio {
 
                     if let Some(conversion_currency) = conversion_currency {
                         let xrate = if let Some(xrate) = self.calculate_xrate(
-                            instrument.id().venue,
+                            instrument_id.venue,
                             sum_pnl.currency,
                             conversion_currency,
                             allow_stale_xrate,
@@ -3086,7 +3087,7 @@ impl Portfolio {
 
                     if let Some(conversion_currency) = conversion_currency {
                         let xrate = if let Some(xrate) = self.calculate_xrate(
-                            instrument.id().venue,
+                            instrument_id.venue,
                             realized_pnl.currency,
                             conversion_currency,
                             allow_stale_xrate,

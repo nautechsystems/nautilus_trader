@@ -558,7 +558,8 @@ Use these to drop a single entity. Each refuses to purge while the entity is sti
   maps (order book, quotes, trades, mark/index/funding prices, instrument status and close, greeks,
   and bars referencing the instrument). Skips while any associated order is non-terminal (anything
   that has not reached a closed state, including initialized, submitted, accepted, emulated,
-  released, and inflight orders) or any associated position is non-closed.
+  released, and inflight orders) or any associated position is non-closed. Cached orders and
+  positions remain indexed until purged separately, preserving historical queries and realized PnL.
 
 :::warning
 `purge_instrument` is intended for actors and strategies with their own lifecycle logic

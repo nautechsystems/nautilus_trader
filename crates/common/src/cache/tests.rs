@@ -7656,7 +7656,7 @@ fn test_purge_open_position_skips_purge() {
 }
 
 #[rstest]
-fn test_purge_instrument_removes_from_cache_and_indices() {
+fn test_purge_instrument_removes_market_data_and_preserves_history() {
     let mut cache = Cache::default();
     let audusd_sim = audusd_sim();
     let instrument_id = audusd_sim.id;
@@ -7821,13 +7821,12 @@ fn test_purge_instrument_removes_from_cache_and_indices() {
     assert!(cache.funding_rate(&instrument_id).is_none());
     assert!(cache.instrument_status(&instrument_id).is_none());
     assert!(cache.instrument_close(&instrument_id).is_none());
-    assert!(!cache.index.instrument_orders.contains_key(&instrument_id));
-    assert!(
-        !cache
-            .index
-            .instrument_positions
-            .contains_key(&instrument_id)
-    );
+    {
+        let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+        let positions = cache.positions(None, Some(&instrument_id), None, None, None);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(positions.len(), 1);
+    }
     assert!(cache.check_integrity());
 }
 
@@ -7909,7 +7908,7 @@ fn test_purge_instrument_skip_order_guard_allows_orders_open() {
     cache.purge_instrument_skip_order_guard(instrument_id);
 
     assert!(cache.instrument(&instrument_id).is_none());
-    assert!(!cache.index.instrument_orders.contains_key(&instrument_id));
+    assert!(cache.has_orders_open(None, Some(&instrument_id), None, None, None));
     assert!(cache.check_integrity());
 }
 
