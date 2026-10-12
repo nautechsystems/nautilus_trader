@@ -1773,11 +1773,11 @@ impl KrakenFuturesHttpClient {
     /// resolve, which may be on another instrument and is skipped. The coverage records each such
     /// skip, each history row that cannot be parsed, resolved or represented, and a continuation
     /// token, which cuts the read short at the page's oldest event: the read takes one page, since
-    /// every Kraken `/history` endpoint draws on one pool of 100 tokens, replenished at 100 every 10
-    /// minutes, at a token per page. A read scoped to an unheld futures instrument reads nothing and
-    /// rules out no order. `ExecutionMassStatus::set_report_window` records whether it is complete
-    /// for bounded history, and the single-order lookup whether it rules out an order it did not
-    /// return.
+    /// every Kraken `/history` endpoint draws on one pool of 100 tokens, replenished at 100 every
+    /// 10 minutes, at a token per page. A read scoped to an unheld futures instrument reads nothing
+    /// and rules out no order. `ExecutionMassStatus::set_report_window` records whether it is
+    /// complete for bounded history, and the single-order lookup whether it rules out an order it
+    /// did not return.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
