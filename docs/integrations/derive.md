@@ -109,9 +109,9 @@ An empty spot book does not provide a bounded way to close a minimum-size fill.
 - **Sparse trades:** public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
   successfully but can be low-volume, so expect sparse trade frames.
 - **Empty books:** the venue still broadcasts ticker and order book frames with a zeroed top of
-  book. The adapter drops those partial quotes (logged at DEBUG), so the quote feed stays silent
-  until a book forms. Trade frames are match-driven and independent of book state, so a trade
-  that empties the book still emits an event.
+  book. The adapter emits no quote when either side has zero price or size; see [Quotes](#quotes).
+  Trade frames are match-driven and independent of book state, so a trade that empties the book
+  still emits an event.
 - **Standard Margin:** spot orders are margined by initial margin fraction, not full notional.
 
 ## Environments
@@ -322,6 +322,17 @@ and prioritize ongoing maintenance.
 | Instrument close               | -         | *Not supported.* The venue publishes option settlement over REST only.  |
 | Option greeks                  | ✓         | Derived from `option_pricing` on option tickers.                        |
 | Option chain                   | ✓         | Aggregated from quotes and greeks; `public/get_tickers` bootstraps ATM. |
+
+#### Quotes
+
+WebSocket tickers report complete snapshots for perpetuals, options, and spot. If either side has
+zero price or size, the adapter clears that instrument's internal quote state and emits no
+`QuoteTick` (logged at DEBUG). Quotes resume when a snapshot supplies both sides with nonzero
+prices and sizes.
+
+The last published quote remains in the Nautilus cache with its original timestamps. Suppressing
+quote output does not withdraw that cached quote. Other subscribed ticker fields, including mark
+and index prices, funding rates, and option greeks, continue to emit independently.
 
 #### Instrument loading
 

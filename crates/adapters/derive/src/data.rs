@@ -67,7 +67,7 @@ use nautilus_model::{
     enums::{AggregationSource, BookType, PriceType},
     identifiers::{ClientId, InstrumentId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
+    types::Price,
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
@@ -2556,35 +2556,23 @@ fn process_ticker_quote(
     quote_cache: &mut QuoteCache,
 ) -> anyhow::Result<Option<QuoteTick>> {
     let quote = parse_ticker_quote(msg, price_precision, size_precision, ts_init)?;
-    let (bid_price, bid_size) = quote_side(quote.bid_price, quote.bid_size);
-    let (ask_price, ask_size) = quote_side(quote.ask_price, quote.ask_size);
+    if quote.bid_price.is_zero()
+        || quote.ask_price.is_zero()
+        || quote.bid_size.is_zero()
+        || quote.ask_size.is_zero()
+    {
+        // Tickers are complete snapshots; a zero side withdraws cached liquidity
+        quote_cache.remove(&quote.instrument_id);
 
-    match quote_cache.process(
-        quote.instrument_id,
-        bid_price,
-        ask_price,
-        bid_size,
-        ask_size,
-        quote.ts_event,
-        quote.ts_init,
-    ) {
-        Ok(quote) => Ok(Some(quote)),
-        Err(e) => {
-            log::debug!(
-                "Skipping partial Derive ticker quote for {}: {e}",
-                msg.data.instrument_name(),
-            );
-            Ok(None)
-        }
+        log::debug!(
+            "Skipping Derive ticker quote with an empty side for {}",
+            msg.data.instrument_name(),
+        );
+        return Ok(None);
     }
-}
 
-fn quote_side(price: Price, size: Quantity) -> (Option<Price>, Option<Quantity>) {
-    if price.is_zero() || size.is_zero() {
-        (None, None)
-    } else {
-        (Some(price), Some(size))
-    }
+    quote_cache.insert(quote.instrument_id, quote);
+    Ok(Some(quote))
 }
 
 fn channel_is_active(
@@ -2745,16 +2733,19 @@ mod tests {
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
+    use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde_json::{Value, json};
 
     use super::*;
     use crate::{
         common::{
             consts::DERIVE_CLIENT_ID, enums::DeriveEnvironment, parse::parse_derive_instrument_any,
+            urls,
         },
         http::models::DeriveInstrument,
-        websocket::{DeriveWsFrame, WsSubscriptionPayload, parse_orderbook_msg},
+        websocket::{DeriveWsFrame, WsSubscriptionPayload, parse_orderbook_msg, parse_ticker_msg},
     };
 
     fn data_path() -> PathBuf {
@@ -2999,7 +2990,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_ticker_partial_quote_uses_cached_side() {
+    fn test_handle_ticker_empty_side_clears_cached_quote() {
         let instrument = spot_instrument();
         let instrument_id = instrument.id();
         let channel = "ticker_slim.ETH-USDC.1000";
@@ -3021,16 +3012,210 @@ mod tests {
 
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
-        match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::Quote(quote)) => {
-                assert_eq!(quote.instrument_id, instrument_id);
-                assert_eq!(quote.bid_price, Price::from("0.2"));
-                assert_eq!(quote.ask_price, Price::from("0.3"));
-                assert_eq!(quote.bid_size, Quantity::from("45.00"));
-                assert_eq!(quote.ask_size, Quantity::from("20.00"));
-            }
-            other => panic!("expected quote data event, was {other:?}"),
+        assert!(rx.try_recv().is_err());
+        assert_eq!(ctx.quote_cache.lock().get(&instrument_id), None);
+    }
+
+    #[rstest]
+    #[case::bid_price("0", "0.4", "45", "67")]
+    #[case::bid_size("0.2", "0.4", "0", "67")]
+    #[case::ask_price("0.2", "0", "45", "67")]
+    #[case::ask_size("0.2", "0.4", "45", "0")]
+    #[case::both_empty("0", "0", "0", "0")]
+    fn test_process_ticker_empty_sides_and_recovery(
+        #[case] bid_price: &str,
+        #[case] ask_price: &str,
+        #[case] bid_size: &str,
+        #[case] ask_size: &str,
+        #[values(false, true)] populated: bool,
+        #[values(false, true)] slim: bool,
+    ) {
+        let (instrument, channel, mut data) = if slim {
+            (
+                spot_instrument(),
+                "ticker_slim.ETH-USDC.1000",
+                spot_ticker_slim_json(),
+            )
+        } else {
+            (perp_instrument(), "ticker.ETH-PERP.1000", ticker_json(1234))
+        };
+
+        let instrument_id = instrument.id();
+        let mut quote_cache = QuoteCache::new();
+        let ts_init = UnixNanos::from(9_876_543_210);
+
+        let expected = QuoteTick::new(
+            instrument_id,
+            Price::from_decimal_dp(dec!(0.2), instrument.price_precision()).unwrap(),
+            Price::from_decimal_dp(dec!(0.4), instrument.price_precision()).unwrap(),
+            Quantity::from_decimal_dp(dec!(45), instrument.size_precision()).unwrap(),
+            Quantity::from_decimal_dp(dec!(67), instrument.size_precision()).unwrap(),
+            UnixNanos::from(1_238_000_000),
+            ts_init,
+        );
+
+        let unrelated_quote = QuoteTick {
+            instrument_id: InstrumentId::from("BTC-PERP.DERIVE"),
+            ..expected
+        };
+
+        quote_cache.insert(unrelated_quote.instrument_id, unrelated_quote);
+        if populated {
+            quote_cache.insert(instrument_id, expected);
         }
+
+        let keys = if slim {
+            ["b", "a", "B", "A"]
+        } else {
+            [
+                "best_bid_price",
+                "best_ask_price",
+                "best_bid_amount",
+                "best_ask_amount",
+            ]
+        };
+
+        for (values, timestamp, expected_result) in [
+            ([bid_price, ask_price, bid_size, ask_size], 1235, None),
+            (["0.6", "0", "89", "0"], 1236, None),
+            (["0", "0.8", "0", "91"], 1237, None),
+            (["0.2", "0.4", "45", "67"], 1238, Some(expected)),
+        ] {
+            data["timestamp"] = json!(timestamp);
+            let snapshot = if slim {
+                &mut data["instrument_ticker"]
+            } else {
+                &mut data
+            };
+
+            for (key, value) in keys.into_iter().zip(values) {
+                snapshot[key] = json!(value);
+            }
+
+            let payload = subscription_payload(channel, &data);
+            let msg = parse_ticker_msg(&payload).unwrap();
+            let result = process_ticker_quote(
+                &msg,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                ts_init,
+                &mut quote_cache,
+            )
+            .unwrap();
+
+            assert_eq!(result, expected_result);
+            assert_eq!(quote_cache.get(&instrument_id), expected_result.as_ref());
+            assert_eq!(
+                quote_cache.get(&unrelated_quote.instrument_id),
+                Some(&unrelated_quote)
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::testnet_spot(DeriveEnvironment::Testnet, "ETH-USDC")]
+    #[case::testnet_perp(DeriveEnvironment::Testnet, "ETH-PERP")]
+    #[case::mainnet_spot(DeriveEnvironment::Mainnet, "ETH-USDC")]
+    #[case::mainnet_perp(DeriveEnvironment::Mainnet, "ETH-PERP")]
+    #[tokio::test]
+    #[ignore = "requires Derive public network access; mainnet requires an isolated NZ route"]
+    async fn test_live_ticker_complete_snapshots(
+        #[case] environment: DeriveEnvironment,
+        #[case] instrument_name: &str,
+    ) {
+        let http =
+            DeriveHttpClient::new(urls::rest_url(environment), Some(15), None, None).unwrap();
+        let definition = http.get_instrument(instrument_name).await.unwrap();
+        let instrument = parse_derive_instrument_any(&definition, UnixNanos::from(1))
+            .unwrap()
+            .unwrap();
+        let instrument_id = instrument.id();
+        let mut ws_client =
+            DeriveWebSocketClient::new(None, environment, TransportBackend::default(), None);
+        ws_client.connect().await.unwrap();
+        let mut events = ws_client.take_event_receiver().unwrap();
+        let validation = async {
+            ws_client
+                .subscribe_ticker(instrument_name, "1000")
+                .await
+                .unwrap();
+            let mut quote_cache = QuoteCache::new();
+
+            let seed = QuoteTick::new(
+                instrument_id,
+                Price::from("0.1"),
+                Price::from("0.3"),
+                Quantity::from("10.00"),
+                Quantity::from("20.00"),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            );
+            quote_cache.insert(instrument_id, seed);
+            let mut published = 0;
+            let mut suppressed = 0;
+
+            for _ in 0..3 {
+                let payload = loop {
+                    if let DeriveWsMessage::Subscription(payload) = events.recv().await.unwrap() {
+                        break payload;
+                    }
+                };
+
+                let msg = parse_ticker_msg(&payload).unwrap();
+                let ts_init = UnixNanos::from(9_876_543_210);
+                let expected = parse_ticker_quote(
+                    &msg,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    ts_init,
+                )
+                .unwrap();
+                let result = process_ticker_quote(
+                    &msg,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    ts_init,
+                    &mut quote_cache,
+                )
+                .unwrap();
+
+                if expected.bid_price.is_zero()
+                    || expected.ask_price.is_zero()
+                    || expected.bid_size.is_zero()
+                    || expected.ask_size.is_zero()
+                {
+                    assert_eq!(result, None);
+                    assert_eq!(quote_cache.get(&instrument_id), None);
+                    suppressed += 1;
+                } else {
+                    assert_eq!(result, Some(expected));
+                    assert_eq!(quote_cache.get(&instrument_id), Some(&expected));
+                    assert_eq!(expected.instrument_id, instrument_id);
+                    assert_eq!(
+                        expected.ts_event,
+                        UnixNanos::from(msg.data.timestamp() as u64 * 1_000_000)
+                    );
+                    assert_eq!(expected.ts_init, ts_init);
+                    published += 1;
+                }
+            }
+
+            ws_client
+                .unsubscribe_ticker(instrument_name, "1000")
+                .await
+                .unwrap();
+            (published, suppressed)
+        };
+
+        let result = tokio::time::timeout(Duration::from_secs(30), validation).await;
+        tokio::time::timeout(Duration::from_secs(5), ws_client.disconnect())
+            .await
+            .expect("ticker validation shutdown exceeds five seconds")
+            .unwrap();
+        let (published, suppressed) = result.expect("ticker validation exceeds 30 seconds");
+        println!(
+            "Derive {environment:?} {instrument_name}: {published} complete quotes, {suppressed} empty snapshots suppressed; unsubscribed and disconnected"
+        );
     }
 
     #[rstest]
@@ -3054,6 +3239,9 @@ mod tests {
         ctx.active_quote_subs.insert(instrument_id);
 
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Reconnected, &ctx);
+
+        assert_eq!(ctx.quote_cache.lock().get(&instrument_id), None);
+
         let payload = subscription_payload(channel, &spot_ticker_slim_json());
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
