@@ -85,7 +85,7 @@ where
         .transpose()
 }
 
-/// Deserializes the required RTDS crypto TWAP `value` as a finite decimal.
+/// Deserializes the required PolyBolt crypto TWAP display `value` as a finite decimal.
 ///
 /// Accepts JSON numbers and numeric strings in plain or scientific notation. Rejects missing,
 /// null, non-finite numbers, and every non-decimal JSON shape.

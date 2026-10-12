@@ -14,9 +14,12 @@ __all__ = [
     "POLYMARKET",
     "POLYMARKET_CLIENT_ID",
     "POLYMARKET_VENUE",
+    "PolymarketCryptoPrice",
+    "PolymarketCryptoTwap",
     "PolymarketDataClientConfig",
     "PolymarketDataClientFactory",
     "PolymarketDataLoader",
+    "PolymarketEquityPrice",
     "PolymarketExecutionClientConfig",
     "PolymarketExecutionClientFactory",
     "PolymarketFeeModel",
@@ -24,9 +27,6 @@ __all__ = [
     "PolymarketPositionClient",
     "PolymarketPositionOutcome",
     "PolymarketPositionTransaction",
-    "PolymarketRtdsCryptoPrice",
-    "PolymarketRtdsCryptoTwap",
-    "PolymarketRtdsEquityPrice",
     "PolymarketSessionKey",
     "PolymarketSessionKeyClient",
     "PolymarketSessionKeyClientConfig",
@@ -38,6 +38,69 @@ __all__ = [
 POLYMARKET: str
 POLYMARKET_CLIENT_ID: model.ClientId
 POLYMARKET_VENUE: model.Venue
+
+@typing.final
+class PolymarketCryptoPrice:
+    @property
+    def symbol(self) -> str: ...
+    @property
+    def source(self) -> str: ...
+    @property
+    def value(self) -> typing.Any: ...
+    @property
+    def price_timestamp_ms(self) -> int: ...
+    @property
+    def message_timestamp_ms(self) -> int: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls,
+        symbol: str,
+        source: str,
+        value: typing.Any,
+        price_timestamp_ms: int,
+        message_timestamp_ms: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> PolymarketCryptoPrice: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+
+@typing.final
+class PolymarketCryptoTwap:
+    @property
+    def symbol(self) -> str: ...
+    @property
+    def source(self) -> str: ...
+    @property
+    def window_seconds(self) -> int: ...
+    @property
+    def value(self) -> typing.Any: ...
+    @property
+    def observation_timestamp_ms(self) -> int: ...
+    @property
+    def message_timestamp_ms(self) -> int: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls,
+        symbol: str,
+        source: str,
+        window_seconds: int,
+        value: typing.Any,
+        observation_timestamp_ms: int,
+        message_timestamp_ms: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> PolymarketCryptoTwap: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class PolymarketDataClientConfig:
@@ -82,7 +145,7 @@ class PolymarketDataClientConfig:
     @property
     def resolve_poll_max_wait_secs(self) -> int: ...
     @property
-    def base_url_rtds(self) -> str | None: ...
+    def base_url_reference_prices(self) -> str | None: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
     @property
@@ -117,7 +180,7 @@ class PolymarketDataClientConfig:
         resolve_poll_interval_secs: int | None = None,
         resolve_poll_grace_secs: int | None = None,
         resolve_poll_max_wait_secs: int | None = None,
-        base_url_rtds: str | None = None,
+        base_url_reference_prices: str | None = None,
         transport_backend: network.TransportBackend | None = None,
         drop_quotes_missing_side: bool | None = None,
         proxy_url: str | None = None,
@@ -125,6 +188,9 @@ class PolymarketDataClientConfig:
         book_snapshot_timeout_secs: int | None = None,
         book_stale_check_interval_secs: int | None = None,
         book_stale_threshold_secs: int | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        passphrase: str | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -133,6 +199,42 @@ class PolymarketDataClientConfig:
 class PolymarketDataClientFactory:
     def __init__(self) -> None: ...
     def name(self) -> str: ...
+
+@typing.final
+class PolymarketEquityPrice:
+    @property
+    def symbol(self) -> str: ...
+    @property
+    def source(self) -> str: ...
+    @property
+    def value(self) -> typing.Any: ...
+    @property
+    def price_timestamp_ms(self) -> int: ...
+    @property
+    def message_timestamp_ms(self) -> int: ...
+    @property
+    def received_at_ms(self) -> typing.Any: ...
+    @property
+    def is_carried_forward(self) -> bool: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls,
+        symbol: str,
+        source: str,
+        value: typing.Any,
+        price_timestamp_ms: int,
+        message_timestamp_ms: int,
+        received_at_ms: typing.Any,
+        is_carried_forward: bool,
+        ts_event: int,
+        ts_init: int,
+    ) -> PolymarketEquityPrice: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class PolymarketExecutionClientConfig:
@@ -237,99 +339,6 @@ class PolymarketInstrumentProviderConfig:
         use_gamma_markets: bool | None = None,
         series_ids: typing.Sequence[int] | None = None,
     ) -> None: ...
-
-@typing.final
-class PolymarketRtdsCryptoPrice:
-    @property
-    def symbol(self) -> str: ...
-    @property
-    def value(self) -> typing.Any: ...
-    @property
-    def price_timestamp_ms(self) -> int: ...
-    @property
-    def message_timestamp_ms(self) -> int: ...
-    @property
-    def ts_event(self) -> int: ...
-    @property
-    def ts_init(self) -> int: ...
-    def __new__(
-        cls,
-        symbol: str,
-        value: typing.Any,
-        price_timestamp_ms: int,
-        message_timestamp_ms: int,
-        ts_event: int,
-        ts_init: int,
-    ) -> PolymarketRtdsCryptoPrice: ...
-    def to_json(self) -> str: ...
-    @classmethod
-    def from_json(cls, data: typing.Any) -> typing.Any: ...
-
-@typing.final
-class PolymarketRtdsCryptoTwap:
-    @property
-    def symbol(self) -> str: ...
-    @property
-    def window_seconds(self) -> int: ...
-    @property
-    def value(self) -> typing.Any: ...
-    @property
-    def observation_timestamp_ms(self) -> int: ...
-    @property
-    def message_timestamp_ms(self) -> int: ...
-    @property
-    def ts_event(self) -> int: ...
-    @property
-    def ts_init(self) -> int: ...
-    def __new__(
-        cls,
-        symbol: str,
-        window_seconds: int,
-        value: typing.Any,
-        observation_timestamp_ms: int,
-        message_timestamp_ms: int,
-        ts_event: int,
-        ts_init: int,
-    ) -> PolymarketRtdsCryptoTwap: ...
-    def to_json(self) -> str: ...
-    @classmethod
-    def from_json(cls, data: typing.Any) -> typing.Any: ...
-
-@typing.final
-class PolymarketRtdsEquityPrice:
-    @property
-    def symbol(self) -> str: ...
-    @property
-    def value(self) -> typing.Any: ...
-    @property
-    def full_accuracy_value(self) -> typing.Any: ...
-    @property
-    def price_timestamp_ms(self) -> int: ...
-    @property
-    def message_timestamp_ms(self) -> int: ...
-    @property
-    def received_at_ms(self) -> typing.Any: ...
-    @property
-    def is_carried_forward(self) -> bool: ...
-    @property
-    def ts_event(self) -> int: ...
-    @property
-    def ts_init(self) -> int: ...
-    def __new__(
-        cls,
-        symbol: str,
-        value: typing.Any,
-        full_accuracy_value: typing.Any,
-        price_timestamp_ms: int,
-        message_timestamp_ms: int,
-        received_at_ms: typing.Any,
-        is_carried_forward: bool,
-        ts_event: int,
-        ts_init: int,
-    ) -> PolymarketRtdsEquityPrice: ...
-    def to_json(self) -> str: ...
-    @classmethod
-    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class PolymarketUpDownEventSlugConfig:

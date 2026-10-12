@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Added tick scheme registration, thanks @faysou
 - Added negative price support for futures, except inverse futures (#5190), thanks @DeLuke84
 - Added `BacktestDataConfig.batch_deltas` for batched book delta replay (#5215), thanks for reporting @nicezic
+- Added WebSocket peer-close callbacks to control automatic reconnection
 - Added Bybit public liquidation custom data for linear and inverse contracts (#5152), thanks @Martingale42
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 - Added Derive adapter support for API v3
@@ -57,6 +58,12 @@ Released on TBD (UTC).
 - Changed Interactive Brokers Rust provider loaders; use `load_with_return_async` (#5041), thanks @faysou
 - Changed Rust `KrakenDataClientConfig` literals; add `validate_l2_checksum: true` (#5219), thanks @zhaow-de
 - Changed Rust `OKXAmendAlgoOrderRequest` literals to require `new_trigger_px_type`; use `None` to omit it
+- Removed Polymarket 30-second TWAP support; use `window_seconds=60` (#5296)
+- Renamed Polymarket reference-price types to drop `Rtds`, without aliases (#5296)
+- Renamed Polymarket `base_url_rtds` to `base_url_reference_prices` (#5296)
+- Changed Polymarket reference prices to PolyBolt; configure CLOB L2 credentials (#5296), thanks @yashwardhan-gautam
+- Changed Polymarket crypto reference symbols to lowercase USD pairs such as `btcusd` (#5296)
+- Changed Polymarket reference prices to exact decimals with `source`; equity drops `full_accuracy_value` (#5296)
 
 ### Security
 
@@ -183,6 +190,7 @@ Released on TBD (UTC).
 - Clarified Hyperliquid modify replacement rules and individual batch results
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
 - Clarified Lighter cancel-all scope and batch cancellation failure handling
+- Documented Polymarket PolyBolt reference prices and the RTDS migration (#5296)
 
 ### Deprecations
 

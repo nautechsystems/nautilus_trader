@@ -86,11 +86,11 @@ use crate::{
         gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
         query::GetGammaMarketsParams,
     },
+    polybolt::PolymarketPolyBoltFeed,
     resolve::{
         PendingResolution, PendingResolutionGuard, ResolveApplyResult, ResolveContext,
         ResolveWatchEntry, StrictResolvedMarket, apply_condition_resolution_with_assets,
     },
-    rtds::PolymarketRtdsFeed,
     websocket::{
         error::PolymarketWsError,
         messages::{MarketWsMessage, PolymarketNewMarket, PolymarketQuote, PolymarketWsMessage},
@@ -147,7 +147,7 @@ pub(super) struct WsMessageContext {
     pub(super) new_market_inflight_keys: Arc<DashMap<String, ()>>,
     pub(super) new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     pub(super) tasks: TaskSpawner,
-    pub(super) rtds_feed: PolymarketRtdsFeed,
+    pub(super) polybolt_feed: PolymarketPolyBoltFeed,
     pub(super) subscribe_new_markets: bool,
     pub(super) new_market_filter: Option<Arc<dyn InstrumentFilter>>,
     pub(super) drop_quotes_missing_side: bool,
@@ -224,16 +224,19 @@ pub(super) fn handle_ws_message(message: PolymarketWsMessage, ctx: &WsMessageCon
         }
         PolymarketWsMessage::Reconnected { shard_id } => {
             log::info!("Polymarket WS reconnected");
+
             if ctx.cancellation_token.is_cancelled() {
-                log::debug!("Skipping RTDS recovery because data client is cancelling");
+                log::debug!("Skipping PolyBolt recovery because data client is cancelling");
                 return;
             }
 
-            if ctx.rtds_feed.needs_connection_recovery() {
-                ctx.rtds_feed
-                    .request_reconcile(crate::rtds::ReconcileReason::EnsureConnected);
+            if ctx.polybolt_feed.needs_connection_recovery() {
+                ctx.polybolt_feed
+                    .request_reconcile(crate::polybolt::ReconcileReason::EnsureConnected);
             } else {
-                log::debug!("Skipping RTDS recovery because RTDS connection is still healthy");
+                log::debug!(
+                    "Skipping PolyBolt recovery because PolyBolt connection is still healthy"
+                );
             }
 
             handle_book_reconnect(ctx, shard_id);
@@ -1503,30 +1506,66 @@ mod tests {
     }
 
     #[derive(Clone, Default)]
-    struct RtdsTestServerState {
+    struct PolyBoltTestServerState {
         received_payloads: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     }
 
-    async fn handle_rtds_upgrade(
-        ws: WebSocketUpgrade,
-        State(state): State<RtdsTestServerState>,
-    ) -> axum::response::Response {
-        ws.on_upgrade(move |socket| record_json_ws_payloads(socket, state.received_payloads))
+    async fn handle_polybolt_socket(mut socket: WebSocket, state: PolyBoltTestServerState) {
+        while let Some(result) = socket.next().await {
+            let Ok(message) = result else { break };
+
+            match message {
+                AxumWsMessage::Text(text) => {
+                    let Ok(payload) = serde_json::from_str::<Value>(&text) else {
+                        continue;
+                    };
+
+                    state
+                        .received_payloads
+                        .lock()
+                        .await
+                        .push(crate::polybolt::testing::recorded_payload(&payload));
+                    for reply in crate::polybolt::testing::mock_replies(&payload) {
+                        if socket
+                            .send(AxumWsMessage::Text(reply.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                }
+                AxumWsMessage::Ping(data) => {
+                    if socket.send(AxumWsMessage::Pong(data)).await.is_err() {
+                        break;
+                    }
+                }
+                AxumWsMessage::Close(_) => break,
+                _ => {}
+            }
+        }
     }
 
-    async fn start_rtds_test_server(state: RtdsTestServerState) -> SocketAddr {
+    async fn handle_polybolt_upgrade(
+        ws: WebSocketUpgrade,
+        State(state): State<PolyBoltTestServerState>,
+    ) -> axum::response::Response {
+        ws.on_upgrade(move |socket| handle_polybolt_socket(socket, state))
+    }
+
+    async fn start_polybolt_test_server(state: PolyBoltTestServerState) -> SocketAddr {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
-            .expect("bind RTDS test server");
+            .expect("bind PolyBolt test server");
         let addr = listener.local_addr().expect("local_addr");
         let router = Router::new()
-            .route("/rtds", get(handle_rtds_upgrade))
+            .route("/polybolt", get(handle_polybolt_upgrade))
             .with_state(state);
 
         tokio::spawn(async move {
             axum::serve(listener, router)
                 .await
-                .expect("RTDS test server failed");
+                .expect("PolyBolt test server failed");
         });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1649,8 +1688,8 @@ mod tests {
                 default_config.new_market_fetch_max_concurrency,
             )),
             tasks: task_spawner.clone(),
-            rtds_feed: crate::rtds::PolymarketRtdsFeed::new(
-                "ws://localhost/rtds".to_string(),
+            polybolt_feed: crate::polybolt::PolymarketPolyBoltFeed::new(
+                "ws://localhost/polybolt".to_string(),
                 TransportBackend::default(),
                 get_atomic_clock_realtime(),
                 data_tx.into(),
@@ -1820,7 +1859,7 @@ mod tests {
             new_market_inflight_keys: client.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
             tasks: client.tasks.spawner().expect("task spawner"),
-            rtds_feed: client.rtds_feed.clone(),
+            polybolt_feed: client.polybolt_feed.clone(),
             subscribe_new_markets: client.config.subscribe_new_markets,
             new_market_filter: client.config.new_market_filter.clone(),
             drop_quotes_missing_side: client.config.drop_quotes_missing_side,
@@ -2707,33 +2746,45 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn handle_reconnected_does_not_replay_rtds_when_rtds_is_healthy() {
-        let state = RtdsTestServerState::default();
-        let addr = start_rtds_test_server(state.clone()).await;
+    async fn handle_reconnected_does_not_replay_polybolt_when_polybolt_is_healthy() {
+        let state = PolyBoltTestServerState::default();
+        let addr = start_polybolt_test_server(state.clone()).await;
         let (mut ctx, _data_rx) = make_ws_ctx();
-        ctx.rtds_feed = crate::rtds::PolymarketRtdsFeed::new(
-            format!("ws://{addr}/rtds"),
+
+        ctx.polybolt_feed = crate::polybolt::PolymarketPolyBoltFeed::new(
+            format!("ws://{addr}/polybolt"),
             TransportBackend::default(),
             ctx.clock,
             ctx.data_sender.clone(),
         );
-        ctx.rtds_feed
+        ctx.polybolt_feed
             .track_subscribe(DataType::new(
-                "PolymarketRtdsCryptoPrice",
+                "PolymarketCryptoPrice",
                 Some({
                     let mut metadata = Params::new();
-                    metadata.insert("symbol".to_string(), Value::String("BTCUSDT".to_string()));
+                    metadata.insert("symbol".to_string(), Value::String("btcusd".to_string()));
                     metadata
                 }),
                 None,
             ))
-            .expect("track RTDS subscribe");
-        ctx.rtds_feed.connect().await.expect("connect RTDS feed");
+            .expect("track PolyBolt subscribe");
+
+        ctx.polybolt_feed
+            .connect()
+            .await
+            .expect("connect PolyBolt feed");
 
         wait_until_async(
             || {
                 let state = state.clone();
-                async move { !state.received_payloads.lock().await.is_empty() }
+                async move {
+                    state
+                        .received_payloads
+                        .lock()
+                        .await
+                        .iter()
+                        .any(|payload| payload["op"] == "subscribe")
+                }
             },
             Duration::from_secs(2),
         )
@@ -2745,44 +2796,52 @@ mod tests {
 
         assert!(
             state.received_payloads.lock().await.is_empty(),
-            "healthy RTDS connection should not replay subscriptions on main WS reconnect",
+            "healthy PolyBolt connection should not replay subscriptions on main WS reconnect",
         );
-        ctx.rtds_feed
+        ctx.polybolt_feed
             .disconnect()
             .await
-            .expect("disconnect RTDS feed");
+            .expect("disconnect PolyBolt feed");
     }
 
     #[rstest]
     #[tokio::test]
-    async fn handle_reconnected_recovers_rtds_when_retained_subscriptions_are_missing() {
-        let state = RtdsTestServerState::default();
-        let addr = start_rtds_test_server(state.clone()).await;
+    async fn handle_reconnected_recovers_polybolt_when_retained_subscriptions_are_missing() {
+        let state = PolyBoltTestServerState::default();
+        let addr = start_polybolt_test_server(state.clone()).await;
         let (mut ctx, _data_rx) = make_ws_ctx();
-        ctx.rtds_feed = crate::rtds::PolymarketRtdsFeed::new(
-            format!("ws://{addr}/rtds"),
+
+        ctx.polybolt_feed = crate::polybolt::PolymarketPolyBoltFeed::new(
+            format!("ws://{addr}/polybolt"),
             TransportBackend::default(),
             ctx.clock,
             ctx.data_sender.clone(),
         );
-        ctx.rtds_feed
+        ctx.polybolt_feed
             .track_subscribe(DataType::new(
-                "PolymarketRtdsCryptoPrice",
+                "PolymarketCryptoPrice",
                 Some({
                     let mut metadata = Params::new();
-                    metadata.insert("symbol".to_string(), Value::String("BTCUSDT".to_string()));
+                    metadata.insert("symbol".to_string(), Value::String("btcusd".to_string()));
                     metadata
                 }),
                 None,
             ))
-            .expect("track RTDS subscribe");
+            .expect("track PolyBolt subscribe");
 
         handle_ws_message(PolymarketWsMessage::Reconnected { shard_id: None }, &ctx);
 
         wait_until_async(
             || {
                 let state = state.clone();
-                async move { !state.received_payloads.lock().await.is_empty() }
+                async move {
+                    state
+                        .received_payloads
+                        .lock()
+                        .await
+                        .iter()
+                        .any(|payload| payload["op"] == "subscribe")
+                }
             },
             Duration::from_secs(2),
         )
@@ -2790,36 +2849,37 @@ mod tests {
 
         let payloads = state.received_payloads.lock().await.clone();
         let replay = payloads.last().expect("recovery payload");
-        assert_eq!(replay["action"].as_str(), Some("subscribe"));
-        ctx.rtds_feed
+        assert_eq!(replay["op"].as_str(), Some("subscribe"));
+        ctx.polybolt_feed
             .disconnect()
             .await
-            .expect("disconnect RTDS feed");
+            .expect("disconnect PolyBolt feed");
     }
 
     #[rstest]
     #[tokio::test]
-    async fn handle_reconnected_does_not_trigger_rtds_recovery_after_cancellation() {
-        let state = RtdsTestServerState::default();
-        let addr = start_rtds_test_server(state.clone()).await;
+    async fn handle_reconnected_does_not_trigger_polybolt_recovery_after_cancellation() {
+        let state = PolyBoltTestServerState::default();
+        let addr = start_polybolt_test_server(state.clone()).await;
         let (mut ctx, _data_rx) = make_ws_ctx();
-        ctx.rtds_feed = crate::rtds::PolymarketRtdsFeed::new(
-            format!("ws://{addr}/rtds"),
+
+        ctx.polybolt_feed = crate::polybolt::PolymarketPolyBoltFeed::new(
+            format!("ws://{addr}/polybolt"),
             TransportBackend::default(),
             ctx.clock,
             ctx.data_sender.clone(),
         );
-        ctx.rtds_feed
+        ctx.polybolt_feed
             .track_subscribe(DataType::new(
-                "PolymarketRtdsCryptoPrice",
+                "PolymarketCryptoPrice",
                 Some({
                     let mut metadata = Params::new();
-                    metadata.insert("symbol".to_string(), Value::String("BTCUSDT".to_string()));
+                    metadata.insert("symbol".to_string(), Value::String("btcusd".to_string()));
                     metadata
                 }),
                 None,
             ))
-            .expect("track RTDS subscribe");
+            .expect("track PolyBolt subscribe");
 
         ctx.cancellation_token.cancel();
         handle_ws_message(PolymarketWsMessage::Reconnected { shard_id: None }, &ctx);

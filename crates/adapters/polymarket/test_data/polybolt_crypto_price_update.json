@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "channel": "price.crypto",
+  "seq": 2,
+  "ts": 1791355667000,
+  "payload": {
+    "full_accuracy_value": "84290.833784311415570432",
+    "source": "chainlink",
+    "symbol": "btcusd",
+    "timestamp": 1791355667000,
+    "value": 84290.83378431141
+  }
+}
