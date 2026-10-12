@@ -178,6 +178,7 @@ Released on TBD (UTC).
 - Clarified `Portfolio` equity rules for calculated and reported margin accounts
 - Fixed Binance and Hyperliquid custom data examples to unwrap `CustomData` (#5246), thanks @Martingale42
 - Updated Derive integration guide for API v3 setup, margin models, and recovery limits
+- Clarified Hyperliquid modify replacement rules and individual batch results
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
 - Clarified Lighter cancel-all scope and batch cancellation failure handling
 

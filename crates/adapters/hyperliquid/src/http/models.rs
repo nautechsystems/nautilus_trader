@@ -1935,7 +1935,7 @@ pub enum HyperliquidExchangeAction {
         modify: HyperliquidExchangeModifyOrderRequest,
     },
 
-    /// Modify multiple orders atomically.
+    /// Modify multiple orders in one action.
     #[serde(rename = "batchModify")]
     BatchModify {
         /// Multiple order modifications.
