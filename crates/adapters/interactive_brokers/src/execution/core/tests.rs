@@ -260,7 +260,8 @@ fn next_order_event(
 #[case(1, 0, 1)]
 #[case(1, 310, 310_000_001)]
 #[case(42, 1_402, 402_000_042)]
-#[case(450_000_123, 402, 402_000_123)]
+#[case(310_000_123, 402, 402_000_123)]
+#[case(402_999_999, 402, 402_999_999)]
 #[case(1, -12, 12_000_001)]
 fn apply_client_order_id_floor(
     #[case] next_id: i32,
@@ -268,14 +269,30 @@ fn apply_client_order_id_floor(
     #[case] expected: i32,
 ) {
     assert_eq!(
-        InteractiveBrokersExecutionClient::apply_client_order_id_floor(next_id, client_id),
+        InteractiveBrokersExecutionClient::apply_client_order_id_floor(next_id, client_id).unwrap(),
         expected
     );
 }
 
 #[rstest]
-#[case::foreign_next_id_without_used_ids(770_000_006, None, 760_000_006)]
-#[case::foreign_next_id_below_used_ids(770_000_006, Some(760_000_017), 760_000_018)]
+#[case::partition_ceiling(403_000_000, 402)]
+#[case::higher_partition(450_000_123, 402)]
+#[case::issue_5277(770_000_006, 7760)]
+fn apply_client_order_id_floor_rejects_next_id_above_partition(
+    #[case] next_id: i32,
+    #[case] client_id: i32,
+) {
+    let error = InteractiveBrokersExecutionClient::apply_client_order_id_floor(next_id, client_id)
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains(&next_id.to_string()), "{error}");
+    assert!(error.contains(&client_id.to_string()), "{error}");
+}
+
+#[rstest]
+#[case::lower_next_id_without_used_ids(750_000_006, None, 760_000_006)]
+#[case::lower_next_id_below_used_ids(750_000_006, Some(760_000_017), 760_000_018)]
 #[case::own_next_id_above_used_ids(760_000_020, Some(760_000_017), 760_000_020)]
 fn initial_order_id_clears_used_order_ids(
     #[case] next_id: i32,
@@ -283,8 +300,24 @@ fn initial_order_id_clears_used_order_ids(
     #[case] expected: i32,
 ) {
     assert_eq!(
-        InteractiveBrokersExecutionClient::initial_order_id(next_id, 7760, highest_used_order_id),
+        InteractiveBrokersExecutionClient::initial_order_id(next_id, 7760, highest_used_order_id)
+            .unwrap(),
         expected
+    );
+}
+
+// IB reported next valid ID 770000006 for client 7760 and refused 760002000 with 103 (#5277)
+#[rstest]
+#[case::without_used_ids(None)]
+#[case::with_used_ids(Some(760_000_017))]
+fn initial_order_id_rejects_next_id_above_partition(#[case] highest_used_order_id: Option<i32>) {
+    assert!(
+        InteractiveBrokersExecutionClient::initial_order_id(
+            770_000_006,
+            7760,
+            highest_used_order_id
+        )
+        .is_err()
     );
 }
 
