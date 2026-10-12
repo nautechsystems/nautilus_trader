@@ -874,8 +874,8 @@ Each read takes one page: Kraken `/history` endpoints share a pool
 of 100 tokens, replenished at 100 every 10 minutes. An order-history page costs one
 token, so a page that hands back a continuation token, in the body or
 the `Next-Continuation-Token` header, logs a warning and leaves the set incomplete rather than
-reading further. A single-order status lookup still reports absent an order placed after
-the page's oldest event by more than the clock skew allowance; see
+reading further. A single-order status lookup can still report a cached order absent when it
+was placed after the page's oldest event by more than the clock skew allowance; see
 [Single-order lookups](#single-order-lookups).
 
 The history lists every lifecycle event, so the read hands back one report per

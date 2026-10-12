@@ -2221,9 +2221,9 @@ impl KrakenSpotHttpClient {
     /// An in-scope open order whose pair cannot be resolved, or that cannot be parsed, fails the
     /// read, except that a read scoped to one instrument skips an order whose pair it cannot
     /// resolve, since that order may be on another instrument. The coverage records each such
-    /// skip, each closed order that cannot be resolved or parsed, and a closed-order read that
-    /// stops at its page cap, which it cannot place in time; an unheld spot instrument reads
-    /// nothing, which rules out no order.
+    /// skip, each closed order that cannot be resolved, each in-scope one that cannot be parsed,
+    /// and a closed-order read that stops at its page cap, which it cannot place in time. A read
+    /// scoped to an unheld spot instrument reads nothing and rules out no order.
     /// `ExecutionMassStatus::set_report_window` records whether it is complete for bounded history,
     /// and the single-order lookup whether it rules out an order it did not return.
     pub(crate) async fn request_order_status_reports_checked(
