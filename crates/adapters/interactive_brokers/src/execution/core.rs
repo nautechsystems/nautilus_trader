@@ -1367,16 +1367,16 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let report_client = self.report_client()?;
-        let (mut order_reports, (fill_reports, combo_leg_fill_reports), mut position_reports) = tokio::try_join!(
+        let (mut order_reports, fill_evidence, mut position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),
-            report_client.generate_fill_reports_with_combo_legs(fill_cmd),
+            report_client.generate_fill_evidence(fill_cmd),
             self.generate_position_status_reports(&position_cmd),
         )?;
 
         tracing::info!(
             "generate_mass_status: {} order reports, {} fill reports, {} position reports",
             order_reports.len(),
-            fill_reports.len(),
+            fill_evidence.reports.len(),
             position_reports.len()
         );
 
@@ -1392,12 +1392,13 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         // cannot be claimed complete.
         mass_status.set_report_window(start, start.is_some());
 
-        parse::fill_missing_avg_px(&mut order_reports, &fill_reports);
+        parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);
         parse::fill_position_avg_px_from_fills(
             &mut position_reports,
-            &fill_reports,
-            &combo_leg_fill_reports,
+            &fill_evidence,
+            &self.instrument_provider,
         );
+        let fill_reports = fill_evidence.reports;
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);

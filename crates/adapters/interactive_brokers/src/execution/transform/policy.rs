@@ -15,9 +15,9 @@
 
 //! Interactive Brokers order transformation policies.
 
-use ibapi::orders::{Action, Order as IBOrder, TimeInForce};
+use ibapi::orders::{Order as IBOrder, TimeInForce};
 use nautilus_model::{
-    enums::{OrderType as NautilusOrderType, TrailingOffsetType},
+    enums::{OrderSide, OrderType as NautilusOrderType, TrailingOffsetType},
     instruments::Instrument,
     orders::{Order as NautilusOrder, any::OrderAny},
 };
@@ -45,21 +45,19 @@ pub(super) fn apply_quantity_policy(
     }
 
     let instrument_id = order.instrument_id();
-    let is_inverse = instrument_provider
+    if !instrument_provider
         .find(&instrument_id)
-        .is_some_and(|instrument| instrument.is_inverse());
-
-    if !is_inverse && !instrument_provider.is_crypto_instrument(&instrument_id) {
+        .is_some_and(|instrument| instrument.is_inverse())
+    {
         anyhow::bail!(
             "Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse \
-             instruments and crypto contracts; {instrument_id} must use the base quantity"
+             instruments; {instrument_id} must use the base quantity"
         );
     }
 
-    // IBKR accepts a cash quantity (`cash_qty`) only for BUY orders on these instruments
-    // (e.g. PAXOS crypto); a SELL must use the base/coin quantity (`total_quantity`). The final
-    // IB action decides, since IBOrderTags can override it.
-    if ib_order.action != Action::Buy {
+    // IBKR accepts a cash quantity (`cash_qty`) only for BUY orders on these instruments;
+    // a SELL must use the base quantity (`total_quantity`)
+    if order.order_side() != OrderSide::Buy {
         anyhow::bail!(
             "Interactive Brokers only accepts a quote quantity (`cash_qty`) for BUY orders; \
              a SELL must use the base quantity"

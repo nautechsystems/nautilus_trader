@@ -76,6 +76,10 @@ fn apply_ib_order_tag_overlay(
             continue;
         }
 
+        if is_adapter_owned_field(&field) {
+            anyhow::bail!("IBOrderTags cannot set {field}, which the adapter sets from the order");
+        }
+
         if field == "non_guaranteed" {
             apply_non_guaranteed_combo_tag(ib_order, value)?;
             sync_order_field(&mut order_value, "smart_combo_routing_params", ib_order)?;
@@ -448,6 +452,20 @@ fn set_tag_value(target: &mut Vec<TagValue>, tag: &str, value: &str) {
 
 fn should_skip_generic_overlay(field: &str) -> bool {
     matches!(field, "conditions")
+}
+
+fn is_adapter_owned_field(field: &str) -> bool {
+    matches!(
+        field,
+        "order_id"
+            | "client_id"
+            | "perm_id"
+            | "order_ref"
+            | "total_quantity"
+            | "cash_qty"
+            | "parent_id"
+            | "transmit"
+    )
 }
 
 fn canonical_order_tag_key(key: &str) -> String {

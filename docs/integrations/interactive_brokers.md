@@ -395,12 +395,11 @@ The adapter maps `DAY`, `GTC`, `IOC`, `FOK`, `GTD`, and `AT_THE_OPEN` time in fo
 or limit order with `AT_THE_CLOSE` becomes the corresponding market-on-close or limit-on-close IB
 order. GTD orders include their Nautilus expiry time in the IB order.
 
-The adapter rejects post-only orders. Quote quantity is valid only for inverse instruments and IB
-crypto contracts (PAXOS, ZEROHASH), and only on BUY `MARKET` orders, which IB sizes by `cashQty`
-(IB rejects a cash quantity on any other order type with error 10244). Trailing orders support
-price offsets and basis-point offsets, which IB receives as a trailing percent. These checks, and
-any order the adapter cannot resolve or transform for IB, emit coded `OrderDenied` reasons before
-the adapter sends an order to IB.
+The adapter rejects post-only orders. Quote quantity is valid only for inverse instruments, and
+only on BUY `MARKET` orders, which IB sizes by `cashQty` (IB rejects a cash quantity on any other
+order type with error 10244). Trailing orders support price offsets and basis-point offsets, which
+IB receives as a trailing percent. These checks, and any order the adapter cannot resolve or
+transform for IB, emit coded `OrderDenied` reasons before the adapter sends an order to IB.
 
 ### Commands and order attributes
 
@@ -429,6 +428,11 @@ conversion. The adapter normalizes `order_type`, `tif` or `timeInForce`, `action
 `trigger_method`, `origin`, `short_sale_slot`, `volatility_type`,
 `reference_price_type`, `rule_80_a`, `open_close`, and `NonGuaranteed`. Active, stop, cancel, manual,
 and good-till timestamps use `%Y%m%d %H:%M:%S UTC`.
+
+The adapter tracks each order by its IB order ID and reference and checks each execution against
+the order side, so tags cannot set `orderId`, `clientId`, `permId`, `orderRef`, `totalQuantity`,
+`cashQty`, `parentId`, or `transmit`. A tagged `action` must keep the order side: a SELL order may
+use `SSHORT` or `SLONG`, but not `BUY`. Such a tag fails the order conversion.
 
 The optional `conditions` array accepts these shapes:
 
@@ -472,8 +476,14 @@ from the quantity held before the fill window. When the replay passes through fl
 position report carries the average price of the fills after the last crossing, so a position held
 across a restart reconciles. Fills that share a timestamp have no known execution order, so a group
 of them that mixes sides or flips the position leaves the entry price unknown until a later fill
-opens from flat or flips. Otherwise the report keeps IB's average cost, which the engine's
-reconciliation fill uses.
+opens from flat or flips.
+
+The replay infers the quantity held before the window, so a missing execution would change the
+result. The report carries the replayed entry price only when every execution of the instrument
+was parsed and the price reproduces IB's average cost: the entry price plus the opening
+commissions per unit for a long, or minus them for a short, where a lot opened by a flip carries
+no commission. Otherwise the report keeps IB's average cost, which the engine's reconciliation fill
+uses.
 
 On connect, the execution client resolves the instrument of every open position in the account and
 publishes any the cache does not hold, so a position in a contract outside the provider's `load_ids`

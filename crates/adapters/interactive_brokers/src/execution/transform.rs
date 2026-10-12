@@ -26,7 +26,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::enums::{IbOrderType, IbTimeInForce, IbTriggerMethod},
+    common::enums::{IbAction, IbOrderType, IbTimeInForce, IbTriggerMethod},
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
 
@@ -87,6 +87,16 @@ pub fn nautilus_order_to_ib_order(
     apply_display_quantity_policy(&mut ib_order, order);
 
     apply_ib_order_tags(&mut ib_order, order.tags())?;
+
+    // Tracking checks each execution against the Nautilus side, so a tag may change the IB
+    // action only within that side (for example SELL to SSHORT)
+    let tagged_action = IbAction::from(ib_order.action);
+    if tagged_action.order_side() != order.order_side() {
+        anyhow::bail!(
+            "IBOrderTags action {tagged_action} conflicts with the {} order side",
+            order.order_side(),
+        );
+    }
 
     // Runs after the tags so it validates the order type IB receives
     apply_quantity_policy(&mut ib_order, order, instrument_provider)?;
@@ -175,16 +185,13 @@ pub(super) const fn ib_trigger_method_to_trigger_type(
 
 #[cfg(test)]
 mod tests {
-    use ibapi::{
-        contracts::{Contract, Exchange, SecurityType, Symbol as IbSymbol},
-        orders::OrderCondition,
-    };
+    use ibapi::orders::OrderCondition;
     use nautilus_model::{
         enums::{OrderSide, OrderType, TimeInForce as NautilusTimeInForce, TrailingOffsetType},
         identifiers::{InstrumentId, OrderListId, Symbol as NautilusSymbol, Venue},
-        instruments::{CurrencyPair, InstrumentAny},
+        instruments::{InstrumentAny, stubs::btcusd_inverse_perp},
         orders::OrderTestBuilder,
-        types::{Currency, Price, Quantity},
+        types::{Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -193,54 +200,29 @@ mod tests {
     use super::*;
     use crate::config::InteractiveBrokersInstrumentProviderConfig;
 
-    fn create_quote_quantity_crypto_order(
+    fn create_quote_quantity_order(
+        side: OrderSide,
         order_type: OrderType,
         time_in_force: NautilusTimeInForce,
         tags_json: Option<&str>,
     ) -> (OrderAny, InteractiveBrokersInstrumentProvider) {
-        let instrument_id =
-            InstrumentId::new(NautilusSymbol::from("BTC/USD"), Venue::from("PAXOS"));
-        let ts = UnixNanos::default();
-        // IB crypto is a non-inverse currency pair; the CRYPTO contract carries the signal
-        let instrument = CurrencyPair::builder()
-            .instrument_id(instrument_id)
-            .raw_symbol(NautilusSymbol::from("BTC.USD"))
-            .base_currency(Currency::BTC())
-            .quote_currency(Currency::USD())
-            .price_precision(2)
-            .size_precision(8)
-            .price_increment(Price::from("0.25"))
-            .size_increment(Quantity::from("0.00000001"))
-            .ts_event(ts)
-            .ts_init(ts)
-            .build()
-            .unwrap();
+        let instrument = btcusd_inverse_perp(1, 0, Price::from("0.5"), Quantity::from("1"));
+        let instrument_id = instrument.id;
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
-        provider.insert_test_instrument(InstrumentAny::CurrencyPair(instrument), 4242, 1);
-        provider.insert_test_contract(
-            instrument_id,
-            Contract {
-                contract_id: 4242,
-                symbol: IbSymbol::from("BTC"),
-                security_type: SecurityType::Crypto,
-                exchange: Exchange::from("PAXOS"),
-                currency: ibapi::contracts::Currency::from("USD"),
-                ..Default::default()
-            },
-        );
+        provider.insert_test_instrument(InstrumentAny::CryptoPerpetual(instrument), 4242, 1);
 
         let mut builder = OrderTestBuilder::new(order_type);
         builder
             .instrument_id(instrument_id)
-            .side(OrderSide::Buy)
+            .side(side)
             .quantity(Quantity::from("20"))
             .time_in_force(time_in_force)
             .quote_quantity(true);
 
         if order_type == OrderType::Limit {
-            builder.price(Price::from("87306.25"));
+            builder.price(Price::from("87306.5"));
         }
 
         if let Some(tags_json) = tags_json {
@@ -251,90 +233,91 @@ mod tests {
     }
 
     #[rstest]
-    fn test_quote_quantity_crypto_market_buy_maps_to_cash_qty() {
-        let (order, provider) =
-            create_quote_quantity_crypto_order(OrderType::Market, NautilusTimeInForce::Gtc, None);
+    fn test_quote_quantity_inverse_market_buy_maps_to_cash_qty() {
+        let (order, provider) = create_quote_quantity_order(
+            OrderSide::Buy,
+            OrderType::Market,
+            NautilusTimeInForce::Gtc,
+            None,
+        );
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
-            .expect("cash quantity is valid for a crypto MARKET BUY");
+            .expect("cash quantity is valid for an inverse MARKET BUY");
 
         assert_eq!(ib_order.cash_qty, Some(20.0));
         assert_eq!(ib_order.total_quantity, 0.0);
     }
 
     #[rstest]
-    fn test_quote_quantity_limit_order_is_rejected_before_submission() {
-        // IB rejects `cashQty` on non-MARKET orders with error 10244; deny locally instead
+    // IB rejects `cashQty` on non-MKT orders with error 10244, so these are denied locally
+    #[case::limit(
+        OrderSide::Buy,
+        OrderType::Limit,
+        NautilusTimeInForce::Gtc,
+        None,
+        "(IB error 10244 for LIMIT sent as LMT)"
+    )]
+    #[case::market_at_the_close(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::AtTheClose,
+        None,
+        "(IB error 10244 for MARKET sent as MOC)"
+    )]
+    #[case::market_tagged_limit(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"orderType":"LMT"}"#),
+        "(IB error 10244 for MARKET sent as LMT)"
+    )]
+    #[case::sell(
+        OrderSide::Sell,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        None,
+        "only accepts a quote quantity (`cash_qty`) for BUY orders"
+    )]
+    #[case::sell_tagged_buy(
+        OrderSide::Sell,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"action":"BUY"}"#),
+        "IBOrderTags action BUY conflicts with the SELL order side"
+    )]
+    #[case::buy_tagged_sell(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"action":"SELL"}"#),
+        "IBOrderTags action SELL conflicts with the BUY order side"
+    )]
+    #[case::tagged_cash_qty(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"cashQty":5.0}"#),
+        "IBOrderTags cannot set cash_qty"
+    )]
+    fn test_quote_quantity_order_is_denied_before_submission(
+        #[case] side: OrderSide,
+        #[case] order_type: OrderType,
+        #[case] time_in_force: NautilusTimeInForce,
+        #[case] tags_json: Option<&str>,
+        #[case] expected: &str,
+    ) {
         let (order, provider) =
-            create_quote_quantity_crypto_order(OrderType::Limit, NautilusTimeInForce::Gtc, None);
+            create_quote_quantity_order(side, order_type, time_in_force, tags_json);
 
         let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
-            .expect_err("cash quantity must not be sent on a LIMIT order");
+            .expect_err("the quote quantity order must be denied");
 
         let message = format!("{err:#}");
-        assert!(message.contains("MARKET"), "unexpected reason: {message}");
-        assert!(message.contains("10244"), "unexpected reason: {message}");
+        assert!(message.contains(expected), "unexpected reason: {message}");
     }
 
     #[rstest]
-    fn test_quote_quantity_market_at_the_close_is_rejected_before_submission() {
-        // MARKET with AT_THE_CLOSE is sent to IB as MOC, which also rejects `cashQty`
-        let (order, provider) = create_quote_quantity_crypto_order(
-            OrderType::Market,
-            NautilusTimeInForce::AtTheClose,
-            None,
-        );
-
-        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
-            .expect_err("cash quantity must not be sent on a MOC order");
-
-        let message = format!("{err:#}");
-        assert!(
-            message.contains("sent as MOC"),
-            "unexpected reason: {message}"
-        );
-    }
-
-    #[rstest]
-    fn test_quote_quantity_market_tagged_as_limit_is_rejected_before_submission() {
-        // IBOrderTags can override the IB order type, so the check must see the tagged type
-        let (order, provider) = create_quote_quantity_crypto_order(
-            OrderType::Market,
-            NautilusTimeInForce::Gtc,
-            Some(r#"{"orderType":"LMT"}"#),
-        );
-
-        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
-            .expect_err("cash quantity must not be sent on a tagged LMT order");
-
-        let message = format!("{err:#}");
-        assert!(
-            message.contains("sent as LMT"),
-            "unexpected reason: {message}"
-        );
-    }
-
-    #[rstest]
-    fn test_quote_quantity_buy_tagged_as_sell_is_rejected_before_submission() {
-        // IBOrderTags can override the IB action, so the check must see the tagged action
-        let (order, provider) = create_quote_quantity_crypto_order(
-            OrderType::Market,
-            NautilusTimeInForce::Gtc,
-            Some(r#"{"action":"SELL"}"#),
-        );
-
-        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
-            .expect_err("cash quantity must not be sent on a tagged SELL order");
-
-        let message = format!("{err:#}");
-        assert!(
-            message.contains("only accepts a quote quantity (`cash_qty`) for BUY orders"),
-            "unexpected reason: {message}"
-        );
-    }
-
-    #[rstest]
-    fn test_quote_quantity_without_crypto_or_inverse_contract_is_rejected() {
+    fn test_quote_quantity_without_inverse_instrument_is_rejected() {
         let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
@@ -347,9 +330,104 @@ mod tests {
             .build();
 
         let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
-            .expect_err("quote quantity needs an inverse instrument or crypto contract");
+            .expect_err("quote quantity needs an inverse instrument");
 
-        assert!(format!("{err:#}").contains("base quantity"));
+        assert_eq!(
+            format!("{err:#}"),
+            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse \
+             instruments; AAPL.NASDAQ must use the base quantity"
+        );
+    }
+
+    #[rstest]
+    #[case::sell_short(OrderSide::Sell, r#"{"action":"SSHORT"}"#, Action::SellShort)]
+    #[case::sell_long(OrderSide::Sell, r#"{"action":"SLONG"}"#, Action::SellLong)]
+    #[case::same_side(OrderSide::Buy, r#"{"action":"BUY"}"#, Action::Buy)]
+    fn test_tagged_action_within_order_side_is_applied(
+        #[case] side: OrderSide,
+        #[case] tags_json: &str,
+        #[case] expected: Action,
+    ) {
+        let order = create_test_order_with_side_and_tags(side, tags_json);
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect("an action within the order side is valid");
+
+        assert_eq!(ib_order.action, expected);
+    }
+
+    #[rstest]
+    #[case::sell_tagged_buy(
+        OrderSide::Sell,
+        r#"{"action":"BUY"}"#,
+        "IBOrderTags action BUY conflicts with the SELL order side"
+    )]
+    #[case::buy_tagged_sell_short(
+        OrderSide::Buy,
+        r#"{"action":"SSHORT"}"#,
+        "IBOrderTags action SSHORT conflicts with the BUY order side"
+    )]
+    #[case::order_id(OrderSide::Buy, r#"{"orderId":99}"#, "IBOrderTags cannot set order_id")]
+    #[case::client_id(
+        OrderSide::Buy,
+        r#"{"clientId":7}"#,
+        "IBOrderTags cannot set client_id"
+    )]
+    #[case::perm_id(
+        OrderSide::Buy,
+        r#"{"permId":12345}"#,
+        "IBOrderTags cannot set perm_id"
+    )]
+    #[case::order_ref(
+        OrderSide::Buy,
+        r#"{"orderRef":"OTHER"}"#,
+        "IBOrderTags cannot set order_ref"
+    )]
+    #[case::total_quantity(
+        OrderSide::Buy,
+        r#"{"totalQuantity":500}"#,
+        "IBOrderTags cannot set total_quantity"
+    )]
+    #[case::parent_id(
+        OrderSide::Buy,
+        r#"{"parentId":3}"#,
+        "IBOrderTags cannot set parent_id"
+    )]
+    #[case::transmit(
+        OrderSide::Buy,
+        r#"{"transmit":false}"#,
+        "IBOrderTags cannot set transmit"
+    )]
+    fn test_tags_that_break_order_tracking_are_rejected(
+        #[case] side: OrderSide,
+        #[case] tags_json: &str,
+        #[case] expected: &str,
+    ) {
+        let order = create_test_order_with_side_and_tags(side, tags_json);
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("the tag must be rejected");
+
+        let message = format!("{err:#}");
+        assert!(message.contains(expected), "unexpected reason: {message}");
+    }
+
+    fn create_test_order_with_side_and_tags(side: OrderSide, tags_json: &str) -> OrderAny {
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
+
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(side)
+            .quantity(Quantity::from(100))
+            .price(Price::from("150.00"))
+            .tags(vec![Ustr::from(&format!("IBOrderTags:{tags_json}"))])
+            .build()
     }
 
     fn create_test_order_with_tags(tags_json: &str) -> OrderAny {
@@ -549,7 +627,6 @@ mod tests {
             "algoStrategy": "Adaptive",
             "algoParams": [{"tag": "adaptivePriority", "value": "Normal"}],
             "notHeld": true,
-            "cashQty": 1000.0,
             "mifid2DecisionMaker": "maker",
             "autoCancelParent": true,
             "minTradeQty": 5,
@@ -618,7 +695,6 @@ mod tests {
         assert_eq!(ib_order.algo_params[0].tag, "adaptivePriority");
         assert_eq!(ib_order.algo_params[0].value, "Normal");
         assert!(ib_order.not_held);
-        assert_eq!(ib_order.cash_qty, Some(1000.0));
         assert_eq!(ib_order.mifid2_decision_maker, "maker");
         assert!(ib_order.auto_cancel_parent);
         assert_eq!(ib_order.min_trade_qty, Some(5));

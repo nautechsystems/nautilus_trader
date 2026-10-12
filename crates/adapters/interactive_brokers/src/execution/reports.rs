@@ -20,7 +20,10 @@
 
 use ibapi::client::Client;
 
-use super::{core::*, parse::parse_order_data_to_report};
+use super::{
+    core::*,
+    parse::{FillEvidence, parse_order_data_to_report},
+};
 
 /// Inputs for turning IB report data into reports, with no venue access.
 #[derive(Clone)]
@@ -40,32 +43,8 @@ impl IbReportContext {
         }
     }
 
-    pub(super) fn parse_historical_fill_report(
-        &self,
-        cmd: &GenerateFillReports,
-        exec_data: &ExecutionData,
-        commission: f64,
-        commission_currency: &str,
-        ts_init: UnixNanos,
-    ) -> Option<FillReport> {
-        let instrument_id = match self.resolve_historical_execution_instrument_id(exec_data) {
-            Ok(instrument_id) => instrument_id,
-            Err(e) => {
-                Self::warn_historical_fill_report_parse_error(exec_data, &e);
-                return None;
-            }
-        };
-
-        self.build_historical_fill_report(
-            cmd,
-            exec_data,
-            instrument_id,
-            commission,
-            commission_currency,
-            ts_init,
-        )
-    }
-
+    // Returns `Ok(None)` for an execution outside the command's filters and an error for one
+    // that cannot be parsed
     fn build_historical_fill_report(
         &self,
         cmd: &GenerateFillReports,
@@ -74,32 +53,27 @@ impl IbReportContext {
         commission: f64,
         commission_currency: &str,
         ts_init: UnixNanos,
-    ) -> Option<FillReport> {
+    ) -> anyhow::Result<Option<FillReport>> {
         if let Some(filter_id) = cmd.instrument_id
             && instrument_id != filter_id
         {
-            return None;
+            return Ok(None);
         }
 
         if let Some(filter_venue_order_id) = cmd.venue_order_id
             && ib_venue_order_id(exec_data.execution.order_id, exec_data.execution.perm_id)
                 != filter_venue_order_id
         {
-            return None;
+            return Ok(None);
         }
 
-        if let Some(end) = cmd.end {
-            match parse_execution_time(&exec_data.execution.time) {
-                Ok(ts_event) if ts_event > end => return None,
-                Ok(_) => {}
-                Err(e) => {
-                    Self::warn_historical_fill_report_parse_error(exec_data, &e);
-                    return None;
-                }
-            }
+        if let Some(end) = cmd.end
+            && parse_execution_time(&exec_data.execution.time)? > end
+        {
+            return Ok(None);
         }
 
-        match parse_execution_to_fill_report(
+        parse_execution_to_fill_report(
             &exec_data.execution,
             &exec_data.contract,
             commission,
@@ -109,13 +83,8 @@ impl IbReportContext {
             &self.instrument_provider,
             ts_init,
             None, // avg_px (not available in historical fills)
-        ) {
-            Ok(report) => Some(report),
-            Err(e) => {
-                Self::warn_historical_fill_report_parse_error(exec_data, &e);
-                None
-            }
-        }
+        )
+        .map(Some)
     }
 
     fn resolve_historical_execution_instrument_id(
@@ -366,16 +335,15 @@ impl IbReportClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let (reports, _) = self.generate_fill_reports_with_combo_legs(cmd).await?;
-        Ok(reports)
+        Ok(self.generate_fill_evidence(cmd).await?.reports)
     }
 
-    /// Returns the fill reports, and separately the combo leg executions they drop in favor of
-    /// the spread fills, which still change the leg positions.
-    pub(super) async fn generate_fill_reports_with_combo_legs(
+    /// Returns the fill reports with the evidence an entry price rebuild needs: the combo leg
+    /// executions they drop and the executions the adapter could not parse.
+    pub(super) async fn generate_fill_evidence(
         &self,
         cmd: GenerateFillReports,
-    ) -> anyhow::Result<(Vec<FillReport>, Vec<FillReport>)> {
+    ) -> anyhow::Result<FillEvidence> {
         let client = self.client.as_ref();
 
         let filter =
@@ -386,76 +354,27 @@ impl IbReportClient {
             .await
             .context("Timeout requesting executions")??;
         let mut subscription = subscription.filter_data();
-        let mut reports = Vec::new();
         let ts_init = get_atomic_clock_realtime().get_time_ns();
-        let mut pending_exec_data: AHashMap<String, ExecutionData> = AHashMap::new();
-        let mut pending_commissions: AHashMap<String, (f64, String)> = AHashMap::new();
-        let mut combo_executions = Vec::new();
+        let mut collector = FillReportCollector::new(&self.context, &cmd, ts_init);
 
         while let Some(exec_result) = subscription.next().await {
-            match exec_result {
-                Ok(Executions::ExecutionData(exec_data)) => {
-                    let execution_id = exec_data.execution.execution_id.clone();
-                    if parse::is_combo_execution(&exec_data) {
-                        combo_executions.push(exec_data);
-                    } else if let Some((commission, commission_currency)) =
-                        pending_commissions.remove(&execution_id)
-                    {
-                        if let Some(report) = self.context.parse_historical_fill_report(
-                            &cmd,
-                            &exec_data,
-                            commission,
-                            &commission_currency,
-                            ts_init,
-                        ) {
-                            reports.push(report);
-                        }
-                    } else {
-                        pending_exec_data.insert(execution_id, exec_data);
-                    }
-                }
-                Ok(Executions::CommissionReport(commission)) => {
-                    if let Some(exec_data) = pending_exec_data.remove(&commission.execution_id) {
-                        if let Some(report) = self.context.parse_historical_fill_report(
-                            &cmd,
-                            &exec_data,
-                            commission.commission,
-                            &commission.currency,
-                            ts_init,
-                        ) {
-                            reports.push(report);
-                        }
-                    } else {
-                        pending_commissions.insert(
-                            commission.execution_id,
-                            (commission.commission, commission.currency),
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Error receiving execution data: {e}");
-                }
-            }
+            collector.push(exec_result);
         }
 
-        anyhow::ensure!(
-            pending_exec_data.is_empty(),
-            "IB did not provide commission reports for execution IDs: {}",
-            pending_exec_data
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        let (mut evidence, combo_executions) = collector.finish()?;
 
-        let combo_leg_reports = if combo_executions.is_empty() {
-            Vec::new()
-        } else {
-            self.resolve_combo_fill_reports(&cmd, client, combo_executions, &mut reports, ts_init)
-                .await?
-        };
+        if !combo_executions.is_empty() {
+            self.resolve_combo_fill_reports(
+                &cmd,
+                client,
+                combo_executions,
+                &mut evidence.reports,
+                ts_init,
+            )
+            .await?;
+        }
 
-        Ok((reports, combo_leg_reports))
+        Ok(evidence)
     }
 
     /// Inserts `report`, replacing an earlier report for the same account, instrument, and
@@ -605,10 +524,7 @@ impl IbReportClient {
 
     // A combo-level execution carries a generic BAG contract without its legs, so its spread
     // resolves through the combo order's contract by permanent ID. It becomes the spread
-    // order's fill with zero commission, as on the live path, and the combo's leg executions
-    // are removed from `reports` and returned: they share its order IDs, so they would fill the
-    // spread order at leg prices, and startup reconciles leg positions from IB's position
-    // reports.
+    // order's fill with zero commission, as on the live path.
     async fn resolve_combo_fill_reports(
         &self,
         cmd: &GenerateFillReports,
@@ -616,50 +532,39 @@ impl IbReportClient {
         combo_executions: Vec<ExecutionData>,
         reports: &mut Vec<FillReport>,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Vec<FillReport>> {
+    ) -> anyhow::Result<()> {
         let combo_perm_ids: AHashSet<i64> = combo_executions
             .iter()
             .map(|exec_data| exec_data.execution.perm_id)
             .collect();
         let combo_contracts = self.combo_order_contracts(client, &combo_perm_ids).await?;
-        let combo_venue_order_ids: AHashSet<VenueOrderId> = combo_perm_ids
-            .iter()
-            .map(|perm_id| ib_venue_order_id(0, *perm_id))
-            .collect();
-        let combo_leg_reports: Vec<FillReport> = reports
-            .extract_if(.., |report| {
-                combo_venue_order_ids.contains(&report.venue_order_id)
-            })
-            .collect();
 
         for exec_data in combo_executions {
             let perm_id = exec_data.execution.perm_id;
 
-            let instrument_id = match combo_contracts
+            let report = combo_contracts
                 .get(&perm_id)
                 .context("IB returned no combo order for the execution")
                 .and_then(|contract| self.context.resolve_report_contract_instrument_id(contract))
-            {
-                Ok(instrument_id) => instrument_id,
-                Err(e) => {
-                    IbReportContext::warn_historical_fill_report_parse_error(&exec_data, &e);
-                    continue;
-                }
-            };
+                .and_then(|instrument_id| {
+                    self.context.build_historical_fill_report(
+                        cmd,
+                        &exec_data,
+                        instrument_id,
+                        0.0,
+                        exec_data.contract.currency.as_str(),
+                        ts_init,
+                    )
+                });
 
-            if let Some(report) = self.context.build_historical_fill_report(
-                cmd,
-                &exec_data,
-                instrument_id,
-                0.0,
-                exec_data.contract.currency.as_str(),
-                ts_init,
-            ) {
-                reports.push(report);
+            match report {
+                Ok(Some(report)) => reports.push(report),
+                Ok(None) => {}
+                Err(e) => IbReportContext::warn_historical_fill_report_parse_error(&exec_data, &e),
             }
         }
 
-        Ok(combo_leg_reports)
+        Ok(())
     }
 
     async fn combo_order_contracts(
@@ -692,5 +597,140 @@ impl IbReportClient {
         })
         .await
         .context("timed out reading IB combo orders")?
+    }
+}
+
+/// Pairs IB executions with their commission reports into fill reports.
+///
+/// It records each execution it cannot turn into a fill report, since the fills it returns are
+/// then incomplete for that instrument, or for every instrument when the execution's instrument
+/// is unknown.
+pub(super) struct FillReportCollector<'a> {
+    context: &'a IbReportContext,
+    cmd: &'a GenerateFillReports,
+    ts_init: UnixNanos,
+    evidence: FillEvidence,
+    pending_exec_data: AHashMap<String, ExecutionData>,
+    pending_commissions: AHashMap<String, (f64, String)>,
+    combo_executions: Vec<ExecutionData>,
+}
+
+impl<'a> FillReportCollector<'a> {
+    pub(super) fn new(
+        context: &'a IbReportContext,
+        cmd: &'a GenerateFillReports,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            context,
+            cmd,
+            ts_init,
+            evidence: FillEvidence::default(),
+            pending_exec_data: AHashMap::new(),
+            pending_commissions: AHashMap::new(),
+            combo_executions: Vec::new(),
+        }
+    }
+
+    pub(super) fn push(&mut self, item: Result<Executions, ibapi::Error>) {
+        match item {
+            Ok(Executions::ExecutionData(exec_data)) => {
+                let execution_id = exec_data.execution.execution_id.clone();
+                if parse::is_combo_execution(&exec_data) {
+                    self.combo_executions.push(exec_data);
+                } else if let Some((commission, commission_currency)) =
+                    self.pending_commissions.remove(&execution_id)
+                {
+                    self.add_fill(&exec_data, commission, &commission_currency);
+                } else {
+                    self.pending_exec_data.insert(execution_id, exec_data);
+                }
+            }
+            Ok(Executions::CommissionReport(commission)) => {
+                if let Some(exec_data) = self.pending_exec_data.remove(&commission.execution_id) {
+                    self.add_fill(&exec_data, commission.commission, &commission.currency);
+                } else {
+                    self.pending_commissions.insert(
+                        commission.execution_id,
+                        (commission.commission, commission.currency),
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Error receiving execution data: {e}");
+                self.evidence.missing_all = true;
+            }
+        }
+    }
+
+    /// Returns the fill evidence and the combo-level executions, whose spread fills need the
+    /// combo order contracts.
+    ///
+    /// The combo leg executions move from the fill reports to the evidence's combo leg reports:
+    /// they share the combo's order IDs, so they would fill the spread order at leg prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an execution has no commission report.
+    pub(super) fn finish(mut self) -> anyhow::Result<(FillEvidence, Vec<ExecutionData>)> {
+        anyhow::ensure!(
+            self.pending_exec_data.is_empty(),
+            "IB did not provide commission reports for execution IDs: {}",
+            self.pending_exec_data
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        // A commission report without its execution means an execution never arrived
+        if !self.pending_commissions.is_empty() {
+            self.evidence.missing_all = true;
+        }
+
+        let combo_venue_order_ids: AHashSet<VenueOrderId> = self
+            .combo_executions
+            .iter()
+            .map(|exec_data| ib_venue_order_id(0, exec_data.execution.perm_id))
+            .collect();
+        self.evidence.combo_leg_reports = self
+            .evidence
+            .reports
+            .extract_if(.., |report| {
+                combo_venue_order_ids.contains(&report.venue_order_id)
+            })
+            .collect();
+
+        Ok((self.evidence, self.combo_executions))
+    }
+
+    fn add_fill(&mut self, exec_data: &ExecutionData, commission: f64, commission_currency: &str) {
+        let instrument_id = match self
+            .context
+            .resolve_historical_execution_instrument_id(exec_data)
+        {
+            Ok(instrument_id) => instrument_id,
+            Err(e) => {
+                IbReportContext::warn_historical_fill_report_parse_error(exec_data, &e);
+                self.evidence.missing_all = true;
+                return;
+            }
+        };
+
+        match self.context.build_historical_fill_report(
+            self.cmd,
+            exec_data,
+            instrument_id,
+            commission,
+            commission_currency,
+            self.ts_init,
+        ) {
+            Ok(Some(report)) => self.evidence.reports.push(report),
+            Ok(None) => {}
+            Err(e) => {
+                IbReportContext::warn_historical_fill_report_parse_error(exec_data, &e);
+                self.evidence.missing_instruments.insert(instrument_id);
+            }
+        }
     }
 }
