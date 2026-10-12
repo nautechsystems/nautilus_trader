@@ -528,6 +528,32 @@ status, open-only report runs, and targeted single-order queries consult
 `POST /orders/status` before treating the order as missing. That window reports
 orders that are open or were filled or canceled in the last 5 seconds.
 
+The venue echoes the client order ID the adapter submitted, which is shortened
+to 18 characters unless it fits or is a UUID, hyphenated or as 32 hex
+characters. Mass status and open-only report runs therefore name each window
+report by the cached order it describes: by venue order ID when the cache holds
+it, else by a shortened ID that exactly one order queried by client order ID
+holds and exactly one report with an unknown venue order ID carries, on the
+order's instrument and side and placed no more than five seconds before the
+order's creation, which allows for clock skew. Any other window report is left
+out with a warning naming the reason, since it cannot be tied to exactly one
+cached order.
+
+The venue order ID and client order ID requests run one after the other. A
+shortened client order ID matches every order that shortens alike, so an order
+asked about by venue order ID can come back from the client order ID request
+too, in a different state. Of the two window reports, the order's latest state
+is kept, whichever request ran later: a closed state over an open one, else the
+later venue update, else the larger filled quantity. The naming rule above and
+the fill-price rule below apply to the report kept.
+
+In those runs the window carries no fill price, so a fully executed order is
+left out with a warning rather than having its executions inferred at the order
+price; a targeted single-order query prices it from recent fills instead, or
+fails so reconciliation defers it. Mass status marks the set incomplete when it
+leaves out a window report. A canceled order with executions is reported, since
+reconciliation waits for its fills rather than infer them.
+
 A hold that fills after a cancel acknowledgement reconciles to its true
 terminal state with the venue's cumulative filled, not a premature cancellation.
 
