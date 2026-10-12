@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use pyo3::{prelude::*, types::PyType};
 
 use crate::data::greeks::{
-    BlackScholesGreeksResult, GreeksData, OptionGreekValues, PortfolioGreeks, black_scholes_greeks,
-    imply_vol, imply_vol_and_greeks, refine_vol_and_greeks,
+    BlackScholesGreeksResult, GreeksData, OptionGreekValues, PortfolioGreeks,
+    black_scholes_greeks_checked, imply_vol_and_greeks_checked, imply_vol_checked,
 };
 
 #[cfg(feature = "python")]
@@ -286,13 +286,30 @@ impl BlackScholesGreeksResult {
     fn itm_prob(&self) -> f64 {
         self.itm_prob
     }
+
+    #[getter]
+    fn rho(&self) -> f64 {
+        self.rho
+    }
 }
 
 /// Computes Black-Scholes greeks using the fast `compute_greeks` implementation.
 /// This function uses `compute_greeks` from `black_scholes.rs` which is optimized for performance.
+#[doc = "
+
+`db_dr` is zero for fixed carry and one for carry defined as `r - q`, including `r == q`.
+Rho is per percentage point.
+The exact implementation is used when the fast result is nonfinite or inconsistent.
+
+# Errors
+
+Returns an error if:
+- Model inputs are invalid.
+- Valuation results are nonfinite or inconsistent."]
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
-#[pyo3(name = "black_scholes_greeks")]
+#[pyo3(name = "black_scholes_greeks", signature = (s, r, b, vol, is_call, k, t, db_dr=0.0))]
+#[expect(clippy::too_many_arguments)]
 pub fn py_black_scholes_greeks(
     s: f64,
     r: f64,
@@ -301,8 +318,9 @@ pub fn py_black_scholes_greeks(
     is_call: bool,
     k: f64,
     t: f64,
+    db_dr: f64,
 ) -> PyResult<BlackScholesGreeksResult> {
-    Ok(black_scholes_greeks(s, r, b, vol, is_call, k, t))
+    black_scholes_greeks_checked(s, r, b, vol, is_call, k, t, db_dr).map_err(to_pyvalue_err)
 }
 
 /// Computes the implied volatility for an option given its parameters and market price.
@@ -322,15 +340,28 @@ pub fn py_imply_vol(
     t: f64,
     price: f64,
 ) -> PyResult<f64> {
-    let vol = imply_vol(s, r, b, is_call, k, t, price);
-    Ok(vol)
+    imply_vol_checked(s, r, b, is_call, k, t, price).map_err(to_pyvalue_err)
 }
 
 /// Computes implied volatility and greeks using the fast implementations.
 /// This function uses `compute_greeks` after implying volatility.
+#[doc = "
+
+`db_dr` is zero for fixed carry and one for carry defined as `r - q`, including `r == q`.
+Rho is per percentage point.
+The exact implementation is used when the fast kernel cannot reprice the solved premium
+within 0.01 percent.
+
+# Errors
+
+Returns an error if:
+- Model inputs or the premium are invalid.
+- The premium has no finite positive implied volatility.
+- Results are nonfinite, inconsistent, or fail the 0.01 percent repricing tolerance."]
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
-#[pyo3(name = "imply_vol_and_greeks")]
+#[pyo3(name = "imply_vol_and_greeks", signature = (s, r, b, is_call, k, t, price, db_dr=0.0))]
+#[expect(clippy::too_many_arguments)]
 pub fn py_imply_vol_and_greeks(
     s: f64,
     r: f64,
@@ -339,16 +370,33 @@ pub fn py_imply_vol_and_greeks(
     k: f64,
     t: f64,
     price: f64,
+    db_dr: f64,
 ) -> PyResult<BlackScholesGreeksResult> {
-    Ok(imply_vol_and_greeks(s, r, b, is_call, k, t, price))
+    imply_vol_and_greeks_checked(s, r, b, is_call, k, t, price, db_dr, None).map_err(to_pyvalue_err)
 }
 
 /// Refines implied volatility using an initial guess and computes greeks.
 /// This function uses `compute_iv_and_greeks` which performs a Halley iteration
 /// to refine the volatility estimate from an initial guess.
+#[doc = "
+
+`db_dr` is zero for fixed carry and one for carry defined as `r - q`, including `r == q`.
+Rho is per percentage point.
+
+Refinement falls back to the full implied-volatility solver when its volatility reaches a
+clamp bound or it fails to reprice the premium within 0.01 percent.
+The exact implementation is used when the fast kernel cannot reprice the solved premium
+within that tolerance.
+
+# Errors
+
+Returns an error if:
+- Model inputs or the premium are invalid.
+- The premium has no finite positive implied volatility.
+- Results are nonfinite, inconsistent, or fail the 0.01 percent repricing tolerance."]
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
-#[pyo3(name = "refine_vol_and_greeks")]
+#[pyo3(name = "refine_vol_and_greeks", signature = (s, r, b, is_call, k, t, target_price, initial_vol, db_dr=0.0))]
 #[expect(clippy::too_many_arguments)]
 pub fn py_refine_vol_and_greeks(
     s: f64,
@@ -359,8 +407,9 @@ pub fn py_refine_vol_and_greeks(
     t: f64,
     target_price: f64,
     initial_vol: f64,
+    db_dr: f64,
 ) -> PyResult<BlackScholesGreeksResult> {
-    Ok(refine_vol_and_greeks(
+    imply_vol_and_greeks_checked(
         s,
         r,
         b,
@@ -368,6 +417,8 @@ pub fn py_refine_vol_and_greeks(
         k,
         t,
         target_price,
-        initial_vol,
-    ))
+        db_dr,
+        Some(initial_vol),
+    )
+    .map_err(to_pyvalue_err)
 }
