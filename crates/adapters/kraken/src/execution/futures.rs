@@ -59,9 +59,9 @@ use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    command_failure_from_cancel_error, command_failure_from_futures_batch_error,
-    command_failure_from_futures_batch_item, command_failure_from_modify_error,
-    command_failure_from_submit_error,
+    cached_order_for_status_command, command_failure_from_cancel_error,
+    command_failure_from_futures_batch_error, command_failure_from_futures_batch_item,
+    command_failure_from_modify_error, command_failure_from_submit_error, earliest_venue_time,
 };
 use crate::{
     common::{
@@ -772,9 +772,9 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let account_id = self.core.account_id;
         // Scoped to the command's instrument, so an unresolvable open order on another contract
         // is out of scope for this lookup rather than failing it.
-        let reports = self
+        let (reports, coverage) = self
             .http
-            .request_order_status_reports(account_id, cmd.instrument_id, None, None, false)
+            .request_order_status_reports_checked(account_id, cmd.instrument_id, None, None, false)
             .await?;
 
         // Match by venue_order_id or client_order_id (comparing truncated form
@@ -794,7 +794,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             // the engine defers, as the orders-status window does below. A failed fills read counts
             // as an empty page, so a cached order holding every execution still prices it.
             if is_unpriced_terminal_report(&report) {
-                let cached = self.get_cached_order_for_status_command(cmd);
+                let cached = cached_order_for_status_command(&self.core.cache(), cmd);
                 let fills = self
                     .http
                     .request_fill_reports(account_id, Some(report.instrument_id), None, None)
@@ -815,8 +815,18 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             return Ok(Some(report));
         }
 
-        let Some(order) = self.get_cached_order_for_status_command(cmd) else {
-            return Ok(None);
+        // Absence answers that the venue has no such order, so it needs a read that rules the
+        // order out; otherwise reconciliation defers.
+        let Some(order) = cached_order_for_status_command(&self.core.cache(), cmd) else {
+            if coverage.rules_out(cmd.venue_order_id, None) {
+                return Ok(None);
+            }
+            anyhow::bail!(
+                "No report for client order ID {:?}, venue order ID {:?} in an order read that \
+                 does not rule the order out; deferring rather than reporting it missing",
+                cmd.client_order_id,
+                cmd.venue_order_id,
+            );
         };
 
         // Held orders never appear on /openorders; query the 5-second window
@@ -882,7 +892,18 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                  fills; deferring until the fills feed prices it",
                 order.client_order_id(),
             ),
-            (None, None) => Ok(None),
+            (None, None) => {
+                let venue_order_id = cmd.venue_order_id.or(order.venue_order_id());
+
+                if coverage.rules_out(venue_order_id, Some(earliest_venue_time(&order))) {
+                    return Ok(None);
+                }
+                anyhow::bail!(
+                    "No report for order {} in an order read that does not rule it out; \
+                     deferring rather than reporting it missing",
+                    order.client_order_id(),
+                )
+            }
         }
     }
 
@@ -1035,7 +1056,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .request_order_status_reports_checked(account_id, None, start, None, false)
             .await
         {
-            Ok(read) => read,
+            Ok((reports, coverage)) => (reports, coverage.is_complete()),
             Err(e) if is_refused_history_read(&e) => {
                 log::warn!(
                     "Order history read refused for mass status, reading open orders only and \
@@ -1886,21 +1907,6 @@ impl KrakenFuturesExecutionClient {
             &queried_by_cli_ord_id,
             latest_report_per_order(reports),
         ))
-    }
-
-    fn get_cached_order_for_status_command(
-        &self,
-        cmd: &GenerateOrderStatusReport,
-    ) -> Option<OrderAny> {
-        let cache = self.core.cache();
-
-        if let Some(client_order_id) = cmd.client_order_id {
-            return cache.order(&client_order_id).map(|o| o.clone());
-        }
-
-        let venue_order_id = cmd.venue_order_id?;
-        let client_order_id = *cache.client_order_id(&venue_order_id)?;
-        cache.order(&client_order_id).map(|o| o.clone())
     }
 }
 

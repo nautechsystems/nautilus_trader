@@ -81,6 +81,7 @@ use crate::{
     },
     http::{
         apply_count_limit,
+        coverage::ReportCoverage,
         error::{
             KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
             kraken_http_should_retry,
@@ -2215,12 +2216,13 @@ impl KrakenSpotHttpClient {
             .map(|(reports, _)| reports)
     }
 
-    /// Requests order status reports, also reporting whether the set is complete.
+    /// Requests order status reports, also reporting what the read covered.
     ///
     /// An in-scope open order whose pair cannot be resolved, or that cannot be parsed, fails the
-    /// read. The flag is `false` when an in-scope closed order cannot be resolved or parsed, or the
-    /// closed-order read stops at its page cap, which `ExecutionMassStatus::set_report_window`
-    /// records for bounded history.
+    /// read. The coverage records each in-scope closed order that cannot be resolved or parsed, and
+    /// a closed-order read that stops at its page cap, which it cannot place in time.
+    /// `ExecutionMassStatus::set_report_window` records whether it is complete for bounded history,
+    /// and the single-order lookup whether it rules out an order it did not return.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -2228,12 +2230,12 @@ impl KrakenSpotHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         open_only: bool,
-    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, ReportCoverage)> {
         const PAGE_SIZE: i32 = 50;
 
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
-        let mut complete = true;
+        let mut coverage = ReportCoverage::default();
 
         // A scoped read for an instrument this client does not hold can match nothing, so return
         // before the request rather than falling through and reporting every instrument's rows.
@@ -2242,7 +2244,7 @@ impl KrakenSpotHttpClient {
                 .get_cached_instrument(&target_id.symbol.inner())
                 .is_none()
         {
-            return Ok((all_reports, complete));
+            return Ok((all_reports, coverage));
         }
 
         let open_orders = self.inner.get_open_orders(Some(true), None).await?;
@@ -2275,7 +2277,7 @@ impl KrakenSpotHttpClient {
         }
 
         if open_only {
-            return Ok((all_reports, complete));
+            return Ok((all_reports, coverage));
         }
 
         // Kraken API expects Unix timestamps in seconds
@@ -2288,9 +2290,9 @@ impl KrakenSpotHttpClient {
         loop {
             if pages >= MAX_REPORT_PAGES {
                 log::warn!(
-                    "ClosedOrders pagination hit the cap of {MAX_REPORT_PAGES} pages; returning a truncated set and marking it incomplete, which only mass status surfaces"
+                    "ClosedOrders pagination hit the cap of {MAX_REPORT_PAGES} pages; returning a truncated set and marking it incomplete"
                 );
-                complete = false;
+                coverage.truncate(None);
                 break;
             }
 
@@ -2320,7 +2322,7 @@ impl KrakenSpotHttpClient {
                         "ClosedOrders: instrument not in cache for pair {}, skipping order {order_id}",
                         order.descr.pair
                     );
-                    complete = false;
+                    coverage.skip(order_id);
                     continue;
                 };
 
@@ -2328,7 +2330,7 @@ impl KrakenSpotHttpClient {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
                         log::warn!("Failed to parse order {order_id}: {e}");
-                        complete = false;
+                        coverage.skip(order_id);
                     }
                 }
             }
@@ -2336,7 +2338,7 @@ impl KrakenSpotHttpClient {
             offset += PAGE_SIZE;
         }
 
-        Ok((all_reports, complete))
+        Ok((all_reports, coverage))
     }
 
     /// Requests fill/trade reports from Kraken.
@@ -2354,7 +2356,8 @@ impl KrakenSpotHttpClient {
 
     /// Requests fill reports, also reporting whether the set is complete.
     ///
-    /// See [`Self::request_order_status_reports_checked`] for what the flag means.
+    /// The flag is `false` when an in-scope trade cannot be resolved or parsed, or the read stops
+    /// at its page cap, which `ExecutionMassStatus::set_report_window` records for bounded history.
     pub(crate) async fn request_fill_reports_checked(
         &self,
         account_id: AccountId,

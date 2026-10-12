@@ -35,7 +35,10 @@ mod futures;
 mod spot;
 
 pub use futures::KrakenFuturesExecutionClient;
+use nautilus_common::{cache::Cache, messages::execution::GenerateOrderStatusReport};
+use nautilus_core::UnixNanos;
 use nautilus_live::execution::failure::CommandFailure;
+use nautilus_model::orders::{Order, OrderAny};
 pub use spot::KrakenSpotExecutionClient;
 
 use crate::{
@@ -48,6 +51,30 @@ use crate::{
         spot::models::SpotBatchOrderResponse,
     },
 };
+
+/// The cached order a single-order status command names, by its client order ID or else through
+/// the venue order ID index.
+fn cached_order_for_status_command(
+    cache: &Cache,
+    cmd: &GenerateOrderStatusReport,
+) -> Option<OrderAny> {
+    if let Some(client_order_id) = cmd.client_order_id {
+        return cache.order(&client_order_id).map(|o| o.clone());
+    }
+
+    let venue_order_id = cmd.venue_order_id?;
+    let client_order_id = *cache.client_order_id(&venue_order_id)?;
+    cache.order(&client_order_id).map(|o| o.clone())
+}
+
+/// The earliest time an order can carry at the venue: its creation, or its acceptance when the
+/// engine adopted it from a venue report after the venue had placed it.
+fn earliest_venue_time(order: &OrderAny) -> UnixNanos {
+    let created = order.ts_init();
+    order
+        .ts_accepted()
+        .map_or(created, |accepted| accepted.min(created))
+}
 
 fn command_failure_from_submit_error(error: &anyhow::Error) -> CommandFailure {
     for cause in error.chain() {

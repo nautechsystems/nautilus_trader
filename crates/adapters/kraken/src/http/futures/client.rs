@@ -79,6 +79,7 @@ use crate::{
     },
     http::{
         apply_count_limit,
+        coverage::ReportCoverage,
         error::{
             KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
             kraken_http_should_retry,
@@ -1759,16 +1760,17 @@ impl KrakenFuturesHttpClient {
             .map(|(reports, _)| reports)
     }
 
-    /// Requests order status reports, also reporting whether the set is complete.
+    /// Requests order status reports, also reporting what the read covered.
     ///
     /// An in-scope open order whose instrument cannot be resolved, or that cannot be parsed, fails
     /// the read, except an untouched reduce-only trigger listed without an unfilled size that no
-    /// open position sizes, which is skipped. The flag is `false` when such a trigger is skipped, a
-    /// history row cannot be parsed, a historical record's instrument cannot be resolved, a history
-    /// row could not be represented, or the history page hands back a continuation token: the read
-    /// takes one page, since every Kraken `/history` endpoint draws on one pool of 100 tokens,
-    /// replenished at 100 every 10 minutes, at a token per page.
-    /// `ExecutionMassStatus::set_report_window` records the flag for bounded history.
+    /// open position sizes, which is skipped. The coverage records each such trigger, each history
+    /// row that cannot be parsed, resolved or represented, and a continuation token, which cuts the
+    /// read short at the page's oldest event: the read takes one page, since every Kraken
+    /// `/history` endpoint draws on one pool of 100 tokens, replenished at 100 every 10 minutes, at
+    /// a token per page. `ExecutionMassStatus::set_report_window` records whether it is complete
+    /// for bounded history, and the single-order lookup whether it rules out an order it did not
+    /// return.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -1776,8 +1778,8 @@ impl KrakenFuturesHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         open_only: bool,
-    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
-        let mut complete = true;
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, ReportCoverage)> {
+        let mut coverage = ReportCoverage::default();
 
         // A scoped read for an instrument this client does not hold can match nothing, so
         // return before the request rather than reporting every instrument's rows.
@@ -1786,7 +1788,7 @@ impl KrakenFuturesHttpClient {
                 .get_cached_instrument(&target_id.symbol.inner())
                 .is_none()
         {
-            return Ok((Vec::new(), complete));
+            return Ok((Vec::new(), coverage));
         }
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
@@ -1876,7 +1878,7 @@ impl KrakenFuturesHttpClient {
                         order.order_id,
                         order.symbol
                     );
-                    complete = false;
+                    coverage.skip(&order.order_id);
                     skipped_open_order_ids.insert(VenueOrderId::new(order.order_id.as_str()));
                     continue;
                 }
@@ -1931,7 +1933,15 @@ impl KrakenFuturesHttpClient {
                 log::warn!(
                     "Order history window since={start_ms:?} before={end_ms:?} holds more events than one page; the events beyond it are not read, marking the set incomplete"
                 );
-                complete = false;
+                // The page holds the newest events, so it covers every event from its oldest one
+                // on; a page with no usable event time covers nothing it can place.
+                coverage.truncate(
+                    response
+                        .oldest_event_ms
+                        .and_then(|ms| u64::try_from(ms).ok())
+                        .and_then(|ms| ms.checked_mul(1_000_000))
+                        .map(UnixNanos::from),
+                );
             }
 
             // The history lists every lifecycle event, so an order appears once per event. Each
@@ -1950,7 +1960,14 @@ impl KrakenFuturesHttpClient {
                     "Order history page had {} row(s) the adapter could not represent; marking the set incomplete",
                     response.skipped_rows
                 );
-                complete = false;
+
+                for order_id in &response.skipped_order_ids {
+                    coverage.skip(order_id);
+                }
+
+                if response.skipped_rows > response.skipped_order_ids.len() {
+                    coverage.skip_unidentified();
+                }
             }
 
             for event_wrapper in response.order_events {
@@ -1988,7 +2005,7 @@ impl KrakenFuturesHttpClient {
                         Err(e) => {
                             let order_id = &event.order_id;
                             log::warn!("Failed to parse futures order event {order_id}: {e}");
-                            complete = false;
+                            coverage.skip(order_id);
                         }
                     }
                 } else {
@@ -1996,14 +2013,14 @@ impl KrakenFuturesHttpClient {
                         "Instrument not in cache for futures symbol {}, skipping order event",
                         event.symbol
                     );
-                    complete = false;
+                    coverage.skip(&event.order_id);
                 }
             }
 
             all_reports.extend(latest.into_values());
         }
 
-        Ok((all_reports, complete))
+        Ok((all_reports, coverage))
     }
 
     /// Requests order status reports from the venue's `/orders/status`
@@ -2080,7 +2097,8 @@ impl KrakenFuturesHttpClient {
 
     /// Requests fill reports, also reporting whether the set is complete.
     ///
-    /// See [`Self::request_order_status_reports_checked`] for what the flag means.
+    /// The flag is `false` when an in-scope fill cannot be resolved or parsed, which
+    /// `ExecutionMassStatus::set_report_window` records for bounded history.
     pub(crate) async fn request_fill_reports_checked(
         &self,
         account_id: AccountId,
@@ -4353,7 +4371,7 @@ mod tests {
         let client = history_test_client(history, header_token).await;
         cache_test_futures_instrument(&client);
 
-        let (reports, complete) = client
+        let (reports, coverage) = client
             .request_order_status_reports_checked(
                 AccountId::from("KRAKEN-001"),
                 None,
@@ -4364,7 +4382,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(complete, expected_complete);
+        assert_eq!(coverage.is_complete(), expected_complete);
         assert_eq!(
             reports
                 .iter()
@@ -4439,7 +4457,7 @@ mod tests {
         let client = history_test_client(Arc::new(RwLock::new(page)), None).await;
         cache_test_futures_instrument(&client);
 
-        let (reports, complete) = client
+        let (reports, coverage) = client
             .request_order_status_reports_checked(
                 AccountId::from("KRAKEN-001"),
                 None,
@@ -4450,7 +4468,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(complete);
+        assert!(coverage.is_complete());
         assert_eq!(reports.len(), 1, "{reports:?}");
         assert_eq!(reports[0].venue_order_id, VenueOrderId::from("H-CLOSED"));
         assert_eq!(reports[0].order_status, OrderStatus::Canceled);
@@ -4469,24 +4487,24 @@ mod tests {
 
         // Control: the same page with a decodable type reads complete, so the flag below is
         // driven by the undecodable type rather than by the page itself.
-        let (control, complete) = client
+        let (control, coverage) = client
             .request_order_status_reports_checked(account_id, None, None, None, false)
             .await
             .unwrap();
         assert!(
-            complete,
+            coverage.is_complete(),
             "the control must be complete, or the skip proves nothing"
         );
         assert_eq!(control.len(), 2);
 
         *history.write() = history_page("Unknown", None);
-        let (reports, complete) = client
+        let (reports, coverage) = client
             .request_order_status_reports_checked(account_id, None, None, None, false)
             .await
             .unwrap();
 
         assert!(
-            !complete,
+            !coverage.is_complete(),
             "a skipped history row must leave the set incomplete"
         );
         assert_eq!(reports.len(), 1);
