@@ -27,7 +27,7 @@ use std::{
 
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::{serialization::deserialize_decimal_token, string::secret::SecretString};
 use nautilus_model::identifiers::InstrumentId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ use crate::{
         enums::{
             DeriveInstrumentType, DeriveOrderbookDepth, DeriveOrderbookGroup, DeriveTickerInterval,
         },
-        parse::{deserialize_decimal, format_instrument_id, salvage_rows},
+        parse::{format_instrument_id, salvage_rows},
     },
     http::models::{
         DeriveAggregateTradingStats, DeriveOptionPricing, DeriveOrder, DerivePublicTrade,
@@ -394,10 +394,10 @@ pub struct WsSubscriptionPayload {
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 pub struct DeriveOrderbookLevel(
     /// Price level.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub Decimal,
     /// Aggregated amount at the price level.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub Decimal,
 );
 

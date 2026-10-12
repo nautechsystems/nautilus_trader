@@ -62,6 +62,9 @@ use nautilus_derive::{
     },
     config::DeriveDataClientConfig,
     data::DeriveDataClient,
+    websocket::{
+        WsSubscriptionPayload, parse_orderbook_deltas, parse_orderbook_depth, parse_orderbook_msg,
+    },
 };
 use nautilus_live::{
     SocketReconnectRegistry, SocketReconnectRequestOutcome, book::conformance::BookStreamChecker,
@@ -1181,6 +1184,92 @@ async fn test_book_recovery_keeps_shared_channel_and_active_socket(#[case] missi
     );
     client.disconnect().await.unwrap();
     assert_eq!(ws_state.connection_count.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+#[case::null_price(0, Value::Null)]
+#[case::empty_price(0, json!(""))]
+#[case::null_amount(1, Value::Null)]
+#[case::empty_amount(1, json!(""))]
+#[tokio::test]
+async fn test_missing_numeric_book_values_retry_until_valid_snapshot(
+    #[case] field: usize,
+    #[case] value: Value,
+    #[values(false, true)] empty: bool,
+) {
+    let ws_state = WsState::default();
+    let channel = "orderbook.ETH-PERP.1.10";
+    let mut valid = subscription_notification(channel).unwrap();
+    let timestamp = valid["params"]["data"]["timestamp"].as_i64().unwrap();
+    let mut malformed = valid.clone();
+    malformed["params"]["data"]["timestamp"] = json!(timestamp + 2);
+    malformed["params"]["data"]["bids"][0][field] = value;
+
+    if empty {
+        valid["params"]["data"]["bids"] = json!([]);
+        valid["params"]["data"]["asks"] = json!([]);
+    }
+
+    let payload: WsSubscriptionPayload =
+        serde_json::from_str(&valid["params"].to_string()).unwrap();
+    let expected_msg = parse_orderbook_msg(&payload).unwrap();
+    ws_state.subscription_notifications.lock().await.insert(
+        channel.to_string(),
+        vec![malformed.clone(), malformed, valid],
+    );
+    let rest_addr = start_rest_server(RestState::default()).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut config = config(rest_addr, ws_addr);
+    config.currencies = vec!["ETH".to_owned()];
+    config.book_snapshot_timeout_secs = 0;
+    config.book_stale_threshold_secs = 0;
+    let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let id = InstrumentId::from("ETH-PERP.DERIVE");
+    client
+        .subscribe_book_deltas(subscribe_book_deltas(id, Some(10), None))
+        .unwrap();
+    client
+        .subscribe_book_depth(subscribe_book_depth(id, None))
+        .unwrap();
+
+    let Data::BookDeltas(deltas) = recv_data(&mut rx).await else {
+        panic!("expected recovered snapshot deltas");
+    };
+
+    let Data::BookDepth(depth) = recv_data(&mut rx).await else {
+        panic!("expected recovered shared depth snapshot");
+    };
+
+    let expected_deltas = parse_orderbook_deltas(&expected_msg, 2, 3, deltas.ts_init).unwrap();
+    let expected_depth = parse_orderbook_depth(&expected_msg, 2, 3, depth.ts_init).unwrap();
+    assert_eq!(*deltas, expected_deltas);
+    assert_eq!(*depth, expected_depth);
+    assert_eq!(ws_state.subscribes().await.len(), 3);
+    assert_eq!(ws_state.unsubscribes().await.len(), 2);
+    assert_eq!(ws_state.connection_count.load(Ordering::SeqCst), 1);
+    assert!(rx.try_recv().is_err());
+    client
+        .unsubscribe_book_deltas(&unsubscribe_book_deltas(id, None))
+        .unwrap();
+    client
+        .unsubscribe_book_depth(&unsubscribe_book_depth(id))
+        .unwrap();
+    wait_until_async(
+        || async { ws_state.unsubscribes().await.len() == 3 },
+        Duration::from_secs(3),
+    )
+    .await;
+    tokio::time::timeout(Duration::from_secs(5), client.disconnect())
+        .await
+        .expect("book recovery shutdown exceeds five seconds")
+        .unwrap();
+    assert_eq!(ws_state.connection_count.load(Ordering::SeqCst), 0);
+    assert!(rx.try_recv().is_err());
 }
 
 #[rstest]
