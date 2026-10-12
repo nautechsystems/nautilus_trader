@@ -95,6 +95,7 @@ Released on TBD (UTC).
 - Fixed Bybit stale WebSocket subscriptions blocking subscriptions after reconnect (#5250), thanks @Martingale42
 - Fixed Bybit failed quote subscriptions retaining shared order book references (#5258), thanks @Martingale42
 - Fixed Bybit incomplete position reports causing held positions to reconcile as flat
+- Fixed Deribit duplicate fills from order responses and user trade subscriptions
 - Fixed Deribit position reports failing on fractional leverage (#5240), thanks @abhijeetvichare76
 - Fixed Derive fill history marked complete when trades lack trade or venue order IDs
 - Fixed Derive accepting null or empty order book prices and amounts as zero
