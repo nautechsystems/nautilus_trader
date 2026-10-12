@@ -19,7 +19,9 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::enums::{KrakenFuturesOrderType, KrakenOrderSide, KrakenTriggerSignal};
+use crate::common::enums::{
+    KrakenFuturesOrderType, KrakenFuturesQtyMode, KrakenOrderSide, KrakenTriggerSignal,
+};
 
 /// Parameters for sending an order via `POST /api/v3/sendorder`.
 ///
@@ -267,6 +269,10 @@ pub struct KrakenFuturesBatchEditItem {
     /// New stop price.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_price: Option<String>,
+
+    /// Whether `size` sets the order's total size or its open size.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qty_mode: Option<KrakenFuturesQtyMode>,
 }
 
 impl KrakenFuturesBatchEditItem {
@@ -281,6 +287,7 @@ impl KrakenFuturesBatchEditItem {
             size: params.size,
             limit_price: params.limit_price,
             stop_price: params.stop_price,
+            qty_mode: params.qty_mode,
         }
     }
 }
@@ -345,6 +352,11 @@ pub struct KrakenFuturesEditOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_price: Option<String>,
+
+    /// Whether `size` sets the order's total size or its open size.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qty_mode: Option<KrakenFuturesQtyMode>,
 }
 
 /// Parameters for canceling all orders via `POST /api/v3/cancelallorders`.

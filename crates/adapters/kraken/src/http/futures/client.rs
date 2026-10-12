@@ -65,7 +65,8 @@ use crate::{
         credential::KrakenCredential,
         enums::{
             KrakenApiResult, KrakenEnvironment, KrakenFuturesOrderStatus, KrakenFuturesOrderType,
-            KrakenOrderSide, KrakenProductType, KrakenSendStatus, KrakenTriggerSignal,
+            KrakenFuturesQtyMode, KrakenOrderSide, KrakenProductType, KrakenSendStatus,
+            KrakenTriggerSignal,
         },
         parse::{
             bar_type_to_futures_resolution, normalize_asset_key, parse_bar,
@@ -2971,8 +2972,11 @@ impl KrakenFuturesHttpClient {
             builder.cli_ord_id(id.clone());
         }
 
+        // A Nautilus quantity is the order's total, fills included, while the venue reads a bare
+        // size as the open size
         if let Some(qty) = quantity {
             builder.size(qty.to_string());
+            builder.qty_mode(KrakenFuturesQtyMode::Absolute);
         }
 
         if let Some(p) = price {
@@ -4368,6 +4372,48 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["H-SKIP-1", "H-KEEP-2"],
             "the page's rows are reported either way"
+        );
+    }
+
+    /// An edit that resizes the order sends its size as the order's total, fills included, since
+    /// the venue reads a bare size as the open size, on the single and the batch edit alike; a
+    /// price-only edit sends no size and no mode.
+    #[rstest]
+    #[case::resize(Some("5"), Some("ABSOLUTE"))]
+    #[case::price_only(None, None)]
+    #[tokio::test]
+    async fn test_build_edit_order_params_sends_a_size_as_the_total(
+        #[case] quantity: Option<&str>,
+        #[case] expected_qty_mode: Option<&str>,
+    ) {
+        let client = history_test_client(Arc::new(RwLock::new(String::new())), None).await;
+        let instrument_id = cache_test_futures_instrument(&client);
+
+        let params = client
+            .build_edit_order_params(
+                instrument_id,
+                None,
+                Some(VenueOrderId::from("V-EDIT-1")),
+                quantity.map(Quantity::from),
+                Some(Price::from("70000")),
+                None,
+            )
+            .unwrap();
+
+        let form: Vec<(String, String)> =
+            serde_urlencoded::from_str(&serde_urlencoded::to_string(&params).unwrap()).unwrap();
+        let form_qty_mode = form
+            .iter()
+            .find(|(key, _)| key == "qtyMode")
+            .map(|(_, value)| value.as_str());
+        assert_eq!(form_qty_mode, expected_qty_mode, "{form:?}");
+
+        let item =
+            serde_json::to_value(KrakenFuturesBatchEditItem::from_params(params, "tag-1")).unwrap();
+        assert_eq!(
+            item.get("qtyMode").and_then(|value| value.as_str()),
+            expected_qty_mode,
+            "{item}"
         );
     }
 
