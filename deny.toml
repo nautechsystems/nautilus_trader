@@ -22,6 +22,11 @@ ignore = [
   # TODO: Monitor https://github.com/alloy-rs/alloy for migration to pastey or alternative
   { id = "RUSTSEC-2024-0436", reason = "paste unmaintained, transitive via alloy" },
 
+  # unsafe-libyaml is build-only via dydx-proto -> tonic-buf-build -> serde_yaml,
+  # YAML parsing runs only when V4_PROTO_REBUILD requests protobuf regeneration.
+  # No fixed release exists; remove this exception when upstream replaces the parser
+  { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml unmaintained, build-only via dydx-proto, parsing requires V4_PROTO_REBUILD" },
+
   # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only).
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
   { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
