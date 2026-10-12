@@ -110,6 +110,7 @@ ot = "ot" # Order tag variable naming convention
 
 # External API terms (exact spelling from their documentation)
 HIGHTER = "HIGHTER" # Binance API error code (their official typo)
+hearbeat = "hearbeat" # CoinAPI WebSocket heartbeat type (their official typo)
 cummulative = "cummulative" # Binance API: cummulativeQuoteQty field (their official typo)
 cummulativeQuoteQty = "cummulativeQuoteQty" # Binance API field name
 SETTELMENT = "SETTELMENT" # Binance API: DELIVERED_SETTELMENT income type (their official typo)

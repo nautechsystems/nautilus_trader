@@ -866,6 +866,37 @@ mod tests {
     }
 
     #[rstest]
+    #[case::null_price(0, Value::Null)]
+    #[case::empty_price(0, json!(""))]
+    #[case::null_amount(1, Value::Null)]
+    #[case::empty_amount(1, json!(""))]
+    fn test_parse_orderbook_rejects_missing_numeric_values(
+        #[case] field: usize,
+        #[case] value: Value,
+        #[values("bids", "asks")] side: &str,
+        #[values(false, true)] depth: bool,
+    ) {
+        let mut data = load_json("perps/ws_orderbook_eth.json");
+        data[side][0][field] = value;
+        let payload = subscription_data_payload("orderbook.ETH-PERP.1.10", &data);
+
+        let result = parse_orderbook_msg(&payload).and_then(|msg| {
+            if depth {
+                parse_orderbook_depth(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(123))
+                    .map(|_| ())
+            } else {
+                parse_orderbook_deltas(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(123))
+                    .map(|_| ())
+            }
+        });
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "failed to decode Derive orderbook data"
+        );
+    }
+
+    #[rstest]
     fn test_parse_public_trades_frame() {
         let payload = subscription_data_payload(
             "trades.perp.ETH",

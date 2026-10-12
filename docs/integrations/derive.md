@@ -947,6 +947,10 @@ Order books recover independently of session recovery. Recovery starts after:
 Set either option to `0` to disable that timer. Choose the stale threshold for the expected update frequency:
 duplicate timestamps do not refresh freshness; advancing empty snapshots do.
 
+Null or empty required prices or amounts cause decoding to fail and start recovery. These snapshots
+publish no deltas or depth, do not refresh freshness or advance the accepted timestamp, and cannot
+complete recovery.
+
 Recovery unsubscribes and resubscribes the affected channel, accepting snapshots only after its
 subscription acknowledgement. It follows the
 [shared retry budget and ceiling](../developer_guide/adapters.md#recovery-state-and-retry-budgets)

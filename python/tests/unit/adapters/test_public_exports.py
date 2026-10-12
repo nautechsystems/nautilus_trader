@@ -33,7 +33,7 @@ ADAPTERS_ROOT = Path(__file__).resolve().parents[3] / "nautilus_trader" / "adapt
 ADAPTERS = sorted(p.name for p in ADAPTERS_ROOT.iterdir() if (p / "__init__.py").exists())
 
 # Venue adapters expose canonical <VENUE>, <VENUE>_CLIENT_ID, <VENUE>_VENUE constants.
-# Data providers (databento, tardis), the blockchain data client, the sandbox exec
+# Data providers (coinapi, databento, tardis), the blockchain data client, the sandbox exec
 # client, and the multi-venue interactive_brokers broker intentionally omit them.
 VENUE_ADAPTERS = {
     "architect_ax": "AX",
@@ -229,6 +229,7 @@ def test_known_adapter_set_is_complete() -> None:
         "binance",
         "blockchain",
         "bybit",
+        "coinapi",
         "coinbase",
         "databento",
         "deribit",

@@ -89,8 +89,8 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::QuoteTick,
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-        TriggerType,
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderEventType,
@@ -7542,9 +7542,10 @@ async fn test_generate_fill_reports_filters_by_venue_order_id() {
     *rest_state.trade_history_response.lock().await = json!({
         "trades": [
             sample_trade_json("trade-a", "ord-1", "ETH-PERP"),
+            sample_trade_json("", "ord-1", "ETH-PERP"),
             sample_trade_json("trade-b", "ord-2", "ETH-PERP"),
         ],
-        "pagination": {"count": 2, "num_pages": 1},
+        "pagination": {"count": 3, "num_pages": 1},
         "subaccount_id": TEST_SUBACCOUNT,
     });
     let mut tc = build_report_client(rest_state, ws_state).await;
@@ -7566,6 +7567,152 @@ async fn test_generate_fill_reports_filters_by_venue_order_id() {
     assert_eq!(reports[0].venue_order_id.as_str(), "ord-2");
 
     tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::trade_id("", "ord-identity")]
+#[case::order_id("trade-identity", "")]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_missing_execution_identity(
+    #[case] trade_id: &str,
+    #[case] order_id: &str,
+    #[values(false, true)] bounded: bool,
+    #[values(false, true)] filter_order: bool,
+    #[values(false, true)] include_valid: bool,
+) {
+    let state = RestState::default();
+    let mut trades = vec![sample_trade_json(trade_id, order_id, "ETH-PERP")];
+    if include_valid {
+        trades.push(sample_trade_json("trade-valid", "ord-identity", "ETH-PERP"));
+    }
+
+    *state.trade_history_response.lock().await = json!({
+        "trades": trades, "pagination": {"count": trades.len(), "num_pages": 1},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let start = bounded.then_some(UnixNanos::from(1_700_000_000_000_000_000));
+    let end = bounded.then_some(UnixNanos::from(1_700_000_003_000_000_000));
+    let result = tc
+        .client
+        .generate_fill_reports(GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(InstrumentId::from("ETH-PERP.DERIVE")),
+            filter_order.then_some(VenueOrderId::from("ord-identity")),
+            start,
+            end,
+            None,
+            None,
+        ))
+        .await;
+    tc.client.disconnect().await.unwrap();
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "incomplete Derive fill report coverage"
+    );
+    let calls = state.trade_history_calls.lock().await;
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["instrument_name"], json!("ETH-PERP"));
+    assert_eq!(
+        calls[0].get("from_timestamp"),
+        bounded.then_some(&json!(1_700_000_000_000_i64))
+    );
+    assert_eq!(
+        calls[0].get("to_timestamp"),
+        bounded.then_some(&json!(1_700_000_003_000_i64))
+    );
+}
+
+#[rstest]
+#[case::trade_id("", "ord-identity")]
+#[case::order_id("trade-identity", "")]
+#[tokio::test]
+async fn test_mass_status_missing_execution_identity_never_completes_history(
+    #[case] trade_id: &str,
+    #[case] order_id: &str,
+    #[values(None, Some(10_000_000))] lookback: Option<u64>,
+    #[values(false, true)] include_valid: bool,
+) {
+    let state = RestState::default();
+    *state.open_orders_response.lock().await = json!({
+        "orders": [order_json_with("ord-identity", "STRAT-O-1", "buy", "ETH-PERP", 1_700_000_001_000, "open")],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *state.order_history_response.lock().await = json!({
+        "orders": [], "pagination": {"count": 0, "num_pages": 0},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *state.positions_response.lock().await = json!({
+        "positions": [sample_position_json("ETH-PERP", "0.3")],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut trades = vec![sample_trade_json(trade_id, order_id, "ETH-PERP")];
+    if include_valid {
+        trades.push(sample_trade_json("trade-valid", "ord-identity", "ETH-PERP"));
+    }
+
+    *state.trade_history_response.lock().await = json!({
+        "trades": trades, "pagination": {"count": trades.len(), "num_pages": 1},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_report_client(state.clone(), WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let result = tc.client.generate_mass_status(lookback).await;
+    let finished = get_atomic_clock_realtime().get_time_ns();
+    tc.client.disconnect().await.unwrap();
+
+    if let Some(minutes) = lookback {
+        let mass = result.unwrap().unwrap();
+        assert!(!mass.reports_complete());
+        assert_eq!(
+            mass.lookback_start(),
+            Some(
+                mass.ts_init
+                    .saturating_sub(DurationNanos::try_from_mins(minutes).unwrap())
+            )
+        );
+        assert_eq!(mass.order_reports().len(), 1);
+        assert_eq!(
+            mass.order_reports()[&VenueOrderId::from("ord-identity")].instrument_id,
+            InstrumentId::from("ETH-PERP.DERIVE")
+        );
+        assert_eq!(mass.position_reports().len(), 1);
+        assert_eq!(
+            mass.position_reports()[&InstrumentId::from("ETH-PERP.DERIVE")][0].signed_decimal_qty,
+            dec!(0.3)
+        );
+        assert_eq!(mass.fill_reports().len(), usize::from(include_valid));
+
+        if include_valid {
+            let fills = &mass.fill_reports()[&VenueOrderId::from("ord-identity")];
+            assert_eq!(fills.len(), 1);
+            let fill = &fills[0];
+            assert_eq!(fill.account_id, AccountId::from("DERIVE-001"));
+            assert_eq!(fill.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+            assert_eq!(fill.venue_order_id, VenueOrderId::from("ord-identity"));
+            assert_eq!(fill.trade_id, TradeId::from("trade-valid"));
+            assert_eq!(fill.client_order_id, Some(ClientOrderId::from("STRAT-O-1")));
+            assert_eq!(fill.order_side, OrderSide::Buy);
+            assert_eq!(fill.last_qty.as_decimal(), dec!(1));
+            assert_eq!(fill.last_px.as_decimal(), dec!(3505));
+            assert_eq!(fill.commission, Money::from("0.5 USDC"));
+            assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+            assert_eq!(fill.ts_event, UnixNanos::from(1_700_000_002_000_000_000));
+            assert_eq!(fill.avg_px, None);
+            assert_eq!(fill.venue_position_id, None);
+            assert!(fill.ts_init >= mass.ts_init && fill.ts_init <= finished);
+        }
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "incomplete unbounded Derive report coverage"
+        );
+    }
+
+    assert_eq!(state.trade_history_calls.lock().await.len(), 1);
 }
 
 #[rstest]

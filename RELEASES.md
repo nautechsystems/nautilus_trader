@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Added tick scheme registration, thanks @faysou
 - Added negative price support for futures, except inverse futures (#5190), thanks @DeLuke84
 - Added `BacktestDataConfig.batch_deltas` for batched book delta replay (#5215), thanks for reporting @nicezic
+- Added WebSocket peer-close callbacks to control automatic reconnection
 - Added Bybit public liquidation custom data for linear and inverse contracts (#5152), thanks @Martingale42
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 - Added Derive adapter support for API v3
@@ -57,6 +58,12 @@ Released on TBD (UTC).
 - Changed Interactive Brokers Rust provider loaders; use `load_with_return_async` (#5041), thanks @faysou
 - Changed Rust `KrakenDataClientConfig` literals; add `validate_l2_checksum: true` (#5219), thanks @zhaow-de
 - Changed Rust `OKXAmendAlgoOrderRequest` literals to require `new_trigger_px_type`; use `None` to omit it
+- Removed Polymarket 30-second TWAP support; use `window_seconds=60` (#5296)
+- Renamed Polymarket reference-price types to drop `Rtds`, without aliases (#5296)
+- Renamed Polymarket `base_url_rtds` to `base_url_reference_prices` (#5296)
+- Changed Polymarket reference prices to PolyBolt; configure CLOB L2 credentials (#5296), thanks @yashwardhan-gautam
+- Changed Polymarket crypto reference symbols to lowercase USD pairs such as `btcusd` (#5296)
+- Changed Polymarket reference prices to exact decimals with `source`; equity drops `full_accuracy_value` (#5296)
 
 ### Security
 
@@ -94,7 +101,11 @@ Released on TBD (UTC).
 - Fixed Parquet catalog row order for equal `ts_init` timestamps (#5267), thanks @ragen1337
 - Fixed Bybit stale WebSocket subscriptions blocking subscriptions after reconnect (#5250), thanks @Martingale42
 - Fixed Bybit failed quote subscriptions retaining shared order book references (#5258), thanks @Martingale42
+- Fixed Bybit incomplete position reports causing held positions to reconcile as flat
+- Fixed Deribit duplicate fills from order responses and user trade subscriptions
 - Fixed Deribit position reports failing on fractional leverage (#5240), thanks @abhijeetvichare76
+- Fixed Derive fill history marked complete when trades lack trade or venue order IDs
+- Fixed Derive accepting null or empty order book prices and amounts as zero
 - Fixed Hyperliquid account updates retaining balances reported at zero (#5210), thanks @XBeg9
 - Fixed Hyperliquid reduce-only filled order lookups overstating fill quantity (#5222), thanks @XBeg9
 - Fixed Hyperliquid HIP-4 outcome price and size precision (#5266), thanks @vignesh-chaturvedi
@@ -176,8 +187,10 @@ Released on TBD (UTC).
 - Clarified `Portfolio` equity rules for calculated and reported margin accounts
 - Fixed Binance and Hyperliquid custom data examples to unwrap `CustomData` (#5246), thanks @Martingale42
 - Updated Derive integration guide for API v3 setup, margin models, and recovery limits
+- Clarified Hyperliquid modify replacement rules and individual batch results
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
 - Clarified Lighter cancel-all scope and batch cancellation failure handling
+- Documented Polymarket PolyBolt reference prices and the RTDS migration (#5296)
 
 ### Deprecations
 

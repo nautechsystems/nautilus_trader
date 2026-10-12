@@ -1,0 +1,1 @@
+[{"symbol_id":"TEST_SPOT_BTC_USD","time_exchange":"2026-01-01T00:00:01.1234567Z","time_coinapi":"2026-01-01T00:00:01.1234568Z","uuid":"trade-1","price":123.12345678901234567890123456,"size":1.234e-5,"taker_side":"BUY","id_trade":"venue-1"}]

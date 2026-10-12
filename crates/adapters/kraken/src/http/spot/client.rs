@@ -2217,8 +2217,10 @@ impl KrakenSpotHttpClient {
 
     /// Requests order status reports, also reporting whether the set is complete.
     ///
-    /// The flag is `false` when a historical record was skipped because its instrument could not
-    /// be resolved, which `ExecutionMassStatus::set_report_window` records for bounded history.
+    /// An in-scope open order whose pair cannot be resolved, or that cannot be parsed, fails the
+    /// read. The flag is `false` when an in-scope closed order cannot be resolved or parsed, or the
+    /// closed-order read stops at its page cap, which `ExecutionMassStatus::set_report_window`
+    /// records for bounded history.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -2262,13 +2264,14 @@ impl KrakenSpotHttpClient {
                 )
             })?;
 
-            match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
-                Ok(report) => all_reports.push(report),
-                Err(e) => {
-                    log::warn!("Failed to parse order {order_id}: {e}");
-                    complete = false;
-                }
-            }
+            // An in-scope open order the client cannot parse fails the read: dropped, it reads to
+            // reconciliation as an order the venue does not have.
+            let report =
+                parse_order_status_report(order_id, order, &instrument, account_id, ts_init)
+                    .map_err(|e| {
+                        anyhow::anyhow!("OpenOrders: failed to parse order {order_id}: {e}")
+                    })?;
+            all_reports.push(report);
         }
 
         if open_only {

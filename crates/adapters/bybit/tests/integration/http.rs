@@ -33,10 +33,12 @@ use nautilus_bybit::{
             BybitOrderSmpType, BybitOrderType, BybitPositionIdx, BybitProductType,
             BybitRepayStatus, BybitTpSlMode, BybitTriggerType, BybitUnifiedMarginStatus,
         },
+        parse::parse_linear_instrument,
         urls::bybit_http_base_url,
     },
     http::{
         client::{BybitHttpClient, BybitRawHttpClient},
+        models::BybitInstrumentLinearResponse,
         query::{
             BybitFeeRateParams, BybitInstrumentsInfoParamsBuilder, BybitNativeTpSlParams,
             BybitPositionListParamsBuilder, BybitWalletBalanceParams,
@@ -44,9 +46,13 @@ use nautilus_bybit::{
     },
 };
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
+use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType},
+    enums::{
+        AvgPxReconciliation, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TriggerType,
+    },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol},
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -97,6 +103,7 @@ struct TestServerState {
     settle_coin_queries: SettleCoinQueries,
     realtime_requests: Arc<tokio::sync::Mutex<usize>>,
     history_requests: Arc<tokio::sync::Mutex<usize>>,
+    position_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     order_submissions: Arc<tokio::sync::Mutex<Vec<CapturedOrder>>>,
     batch_cancel_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
@@ -109,6 +116,7 @@ impl Default for TestServerState {
             settle_coin_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             realtime_requests: Arc::new(tokio::sync::Mutex::new(0)),
             history_requests: Arc::new(tokio::sync::Mutex::new(0)),
+            position_queries: Arc::default(),
             order_submissions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             batch_cancel_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
         }
@@ -5098,4 +5106,310 @@ async fn test_fetch_all_sub_api_keys_walks_cursor() {
         log[1].contains("cursor=keys-2"),
         "second page must carry cursor: {log:?}"
     );
+}
+
+#[rstest]
+#[case(false, "cache", "Instrument ETHUSDT-LINEAR not found in cache")]
+#[case(true, "cache", "Instrument ETHUSDT-LINEAR not found in cache")]
+#[case(false, "size", "position.size")]
+#[case(true, "size", "position.size")]
+#[case(false, "avgPrice", "Invalid decimal")]
+#[case(true, "avgPrice", "Invalid decimal")]
+#[case(false, "updatedTime", "position.updatedTime")]
+#[case(true, "updatedTime", "position.updatedTime")]
+#[case(false, "symbol", "Position symbol is empty")]
+#[case(true, "symbol", "Position symbol is empty")]
+#[tokio::test]
+async fn test_position_reports_reject_incomplete_rows(
+    #[case] scoped: bool,
+    #[case] failure: &'static str,
+    #[case] expected_error: &'static str,
+) {
+    let mut positions = load_test_data("http_get_positions.json");
+    positions["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(2);
+
+    if failure != "cache" {
+        positions["result"]["list"][1][failure] =
+            json!(if failure == "symbol" { "" } else { "invalid" });
+    }
+
+    let (addr, state) = start_position_report_server(positions, false).await;
+    let client = user_test_client(format!("http://{addr}"));
+    let instruments: BybitInstrumentLinearResponse =
+        serde_json::from_value(load_test_data("http_get_instruments_linear.json")).unwrap();
+
+    for definition in instruments.result.list {
+        if failure != "cache" || definition.symbol == "BTCUSDT" {
+            let instrument = parse_linear_instrument(&definition, 0.into(), 0.into()).unwrap();
+            client.cache_instrument(instrument);
+        }
+    }
+
+    let result = client
+        .request_position_status_reports(
+            AccountId::new("BYBIT-UNIFIED"),
+            BybitProductType::Linear,
+            scoped.then_some(InstrumentId::from("ETHUSDT-LINEAR.BYBIT")),
+        )
+        .await;
+    let error =
+        result.expect_err("a held position row must not be omitted from successful reports");
+    assert!(
+        format!("{error:#}").contains(expected_error),
+        "unexpected error: {error:#}"
+    );
+
+    if failure == "symbol" {
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Position symbol is empty, category=Linear, symbol={:?}, settle_coin={:?}",
+                scoped.then_some("ETHUSDT"),
+                (!scoped).then_some("USDT"),
+            )
+        );
+    } else if failure != "cache" {
+        assert_eq!(
+            error.to_string(),
+            "failed to parse position report for ETHUSDT-LINEAR"
+        );
+    }
+
+    let queries = state.position_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(
+        queries[0].get("category").map(String::as_str),
+        Some("linear")
+    );
+    assert_eq!(
+        queries[0].get("symbol").map(String::as_str),
+        scoped.then_some("ETHUSDT")
+    );
+    assert_eq!(
+        queries[0].get("settleCoin").map(String::as_str),
+        (!scoped).then_some("USDT")
+    );
+}
+
+#[rstest]
+#[case(false, false)]
+#[case(true, false)]
+#[case(true, true)]
+#[tokio::test]
+async fn test_position_reports_preserve_held_and_flat_rows(
+    #[case] scoped: bool,
+    #[case] flat: bool,
+) {
+    let mut positions = load_test_data("http_get_positions.json");
+    positions["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(2);
+
+    if flat {
+        positions["result"]["list"][1]["side"] = json!("");
+        positions["result"]["list"][1]["size"] = json!("0");
+        positions["result"]["list"][1]["avgPrice"] = json!("0");
+    }
+
+    let (addr, state) = start_position_report_server(positions, false).await;
+    let client = user_test_client(format!("http://{addr}"));
+    client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+    let account_id = AccountId::new("BYBIT-UNIFIED");
+    let ts_before = get_atomic_clock_realtime().get_time_ns();
+    let reports = client
+        .request_position_status_reports(
+            account_id,
+            BybitProductType::Linear,
+            scoped.then_some(InstrumentId::from("ETHUSDT-LINEAR.BYBIT")),
+        )
+        .await
+        .unwrap();
+
+    let ts_after = get_atomic_clock_realtime().get_time_ns();
+
+    let expected_rows = [
+        (
+            "BTCUSDT-LINEAR.BYBIT",
+            PositionSide::Long,
+            "0.500",
+            "0.5",
+            Some("50000.00"),
+            1_697_673_600_012_000_000_u64,
+        ),
+        (
+            "ETHUSDT-LINEAR.BYBIT",
+            if flat {
+                PositionSide::Flat
+            } else {
+                PositionSide::Short
+            },
+            if flat { "0.00" } else { "5.00" },
+            if flat { "0" } else { "-5" },
+            if flat { None } else { Some("3000.00") },
+            1_697_673_700_112_000_000_u64,
+        ),
+    ];
+
+    let expected = if scoped {
+        &expected_rows[1..]
+    } else {
+        &expected_rows[..]
+    };
+
+    assert_eq!(reports.len(), expected.len());
+
+    for (report, (id, side, quantity, signed_quantity, avg_price, ts_last)) in
+        reports.iter().zip(expected)
+    {
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, InstrumentId::from(*id));
+        assert_eq!(report.position_side, *side);
+        assert_eq!(report.quantity, Quantity::from(*quantity));
+        assert_eq!(
+            report.signed_decimal_qty,
+            rust_decimal::Decimal::from_str_exact(signed_quantity).unwrap()
+        );
+        assert_eq!(
+            report.avg_px_open,
+            avg_price.map(|value| rust_decimal::Decimal::from_str_exact(value).unwrap())
+        );
+        assert_eq!(report.ts_last.as_u64(), *ts_last);
+        assert!(report.ts_init >= ts_before && report.ts_init <= ts_after);
+        assert_eq!(report.ts_init, reports[0].ts_init);
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(
+            report.avg_px_open_reconciliation,
+            AvgPxReconciliation::Match
+        );
+        assert_eq!(report.avg_px_open_precision, None);
+    }
+
+    if !scoped {
+        assert_ne!(reports[0].report_id, reports[1].report_id);
+    }
+
+    let queries = state.position_queries.lock().await;
+    assert_eq!(queries.len(), if scoped { 1 } else { 2 });
+    assert_eq!(
+        queries[0].get("settleCoin").map(String::as_str),
+        (!scoped).then_some("USDT")
+    );
+
+    if !scoped {
+        assert_eq!(
+            queries[1].get("settleCoin").map(String::as_str),
+            Some("USDC")
+        );
+    }
+}
+
+#[rstest]
+#[case("cache", "Instrument ETHUSDT-LINEAR not found in cache")]
+#[case("size", "position.size")]
+#[tokio::test]
+async fn test_position_reports_reject_incomplete_later_page(
+    #[case] failure: &str,
+    #[case] expected_error: &str,
+) {
+    let mut positions = load_test_data("http_get_positions.json");
+    positions["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(2);
+
+    if failure == "size" {
+        positions["result"]["list"][1]["size"] = json!("invalid");
+    }
+
+    let (addr, state) = start_position_report_server(positions, true).await;
+    let client = user_test_client(format!("http://{addr}"));
+    let instruments: BybitInstrumentLinearResponse =
+        serde_json::from_value(load_test_data("http_get_instruments_linear.json")).unwrap();
+
+    for definition in instruments.result.list {
+        if failure != "cache" || definition.symbol == "BTCUSDT" {
+            client.cache_instrument(
+                parse_linear_instrument(&definition, 0.into(), 0.into()).unwrap(),
+            );
+        }
+    }
+
+    let error = client
+        .request_position_status_reports(
+            AccountId::new("BYBIT-UNIFIED"),
+            BybitProductType::Linear,
+            None,
+        )
+        .await
+        .expect_err("a later page failure must discard earlier position reports");
+
+    assert!(
+        format!("{error:#}").contains(expected_error),
+        "unexpected error: {error:#}"
+    );
+    let queries = state.position_queries.lock().await;
+    assert_eq!(queries.len(), 2);
+    assert_eq!(queries[0].get("cursor"), None);
+    assert_eq!(
+        queries[1].get("cursor").map(String::as_str),
+        Some("position-page-2")
+    );
+    assert_eq!(
+        queries[0].get("settleCoin").map(String::as_str),
+        Some("USDT")
+    );
+    assert_eq!(
+        queries[1].get("settleCoin").map(String::as_str),
+        Some("USDT")
+    );
+}
+
+async fn start_position_report_server(
+    positions: Value,
+    paginated: bool,
+) -> (SocketAddr, TestServerState) {
+    let state = TestServerState::default();
+
+    let router = Router::new()
+        .route("/v5/market/time", get(handle_get_server_time))
+        .route("/v5/market/instruments-info", get(handle_get_instruments))
+        .route(
+            "/v5/position/list",
+            get(
+                move |Query(query): Query<HashMap<String, String>>,
+                      State(state): State<TestServerState>| {
+                    let mut response = positions.clone();
+                    async move {
+                        let list = response["result"]["list"].as_array_mut().unwrap();
+                        if query.get("settleCoin").map(String::as_str) == Some("USDC") {
+                            list.clear();
+                        } else if query.contains_key("symbol")
+                            || (paginated && query.contains_key("cursor"))
+                        {
+                            list.remove(0);
+                        } else if paginated {
+                            list.truncate(1);
+                            response["result"]["nextPageCursor"] = json!("position-page-2");
+                        }
+
+                        state.position_queries.lock().await.push(query);
+                        Json(response)
+                    }
+                },
+            ),
+        )
+        .with_state(state.clone());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    wait_for_server(addr, "/v5/market/time").await;
+    (addr, state)
 }

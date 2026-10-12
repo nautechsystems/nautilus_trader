@@ -68,7 +68,7 @@ use nautilus_polymarket::{
     common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
     config::PolymarketDataClientConfig,
     data::PolymarketDataClient,
-    data_types::PolymarketRtdsCryptoTwap,
+    data_types::{PolymarketCryptoPrice, PolymarketCryptoTwap, PolymarketEquityPrice},
     http::{
         clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
         gamma::PolymarketGammaHttpClient,
@@ -135,7 +135,7 @@ struct TestServerState {
     trades_request_count: Arc<AtomicUsize>,
     trades_error: Arc<AtomicBool>,
     market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
-    rtds_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    polybolt_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
 
 async fn handle_gamma_markets(State(state): State<TestServerState>) -> Json<Value> {
@@ -219,33 +219,19 @@ async fn handle_market_socket(mut socket: WebSocket, state: TestServerState) {
     }
 }
 
-async fn handle_rtds_socket(mut socket: WebSocket, state: TestServerState) {
+// Minimal PolyBolt venue: acknowledges auth and subscriptions (never recording the auth
+// payload), then serves captured updates for each supported price channel.
+async fn handle_polybolt_socket(mut socket: WebSocket, state: TestServerState) {
     while let Some(result) = socket.next().await {
         let Ok(message) = result else { break };
 
         match message {
             Message::Text(text) => {
-                let Ok(payload) = serde_json::from_str::<Value>(&text) else {
-                    continue;
-                };
-                let is_twap_subscribe = payload.get("action").and_then(Value::as_str)
-                    == Some("subscribe")
-                    && payload
-                        .get("subscriptions")
-                        .and_then(Value::as_array)
-                        .is_some_and(|subscriptions| {
-                            subscriptions.iter().any(|subscription| {
-                                subscription.get("topic").and_then(Value::as_str)
-                                    == Some("crypto_prices_twap_sixty")
-                            })
-                        });
-                state.rtds_payloads.lock().await.push(payload);
-
-                if is_twap_subscribe {
-                    let update = load_json("rtds_crypto_twap_sixty_update.json").to_string();
-                    if socket.send(Message::Text(update.into())).await.is_err() {
-                        break;
-                    }
+                if handle_polybolt_request(&mut socket, &state, &text)
+                    .await
+                    .is_err()
+                {
+                    return;
                 }
             }
             Message::Ping(data) => {
@@ -259,11 +245,84 @@ async fn handle_rtds_socket(mut socket: WebSocket, state: TestServerState) {
     }
 }
 
-async fn handle_rtds_upgrade(
+async fn handle_polybolt_request(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    text: &str,
+) -> Result<(), axum::Error> {
+    let Ok(payload) = serde_json::from_str::<Value>(text) else {
+        return Ok(());
+    };
+
+    let op = payload["op"].as_str().unwrap_or_default();
+    state.polybolt_payloads.lock().await.push(if op == "auth" {
+        json!({"op": "auth"})
+    } else {
+        payload.clone()
+    });
+
+    for reply in polybolt_replies(&payload) {
+        socket.send(Message::Text(reply.to_string().into())).await?;
+    }
+
+    Ok(())
+}
+
+fn polybolt_replies(payload: &Value) -> Vec<Value> {
+    let op = payload["op"].as_str().unwrap_or_default();
+
+    let mut replies = match op {
+        "auth" => vec![json!({"op": "authed", "rid": payload["rid"]})],
+        "subscribe" | "unsubscribe" => payload["subscriptions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|subscription| {
+                json!({
+                    "op": format!("{op}d"),
+                    "channel": subscription["channel"],
+                    "rid": payload["rid"],
+                })
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+
+    if op == "subscribe" {
+        replies.extend(
+            payload["subscriptions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|subscription| {
+                    let fixture = match subscription["channel"].as_str()? {
+                        "price.crypto" => "polybolt_crypto_price_update.json",
+                        "price.crypto.twap" => "polybolt_crypto_twap_update.json",
+                        "price.equity" => "polybolt_equity_price_update.json",
+                        _ => return None,
+                    };
+
+                    let mut reply = load_json(fixture);
+                    let timestamp = reply["payload"]["timestamp"].as_u64().unwrap();
+                    reply["ts"] = json!(timestamp + 111);
+                    if subscription["channel"] == "price.equity" {
+                        reply["payload"]["received_at"] = json!(timestamp + 222);
+                        reply["payload"]["is_carried_forward"] = json!(true);
+                    }
+
+                    Some(reply)
+                }),
+        );
+    }
+
+    replies
+}
+
+async fn handle_polybolt_upgrade(
     ws: WebSocketUpgrade,
     State(state): State<TestServerState>,
 ) -> Response {
-    ws.on_upgrade(move |socket| handle_rtds_socket(socket, state))
+    ws.on_upgrade(move |socket| handle_polybolt_socket(socket, state))
 }
 
 fn create_router(state: TestServerState) -> Router {
@@ -273,7 +332,7 @@ fn create_router(state: TestServerState) -> Router {
         .route("/book", get(handle_book))
         .route("/v2/trades", get(handle_trades))
         .route("/ws/market", get(handle_market_upgrade))
-        .route("/rtds", get(handle_rtds_upgrade))
+        .route("/polybolt", get(handle_polybolt_upgrade))
         .with_state(state)
 }
 
@@ -284,7 +343,7 @@ fn crypto_twap_data_type(symbol: &str, window_seconds: u64) -> DataType {
         "window_seconds".to_string(),
         Value::Number(window_seconds.into()),
     );
-    DataType::new("PolymarketRtdsCryptoTwap", Some(metadata), None)
+    DataType::new("PolymarketCryptoTwap", Some(metadata), None)
 }
 
 async fn start_mock_server(state: TestServerState) -> SocketAddr {
@@ -364,12 +423,30 @@ async fn test_connect_with_new_markets_emits_market_socket_state_change() {
 }
 
 #[rstest]
+#[case("PolymarketCryptoPrice", "price.crypto", "BTCUSD", None)]
+#[case("PolymarketCryptoTwap", "price.crypto.twap", "BTCUSD", Some(60))]
+#[case("PolymarketEquityPrice", "price.equity", "AAPL", None)]
 #[tokio::test]
-async fn test_subscribe_crypto_twap_sends_exact_topic_and_emits_exact_update() {
+async fn test_subscribe_reference_price_authenticates_sends_exact_channel_and_emits_exact_update(
+    #[case] type_name: &str,
+    #[case] channel: &str,
+    #[case] symbol: &str,
+    #[case] window_seconds: Option<u64>,
+) {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut data_rx) = create_test_data_client(addr);
-    let data_type = crypto_twap_data_type("BTC/USD", 60);
+
+    let data_type = match window_seconds {
+        Some(window) => crypto_twap_data_type(symbol, window),
+        None => {
+            let mut metadata = Params::new();
+            metadata.insert("symbol".to_string(), json!(symbol));
+            DataType::new(type_name, Some(metadata), None)
+        }
+    };
+
+    let started = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
 
     client
         .subscribe(SubscribeCustomData::new(
@@ -381,7 +458,7 @@ async fn test_subscribe_crypto_twap_sends_exact_topic_and_emits_exact_update() {
             None,
             None,
         ))
-        .expect("subscribe 60-second TWAP");
+        .expect("subscribe reference price");
     client.connect().await.expect("connect data client");
 
     let custom = tokio::time::timeout(Duration::from_secs(5), async {
@@ -393,29 +470,74 @@ async fn test_subscribe_crypto_twap_sends_exact_topic_and_emits_exact_update() {
         }
     })
     .await
-    .expect("wait for TWAP custom data");
-    let payload = custom
-        .data
-        .as_any()
-        .downcast_ref::<PolymarketRtdsCryptoTwap>()
-        .expect("PolymarketRtdsCryptoTwap");
-    let requests = state.rtds_payloads.lock().await.clone();
+    .expect("wait for reference-price custom data");
+
+    let finished = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let requests = state.polybolt_payloads.lock().await.clone();
+    let mut filter = json!({"symbol": symbol.to_ascii_lowercase()});
+    if let Some(window) = window_seconds {
+        filter["window_seconds"] = json!(window);
+    }
 
     assert_eq!(custom.data_type, data_type);
-    assert_eq!(payload.symbol, "btc/usd");
-    assert_eq!(payload.window_seconds, 60);
-    assert_eq!(payload.value, dec!(65000.123456789012345678));
-    assert_eq!(payload.observation_timestamp_ms, 1772752581815);
-    assert_eq!(payload.message_timestamp_ms, 1772752582004);
+    assert!((started..=finished).contains(&custom.data.ts_init()));
+
+    match type_name {
+        "PolymarketCryptoPrice" => {
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketCryptoPrice>()
+                .unwrap();
+            assert_eq!(payload.symbol, "btcusd");
+            assert_eq!(payload.source, "chainlink");
+            assert_eq!(payload.value, dec!(84290.833784311415570432));
+            assert_eq!(payload.price_timestamp_ms, 1791355667000);
+            assert_eq!(payload.message_timestamp_ms, 1791355667111);
+            assert_eq!(payload.ts_event, UnixNanos::from(1791355667000000000));
+        }
+        "PolymarketCryptoTwap" => {
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketCryptoTwap>()
+                .unwrap();
+            assert_eq!(payload.symbol, "btcusd");
+            assert_eq!(payload.source, "chainlink");
+            assert_eq!(payload.window_seconds, 60);
+            assert_eq!(payload.value, dec!(84291.577380840025358336));
+            assert_eq!(payload.observation_timestamp_ms, 1791355667000);
+            assert_eq!(payload.message_timestamp_ms, 1791355667111);
+            assert_eq!(payload.ts_event, UnixNanos::from(1791355667000000000));
+        }
+        "PolymarketEquityPrice" => {
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketEquityPrice>()
+                .unwrap();
+            assert_eq!(payload.symbol, "aapl");
+            assert_eq!(payload.source, "pyth");
+            assert_eq!(payload.value, dec!(333.81));
+            assert_eq!(payload.price_timestamp_ms, 1791355668000);
+            assert_eq!(payload.message_timestamp_ms, 1791355668111);
+            assert_eq!(payload.received_at_ms, Some(1791355668222));
+            assert!(payload.is_carried_forward);
+            assert_eq!(payload.ts_event, UnixNanos::from(1791355668000000000));
+        }
+        _ => panic!("unexpected test type {type_name}"),
+    }
+
     assert_eq!(
         requests,
-        vec![serde_json::json!({
-            "action": "subscribe",
-            "subscriptions": [{
-                "topic": "crypto_prices_twap_sixty",
-                "type": "update",
-            }],
-        })],
+        vec![
+            json!({"op": "auth"}),
+            json!({
+                "op": "subscribe",
+                "subscriptions": [{"channel": channel, "filter": filter}],
+            }),
+        ],
+        "auth must precede the subscribe and the auth payload must never be recorded",
     );
 
     client.disconnect().await.expect("disconnect data client");
@@ -463,7 +585,10 @@ fn create_test_data_client_with_resolution_options(
     let config = PolymarketDataClientConfig {
         base_url_http: Some(base_url.clone()),
         base_url_ws: Some(format!("ws://{addr}/ws")),
-        base_url_rtds: Some(format!("ws://{addr}/rtds")),
+        base_url_reference_prices: Some(format!("ws://{addr}/polybolt")),
+        api_key: Some("fixture-key".into()),
+        api_secret: Some("Zml4dHVyZS1zZWNyZXQ=".into()),
+        passphrase: Some("fixture-passphrase".into()),
         base_url_gamma: Some(base_url.clone()),
         base_url_data_api: Some(base_url),
         subscribe_new_markets,

@@ -23,6 +23,7 @@ This crate provides feature flags to control source code inclusion during compil
 
 - `arrow`: Enables Apache Arrow support in dependent crates.
 - `betfair`: Enables the Betfair adapter and its Python bindings.
+- `coinapi`: Enables the CoinAPI adapter and its Python bindings.
 - `defi`: Enables DeFi (Decentralized Finance) support, including blockchain adapters.
 - `extension-module`: Builds as a Python extension module and is automatically enabled by `maturin`.
 - `high-precision`: Uses 128-bit value types throughout the workspace.
