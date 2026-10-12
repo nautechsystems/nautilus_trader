@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "channel": "price.crypto.twap",
+  "seq": 1,
+  "ts": 1791355666000,
+  "snapshot": true,
+  "payload": {
+    "data": [
+      {
+        "full_accuracy_value": "84308.348647635372998656",
+        "timestamp": 1791355549000,
+        "value": 84308.34864763537
+      },
+      {
+        "full_accuracy_value": "84308.296819943225163776",
+        "timestamp": 1791355550000,
+        "value": 84308.29681994322
+      },
+      {
+        "full_accuracy_value": "84291.78433204316536832",
+        "timestamp": 1791355666000,
+        "value": 84291.78433204317
+      }
+    ],
+    "source": "chainlink",
+    "symbol": "btcusd",
+    "window_seconds": 60
+  }
+}

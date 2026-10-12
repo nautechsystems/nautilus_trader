@@ -1222,6 +1222,38 @@ Hyperliquid implements order modification as a **cancel-replace**. The `modify` 
 cancels the original order (old `oid`) and opens a replacement with a new `oid`. Both legs
 share the same client order ID (`cloid`).
 
+Nautilus omits the action-level
+[`always_place` flag](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#modify-an-order)
+(`a`). With the flag absent, a canceled or fully filled target does not create a replacement.
+Setting it to true allows replacement even when cancellation fails and can create an unwanted
+extra order.
+
+Replacement rules depend on the original order. An executable limit replacement is priced to match immediately.
+
+| Original order                  | Replacement                 | Venue result                                          |
+| ------------------------------- | --------------------------- | ----------------------------------------------------- |
+| Limit                           | Non-executable ALO limit    | Accepted; stays post-only.                            |
+| Limit                           | Non-executable GTC limit    | Accepted; time in force changes to ALO.               |
+| Limit                           | Executable ALO or GTC limit | Original canceled; replacement rejected as post-only. |
+| Limit                           | IOC limit                   | Rejected without canceling the original.              |
+| Limit                           | Trigger market or limit     | Rejected without canceling the original.              |
+| Untriggered stop or take profit | Same trigger kind           | Accepted.                                             |
+
+The linked API description allows only non-trigger replacements with `always_place` false.
+The venue also accepts same-kind replacements for existing trigger orders with `a` absent.
+Nautilus strategy modifications retain the cached order's kind and time in force.
+
+The execution client sends one `modify` action per `ModifyOrder`. For direct `batchModify` calls,
+the venue processes each modification separately. An invalid replacement does not roll back
+successful modifications in the same batch. Check each entry's result.
+
+:::warning
+An executable ALO or GTC replacement can cancel the original limit order before Hyperliquid
+rejects the replacement. A modify rejection does not prove that the original order is still open.
+`OrderModifyRejected` can be followed by `OrderCanceled` if the venue cancels the original.
+Check its venue state before deciding whether to submit another order.
+:::
+
 The modify HTTP response only confirms success. The
 [`orderUpdates` WebSocket subscription](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions)
 then delivers an `ACCEPTED(new_oid)` status report, followed by a `CANCELED(old_oid)` for the

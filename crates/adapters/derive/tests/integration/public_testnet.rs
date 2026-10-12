@@ -13,19 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Non-mutating live validation against the Derive v3 public testnet API.
+//! Non-mutating live validation against the Derive v3 public API.
 
 use std::time::Duration;
 
 use nautilus_common::providers::InstrumentProvider;
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_derive::{
-    common::{consts::REST_URL_TESTNET, enums::DeriveEnvironment},
+    common::{
+        consts::REST_URL_TESTNET, enums::DeriveEnvironment, parse::parse_derive_instrument_any,
+        urls,
+    },
     http::DeriveHttpClient,
     providers::DeriveInstrumentProvider,
     websocket::{
-        DeriveWebSocketClient, DeriveWsMessage, parse_ticker_msg, parse_ticker_quote,
-        parse_ticker_quote_from_rest,
+        DeriveWebSocketClient, DeriveWsMessage, parse_orderbook_deltas, parse_orderbook_depth,
+        parse_orderbook_msg, parse_ticker_msg, parse_ticker_quote, parse_ticker_quote_from_rest,
     },
 };
 use nautilus_model::{
@@ -33,6 +36,89 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::websocket::TransportBackend;
+use rstest::rstest;
+
+#[rstest]
+#[case::testnet(DeriveEnvironment::Testnet)]
+#[case::mainnet(DeriveEnvironment::Mainnet)]
+#[tokio::test]
+#[ignore = "requires Derive public network access; mainnet requires an isolated NZ route"]
+async fn test_public_v3_book_snapshots(#[case] environment: DeriveEnvironment) {
+    let http = DeriveHttpClient::new(urls::rest_url(environment), Some(15), None, None).unwrap();
+    let definition = http.get_instrument("ETH-PERP").await.unwrap();
+    let instrument = parse_derive_instrument_any(&definition, UnixNanos::from(1))
+        .unwrap()
+        .unwrap();
+    let mut ws_client =
+        DeriveWebSocketClient::new(None, environment, TransportBackend::default(), None);
+    ws_client.connect().await.unwrap();
+    let mut events = ws_client.take_event_receiver().unwrap();
+    let validation = async {
+        ws_client
+            .subscribe_orderbook("ETH-PERP", "1", "10")
+            .await
+            .unwrap();
+
+        let payload = loop {
+            match events.recv().await.unwrap() {
+                DeriveWsMessage::Subscription(payload)
+                | DeriveWsMessage::BookSubscription { payload, .. } => break payload,
+                _ => {}
+            }
+        };
+
+        let msg = parse_orderbook_msg(&payload).unwrap();
+        let deltas = parse_orderbook_deltas(
+            &msg,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            UnixNanos::from(2),
+        )
+        .unwrap();
+        let depth = parse_orderbook_depth(
+            &msg,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            UnixNanos::from(2),
+        )
+        .unwrap();
+        assert_eq!(msg.channel.as_str(), "orderbook.ETH-PERP.1.10");
+        assert_eq!(deltas.instrument_id, instrument.id());
+        assert_eq!(depth.instrument_id, instrument.id());
+        assert_eq!(deltas.sequence, depth.sequence);
+        assert_eq!(deltas.ts_event, depth.ts_event);
+        assert_eq!(deltas.ts_init, depth.ts_init);
+        assert_eq!(deltas.deltas.len(), 1 + depth.bids.len() + depth.asks.len());
+
+        for (delta, level) in deltas
+            .deltas
+            .iter()
+            .skip(1)
+            .zip(depth.bids.iter().chain(&depth.asks))
+        {
+            assert_eq!(delta.order.price, level.price);
+            assert_eq!(delta.order.size, level.size);
+            assert_eq!(delta.order.side, level.side);
+            assert_eq!(level.price.precision, instrument.price_precision());
+            assert_eq!(level.size.precision, instrument.size_precision());
+        }
+
+        ws_client
+            .unsubscribe_orderbook("ETH-PERP", "1", "10")
+            .await
+            .unwrap();
+        println!(
+            "Derive {environment:?}: full snapshot decoded into deltas and depth; unsubscribed"
+        );
+    };
+
+    let result = tokio::time::timeout(Duration::from_secs(30), validation).await;
+    tokio::time::timeout(Duration::from_secs(5), ws_client.disconnect())
+        .await
+        .expect("book validation shutdown exceeds five seconds")
+        .unwrap();
+    result.expect("book validation exceeds 30 seconds");
+}
 
 #[tokio::test]
 #[ignore = "requires Derive public testnet network access"]

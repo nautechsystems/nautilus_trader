@@ -1,0 +1,14 @@
+[
+  {
+    "time_period_start": "2026-09-23T09:09:00.0000000Z",
+    "time_period_end": "2026-09-23T09:10:00.0000000Z",
+    "time_open": "2026-09-23T09:09:00.0822750Z",
+    "time_close": "2026-09-23T09:09:59.9983600Z",
+    "price_open": 85988.49,
+    "price_high": 86007.23,
+    "price_low": 85986.91,
+    "price_close": 85998.695,
+    "volume_traded": 0.9707556800000001,
+    "trades_count": 261
+  }
+]

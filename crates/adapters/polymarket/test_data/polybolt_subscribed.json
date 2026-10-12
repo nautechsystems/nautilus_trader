@@ -1,0 +1,6 @@
+{
+  "op": "subscribed",
+  "channel": "price.crypto.twap",
+  "rid": "s1",
+  "provider": "chainlink"
+}

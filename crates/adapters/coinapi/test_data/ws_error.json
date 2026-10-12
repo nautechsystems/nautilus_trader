@@ -1,0 +1,1 @@
+{"type":"error","message":"Subscribed data type \u0027nonsense\u0027 is invalid. Allowed values: book5, book20, book50, book, book_l3, quote, trade, ohlcv, exrate, asset, exchange, symbol, connectivity_status."}

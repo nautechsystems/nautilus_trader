@@ -27,12 +27,20 @@ create_case() {
   mkdir -p \
     "$case_dir/crates/live/src/execution" \
     "$case_dir/crates/execution/src/matching_engine" \
+    "$case_dir/crates/adapters/coinapi/src/http" \
+    "$case_dir/crates/adapters/coinapi/src/websocket" \
     "$case_dir/crates/adapters/okx/src/book" \
     "$case_dir/crates/adapters/okx/src/common" \
     "$case_dir/crates/adapters/okx/src/http" \
     "$case_dir/crates/adapters/okx/src/websocket"
   : > "$case_dir/crates/live/src/execution/manager.rs"
   : > "$case_dir/crates/execution/src/matching_engine/mod.rs"
+  for adapter_path in \
+    config.rs data.rs \
+    http/client.rs http/models.rs http/query.rs \
+    websocket/client.rs websocket/messages.rs websocket/parse.rs; do
+    : > "$case_dir/crates/adapters/coinapi/src/$adapter_path"
+  done
   for adapter_path in \
     book/mod.rs book/recovery.rs book/sync.rs \
     common/parse.rs common/task.rs \

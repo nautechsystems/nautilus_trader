@@ -30,7 +30,7 @@ use futures_util::stream::{SplitSink, SplitStream};
 
 use crate::{
     error::SendError,
-    transport::{BoxedWsTransport, Message},
+    transport::{BoxedWsTransport, CloseFrame, Message},
 };
 
 /// Sink half of the active WebSocket transport.
@@ -64,6 +64,13 @@ pub type PingHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
 
 /// Function type for handling WebSocket ping messages with connection ownership.
 pub type EpochPingHandler = Arc<dyn Fn(u64, Vec<u8>) + Send + Sync>;
+
+/// Handles a peer close frame and decides whether automatic reconnection continues.
+///
+/// Returns `true` to use the client's reconnect policy, or `false` to disconnect without retrying.
+/// The callback runs synchronously on the reader task before it ends. Close frames are delivered
+/// only to this callback, not to the message handler.
+pub type CloseHandler = Arc<dyn Fn(Option<CloseFrame>) -> bool + Send + Sync>;
 
 /// Creates a channel-based message handler.
 ///

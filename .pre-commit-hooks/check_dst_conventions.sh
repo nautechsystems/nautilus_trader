@@ -52,6 +52,14 @@ IN_SCOPE_CRATES=(
 # Files under src/python/ are skipped separately by the /python/ path rule,
 # per the repo-wide Python/FFI policy.
 #
+# CoinAPI excludes module declarations (lib.rs, common/mod.rs, http/mod.rs,
+# websocket/mod.rs), common/consts.rs (pure identity constants),
+# common/credential.rs (API key resolution from config or environment and
+# character validation), factories.rs (construction wiring only),
+# common/symbol.rs (pure symbol mapping), http/error.rs (pure error
+# classification and retry-delay conversion), http/parse.rs (pure instrument parsing with caller-provided
+# timestamps), and websocket/error.rs (pure error variants).
+#
 # Derive additionally gates signing clocks, credentials derived from those clocks,
 # native parsing, rate limits, and instrument collection. Its remaining module
 # declarations, constants, enums, errors, URLs, factories, retry classifiers,
@@ -70,6 +78,15 @@ IN_SCOPE_CRATES=(
 # - Test-only or placeholder: common/testing.rs, http/parse.rs.
 
 ADAPTER_PATHS=(
+  "crates/adapters/coinapi/src/config.rs"
+  "crates/adapters/coinapi/src/data.rs"
+  "crates/adapters/coinapi/src/http/client.rs"
+  "crates/adapters/coinapi/src/http/models.rs"
+  "crates/adapters/coinapi/src/http/query.rs"
+  "crates/adapters/coinapi/src/websocket/client.rs"
+  "crates/adapters/coinapi/src/websocket/messages.rs"
+  "crates/adapters/coinapi/src/websocket/parse.rs"
+
   "crates/adapters/derive/src/book/recovery.rs"
   "crates/adapters/derive/src/book/sync.rs"
   "crates/adapters/derive/src/common/parse.rs"
@@ -289,7 +306,7 @@ report() {
 }
 
 ################################################################################
-# Adapter path coverage: every audited OKX file must exist
+# Adapter path coverage: every audited adapter file must exist
 ################################################################################
 
 # Fail loudly instead of silently skipping a moved file

@@ -1,0 +1,14 @@
+[
+  {
+    "symbol_id": "COINBASE_SPOT_BTC_USD",
+    "time_exchange": "2026-09-23T09:09:00.0822750Z",
+    "time_coinapi": "2026-09-23T09:09:00.2385208Z",
+    "uuid": "f84a79ad-ea86-4527-b1f1-e9d8bd7ed004",
+    "price": 85988.49,
+    "size": 0.01,
+    "taker_side": "BUY",
+    "id_trade": "1097218181",
+    "id_order_maker": "dad39888-007c-4765-99a5-05b0d58bba3a",
+    "id_order_taker": "ac74e7ad-506c-43a2-b892-6e5f9744ef23"
+  }
+]

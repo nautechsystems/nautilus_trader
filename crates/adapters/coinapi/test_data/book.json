@@ -1,0 +1,17 @@
+{
+  "symbol_id": "COINBASE_SPOT_BTC_USD",
+  "time_exchange": "2026-09-24T09:10:36.0854790Z",
+  "time_coinapi": "2026-09-24T09:10:36.1734713Z",
+  "asks": [
+    {
+      "price": 83556.6,
+      "size": 0.01675362
+    }
+  ],
+  "bids": [
+    {
+      "price": 83556.59,
+      "size": 0.02515277
+    }
+  ]
+}

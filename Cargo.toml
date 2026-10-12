@@ -7,6 +7,7 @@ members = [
   "crates/adapters/binance",
   "crates/adapters/blockchain",
   "crates/adapters/bybit",
+  "crates/adapters/coinapi",
   "crates/adapters/coinbase",
   "crates/adapters/databento",
   "crates/adapters/deribit",
@@ -97,6 +98,7 @@ nautilus-betfair = { path = "crates/adapters/betfair", version = "0.66.0", defau
 nautilus-binance = { path = "crates/adapters/binance", version = "0.66.0", default-features = false }
 nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.66.0" }
 nautilus-bybit = { path = "crates/adapters/bybit", version = "0.66.0", default-features = false }
+nautilus-coinapi = { path = "crates/adapters/coinapi", version = "0.66.0", default-features = false }
 nautilus-coinbase = { path = "crates/adapters/coinbase", version = "0.66.0", default-features = false }
 nautilus-databento = { path = "crates/adapters/databento", version = "0.66.0", default-features = false }
 nautilus-deribit = { path = "crates/adapters/deribit", version = "0.66.0", default-features = false }

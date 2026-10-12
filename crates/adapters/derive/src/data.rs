@@ -2754,7 +2754,7 @@ mod tests {
             consts::DERIVE_CLIENT_ID, enums::DeriveEnvironment, parse::parse_derive_instrument_any,
         },
         http::models::DeriveInstrument,
-        websocket::{DeriveWsFrame, WsSubscriptionPayload},
+        websocket::{DeriveWsFrame, WsSubscriptionPayload, parse_orderbook_msg},
     };
 
     fn data_path() -> PathBuf {
@@ -3133,6 +3133,120 @@ mod tests {
             }
             other => panic!("expected depth data event, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    #[case::null_price(0, Value::Null)]
+    #[case::empty_price(0, json!(""))]
+    #[case::null_amount(1, Value::Null)]
+    #[case::empty_amount(1, json!(""))]
+    fn test_orderbook_missing_numeric_values_preserve_recovery_and_watermark(
+        #[case] field: usize,
+        #[case] value: Value,
+        #[values("bids", "asks")] side: &str,
+        #[values(false, true)] depth: bool,
+    ) {
+        let instrument = perp_instrument();
+        let instrument_id = instrument.id();
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+        let (ctx, mut rx) = make_ctx(Some(instrument));
+        let channel = "orderbook.ETH-PERP.1.10";
+
+        let channels = if depth {
+            &ctx.active_book_depth_channels
+        } else {
+            &ctx.active_book_delta_channels
+        };
+
+        channels.insert(instrument_id, channel.to_string());
+
+        let assert_snapshot = |event, msg: &DeriveOrderbookMsg| match event {
+            DataEvent::Data(Data::BookDeltas(deltas)) if !depth => {
+                let expected =
+                    parse_orderbook_deltas(msg, price_precision, size_precision, deltas.ts_init)
+                        .unwrap();
+                assert_eq!(*deltas, expected);
+            }
+            DataEvent::Data(Data::BookDepth(snapshot)) if depth => {
+                let expected =
+                    parse_orderbook_depth(msg, price_precision, size_precision, snapshot.ts_init)
+                        .unwrap();
+                assert_eq!(*snapshot, expected);
+            }
+            other => panic!("expected book data event, was {other:?}"),
+        };
+
+        let initial = orderbook_json();
+        let timestamp = initial["timestamp"].as_i64().unwrap();
+        let write = ctx.book_sync.write(channel).unwrap();
+        let payload = subscription_payload(channel, &initial);
+        let msg = parse_orderbook_msg(&payload).unwrap();
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation: write.generation.clone(),
+            },
+            &ctx,
+        );
+
+        assert_snapshot(rx.try_recv().unwrap(), &msg);
+
+        let mut malformed = initial.clone();
+        malformed["timestamp"] = json!(timestamp + 2);
+        malformed[side][0][field] = value;
+        let payload = subscription_payload(channel, &malformed);
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation: write.generation,
+            },
+            &ctx,
+        );
+
+        assert!(rx.try_recv().is_err());
+        let recoveries = ctx.book_sync.recoveries(Duration::ZERO, Instant::now());
+        assert_eq!(recoveries.len(), 1);
+        let recovery = &recoveries[0].2;
+        let write = ctx
+            .book_sync
+            .begin_recovery_write(channel, recovery, recovery.gate.clone())
+            .unwrap();
+        write.gate.open();
+        let payload = subscription_payload(channel, &malformed);
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation: write.generation.clone(),
+            },
+            &ctx,
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert!(recovery.is_running());
+        assert!(!recovery.is_accepted());
+
+        let mut valid = initial;
+        valid["timestamp"] = json!(timestamp + 1);
+        let payload = subscription_payload(channel, &valid);
+        let msg = parse_orderbook_msg(&payload).unwrap();
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation: write.generation,
+            },
+            &ctx,
+        );
+
+        assert_snapshot(rx.try_recv().unwrap(), &msg);
+        assert!(recovery.is_accepted());
+        assert!(!recovery.is_running());
+        assert!(rx.try_recv().is_err());
+        assert!(
+            ctx.book_sync
+                .recoveries(Duration::ZERO, Instant::now())
+                .is_empty()
+        );
     }
 
     #[rstest]

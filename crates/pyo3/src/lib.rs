@@ -34,6 +34,7 @@
 //!
 //! - `arrow`: Enables Apache Arrow support in dependent crates.
 //! - `betfair`: Enables the Betfair adapter and its Python bindings.
+//! - `coinapi`: Enables the CoinAPI adapter and its Python bindings.
 //! - `defi`: Enables DeFi (Decentralized Finance) support, including blockchain adapters.
 //! - `extension-module`: Builds as a Python extension module and is automatically enabled by
 //!   `maturin`.
@@ -213,6 +214,14 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let submodule = pyo3::wrap_pymodule!(nautilus_bybit::python::bybit);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+
+    #[cfg(feature = "coinapi")]
+    {
+        let n = "coinapi";
+        let submodule = pyo3::wrap_pymodule!(nautilus_coinapi::python::coinapi);
+        m.add_wrapped(submodule)?;
+        sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    }
 
     let n = "coinbase";
     let submodule = pyo3::wrap_pymodule!(nautilus_coinbase::python::coinbase);

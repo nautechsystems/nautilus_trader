@@ -28,7 +28,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_common::cache::fifo::FifoCacheMap;
+use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{
     AtomicSet, AtomicTime, UUID4, UnixNanos,
     string::secret::{SecretString, zeroize_json_value},
@@ -42,7 +42,7 @@ use nautilus_model::{
         OrderRejected,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
 };
@@ -254,6 +254,8 @@ pub struct DeribitWsFeedHandler {
 
     // Retain recent terminal identities so late trade frames stay on the order-event path
     terminal_order_contexts: FifoCacheMap<VenueOrderId, OrderContext, 10_000>,
+
+    emitted_trades: FifoCache<(VenueOrderId, TradeId), 10_000>,
     pending_bars: AHashMap<String, Bar>,
     bars_timestamp_on_close: bool,
     last_account_states: AHashMap<String, AccountState>,
@@ -301,6 +303,7 @@ impl DeribitWsFeedHandler {
             order_contexts: AHashMap::new(),
             submitted_order_contexts: FifoCacheMap::new(),
             terminal_order_contexts: FifoCacheMap::new(),
+            emitted_trades: FifoCache::new(),
             pending_bars: AHashMap::new(),
             bars_timestamp_on_close,
             last_account_states: AHashMap::new(),
@@ -2676,6 +2679,19 @@ impl DeribitWsFeedHandler {
             }
         }
 
+        // Preserve order-context updates before suppressing duplicate trade output
+        outgoing.retain(|message| match message {
+            NautilusWsMessage::OrderFilled(fill) => self
+                .emitted_trades
+                .insert((fill.venue_order_id, fill.trade_id)),
+            _ => true,
+        });
+
+        reports.retain(|report| {
+            self.emitted_trades
+                .insert((report.venue_order_id, report.trade_id))
+        });
+
         if !reports.is_empty() {
             outgoing.push(NautilusWsMessage::FillReports(reports));
         }
@@ -2793,7 +2809,11 @@ fn is_grouped_book_channel(channel: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{enums::LiquiditySide, instruments::Instrument, types::Money};
+    use nautilus_model::{
+        enums::LiquiditySide,
+        instruments::Instrument,
+        types::{Money, Price, Quantity},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -2979,17 +2999,17 @@ mod tests {
             ))
             .await;
 
-        assert!(matches!(
-            handler.pending_outgoing.pop_front().unwrap(),
-            NautilusWsMessage::OrderFilled(event)
-                if event.client_order_id == client_order_id
-        ));
         assert!(handler.pending_outgoing.is_empty());
     }
 
     #[rstest]
+    #[case::response_first(false)]
+    #[case::subscription_first(true)]
     #[tokio::test]
-    async fn submit_response_trades_use_tracked_event_path() {
+    async fn submit_response_trades_use_tracked_event_path(
+        #[case] subscription_first: bool,
+        #[values("filled", "open")] trade_state: &str,
+    ) {
         let mut handler = routing_test_handler();
         let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
         let context = OrderContext {
@@ -3016,40 +3036,202 @@ mod tests {
                 order_type: context.order_type,
             },
         );
+
+        let mut trade = trade_data();
+        trade["state"] = serde_json::json!(trade_state);
+        trade["amount"] = serde_json::json!(if trade_state == "filled" { 2 } else { 1 });
+        let mut order = order_data(trade_state, false);
+        order["filled_amount"] = trade["amount"].clone();
         let response = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 42,
-            "result": { "order": order_data("filled", false), "trades": [trade_data()] }
+            "result": { "order": order, "trades": [trade.clone()] }
         });
+        let trade_update = subscription("user.trades.any.any.raw", &serde_json::json!([trade]));
 
-        handler.process_raw_message(&response.to_string()).await;
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.raw_rx = raw_rx;
+        handler.out_tx = out_tx;
+        let response = response.to_string();
+        let messages = if subscription_first {
+            [trade_update, response]
+        } else {
+            [response, trade_update]
+        };
 
+        for message in messages {
+            raw_tx.send(Message::Text(message.into())).unwrap();
+        }
+
+        raw_tx.send(Message::Text(RECONNECTED.into())).unwrap();
+        let reconnected = tokio::time::timeout(std::time::Duration::from_secs(2), handler.next())
+            .await
+            .unwrap();
+
+        assert!(matches!(reconnected, Some(NautilusWsMessage::Reconnected)));
         assert!(matches!(
-            handler.pending_outgoing.pop_front().unwrap(),
+            out_rx.try_recv().unwrap(),
             NautilusWsMessage::OrderAccepted(event)
                 if event.client_order_id == client_order_id
         ));
         assert!(matches!(
-            handler.pending_outgoing.pop_front().unwrap(),
+            out_rx.try_recv().unwrap(),
             NautilusWsMessage::OrderFilled(event)
                 if event.client_order_id == client_order_id
                     && event.trade_id.to_string() == "ETH-2696068"
+                    && event.last_qty.to_string() == if trade_state == "filled" { "2" } else { "1" }
         ));
+        assert!(out_rx.try_recv().is_err());
         assert!(handler.pending_outgoing.is_empty());
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        assert_eq!(
+            handler
+                .terminal_order_contexts
+                .contains_key(&venue_order_id),
+            trade_state == "filled",
+        );
+        assert_eq!(
+            handler.order_contexts.contains_key(&venue_order_id),
+            trade_state == "open",
+        );
+    }
 
-        handler
-            .process_raw_message(&subscription(
-                "user.trades.any.any.raw",
-                &serde_json::json!([trade_data()]),
-            ))
-            .await;
+    #[rstest]
+    #[case::tracked(true)]
+    #[case::external(false)]
+    #[tokio::test]
+    async fn trade_replays_after_reconnect_preserve_new_fills(#[case] tracked: bool) {
+        let mut handler = routing_test_handler();
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
 
-        assert!(matches!(
-            handler.pending_outgoing.pop_front().unwrap(),
-            NautilusWsMessage::OrderFilled(event)
-                if event.client_order_id == client_order_id
-        ));
+        if tracked {
+            handler.order_contexts.insert(
+                venue_order_id,
+                OrderContext {
+                    client_order_id,
+                    trader_id: TraderId::from("TRADER-001"),
+                    strategy_id: StrategyId::from("S-001"),
+                    instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                    order_side: OrderSide::Buy,
+                    order_type: OrderType::Market,
+                    accepted: true,
+                    last_order_signature: None,
+                },
+            );
+        }
+
+        let mut first_trade = trade_data();
+        first_trade["amount"] = serde_json::json!(1);
+        let mut second_trade = first_trade.clone();
+        second_trade["trade_id"] = serde_json::json!("ETH-2696069");
+        second_trade["price"] = serde_json::json!(204.1);
+        second_trade["fee"] = serde_json::json!(0.00083602);
+        let first_update = subscription(
+            "user.trades.any.any.raw",
+            &serde_json::json!([first_trade.clone(), first_trade.clone()]),
+        );
+        let replay_update = subscription(
+            "user.trades.any.any.raw",
+            &serde_json::json!([first_trade, second_trade.clone(), second_trade]),
+        );
+
+        handler.process_raw_message(&first_update).await;
+        let first = handler.pending_outgoing.pop_front().unwrap();
         assert!(handler.pending_outgoing.is_empty());
+        let reconnected = handler.process_raw_message(RECONNECTED).await;
+        handler.process_raw_message(&replay_update).await;
+        let second = handler.pending_outgoing.pop_front().unwrap();
+
+        let fills = [first, second].map(|message| match message {
+            NautilusWsMessage::OrderFilled(fill) => {
+                assert!(tracked);
+                assert_eq!(fill.client_order_id, client_order_id);
+                (
+                    fill.trade_id,
+                    fill.last_qty,
+                    fill.last_px,
+                    fill.commission.unwrap(),
+                )
+            }
+            NautilusWsMessage::FillReports(mut reports) => {
+                assert!(!tracked);
+                assert_eq!(reports.len(), 1);
+                let report = reports.pop().unwrap();
+                (
+                    report.trade_id,
+                    report.last_qty,
+                    report.last_px,
+                    report.commission,
+                )
+            }
+            message => panic!("unexpected fill message: {message:?}"),
+        });
+
+        assert!(matches!(reconnected, Some(NautilusWsMessage::Reconnected)));
+        assert!(handler.pending_outgoing.is_empty());
+        assert_eq!(
+            fills,
+            [
+                (
+                    TradeId::from("ETH-2696068"),
+                    Quantity::from(1),
+                    Price::from("203.8"),
+                    Money::from("0.00073602 USDT")
+                ),
+                (
+                    TradeId::from("ETH-2696069"),
+                    Quantity::from(1),
+                    Price::from("204.1"),
+                    Money::from("0.00083602 USDT")
+                ),
+            ],
+        );
+        assert_eq!(
+            handler
+                .terminal_order_contexts
+                .contains_key(&venue_order_id),
+            tracked
+        );
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+    }
+
+    #[rstest]
+    fn trade_dedup_is_scoped_to_venue_order() {
+        let mut handler = routing_test_handler();
+        let first_trade = trade_data();
+        let mut second_trade = first_trade.clone();
+        second_trade["order_id"] = serde_json::json!("ETH-584830575");
+        let trades: Vec<DeribitUserTradeMsg> = serde_json::from_str(
+            &serde_json::json!([first_trade.clone(), first_trade, second_trade]).to_string(),
+        )
+        .unwrap();
+
+        let messages = handler.route_user_trades(&trades, UnixNanos::default());
+
+        assert_eq!(messages.len(), 1);
+
+        let NautilusWsMessage::FillReports(reports) = &messages[0] else {
+            panic!("expected external fill reports");
+        };
+
+        assert_eq!(
+            reports
+                .iter()
+                .map(|report| (report.venue_order_id, report.trade_id))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    VenueOrderId::from("ETH-584830574"),
+                    TradeId::from("ETH-2696068")
+                ),
+                (
+                    VenueOrderId::from("ETH-584830575"),
+                    TradeId::from("ETH-2696068")
+                ),
+            ],
+        );
     }
 
     #[rstest]
@@ -3488,8 +3670,10 @@ mod tests {
     }
 
     #[rstest]
+    #[case::new_trade(true)]
+    #[case::repeated_trade(false)]
     #[tokio::test]
-    async fn delayed_edit_response_keeps_partial_fill_terminal() {
+    async fn delayed_edit_response_keeps_partial_fill_terminal(#[case] new_trade: bool) {
         let mut handler = routing_test_handler();
         let venue_order_id = VenueOrderId::from("ETH-584830574");
         let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -3524,6 +3708,10 @@ mod tests {
         );
         let mut partial_trade = trade_data();
         partial_trade["state"] = serde_json::Value::String("open".to_string());
+        if new_trade {
+            partial_trade["trade_id"] = serde_json::json!("ETH-2696069");
+        }
+
         let response = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 42,
@@ -3531,14 +3719,20 @@ mod tests {
         });
 
         let updated = handler.process_raw_message(&response.to_string()).await;
-        let filled = handler.pending_outgoing.pop_front().unwrap();
+        let filled = handler.pending_outgoing.pop_front();
 
         assert!(updated.is_none());
-        assert!(matches!(
-            filled,
-            NautilusWsMessage::OrderFilled(event)
-                if event.client_order_id == client_order_id
-        ));
+
+        match filled {
+            Some(NautilusWsMessage::OrderFilled(event)) => {
+                assert!(new_trade);
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.trade_id, TradeId::from("ETH-2696069"));
+            }
+            None => assert!(!new_trade),
+            message => panic!("unexpected fill message: {message:?}"),
+        }
+
         assert!(!handler.order_contexts.contains_key(&venue_order_id));
         assert!(
             handler
