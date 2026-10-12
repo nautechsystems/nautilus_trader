@@ -2975,7 +2975,7 @@ impl KrakenFuturesHttpClient {
         // A Nautilus quantity is the order's total, fills included, while the venue reads a bare
         // size as the open size
         if let Some(qty) = quantity {
-            let _ = qty;
+            builder.size(qty.to_string());
             builder.qty_mode(KrakenFuturesQtyMode::Absolute);
         }
 
