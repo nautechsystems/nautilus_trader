@@ -1170,6 +1170,11 @@ When an IOC order cannot match any resting liquidity, Hyperliquid reports
 The adapter preserves this venue rejection as `OrderRejected`. It does not synthesize an
 `OrderAccepted` followed by `OrderCanceled`. A partially filled IOC still keeps its fills and
 cancels only the unfilled remainder.
+
+For tracked orders, a terminal rejection after a partial fill closes the unfilled remainder
+with `OrderCanceled`. If the status reports fills that have not arrived, the adapter waits
+for those fills before closing the order. Unique fills received after closure still reconcile
+with their venue quantities and commissions.
 :::
 
 ### Execution instructions

@@ -2128,6 +2128,9 @@ subscriptions per connection; the 65th distinct `(channel, symbol)` is rejected 
 
 After a reconnect the feed re-authenticates and replays the retained subscriptions. The venue
 replays a fresh snapshot that can backfill the disconnect interval within its two-minute history.
+Consumers may receive a burst of historical observations with their original event timestamps
+(`ts_event`) and current initialization timestamps (`ts_init`). Recovery is bounded by the snapshot
+history and replay-admission rules below; it does not guarantee lossless history.
 Points at or before the last emitted timestamp are suppressed, so nothing is emitted twice. For
 TWAP the replay guard also survives reconnect: a redelivery of the last observation is suppressed,
 older observations are suppressed, and a different value for the same observation timestamp is not emitted but is

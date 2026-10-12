@@ -310,7 +310,9 @@ fn test_dispatch_rejected_tracked_emits_rejected_and_cleans_up(#[case] bound: bo
 }
 
 #[rstest]
-fn test_failed_modify_cancels_partially_filled_order() {
+#[case::zero_report_fills("0")]
+#[case::positive_report_fills("0.00014")]
+fn test_failed_modify_cancels_partially_filled_order(#[case] reported_fills: &str) {
     let (emitter, mut rx) = test_emitter();
     let state = WsDispatchState::new();
     let cid = ClientOrderId::new("O-PARTIAL-MODIFY");
@@ -369,18 +371,19 @@ fn test_failed_modify_cancels_partially_filled_order() {
         ("101", OrderStatus::Rejected),
         ("100", OrderStatus::Canceled),
     ] {
-        dispatch_order_event(
-            &make_status_report(
-                Some(cid.as_str()),
-                venue_order_id,
-                status,
-                Some("56730.0"),
-                "0.00020",
-            ),
-            &state,
-            &emitter,
-            UnixNanos::default(),
+        let mut report = make_status_report(
+            Some(cid.as_str()),
+            venue_order_id,
+            status,
+            Some("56730.0"),
+            "0.00020",
         );
+
+        if status == OrderStatus::Rejected {
+            report.filled_qty = Quantity::from(reported_fills);
+        }
+
+        dispatch_order_event(&report, &state, &emitter, UnixNanos::default());
     }
 
     let events = drain_events(&mut rx);

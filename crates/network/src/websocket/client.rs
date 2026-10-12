@@ -3969,7 +3969,7 @@ mod tests {
     };
 
     use crate::{
-        SocketState, SocketStateSink,
+        RECONNECTED, SocketState, SocketStateSink,
         error::SendError,
         http::{HttpClient, Method},
         logging::tests::capture_logs_for,
@@ -3980,7 +3980,7 @@ mod tests {
             AuthTracker, CloseHandler, InitialConnectRetryPolicy, ReconnectHeaders,
             TransportBackend, WebSocketClient, WebSocketClientInner, WebSocketConfig,
             auth::AuthState,
-            types::{WriterCommand, channel_message_handler},
+            types::{WriterCommand, channel_epoch_message_handler, channel_message_handler},
         },
     };
 
@@ -4766,6 +4766,105 @@ mod tests {
         // Cleanup
         client.disconnect().await;
         assert!(client.is_disconnected());
+    }
+
+    #[rstest]
+    #[case::plain(false)]
+    #[case::epoch(true)]
+    #[tokio::test]
+    async fn test_peer_close_preserves_forwarded_messages(#[case] epoch_aware: bool) {
+        let timeout = Duration::from_secs(5);
+        let subscription = "subscribe-retained";
+        let server = TestServer::setup().await;
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://127.0.0.1:{}", server.port))
+            .headers(vec![("test".to_string(), "test".to_string())])
+            .backend(TransportBackend::Tungstenite)
+            .reconnect_delay_initial_ms(50)
+            .reconnect_jitter_ms(0)
+            .build()
+            .unwrap();
+        let (handler, mut raw_rx) = channel_epoch_message_handler();
+
+        let ws_client = if epoch_aware {
+            WebSocketClient::epoch_builder()
+                .config(config)
+                .epoch_handler(handler)
+                .connect()
+                .await
+        } else {
+            WebSocketClient::builder()
+                .config(config)
+                .message_handler(Arc::new(move |message| handler(0, message)))
+                .connect()
+                .await
+        }
+        .unwrap();
+
+        let ws_client = Arc::new(ws_client);
+        let (bytes_tx, mut bytes_rx) = tokio::sync::mpsc::unbounded_channel();
+        let forwarding_client = Arc::clone(&ws_client);
+
+        let forwarding_task = tokio::spawn(async move {
+            while let Some((epoch, message)) = raw_rx.recv().await {
+                let data = match message {
+                    WsMessage::Text(text) => text.as_bytes().to_vec(),
+                    WsMessage::Binary(data) => data.to_vec(),
+                    WsMessage::Close(_) => break,
+                    _ => continue,
+                };
+
+                if data == RECONNECTED.as_bytes() {
+                    forwarding_client
+                        .send_text(subscription.into(), None)
+                        .await
+                        .unwrap();
+                }
+
+                if bytes_tx.send((epoch, data)).is_err() {
+                    break;
+                }
+            }
+        });
+
+        ws_client
+            .send_text(subscription.into(), None)
+            .await
+            .unwrap();
+        let initial = tokio::time::timeout(timeout, bytes_rx.recv())
+            .await
+            .expect("initial subscription response timed out")
+            .expect("forwarding task ended before peer close");
+
+        ws_client.send_text("close-now".into(), None).await.unwrap();
+        let reconnected = tokio::time::timeout(timeout, bytes_rx.recv())
+            .await
+            .expect("reconnect notification timed out")
+            .expect("peer close terminated the forwarding task");
+        let replayed = tokio::time::timeout(timeout, bytes_rx.recv())
+            .await
+            .expect("subscription replay response timed out")
+            .expect("forwarding task ended before subscription replay");
+        let payload = vec![3, 7, 11];
+        ws_client.send_bytes(payload.clone(), None).await.unwrap();
+        let live = tokio::time::timeout(timeout, bytes_rx.recv())
+            .await
+            .expect("replacement connection data timed out")
+            .expect("forwarding task ended before replacement data");
+
+        let expected_epoch = u64::from(epoch_aware);
+        assert_eq!(initial, (0, subscription.as_bytes().to_vec()));
+        assert_eq!(
+            reconnected,
+            (expected_epoch, RECONNECTED.as_bytes().to_vec())
+        );
+        assert_eq!(replayed, (expected_epoch, subscription.as_bytes().to_vec()));
+        assert_eq!(live, (expected_epoch, payload));
+        assert_eq!(ws_client.connection_epoch(), 1);
+        assert!(!forwarding_task.is_finished());
+
+        ws_client.disconnect().await;
+        forwarding_task.abort();
     }
 
     #[rstest]

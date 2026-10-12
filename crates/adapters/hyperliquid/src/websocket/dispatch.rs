@@ -75,6 +75,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use ahash::AHashMap;
 use dashmap::{DashMap, DashSet};
 use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{UUID4, UnixNanos};
@@ -180,7 +181,10 @@ impl ModifyChain {
 /// for `OrderAccepted`, `OrderTriggered`, and `OrderFilled` emissions, and
 /// carries the GH-3827 cancel-replace state (`cached_venue_order_ids` and
 /// `pending_modify_keys`). Cancels released from a modify chain queue in
-/// `released_cancels` until the WebSocket consumer loop applies them.
+/// `released_cancels` until the WebSocket consumer loop applies them. A rejection
+/// with undispatched fills waits for them, then releases the unfilled remainder
+/// through the same cancel queue. Fill totals are retained per venue order ID so
+/// fills on an earlier leg cannot satisfy a later leg's reported filled quantity.
 #[derive(Debug)]
 pub struct WsDispatchState {
     /// Tracked orders keyed by full Nautilus [`ClientOrderId`].
@@ -210,8 +214,7 @@ pub struct WsDispatchState {
     /// Bounded FIFO dedup to bound memory while keeping recent trade ids
     /// deduped across reconnects.
     emitted_trades: Mutex<FifoCache<TradeId, DEDUP_CAPACITY>>,
-    /// Raw Hyperliquid CLOIDs that reached a terminal state through the post
-    /// response path before the matching `orderUpdates` event arrived.
+    /// Raw Hyperliquid CLOIDs whose terminal state has already been dispatched.
     terminal_cloids: Mutex<FifoCache<Ustr, DEDUP_CAPACITY>>,
     closed_venue_order_ids: Mutex<FifoCache<VenueOrderId, DEDUP_CAPACITY>>,
     /// Last venue order id observed for a tracked client order id.
@@ -241,6 +244,8 @@ pub struct WsDispatchState {
     /// Cumulative filled quantity per tracked order. Compared against
     /// `OrderContext::quantity` to decide when to clean up tracked state.
     pub order_filled_qty: DashMap<ClientOrderId, Quantity>,
+    order_filled_qty_by_venue: Mutex<AHashMap<ClientOrderId, AHashMap<VenueOrderId, Quantity>>>,
+    pending_rejections: Mutex<AHashMap<ClientOrderId, OrderStatusReport>>,
     /// Corrective reduce queued by the cancel-replace promotion, keyed by
     /// client order id. Drained by the WS loop.
     pub pending_corrective: DashMap<ClientOrderId, CorrectiveReduce>,
@@ -265,6 +270,8 @@ impl Default for WsDispatchState {
             pending_modify_chains: DashMap::new(),
             buffered_fills: DashMap::new(),
             order_filled_qty: DashMap::new(),
+            order_filled_qty_by_venue: Mutex::new(AHashMap::new()),
+            pending_rejections: Mutex::new(AHashMap::new()),
             pending_corrective: DashMap::new(),
             released_cancels: Mutex::new(Vec::new()),
             released_cancel_notify: tokio::sync::Notify::new(),
@@ -305,13 +312,16 @@ impl WsDispatchState {
     }
 
     /// Holds a submission-time rejection until the POST response resolves.
+    /// A replay for the same venue order ID cannot reduce its reported filled quantity.
     pub fn buffer_submission_rejection(
         &self,
         client_order_id: ClientOrderId,
         report: OrderStatusReport,
     ) {
         self.pending_submission_rejections
-            .insert(client_order_id, report);
+            .entry(client_order_id)
+            .and_modify(|pending| retain_rejection_report(pending, &report))
+            .or_insert(report);
     }
 
     /// Resolves submission tracking and returns any early rejection report.
@@ -377,17 +387,14 @@ impl WsDispatchState {
 
     /// Records a terminal raw Hyperliquid CLOID.
     ///
-    /// Used when the post response rejects an order before the WebSocket
-    /// `orderUpdates` message. The normal CLOID mapping can be removed while a
-    /// late unresolved order update still gets suppressed instead of forwarded
-    /// as an external report.
+    /// Recording it lets the normal CLOID mapping be removed while a late
+    /// unresolved order update is suppressed instead of forwarded as an external report.
     pub fn insert_terminal_cloid(&self, cloid: Ustr) {
         let mut set = self.terminal_cloids.lock();
         let _ = set.insert(cloid);
     }
 
-    /// Returns whether a raw Hyperliquid CLOID reached a terminal state through
-    /// the post response path.
+    /// Returns whether a raw Hyperliquid CLOID already reached a terminal state.
     #[must_use]
     pub fn terminal_cloid_seen(&self, cloid: &Ustr) -> bool {
         let set = self.terminal_cloids.lock();
@@ -618,8 +625,9 @@ impl WsDispatchState {
 
     fn release_cancel(&self, client_order_id: &ClientOrderId, report: OrderStatusReport) {
         log::debug!(
-            "Releasing held CANCELED for {} on {client_order_id}: no pending modify targets it",
+            "Releasing held terminal report for {} on {client_order_id}: status={:?}",
             report.venue_order_id,
+            report.order_status,
         );
         self.released_cancels.lock().push(report);
         self.released_cancel_notify.notify_one();
@@ -697,6 +705,10 @@ impl WsDispatchState {
         self.pending_corrective.remove(client_order_id);
         self.buffered_fills.remove(client_order_id);
         self.order_filled_qty.remove(client_order_id);
+        self.order_filled_qty_by_venue
+            .lock()
+            .remove(client_order_id);
+        self.pending_rejections.lock().remove(client_order_id);
     }
 
     fn evict_if_full(&self, set: &DashSet<ClientOrderId>) {
@@ -939,6 +951,14 @@ pub fn dispatch_order_fill(
     emitter.send_order_event(OrderEventAny::Filled(filled));
 
     state.record_filled_qty(client_order_id, cumulative);
+    {
+        let mut orders = state.order_filled_qty_by_venue.lock();
+        let fills = orders.entry(client_order_id).or_default();
+        let quantity = fills
+            .entry(report.venue_order_id)
+            .or_insert_with(|| Quantity::zero(report.last_qty.precision));
+        *quantity = *quantity + report.last_qty;
+    }
 
     // Cumulative now includes this fill, so the reduce sizes against the true remaining
     if let Some((target, sent_request)) = promoted_corrective {
@@ -953,9 +973,30 @@ pub fn dispatch_order_fill(
 
     if is_terminal_fill {
         state.cleanup_terminal(&client_order_id);
+        return DispatchOutcome::Tracked;
     }
 
+    release_rejection_after_fill(client_order_id, state);
     DispatchOutcome::Tracked
+}
+
+fn release_rejection_after_fill(client_order_id: ClientOrderId, state: &WsDispatchState) {
+    let mut pending = state.pending_rejections.lock();
+
+    let Some(rejection) = pending.get(&client_order_id) else {
+        return;
+    };
+
+    if filled_qty_for_venue(state, client_order_id, rejection.venue_order_id) < rejection.filled_qty
+    {
+        return;
+    }
+
+    let mut canceled = rejection.clone();
+    pending.remove(&client_order_id);
+    drop(pending);
+    canceled.order_status = OrderStatus::Canceled;
+    state.release_cancel(&client_order_id, canceled);
 }
 
 fn handle_accepted(
@@ -1440,6 +1481,33 @@ fn handle_rejected(
         return DispatchOutcome::Skip;
     }
 
+    {
+        // Check and park atomically so the final fill cannot miss the pending rejection
+        let mut pending = state.pending_rejections.lock();
+        if !report.filled_qty.is_zero()
+            && filled_qty_for_venue(state, client_order_id, report.venue_order_id)
+                < report.filled_qty
+        {
+            pending
+                .entry(client_order_id)
+                .and_modify(|pending| retain_rejection_report(pending, report))
+                .or_insert_with(|| report.clone());
+            return DispatchOutcome::Skip;
+        }
+
+        if pending.contains_key(&client_order_id) {
+            return DispatchOutcome::Skip;
+        }
+    }
+
+    if !report.filled_qty.is_zero()
+        || state
+            .previous_filled_qty(&client_order_id)
+            .is_some_and(|qty| !qty.is_zero())
+    {
+        return handle_canceled(report, client_order_id, context, state, emitter, ts_init);
+    }
+
     if !claim_terminal_order(client_order_id, state, report.order_status) {
         return DispatchOutcome::Skip;
     }
@@ -1464,6 +1532,25 @@ fn handle_rejected(
     emitter.send_order_event(OrderEventAny::Rejected(rejected));
     state.cleanup_terminal(&client_order_id);
     DispatchOutcome::Tracked
+}
+
+fn retain_rejection_report(pending: &mut OrderStatusReport, report: &OrderStatusReport) {
+    if report.venue_order_id != pending.venue_order_id || report.filled_qty >= pending.filled_qty {
+        *pending = report.clone();
+    }
+}
+
+fn filled_qty_for_venue(
+    state: &WsDispatchState,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+) -> Quantity {
+    state
+        .order_filled_qty_by_venue
+        .lock()
+        .get(&client_order_id)
+        .and_then(|fills| fills.get(&venue_order_id).copied())
+        .unwrap_or_else(|| Quantity::zero(0))
 }
 
 fn claim_terminal_order(
@@ -1539,13 +1626,16 @@ pub(crate) fn venue_oid(venue_order_id: VenueOrderId) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::{sync::Arc, time::Duration};
+
     use futures_util::FutureExt;
-    use nautilus_common::messages::ExecutionEvent;
+    use nautilus_common::{messages::ExecutionEvent, testing::wait_until};
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_live::execution::context::OrderIdentity;
     use nautilus_model::{
-        enums::{AccountType, OrderSide, TimeInForce},
+        enums::{AccountType, LiquiditySide, OrderSide, TimeInForce},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId},
+        types::Money,
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -1573,6 +1663,111 @@ mod tests {
             is_reduce_only: false,
             is_quote_quantity: false,
         }
+    }
+
+    #[rstest]
+    fn test_rejection_registers_atomically_with_fill_completion() {
+        let state = Arc::new(WsDispatchState::new());
+        let (emitter, mut rx) = test_emitter();
+        let cid = ClientOrderId::new("O-REJECTION-RACE");
+        let context = make_context(cid);
+        state.register_context(context);
+
+        let first = FillReport::new(
+            AccountId::new("HYPERLIQUID-001"),
+            context.identity.instrument_id,
+            VenueOrderId::new("100"),
+            TradeId::new("T-RACE-1"),
+            OrderSide::Buy,
+            Quantity::from("0.00003"),
+            Price::from("56730.0"),
+            Money::from("0.17 USD"),
+            LiquiditySide::Taker,
+            Some(cid),
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        dispatch_order_fill(&first, &state, &emitter, UnixNanos::default());
+
+        let rejection = OrderStatusReport::new(
+            first.account_id,
+            first.instrument_id,
+            Some(cid),
+            first.venue_order_id,
+            OrderSide::Buy.into(),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Rejected,
+            context.quantity,
+            Quantity::from("0.00005"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let fills = state.order_filled_qty_by_venue.lock();
+        let reject_state = state.clone();
+        let reject_emitter = emitter.clone();
+
+        let rejected = std::thread::spawn(move || {
+            dispatch_order_event(
+                &rejection,
+                &reject_state,
+                &reject_emitter,
+                UnixNanos::default(),
+            )
+        });
+
+        let timeout = Duration::from_secs(5);
+        wait_until(|| state.pending_rejections.is_locked(), timeout);
+        let mut last = first;
+        last.trade_id = TradeId::new("T-RACE-2");
+        last.last_qty = Quantity::from("0.00002");
+        last.commission = Money::from("0.29 USD");
+        let fill_state = state.clone();
+        let fill_emitter = emitter.clone();
+        let filled = std::thread::spawn(move || {
+            dispatch_order_fill(&last, &fill_state, &fill_emitter, UnixNanos::default())
+        });
+
+        wait_until(
+            || state.previous_filled_qty(&cid) == Some(Quantity::from("0.00005")),
+            timeout,
+        );
+        drop(fills);
+        rejected.join().unwrap();
+        assert_eq!(filled.join().unwrap(), DispatchOutcome::Tracked);
+
+        if let Some(released) = state.recv_released_cancels().now_or_never() {
+            assert_eq!(released.len(), 1);
+            dispatch_order_event(&released[0], &state, &emitter, UnixNanos::default());
+        }
+
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+
+        let [
+            ExecutionEvent::Order(OrderEventAny::Accepted(_)),
+            ExecutionEvent::Order(OrderEventAny::Filled(first)),
+            ExecutionEvent::Order(OrderEventAny::Filled(last)),
+            ExecutionEvent::Order(OrderEventAny::Canceled(_)),
+        ] = events.as_slice()
+        else {
+            panic!("expected two fills followed by cancellation: {events:?}");
+        };
+
+        assert_eq!(first.trade_id, TradeId::new("T-RACE-1"));
+        assert_eq!(first.last_qty, Quantity::from("0.00003"));
+        assert_eq!(first.commission, Some(Money::from("0.17 USD")));
+        assert_eq!(last.trade_id, TradeId::new("T-RACE-2"));
+        assert_eq!(last.last_qty, Quantity::from("0.00002"));
+        assert_eq!(last.commission, Some(Money::from("0.29 USD")));
+        assert_eq!(state.lookup_context(&cid), None);
+        assert!(state.filled_orders.contains(&cid));
     }
 
     #[rstest]
