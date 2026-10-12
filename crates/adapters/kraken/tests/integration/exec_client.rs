@@ -150,6 +150,8 @@ struct TestServerState {
     fills_response: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/derivatives/api/v3/openorders` returns this JSON.
     futures_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/0/private/OpenOrders` returns this JSON instead of `http_open_orders.json`.
+    spot_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// Served by `/derivatives/api/v3/openorders` one per request, ahead of the override.
     futures_open_orders_sequence: Arc<tokio::sync::Mutex<VecDeque<String>>>,
     /// When set, `/derivatives/api/v3/openpositions` returns this JSON.
@@ -201,6 +203,7 @@ impl Default for TestServerState {
             orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
             fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             futures_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            spot_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
             futures_open_orders_sequence: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             futures_open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
             futures_order_history_json: Arc::new(tokio::sync::Mutex::new(None)),
@@ -521,7 +524,14 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         "/0/private/GetWebSocketsToken" => json_response(
             r#"{"error":[],"result":{"token":"TEST-TOKEN","expires":900}}"#.to_string(),
         ),
-        "/0/private/OpenOrders" => json_response(load_test_data("http_open_orders.json")),
+        "/0/private/OpenOrders" => {
+            let response = state.spot_open_orders_json.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| load_test_data("http_open_orders.json")),
+            )
+        }
         "/0/private/ClosedOrders" => {
             state
                 .closed_orders_request_count
@@ -1451,6 +1461,402 @@ async fn test_futures_query_order_is_scoped_to_its_instrument() {
         panic!("expected an order status report, received {event:?}");
     };
     assert_eq!(report.venue_order_id, VenueOrderId::from("V-HELD"));
+}
+
+/// The spot single-order status lookup reads only the queried instrument's orders, so an
+/// unresolvable open order on another pair is out of scope for it rather than failing it. An
+/// unscoped lookup still reads that order and fails.
+#[rstest]
+#[case::scoped(Some(InstrumentId::from("BTC/USDT.KRAKEN")), true)]
+#[case::unscoped(None, false)]
+#[tokio::test]
+async fn test_spot_order_status_report_lookup_is_scoped_to_its_instrument(
+    #[case] instrument_id: Option<InstrumentId>,
+    #[case] reported: bool,
+) {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.spot_open_orders_json.lock().await =
+        Some(load_test_data("http_open_orders_held_and_unresolved.json"));
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument_id,
+        None,
+        Some(VenueOrderId::from("OHELD1-AAAAA-AAAAAA")),
+        None,
+        None,
+    );
+    let result = client.generate_order_status_report(&cmd).await;
+
+    if reported {
+        let report = result
+            .expect("an unresolvable order on another pair is out of scope")
+            .expect("the held order is reported");
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from("OHELD1-AAAAA-AAAAAA")
+        );
+    } else {
+        let error = result.expect_err("an unscoped lookup reads the unresolvable order");
+        assert!(
+            format!("{error:#}").contains("instrument not in cache for pair NOSUCHPAIR"),
+            "{error:#}"
+        );
+    }
+}
+
+/// A scoped spot lookup reads past an unresolvable open order on another pair into the closed
+/// orders, so an order that has closed is still found.
+#[rstest]
+#[tokio::test]
+async fn test_spot_order_status_report_lookup_reaches_closed_orders_past_an_unresolved_pair() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.spot_open_orders_json.lock().await =
+        Some(load_test_data("http_open_orders_held_and_unresolved.json"));
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["XBTUSDT"]));
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(test_spot_instrument_id()),
+        None,
+        Some(VenueOrderId::from("OCLOSED-0")),
+        None,
+        None,
+    );
+
+    let report = client
+        .generate_order_status_report(&cmd)
+        .await
+        .expect("an unresolvable order on another pair is out of scope")
+        .expect("the closed order is reported");
+    assert_eq!(report.venue_order_id, VenueOrderId::from("OCLOSED-0"));
+}
+
+/// A spot lookup scoped to an instrument the spot client does not hold reads nothing and reports no
+/// order, even for a venue order ID one of its own pairs carries.
+#[rstest]
+#[tokio::test]
+async fn test_spot_order_status_report_lookup_for_an_unheld_instrument_reads_nothing() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(InstrumentId::from("PI_XBTUSD.KRAKEN")),
+        None,
+        Some(VenueOrderId::from("O26VBY-ISGAE-JP5TLU")),
+        None,
+        None,
+    );
+    let report = client.generate_order_status_report(&cmd).await.unwrap();
+
+    assert!(report.is_none(), "{report:?}");
+    assert!(
+        state.collection_request_ts.lock().await.is_none(),
+        "no open orders are read for an instrument the client does not hold"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_query_order_is_scoped_to_its_instrument() {
+    let (client, mut rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.spot_open_orders_json.lock().await =
+        Some(load_test_data("http_open_orders_held_and_unresolved.json"));
+
+    client
+        .query_order(QueryOrder::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("S-001"),
+            test_spot_instrument_id(),
+            ClientOrderId::new("O-QUERY-1"),
+            Some(VenueOrderId::from("OHELD1-AAAAA-AAAAAA")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Report(_))).await;
+    let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+        panic!("expected an order status report, received {event:?}");
+    };
+    assert_eq!(
+        report.venue_order_id,
+        VenueOrderId::from("OHELD1-AAAAA-AAAAAA")
+    );
+}
+
+/// A read over the open orders, by the path the engine takes.
+#[derive(Clone, Copy, Debug)]
+enum OpenOrderRead {
+    /// `generate_order_status_reports` with `open_only`, scoped to the instrument when given.
+    Bulk(Option<&'static str>),
+    /// `generate_order_status_report` for a venue order ID, scoped to its instrument.
+    Lookup(&'static str, &'static str),
+    MassStatus,
+}
+
+/// Runs `read` and returns the venue order IDs of the order reports it yields.
+async fn read_open_orders(
+    client: &dyn ExecutionClient,
+    read: OpenOrderRead,
+) -> anyhow::Result<Vec<VenueOrderId>> {
+    let venue_order_ids = match read {
+        OpenOrderRead::Bulk(instrument_id) => {
+            let cmd = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                true,
+                instrument_id.map(InstrumentId::from),
+                None,
+                None,
+                None,
+                None,
+            );
+            client
+                .generate_order_status_reports(&cmd)
+                .await?
+                .into_iter()
+                .map(|report| report.venue_order_id)
+                .collect()
+        }
+        OpenOrderRead::Lookup(instrument_id, venue_order_id) => {
+            let cmd = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(InstrumentId::from(instrument_id)),
+                None,
+                Some(VenueOrderId::from(venue_order_id)),
+                None,
+                None,
+            );
+            client
+                .generate_order_status_report(&cmd)
+                .await?
+                .into_iter()
+                .map(|report| report.venue_order_id)
+                .collect()
+        }
+        OpenOrderRead::MassStatus => client
+            .generate_mass_status(None)
+            .await?
+            .expect("mass status available")
+            .order_reports()
+            .keys()
+            .copied()
+            .collect(),
+    };
+    Ok(venue_order_ids)
+}
+
+/// An in-scope spot open order that resolves but cannot be parsed fails the read on every path,
+/// since dropped it would read to reconciliation as an order the venue does not have. A read scoped
+/// to another pair leaves it out of scope.
+#[rstest]
+#[case::bulk_unscoped(
+    OpenOrderRead::Bulk(None),
+    Err("OpenOrders: failed to parse order OBADVL-CCCCC-CCCCCC")
+)]
+#[case::bulk_scoped_to_another_pair(OpenOrderRead::Bulk(Some("BTC/USDT.KRAKEN")), Ok(&["OHELD1-AAAAA-AAAAAA"][..]))]
+#[case::lookup_on_its_pair(
+    OpenOrderRead::Lookup("ETH/USDT.KRAKEN", "OBADVL-CCCCC-CCCCCC"),
+    Err("OpenOrders: failed to parse order OBADVL-CCCCC-CCCCCC")
+)]
+#[case::mass_status(
+    OpenOrderRead::MassStatus,
+    Err("OpenOrders: failed to parse order OBADVL-CCCCC-CCCCCC")
+)]
+#[tokio::test]
+async fn test_spot_open_order_reads_fail_on_an_unparsable_order(
+    #[case] read: OpenOrderRead,
+    #[case] expected: Result<&[&str], &str>,
+) {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.spot_open_orders_json.lock().await =
+        Some(load_test_data("http_open_orders_unparsable.json"));
+
+    let result = read_open_orders(&client, read).await;
+
+    match expected {
+        Ok(venue_order_ids) => {
+            let expected: Vec<VenueOrderId> = venue_order_ids
+                .iter()
+                .map(|id| VenueOrderId::from(*id))
+                .collect();
+            assert_eq!(result.unwrap(), expected);
+        }
+        Err(message) => {
+            let error = result.expect_err("the unparsable open order fails the read");
+            assert!(format!("{error:#}").contains(message), "{error:#}");
+        }
+    }
+}
+
+/// A spot closed order that cannot be parsed is skipped and leaves the set incomplete, while the
+/// rest of the read stands.
+#[rstest]
+#[tokio::test]
+async fn test_spot_mass_status_skips_an_unparsable_closed_order_as_incomplete() {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.closed_orders_json.lock().await =
+        Some(load_test_data("http_closed_orders_unparsable.json"));
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    let order_reports = mass_status.order_reports();
+    assert!(order_reports.contains_key(&VenueOrderId::from("OCLGOD-DDDDD-DDDDDD")));
+    assert!(!order_reports.contains_key(&VenueOrderId::from("OCLBAD-EEEEE-EEEEEE")));
+    assert!(!mass_status.reports_complete());
+}
+
+/// An in-scope futures open order that resolves but cannot be parsed fails the read on every path.
+/// A read scoped to another contract leaves it out of scope.
+#[rstest]
+#[case::bulk_unscoped(
+    "http_futures_open_orders_unparsable.json",
+    OpenOrderRead::Bulk(None),
+    Err("OpenOrders: failed to parse futures order V-UNPARSABLE")
+)]
+#[case::bulk_scoped_to_another_contract("http_futures_open_orders_unparsable.json", OpenOrderRead::Bulk(Some("PI_XBTUSD.KRAKEN")), Ok(&["V-HELD"][..]))]
+#[case::lookup_on_its_contract(
+    "http_futures_open_orders_unparsable.json",
+    OpenOrderRead::Lookup("PF_ETHUSD.KRAKEN", "V-UNPARSABLE"),
+    Err("OpenOrders: failed to parse futures order V-UNPARSABLE")
+)]
+#[case::mass_status(
+    "http_futures_open_orders_unparsable.json",
+    OpenOrderRead::MassStatus,
+    Err("OpenOrders: failed to parse futures order V-UNPARSABLE")
+)]
+#[tokio::test]
+async fn test_futures_open_order_reads_fail_on_an_unparsable_order(
+    #[case] fixture: &str,
+    #[case] read: OpenOrderRead,
+    #[case] expected: Result<&[&str], &str>,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(load_test_data(fixture));
+
+    let result = read_open_orders(&client, read).await;
+
+    match expected {
+        Ok(venue_order_ids) => {
+            let expected: Vec<VenueOrderId> = venue_order_ids
+                .iter()
+                .map(|id| VenueOrderId::from(*id))
+                .collect();
+            assert_eq!(result.unwrap(), expected);
+        }
+        Err(message) => {
+            let error = result.expect_err("the unparsable open order fails the read");
+            assert!(format!("{error:#}").contains(message), "{error:#}");
+        }
+    }
+}
+
+/// What a futures read makes of an unsized trigger.
+#[derive(Clone, Copy, Debug)]
+enum UnsizedTrigger {
+    Skipped,
+    SizedAt(&'static str),
+    FailsTheRead,
+}
+
+/// An untouched reduce-only trigger the venue lists without an unfilled size takes its size from
+/// the open position on its contract. With none it has no size to report, so the read skips it,
+/// its history rows with it, and leaves the set incomplete rather than failing every futures order
+/// read; when the open positions read fails, its size is unknown and the read fails.
+#[rstest]
+#[case::flat_contract(None, false, UnsizedTrigger::Skipped)]
+#[case::flat_contract_with_a_history_row(None, true, UnsizedTrigger::Skipped)]
+#[case::sized_by_its_contract_position(
+    Some("http_futures_open_positions_xbtusd.json"),
+    false,
+    UnsizedTrigger::SizedAt("8000")
+)]
+#[case::positions_read_fails(
+    Some("http_futures_open_positions_error.json"),
+    false,
+    UnsizedTrigger::FailsTheRead
+)]
+#[tokio::test]
+async fn test_futures_mass_status_skips_an_unsized_trigger_only_on_a_flat_contract(
+    #[case] positions_fixture: Option<&str>,
+    #[case] history_row: bool,
+    #[case] expected: UnsizedTrigger,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.futures_open_orders_json.lock().await = Some(load_test_data(
+        "http_futures_open_orders_unsized_trigger.json",
+    ));
+
+    if let Some(fixture) = positions_fixture {
+        *state.futures_open_positions_json.lock().await = Some(load_test_data(fixture));
+    }
+
+    if history_row {
+        // A zero-quantity placement would read as filled were it reported from history
+        *state.futures_order_history_json.lock().await =
+            Some(futures_order_history_json(&[futures_history_element(
+                "OrderPlaced",
+                "e1",
+                "V-TRIGGER",
+                "PI_XBTUSD",
+                "0",
+                "0",
+                1680877245500,
+            )]));
+    }
+
+    let result = client.generate_mass_status(None).await;
+
+    match expected {
+        UnsizedTrigger::Skipped => {
+            let mass_status = result.unwrap().expect("mass status available");
+            assert!(
+                !mass_status
+                    .order_reports()
+                    .contains_key(&VenueOrderId::from("V-TRIGGER"))
+            );
+            assert!(!mass_status.reports_complete());
+        }
+        UnsizedTrigger::SizedAt(quantity) => {
+            let mass_status = result.unwrap().expect("mass status available");
+            let order_reports = mass_status.order_reports();
+            let report = order_reports
+                .get(&VenueOrderId::from("V-TRIGGER"))
+                .expect("the sized trigger is reported");
+            assert_eq!(report.quantity, Quantity::from(quantity));
+        }
+        UnsizedTrigger::FailsTheRead => {
+            let error =
+                result.expect_err("an unsized trigger with no positions read fails the read");
+            assert!(
+                format!("{error:#}").contains(
+                    "OpenOrders: futures order V-TRIGGER lists no unfilled size and the open \
+                     positions read failed"
+                ),
+                "{error:#}"
+            );
+        }
+    }
 }
 
 /// Out of scope, an unresolvable position is skipped: a scoped read only reports its own

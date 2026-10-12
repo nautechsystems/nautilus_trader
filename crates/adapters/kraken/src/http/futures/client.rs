@@ -1760,11 +1760,13 @@ impl KrakenFuturesHttpClient {
 
     /// Requests order status reports, also reporting whether the set is complete.
     ///
-    /// An in-scope open order whose instrument cannot be resolved fails the read. The flag is
-    /// `false` when a record cannot be parsed, a historical record's instrument cannot be
-    /// resolved, a history row could not be represented, or the history page hands back a
-    /// continuation token: the read takes one page, since every Kraken `/history` endpoint draws
-    /// on one pool of 100 tokens, replenished at 100 every 10 minutes, at a token per page.
+    /// An in-scope open order whose instrument cannot be resolved, or that cannot be parsed, fails
+    /// the read, except an untouched reduce-only trigger listed without an unfilled size that no
+    /// open position sizes, which is skipped. The flag is `false` when such a trigger is skipped, a
+    /// history row cannot be parsed, a historical record's instrument cannot be resolved, a history
+    /// row could not be represented, or the history page hands back a continuation token: the read
+    /// takes one page, since every Kraken `/history` endpoint draws on one pool of 100 tokens,
+    /// replenished at 100 every 10 minutes, at a token per page.
     /// `ExecutionMassStatus::set_report_window` records the flag for bounded history.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
@@ -1807,26 +1809,27 @@ impl KrakenFuturesHttpClient {
             .any(|order| order.unfilled_size.is_none())
         {
             match self.inner.get_open_positions().await {
-                Ok(response) if response.result == KrakenApiResult::Success => response
+                Ok(response) if response.result == KrakenApiResult::Success => Ok(response
                     .open_positions
                     .into_iter()
                     .map(|position| (position.symbol, position.size))
-                    .collect::<AHashMap<_, _>>(),
+                    .collect::<AHashMap<_, _>>()),
                 Ok(response) => {
-                    let error = response
+                    let reason = response
                         .error
                         .unwrap_or_else(|| "Unknown error".to_string());
-                    log::warn!("Failed to get open positions for order quantities: {error}");
-                    AHashMap::new()
+                    log::warn!("Failed to get open positions for order quantities: {reason}");
+                    Err(reason)
                 }
                 Err(e) => {
                     log::warn!("Failed to get open positions for order quantities: {e}");
-                    AHashMap::new()
+                    Err(e.to_string())
                 }
             }
         } else {
-            AHashMap::new()
+            Ok(AHashMap::new())
         };
+        let mut skipped_open_order_ids = AHashSet::new();
 
         for order in &response.open_orders {
             // Resolve the row and compare instrument ids, so a scoped read cannot match on a
@@ -1839,7 +1842,7 @@ impl KrakenFuturesHttpClient {
             }
 
             if let Some(instrument) = resolved {
-                let position_size = if order.unfilled_size.is_none()
+                let sized_by_position = order.unfilled_size.is_none()
                     && matches!(
                         order.order_type,
                         KrakenFuturesOrderType::Stop
@@ -1848,27 +1851,51 @@ impl KrakenFuturesHttpClient {
                             | KrakenFuturesOrderType::TakeProfit
                     )
                     && order.status == KrakenFuturesOrderStatus::Untouched
-                    && order.reduce_only == Some(true)
-                {
-                    position_sizes.get(&order.symbol).copied()
-                } else {
-                    None
+                    && order.reduce_only == Some(true);
+                let position_size = match &position_sizes {
+                    Ok(sizes) if sized_by_position => sizes.get(&order.symbol).copied(),
+                    _ => None,
                 };
 
-                match parse_futures_order_status_report(
+                // Such a trigger has no size of its own until it fires. With no open position on
+                // its contract it has none to report, and failing would fail every unscoped
+                // futures order read while it rests, so it is skipped, its history rows with it;
+                // a failed positions read leaves its size unknown instead, which fails the read.
+                if sized_by_position && position_size.is_none() {
+                    if let Err(reason) = &position_sizes {
+                        anyhow::bail!(
+                            "OpenOrders: futures order {} lists no unfilled size and the open \
+                             positions read failed: {reason}",
+                            order.order_id
+                        );
+                    }
+                    log::warn!(
+                        "Skipping futures order {} on {}: the venue lists no unfilled size and no \
+                         open position sizes it; the set is incomplete",
+                        order.order_id,
+                        order.symbol
+                    );
+                    complete = false;
+                    skipped_open_order_ids.insert(VenueOrderId::new(order.order_id.as_str()));
+                    continue;
+                }
+
+                // An in-scope open order the client cannot parse fails the read: dropped, it reads
+                // to reconciliation as an order the venue does not have.
+                let report = parse_futures_order_status_report(
                     order,
                     &instrument,
                     account_id,
                     position_size,
                     ts_init,
-                ) {
-                    Ok(report) => all_reports.push(report),
-                    Err(e) => {
-                        let order_id = &order.order_id;
-                        log::warn!("Failed to parse futures order {order_id}: {e}");
-                        complete = false;
-                    }
-                }
+                )
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "OpenOrders: failed to parse futures order {}: {e}",
+                        order.order_id
+                    )
+                })?;
+                all_reports.push(report);
             } else {
                 // An in-scope open order the client cannot resolve fails the read, as the spot
                 // client's does: dropped, it reads to reconciliation as an order the venue never had.
@@ -1909,9 +1936,12 @@ impl KrakenFuturesHttpClient {
             // The history lists every lifecycle event, so an order appears once per event. Each
             // report reconciles against the same cached state, so the read hands back one report
             // per order: the open-order snapshot when the venue still lists it, else the latest
-            // history state.
-            let open_order_ids: AHashSet<VenueOrderId> =
-                all_reports.iter().map(|r| r.venue_order_id).collect();
+            // history state. An open order the snapshot skips is not reported from its history.
+            let open_order_ids: AHashSet<VenueOrderId> = all_reports
+                .iter()
+                .map(|r| r.venue_order_id)
+                .chain(skipped_open_order_ids.iter().copied())
+                .collect();
             let mut latest: IndexMap<VenueOrderId, OrderStatusReport> = IndexMap::new();
 
             if response.skipped_rows > 0 {
