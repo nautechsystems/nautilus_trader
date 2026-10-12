@@ -708,12 +708,16 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
 - Startup mass status reads closed orders alongside open ones, so an order that reached a terminal
   state while the node was down is reconciled. The reconciliation lookback bounds the read, and a
   closed-order read cut short by the page cap leaves the mass status incomplete.
-- A report takes the order's own prices from its description, as AddOrder takes them: a limit
-  order's limit from `descr.price`, a stop-loss-limit or take-profit-limit order's from
-  `descr.price2`, and a trailing-stop-limit order's from `limitprice` once triggered, with the
-  trigger from `stopprice`. A market or stop-market order carries no price. The row's top-level
-  `price` is the average fill price, which reads `0.00000` on an unfilled order; the report's
-  `avg_px` comes from `cost` and `vol_exec`. A zero or relative price reads as none.
+- A report carries the order's own prices, not the row's top-level `price`, which is the average
+  fill price and reads `0.00000` on an unfilled order; the report's `avg_px` comes from `cost` and
+  `vol_exec`. The limit comes from `descr.price` for a limit order, `descr.price2` for a
+  stop-loss-limit or take-profit-limit order and `limitprice` for a trailing-stop-limit order once
+  triggered. A market, settle-position, stop-loss, take-profit or trailing-stop order carries no
+  limit. The trigger comes from `stopprice`, or, for a stop-loss, take-profit, stop-loss-limit or
+  take-profit-limit order without one, from `descr.price`, as AddOrder takes it. A zero or relative
+  price reads as none.
+- An untriggered trailing-stop-limit order has no absolute limit, so its report carries no price,
+  and an order the cache does not hold cannot be rebuilt from it until it triggers.
 - An executions frame states the order's price only when it carries `limit_price`, never at a
   fill price.
 

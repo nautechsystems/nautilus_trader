@@ -777,8 +777,8 @@ pub fn parse_order_status_report(
         .transpose()?
         .unwrap_or(ts_accepted);
 
-    // The row's top-level `price` is the average fill price, which `avg_px` carries; the order's
-    // own prices sit in its description, as AddOrder takes them
+    // The row's top-level `price` is the average fill price, which `avg_px` carries, so the
+    // order's prices come from the fields that hold them
     let price_precision = instrument.price_precision();
     let row_price =
         |value: &str, field: &str| parse_spot_order_price(order_id, value, price_precision, field);
@@ -802,12 +802,29 @@ pub fn parse_order_status_report(
         | KrakenOrderType::TrailingStop => None,
     };
 
-    let trigger_price = order
+    let stop_price = order
         .stopprice
         .as_deref()
         .map(|value| row_price(value, "stopprice"))
         .transpose()?
         .flatten();
+
+    // AddOrder takes a non-trailing conditional order's trigger as its `price`, which the
+    // description holds, so it stands in for a zero `stopprice`
+    let trigger_price = match order.descr.ordertype {
+        KrakenOrderType::StopLoss
+        | KrakenOrderType::TakeProfit
+        | KrakenOrderType::StopLossLimit
+        | KrakenOrderType::TakeProfitLimit => match stop_price {
+            Some(price) => Some(price),
+            None => row_price(&order.descr.price, "descr.price")?,
+        },
+        KrakenOrderType::Market
+        | KrakenOrderType::Limit
+        | KrakenOrderType::SettlePosition
+        | KrakenOrderType::TrailingStop
+        | KrakenOrderType::TrailingStopLimit => stop_price,
+    };
 
     let expire_time = if has_expiration {
         order
@@ -1975,13 +1992,14 @@ mod tests {
         assert_eq!(report.quantity, Quantity::from("0.50000000"));
     }
 
-    /// A spot report carries the order's own prices from its description, as AddOrder takes them,
-    /// never the row's top-level `price`, which is the average fill price and reads `0.00000` on
-    /// an unfilled order: the limit of a limit order from `descr.price`, of a stop-loss-limit or
-    /// take-profit-limit order from `descr.price2`, and of a trailing-stop-limit order from
-    /// `limitprice` once triggered, the trigger from `stopprice`, and no price for a market or
-    /// stop-market order. A zero or relative price reads as none. The base row is a live
-    /// OpenOrders capture of an unfilled limit buy at 20000.00.
+    /// A spot report carries the order's own prices, never the row's top-level `price`, which is
+    /// the average fill price and reads `0.00000` on an unfilled order. The limit comes from
+    /// `descr.price` for a limit order, `descr.price2` for a stop-loss-limit or take-profit-limit
+    /// order and `limitprice` for a triggered trailing-stop-limit order; a market,
+    /// settle-position, stop-loss, take-profit, trailing-stop or untriggered trailing-stop-limit
+    /// order carries none. The trigger comes from `stopprice`, or, for a non-trailing conditional
+    /// order with none, from `descr.price`. An empty, zero or relative price reads as none. The
+    /// base row is a live OpenOrders capture of an unfilled limit buy at 20000.00.
     #[rstest]
     #[case::unfilled_limit(json!({}), Some("20000.00"), None, None)]
     #[case::limit_filled_below_its_limit(
@@ -1996,22 +2014,40 @@ mod tests {
         None,
         Some(dec!(30000))
     )]
+    #[case::settled_position(
+        json!({"descr": {"ordertype": "settle-position", "price": "0"}, "status": "closed", "price": "30000.00", "vol_exec": "0.00010000", "cost": "3.00000"}),
+        None,
+        None,
+        Some(dec!(30000))
+    )]
     #[case::stop_loss(
         json!({"descr": {"ordertype": "stop-loss", "price": "19000.00"}}),
         None,
+        Some("19000.00"),
+        None
+    )]
+    #[case::take_profit(
+        json!({"descr": {"ordertype": "take-profit", "price": "21000.00"}}),
         None,
+        Some("21000.00"),
         None
     )]
     #[case::stop_loss_limit(
         json!({"descr": {"ordertype": "stop-loss-limit", "price": "19000.00", "price2": "18990.00"}}),
         Some("18990.00"),
-        None,
+        Some("19000.00"),
         None
     )]
     #[case::take_profit_limit_with_its_stop_price(
-        json!({"descr": {"ordertype": "take-profit-limit", "price": "21000.00", "price2": "21010.00"}, "stopprice": "21000.00"}),
+        json!({"descr": {"ordertype": "take-profit-limit", "price": "21000.00", "price2": "21010.00"}, "stopprice": "21005.00"}),
         Some("21010.00"),
-        Some("21000.00"),
+        Some("21005.00"),
+        None
+    )]
+    #[case::trailing_stop(
+        json!({"descr": {"ordertype": "trailing-stop", "price": "+50.00"}, "stopprice": "19950.00"}),
+        None,
+        Some("19950.00"),
         None
     )]
     #[case::untriggered_trailing_stop_limit(
@@ -2021,13 +2057,17 @@ mod tests {
         None
     )]
     #[case::triggered_trailing_stop_limit(
-        json!({"descr": {"ordertype": "trailing-stop-limit", "price": "+50.00", "price2": "+0"}, "limitprice": "19950.00"}),
+        json!({"descr": {"ordertype": "trailing-stop-limit", "price": "+50.00", "price2": "+0"}, "stopprice": "19960.00", "limitprice": "19950.00"}),
         Some("19950.00"),
-        None,
+        Some("19960.00"),
         None
     )]
-    #[case::relative_limit(json!({"descr": {"price": "+1.5%"}}), None, None, None)]
-    fn test_parse_order_status_report_prices_the_order_from_its_description(
+    #[case::limit_above_the_market(json!({"descr": {"price": "+1.5"}}), None, None, None)]
+    #[case::limit_below_the_market(json!({"descr": {"price": "-1.5"}}), None, None, None)]
+    #[case::limit_off_the_market(json!({"descr": {"price": "#1.5"}}), None, None, None)]
+    #[case::limit_as_a_percentage(json!({"descr": {"price": "1.5%"}}), None, None, None)]
+    #[case::empty_stop_price(json!({"stopprice": ""}), Some("20000.00"), None, None)]
+    fn test_parse_order_status_report_prices_the_order_from_its_own_fields(
         #[case] overrides: serde_json::Value,
         #[case] expected_price: Option<&str>,
         #[case] expected_trigger_price: Option<&str>,
