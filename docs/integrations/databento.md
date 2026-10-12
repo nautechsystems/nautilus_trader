@@ -591,11 +591,14 @@ record in this order:
    on the file loader, `get_range_instruments` on the historical client) or
    by an explicit `set_price_precision(symbol, precision)` call.
 
-Before each historical request, the data client seeds this cache when the request
-carries no explicit precision and the symbol has none cached: it fetches the
-instrument definition for the requested `instrument_id` first. When precision
-cannot be resolved, loading fails with an explicit error rather than silently
-defaulting to USD precision.
+The data client fetches the requested instrument's definition when neither
+source supplies precision. The lookup starts at UTC midnight on the request's
+start date to include Databento's midnight definition snapshots. The market data
+request keeps its original time range.
+
+Unresolved precision never defaults to USD precision. Historical client and
+loader calls return an error; data client requests log the error and return an
+empty response.
 
 :::tip
 Call `subscribe_instrument()` for each instrument at strategy start so definition
