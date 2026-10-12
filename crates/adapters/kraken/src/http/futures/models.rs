@@ -1648,6 +1648,19 @@ mod tests {
         assert_eq!(response.oldest_event_ms, Some(1_680_876_930_000));
     }
 
+    /// A row skipped for a timestamp before the epoch names the order it carries, so a lookup
+    /// cannot rule that order out.
+    #[rstest]
+    fn test_parse_futures_order_events_names_the_order_of_a_pre_epoch_row() {
+        let data = r#"{"elements":[{"uid":"e1","timestamp":1680876930250,"event":{"OrderPlaced":{"order":{"uid":"o-pre","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":-1,"lastUpdateTimestamp":-1},"reason":"new_user_order"}}}]}"#;
+
+        let response = order_history_events_from(data);
+
+        assert!(response.order_events.is_empty());
+        assert_eq!(response.skipped_rows, 1);
+        assert_eq!(response.skipped_order_ids, vec!["o-pre".to_string()]);
+    }
+
     /// A page reaches back to its oldest event whatever the projection keeps, so a skipped row
     /// counts toward the oldest time. A skipped row names its order when it carries one; an
     /// undocumented kind names none.

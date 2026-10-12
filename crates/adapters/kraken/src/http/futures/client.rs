@@ -1769,9 +1769,11 @@ impl KrakenFuturesHttpClient {
     ///
     /// An in-scope open order whose instrument cannot be resolved, or that cannot be parsed, fails
     /// the read, except an untouched reduce-only trigger listed without an unfilled size that no
-    /// open position sizes, which is skipped. The coverage records each such trigger, each history
-    /// row that cannot be parsed, resolved or represented, and a continuation token, which cuts the
-    /// read short at the page's oldest event: the read takes one page, since every Kraken
+    /// open position sizes, which is skipped, and an order a read scoped to one instrument cannot
+    /// resolve, which may be on another instrument and is skipped. The coverage records each such
+    /// skip, each history row that cannot be parsed, resolved or represented, and a continuation
+    /// token, which cuts the read short at the page's oldest event; an unheld futures instrument
+    /// reads nothing, which rules out no order: the read takes one page, since every Kraken
     /// `/history` endpoint draws on one pool of 100 tokens, replenished at 100 every 10 minutes, at
     /// a token per page. `ExecutionMassStatus::set_report_window` records whether it is complete
     /// for bounded history, and the single-order lookup whether it rules out an order it did not

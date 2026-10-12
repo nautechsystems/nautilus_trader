@@ -1536,8 +1536,8 @@ async fn test_spot_order_status_report_lookup_reaches_closed_orders_past_an_unre
     assert_eq!(report.venue_order_id, VenueOrderId::from("OCLOSED-0"));
 }
 
-/// A spot lookup scoped to an instrument the spot client does not hold reads nothing and reports no
-/// order, even for a venue order ID one of its own pairs carries.
+/// A spot lookup scoped to a futures instrument, which the spot client never holds, reads nothing
+/// and reports no order, even for a venue order ID one of its own pairs carries.
 #[rstest]
 #[tokio::test]
 async fn test_spot_order_status_report_lookup_for_an_unheld_instrument_reads_nothing() {
@@ -1771,9 +1771,9 @@ enum SpotLookupRead {
 }
 
 /// The spot lookup answers that the venue has no such order only from a read that rules the order
-/// out: a closed order that cannot be parsed or resolved rules out every other order with a venue
-/// order ID, but not itself nor an order without one, and a walk cut short at its page cap rules
-/// out none.
+/// out: a closed order that cannot be parsed or resolved, or an open one that cannot be resolved,
+/// rules out every other order with a venue order ID, but not itself nor an order without one, and
+/// a walk cut short at its page cap rules out none.
 #[rstest]
 #[case::complete_read(
     SpotLookupRead::Complete,
@@ -1904,14 +1904,16 @@ enum FuturesLookupRead {
     UnresolvedRowOf(&'static str),
     /// An open order, `V-UNRESOLVED`, on a contract the client cannot resolve.
     UnresolvedOpenOrder,
+    /// A history row of this order that cannot be parsed, its quantity negative.
+    UnparsableRowOf(&'static str),
 }
 
 /// The futures lookup answers that the venue has no such order only from a read that rules the
 /// order out. A history page handed back with a continuation token holds the newest events, so it
 /// rules out an order placed after its oldest event by more than the clock skew allowance, and a
-/// page with no events rules out none. A skipped row, one the client cannot resolve included,
-/// rules out every other order with a venue order ID, and a row naming no order rules out none. An
-/// order the cut-short read returns is reported.
+/// page with no events rules out none. A skipped row, one the client cannot resolve or parse
+/// included, rules out every other order with a venue order ID, and a row naming no order rules out
+/// none. An order the cut-short read returns is reported.
 #[rstest]
 #[case::complete_read(FuturesLookupRead::Complete, "V-LOOKUP-1", LookupAnswer::Absent)]
 #[case::token_page_reaching_past_the_order(
@@ -1982,6 +1984,16 @@ enum FuturesLookupRead {
 #[case::unresolved_open_order_is_the_order(
     FuturesLookupRead::UnresolvedOpenOrder,
     "V-UNRESOLVED",
+    LookupAnswer::Deferred
+)]
+#[case::unparsable_row_of_another_order(
+    FuturesLookupRead::UnparsableRowOf("V-OTHER-1"),
+    "V-LOOKUP-1",
+    LookupAnswer::Absent
+)]
+#[case::unparsable_row_of_the_order(
+    FuturesLookupRead::UnparsableRowOf("V-LOOKUP-1"),
+    "V-LOOKUP-1",
     LookupAnswer::Deferred
 )]
 #[tokio::test]
@@ -2065,6 +2077,17 @@ async fn test_futures_order_lookup_reports_absence_only_from_a_read_that_rules_t
             ));
             futures_order_history_json(&[])
         }
+        FuturesLookupRead::UnparsableRowOf(order_uid) => {
+            futures_order_history_json(&[futures_history_element(
+                "OrderCancelled",
+                "e-unparsable",
+                order_uid,
+                "PI_XBTUSD",
+                "-1",
+                "0",
+                FUTURES_LOOKUP_ORDER_MS,
+            )])
+        }
         FuturesLookupRead::UnresolvedOpenOrder => {
             *state.futures_open_orders_json.lock().await =
                 Some(futures_open_orders_json("V-UNRESOLVED", "PF_NOSUCHUSD"));
@@ -2099,19 +2122,24 @@ async fn test_futures_order_lookup_reports_absence_only_from_a_read_that_rules_t
     assert_lookup_answer(result, expected, venue_order_id);
 }
 
-/// An order adopted from a venue report is created on the node after the venue accepted it, so the
-/// lookup sets its acceptance, the earlier time, against how far back a cut-short read reached.
+/// A cut-short read rules out an order only if it reaches back past the earlier of the order's
+/// creation and acceptance. An order adopted from a venue report is created on the node after the
+/// venue accepted it, and one the node submits is created before it, so each is dated from the
+/// earlier time.
 #[rstest]
-#[case::page_reaching_past_the_acceptance(-61, LookupAnswer::Absent)]
-#[case::page_starting_between_acceptance_and_creation(30, LookupAnswer::Deferred)]
+#[case::adopted_page_reaching_past_the_acceptance(120, -61, LookupAnswer::Absent)]
+#[case::adopted_page_starting_after_the_acceptance(120, 30, LookupAnswer::Deferred)]
+#[case::submitted_page_reaching_past_the_creation(-120, -181, LookupAnswer::Absent)]
+#[case::submitted_page_starting_after_the_creation(-120, -90, LookupAnswer::Deferred)]
 #[tokio::test]
-async fn test_futures_order_lookup_dates_an_adopted_order_from_its_acceptance(
+async fn test_futures_order_lookup_dates_an_order_from_its_earlier_known_time(
+    #[case] created_after_acceptance_secs: i64,
     #[case] page_starts_after_acceptance_secs: i64,
     #[case] expected: LookupAnswer,
 ) {
     let (client, _rx, cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
-    let client_order_id = ClientOrderId::new("futures-lookup-adopted");
+    let client_order_id = ClientOrderId::new("futures-lookup-dated");
     let accepted_ms = FUTURES_LOOKUP_ORDER_MS;
     let order = add_futures_limit_order_created_at(
         &cache,
@@ -2119,12 +2147,12 @@ async fn test_futures_order_lookup_dates_an_adopted_order_from_its_acceptance(
         test_instrument_id(),
         OrderSide::Buy,
         test_strategy_id(),
-        UnixNanos::from((accepted_ms + 120_000) as u64 * 1_000_000),
+        UnixNanos::from((accepted_ms + created_after_acceptance_secs * 1_000) as u64 * 1_000_000),
     );
     accept_cached_order_at(
         &cache,
         &order,
-        "V-ADOPTED-1",
+        "V-DATED-1",
         UnixNanos::from(accepted_ms as u64 * 1_000_000),
     );
     *state.futures_order_history_json.lock().await =
@@ -2145,13 +2173,13 @@ async fn test_futures_order_lookup_dates_an_adopted_order_from_its_acceptance(
         UnixNanos::default(),
         Some(test_instrument_id()),
         Some(client_order_id),
-        Some(VenueOrderId::from("V-ADOPTED-1")),
+        Some(VenueOrderId::from("V-DATED-1")),
         None,
         None,
     );
     let result = client.generate_order_status_report(&cmd).await;
 
-    assert_lookup_answer(result, expected, "V-ADOPTED-1");
+    assert_lookup_answer(result, expected, "V-DATED-1");
 }
 
 /// Spot and Futures share the `KRAKEN` venue, so each client is asked about the other's orders and
