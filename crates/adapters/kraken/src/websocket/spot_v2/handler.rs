@@ -334,7 +334,10 @@ impl SpotFeedHandler {
             KrakenWsChannel::Ohlc => self.handle_ohlc_message(msg),
             KrakenWsChannel::Executions => self.handle_executions_message(msg),
             KrakenWsChannel::Level3 => {
-                unreachable!("level3 messages routed via fast-path in parse_message",)
+                // Well-formed level3 messages take the fast path in `parse_message`, so
+                // reaching here means the venue sent one that failed to parse
+                log::warn!("Dropping malformed level3 message");
+                None
             }
             _ => {
                 log::warn!("Unhandled channel: {:?}", msg.channel);
@@ -987,6 +990,21 @@ mod tests {
                 "timestamp": "2024-01-01T00:00:00Z"
             }]
         }"#;
+
+        let result = handler.parse_message(json);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    #[case::empty_data(r#"{"channel":"level3","type":"update","data":[]}"#)]
+    #[case::snapshot_missing_bids(
+        r#"{"channel":"level3","type":"snapshot","data":[{"symbol":"BTC/USD","asks":[],"checksum":0,"timestamp":"2024-01-01T00:00:00Z"}]}"#
+    )]
+    #[case::unexpected_type(r#"{"channel":"level3","type":"error","data":[{}]}"#)]
+    fn test_parse_level3_malformed_message_is_dropped(#[case] json: &str) {
+        let handler = create_test_handler();
+        handler.subscriptions.mark_subscribe("level3:BTC/USD");
+        handler.subscriptions.confirm_subscribe("level3:BTC/USD");
 
         let result = handler.parse_message(json);
         assert!(result.is_none());
