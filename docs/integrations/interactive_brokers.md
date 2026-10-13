@@ -32,7 +32,9 @@ the adapter partitions order IDs with `client_id % 1000`.
 IB refuses an order ID at or below one the same `client_id` already used, across sessions (error
 103). On connect, the execution client starts above the highest order ID its `client_id` has among
 IB's open and completed orders, and keeps IB's next valid ID only when it falls in the client's
-partition. Connecting fails if the completed orders do not arrive in full within `request_timeout`.
+partition. If IB's next valid ID lies above the partition, IB would refuse every ID in it, so
+connecting fails; use another `client_id`. Connecting also fails if the completed orders do not
+arrive in full within `request_timeout`.
 IB lists completed orders for a limited period only, so a client that left no order open can still
 start below an ID it used before that period.
 

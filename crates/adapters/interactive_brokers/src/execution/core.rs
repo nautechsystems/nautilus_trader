@@ -644,18 +644,27 @@ impl InteractiveBrokersExecutionClient {
         Ok(order_id)
     }
 
-    fn apply_client_order_id_floor(next_id: i32, client_id: i32) -> i32 {
+    // IB refuses every order ID below the client's next valid ID (error 103). When that ID lies
+    // above the client's partition no ID in it can be used, so this fails instead of mapping
+    fn apply_client_order_id_floor(next_id: i32, client_id: i32) -> anyhow::Result<i32> {
         let client_slot = client_id.unsigned_abs() % 1000;
         if client_slot == 0 {
-            return next_id;
+            return Ok(next_id);
         }
 
         let order_id_floor = (client_slot as i32) * ORDER_ID_PARTITION_SIZE;
         let order_id_ceiling = order_id_floor + ORDER_ID_PARTITION_SIZE;
-        if next_id > order_id_floor && next_id < order_id_ceiling {
-            next_id
+        anyhow::ensure!(
+            next_id < order_id_ceiling,
+            "IB next valid order ID {next_id} for client_id {client_id} is above its partition ({} to {}), so IB would refuse every order with error 103; use another client_id",
+            order_id_floor + 1,
+            order_id_ceiling - 1,
+        );
+
+        if next_id > order_id_floor {
+            Ok(next_id)
         } else {
-            order_id_floor + next_id.rem_euclid(ORDER_ID_PARTITION_SIZE).max(1)
+            Ok(order_id_floor + next_id.rem_euclid(ORDER_ID_PARTITION_SIZE).max(1))
         }
     }
 
@@ -669,14 +678,20 @@ impl InteractiveBrokersExecutionClient {
         order_id > order_id_floor && order_id < order_id_floor + ORDER_ID_PARTITION_SIZE
     }
 
-    // IB refuses an order ID at or below one the same client already used (error 103). Its next
-    // valid ID can belong to another client's partition and then says nothing about this
-    // client's IDs, so the start also clears the highest ID this client has in orders IB lists
-    fn initial_order_id(next_id: i32, client_id: i32, highest_used_order_id: Option<i32>) -> i32 {
-        let client_scoped_next_id = Self::apply_client_order_id_floor(next_id, client_id);
-        highest_used_order_id.map_or(client_scoped_next_id, |order_id| {
-            client_scoped_next_id.max(order_id.saturating_add(1))
-        })
+    // IB refuses an order ID at or below one the same client already used (error 103). A next
+    // valid ID below the client's partition says nothing about this client's IDs, so the start
+    // also clears the highest ID this client has in orders IB lists
+    fn initial_order_id(
+        next_id: i32,
+        client_id: i32,
+        highest_used_order_id: Option<i32>,
+    ) -> anyhow::Result<i32> {
+        let client_scoped_next_id = Self::apply_client_order_id_floor(next_id, client_id)?;
+        Ok(
+            highest_used_order_id.map_or(client_scoped_next_id, |order_id| {
+                client_scoped_next_id.max(order_id.saturating_add(1))
+            }),
+        )
     }
 
     /// Gets the next valid order ID from IB.
@@ -1104,7 +1119,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             next_id,
             self.config.client_id,
             highest_open_order_id.max(highest_completed_order_id),
-        );
+        )?;
 
         if starting_order_id == next_id {
             tracing::debug!(
