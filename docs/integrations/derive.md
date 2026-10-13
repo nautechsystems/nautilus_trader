@@ -525,9 +525,15 @@ If an unresolved replacement prevents startup:
    native records before resuming trading. The adapter provides no automatic cache repair for
    this case; clearing `PendingUpdate` alone does not establish the replacement's outcome.
 
-Mass status retains native reports for historical replacement legs and processes them before the current
-cumulative report. It fetches fill companions absent from history and open orders by exact venue ID,
-including uncached orders, and retains them outside the lookback window.
+Mass status retains native replacement legs and fills. For an uncached replacement chain, startup reconciliation
+restores the proven live successor with cumulative fills and native venue order IDs. Recovered replacement
+successors support queries, modification, and cancellation. Reconnect snapshots leave uncached
+replacement reports native; they do not reconstruct these chains.
+
+When an uncached replacement chain starts before a bounded lookback, mass status extends the full history
+window to its first leg.
+Mass status fetches fill companions absent from history and open orders by exact venue ID, including uncached
+orders, and retains them outside the lookback window.
 
 Cached legs retain identity and replacement checks. Uncached orders and fills with reused labels outside
 one replacement chain omit client order IDs; this check uses history and open-order ancestry. Active
@@ -535,12 +541,22 @@ open orders keep their IDs.
 
 **Recovery limits**:
 
+- Startup validates all labeled uncached replacement chains on the subaccount before engine filters
+  apply, including other bots' chains. Invalid chains can prevent startup; long chains extend history
+  reads and can exceed the reconciliation timeout.
+- Do not let another process replace orders adopted by this node. Startup registers all adopted open
+  orders for tracking; an external replacement without a local pending modify leaves the binding
+  unresolved and blocks reports and commands until the native state is reconciled and the node restarts.
 - Bounded snapshots mark coverage incomplete if history fails or an uncached companion remains missing
   after fallback. Failed history skips companion lookups.
-- Contradictory identities fail requests. With history available, unavailable cached companions or
-  lookup errors other than `11006` also fail requests.
+- Startup recovery of an uncached replacement chain requires complete order, fill, and position sources, with native fills
+  matching each previous leg and the cumulative filled quantity; otherwise the request fails.
+- Contradictory identities or invalid replacement ancestry fail requests, including bounded snapshots.
+  With history available, unavailable cached companions or lookup errors other than `11006` also fail requests.
 
 Open-only requests return active orders. Requests for known replaced legs return the current logical order.
+Single-order and bulk queries return native reports for uncached replacement chains; startup reconciliation
+restores the chain.
 
 Unbounded reconnect snapshots fail if a source fails, records are lost, or a fill has no matching
 order report. Retained historical rows with inferred precision do not fail these snapshots. Bounded

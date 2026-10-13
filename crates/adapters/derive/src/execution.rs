@@ -36,6 +36,7 @@ use ahash::{AHashMap, AHashSet};
 use alloy_primitives::U256;
 use anyhow::Context;
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::ORDER_NOT_FOUND,
     clients::ExecutionClient,
@@ -832,6 +833,86 @@ impl ExecutionClient for DeriveExecutionClient {
         self.core.cache().account_owned(&self.core.account_id)
     }
 
+    fn venue_order_ids(
+        &self,
+        mass_status: &ExecutionMassStatus,
+    ) -> Option<IndexMap<ClientOrderId, Vec<VenueOrderId>>> {
+        let reports = mass_status.order_reports();
+        let mut groups: IndexMap<ClientOrderId, Vec<&OrderStatusReport>> = IndexMap::new();
+
+        for report in reports.values() {
+            if let Some(id) = report.client_order_id {
+                groups.entry(id).or_default().push(report);
+            }
+        }
+
+        let cache = self.core.cache();
+        let mut order_venue_ids = IndexMap::new();
+
+        for (id, mut group) in groups {
+            if cache.order_exists(&id) {
+                continue;
+            }
+
+            let mut open = group.iter().filter(|report| report.order_status.is_open());
+
+            let Some(current) = open.next().copied() else {
+                continue;
+            };
+
+            if group.len() < 2
+                || open.next().is_some()
+                || group.iter().any(|report| {
+                    cache.client_order_id(&report.venue_order_id).is_some()
+                        || report.account_id != current.account_id
+                        || report.instrument_id != current.instrument_id
+                        || report.order_side != current.order_side
+                        || report.order_type != current.order_type
+                        || report.venue_order_id != current.venue_order_id
+                            && !matches!(
+                                report.order_status,
+                                OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Filled
+                            )
+                })
+            {
+                continue;
+            }
+
+            group.sort_by_key(|report| report.ts_accepted);
+            let venue_order_ids = group
+                .into_iter()
+                .filter(|report| report.venue_order_id != current.venue_order_id)
+                .map(|report| report.venue_order_id)
+                .chain(std::iter::once(current.venue_order_id))
+                .collect();
+            order_venue_ids.insert(id, venue_order_ids);
+        }
+
+        (!order_venue_ids.is_empty()).then_some(order_venue_ids)
+    }
+
+    fn register_external_order(
+        &self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+        strategy_id: StrategyId,
+        _ts_init: UnixNanos,
+    ) {
+        let _delivery = self.dispatch_state.delivery_guard();
+        let cache = self.core.cache();
+        if let Some(order) = cache.order_ref(&client_order_id)
+            && order.is_open()
+            && order.account_id() == Some(self.core.account_id)
+            && order.instrument_id() == instrument_id
+            && order.strategy_id() == strategy_id
+            && order.venue_order_id() == Some(venue_order_id)
+            && cache.client_id(&client_order_id) == Some(&self.core.client_id)
+        {
+            self.dispatch_state.restore_order(&order);
+        }
+    }
+
     fn start(&mut self) -> anyhow::Result<()> {
         self.emitter.set_sender(get_exec_event_sender());
         self.restore_active_orders();
@@ -1075,7 +1156,7 @@ impl ExecutionClient for DeriveExecutionClient {
         let log_level = cmd.log_receipt_level;
         let reports = self
             .reconciliation_context()
-            .generate_fill_reports(cmd)
+            .generate_fill_reports(cmd, false)
             .await?
             .into_complete("fill")?;
         log_report_receipt(reports.len(), "FillReport", log_level);
@@ -1105,7 +1186,7 @@ impl ExecutionClient for DeriveExecutionClient {
         let ts_init = self.clock.get_time_ns();
         Box::pin(
             self.reconciliation_context()
-                .generate_mass_status(lookback_mins, ts_init),
+                .generate_mass_status(lookback_mins, ts_init, true),
         )
         .await
         .map(Some)
@@ -2320,7 +2401,7 @@ impl DeriveReconciliationContext {
 
     async fn recover_after_reconnect(&self, ts_init: UnixNanos) -> anyhow::Result<()> {
         self.refresh_account_state().await?;
-        let mass_status = Box::pin(self.generate_mass_status(None, ts_init)).await?;
+        let mass_status = Box::pin(self.generate_mass_status(None, ts_init, false)).await?;
         let order_count = mass_status.order_reports().len();
         let fill_count: usize = mass_status.fill_reports().values().map(Vec::len).sum();
         let position_count = mass_status.position_reports().len();
@@ -2435,7 +2516,9 @@ impl DeriveReconciliationContext {
         }
 
         observe_trigger_order(&self.dispatch_state, &order, &report);
-        self.project_order_report(&order, report).await.map(Some)
+        self.project_order_report(&order, report, &[], false)
+            .await
+            .map(Some)
     }
 
     async fn prime_order_bindings(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
@@ -2566,7 +2649,14 @@ impl DeriveReconciliationContext {
         let orders = self.collect_order_records(cmd).await?;
 
         let mut reports = self
-            .generate_order_status_reports_from_records(cmd, orders, &AHashSet::new(), false)
+            .generate_order_status_reports_from_records(
+                cmd,
+                orders,
+                &AHashSet::new(),
+                false,
+                &[],
+                false,
+            )
             .await?;
         retain_order_status_reports(&mut reports.reports, cmd);
         Ok(reports)
@@ -2578,6 +2668,8 @@ impl DeriveReconciliationContext {
         orders: Vec<DeriveOrder>,
         ambiguous_client_order_ids: &AHashSet<Ustr>,
         strict: bool,
+        ancestors: &[DeriveOrder],
+        recover_uncached: bool,
     ) -> anyhow::Result<CollectedReports<OrderStatusReport>> {
         self.ensure_order_context()?;
         let mut complete = true;
@@ -2597,14 +2689,16 @@ impl DeriveReconciliationContext {
 
         let mut reports = Vec::with_capacity(orders.len());
 
-        for order in orders {
-            observe_order_binding(&self.dispatch_state, &order);
+        let known_orders: Vec<_> = orders.iter().chain(ancestors).collect();
+
+        for order in &orders {
+            observe_order_binding(&self.dispatch_state, order);
             ensure_bindings_resolved(&self.dispatch_state, cmd.instrument_id)?;
-            let (price_precision, size_precision) = self.order_precision(&order)?;
+            let (price_precision, size_precision) = self.order_precision(order)?;
             complete &= price_precision.is_some();
 
             match parse_derive_order_to_report_with_precision(
-                &order,
+                order,
                 self.account_id,
                 price_precision,
                 size_precision,
@@ -2617,7 +2711,7 @@ impl DeriveReconciliationContext {
                         report.venue_order_id,
                         report.instrument_id,
                     )?;
-                    observe_trigger_order(&self.dispatch_state, &order, &report);
+                    observe_trigger_order(&self.dispatch_state, order, &report);
                     if report
                         .client_order_id
                         .and_then(|cid| self.order_binding(cid))
@@ -2626,10 +2720,18 @@ impl DeriveReconciliationContext {
                             ambiguous_client_order_ids.contains(&client_order_id.inner())
                         })
                     {
+                        anyhow::ensure!(
+                            order.replaced_order_id.is_none() || report.order_status.is_closed(),
+                            "Ambiguous native replacement chain for {}",
+                            order.label,
+                        );
                         report.client_order_id = None;
                     }
 
-                    reports.push(self.project_order_report(&order, report).await?);
+                    reports.push(
+                        self.project_order_report(order, report, &known_orders, recover_uncached)
+                            .await?,
+                    );
                 }
                 Err(e) if cmd.open_only => {
                     return Err(e.context(format!(
@@ -2816,6 +2918,8 @@ impl DeriveReconciliationContext {
         &self,
         order: &DeriveOrder,
         mut report: OrderStatusReport,
+        known_orders: &[&DeriveOrder],
+        recover_uncached: bool,
     ) -> anyhow::Result<OrderStatusReport> {
         self.ensure_order_context()?;
 
@@ -2827,6 +2931,39 @@ impl DeriveReconciliationContext {
             .order_binding(client_order_id)
             .filter(|binding| binding.identity.instrument_id == report.instrument_id)
         else {
+            if recover_uncached
+                && report.order_status.is_open()
+                && order.replaced_order_id.is_some()
+            {
+                let identity = OrderIdentity {
+                    instrument_id: report.instrument_id,
+                    strategy_id: StrategyId::from("EXTERNAL"),
+                    order_side: report
+                        .order_side
+                        .context("missing native replacement side")?,
+                    order_type: report.order_type,
+                };
+
+                let legs = replacement_orders(
+                    &self.http_client,
+                    &self.dispatch_state,
+                    client_order_id,
+                    identity,
+                    order.clone(),
+                    Vec::new(),
+                    known_orders,
+                )
+                .await
+                .context(UnresolvedOrderBinding(client_order_id))?;
+                self.project_replacement_history(order, &legs, &mut report)
+                    .context(UnresolvedOrderBinding(client_order_id))?;
+                self.ensure_order_context()?;
+                anyhow::ensure!(
+                    self.order_binding(client_order_id).is_none(),
+                    "Native replacement binding changed during report collection",
+                );
+            }
+
             return Ok(report);
         };
 
@@ -2861,6 +2998,7 @@ impl DeriveReconciliationContext {
             binding.identity,
             order.clone(),
             binding.venue_order_legs.clone(),
+            &[],
         )
         .await?;
         self.project_replacement_history(order, &legs, &mut report)?;
@@ -2945,6 +3083,7 @@ impl DeriveReconciliationContext {
     async fn generate_fill_reports(
         &self,
         cmd: GenerateFillReports,
+        retain_untracked: bool,
     ) -> anyhow::Result<CollectedReports<FillReport>> {
         self.resolve_pending_modifies(cmd.instrument_id).await?;
         let mut complete = true;
@@ -3025,7 +3164,12 @@ impl DeriveReconciliationContext {
                         report.instrument_id,
                     )?;
                     observe_trigger_fill(&self.dispatch_state, &report);
-                    if self.dispatch_state.contains_trade(&report.trade_id)
+                    let retain = retain_untracked
+                        && report
+                            .client_order_id
+                            .is_some_and(|id| self.order_binding(id).is_none());
+
+                    if self.dispatch_state.contains_trade(&report.trade_id) && !retain
                         || !seen_trade_ids.insert(report.trade_id)
                     {
                         log::debug!(
@@ -3111,6 +3255,7 @@ impl DeriveReconciliationContext {
         &self,
         lookback_mins: Option<u64>,
         ts_now: UnixNanos,
+        recover_uncached: bool,
     ) -> anyhow::Result<ExecutionMassStatus> {
         self.ensure_order_context()?;
         log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
@@ -3169,7 +3314,7 @@ impl DeriveReconciliationContext {
                         records_complete: true,
                     })
             },
-            self.generate_fill_reports(fill_cmd),
+            self.generate_fill_reports(fill_cmd, recover_uncached),
             self.generate_position_status_snapshot(&position_cmd),
         );
         let history = collect_mass_reports(history, "order history", start.is_some())?;
@@ -3228,24 +3373,62 @@ impl DeriveReconciliationContext {
                 .chain(companions.reports.iter()),
         );
         let ambiguous_open_client_order_ids = AHashSet::new();
+
+        let replaced_order_ids: AHashSet<_> = history
+            .reports
+            .iter()
+            .chain(open.reports.iter())
+            .chain(companions.reports.iter())
+            .filter_map(|order| {
+                order
+                    .replaced_order_id
+                    .as_deref()
+                    .map(|id| (order.label, id))
+            })
+            .collect();
+
+        anyhow::ensure!(
+            !recover_uncached
+                || !open.reports.iter().any(|order| {
+                    (order.replaced_order_id.is_some()
+                        && ambiguous_client_order_ids.contains(&order.label)
+                        || replaced_order_ids.contains(&(order.label, order.order_id.as_str())))
+                        && ClientOrderId::new_checked(order.label)
+                            .is_ok_and(|cid| self.order_binding(cid).is_none())
+                }),
+            "Invalid native replacement head in open orders",
+        );
+        let ancestors: Vec<_> = history
+            .reports
+            .iter()
+            .chain(open.reports.iter())
+            .chain(companions.reports.iter())
+            .cloned()
+            .collect();
         let (history, open, companions) = tokio::join!(
             self.generate_order_status_reports_from_records(
                 &history_order_cmd,
                 history.reports,
                 &ambiguous_client_order_ids,
                 false,
+                &ancestors,
+                recover_uncached,
             ),
             self.generate_order_status_reports_from_records(
                 &open_order_cmd,
                 open.reports,
                 &ambiguous_open_client_order_ids,
                 false,
+                &ancestors,
+                recover_uncached,
             ),
             self.generate_order_status_reports_from_records(
                 &history_order_cmd,
                 companions.reports,
                 &ambiguous_client_order_ids,
                 true,
+                &ancestors,
+                recover_uncached,
             ),
         );
         let history = collect_mass_reports(history, "order history", start.is_some())?;
@@ -3254,7 +3437,33 @@ impl DeriveReconciliationContext {
         reports_complete &= history.complete && open.complete && companions.complete;
         records_complete &=
             history.records_complete && open.records_complete && companions.records_complete;
+        anyhow::ensure!(
+            !recover_uncached
+                || records_complete
+                || !ancestors.iter().any(|order| {
+                    order.replaced_order_id.is_some()
+                        && derive_status_to_nautilus(
+                            order.order_status,
+                            order.filled_amount,
+                            order.amount,
+                        )
+                        .is_ok_and(|status| status.is_open())
+                        && ClientOrderId::new_checked(order.label)
+                            .is_ok_and(|id| self.order_binding(id).is_none())
+                }),
+            "Incomplete reports for uncached replacement",
+        );
         let open_order_reports = open.reports;
+
+        if recover_uncached
+            && let Some(earliest) =
+                self.replacement_lookback_start(start, &open_order_reports, &ancestors)
+        {
+            let lookback = ts_now.saturating_duration_since(earliest).as_mins() + 1;
+            return Box::pin(self.generate_mass_status(Some(lookback), ts_now, recover_uncached))
+                .await;
+        }
+
         let (mut history_order_reports, retained_companion_reports): (Vec<_>, Vec<_>) = history
             .reports
             .into_iter()
@@ -3339,21 +3548,20 @@ impl DeriveReconciliationContext {
         } = position_snapshot;
         let mut mass_status =
             ExecutionMassStatus::new(self.client_id, self.account_id, *DERIVE_VENUE, ts_now, None);
-        mass_status.set_report_window(
-            start,
-            if start.is_some() {
-                reports_complete
-            } else {
-                records_complete
-            },
-        );
+        mass_status.set_report_window(start, reports_complete || start.is_none());
 
-        mass_status.add_order_reports(deduplicate_order_status_reports(
+        let order_reports = deduplicate_order_status_reports(
             history_order_reports
                 .into_iter()
                 .chain(open_order_reports)
                 .collect(),
-        )?);
+        )?;
+
+        if recover_uncached {
+            self.ensure_replacement_fills(&order_reports, &fill_reports, &ancestors)?;
+        }
+
+        mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
 
@@ -3370,6 +3578,79 @@ impl DeriveReconciliationContext {
 
         self.ensure_order_context()?;
         Ok(mass_status)
+    }
+
+    fn ensure_replacement_fills(
+        &self,
+        reports: &[OrderStatusReport],
+        fills: &[FillReport],
+        records: &[DeriveOrder],
+    ) -> anyhow::Result<()> {
+        for current in reports {
+            if !current.order_status.is_open()
+                || current
+                    .client_order_id
+                    .is_none_or(|id| self.order_binding(id).is_some())
+                || !records.iter().any(|order| {
+                    order.order_id == current.venue_order_id.as_str()
+                        && order.replaced_order_id.is_some()
+                })
+            {
+                continue;
+            }
+
+            let mut filled = Decimal::ZERO;
+
+            for report in reports {
+                if report.client_order_id != current.client_order_id {
+                    continue;
+                }
+
+                let native_filled: Decimal = fills
+                    .iter()
+                    .filter(|fill| fill.venue_order_id == report.venue_order_id)
+                    .map(|fill| fill.last_qty.as_decimal())
+                    .sum();
+                anyhow::ensure!(
+                    report.venue_order_id == current.venue_order_id
+                        || native_filled == report.filled_qty.as_decimal(),
+                    "Incomplete native fills for uncached replacement {} at {}",
+                    current.venue_order_id,
+                    report.venue_order_id,
+                );
+                filled += native_filled;
+            }
+
+            anyhow::ensure!(
+                filled == current.filled_qty.as_decimal(),
+                "Incomplete native fills for uncached replacement {}",
+                current.venue_order_id,
+            );
+        }
+
+        Ok(())
+    }
+
+    fn replacement_lookback_start(
+        &self,
+        start: Option<UnixNanos>,
+        open: &[OrderStatusReport],
+        records: &[DeriveOrder],
+    ) -> Option<UnixNanos> {
+        let start = start?;
+        open.iter()
+            .filter(|report| {
+                report.ts_accepted < start
+                    && report
+                        .client_order_id
+                        .is_some_and(|id| self.order_binding(id).is_none())
+                    && records.iter().any(|order| {
+                        order.order_id == report.venue_order_id.as_str()
+                            && order.replaced_order_id.is_some()
+                    })
+            })
+            .map(|report| report.ts_accepted)
+            .min()
     }
 
     async fn collect_companion_order_records(
@@ -4475,6 +4756,7 @@ async fn replacement_amounts(
         identity,
         current,
         dispatch_state.venue_order_legs(&client_order_id),
+        &[],
     )
     .await?;
     let mut filled = U256::ZERO;
@@ -4513,6 +4795,7 @@ async fn replacement_orders(
     identity: OrderIdentity,
     current: DeriveOrder,
     mut proven_legs: Vec<VenueOrderId>,
+    known_orders: &[&DeriveOrder],
 ) -> anyhow::Result<Vec<DeriveOrder>> {
     let current_venue_order_id = VenueOrderId::new_checked(&current.order_id)?;
     proven_legs.retain(|id| *id != current_venue_order_id);
@@ -4535,6 +4818,12 @@ async fn replacement_orders(
 
             let order = if venue_order_id == current_venue_order_id {
                 current.clone()
+            } else if let Some(order) = known_orders
+                .iter()
+                .filter(|order| order.order_id == venue_order_id.as_str())
+                .max_by_key(|order| order.last_update_timestamp)
+            {
+                (**order).clone()
             } else {
                 fetch_order_record(
                     http_client,
@@ -6091,7 +6380,7 @@ mod tests {
             UnixNanos::from(4),
         )
         .unwrap();
-        let result = stale.project_order_report(&native, report).await;
+        let result = stale.project_order_report(&native, report, &[], true).await;
         let fresh = client.reconciliation_context();
         let binding = fresh.order_binding(cid).unwrap();
         let mut legs = binding.venue_order_legs.clone();
@@ -6854,12 +7143,14 @@ mod tests {
     #[case(None, "DERIVE-001", false, false)]
     #[case(Some(ClientId::from(DERIVE)), "DERIVE-OTHER", false, false)]
     #[case(Some(ClientId::from(DERIVE)), "DERIVE-001", true, false)]
-    fn test_start_restores_only_owned_active_orders(
+    fn test_restores_only_owned_active_orders(
         #[case] assigned_client: Option<ClientId>,
         #[case] account: &str,
         #[case] closed: bool,
         #[case] restored: bool,
         #[values(false, true)] voided: bool,
+        #[values(false, true)] register_external: bool,
+        #[values(false, true)] replacement: bool,
     ) {
         use nautilus_common::live::runner::replace_exec_event_sender;
 
@@ -6977,6 +7268,32 @@ mod tests {
             assert!(order.trade_ids().is_empty());
         }
 
+        let current = if replacement && !closed {
+            let current = VenueOrderId::from("restored-current-child");
+            order
+                .apply(OrderEventAny::Updated(OrderUpdated::new(
+                    order.trader_id(),
+                    order.strategy_id(),
+                    instrument_id,
+                    cid,
+                    order.quantity(),
+                    UUID4::new(),
+                    UnixNanos::from(6),
+                    UnixNanos::from(7),
+                    false,
+                    Some(current),
+                    Some(account_id),
+                    order.price(),
+                    None,
+                    None,
+                    false,
+                )))
+                .unwrap();
+            current
+        } else {
+            report.venue_order_id
+        };
+
         let identity = OrderIdentity {
             instrument_id,
             strategy_id: order.strategy_id(),
@@ -6984,12 +7301,27 @@ mod tests {
             order_type: order.order_type(),
         };
 
+        let mut client = DeriveExecutionClient::new(core, test_config()).unwrap();
+        if register_external {
+            client.start().unwrap();
+        }
+
         cache
             .borrow_mut()
             .add_order(order, None, assigned_client, false)
             .unwrap();
-        let mut client = DeriveExecutionClient::new(core, test_config()).unwrap();
-        client.start().unwrap();
+
+        if register_external {
+            client.register_external_order(
+                cid,
+                current,
+                instrument_id,
+                identity.strategy_id,
+                UnixNanos::from(8),
+            );
+        } else {
+            client.start().unwrap();
+        }
 
         assert_eq!(
             client.dispatch_state.identity(&cid),
@@ -6997,7 +7329,20 @@ mod tests {
         );
         assert_eq!(
             client.dispatch_state.bound_venue_order_id(&cid),
-            restored.then_some(report.venue_order_id)
+            restored.then_some(current)
+        );
+        let expected_legs = restored
+            .then_some(report.venue_order_id)
+            .into_iter()
+            .chain((restored && replacement).then_some(current))
+            .collect::<AHashSet<_>>();
+        assert_eq!(
+            client
+                .dispatch_state
+                .venue_order_legs(&cid)
+                .into_iter()
+                .collect::<AHashSet<_>>(),
+            expected_legs,
         );
         assert_eq!(client.dispatch_state.contains_accepted(&cid), restored);
         assert_eq!(
