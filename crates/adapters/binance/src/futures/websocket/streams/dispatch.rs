@@ -2348,6 +2348,7 @@ mod tests {
                 order_type: OrderType::Limit,
                 price: None,
                 quantity: Quantity::from("1"),
+                is_quote_quantity: false,
                 venue_position_id: None,
             },
         );
@@ -2462,6 +2463,7 @@ mod tests {
                 order_type: OrderType::Limit,
                 price,
                 quantity,
+                is_quote_quantity: false,
                 venue_position_id: None,
             },
         );

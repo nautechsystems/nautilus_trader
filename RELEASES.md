@@ -98,6 +98,7 @@ Released on TBD (UTC).
 - Fixed portfolio Greeks panics when calculations, subscribers, or filters write to the cache
 - Fixed missing Python Greeks conversion, scalar-left multiplication, and portfolio addition
 - Fixed `BacktestNode` streaming runs leaving the engine running after a data load failure
+- Fixed Binance Spot quote-sized market orders remaining open after full execution
 - Fixed Bybit stale WebSocket subscriptions blocking subscriptions after reconnect (#5250), thanks @Martingale42
 - Fixed Bybit failed quote subscriptions retaining shared order book references (#5258), thanks @Martingale42
 - Fixed Bybit incomplete position reports causing held positions to reconcile as flat
