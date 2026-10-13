@@ -1402,6 +1402,7 @@ mod tests {
                     | HandlerCommand::SendTxBatch { response_tx, .. },
                 ) = cmd_rx.recv().await
                 {
+                    cmd_rx.close();
                     drop(response_tx);
                 }
             });

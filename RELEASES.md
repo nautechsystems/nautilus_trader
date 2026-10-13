@@ -23,6 +23,7 @@ Released on TBD (UTC).
 - Added Interactive Brokers subscription idle events (#5041), thanks @faysou
 - Added Kraken Spot L2 checksum validation and resync on mismatch (#5219), thanks @zhaow-de
 - Added Lighter native transaction batching with automatic splitting for order lists and batch operations
+- Added Lighter native OTO, OCO, and OTOCO order groups with normalized Nautilus relationships
 
 ### Breaking Changes
 
@@ -131,6 +132,8 @@ Released on TBD (UTC).
 - Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
 - Fixed Lighter single and batch modify failures remaining pending after admission
+- Fixed Lighter fills and order updates preceding modification confirmation
+- Fixed Lighter duplicate fill reports across HTTP history pages
 - Fixed OKX conditional order amendments dropping prices (#5275), thanks for reporting @ProfitChef
 - Fixed Polymarket modify canceling a working order when the signed replacement is below the market minimum
 - Fixed Polymarket recovered BUY overfills being rejected instead of raising order quantity
@@ -147,6 +150,7 @@ Released on TBD (UTC).
 - Ported the Interactive Brokers adapter to the `ibapi` v5.0.0 API (#5041), thanks @faysou
 - Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
 - Improved Lighter report generation with HTTP collection on runtime workers (#5216)
+- Improved Lighter execution race coverage and grouped-order signer validation
 - Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
 - Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Optimized core string formatting, precision parsing, and API key masking allocations (#5225), thanks @sunlei
@@ -195,6 +199,7 @@ Released on TBD (UTC).
 - Clarified Hyperliquid modify replacement rules and individual batch results
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
 - Clarified Lighter cancel-all scope and batch cancellation failure handling
+- Clarified Lighter contingent order mappings, execution ordering, and venue limits
 - Documented Polymarket PolyBolt reference prices and the RTDS migration (#5296)
 
 ### Deprecations

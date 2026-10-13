@@ -32,7 +32,7 @@ use nautilus_model::{
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    orders::{LIMIT_ORDER_TYPES, STOP_ORDER_TYPES},
+    orders::{LIMIT_ORDER_TYPES, STOP_ORDER_TYPES, TRIGGERABLE_ORDER_TYPES},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -484,7 +484,13 @@ pub fn parse_ws_order_status_report(
     let order_side = order
         .side
         .map_or_else(|| order_side_from_is_ask(order.is_ask), nautilus_order_side);
-    let order_type = nautilus_order_type(order.order_type)?;
+    let mut order_type = nautilus_order_type(order.order_type)?;
+    if is_order_triggered(order)
+        && order.trigger_price.is_zero()
+        && matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched)
+    {
+        order_type = OrderType::Limit;
+    }
 
     let (time_in_force, expire_time) =
         nautilus_time_in_force(order.time_in_force, order.order_expiry);
@@ -492,7 +498,14 @@ pub fn parse_ws_order_status_report(
 
     let quantity = quantity_from_decimal(order.initial_base_amount, instrument.size_precision())?;
     let filled_qty = quantity_from_decimal(order.filled_base_amount, instrument.size_precision())?;
-    let order_status = nautilus_order_status(order.status, &filled_qty);
+    let mut order_status = nautilus_order_status(order.status, &filled_qty);
+    if order_status == OrderStatus::Accepted
+        && is_order_triggered(order)
+        && TRIGGERABLE_ORDER_TYPES.contains(&order_type)
+    {
+        order_status = OrderStatus::Triggered;
+    }
+
     let cancel_reason = order.status.as_cancel_reason();
 
     let ts_accepted = parse_optional_order_timestamp(order.created_at)?;
@@ -551,6 +564,19 @@ pub fn parse_ws_order_status_report(
     // layer, where the venue-to-client id mapping is tracked.
 
     Ok(report)
+}
+
+pub(crate) fn is_order_triggered(order: &LighterOrder) -> bool {
+    order.status == LighterOrderStatus::Open
+        && (order.trigger_status == LighterTriggerStatus::Ready
+            || (order.trigger_status == LighterTriggerStatus::Na
+                && matches!(
+                    order.order_type,
+                    LighterOrderKind::StopLoss
+                        | LighterOrderKind::StopLossLimit
+                        | LighterOrderKind::TakeProfit
+                        | LighterOrderKind::TakeProfitLimit
+                )))
 }
 
 fn order_type_requires_trigger_type(order_type: OrderType) -> bool {
@@ -738,16 +764,17 @@ pub(crate) fn lighter_order_shape(
 /// The caller (the execution consumption loop) decides between this path and
 /// the [`OrderStatusReport`] fallback based on whether the cloid is in
 /// `WsDispatchState::order_identities`. Returns `None` for `InProgress` and
-/// `Filled`: fills flow through the trade stream and are converted via
-/// [`parse_lighter_order_filled`]. Lighter `Pending` means the venue has
+/// unchanged `Filled` frames. A changed `Filled` frame produces `Updated`;
+/// actual fills flow through the trade stream via [`parse_lighter_order_filled`].
+/// Lighter `Pending` means the venue has
 /// acknowledged the order, so it follows the accepted/update path without
 /// the `Open`-only trigger transition.
 ///
 /// The `Open` branch decision matrix (in order):
 ///
-/// - Already accepted with a fresh `Ready` trigger and a changed shape
+/// - Already accepted with a fresh trigger and a changed shape
 ///   -> `Updated`, then `Triggered`.
-/// - `trigger_status == Ready` and not yet emitted -> `Triggered`.
+/// - An open conditional limit with `Ready` or `Na` trigger status and no prior trigger -> `Triggered`.
 /// - Not yet accepted -> `Accepted` (the dispatcher seeds the shape
 ///   snapshot so subsequent diffs are meaningful).
 /// - Already accepted and the order shape changed (qty / price / trigger)
@@ -779,29 +806,15 @@ pub(crate) fn parse_lighter_order_event(
     match order.status {
         LighterOrderStatus::InProgress => Ok(None),
         LighterOrderStatus::Pending | LighterOrderStatus::Open => {
-            let fresh_trigger = order.status == LighterOrderStatus::Open
-                && order.trigger_status == LighterTriggerStatus::Ready
+            let fresh_trigger = is_order_triggered(order)
+                && TRIGGERABLE_ORDER_TYPES.contains(&identity.order_type)
                 && !open_ctx.triggered_already_emitted;
 
             if fresh_trigger && open_ctx.accepted_already_emitted && open_ctx.shape_changed {
-                let shape = lighter_order_shape(order, instrument, identity.order_type)?;
-                let updated = OrderUpdated::new(
-                    trader_id,
-                    identity.strategy_id,
-                    identity.instrument_id,
-                    cloid,
-                    shape.quantity,
-                    UUID4::new(),
-                    ts_event,
-                    ts_init,
-                    false,
-                    Some(venue_order_id),
-                    Some(account_id),
-                    shape.price,
-                    shape.trigger_price,
-                    None,
-                    false,
-                );
+                let updated = parse_lighter_order_updated(
+                    order, instrument, identity, cloid, account_id, trader_id, ts_init,
+                )?;
+
                 let triggered = OrderTriggered::new(
                     trader_id,
                     identity.strategy_id,
@@ -847,33 +860,23 @@ pub(crate) fn parse_lighter_order_event(
                 );
                 Ok(Some(ParsedOrderEvent::Accepted(accepted)))
             } else if open_ctx.shape_changed {
-                let shape = lighter_order_shape(order, instrument, identity.order_type)?;
-                let updated = OrderUpdated::new(
-                    trader_id,
-                    identity.strategy_id,
-                    identity.instrument_id,
-                    cloid,
-                    shape.quantity,
-                    UUID4::new(),
-                    ts_event,
-                    ts_init,
-                    false,
-                    Some(venue_order_id),
-                    Some(account_id),
-                    shape.price,
-                    shape.trigger_price,
-                    None,
-                    false,
-                );
+                let updated = parse_lighter_order_updated(
+                    order, instrument, identity, cloid, account_id, trader_id, ts_init,
+                )?;
                 Ok(Some(ParsedOrderEvent::Updated(updated)))
             } else {
                 Ok(None)
             }
         }
         LighterOrderStatus::Filled => {
-            // The trade stream drives `OrderFilled`; the order frame is a
-            // status echo and does not carry per-fill trade ids.
-            Ok(None)
+            if open_ctx.accepted_already_emitted && open_ctx.shape_changed {
+                let updated = parse_lighter_order_updated(
+                    order, instrument, identity, cloid, account_id, trader_id, ts_init,
+                )?;
+                Ok(Some(ParsedOrderEvent::Updated(updated)))
+            } else {
+                Ok(None)
+            }
         }
         LighterOrderStatus::CanceledExpired => {
             let expired = OrderExpired::new(
@@ -933,6 +936,38 @@ pub(crate) fn parse_lighter_order_event(
             Ok(Some(ParsedOrderEvent::Canceled(canceled)))
         }
     }
+}
+
+pub(crate) fn parse_lighter_order_updated(
+    order: &LighterOrder,
+    instrument: &InstrumentAny,
+    identity: &OrderIdentity,
+    cloid: ClientOrderId,
+    account_id: AccountId,
+    trader_id: TraderId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderUpdated> {
+    let shape =
+        identity.normalize_shape(lighter_order_shape(order, instrument, identity.order_type)?);
+    let ts_event = parse_optional_order_timestamp(order.updated_at)?;
+    let venue_order_id = VenueOrderId::new(order.order_id.as_str());
+    Ok(OrderUpdated::new(
+        trader_id,
+        identity.strategy_id,
+        identity.instrument_id,
+        cloid,
+        shape.quantity,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
+        shape.price,
+        shape.trigger_price,
+        None,
+        false,
+    ))
 }
 
 /// Build an [`OrderFilled`] event from a Lighter `account_trades` payload,
@@ -1979,6 +2014,89 @@ mod tests {
     }
 
     #[rstest]
+    #[case(LighterOrderKind::StopLossLimit, LighterTriggerStatus::Na)]
+    #[case(LighterOrderKind::TakeProfitLimit, LighterTriggerStatus::Na)]
+    #[case(LighterOrderKind::StopLossLimit, LighterTriggerStatus::Ready)]
+    #[case(LighterOrderKind::StopLoss, LighterTriggerStatus::Na)]
+    #[case(LighterOrderKind::TakeProfit, LighterTriggerStatus::Na)]
+    #[case(LighterOrderKind::StopLoss, LighterTriggerStatus::Ready)]
+    fn conditional_open_reports_and_events_normalize_trigger(
+        #[case] kind: LighterOrderKind,
+        #[case] trigger_status: LighterTriggerStatus,
+    ) {
+        let instrument = create_test_instrument();
+        let mut order = stub_order(LighterOrderStatus::Open);
+        order.order_type = kind;
+        order.filled_base_amount = Decimal::ZERO;
+        order.trigger_status = trigger_status;
+        order.trigger_price = Decimal::from(2300);
+        let report =
+            parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(7))
+                .unwrap();
+
+        let event = parse_lighter_order_event(
+            &order,
+            &instrument,
+            &test_identity_for(report.order_type),
+            test_cloid(),
+            account_id(),
+            test_trader_id(),
+            OpenFrameContext {
+                accepted_already_emitted: true,
+                triggered_already_emitted: false,
+                shape_changed: false,
+            },
+            UnixNanos::from(7),
+        )
+        .unwrap();
+
+        let replay = parse_lighter_order_event(
+            &order,
+            &instrument,
+            &test_identity_for(report.order_type),
+            test_cloid(),
+            account_id(),
+            test_trader_id(),
+            OpenFrameContext {
+                accepted_already_emitted: true,
+                triggered_already_emitted: true,
+                shape_changed: false,
+            },
+            UnixNanos::from(8),
+        )
+        .unwrap();
+
+        if TRIGGERABLE_ORDER_TYPES.contains(&report.order_type) {
+            assert_eq!(report.order_status, OrderStatus::Triggered);
+            assert!(
+                matches!(event, Some(ParsedOrderEvent::Triggered(triggered)) if triggered.client_order_id == test_cloid())
+            );
+        } else {
+            assert_eq!(report.order_status, OrderStatus::Accepted);
+            assert!(event.is_none());
+        }
+
+        assert!(replay.is_none());
+    }
+
+    #[rstest]
+    fn triggered_external_limit_without_trigger_price_reports_active_limit() {
+        let instrument = create_test_instrument();
+        let mut order = stub_order(LighterOrderStatus::Open);
+        order.order_type = LighterOrderKind::TakeProfitLimit;
+        order.filled_base_amount = Decimal::ZERO;
+        order.trigger_status = LighterTriggerStatus::Na;
+        order.trigger_price = Decimal::ZERO;
+        let report =
+            parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(7))
+                .unwrap();
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.trigger_price, None);
+        assert_eq!(report.price, Some(Price::from("2352.74")));
+    }
+
+    #[rstest]
     fn test_parse_ws_order_status_report_omits_parent_order_id() {
         // Lighter's `parent_order_id` lives in the venue namespace; populating
         // Nautilus `OrderStatusReport::parent_order_id` (a `ClientOrderId`)
@@ -2929,12 +3047,14 @@ mod tests {
         // `Triggered` regardless of `accepted_already_emitted`.
         let instrument = create_test_instrument();
         let mut order = stub_order(LighterOrderStatus::Open);
+        order.order_type = LighterOrderKind::StopLossLimit;
+        order.trigger_price = Decimal::from(2300);
         order.trigger_status = LighterTriggerStatus::Ready;
 
         let event = parse_lighter_order_event(
             &order,
             &instrument,
-            &test_identity(),
+            &test_identity_for(OrderType::StopLimit),
             test_cloid(),
             account_id(),
             test_trader_id(),
@@ -2959,12 +3079,14 @@ mod tests {
         let instrument = create_test_instrument();
         let mut order = stub_order(LighterOrderStatus::Open);
         order.filled_base_amount = Decimal::ZERO;
+        order.order_type = LighterOrderKind::StopLossLimit;
+        order.trigger_price = Decimal::from(2300);
         order.trigger_status = LighterTriggerStatus::Ready;
 
         let event_fresh = parse_lighter_order_event(
             &order,
             &instrument,
-            &test_identity(),
+            &test_identity_for(OrderType::StopLimit),
             test_cloid(),
             account_id(),
             test_trader_id(),
