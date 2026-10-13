@@ -178,11 +178,14 @@ Static enforcement has two layers:
 | Clippy policy           | `clippy.toml` and `[workspace.lints.clippy]` reject direct `getrandom::{fill,u32,u64}` calls and `tokio::task::LocalSet`. |
 | `check-dst-conventions` | The pre-commit hook applies path-aware and cfg-aware structural checks that Clippy cannot express cleanly.                |
 
-The hook lives at `.pre-commit-hooks/check_dst_conventions.sh` and runs in the standard pre-commit
-suite and CI. Rules 1 to 4 and 6 scan the 17 in-scope workspace crates and the audited adapter
-files in the hook's `ADAPTER_PATHS` list. Rule 5 covers its two audited files. Rule 7 scans the
-nine crates on the madsim build path, those adapter files, and
-`crates/network/src/websocket/client.rs`.
+The hook lives at `.pre-commit-hooks/check_dst_conventions.sh` and runs in the standard pre-commit suite and
+CI. Its scope varies by rule:
+
+- **Rules 1 to 4 and 6**: the 17 in-scope workspace crates and the audited adapter files in the hook's
+  `ADAPTER_PATHS` list.
+- **Rule 5**: its two audited files.
+- **Rule 7**: the nine crates on the madsim build path, those adapter files, and
+  `crates/network/src/websocket/client.rs`.
 
 | Rule | Rejects                                                                                                                                        | Scope or exception                                                                                          |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -248,26 +251,34 @@ outside a proven runtime slice.
 
 ## Simulated HTTP and WebSocket transport
 
-With `simulation` and `cfg(madsim)`, `nautilus-network` executes plaintext HTTP/1.1 requests and
-Tungstenite WebSocket connections over Madsim byte streams. Production and simulated HTTP share
-request defaults, URL and query encoding, and response validation, including buffered body limits
-and a deadline covering the body read. The simulation branch in
-`crates/network/src/http/simulation.rs` uses Hyper for the HTTP/1.1 exchange and owns its Madsim
-connection task. WebSocket traffic uses the Tungstenite codec; `crates/network/src/dst.rs` routes
-its owned tasks and transport streams to Madsim. Normal builds use pooled Hyper HTTP connections
-and Tokio tasks.
+With `simulation` and `cfg(madsim)`, `nautilus-network` executes plaintext HTTP/1.1 requests and Tungstenite
+WebSocket connections over Madsim byte streams.
 
-Configure controlled `http://` and `ws://` endpoints and select `TransportBackend::Tungstenite`.
-Simulation rejects HTTPS/WSS, explicit proxies, and Sockudo before opening a connection.
-`HttpRedirectPolicy::Follow` is the default: a redirect response with `Location` returns an error
-instead of following it. `Reject` returns the redirect response to the caller. Sockudo's internal
-timers require a Tokio runtime. Ambient HTTP proxy settings do not affect the simulated exchange.
+- **HTTP**: production and simulated paths share request defaults, URL and query encoding, and response
+  validation, including buffered body limits and a deadline covering the body read. The simulation branch in
+  `crates/network/src/http/simulation.rs` uses Hyper for the HTTP/1.1 exchange and owns its Madsim connection
+  task.
+- **WebSocket**: traffic uses the Tungstenite codec; `crates/network/src/dst.rs` routes its owned tasks and
+  transport streams to Madsim.
 
-The model covers HTTP request bytes, WebSocket message payloads, and domain events. It does not
-promise reproducible WebSocket handshake keys or frame masks, TLS records, OS TCP scheduling,
-partial writes, socket options, or TCP half-close. In `crates/network/src/dst/stream.rs`, stream
-shutdown flushes bytes; dropping the stream closes the connection. Combining `simulation`, `cfg(madsim)`, and `turmoil` is a compile
-error; run the two simulators in separate builds.
+Normal builds use pooled Hyper HTTP connections and Tokio tasks.
+
+Configure controlled `http://` and `ws://` endpoints and select `TransportBackend::Tungstenite`. Simulation
+rejects HTTPS/WSS, explicit proxies, and Sockudo before opening a connection. Sockudo's internal timers
+require a Tokio runtime. Ambient HTTP proxy settings do not affect the simulated exchange.
+
+Redirect behavior depends on `HttpRedirectPolicy`:
+
+- `Follow` (default): a redirect response with `Location` returns an error instead of following it.
+- `Reject`: returns the redirect response to the caller.
+
+The model covers HTTP request bytes, WebSocket message payloads, and domain events. It does not promise
+reproducible WebSocket handshake keys or frame masks, TLS records, OS TCP scheduling, partial writes, socket
+options, or TCP half-close.
+
+In `crates/network/src/dst/stream.rs`, stream shutdown flushes bytes; dropping the stream closes the
+connection. Combining `simulation`, `cfg(madsim)`, and `turmoil` is a compile error; run the two simulators in
+separate builds.
 
 Simulation sorts request headers by name for reproducible HTTP bytes. This canonical order does
 not promise byte-for-byte equality with live request header ordering. Each HTTP request opens a

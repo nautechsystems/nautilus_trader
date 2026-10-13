@@ -94,12 +94,16 @@ reconciliation, or trader startup failures abort startup and follow the coordina
 
 ### Submission recovery at shutdown
 
-Rust `LiveNode::stop`, `run`, and `run_with_mode`, and Python `run_async()` use the same submission
-recovery boundary. During `delay_post_stop`, the node continues processing venue evidence and native
-managed-exit timers without starting new reconciliation queries. At the end of that window, any
-retained submission without a native outcome or venue confirmation makes shutdown return an error
-listing the unresolved client order IDs. Clients disconnect and the kernel stops even when recovery
-is incomplete. Evidence drained after this boundary cannot change the recorded shutdown result.
+Rust `LiveNode::stop`, `run`, and `run_with_mode`, and Python `run_async()` use the same submission recovery
+boundary:
+
+1. During `delay_post_stop`, the node continues processing venue evidence and native managed-exit timers
+   without starting new reconciliation queries.
+1. At the end of that window, any retained submission without a native outcome or venue confirmation makes
+   shutdown return an error listing the unresolved client order IDs.
+1. Clients disconnect and the kernel stops even when recovery is incomplete.
+
+Evidence drained after this boundary cannot change the recorded shutdown result.
 
 This applies to `RetainUnresolved` and to clients which require submission retention, including
 submissions whose recovery budget has not yet exhausted. Polymarket requires retention automatically,
@@ -193,11 +197,12 @@ with any shutdown error preserved as the cancellation exception's cause.
 
 ### Host integration and limits
 
-Compatibility is tested with the default asyncio loop and uvloop. An ASGI lifespan managed by
-Uvicorn can apply the same ownership pattern without transferring signal handling to the node.
-Before an ASGI lifespan reports startup complete, wait until the handle reports `Running` while
-checking whether the run task has failed. Keep supervising the task after startup, and treat
-unexpected completion as a service failure.
+Compatibility is tested with the default asyncio loop and uvloop. An ASGI lifespan managed by Uvicorn can
+apply the same ownership pattern without transferring signal handling to the node.
+
+Before an ASGI lifespan reports startup complete, wait until the handle reports `Running` while checking
+whether the run task has failed. Keep supervising the task after startup, and treat unexpected completion as a
+service failure.
 
 While the node is running, it yields to the host loop periodically, so a burst of events cannot
 starve the host's own callbacks. Startup and shutdown drain their queues without yielding, so a
@@ -208,13 +213,16 @@ Run one concurrent `LiveNode` per process. The runner binds its channel senders 
 thread-local storage, and other runtime state is process-wide. `run_async()` also rejects a second
 hosted node on the same event loop. Run additional nodes in separate processes.
 
-Building another `LiveNode` on the same thread raises an error while the first node exists or is
-being built. In Python, `node.build(...)` is a static constructor and attempts to create another node.
-Drop the existing node, or release all references to it in Python, before building its replacement.
-With a single Python reference, call `del node` first: `node = LiveNode.build(...)` attempts construction
-while the old node still exists. Calling `dispose()` alone does not release this construction guard.
-Exceptions and unfinished coroutines can retain the node; release those references too. If an
-unreachable reference cycle retains it, run `gc.collect()` before rebuilding.
+Building another `LiveNode` on the same thread raises an error while the first node exists or is being built.
+In Python, `node.build(...)` is a static constructor and attempts to create another node.
+
+Calling `dispose()` alone does not release this construction guard. Before building a replacement, drop the
+existing node or release all references to it in Python:
+
+- With a single Python reference, call `del node` first: `node = LiveNode.build(...)` attempts construction
+  while the old node still exists.
+- Exceptions and unfinished coroutines can retain the node; release those references too.
+- If an unreachable reference cycle retains it, run `gc.collect()` before rebuilding.
 
 When an ASGI application lifespan constructs the node, run that application with one worker. Do not
 use hot reload for live trading because it restarts the worker and its node. Scale HTTP request
@@ -341,11 +349,12 @@ channels are ready together, the runner polls in this order:
 
 Events precede commands within the execution and data channel pairs.
 
-This polling order keeps a market-data backlog from taking priority over ready execution traffic.
-It does not define **one global FIFO order** across channels, adapters, or venues. Each selected branch
-runs to completion before the runner polls again, so a slow handler delays every channel. The runner
-yields to the host event loop periodically, but yielding does not change channel priority or shorten
-a slow handler.
+This polling order keeps a market-data backlog from taking priority over ready execution traffic. It does not
+define **one global FIFO order** across channels, adapters, or venues.
+
+Each selected branch runs to completion before the runner polls again, so a slow handler delays every channel.
+The runner yields to the host event loop periodically, but yielding does not change channel priority or
+shorten a slow handler.
 
 :::warning[Unbounded queues]
 Runner channels do not apply producer backpressure, coalesce messages, shed market data, or impose a
@@ -447,13 +456,13 @@ bus, and the event has no wire representation for external message-bus streaming
 
 ### Publication and routing
 
-Actors can observe transport availability for adapters that opt into socket state reporting.
-`LiveNode` publishes `SocketStateChanged` on
-`events.system.SocketStateChanged.<client_id>.<endpoint>` with the trader ID, client ID, optional venue,
-stable endpoint label, state, fresh event ID, and event timestamps. The endpoint label identifies one
-logical adapter transport without exposing its URL. `LiveNode` sets
-both timestamps from the kernel clock when it handles the transport's neutral state notification.
-Adapters send the notification through the runner's system-event channel, separately from market
+Actors can observe transport availability for adapters that opt into socket state reporting. `LiveNode`
+publishes `SocketStateChanged` on `events.system.SocketStateChanged.<client_id>.<endpoint>` with the trader
+ID, client ID, optional venue, stable endpoint label, state, fresh event ID, and event timestamps. The
+endpoint label identifies one logical adapter transport without exposing its URL.
+
+`LiveNode` sets both timestamps from the kernel clock when it handles the transport's neutral state
+notification. Adapters send the notification through the runner's system-event channel, separately from market
 data. The internal channel is not part of queue-pressure monitoring.
 
 The client ID and endpoint components percent-encode bytes other than ASCII letters, digits, `-`,

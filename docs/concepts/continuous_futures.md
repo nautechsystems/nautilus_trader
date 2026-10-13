@@ -219,9 +219,12 @@ stateDiagram-v2
     Active --> [*]: unsubscribe(cancel timer, deactivate segment)
 ```
 
-When a transition fires, the engine deactivates the current segment (unsubscribes the source),
-applies the next segment's adjustment, subscribes to the new source, and arms the timer for the
-following transition.
+When a transition fires, the engine:
+
+1. Deactivates the current segment by unsubscribing the source.
+1. Applies the next segment's adjustment.
+1. Subscribes to the new source.
+1. Arms the timer for the following transition.
 
 ## Source resolution
 

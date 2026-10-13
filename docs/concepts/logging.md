@@ -1,7 +1,6 @@
 # Logging
 
-The platform provides logging for both backtesting and live trading using a high-performance logging subsystem implemented in Rust
-with a standardized facade from the `log` crate.
+The platform provides Rust logging for backtesting and live trading through the standard `log` crate facade.
 
 The core logger operates in a separate thread and uses a multi-producer single-consumer (MPSC) channel to receive log messages.
 This moves log output I/O off the calling thread. Message arguments are still formatted on the
@@ -110,7 +109,7 @@ Log messages are written to the console via stdout/stderr writers. Set the minim
 
 ### File logging
 
-Log files are written to the current working directory by default. The naming convention and rotation behavior are configurable and follow specific patterns based on your settings.
+Log files are written to the current working directory by default. Settings control file naming and rotation.
 
 Set the log directory and custom file basename with `FileWriterConfig.directory` and
 `FileWriterConfig.file_name`.
@@ -316,19 +315,20 @@ the component identity and callback name. Strategy market-exit callbacks use the
 Python data and timer callback errors also reach `ERROR`; those records use the emitting Rust module
 as their component.
 
-For these event callbacks, an exception interrupts that Python invocation. By default, the runtime
-continues dispatching events; it does not roll back work the callback completed before raising.
-To request a normal shutdown after an error, enable `shutdown_on_error` in the
-[backtest engine](backtesting/apis-and-runs.md#shutdown-on-error) or [live node](live.md#shutdown-on-error)
-configuration. The request takes effect when the runtime next checks for shutdown, rather than
-interrupting the current event dispatch.
+For these event callbacks, an exception interrupts that Python invocation. By default, the runtime continues
+dispatching events; it does not roll back work the callback completed before raising.
+
+To request a normal shutdown after an error, enable `shutdown_on_error` in the [backtest
+engine](backtesting/apis-and-runs.md#shutdown-on-error) or [live node](live.md#shutdown-on-error)
+configuration. The request takes effect when the runtime next checks for shutdown, rather than interrupting
+the current event dispatch.
 
 ## Using a logger directly
 
-It's possible to use `Logger` objects directly, and these can be initialized anywhere (very similar to the Python built-in `logging` API).
+You can initialize and use `Logger` objects directly anywhere, much like Python's built-in `logging` API.
 
-If you ***aren't*** using an object which already initializes a `NautilusKernel` (and logging) such as `BacktestEngine` or `LiveNode`,
-then you can activate logging in the following way:
+If you do not use an object that initializes a `NautilusKernel` and logging, such as `BacktestEngine` or
+`LiveNode`, activate logging as follows:
 
 ```python
 from nautilus_trader.common import init_logging

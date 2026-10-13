@@ -42,12 +42,14 @@ guarantees it.
 
 ### Unknown-field handling depends on the construction path
 
-Rust deserialization and Python constructor binding enforce unknown fields independently.
-`BybitDataClientConfig`, for example, uses `#[serde(deny_unknown_fields)]` and rejects extra
-serialized keys. A Rust type without that attribute may accept them. Fixed Python config
-constructors raise `TypeError` for unsupported keywords. `DataActorConfig`, `StrategyConfig`, and
-`ExecutionAlgorithmConfig` accept additional keywords for Python subclasses. Do not infer one
-construction path's strictness from another.
+Rust deserialization and Python constructor binding enforce unknown fields independently:
+
+- **Rust**: `BybitDataClientConfig`, for example, uses `#[serde(deny_unknown_fields)]` and rejects extra
+  serialized keys. A Rust type without that attribute may accept them.
+- **Python**: fixed config constructors raise `TypeError` for unsupported keywords. `DataActorConfig`,
+  `StrategyConfig`, and `ExecutionAlgorithmConfig` accept additional keywords for Python subclasses.
+
+Do not infer one construction path's strictness from another.
 
 ## Python configs
 
@@ -60,12 +62,13 @@ The wrapper then either selects the Rust default or preserves an absent optional
 the field. Check the field documentation rather than inferring its behavior from the Python
 annotation.
 
-Properties expose selected config values. Configs that hold secrets can omit their values or expose
-only presence checks; consult the config API before displaying or logging a config. Mutability is
-type-specific: many configs expose only read-only getters, while extensible component configs and
-some adapter configs expose documented setters. `DataActorConfig`, `StrategyConfig`, and
-`ExecutionAlgorithmConfig` also accept extra fields for Python subclasses. Python-owned analysis
-configs retain their documented dataclass behavior.
+Properties expose selected config values. Configs that hold secrets can omit their values or expose only
+presence checks; consult the config API before displaying or logging a config.
+
+Mutability is type-specific: many configs expose only read-only getters, while extensible component configs
+and some adapter configs expose documented setters. `DataActorConfig`, `StrategyConfig`, and
+`ExecutionAlgorithmConfig` also accept extra fields for Python subclasses. Python-owned analysis configs
+retain their documented dataclass behavior.
 
 ```python
 from nautilus_trader.adapters.bybit import BybitDataClientConfig

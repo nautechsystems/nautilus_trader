@@ -57,19 +57,22 @@ does not turn Python coroutines into Tokio tasks.
 | `run()`       | Calling thread; blocks | `LiveNode`       | Returns after coordinated shutdown finishes.                |
 | `run_async()` | Python host loop       | Host application | Resolves after the same coordinated shutdown path finishes. |
 
-`run_async()` lets an asyncio or ASGI application host the node on its existing loop. It drives the
-same Rust lifecycle as `run()` and leaves `SIGINT` and `SIGTERM` handling to the host. Compatibility
-is tested with the default asyncio loop, uvloop, and an ASGI lifespan managed by Uvicorn. The Python
-wheel does not install uvloop or Uvicorn; applications supply their chosen loop and server. An ASGI
+`run_async()` lets an asyncio or ASGI application host the node on its existing loop. It drives the same Rust
+lifecycle as `run()` and leaves `SIGINT` and `SIGTERM` handling to the host.
+
+Compatibility is tested with the default asyncio loop, uvloop, and an ASGI lifespan managed by Uvicorn. The
+Python wheel does not install uvloop or Uvicorn; applications supply their chosen loop and server. An ASGI
 application whose lifespan constructs a node must run with one worker and without hot reload.
 
-Capture `node.cache`, `node.portfolio`, and `node.handle()` before starting `run_async()`. The
-coroutine owns the node until it finishes, while the captured objects remain usable. Stop a hosted
-run through `LiveNodeHandle.stop()`, then await the run task for complete shutdown. Cancellation
-requests the same graceful shutdown before it propagates. Call `node.dispose()` after the task
-finishes to release the node's resources. A host must wait for the handle to report `Running` before
-reporting startup complete, supervise the run task for its lifetime, and fail the service if the
-task completes unexpectedly.
+For a hosted run:
+
+1. Capture `node.cache`, `node.portfolio`, and `node.handle()` before starting `run_async()`. The coroutine
+   owns the node until it finishes, while the captured objects remain usable.
+1. Wait for the handle to report `Running` before reporting startup complete. Supervise the run task for its
+   lifetime, and fail the service if the task completes unexpectedly.
+1. Stop through `LiveNodeHandle.stop()`, then await the run task for complete shutdown. Cancellation requests
+   the same graceful shutdown before it propagates.
+1. Call `node.dispose()` after the task finishes to release the node's resources.
 
 See [Hosted event loops](live.md#hosted-event-loops) for the lifecycle, cancellation, fairness, and
 cache-backing contract.
@@ -123,9 +126,10 @@ and data types under `nautilus_trader.adapters`. Their integration guides define
 capabilities.
 
 Custom live adapters subclass the Python client bases and register through `LiveNodeBuilder` or
-`LiveNode.build`. Their async work runs on the node's bound Python event loop. They receive a
-read-only cache view and emit typed data, events, and reports through queued output. Independent
-Rust/PyO3 packages can use the same Python protocol with model objects from the installed wheel.
+`LiveNode.build`. Their async work runs on the node's bound Python event loop. They receive a read-only cache
+view and emit typed data, events, and reports through queued output.
+
+Independent Rust/PyO3 packages can use the same Python protocol with model objects from the installed wheel.
 See the [Python adapter interface](../developer_guide/python_adapters.md) for the supported hooks,
 factory/config contract, lifecycle rules, and v1 migration limits.
 

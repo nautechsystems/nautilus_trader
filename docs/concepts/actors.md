@@ -14,10 +14,11 @@ adds order-management capabilities.
 
 ## Basic Python example
 
-Actors support configuration through a pattern similar to strategies. Declare custom fields as
-keyword-only arguments and accept `**_kwargs` so the base fields (`actor_id` and the log settings)
-pass through to `DataActorConfig.__new__`, which reads them from the same call. A positional
-argument would be matched against `actor_id` instead, raising a `TypeError`.
+Actors support configuration through a pattern similar to strategies. Declare custom fields as keyword-only
+arguments and accept `**_kwargs` so the base fields (`actor_id` and the log settings) pass through to
+`DataActorConfig.__new__`, which reads them from the same call.
+
+A positional argument would be matched against `actor_id` instead, raising a `TypeError`.
 
 ```python
 from nautilus_trader.common import DataActor
@@ -49,10 +50,11 @@ class MyActor(DataActor):
 
 ## Actor configuration and IDs
 
-Data actors can receive a `DataActorConfig` subclass. The base config accepts an optional `actor_id`.
-If supplied, the actor registers with that ID; otherwise a Python actor registers under its class
-name. Give each instance an explicit `actor_id` when running more than one instance of the same
-actor, because a duplicate ID is rejected at registration (a `RuntimeError` in Python).
+Data actors can receive a `DataActorConfig` subclass. The base config accepts an optional `actor_id`. If
+supplied, the actor registers with that ID; otherwise a Python actor registers under its class name.
+
+Give each instance an explicit `actor_id` when running more than one instance of the same actor, because a
+duplicate ID is rejected at registration (a `RuntimeError` in Python).
 
 Treat configuration as construction data for the actor. Read user-supplied settings through
 `self.config`, and keep runtime state on the actor itself.
@@ -506,9 +508,8 @@ updates. Use historical bars to initialize indicators or baseline state, and app
 validation or logging to response batches and individual subscribed updates.
 
 :::tip
-When debugging data flow issues, check that you're looking at the correct handler for your data source.
-If you're not seeing data in `on_bar()` but see log messages about receiving bars, check
-`on_historical_bars()` because the data might be coming from a request rather than a subscription.
+When debugging data flow, check the handler for your data source. If bars appear in the logs but not in
+`on_bar()`, check `on_historical_bars()`: they might come from a request rather than a subscription.
 :::
 
 ## Order event handling

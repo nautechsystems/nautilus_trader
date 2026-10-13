@@ -80,11 +80,14 @@ Consumers sharing a source must agree on client, book type, depth, and subscript
 Different clients may use different configurations when all consumers of that source are unmanaged.
 Unsubscribing one consumer preserves the source while other consumers still need it.
 
-Interval delivery subscribes to deltas and publishes the cached book on a timer. `OrderBookDepth`
-events do not update that delta-managed book, including during backtests. For depth-only replay,
-use `subscribe_book_depth` and `on_book_depth`. To use interval delivery, supply `OrderBookDeltas`,
-converting depth snapshots to snapshot-flagged deltas before replay when needed. During a feed outage
-or recovery, the interval timer can continue publishing the last cached book.
+Interval delivery subscribes to deltas and publishes the cached book on a timer. `OrderBookDepth` events do
+not update that delta-managed book, including during backtests.
+
+- **Depth-only replay**: use `subscribe_book_depth` and `on_book_depth`.
+- **Interval delivery**: supply `OrderBookDeltas`, converting depth snapshots to snapshot-flagged deltas
+  before replay when needed.
+
+During a feed outage or recovery, the interval timer can continue publishing the last cached book.
 
 ## Accessing the book
 
@@ -141,11 +144,12 @@ cache. If no side is cached, an `Add` returns `BookIntegrityError::NoOrderSide`,
 or `Delete` is skipped. If the ID exists on both sides, an `Add` returns
 `BookIntegrityError::AmbiguousOrderSide`, while an `Update` or `Delete` is skipped with a warning.
 
-Out-of-order deltas and depth snapshots are **applied rather than rejected**, so a venue that replays
-or reorders events still reaches the state those events describe. Only the book metadata is
-protected: `ts_last` never regresses, and `sequence` never regresses except across the full clears
-described below. A stale update logs one warning for each field that regressed, `sequence` and
-`ts_event` independently, and how often it logs depends on how the update arrives:
+Out-of-order deltas and depth snapshots are **applied rather than rejected**, so a venue that replays or
+reorders events still reaches the state those events describe. Only the book metadata is protected: `ts_last`
+never regresses, and `sequence` never regresses except across the full clears described below.
+
+A stale update logs one warning for each field that regressed, `sequence` and `ts_event` independently.
+Warning frequency depends on how the update arrives:
 
 - **Incremental deltas**: Once per stale delta.
 - **Snapshot deltas**: Once per snapshot, whether it arrives as an `F_SNAPSHOT` batch or as a
@@ -153,12 +157,13 @@ described below. A stale update logs one warning for each field that regressed, 
   timestamp.
 - **Depth snapshots**: Once, since an `OrderBookDepth` replaces the book in a single update.
 
-Some venue feeds restart their sequence counter when they clear the book. A full book clear
-**without** the `F_SNAPSHOT` flag is checked against the old sequence high-water, then the clear's
-sequence becomes the new high-water. Later deltas are compared from that value rather than from a
-value received before the clear. Snapshot-flagged clears preserve the current high-water. The public
-`clear()` method uses the new behavior, while `clear_bids()` and `clear_asks()` preserve the current
-high-water.
+Some venue feeds restart their sequence counter when they clear the book:
+
+- **Full clear without `F_SNAPSHOT`**: the clear is checked against the old sequence high-water, then its
+  sequence becomes the new high-water. Later deltas are compared from that value rather than from a value
+  received before the clear. The public `clear()` method uses this behavior.
+- **Snapshot-flagged clear**: preserves the current high-water.
+- **Side clear**: `clear_bids()` and `clear_asks()` preserve the current high-water.
 
 A snapshot report describes the incoming snapshot, so it does not depend on whether each of its
 deltas reaches the book. An `L1_MBP` book driven by quotes or trades is the exception to all of
@@ -184,21 +189,25 @@ The `OwnOrderBook` tracks your own working orders separately from the public boo
 making and other quoting strategies use it to estimate available liquidity at each price
 level after subtracting their own orders.
 
-Execution engines maintain own books when `manage_own_order_books` is enabled. The cache
-updates an existing own book as order events change state. Eligible orders have a price, do not
-use `IOC` or `FOK` time in force, and are not held by the order emulator. Emulated orders never rest
-in the public book, so they join only when released. Quote-quantity orders join once an update
-converts their quantity to base units. Terminal events may still clean up an existing own book
-entry, even when the order would not otherwise be eligible for tracking.
+Execution engines maintain own books when `manage_own_order_books` is enabled. The cache updates an existing
+own book as order events change state. Eligible orders have a price, do not use `IOC` or `FOK` time in force,
+and are not held by the order emulator.
+
+- **Emulated orders**: never rest in the public book, so they join only when released.
+- **Quote-quantity orders**: join once an update converts their quantity to base units.
+- **Terminal events**: may still clean up an existing own book entry, even when the order would not otherwise
+  be eligible for tracking.
 
 ### Order lifecycle
 
-The `OwnOrderBook` tracks orders through their lifecycle. Orders are added during submission or
-materialized from reconciliation. Orders sent to an external execution client join on their first
-order event. Nonterminal states such as `OrderStatus::Accepted`, `OrderStatus::PendingUpdate`,
-`OrderStatus::PendingCancel`, and `OrderStatus::PartiallyFilled` update the entry. The closed
-states `OrderStatus::Denied`, `OrderStatus::Rejected`, `OrderStatus::Canceled`,
-`OrderStatus::Expired`, `OrderStatus::Filled`, and `OrderStatus::Voided` remove it.
+The `OwnOrderBook` tracks orders through their lifecycle:
+
+- **Addition**: orders are added during submission or materialized from reconciliation. Orders sent to an
+  external execution client join on their first order event.
+- **Update**: nonterminal states such as `OrderStatus::Accepted`, `OrderStatus::PendingUpdate`,
+  `OrderStatus::PendingCancel`, and `OrderStatus::PartiallyFilled` update the entry.
+- **Removal**: the closed states `OrderStatus::Denied`, `OrderStatus::Rejected`, `OrderStatus::Canceled`,
+  `OrderStatus::Expired`, `OrderStatus::Filled`, and `OrderStatus::Voided` remove it.
 
 Each `OwnBookOrder` carries:
 
@@ -271,11 +280,13 @@ let statuses = AHashSet::from([OrderStatus::Accepted]);
 let filtered = book.filtered_view(Some(&own_book), None, Some(&statuses), None, None);
 ```
 
-The `accepted_buffer_ns` parameter provides a grace period. When `ts_now` is set, the view includes
-an own order only when `ts_accepted + accepted_buffer_ns <= ts_now`. This excludes recently accepted
-orders that may not yet appear in the public book feed. The time check applies regardless of order
-status, so combine it with a status filter to exclude non-accepted orders. Omitting `ts_now`
-disables acceptance-time filtering, and a positive `accepted_buffer_ns` requires `ts_now`.
+The `accepted_buffer_ns` parameter provides a grace period. When `ts_now` is set, the view includes an own
+order only when `ts_accepted + accepted_buffer_ns <= ts_now`. This excludes recently accepted orders that may
+not yet appear in the public book feed.
+
+The time check applies regardless of order status, so combine it with a status filter to exclude non-accepted
+orders. Omitting `ts_now` disables acceptance-time filtering, and a positive `accepted_buffer_ns` requires
+`ts_now`.
 
 ```rust
 // Only subtract orders accepted at least 500ms ago

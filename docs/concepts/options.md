@@ -1,8 +1,7 @@
 # Options
 
-Nautilus provides first-class support for options trading across traditional
-and crypto markets. This includes option-specific instrument types, venue-provided
-Greeks streaming, option chain aggregation, and a local Black-Scholes Greeks calculator
+Nautilus supports options trading across traditional and crypto markets through option-specific instrument
+types, venue-provided Greeks streaming, option chain aggregation, and a local Black-Scholes Greeks calculator
 for risk management.
 
 ## Option instrument types
@@ -188,15 +187,17 @@ also be seeded from a reference price fetched for the option series via HTTP, al
 instant bootstrap before live WebSocket ticks arrive. As ATM shifts, the active strike
 set rebalances automatically.
 
-`Delta` resolves from venue-provided Greeks: a strike is active when its call or put delta
-magnitude (calls positive, puts negative, compared by absolute value) falls within
-`tolerance` of `target`. A typical out-of-the-money target such as `0.25` selects a strike on
-each side of ATM. Before the ATM reference price is known, `Delta` is deferred like other
-dynamic ranges. After ATM is known, when no active strike's Greeks match the band
-(including before any Greeks arrive), `Delta` falls back to an ATM-relative window of five
-strikes either side of ATM. Before switching from the fallback window to selected delta
-strikes, the aggregator waits until every fallback leg has Greeks so partial early updates do
-not drop neighboring strikes.
+`Delta` resolves from venue-provided Greeks: a strike is active when its call or put delta magnitude (calls
+positive, puts negative, compared by absolute value) falls within `tolerance` of `target`. A typical
+out-of-the-money target such as `0.25` selects a strike on each side of ATM.
+
+Bootstrap and fallback depend on the available data:
+
+- **Before ATM is known**: `Delta` is deferred like other dynamic ranges.
+- **After ATM is known**: when no active strike's Greeks match the band, including before any Greeks arrive,
+  `Delta` falls back to an ATM-relative window of five strikes either side of ATM.
+- **Before switching to selected delta strikes**: the aggregator waits until every fallback leg has Greeks so
+  partial early updates do not drop neighboring strikes.
 
 ### Snapshot vs. raw mode
 
@@ -342,30 +343,32 @@ flowchart TD
 
 #### DataEngine
 
-Holds one `OptionChainManager` per active `OptionSeriesId`. On
-`SubscribeOptionChain`, it resolves instruments from the cache, requests a series
-reference price for dynamic strike ranges, creates the manager, subscribes active
-instruments to the data client, and sets up the snapshot timer. On each timer tick,
-the manager checks for rebalances, publishes a snapshot, and queues any wire
-subscription changes for the engine to drain. On `UnsubscribeOptionChain` or when
-all instruments expire, it tears down the manager, cancels the timer, and
-unsubscribes wire-level feeds.
+Holds one `OptionChainManager` per active `OptionSeriesId`:
+
+- **Subscription**: on `SubscribeOptionChain`, it resolves instruments from the cache, requests a series
+  reference price for dynamic strike ranges, creates the manager, subscribes active instruments to the data
+  client, and sets up the snapshot timer.
+- **Timer tick**: the manager checks for rebalances, publishes a snapshot, and queues any wire subscription
+  changes for the engine to drain.
+- **Teardown**: on `UnsubscribeOptionChain` or when all instruments expire, it tears down the manager, cancels
+  the timer, and unsubscribes wire-level feeds.
 
 #### OptionChainManager
 
-A per-series Rust manager around `OptionChainAggregator` and `AtmTracker`. The
-`DataEngine` feeds it market data through `handle_quote()` and `handle_greeks()`.
-In snapshot mode, timer callbacks call `publish_slice()`. In raw mode, each active
-quote or Greeks update calls `publish_slice()` immediately. The manager bootstraps the
-active instrument set internally on the first ATM price.
+A per-series Rust manager around `OptionChainAggregator` and `AtmTracker`. The `DataEngine` feeds it market
+data through `handle_quote()` and `handle_greeks()`. The manager bootstraps the active instrument set
+internally on the first ATM price.
+
+- **Snapshot mode**: timer callbacks call `publish_slice()`.
+- **Raw mode**: each active quote or Greeks update calls `publish_slice()` immediately.
 
 #### OptionChainAggregator
 
-Accumulates quotes and Greeks into call/put buffers using **keep-latest semantics**.
-Instruments that did not update since the last snapshot are still included. Greeks
-that arrive before any quote for an instrument are held in a `pending_greeks`
-buffer and attached when the first quote arrives. On each `snapshot()` call, the
-aggregator produces an immutable `OptionChainSlice`.
+Accumulates quotes and Greeks into call/put buffers using **keep-latest semantics**. Instruments that did not
+update since the last snapshot are still included.
+
+Greeks that arrive before any quote for an instrument are held in a `pending_greeks` buffer and attached when
+the first quote arrives. On each `snapshot()` call, the aggregator produces an immutable `OptionChainSlice`.
 
 #### AtmTracker
 

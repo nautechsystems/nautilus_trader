@@ -64,12 +64,12 @@ catalog.write_option_greeks(greeks)  # greeks: list[OptionGreeks]
 greeks = catalog.query_option_greeks()
 ```
 
-During replay, persisted Greeks reach a subscribed actor or strategy through the same
-`on_option_greeks` handler used for live data. They also feed option-chain aggregation. When a
-strategy subscribes to an `OptionChainSlice`, the backtest data engine joins replayed
-`OptionGreeks` with replayed `QuoteTick` BBO updates for each option instrument. The
-`underlying_price` field seeds ATM selection, and `delta` supports delta-based strike selection
-through `StrikeRange.delta(target, tolerance)`.
+During replay, persisted Greeks reach a subscribed actor or strategy through the same `on_option_greeks`
+handler used for live data. They also feed option-chain aggregation.
+
+When a strategy subscribes to an `OptionChainSlice`, the backtest data engine joins replayed `OptionGreeks`
+with replayed `QuoteTick` BBO updates for each option instrument. The `underlying_price` field seeds ATM
+selection, and `delta` supports delta-based strike selection through `StrikeRange.delta(target, tolerance)`.
 
 ### Core schema versus custom data
 
