@@ -25,6 +25,8 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
+use super::parse::is_representable_size;
+
 /// IB publishes price -1 when a side has no quote; a zero or negative price
 /// with genuine size is a legitimate value for spreads. The paired zero-size
 /// sentinel is handled by the size updates, which clear the side.
@@ -44,8 +46,7 @@ fn checked_quantity(size: f64, precision: u8) -> Option<Quantity> {
         }
     };
 
-    let tolerance = 10_f64.powi(-i32::from(precision)) * 1e-9;
-    if (quantity.as_f64() - size).abs() > tolerance {
+    if !is_representable_size(quantity, size, precision) {
         tracing::warn!(
             "Ignoring unrepresentable IB quote size {} with precision {}",
             size,
@@ -528,7 +529,10 @@ impl OptionGreeksCache {
 mod tests {
     use ibapi::contracts::{OptionComputation, tick_types::TickType};
     use nautilus_core::UnixNanos;
-    use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
+    use nautilus_model::{
+        identifiers::{InstrumentId, Symbol, Venue},
+        types::Quantity,
+    };
     use rstest::rstest;
 
     use super::{OptionGreeksCache, QuoteCache, is_sentinel_price};
@@ -778,6 +782,51 @@ mod tests {
         assert!(quote.is_none());
         let last_quote = cache.get_last_quote(&instrument_id).unwrap();
         assert_eq!(last_quote.bid_size.as_f64(), 10.0);
+    }
+
+    #[rstest]
+    fn test_quote_cache_accepts_large_size_at_size_precision() {
+        let mut cache = QuoteCache::new();
+        let instrument_id = instrument_id();
+
+        cache.update_bid_price(
+            instrument_id,
+            1.16375,
+            None,
+            5,
+            2,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        cache.update_ask_price(
+            instrument_id,
+            1.1638,
+            None,
+            5,
+            2,
+            UnixNanos::new(2),
+            UnixNanos::new(2),
+        );
+        cache.update_bid_size(
+            instrument_id,
+            2_500_000.0,
+            5,
+            2,
+            UnixNanos::new(3),
+            UnixNanos::new(3),
+        );
+        let quote = cache
+            .update_ask_size(
+                instrument_id,
+                1_975_139.0,
+                5,
+                2,
+                UnixNanos::new(4),
+                UnixNanos::new(4),
+            )
+            .unwrap();
+
+        assert_eq!(quote.ask_size, Quantity::new(1_975_139.0, 2));
     }
 
     #[rstest]
