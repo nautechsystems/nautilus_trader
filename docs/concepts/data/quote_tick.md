@@ -1,7 +1,7 @@
 # QuoteTick
 
-`QuoteTick` represents the top-of-book bid and ask for one instrument. It carries the best available
-bid and ask prices and sizes at a specific event time.
+`QuoteTick` represents the top-of-book bid and ask for one instrument: the best available prices
+and sizes at a specific event time.
 
 ## Fields
 
@@ -64,6 +64,6 @@ quote = QuoteTick(
 
 ## Related guides
 
-- [OrderBookDepth](order_book_depth.md) covers fixed-depth snapshots with top levels.
+- [OrderBookDepth](order_book_depth.md) covers variable-depth snapshots with top levels.
 - [Bars and aggregation](index.md#bars-and-aggregation) covers quote-to-bar aggregation.
 - [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.
