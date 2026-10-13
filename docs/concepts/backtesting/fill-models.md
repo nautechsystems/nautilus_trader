@@ -20,10 +20,13 @@ With an L1 book, including books updated from quotes, trades, or bars:
 For example, with `prob_slippage=0.5`, each BUY fill has a 50% chance of moving one tick higher.
 Set `random_seed` when a run must reproduce the model's random draws.
 
-If a venue does not specify a fill model, it uses `DefaultFillModel` with
-`prob_fill_on_limit=1.0` and `prob_slippage=0.0`. The model therefore considers a touched limit
-fill-eligible, and L1 fills do not receive probabilistic one-tick slippage by default. This does
-not disable the matching engine's separate residual-fill rule for eligible market-style orders.
+If a venue does not specify a fill model, it uses `DefaultFillModel` with:
+
+- `prob_fill_on_limit=1.0`: A touched limit order is fill-eligible.
+- `prob_slippage=0.0`: L1 fills receive no probabilistic one-tick slippage.
+
+These defaults do not disable the matching engine's separate residual-fill rule for eligible
+market-style orders.
 
 :::warning
 Historical order book data remains immutable after a fill. With
@@ -50,8 +53,8 @@ arrives. See [order book immutability](fill-prices-and-matching.md#order-book-im
 
 `BestPriceFillModel` also fills a limit order at or inside the spread at the order's own price.
 
-The tier sizes are model constants expressed in instrument quantity units. Confirm that they suit
-the scale of the instrument before using a tiered model.
+**Instrument scale**: Tier sizes are model constants expressed in instrument quantity units.
+Confirm that they suit the instrument's scale before using a tiered model.
 
 Synthetic books omit any level outside the instrument's `min_price` and `max_price`, or at a zero or
 negative price for an instrument that does not allow one.
@@ -59,9 +62,9 @@ negative price for an instrument that does not allow one.
 `CompetitionAwareFillModel` accepts `liquidity_factor` values in `[0.0, 1.0]`, defaults to `0.3`,
 and clamps the calculated size to at least one instrument quantity unit.
 
-The current Python bindings do not expose the state setters for `VolumeSensitiveFillModel` or
-`MarketHoursFillModel`. From Python, they retain their initial values of 1,000 recent-volume units
-and normal-liquidity mode.
+**Python state**: The bindings do not expose the state setters for `VolumeSensitiveFillModel` or
+`MarketHoursFillModel`. From Python, these models retain their initial values of 1,000 recent-volume
+units and normal-liquidity mode, respectively.
 
 ## Configuration
 
@@ -121,7 +124,7 @@ venue = BacktestVenueConfig(
 )
 ```
 
-The current high-level venue configuration accepts built-in fill models. It does not load fill
+The high-level venue configuration accepts built-in fill models. It does not load fill
 models from import-path configuration objects.
 
 ### Custom fill models
@@ -138,12 +141,14 @@ It may also implement:
 - `get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask) -> OrderBook | None`
 
 Subclassing `nautilus_trader.execution.FillModel` supplies default implementations for these
-methods. This custom-object protocol applies to the low-level engine only.
+methods. This custom-object protocol applies to the **low-level engine only**.
 
 The liquidity hook receives `None` for a missing historical bid or ask. Custom models must handle
-these optional prices. Returning `None` uses the standard fill logic; returning an `OrderBook`
-restricts fills to that book's eligible liquidity, even when no fills are available. Partial custom
-fills are not topped up with historical liquidity or the L1 remainder-fill rule.
+these optional prices. The return value determines the fill behavior:
+
+- `None` uses the standard fill logic.
+- An `OrderBook` restricts fills to that book's eligible liquidity, even when no fills are available.
+  Partial custom fills are not topped up with historical liquidity or the L1 remainder-fill rule.
 
 ## Probabilistic parameters
 

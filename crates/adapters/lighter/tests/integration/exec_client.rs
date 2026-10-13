@@ -62,6 +62,8 @@ use futures_util::{SinkExt, StreamExt};
 use nautilus_common::{
     cache::Cache,
     clients::{ExecutionClient, ExecutionReportTask},
+    clock::{Clock, VirtualClock},
+    factories::OrderFactory,
     live::runner::{replace_exec_event_sender, replace_system_event_sender},
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
@@ -72,9 +74,11 @@ use nautilus_common::{
         },
         system::SocketState,
     },
+    msgbus::{MessageBus, set_message_bus},
     testing::wait_until_async,
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_execution::engine::ExecutionEngine;
 use nautilus_lighter::{
     common::{
         consts::{
@@ -85,16 +89,16 @@ use nautilus_lighter::{
     config::LighterExecutionClientConfig,
     execution::LighterExecutionClient,
     signing::tx::{
-        CancelOrderTxInfo, CreateOrderTxInfo, L2TxAttributes, ModifyOrderTxInfo, OrderInfo,
-        TxContext, compute_tx_hash,
+        CancelOrderTxInfo, CreateGroupedOrdersTxInfo, CreateOrderTxInfo, L2TxAttributes,
+        ModifyOrderTxInfo, OrderInfo, TxContext, compute_tx_hash,
     },
 };
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-        TriggerType,
+        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSide, TimeInForce, TriggerType,
     },
     events::{AccountState, OrderAccepted, OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
     identifiers::{
@@ -1521,6 +1525,31 @@ fn order_tx_hash(kind: u8, info: &Value, chain_id: u32) -> String {
                     trigger_price: info["TriggerPrice"].as_u64().unwrap() as u32,
                     order_expiry: info["OrderExpiry"].as_i64().unwrap(),
                 },
+            },
+            chain_id,
+        ),
+        28 => compute_tx_hash(
+            &CreateGroupedOrdersTxInfo {
+                context,
+                grouping_type: serde_json::from_value(info["GroupingType"].clone()).unwrap(),
+                attributes,
+                orders: info["Orders"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|body| OrderInfo {
+                        market_index: body["MarketIndex"].as_i64().unwrap(),
+                        client_order_index: body["ClientOrderIndex"].as_i64().unwrap(),
+                        base_amount: body["BaseAmount"].as_i64().unwrap(),
+                        price: body["Price"].as_u64().unwrap() as u32,
+                        is_ask: body["IsAsk"].as_u64().unwrap() == 1,
+                        order_type: body["Type"].as_u64().unwrap() as u8,
+                        time_in_force: body["TimeInForce"].as_u64().unwrap() as u8,
+                        reduce_only: body["ReduceOnly"].as_u64().unwrap() == 1,
+                        trigger_price: body["TriggerPrice"].as_u64().unwrap() as u32,
+                        order_expiry: body["OrderExpiry"].as_i64().unwrap(),
+                    })
+                    .collect(),
             },
             chain_id,
         ),
@@ -3680,6 +3709,8 @@ async fn test_batch_modify_orders_shares_transport_and_child_outcomes(
             "message": "late duplicate batch rejection",
         }));
 
+        let mut entries = Vec::new();
+
         for (i, modify) in modifies.iter().enumerate() {
             let mut entry = account_all_orders_open_entry(
                 indices[i],
@@ -3692,14 +3723,29 @@ async fn test_batch_modify_orders_shares_transport_and_child_outcomes(
             entry["initial_base_amount"] = json!(modify.quantity.unwrap().to_string());
             entry["remaining_base_amount"] = json!(modify.quantity.unwrap().to_string());
             entry["base_size"] = infos[i]["BaseAmount"].clone();
+            entry["order_index"] = json!(
+                modify
+                    .venue_order_id
+                    .unwrap()
+                    .as_str()
+                    .parse::<i64>()
+                    .unwrap()
+            );
+            entries.push(entry.clone());
+            state.tx_responses_by_nonce.lock().await.insert(
+                infos[i]["Nonce"].as_i64().unwrap(),
+                json!({"status":2,"event_info":json!({"ae":""}).to_string()}),
+            );
             state.push_frame(&json!({"type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"), "orders":{"0":[entry]}}));
         }
+
+        *state.active_orders_response.lock().await = Some(http_orders_payload(&entries, None));
     }
 
     let mut outcomes = Vec::new();
 
     for _ in 0..2 {
-        let event = next_order_event(&mut rx, Duration::from_secs(2))
+        let event = next_order_event(&mut rx, Duration::from_secs(5))
             .await
             .unwrap();
 
@@ -4336,6 +4382,107 @@ async fn test_batch_cancel_recovers_terminal_rest_report(#[case] explicit: bool)
             .is_none()
     );
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::single(0)]
+#[case::batch_member(1)]
+#[case::batch_both(2)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_oco_member_cancels_both_siblings(#[case] mode: u8) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    let ids = [
+        ClientOrderId::from("O-OCO-SL"),
+        ClientOrderId::from("O-OCO-TP"),
+    ];
+    let venues = [
+        VenueOrderId::from("281476929510311"),
+        VenueOrderId::from("281476929510312"),
+    ];
+
+    for (index, kind) in [OrderType::StopMarket, OrderType::MarketIfTouched]
+        .into_iter()
+        .enumerate()
+    {
+        let order = OrderTestBuilder::new(kind)
+            .trader_id(trader_id())
+            .strategy_id(strategy_id())
+            .instrument_id(eth_perp_id())
+            .client_order_id(ids[index])
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.0050"))
+            .trigger_price(Price::from(if index == 0 { "2200.00" } else { "2600.00" }))
+            .trigger_type(TriggerType::Default)
+            .reduce_only(true)
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![ids[1 - index]])
+            .build();
+        cache_accepted_order(&cache, order, venues[index]);
+    }
+
+    let command = CancelOrder::new(
+        trader_id(),
+        Some(client_id()),
+        strategy_id(),
+        eth_perp_id(),
+        ids[0],
+        Some(venues[0]),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    if mode == 0 {
+        client.cancel_order(command).expect("cancel OCO member");
+    } else {
+        let mut cancels = vec![command];
+        if mode == 2 {
+            let mut peer = cancels[0].clone();
+            peer.client_order_id = ids[1];
+            peer.venue_order_id = Some(venues[1]);
+            peer.command_id = UUID4::new();
+            cancels.push(peer);
+        }
+
+        let batch = BatchCancelOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            cancels,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client
+            .batch_cancel_orders(batch)
+            .expect("batch cancel OCO member");
+    }
+
+    await_send_tx_count(&state, 1).await;
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), 1);
+    let infos = batch_cancel_infos(&frames[0]);
+    assert_eq!(infos.len(), 2);
+    assert_eq!(infos[0]["Index"], 281_476_929_510_311_i64);
+    assert_eq!(infos[1]["Index"], 281_476_929_510_312_i64);
+    assert_eq!(infos[0]["MarketIndex"], 0);
+    assert_eq!(infos[1]["MarketIndex"], 0);
+    assert_eq!(
+        infos[1]["Nonce"].as_i64(),
+        Some(infos[0]["Nonce"].as_i64().unwrap() + 1),
+    );
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none(),
+        "cancel submission must wait for venue outcomes",
+    );
+    client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
@@ -6297,6 +6444,84 @@ async fn test_generate_fill_reports_keeps_recent_fill_on_start_boundary_page(
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn test_generate_fill_reports_dedupes_across_http_pages(#[values(false, true)] worker: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    let first = http_trade_fixture(19_209_006_940, 42);
+    let mut second = http_trade_fixture(19_209_006_941, 43);
+    second["size"] = json!("0.2000");
+    second["price"] = json!("1200.00");
+    second["usd_amount"] = json!("240.00");
+    second["taker_fee"] = json!(250);
+    second["bid_id"] = json!(562_947_905_631_054_i64);
+    second["bid_id_str"] = json!("562947905631054");
+    state.trades_responses.lock().await.extend([
+        json!({"code":200,"trades":[first.clone()],"next_cursor":"next-page"}),
+        json!({"code":200,"trades":[first,second]}),
+    ]);
+
+    let reports = generate_fill_reports(
+        &client,
+        GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
+        worker,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.trade_id)
+            .collect::<Vec<_>>(),
+        [TradeId::from("19209006940"), TradeId::from("19209006941")]
+    );
+
+    for (report, venue, qty, price, commission) in [
+        (
+            &reports[0],
+            "562947905631053",
+            "0.1336",
+            "2352.73",
+            "0.06160765 USDC",
+        ),
+        (
+            &reports[1],
+            "562947905631054",
+            "0.2000",
+            "1200.00",
+            "0.06000000 USDC",
+        ),
+    ] {
+        assert_eq!(report.account_id, account_id());
+        assert_eq!(report.instrument_id, eth_perp_id());
+        assert_eq!(report.client_order_id, Some(ClientOrderId::from(venue)));
+        assert_eq!(report.venue_order_id, VenueOrderId::from(venue));
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.last_qty, Quantity::from(qty));
+        assert_eq!(report.last_px, Price::from(price));
+        assert_eq!(report.commission, Money::from(commission));
+        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.ts_event, UnixNanos::from(1_777_941_384_181_000_000));
+    }
+
+    assert_eq!(reports[0].ts_init, reports[1].ts_init);
+    assert_eq!(state.trades_calls.load(Ordering::Relaxed), 2);
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_generate_fill_reports_skips_trade_seen_on_websocket(
     #[values(false, true)] worker: bool,
 ) {
@@ -8216,6 +8441,7 @@ async fn test_order_batches_chunk_commands(
     #[case] sizes: Vec<usize>,
 ) {
     let (addr, state) = start_server().await;
+    *state.account_type.lock().await = Some(1);
     let mut config = build_config(addr);
     config.sendtx_quota_per_min = Some(9);
     let (mut client, mut rx, cache) = build_client_with(config);
@@ -8429,6 +8655,14 @@ async fn test_order_batches_chunk_commands(
         entries[*i]["base_size"] = info["BaseAmount"].clone();
     }
 
+    for info in &infos {
+        state.tx_responses_by_nonce.lock().await.insert(
+            info["Nonce"].as_i64().unwrap(),
+            json!({"status":2,"event_info":json!({"ae":""}).to_string()}),
+        );
+    }
+
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&entries, None));
     state.push_frame(&json!({"type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"), "orders":{"0":entries}}));
     assert_chunked_modify_events(&mut rx, &cache, &modifies, &supported, invalid_modify).await;
     let mut cancels: Vec<_> = valid
@@ -8920,13 +9154,13 @@ async fn assert_chunked_modify_events(
         }
     }
 
-    assert_eq!(
-        updated,
-        supported
-            .iter()
-            .map(|(_, modify)| modify.client_order_id)
-            .collect::<Vec<_>>()
-    );
+    let mut expected: Vec<_> = supported
+        .iter()
+        .map(|(_, modify)| modify.client_order_id)
+        .collect();
+    expected.sort();
+    updated.sort();
+    assert_eq!(updated, expected);
     assert_eq!(
         rejected,
         invalid_modify
@@ -9174,9 +9408,11 @@ async fn test_acknowledged_modify_batch_isolates_outcomes() {
     entry["initial_base_amount"] = json!("0.0100");
     entry["remaining_base_amount"] = json!("0.0100");
     entry["base_size"] = json!(100);
+    entry["order_index"] = json!(venue.as_str().parse::<i64>().unwrap());
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[entry.clone()], None));
     let frame = json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}});
     state.push_frame(&frame);
-    let updated = next_order_event(&mut rx, Duration::from_secs(3))
+    let updated = next_order_event(&mut rx, Duration::from_secs(8))
         .await
         .unwrap();
 
@@ -9212,11 +9448,11 @@ async fn test_acknowledged_modify_batch_isolates_outcomes() {
 }
 
 #[rstest]
-#[case::newer_modify(false, false)]
-#[case::confirmed_success(true, false)]
-#[case::newer_partial_modify(false, true)]
+#[case::overlap_full(false, false)]
+#[case::order_echo(true, false)]
+#[case::overlap_partial(false, true)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_acknowledged_modify_ignores_delayed_failure(
+async fn test_modify_echo_and_overlap_wait_for_transaction_result(
     #[case] confirmed: bool,
     #[case] partial: bool,
 ) {
@@ -9244,97 +9480,103 @@ async fn test_acknowledged_modify_ignores_delayed_failure(
         .unwrap();
     await_tx_calls(&state, 1).await;
 
-    if confirmed {
-        let mut entry = account_all_orders_open_entry(
-            index,
-            venue.as_str(),
-            &index.to_string(),
-            TEST_ORDER_NONCE,
-        );
-        entry["price"] = json!("2400.00");
-        entry["base_price"] = json!(240_000);
-        entry["initial_base_amount"] = json!("0.0100");
-        entry["remaining_base_amount"] = json!("0.0100");
-        entry["base_size"] = json!(100);
-        state.push_frame(&json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}}));
-        let event = next_order_event(&mut rx, Duration::from_secs(3))
+    let mut entry =
+        account_all_orders_open_entry(index, venue.as_str(), &index.to_string(), TEST_ORDER_NONCE);
+    entry["price"] = json!("2400.00");
+    entry["base_price"] = json!(240_000);
+    entry["initial_base_amount"] = json!("0.0100");
+    entry["remaining_base_amount"] = json!("0.0100");
+    entry["base_size"] = json!(100);
+    state.push_frame(&json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}}));
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(250))
             .await
-            .unwrap();
-
-        let OrderEventAny::Updated(event) = event else {
-            panic!("expected Updated, was {event:?}")
-        };
-
-        assert_eq!(event.client_order_id, id);
-        assert_eq!(event.price, Some(Price::from("2400.00")));
-        assert_eq!(event.quantity, Quantity::from("0.0100"));
-    } else {
-        let mut command = modify_command(id, venue, "2401.00");
-        if partial {
-            command.price = None;
-        }
-
-        client.modify_order(command).unwrap();
-        await_send_tx_count(&state, 3).await;
-
-        if partial {
-            assert_eq!(
-                send_tx_info(&state.send_txs().await[2])["Price"],
-                json!(236_131)
-            );
-        }
-
-        let nonce = send_tx_info(&state.send_txs().await[2])["Nonce"]
-            .as_i64()
-            .unwrap();
-        state.tx_responses_by_nonce.lock().await.insert(
-            nonce,
-            json!({"status":0,"event_info":json!({"ae":"new failure"}).to_string()}),
-        );
-        // The older private success must leave the newer intent pending.
-        let mut entry = account_all_orders_open_entry(
-            index,
-            venue.as_str(),
-            &index.to_string(),
-            TEST_ORDER_NONCE,
-        );
-        entry["price"] = json!("2400.00");
-        entry["base_price"] = json!(240_000);
-        entry["initial_base_amount"] = json!("0.0100");
-        entry["remaining_base_amount"] = json!("0.0100");
-        entry["base_size"] = json!(100);
-        state.push_frame(&json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}}));
-        assert!(matches!(
-            next_order_event(&mut rx, Duration::from_secs(3)).await,
-            Some(OrderEventAny::Updated(_))
-        ));
+            .is_none(),
+        "shape echo cannot confirm execution"
+    );
+    let mut next = modify_command(id, venue, "2401.00");
+    if partial {
+        next.price = None;
     }
 
-    state.tx_response_blocked.store(false, Ordering::Release);
-    state.tx_response_release.notify_one();
-
     if !confirmed {
-        let event = next_order_event(&mut rx, Duration::from_secs(8))
+        client.modify_order(next.clone()).unwrap();
+        let event = next_order_event(&mut rx, Duration::from_secs(2))
             .await
             .unwrap();
 
         let OrderEventAny::ModifyRejected(event) = event else {
-            panic!("expected ModifyRejected, was {event:?}")
+            panic!("expected overlap rejection");
         };
 
         assert_eq!(event.client_order_id, id);
         assert_eq!(event.venue_order_id, Some(venue));
         assert_eq!(
             event.reason.as_str(),
-            "Lighter modify transaction failed: new failure"
+            "Lighter permits one unresolved modification per order; wait for its update or rejection"
         );
+        assert_eq!(state.send_txs().await.len(), 2);
     }
 
+    state.tx_response_blocked.store(false, Ordering::Release);
+    state.tx_response_release.notify_one();
+    let event = next_order_event(&mut rx, Duration::from_secs(8))
+        .await
+        .unwrap();
+
+    let OrderEventAny::ModifyRejected(event) = event else {
+        panic!("expected authoritative failure");
+    };
+
+    assert_eq!(event.client_order_id, id);
+    assert_eq!(event.venue_order_id, Some(venue));
+    assert_eq!(
+        event.reason.as_str(),
+        "Lighter modify transaction failed: old failure"
+    );
+    assert_eq!(
+        cache.borrow().order(&id).unwrap().quantity(),
+        Quantity::from("0.0050")
+    );
+    assert_eq!(
+        cache.borrow().order(&id).unwrap().price(),
+        Some(Price::from("2361.31"))
+    );
+    let first_nonce = send_tx_info(&state.send_txs().await[1])["Nonce"]
+        .as_i64()
+        .unwrap();
+    state.tx_responses_by_nonce.lock().await.insert(
+        first_nonce + 1,
+        json!({"status":0,"event_info":json!({"ae":"new failure"}).to_string()}),
+    );
+    client.modify_order(next).unwrap();
+    await_send_tx_count(&state, 3).await;
+    let info = send_tx_info(&state.send_txs().await[2]);
+    assert_eq!(info["Nonce"].as_i64(), Some(first_nonce + 1));
+    assert_eq!(
+        info["Price"],
+        json!(if partial { 236_131 } else { 240_100 })
+    );
+    let event = next_order_event(&mut rx, Duration::from_secs(8))
+        .await
+        .unwrap();
+
+    let OrderEventAny::ModifyRejected(event) = event else {
+        panic!("expected next independent failure");
+    };
+
+    assert_eq!(event.client_order_id, id);
+    assert_eq!(event.venue_order_id, Some(venue));
+    assert_eq!(
+        event.reason.as_str(),
+        "Lighter modify transaction failed: new failure"
+    );
     assert!(
         next_order_event(&mut rx, Duration::from_millis(500))
             .await
             .is_none()
     );
+    assert_eq!(state.send_txs().await.len(), 3);
     client.disconnect().await.unwrap();
 }
 
@@ -9478,22 +9720,37 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes()
     state.tx_response_blocked.store(false, Ordering::Release);
     state.tx_response_release.notify_waiters();
     await_send_tx_count(&state, 18).await;
-    let event = next_order_event(&mut rx, Duration::from_secs(8))
-        .await
-        .unwrap();
+    let mut outcomes = Vec::new();
 
-    let OrderEventAny::ModifyRejected(event) = event else {
-        panic!("expected ModifyRejected, was {event:?}")
-    };
+    for _ in 0..3 {
+        let event = next_order_event(&mut rx, Duration::from_secs(8))
+            .await
+            .unwrap();
 
-    assert_eq!(event.client_order_id, modifies[15].client_order_id);
-    assert_eq!(event.venue_order_id, modifies[15].venue_order_id);
-    assert_eq!(
-        event.reason.as_str(),
-        "Lighter modify transaction failed: current failure"
-    );
-    assert_eq!(event.instrument_id, eth_perp_id());
-    assert_eq!(event.strategy_id, strategy_id());
+        let OrderEventAny::ModifyRejected(event) = event else {
+            panic!("expected ModifyRejected, was {event:?}");
+        };
+
+        assert_eq!(event.instrument_id, eth_perp_id());
+        assert_eq!(event.strategy_id, strategy_id());
+        let index = modifies
+            .iter()
+            .position(|modify| modify.client_order_id == event.client_order_id)
+            .unwrap();
+        assert_eq!(event.venue_order_id, modifies[index].venue_order_id);
+        assert_eq!(
+            event.reason.as_str(),
+            if index == 15 {
+                "Lighter modify transaction failed: current failure"
+            } else {
+                "Lighter modify transaction failed: stale failure"
+            }
+        );
+        outcomes.push(index);
+    }
+
+    outcomes.sort_unstable();
+    assert_eq!(outcomes, vec![0, 1, 15]);
     let frames = state.send_txs().await;
     assert_order_batches(&frames[16..], &[15, 1], 17, first_nonce);
     assert!(
@@ -9553,24 +9810,79 @@ async fn test_acknowledged_modify_ignores_delayed_terminal_report() {
     client
         .modify_order(modify_command(id, venue, "2401.00"))
         .unwrap();
-    await_send_tx_count(&state, 3).await;
-    let nonce = send_tx_info(&state.send_txs().await[2])["Nonce"]
+    let overlap = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    let OrderEventAny::ModifyRejected(overlap) = overlap else {
+        panic!("expected overlapping amendment rejection");
+    };
+
+    assert_eq!(overlap.client_order_id, id);
+    assert_eq!(overlap.venue_order_id, Some(venue));
+    assert_eq!(
+        overlap.reason.as_str(),
+        "Lighter permits one unresolved modification per order; wait for its update or rejection"
+    );
+    assert_eq!(state.send_txs().await.len(), 2);
+    let nonce = send_tx_info(&state.send_txs().await[1])["Nonce"]
         .as_i64()
         .unwrap();
     state.tx_responses_by_nonce.lock().await.insert(
         nonce,
-        json!({"status":0,"event_info":json!({"ae":"new failure"}).to_string()}),
+        json!({"status":2,"event_info":json!({"ae":""}).to_string()}),
     );
     state
         .active_orders_response_blocked
         .store(false, Ordering::Release);
     state.active_orders_response_release.notify_one();
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(250))
+            .await
+            .is_none(),
+        "stale terminal shape must not resolve the amendment"
+    );
+    let mut entry = http_order_fixture(venue.as_str(), &index.to_string(), "open", "0.0000");
+    entry["initial_base_amount"] = json!("0.0100");
+    entry["remaining_base_amount"] = json!("0.0100");
+    entry["price"] = json!("2400.00");
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[entry], None));
+    let event = next_order_event(&mut rx, Duration::from_secs(8))
+        .await
+        .unwrap();
+
+    let OrderEventAny::Updated(event) = event else {
+        panic!("expected authoritative current shape");
+    };
+
+    assert_eq!(event.client_order_id, id);
+    assert_eq!(event.venue_order_id, Some(venue));
+    assert_eq!(event.quantity, Quantity::from("0.0100"));
+    assert_eq!(event.price, Some(Price::from("2400.00")));
+    assert_eq!(event.instrument_id, eth_perp_id());
+    assert_eq!(event.strategy_id, strategy_id());
+    assert!(
+        state.active_orders_calls.load(Ordering::Acquire) >= 2,
+        "current row must require another lookup"
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Updated(event))
+        .unwrap();
+    state.tx_responses_by_nonce.lock().await.insert(
+        nonce + 1,
+        json!({"status":0,"event_info":json!({"ae":"new failure"}).to_string()}),
+    );
+    client
+        .modify_order(modify_command(id, venue, "2401.00"))
+        .unwrap();
+    await_send_tx_count(&state, 3).await;
     let event = next_order_event(&mut rx, Duration::from_secs(8))
         .await
         .unwrap();
 
     let OrderEventAny::ModifyRejected(event) = event else {
-        panic!("expected ModifyRejected, was {event:?}")
+        panic!("expected independent next amendment failure");
     };
 
     assert_eq!(event.client_order_id, id);
@@ -9579,8 +9891,6 @@ async fn test_acknowledged_modify_ignores_delayed_terminal_report() {
         event.reason.as_str(),
         "Lighter modify transaction failed: new failure"
     );
-    assert_eq!(event.instrument_id, eth_perp_id());
-    assert_eq!(event.strategy_id, strategy_id());
     assert!(
         next_order_event(&mut rx, Duration::from_millis(250))
             .await
@@ -9588,4 +9898,640 @@ async fn test_acknowledged_modify_ignores_delayed_terminal_report() {
     );
     assert_eq!(state.send_txs().await.len(), 3);
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::accepted(false)]
+#[case::rejected(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(#[case] rejected: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    let mut factory = OrderFactory::new(
+        trader_id(),
+        strategy_id(),
+        Some(0),
+        Some(0),
+        Rc::new(RefCell::new(VirtualClock::new())),
+        false,
+        false,
+    );
+    let orders = factory
+        .bracket()
+        .instrument_id(eth_perp_id())
+        .order_side(OrderSide::Buy)
+        .quantity(Quantity::from("0.1000"))
+        .entry_order_type(OrderType::Limit)
+        .entry_price(Price::from("2361.31"))
+        .contingency_type(ContingencyType::Oco)
+        .tp_order_type(OrderType::LimitIfTouched)
+        .tp_price(Price::from("2390.00"))
+        .tp_trigger_price(Price::from("2400.00"))
+        .tp_post_only(false)
+        .sl_order_type(OrderType::StopMarket)
+        .sl_trigger_price(Price::from("2300.00"))
+        .call();
+
+    for order in &orders {
+        cache_order(&cache, order.clone());
+    }
+
+    if rejected {
+        *state.next_send_tx_ack.lock().await =
+            Some(json!({"code": 21727, "message": "invalid client order index"}));
+    }
+
+    client
+        .submit_order_list(submit_order_list_command(
+            &orders,
+            orders[0].order_list_id().unwrap().as_str(),
+        ))
+        .unwrap();
+
+    for order in &orders {
+        match next_order_event(&mut rx, Duration::from_secs(2))
+            .await
+            .unwrap()
+        {
+            OrderEventAny::Submitted(event) => {
+                assert_eq!(event.client_order_id, order.client_order_id());
+            }
+            event => panic!("expected submitted event, was {event:?}"),
+        }
+    }
+
+    await_send_tx_count(&state, 1).await;
+    let frames = state.send_txs().await;
+    let types: Vec<u8> =
+        serde_json::from_str(frames[0]["data"]["tx_types"].as_str().unwrap()).unwrap();
+    let infos = batch_tx_infos(&frames[0]);
+    let body = &infos[0];
+    let legs = body["Orders"].as_array().unwrap();
+    let indices: Vec<_> = legs
+        .iter()
+        .map(|leg| leg["ClientOrderIndex"].as_i64().unwrap())
+        .collect();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(types, vec![28]);
+    assert_eq!(infos.len(), 1);
+    assert_eq!(body["GroupingType"], 3);
+    assert_eq!(legs.len(), 3);
+    assert_eq!(legs[0]["Type"], 0);
+    assert_eq!(legs[0]["Price"], 236_131);
+    assert_eq!(legs[0]["BaseAmount"], 1_000);
+    assert_eq!(legs[1]["Type"], 2);
+    assert_eq!(legs[1]["Price"], 228_850);
+    assert_eq!(legs[1]["TriggerPrice"], 230_000);
+    assert_eq!(legs[2]["Type"], 5);
+    assert_eq!(legs[2]["Price"], 239_000);
+    assert_eq!(legs[2]["TriggerPrice"], 240_000);
+    assert_eq!(legs[1]["BaseAmount"], 0);
+    assert_eq!(legs[2]["BaseAmount"], 0);
+    assert_eq!(legs[0]["OrderExpiry"], legs[1]["OrderExpiry"]);
+    assert_eq!(legs[1]["OrderExpiry"], legs[2]["OrderExpiry"]);
+    assert!(
+        indices
+            .iter()
+            .enumerate()
+            .all(|(index, id)| !indices[..index].contains(id))
+    );
+
+    if rejected {
+        for order in &orders {
+            match next_order_event(&mut rx, Duration::from_secs(2))
+                .await
+                .unwrap()
+            {
+                OrderEventAny::Rejected(event) => {
+                    assert_eq!(event.client_order_id, order.client_order_id());
+                    assert!(event.reason.contains("21727"));
+                }
+                event => panic!("expected rejected event, was {event:?}"),
+            }
+        }
+
+        let next = make_limit_order(
+            "O-AFTER-GROUP",
+            OrderSide::Buy,
+            Quantity::from("0.0050"),
+            Price::from("2361.31"),
+            TimeInForce::Gtc,
+            false,
+            false,
+        );
+        cache_order(&cache, next.clone());
+        client.submit_order(submit_command(&next)).unwrap();
+        await_send_tx_count(&state, 2).await;
+        let frames = state.send_txs().await;
+        assert_eq!(send_tx_info(&frames[1])["Nonce"], body["Nonce"]);
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::oto(2)]
+#[case::otoco(3)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_native_group_partial_parent_fill_preserves_child_execution(
+    #[case] legs: usize,
+    #[values(false, true)] complete_parent: bool,
+    #[values(false, true)] trade_first: bool,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    set_message_bus(Rc::new(RefCell::new(MessageBus::new(
+        trader_id(),
+        UUID4::new(),
+        None,
+        None,
+    ))));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    let ids = ["O-PARTIAL-P", "O-PARTIAL-SL", "O-PARTIAL-TP"].map(ClientOrderId::new);
+    let venue_indices = [710_001, 710_002, 710_003];
+    let venues = venue_indices.map(|index| VenueOrderId::new(index.to_string()));
+    let trade_ids = [900_001, 900_002, 900_003];
+    let requested = Quantity::from("0.0088");
+    let partial = Quantity::from("0.0044");
+    let list_id = OrderListId::new("OL-PARTIAL");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id())
+        .strategy_id(strategy_id())
+        .instrument_id(eth_perp_id())
+        .client_order_id(ids[0])
+        .side(OrderSide::Buy)
+        .quantity(requested)
+        .price(Price::from("2361.31"))
+        .time_in_force(TimeInForce::Gtc)
+        .order_list_id(list_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(ids[1..legs].to_vec())
+        .build();
+    let mut orders = vec![parent];
+
+    for (index, kind, limit, trigger) in [
+        (1, OrderType::StopLimit, "2300.11", "2302.33"),
+        (2, OrderType::LimitIfTouched, "2400.22", "2402.44"),
+    ]
+    .into_iter()
+    .take(legs - 1)
+    {
+        let mut child = OrderTestBuilder::new(kind);
+        child
+            .trader_id(trader_id())
+            .strategy_id(strategy_id())
+            .instrument_id(eth_perp_id())
+            .client_order_id(ids[index])
+            .side(OrderSide::Sell)
+            .quantity(requested)
+            .price(Price::from(limit))
+            .trigger_price(Price::from(trigger))
+            .reduce_only(true)
+            .order_list_id(list_id)
+            .parent_order_id(ids[0]);
+
+        if legs == ids.len() {
+            child
+                .contingency_type(ContingencyType::Oco)
+                .linked_order_ids(vec![ids[ids.len() - index]]);
+        }
+
+        orders.push(child.build());
+    }
+
+    for order in &orders {
+        cache_order(&cache, order.clone());
+    }
+
+    client
+        .submit_order_list(submit_order_list_command(&orders, list_id.as_str()))
+        .unwrap();
+
+    for order in &orders {
+        let event = process_execution_event(&mut rx, &mut engine).await;
+
+        let ExecutionEvent::Order(OrderEventAny::Submitted(event)) = event else {
+            panic!("expected submitted event");
+        };
+
+        assert_eq!(event.client_order_id, order.client_order_id());
+    }
+
+    await_send_tx_count(&state, 1).await;
+    let body = batch_tx_infos(&state.send_txs().await[0]).remove(0);
+    let wire_legs = body["Orders"].as_array().unwrap();
+    let indices: Vec<_> = wire_legs
+        .iter()
+        .map(|leg| leg["ClientOrderIndex"].as_i64().unwrap())
+        .collect();
+
+    let mut rows: Vec<_> = orders
+        .iter()
+        .enumerate()
+        .map(|(index, order)| {
+            let mut row = http_order_fixture(
+                venues[index].as_str(),
+                &indices[index].to_string(),
+                if index == 0 { "open" } else { "pending" },
+                "0.0000",
+            );
+            row["initial_base_amount"] = json!(if index == 0 { "0.0088" } else { "0.0000" });
+            row["remaining_base_amount"] = row["initial_base_amount"].clone();
+            row["base_size"] = json!(if index == 0 { 88 } else { 0 });
+            row["price"] = json!(order.price().unwrap().to_string());
+            row["base_price"] = wire_legs[index]["Price"].clone();
+            row["nonce"] = body["Nonce"].clone();
+            row["order_expiry"] = wire_legs[index]["OrderExpiry"].clone();
+            if index == 0 {
+                row["to_trigger_order_id_0"] = json!(venues[1].as_str());
+                if legs == ids.len() {
+                    row["to_trigger_order_id_1"] = json!(venues[2].as_str());
+                }
+            } else {
+                row["is_ask"] = json!(true);
+                row["side"] = json!("sell");
+                row["reduce_only"] = json!(true);
+                row["type"] = json!(if index == 1 {
+                    "stop-loss-limit"
+                } else {
+                    "take-profit-limit"
+                });
+                row["trigger_price"] = json!(order.trigger_price().unwrap().to_string());
+                row["trigger_status"] = json!("parent-order");
+                row["parent_order_index"] = json!(venue_indices[0]);
+                row["parent_order_id"] = json!(venues[0].as_str());
+                if legs == ids.len() {
+                    row["to_cancel_order_id_0"] = json!(venues[venues.len() - index].as_str());
+                }
+            }
+
+            row
+        })
+        .collect();
+
+    let order_frame = |rows: &[Value]| {
+        json!({
+            "type":"update/account_all_orders",
+            "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+            "orders":{"0":rows},
+        })
+    };
+
+    let trade_frame = |trade: &Value| {
+        json!({
+            "type":"update/account_all_trades",
+            "channel":format!("account_all_trades:{TEST_ACCOUNT_INDEX}"),
+            "trades":{"0":[trade]},
+        })
+    };
+
+    state.push_frame(&order_frame(&rows));
+
+    for order in &orders {
+        let event = process_execution_event(&mut rx, &mut engine).await;
+
+        let ExecutionEvent::Order(OrderEventAny::Accepted(event)) = event else {
+            panic!("expected accepted event");
+        };
+
+        assert_eq!(event.client_order_id, order.client_order_id());
+    }
+
+    let mut opening = http_trade_fixture(trade_ids[0], indices[0]);
+    opening["bid_id"] = json!(venue_indices[0]);
+    opening["bid_id_str"] = json!(venues[0].as_str());
+    opening["size"] = json!("0.0044");
+    opening["usd_amount"] = json!("10.352012");
+    rows[0]["filled_base_amount"] = json!("0.0044");
+    rows[0]["filled_quote_amount"] = json!("10.352012");
+    rows[0]["remaining_base_amount"] = json!("0.0044");
+    state.push_frame(&trade_frame(&opening));
+    state.push_frame(&order_frame(&rows));
+    let event = process_execution_event(&mut rx, &mut engine).await;
+    assert!(matches!(
+        event,
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(eth_perp_id()),
+        None,
+        None,
+        None,
+        None,
+    );
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&rows, None));
+    let held = client.generate_order_status_reports(&cmd).await.unwrap();
+    assert_eq!(held.len(), legs);
+    let parent = cache.borrow().order_owned(&ids[0]).unwrap();
+    assert_eq!(parent.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(parent.quantity(), requested);
+    assert_eq!(parent.filled_qty(), partial);
+    assert_eq!(parent.leaves_qty(), partial);
+
+    for (index, order) in orders.iter().enumerate().skip(1) {
+        let child = cache.borrow().order_owned(&ids[index]).unwrap();
+        let report = held
+            .iter()
+            .find(|report| report.client_order_id == Some(ids[index]))
+            .unwrap();
+        assert_eq!(child.status(), OrderStatus::Accepted);
+        assert_eq!(child.quantity(), requested);
+        assert_eq!(child.filled_qty(), Quantity::from("0.0000"));
+        assert_eq!(report.quantity, requested);
+        assert_eq!(report.filled_qty, Quantity::from("0.0000"));
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.venue_order_id, venues[index]);
+        assert_eq!(report.account_id, account_id());
+        assert_eq!(report.instrument_id, eth_perp_id());
+        assert_eq!(report.order_side, Some(OrderSide::Sell));
+        assert_eq!(report.order_type, order.order_type());
+        assert_eq!(report.price, order.price());
+        assert_eq!(report.trigger_price, order.trigger_price());
+        assert!(report.reduce_only);
+        assert_eq!(report.parent_order_id, Some(ids[0]));
+        assert_eq!(report.linked_order_ids.as_deref(), order.linked_order_ids());
+        assert_eq!(report.contingency_type, order.contingency_type());
+        rows[index]["status"] = json!("open");
+        rows[index]["initial_base_amount"] = json!("0.0044");
+        rows[index]["remaining_base_amount"] = json!("0.0044");
+        rows[index]["base_size"] = json!(44);
+        rows[index]["trigger_status"] = json!("mark-price");
+        rows[index]["parent_order_index"] = json!(0);
+        rows[index]["parent_order_id"] = json!("0");
+        rows[index]["to_cancel_order_id_0"] = json!("0");
+    }
+
+    state.push_frame(&order_frame(&rows[1..]));
+
+    for (index, order) in orders.iter().enumerate().skip(1) {
+        let event = process_execution_event(&mut rx, &mut engine).await;
+
+        let ExecutionEvent::Order(OrderEventAny::Updated(update)) = event else {
+            panic!("expected venue child sizing update");
+        };
+
+        assert_eq!(update.quantity, partial);
+        assert_eq!(update.client_order_id, ids[index]);
+        assert_eq!(update.venue_order_id, Some(venues[index]));
+        assert_eq!(update.account_id, Some(account_id()));
+        assert_eq!(update.trader_id, trader_id());
+        assert_eq!(update.strategy_id, strategy_id());
+        assert_eq!(update.instrument_id, eth_perp_id());
+        assert_eq!(update.price, order.price());
+        assert_eq!(update.trigger_price, order.trigger_price());
+    }
+
+    let effective = if complete_parent { requested } else { partial };
+    let mut second = opening.clone();
+    second["trade_id"] = json!(trade_ids[1]);
+    second["trade_id_str"] = json!(trade_ids[1].to_string());
+    second["price"] = json!("2352.77");
+    second["usd_amount"] = json!("10.352188");
+    second["timestamp"] = json!(1_777_941_384_182_i64);
+    rows[0]["status"] = json!(if complete_parent {
+        "filled"
+    } else {
+        "canceled"
+    });
+    rows[0]["remaining_base_amount"] = json!("0.0000");
+    if complete_parent {
+        rows[0]["filled_base_amount"] = json!("0.0088");
+        rows[0]["filled_quote_amount"] = json!("20.704200");
+        for row in &mut rows[1..] {
+            row["initial_base_amount"] = json!("0.0088");
+            row["remaining_base_amount"] = json!("0.0088");
+            row["base_size"] = json!(88);
+        }
+
+        state.push_frame(&trade_frame(&second));
+    }
+
+    state.push_frame(&order_frame(&rows));
+
+    for _ in 0..if complete_parent { legs } else { 1 } {
+        process_execution_event(&mut rx, &mut engine).await;
+    }
+
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&rows[1..], None));
+    let active = client.generate_order_status_reports(&cmd).await.unwrap();
+    assert_eq!(active.len(), legs - 1);
+
+    for (index, order) in orders.iter().enumerate().skip(1) {
+        let child = cache.borrow().order_owned(&ids[index]).unwrap();
+        let report = active
+            .iter()
+            .find(|report| report.client_order_id == Some(ids[index]))
+            .unwrap();
+        assert_eq!(child.status(), OrderStatus::Accepted);
+        assert_eq!(child.quantity(), effective);
+        assert_eq!(child.filled_qty(), Quantity::from("0.0000"));
+        assert_eq!(child.is_triggered(), Some(false));
+        assert_eq!(report.quantity, effective);
+        assert_eq!(report.order_type, order.order_type());
+        assert_eq!(report.parent_order_id, Some(ids[0]));
+        assert_eq!(report.linked_order_ids.as_deref(), order.linked_order_ids());
+        assert_eq!(report.contingency_type, order.contingency_type());
+    }
+
+    let mut exit = http_trade_fixture(trade_ids[2], 0);
+    exit["ask_id"] = json!(venue_indices[1]);
+    exit["ask_id_str"] = json!(venues[1].as_str());
+    exit["ask_client_id"] = json!(indices[1]);
+    exit["ask_client_id_str"] = json!(indices[1].to_string());
+    exit["ask_account_id"] = json!(TEST_ACCOUNT_INDEX);
+    exit["bid_account_id"] = json!(91_249);
+    exit["size"] = json!(effective.to_string());
+    exit["price"] = json!("2301.23");
+    exit["usd_amount"] = json!(if complete_parent {
+        "20.250824"
+    } else {
+        "10.125412"
+    });
+    exit["timestamp"] = json!(1_777_941_384_183_i64);
+    rows[1]["status"] = json!("filled");
+    rows[1]["remaining_base_amount"] = json!("0.0000");
+    rows[1]["filled_base_amount"] = json!(effective.to_string());
+    rows[1]["filled_quote_amount"] = exit["usd_amount"].clone();
+    rows[1]["type"] = json!("limit");
+    rows[1]["trigger_price"] = json!("0.00");
+    if legs == ids.len() {
+        rows[2]["status"] = json!("canceled-oco");
+        rows[2]["remaining_base_amount"] = json!("0.0000");
+    }
+
+    if trade_first {
+        state.push_frame(&trade_frame(&exit));
+    }
+
+    state.push_frame(&order_frame(&rows[1..]));
+    if !trade_first {
+        state.push_frame(&trade_frame(&exit));
+    }
+
+    while orders.iter().any(|order| {
+        !cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .is_closed()
+    }) {
+        process_execution_event(&mut rx, &mut engine).await;
+    }
+
+    let parent = cache.borrow().order_owned(&ids[0]).unwrap();
+    let child = cache.borrow().order_owned(&ids[1]).unwrap();
+
+    let parent_fills: Vec<_> = parent
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((
+                fill.trade_id,
+                fill.last_qty,
+                fill.last_px,
+                fill.commission,
+                fill.order_side,
+            )),
+            _ => None,
+        })
+        .collect();
+
+    let mut expected = vec![(
+        TradeId::new(trade_ids[0].to_string()),
+        partial,
+        Price::from("2352.73"),
+        Some(Money::from("0.00202899 USDC")),
+        OrderSide::Buy,
+    )];
+
+    if complete_parent {
+        expected.push((
+            TradeId::new(trade_ids[1].to_string()),
+            partial,
+            Price::from("2352.77"),
+            Some(Money::from("0.00202903 USDC")),
+            OrderSide::Buy,
+        ));
+    }
+
+    let child_fills: Vec<_> = child
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((
+                fill.trade_id,
+                fill.last_qty,
+                fill.last_px,
+                fill.commission,
+                fill.order_side,
+                fill.order_type,
+            )),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        parent.status(),
+        if complete_parent {
+            OrderStatus::Filled
+        } else {
+            OrderStatus::Canceled
+        }
+    );
+    assert_eq!(parent.quantity(), requested);
+    assert_eq!(parent.filled_qty(), effective);
+    assert_eq!(parent_fills, expected);
+    assert_eq!(child.status(), OrderStatus::Filled);
+    assert_eq!(child.quantity(), effective);
+    assert_eq!(child.filled_qty(), effective);
+    assert_eq!(child.leaves_qty(), Quantity::from("0.0000"));
+    assert_eq!(child.is_triggered(), Some(true));
+    assert_eq!(child.parent_order_id(), Some(ids[0]));
+    assert_eq!(child.trigger_price(), orders[1].trigger_price());
+    assert_eq!(child.linked_order_ids(), orders[1].linked_order_ids());
+    assert_eq!(
+        child_fills,
+        vec![(
+            TradeId::new(trade_ids[2].to_string()),
+            effective,
+            Price::from("2301.23"),
+            Some(Money::from(if complete_parent {
+                "0.00056702 USDC"
+            } else {
+                "0.00028351 USDC"
+            })),
+            OrderSide::Sell,
+            OrderType::StopLimit
+        )]
+    );
+
+    if legs == ids.len() {
+        let peer = cache.borrow().order_owned(&ids[2]).unwrap();
+        assert_eq!(peer.status(), OrderStatus::Canceled);
+        assert_eq!(peer.quantity(), effective);
+        assert_eq!(peer.filled_qty(), Quantity::from("0.0000"));
+        assert_eq!(peer.parent_order_id(), Some(ids[0]));
+        assert_eq!(peer.linked_order_ids(), Some([ids[1]].as_slice()));
+    }
+
+    {
+        let cache = cache.borrow();
+        assert!(
+            cache
+                .positions_open(None, Some(&eth_perp_id()), None, None, None)
+                .is_empty()
+        );
+        let closed = cache.positions_closed(None, Some(&eth_perp_id()), None, None, None);
+        assert_eq!(closed.len(), 1);
+        assert_eq!(closed[0].quantity, Quantity::from("0.0000"));
+        assert_eq!(
+            closed[0].trade_ids(),
+            expected
+                .iter()
+                .map(|fill| fill.0)
+                .chain([TradeId::new(trade_ids[2].to_string())])
+                .collect::<Vec<_>>()
+        );
+    }
+
+    state.push_frame(&trade_frame(&opening));
+    if complete_parent {
+        state.push_frame(&trade_frame(&second));
+    }
+
+    state.push_frame(&trade_frame(&exit));
+    state.push_frame(&order_frame(&rows));
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(250))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+async fn process_execution_event(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    engine: &mut ExecutionEngine,
+) -> ExecutionEvent {
+    let event = next_event_matching(rx, Duration::from_secs(5), |event| {
+        matches!(event, ExecutionEvent::Order(_) | ExecutionEvent::Report(_))
+    })
+    .await
+    .expect("expected execution event");
+
+    match &event {
+        ExecutionEvent::Order(order) => engine.process(order),
+        ExecutionEvent::Report(report) => engine.reconcile_execution_report(report),
+        _ => unreachable!(),
+    }
+
+    event
 }

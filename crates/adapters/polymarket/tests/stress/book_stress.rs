@@ -74,14 +74,14 @@ use tokio_tungstenite::tungstenite::Message;
 const BOOKS: usize = 6;
 
 const MARKET: &str = "market";
-// One shard per book: the primary endpoint, then one per secondary shard ID
+// Discovery is disabled, so the primary shard stays closed and data shards start at 1
 const SHARD_ENDPOINTS: [&str; BOOKS] = [
-    "polymarket-market-streams",
     "polymarket-market-streams-1",
     "polymarket-market-streams-2",
     "polymarket-market-streams-3",
     "polymarket-market-streams-4",
     "polymarket-market-streams-5",
+    "polymarket-market-streams-6",
 ];
 const DEPTH: usize = 20;
 // Replacement attempts in the shared retry budget, including the first
@@ -350,7 +350,7 @@ async fn resubscribe(session: &mut PolymarketSession, id: InstrumentId) {
 }
 
 // Reconnects every shard, requiring each book to resync from a newer connection; every book
-// reports the primary endpoint, so the first request expects a snapshot from all of them
+// reports the first endpoint, so the first request expects a snapshot from all of them
 fn reconnect_all(session: &mut PolymarketSession) {
     let expected = session.proxy().connections(MARKET) + 1;
     session.venue_mut().expected_epoch = expected;

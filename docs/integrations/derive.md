@@ -525,11 +525,22 @@ If an unresolved replacement prevents startup:
    native records before resuming trading. The adapter provides no automatic cache repair for
    this case; clearing `PendingUpdate` alone does not establish the replacement's outcome.
 
-Mass status retains native order reports for historical replacement legs and processes them before
-its current cumulative order report. If a reported fill belongs to a known leg missing from the
-history response, the adapter fetches its companion order by exact venue ID. Open-only requests
-still return active orders, and a targeted request for a known replaced leg returns the current
-logical order.
+Mass status retains native reports for historical replacement legs and processes them before the current
+cumulative report. It fetches fill companions absent from history and open orders by exact venue ID,
+including uncached orders, and retains them outside the lookback window.
+
+Cached legs retain identity and replacement checks. Uncached orders and fills with reused labels outside
+one replacement chain omit client order IDs; this check uses history and open-order ancestry. Active
+open orders keep their IDs.
+
+**Recovery limits**:
+
+- Bounded snapshots mark coverage incomplete if history fails or an uncached companion remains missing
+  after fallback. Failed history skips companion lookups.
+- Contradictory identities fail requests. With history available, unavailable cached companions or
+  lookup errors other than `11006` also fail requests.
+
+Open-only requests return active orders. Requests for known replaced legs return the current logical order.
 
 Unbounded reconnect snapshots fail if a source fails, records are lost, or a fill has no matching
 order report. Retained historical rows with inferred precision do not fail these snapshots. Bounded

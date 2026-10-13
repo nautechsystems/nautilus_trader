@@ -1,7 +1,7 @@
 # Fill Prices and Matching
 
-The backtest matching engine treats recorded order book and trade data as immutable. Simulated fills
-do not edit the historical book. This preserves the replayed market while requiring explicit
+The backtest matching engine treats recorded order book and trade data as **immutable**: simulated
+fills do not edit the historical book. This preserves the replayed market while requiring explicit
 assumptions about whether the same displayed liquidity can fill more than one simulated order.
 
 The engine provides two controls for those assumptions:
@@ -46,11 +46,14 @@ With an L1 book, the recorded market exposes only the best bid and ask:
 | Limit-style taker                                                        | Uses the best crossed quote, bounded by the limit price.                        |
 | Limit-style maker                                                        | Uses the limit price when matched by a trade or market move.                    |
 
-The one-tick residual fill applies after the eligible market-style orders exhaust displayed L1
-size. Price protection can prevent that residual fill if it would cross the configured boundary.
-The residual fill also does not occur when one tick worse would cross the instrument's `min_price`
-or `max_price`, or reach a zero or negative price where the instrument does not allow one.
-This deterministic residual rule is separate from probabilistic fill-model slippage.
+After eligible market-style orders exhaust displayed L1 size, the engine fills the residual one
+tick worse unless that price would:
+
+- Cross the configured price-protection boundary.
+- Cross the instrument's `min_price` or `max_price`.
+- Reach a zero or negative price where the instrument does not allow one.
+
+This **deterministic residual rule** is separate from probabilistic fill-model slippage.
 
 Trade-driven matching has one additional rule. If a trade provides fill evidence at a price absent
 from the book, the engine fills at the order's limit price and caps the quantity at the trade size.
@@ -114,8 +117,10 @@ The engine calculates the boundary at fill time:
 For an instrument with a 0.01 price increment, 100 points allow a BUY to fill at most 1.00 above
 the current ask. Levels beyond the boundary are excluded, so the order can remain partially filled.
 
-A market order gets its boundary when processed. A stop-market order gets its boundary when
-triggered, using the bid or ask at that time. Set `price_protection_points=0` to disable protection.
+- A market order gets its boundary when processed.
+- A stop-market order gets its boundary when triggered, using the bid or ask at that time.
+
+Set `price_protection_points=0` to disable protection.
 
 ## Order book immutability
 
@@ -189,17 +194,18 @@ that it remained available after the recorded trade.
 
 ## Precision requirements
 
-The matching engine accepts lower or equal precision on new orders and order updates when the
-instrument's configured precision does not exceed the build's `FIXED_PRECISION`. For example,
+When the instrument's configured precision does not exceed the build's `FIXED_PRECISION`, the
+matching engine accepts lower or equal precision on new orders and order updates. For example,
 quantity `1` is valid for size precision 3, and price `100` is valid for price precision 2.
-Higher precision is rejected even when the extra decimals are zeros: `1.0000` is invalid for
-size precision 3.
+
+For these instruments, higher precision is rejected even when the extra decimals are zeros:
+`1.0000` is invalid for size precision 3.
 
 Fractional fills and quantity reductions retain exact values. A quantity `1` order partially filled
 for `0.500` reports `0.500` filled and `0.500` remaining.
 
 DeFi builds can use instrument precisions above `FIXED_PRECISION`. For those instruments, the
-validated order fields listed below require exact precision: both precision 17 and precision 0
+validated order fields listed below require **exact precision**: both precision 17 and precision 0
 are rejected when the instrument requires 18. The listed market-data fields must match the
 instrument's configured `price_precision` and `size_precision` exactly.
 
@@ -214,12 +220,12 @@ The outcome of invalid precision depends on where it enters the matching engine:
 | Order update     | Quantity, price, and trigger price                   | Reject the modification.                                     |
 | Generated fill   | Fill price and quantity                              | Normalize when compatible; otherwise warn and skip the fill. |
 
-The engine logs an error after 20 consecutive market-data precision mismatches. With
+The engine logs an error after **20 consecutive market-data precision mismatches**. With
 `shutdown_on_error=True`, that error can request a normal backtest shutdown. A valid quote, trade,
 or executable bar resets the consecutive-mismatch count.
 
-`Bar.volume` must use the instrument's quantity units and size precision. Convert provider-specific
-quote-volume fields before creating the bar.
+**Bar volume**: `Bar.volume` must use the instrument's quantity units and size precision. Convert
+provider-specific quote-volume fields before creating the bar.
 
 Use the instrument factories to construct compatible values:
 

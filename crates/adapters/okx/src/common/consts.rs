@@ -53,12 +53,12 @@ pub const OKX_RECONCILIATION_LOOKBACK_MAX_MINS: u64 = 7 * 24 * 60;
 // Use the canonical host with www to avoid cross-domain redirects which may
 // strip authentication headers in some HTTP clients and middleboxes.
 pub const OKX_HTTP_URL: &str = "https://www.okx.com";
-pub const OKX_WS_PUBLIC_URL: &str = "wss://ws.okx.com:8443/ws/v5/public";
-pub const OKX_WS_PRIVATE_URL: &str = "wss://ws.okx.com:8443/ws/v5/private";
-pub const OKX_WS_BUSINESS_URL: &str = "wss://ws.okx.com:8443/ws/v5/business";
-pub const OKX_WS_DEMO_PUBLIC_URL: &str = "wss://wspap.okx.com:8443/ws/v5/public";
-pub const OKX_WS_DEMO_PRIVATE_URL: &str = "wss://wspap.okx.com:8443/ws/v5/private";
-pub const OKX_WS_DEMO_BUSINESS_URL: &str = "wss://wspap.okx.com:8443/ws/v5/business";
+pub const OKX_WS_PUBLIC_URL: &str = "wss://ws.okx.com/ws/v5/public";
+pub const OKX_WS_PRIVATE_URL: &str = "wss://ws.okx.com/ws/v5/private";
+pub const OKX_WS_BUSINESS_URL: &str = "wss://ws.okx.com/ws/v5/business";
+pub const OKX_WS_DEMO_PUBLIC_URL: &str = "wss://wspap.okx.com/ws/v5/public";
+pub const OKX_WS_DEMO_PRIVATE_URL: &str = "wss://wspap.okx.com/ws/v5/private";
+pub const OKX_WS_DEMO_BUSINESS_URL: &str = "wss://wspap.okx.com/ws/v5/business";
 
 pub const OKX_WS_TOPIC_DELIMITER: char = ':';
 

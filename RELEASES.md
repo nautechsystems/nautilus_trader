@@ -7,14 +7,14 @@ Released on TBD (UTC).
 
 ### Enhancements
 
-- Added `Clock.set_timer_zoned` and Rust `CalendarSchedule` for local calendar recurrence, thanks @faysou
-- Added `time_bars_time_zone` and `time_zone` overrides for local calendar bars, thanks @faysou
-- Added Rust candidate option IDs for supported CME Globex and OSI equity/index contracts, thanks @faysou
-- Added reference instruments to `OptionSeriesId` with compatible derived-reference serialization, thanks @faysou
-- Added `OptionSideFilter` and Rust `StrikeSearchProfile` model types for option selection, thanks @faysou
-- Added tick scheme registration, thanks @faysou
 - Added negative price support for futures, except inverse futures (#5190), thanks @DeLuke84
+- Added `Clock.set_timer_zoned` and `CalendarSchedule` for local calendar recurrence, thanks @faysou
+- Added `time_bars_time_zone` and `time_zone` overrides for local calendar bars, thanks @faysou
 - Added `BacktestDataConfig.batch_deltas` for batched book delta replay (#5215), thanks for reporting @nicezic
+- Added candidate option IDs for supported CME Globex and OSI equity/index contracts, thanks @faysou
+- Added reference instruments to `OptionSeriesId` with compatible derived-reference serialization, thanks @faysou
+- Added `OptionSideFilter` and `StrikeSearchProfile` model types for option selection, thanks @faysou
+- Added tick scheme registration, thanks @faysou
 - Added WebSocket peer-close callbacks to control automatic reconnection
 - Added Bybit public liquidation custom data for linear and inverse contracts (#5152), thanks @Martingale42
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
@@ -23,44 +23,42 @@ Released on TBD (UTC).
 - Added Interactive Brokers subscription idle events (#5041), thanks @faysou
 - Added Kraken Spot L2 checksum validation and resync on mismatch (#5219), thanks @zhaow-de
 - Added Lighter native transaction batching with automatic splitting for order lists and batch operations
+- Added Lighter native OTO, OCO, and OTOCO order groups with normalized Nautilus relationships
 
 ### Breaking Changes
 
-- Removed Rust `TickSchemeError::TickNotFinite`; remove this arm from tick error matches
+- Removed `TickSchemeError::TickNotFinite`; remove this arm from tick error matches
 - Removed Interactive Brokers connection wrappers; use `ibapi::Client` (#5041), thanks @faysou
 - Removed Interactive Brokers `ErrorCategory` and `InteractiveBrokersErrorKind` exports (#5041), thanks @faysou
-- Replaced Interactive Brokers Rust symbology functions with `Symbology` methods (#5041), thanks @faysou
-- Changed Rust `PortfolioGreeks::from(GreeksData)` to apply the contract multiplier
-- Changed Rust `ReconciliationResult` literals; add empty `order_only_fill_keys` (#5114), thanks @zhaow-de
-- Changed Rust `VirtualTimer` and `LiveTimer` to store `interval: TimerInterval` instead of `interval_ns`;
-  match `TimerInterval::Fixed` to read fixed intervals
-- Changed Rust `DataEngineConfig` and `LiveDataEngineConfig` struct literals to require `time_bars_time_zone`;
-  use `None` in existing struct literals to retain UTC alignment
-- Changed Rust `TimeBarAggregator::new` to require `jiff::tz::TimeZone`; pass `TimeZone::UTC` for UTC bars
-- Changed Rust `OptionSeriesId::new` to require a reference instrument; use `new_derived` to derive it
-- Changed Rust `OptionSeriesId::from_expiry` and `from_expiry_ns`; pass `None` as the final argument to derive a reference
-- Changed Rust `OptionSeriesId::from_crypto_option` and struct literals to require `underlying_instrument_id`
-- Changed `OptionSeriesId` equality, hashing, and ordering to include the reference instrument
-- Changed `OptionSeriesId` strings with fractional expiries, including topics and handler IDs, to retain nanoseconds
-- Changed `OptionSeriesId` to reject empty or whitespace-only underlying symbols when deriving a reference
-- Changed Rust `FixedTickScheme::new` to accept `Price`; use `Price::from("0.05")` instead of a float
-- Changed Rust `FixedTickSchemeRounder::new` to accept `Price`; use `Price::from("0.05")` instead of a float
-- Changed Rust `TickSchemeError::TickNotPositive.tick` to `Price` and added variants; update exhaustive matches
-- Changed fixed tick navigation to return `None` for incompatible precision; choose one that represents the tick
-- Changed `BacktestNode` to batch book deltas by default, so fills can differ; set `batch_deltas=False` to opt out
-- Changed batched `BacktestNode` replay to reject deltas without a closing `F_LAST`; `batch_deltas=False` opts out
-- Changed Rust `Order` to require `non_reopened_voided_qty` (#5133), thanks @abhijeetvichare76
-- Changed Deribit position `leverage` to `Option<Decimal>` (#5240), thanks @abhijeetvichare76
-- Changed Rust `DeriveDataClientConfig` struct literals: add `book_snapshot_timeout_secs` and
-  `book_stale_threshold_secs`, or use `..Default::default()`
-- Changed Rust `DeriveWsMessage` to include `BookSubscription`; update exhaustive matches
-- Changed Interactive Brokers contract and security filters to reject unknown values (#5041), thanks @faysou
-- Changed Interactive Brokers Rust provider loaders; use `load_with_return_async` (#5041), thanks @faysou
-- Changed Rust `KrakenDataClientConfig` literals; add `validate_l2_checksum: true` (#5219), thanks @zhaow-de
-- Changed Rust `OKXAmendAlgoOrderRequest` literals to require `new_trigger_px_type`; use `None` to omit it
 - Removed Polymarket 30-second TWAP support; use `window_seconds=60` (#5296)
 - Renamed Polymarket reference-price types to drop `Rtds`, without aliases (#5296)
 - Renamed Polymarket `base_url_rtds` to `base_url_reference_prices` (#5296)
+- Replaced Interactive Brokers symbology functions with `Symbology` methods (#5041), thanks @faysou
+- Changed `BacktestNode` to batch book deltas by default, so fills can differ; set `batch_deltas=False` to opt out
+- Changed batched `BacktestNode` replay to reject deltas without a closing `F_LAST`; `batch_deltas=False` opts out
+- Changed `VirtualTimer`/`LiveTimer`: `interval_ns` -> `interval: TimerInterval`; match `TimerInterval::Fixed`
+- Changed `DataEngineConfig`/`LiveDataEngineConfig`: add `time_bars_time_zone`; use `None` for UTC alignment
+- Changed `TimeBarAggregator::new` to require `jiff::tz::TimeZone`; pass `TimeZone::UTC` for UTC bars
+- Changed `Order` to require `non_reopened_voided_qty` (#5133), thanks @abhijeetvichare76
+- Changed `ReconciliationResult` literals; add empty `order_only_fill_keys` (#5114), thanks @zhaow-de
+- Changed `PortfolioGreeks::from(GreeksData)` to apply the contract multiplier
+- Changed `OptionSeriesId::new` to require a reference instrument; use `new_derived` to derive it
+- Changed `OptionSeriesId::from_expiry` and `from_expiry_ns`; pass `None` as the final argument to derive a reference
+- Changed `OptionSeriesId::from_crypto_option` and struct literals to require `underlying_instrument_id`
+- Changed `OptionSeriesId` equality, hashing, and ordering to include the reference instrument
+- Changed `OptionSeriesId` strings with fractional expiries, including topics and handler IDs, to retain nanoseconds
+- Changed `OptionSeriesId` to reject empty or whitespace-only underlying symbols when deriving a reference
+- Changed `FixedTickScheme::new` to accept `Price`; use `Price::from("0.05")` instead of a float
+- Changed `FixedTickSchemeRounder::new` to accept `Price`; use `Price::from("0.05")` instead of a float
+- Changed `TickSchemeError::TickNotPositive.tick` to `Price` and added variants; update exhaustive matches
+- Changed fixed tick navigation to return `None` for incompatible precision; choose one that represents the tick
+- Changed Deribit position `leverage` to `Option<Decimal>` (#5240), thanks @abhijeetvichare76
+- Changed `DeriveDataClientConfig`: `book_snapshot_timeout_secs`/`book_stale_threshold_secs` or `..Default::default()`
+- Changed `DeriveWsMessage` to include `BookSubscription`; update exhaustive matches
+- Changed Interactive Brokers contract and security filters to reject unknown values (#5041), thanks @faysou
+- Changed Interactive Brokers provider loaders; use `load_with_return_async` (#5041), thanks @faysou
+- Changed `KrakenDataClientConfig` literals; add `validate_l2_checksum: true` (#5219), thanks @zhaow-de
+- Changed `OKXAmendAlgoOrderRequest` literals to require `new_trigger_px_type`; use `None` to omit it
 - Changed Polymarket reference prices to PolyBolt; configure CLOB L2 credentials (#5296), thanks @yashwardhan-gautam
 - Changed Polymarket crypto reference symbols to lowercase USD pairs such as `btcusd` (#5296)
 - Changed Polymarket reference prices to exact decimals with `source`; equity drops `full_accuracy_value` (#5296)
@@ -71,89 +69,98 @@ Released on TBD (UTC).
 
 ### Fixes
 
-- Fixed portfolio Greeks panics when calculations, subscribers, or filters write to the cache
-- Fixed portfolio Greeks omitting multipliers before filtering and aggregation, including futures
-- Fixed missing Python Greeks conversion, scalar-left multiplication, and portfolio addition
-- Fixed released emulated orders sending stale order initialization (#5169), thanks @jrile018
+- Fixed non-reopened voided quantity returning to working leaves after updates (#5133), thanks @abhijeetvichare76
+- Fixed maker/taker commission sign at negative prices
+- Fixed Python indicator constructors aborting the process on invalid periods or oversized capacities
+- Fixed cached custom currencies and their dependents missing after Redis restart (#5195), thanks @zhaow-de
+- Fixed cache open-order queries retaining submitted orders after cancel or modify rejections
+- Fixed Parquet catalog row order for equal `ts_init` timestamps (#5267), thanks @ragen1337
+- Fixed streaming Parquet promotion of `OrderBookDelta.clear()` snapshots (#5268), thanks for reporting @hellow-star
 - Fixed monthly time bars drifting after a clamped month-end origin offset
 - Fixed queued time-bar callbacks affecting aggregation after a stop or restart
-- Fixed `RiskEngine` notional limits for negative prices
-- Fixed maker/taker commission sign at negative prices
-- Fixed cache open-order queries retaining submitted orders after cancel or modify rejections
-- Fixed simulated OTO releases reviving children canceled earlier in the same callback
-- Fixed simulated reduce-only quote-quantity stops converting their resized quantity again
-- Fixed simulated released bracket exits canceled with partially filled entries (#5159), thanks @abhijeetvichare76
-- Fixed `BacktestNode` streaming runs leaving the engine running after a data load failure
-- Fixed Python indicator constructors aborting the process on invalid periods or oversized capacities
+- Fixed released emulated orders sending stale order initialization (#5169), thanks @jrile018
+- Fixed cancel rejection delivery for active orders while preserving their state (#5270), thanks @riven314
+- Fixed late modify rejection delivery for submitted orders without reverting amended terms
 - Fixed reconciliation rejecting fills on a pending order when a `Filled` report exceeds its quantity
 - Fixed replacement reconciliation losing native fill IDs and duplicating inferred fills
 - Fixed reconciliation losing fills for orders spanning a flat position boundary (#5114), thanks @zhaow-de
-- Fixed calculated margin equity omitting option value (#5252), thanks for reporting @abhijeetvichare76
-- Fixed streaming Parquet promotion failing on `OrderBookDelta.clear()` snapshots (#5268), thanks for reporting @hellow-star
+- Fixed simulated OTO releases reviving children canceled earlier in the same callback
+- Fixed simulated reduce-only quote-quantity stops converting their resized quantity again
+- Fixed simulated released bracket exits canceled with partially filled entries (#5159), thanks @abhijeetvichare76
 - Fixed simulated bracket exits rejected as reduce-only before entry fills reached the cache (#5248), thanks @awss1i
 - Fixed trailing stop prices falling between price increments (#5241), thanks @abhijeetvichare76
-- Fixed cached custom currencies and their dependents missing after Redis restart (#5195), thanks @zhaow-de
-- Fixed non-reopened voided quantity returning to working leaves after updates (#5133), thanks @abhijeetvichare76
 - Fixed duplicate account states and incorrect locked margins during funding settlements (#5249), thanks @XBeg9
+- Fixed `RiskEngine` notional limits for negative prices
+- Fixed `RiskEngine` free balance checks omitting unacknowledged orders (#5184), thanks @ngarid
+- Fixed calculated margin equity omitting option value (#5252), thanks for reporting @abhijeetvichare76
 - Fixed `GreeksCalculator` underlying resolution across venues (#5234), thanks @awss1i
-- Fixed cancel rejection delivery for active orders while preserving their state (#5270), thanks @riven314
-- Fixed late modify rejection delivery for submitted orders without reverting amended terms
-- Fixed Parquet catalog row order for equal `ts_init` timestamps (#5267), thanks @ragen1337
+- Fixed portfolio Greeks omitting multipliers before filtering and aggregation, including futures
+- Fixed portfolio Greeks panics when calculations, subscribers, or filters write to the cache
+- Fixed missing Python Greeks conversion, scalar-left multiplication, and portfolio addition
+- Fixed `BacktestNode` streaming runs leaving the engine running after a data load failure
 - Fixed Bybit stale WebSocket subscriptions blocking subscriptions after reconnect (#5250), thanks @Martingale42
 - Fixed Bybit failed quote subscriptions retaining shared order book references (#5258), thanks @Martingale42
 - Fixed Bybit incomplete position reports causing held positions to reconcile as flat
-- Fixed Deribit duplicate fills from order responses and user trade subscriptions
+- Fixed Databento data client intraday requests failing to resolve price precision
 - Fixed Deribit position reports failing on fractional leverage (#5240), thanks @abhijeetvichare76
-- Fixed Derive fill history marked complete when trades lack trade or venue order IDs
+- Fixed Deribit duplicate fills from order responses and user trade subscriptions
 - Fixed Derive accepting null or empty order book prices and amounts as zero
+- Fixed Derive fill history marked complete when trades lack trade or venue order IDs
+- Fixed Hyperliquid HIP-4 outcome price and size precision (#5266), thanks @vignesh-chaturvedi
+- Fixed Hyperliquid place and modify requests retaining trailing zeros in signed order values
+- Fixed Hyperliquid cancel actions to omit explicit `fast: Some(false)` flags
 - Fixed Hyperliquid account updates retaining balances reported at zero (#5210), thanks @XBeg9
 - Fixed Hyperliquid reduce-only filled order lookups overstating fill quantity (#5222), thanks @XBeg9
-- Fixed Hyperliquid HIP-4 outcome price and size precision (#5266), thanks @vignesh-chaturvedi
 - Fixed Hyperliquid canceled replacements leaving orders open when acceptance updates are missing
 - Fixed Hyperliquid recovery sending corrective reductions for canceled replacement orders
-- Fixed Hyperliquid dropping late fill reports after orders close
 - Fixed Hyperliquid stop-market replacement updates causing order-state panics
-- Fixed Hyperliquid cancel actions to omit explicit `fast: Some(false)` flags
-- Fixed Hyperliquid place and modify requests retaining trailing zeros in signed order values
 - Fixed Hyperliquid order closure after partial-fill rejections
-- Fixed Interactive Brokers account balances and margins remaining stale after connect (#5041), thanks @faysou
-- Fixed Interactive Brokers spread fills arriving before their leg fills (#5041), thanks @faysou
-- Fixed Interactive Brokers execution queries replaying historical fills as live fills (#5041), thanks @faysou
+- Fixed Hyperliquid dropping late fill reports after orders close
 - Fixed Interactive Brokers order ID reuse after completed orders (#5284), thanks @honvl
+- Fixed Interactive Brokers account balances and margins remaining stale after connect (#5041), thanks @faysou
+- Fixed Interactive Brokers execution queries replaying historical fills as live fills (#5041), thanks @faysou
+- Fixed Interactive Brokers spread fills arriving before their leg fills (#5041), thanks @faysou
 - Fixed Kraken spot and futures wallets retaining balances reported at zero (#5186), thanks @zhaow-de
 - Fixed Kraken futures margin currencies, aggregation, and maintenance requirements (#5199), thanks @zhaow-de
+- Fixed Kraken spot order lookups failing on unrelated pairs (#5295), thanks @zhaow-de
 - Fixed Kraken futures reads silently omitting unresolved live orders and positions (#5217), thanks @zhaow-de
-- Fixed Kraken futures startup reconciliation omitting order history (#5114), thanks @zhaow-de
+- Fixed Kraken spot and futures reads silently omitting unparsable open orders (#5295), thanks @zhaow-de
 - Fixed Kraken futures order-history parsing and filled-order pricing (#5247), thanks @zhaow-de
+- Fixed Kraken futures status reports restoring full client order IDs (#5293), thanks @zhaow-de
+- Fixed Kraken futures startup reconciliation omitting order history (#5114), thanks @zhaow-de
+- Fixed Lighter transaction nonce send ordering under concurrent preparation
 - Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
 - Fixed Lighter single and batch modify failures remaining pending after admission
-- Fixed Lighter transaction nonce send ordering under concurrent preparation
+- Fixed Lighter fills and order updates preceding modification confirmation
+- Fixed Lighter duplicate fill reports across HTTP history pages
 - Fixed OKX conditional order amendments dropping prices (#5275), thanks for reporting @ProfitChef
+- Fixed Polymarket modify canceling a working order when the signed replacement is below the market minimum
+- Fixed Polymarket recovered BUY overfills being rejected instead of raising order quantity
+- Fixed Polymarket free balance treating BUY fill spend as available before the venue collateral total reflects it
 - Fixed Polymarket bounded restarts marking cached closed orders as incomplete
 - Fixed Polymarket bounded restarts omitting confirmed partial fills from resting orders
-- Fixed Polymarket modify canceling a working order when the signed replacement is below the market minimum
-- Fixed Polymarket free balance treating BUY fill spend as available before the venue collateral total reflects it
 - Fixed Polymarket execution disconnect overrunning the node disconnect timeout with an in-flight cancel
-- Fixed Polymarket recovered BUY overfills being rejected instead of raising order quantity
-- Fixed sandbox cached quote and trade replay replenishing consumed liquidity on order submissions
+- Fixed Sandbox cached quote and trade replay replenishing consumed liquidity on order submissions
 
 ### Internal Improvements
 
 - Added `BacktestNode` book delta replay benchmark comparing batched and individual dispatch
-- Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
-- Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
+- Migrated OKX built-in WebSocket URLs to port 443 for live and demo environments
 - Ported the Interactive Brokers adapter to the `ibapi` v5.0.0 API (#5041), thanks @faysou
 - Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
 - Improved Lighter report generation with HTTP collection on runtime workers (#5216)
+- Improved Lighter execution race coverage and grouped-order signer validation
+- Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
+- Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Optimized core string formatting, precision parsing, and API key masking allocations (#5225), thanks @sunlei
-- Optimized core UTC timestamp formatting (#5226), thanks @sunlei
 - Optimized hexadecimal encoding and decoding (#5227), thanks @sunlei
-- Optimized integer `UnixNanos` parsing (#5228), thanks @sunlei
-- Optimized JSON decimal deserialization to avoid temporary string allocations (#5229), thanks @sunlei
 - Optimized `UUID4` byte conversion (#5230), thanks @sunlei
-- Optimized portfolio snapshots to skip copying account event history (#5237), thanks @XBeg9
+- Optimized integer `UnixNanos` parsing (#5228), thanks @sunlei
+- Optimized core UTC timestamp formatting (#5226), thanks @sunlei
+- Optimized JSON decimal deserialization to avoid temporary string allocations (#5229), thanks @sunlei
 - Optimized backtest funding settlements to update positions in place (#5238), thanks @XBeg9
+- Optimized portfolio snapshots to skip copying account event history (#5237), thanks @XBeg9
 - Optimized Python `Portfolio` queries to avoid copying account event history (#5260), thanks @XBeg9
 - Upgraded Rust (MSRV) to 1.99.0
 - Upgraded `cargo-hawk` tool to v0.1.15
@@ -175,6 +182,7 @@ Released on TBD (UTC).
 - Upgraded `pyo3` crates to v0.29.3
 - Upgraded `tokio` crate to v1.53.2
 - Upgraded `tokio-rustls` crate to v0.26.6
+- Upgraded `tokio-util` crate to v0.7.20
 - Upgraded `uuid` crate to v1.27.0
 - Upgraded `zeroize` crate to v1.9.1
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.16.10
@@ -191,6 +199,7 @@ Released on TBD (UTC).
 - Clarified Hyperliquid modify replacement rules and individual batch results
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
 - Clarified Lighter cancel-all scope and batch cancellation failure handling
+- Clarified Lighter contingent order mappings, execution ordering, and venue limits
 - Documented Polymarket PolyBolt reference prices and the RTDS migration (#5296)
 
 ### Deprecations

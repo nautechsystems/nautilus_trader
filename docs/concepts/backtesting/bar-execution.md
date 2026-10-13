@@ -20,11 +20,13 @@ The event timestamp (`ts_event`) may represent the open or close, depending on t
 - For bars timestamped at the open, set `ts_init = ts_event + interval_ns`. For example, add
   `60_000_000_000` nanoseconds for one-minute bars.
 
-Where an adapter provides a setting such as `bars_timestamp_on_close=True`, prefer that setting so
-the stored data uses the expected convention. For custom data, populate `ts_event` and `ts_init`
-before constructing `Bar` objects, encoding Arrow record batches, writing a catalog, or calling
-`add_data()`. The `BarDataWrangler` consumes explicit timestamp fields and does not expose a
-`ts_init_delta` argument. Verify the result on a small sample before running a backtest.
+If an adapter provides a setting such as `bars_timestamp_on_close=True`, prefer it so stored data
+uses the expected convention.
+
+For custom data, populate `ts_event` and `ts_init` before constructing `Bar` objects, encoding Arrow
+record batches, writing a catalog, or calling `add_data()`. The `BarDataWrangler` consumes explicit
+timestamp fields and does not expose a `ts_init_delta` argument. Verify the result on a small sample
+before running a backtest.
 
 ## Processing bar data
 
@@ -104,12 +106,12 @@ Bar N's OHLC sequence runs before `on_bar(N)`. Without a latency model, an order
 A latency model delays the order's effective arrival. Once the command reaches its arrival
 timestamp, the engine can release it from the venue's latency queue in two ways:
 
-- Exchange-routed market data for the order's instrument. With bar-only data and no intervening
-  timer events, the first bar at or after the arrival timestamp completes its OHLC sweep before the
-  order settles, so the order sees that bar's close. Quote or trade ticks can release it earlier
-  against the book state they establish.
-- An unrestricted settlement point, such as an actor or strategy timer, funding-rate settlement, or shutdown drain.
-  These points release all commands due at that time.
+- **Instrument market data**: Exchange-routed data for the order's instrument releases the command.
+  With bar-only data and no intervening timer events, the first bar at or after arrival completes
+  its OHLC sweep before the order settles, so the order sees that bar's close. Quote or trade ticks
+  can release it earlier against the book state they establish.
+- **Unrestricted settlement**: Points such as actor or strategy timers, funding-rate settlement,
+  or shutdown drains release all commands due at that time.
 
 Market data for another instrument does not release the delayed command against stale book state.
 Portfolio snapshot timers for daily equity curves and `PortfolioConfig.snapshot_interval_ms` samples
@@ -160,4 +162,4 @@ config = BacktestEngineConfig(
 ```
 
 The value is in microseconds. A small delay, such as one microsecond, lets boundary data arrive
-before the bar closes. It affects only internally aggregated bars.
+before the bar closes. It affects **only internally aggregated bars**.

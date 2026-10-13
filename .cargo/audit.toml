@@ -17,6 +17,12 @@ ignore = [
   "RUSTSEC-2024-0436",
   # derivative unmaintained, transitive via alloy-primitives -> ruint -> ark-ff
   "RUSTSEC-2024-0388",
+
+  # unsafe-libyaml is build-only via dydx-proto -> tonic-buf-build -> serde_yaml,
+  # YAML parsing runs only when V4_PROTO_REBUILD requests protobuf regeneration.
+  # No fixed release exists; remove this exception when upstream replaces the parser
+  "RUSTSEC-2024-0449",
+
   # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only)
   "RUSTSEC-2025-0075",
   "RUSTSEC-2025-0080",

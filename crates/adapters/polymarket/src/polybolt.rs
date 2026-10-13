@@ -41,6 +41,7 @@ use nautilus_network::{
     RECONNECTED, SocketStateSink,
     error::SendError,
     http::create_standard_nautilus_headers,
+    ratelimiter::quota::Quota,
     transport::Message as TransportMessage,
     websocket::{
         AuthTracker, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -53,6 +54,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use tokio_tungstenite::tungstenite::{Message, protocol::CloseFrame};
+use ustr::Ustr;
 use zeroize::Zeroize;
 
 use crate::{
@@ -86,6 +88,8 @@ const POLYBOLT_RECONNECT_TIMEOUT_MS: u64 = 15_000;
 const POLYBOLT_RECONNECT_DELAY_INITIAL_MS: u64 = 250;
 const POLYBOLT_RECONNECT_DELAY_MAX_MS: u64 = 5_000;
 const POLYBOLT_RECONNECT_JITTER_MS: u64 = 200;
+const POLYBOLT_SUBSCRIPTION_RATE_LIMIT_KEY: &str = "polybolt-subscriptions";
+const POLYBOLT_SUBSCRIPTION_INTERVAL_MS: u64 = 53;
 /// Venue limit: active `(channel, filter)` subscriptions per connection.
 pub(crate) const POLYBOLT_MAX_SUBSCRIPTIONS: usize = 64;
 /// The only TWAP window PolyBolt serves.
@@ -203,6 +207,7 @@ struct PolymarketPolyBoltFeedInner {
     reset_live_state_pending: AtomicBool,
     closing: AtomicBool,
     shutdown_generation: Mutex<u64>,
+    shutdown_notify: tokio::sync::Notify,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -466,6 +471,7 @@ impl PolymarketPolyBoltFeed {
                 reset_live_state_pending: AtomicBool::new(false),
                 closing: AtomicBool::new(false),
                 shutdown_generation: Mutex::new(0),
+                shutdown_notify: tokio::sync::Notify::new(),
             }),
             _task_owner: Some(Arc::clone(&task_owner)),
             task_slots: Arc::downgrade(&task_owner),
@@ -757,9 +763,8 @@ impl PolymarketPolyBoltFeed {
                      reason={reason:?}); reconnecting in {delay:?}"
                 );
                 self.recycle_connection(ws).await;
-                tokio::time::sleep(delay).await;
 
-                if self.is_generation_open(generation) {
+                if self.wait_for_delay(delay, generation).await {
                     self.inner.halted.store(false, Ordering::Release);
                     self.request_reconcile(ReconcileReason::TransportReset);
                 }
@@ -903,6 +908,7 @@ impl PolymarketPolyBoltFeed {
         let mut generation = self.inner.shutdown_generation.lock();
         *generation = generation.wrapping_add(1);
         self.inner.closing.store(true, Ordering::Release);
+        self.inner.shutdown_notify.notify_waiters();
         self.inner.reconcile_pending.store(false, Ordering::Release);
         self.inner
             .reset_live_state_pending
@@ -991,25 +997,30 @@ impl PolymarketPolyBoltFeed {
     }
 
     async fn run_reconcile_loop(&self) {
+        let generation = *self.inner.shutdown_generation.lock();
+
         loop {
-            if self.inner.closing.load(Ordering::Acquire) {
+            let shutdown = self.inner.shutdown_notify.notified();
+
+            if !self.is_generation_open(generation) {
                 break;
             }
 
-            self.inner.reconcile_notify.notified().await;
+            tokio::select! {
+                () = shutdown => break,
+                () = self.inner.reconcile_notify.notified() => {}
+            }
 
-            if self.inner.closing.load(Ordering::Acquire) {
+            if !self.is_generation_open(generation) {
                 break;
             }
 
             while self.inner.reconcile_pending.swap(false, Ordering::AcqRel) {
                 let retry_delay = self.inner.retry_delay.lock().take();
-                if let Some(delay) = retry_delay {
-                    tokio::time::sleep(delay).await;
-
-                    if self.inner.closing.load(Ordering::Acquire) {
-                        break;
-                    }
+                if let Some(delay) = retry_delay
+                    && !self.wait_for_delay(delay, generation).await
+                {
+                    break;
                 }
 
                 let reset_live_state = self
@@ -1028,18 +1039,36 @@ impl PolymarketPolyBoltFeed {
 
                 let retry_delay = self.reconcile_retry_delay(&e);
                 log::log!(
-                    if retry_delay.is_some() {
+                    if retry_delay.is_some()
+                        || matches!(
+                            e.downcast_ref::<SendError>(),
+                            Some(SendError::ConnectionChanged)
+                        )
+                    {
                         log::Level::Warn
                     } else {
                         log::Level::Error
                     },
-                    "Failed to reconcile PolyBolt custom data subscriptions: {e}",
+                    "Failed to reconcile PolyBolt custom data subscriptions: {e:#}",
                 );
 
                 if let Some(delay) = retry_delay {
                     self.schedule_retry(delay);
                 }
             }
+        }
+    }
+
+    async fn wait_for_delay(&self, delay: Duration, generation: u64) -> bool {
+        let shutdown = self.inner.shutdown_notify.notified();
+
+        if !self.is_generation_open(generation) {
+            return false;
+        }
+
+        tokio::select! {
+            () = shutdown => false,
+            () = tokio::time::sleep(delay) => self.is_generation_open(generation),
         }
     }
 
@@ -1110,9 +1139,16 @@ impl PolymarketPolyBoltFeed {
         let close_inner = Arc::downgrade(&self.inner);
         let config = self.websocket_config();
 
+        // Reserve one of the venue's 20 frames/s for a delayed in-flight write,
+        // rounding the remaining 19 frames/s up to a 53 ms interval.
+        let quota = Quota::with_period(Duration::from_millis(POLYBOLT_SUBSCRIPTION_INTERVAL_MS))
+            .expect("subscription frame interval is nonzero");
+        let keyed_quotas = vec![(POLYBOLT_SUBSCRIPTION_RATE_LIMIT_KEY.to_string(), quota)];
+
         let ws = Arc::new(
             WebSocketClient::epoch_builder()
                 .config(config)
+                .keyed_quotas(keyed_quotas)
                 .epoch_handler(handler)
                 .close_handler(Arc::new(move |frame| {
                     let reconnect = frame
@@ -1488,10 +1524,16 @@ impl PolymarketPolyBoltFeed {
 
         let request = PolyBoltSubscribeRequest { op, subscriptions };
         let payload = serde_json::to_string(&request)?;
-        ws.send_text_on_connection(payload, None, connection_epoch)
+        let keys = [Ustr::from(POLYBOLT_SUBSCRIPTION_RATE_LIMIT_KEY)];
+        ws.send_text_on_connection(payload, Some(&keys), connection_epoch)
             .await
-            .map_err(|e| {
-                ReconcileRetryable(format!("failed to send PolyBolt {op} request: {e}")).into()
+            .map_err(|e| match e {
+                SendError::ConnectionChanged => {
+                    anyhow::Error::new(e).context(format!("failed to send PolyBolt {op} request"))
+                }
+                e => {
+                    ReconcileRetryable(format!("failed to send PolyBolt {op} request: {e}")).into()
+                }
             })
     }
 
@@ -2335,6 +2377,7 @@ mod tests {
     };
     use nautilus_core::{Params, time::get_atomic_clock_realtime};
     use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
+    use nautilus_network::ratelimiter::RateLimiter;
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use serde_json::{Value, json};
@@ -3698,6 +3741,11 @@ mod tests {
         unavailable_auth_once: Arc<AtomicBool>,
         auth_attempts_once: Arc<AtomicBool>,
         auth_count: Arc<AtomicUsize>,
+        snapshots: Arc<AtomicBool>,
+        snapshot_frames: Arc<AtomicUsize>,
+        snapshot_points: Arc<AtomicUsize>,
+        subscription_times: Arc<tokio::sync::Mutex<Vec<std::time::Instant>>>,
+        snapshot_times: Arc<Mutex<Vec<std::time::Instant>>>,
     }
 
     #[derive(Debug)]
@@ -3705,6 +3753,7 @@ mod tests {
         SendText(String),
         Close,
         CloseWithCode(u16),
+        DropFrames(&'static str),
     }
 
     impl TestServerState {
@@ -3754,6 +3803,7 @@ mod tests {
 
         let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel();
         state.control_txs.lock().await.push(control_tx);
+        let mut sequences = AHashMap::<&str, u64>::new();
 
         loop {
             let result = tokio::select! {
@@ -3761,6 +3811,13 @@ mod tests {
                     match command {
                         Some(TestServerCommand::SendText(text)) => {
                             if socket.send(AxumWsMessage::Text(text.into())).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                        Some(TestServerCommand::DropFrames(channel)) => {
+                            let frame = dropped_frame(channel, &mut sequences);
+                            if socket.send(AxumWsMessage::Text(frame.to_string().into())).await.is_err() {
                                 break;
                             }
                             continue;
@@ -3800,7 +3857,12 @@ mod tests {
                     let replies = if payload["op"] == "auth" {
                         auth_replies(&state, &payload)
                     } else {
-                        mock_replies(&payload)
+                        state
+                            .subscription_times
+                            .lock()
+                            .await
+                            .push(std::time::Instant::now());
+                        subscription_replies(&state, &payload, &mut sequences)
                     };
 
                     for reply in replies {
@@ -3822,6 +3884,57 @@ mod tests {
                 _ => {}
             }
         }
+    }
+
+    fn dropped_frame(channel: &'static str, sequences: &mut AHashMap<&str, u64>) -> Value {
+        let mut frame = fixture_json(if channel == "price.crypto" {
+            CRYPTO_UPDATE_FIXTURE
+        } else {
+            EQUITY_UPDATE_FIXTURE
+        });
+
+        let seq = sequences.entry(channel).or_default();
+        *seq += 2;
+        frame["seq"] = json!(*seq);
+        frame["dropped"] = json!(1);
+        frame
+    }
+
+    fn subscription_replies(
+        state: &TestServerState,
+        payload: &Value,
+        sequences: &mut AHashMap<&str, u64>,
+    ) -> Vec<Value> {
+        let mut replies = mock_replies(payload);
+        if payload["op"] != "subscribe" || !state.snapshots.load(Ordering::Relaxed) {
+            return replies;
+        }
+
+        for subscription in payload["subscriptions"].as_array().unwrap() {
+            let channel = subscription["channel"].as_str().unwrap();
+
+            let (channel, fixture) = if channel == "price.crypto" {
+                ("price.crypto", CRYPTO_SNAPSHOT_FIXTURE)
+            } else {
+                ("price.equity", EQUITY_SNAPSHOT_FIXTURE)
+            };
+
+            let mut snapshot = fixture_json(fixture);
+            snapshot["payload"]["symbol"] = subscription["filter"]["symbol"].clone();
+            let seq = sequences.entry(channel).or_default();
+            *seq += 1;
+            snapshot["seq"] = json!(*seq);
+            snapshot["dropped"] = json!(0);
+            state.snapshot_frames.fetch_add(1, Ordering::Relaxed);
+            state.snapshot_points.fetch_add(
+                snapshot["payload"]["data"].as_array().unwrap().len(),
+                Ordering::Relaxed,
+            );
+            state.snapshot_times.lock().push(std::time::Instant::now());
+            replies.push(snapshot);
+        }
+
+        replies
     }
 
     fn auth_replies(state: &TestServerState, payload: &Value) -> Vec<Value> {
@@ -5483,5 +5596,621 @@ mod tests {
             state.payloads().await.is_empty(),
             "disconnect should prevent a pending reconcile from sending wire frames",
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_retry_delay_shutdown() {
+        let (feed, _rx) = make_feed();
+        feed.schedule_retry(Duration::from_secs(60));
+        let task = feed.run_reconcile_loop();
+        tokio::pin!(task);
+        assert!(futures_util::poll!(&mut task).is_pending());
+        feed.begin_shutdown();
+        assert!(
+            futures_util::poll!(&mut task).is_ready(),
+            "shutdown must complete the retry task without advancing its timer"
+        );
+    }
+
+    #[rstest]
+    #[case(100)]
+    #[case(300)]
+    #[tokio::test]
+    async fn test_measure_gap_recovery(#[case] rounds: usize) {
+        let state = TestServerState::default();
+        state.snapshots.store(true, Ordering::Relaxed);
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, mut rx) = make_server_feed(addr);
+        for symbol in ["btcusd", "ethusd"] {
+            feed.track_subscribe(crypto_data_type(symbol)).unwrap();
+        }
+
+        for symbol in ["aapl", "msft"] {
+            feed.track_subscribe(equity_data_type(symbol)).unwrap();
+        }
+
+        feed.connect().await.unwrap();
+        wait_until_async(
+            || {
+                let feed = feed.clone();
+                async move { feed.inner.last_seq_by_channel.lock().len() == 2 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let initial_frames = state.snapshot_frames.load(Ordering::Relaxed);
+        let initial_points = state.snapshot_points.load(Ordering::Relaxed);
+        state.clear_received_payloads().await;
+        state.subscription_times.lock().await.clear();
+        state.snapshot_times.lock().clear();
+        let started = std::time::Instant::now();
+
+        for _ in 0..rounds {
+            let senders = state.control_txs.lock().await.clone();
+
+            for tx in senders {
+                tx.send(TestServerCommand::DropFrames("price.crypto"))
+                    .unwrap();
+                tx.send(TestServerCommand::DropFrames("price.equity"))
+                    .unwrap();
+            }
+
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        let last_drop = std::time::Instant::now();
+
+        let (payloads, subscribe_count, unsubscribe_count, received) =
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let payloads = state.payloads().await;
+                    let subscribe_count =
+                        payloads.iter().filter(|p| p["op"] == "subscribe").count();
+                    let unsubscribe_count =
+                        payloads.iter().filter(|p| p["op"] == "unsubscribe").count();
+                    let pairs = payloads
+                        .iter()
+                        .filter(|payload| payload["op"] == "subscribe")
+                        .flat_map(subscription_pairs)
+                        .collect::<Vec<_>>();
+
+                    let expected = ["price.crypto", "price.equity"]
+                        .into_iter()
+                        .map(|channel| {
+                            let snapshots =
+                                pairs.iter().filter(|(name, _)| name == channel).count();
+                            (channel, (rounds * 2 + snapshots + 2) as u64)
+                        })
+                        .collect::<AHashMap<_, _>>();
+
+                    if subscribe_count == unsubscribe_count
+                        && *feed.inner.last_seq_by_channel.lock() == expected
+                        && feed.inner.resync_channels.lock().is_empty()
+                        && !feed.inner.reconcile_pending.load(Ordering::Acquire)
+                        && feed.inner.wire_mutex.try_lock().is_ok()
+                    {
+                        break (
+                            payloads,
+                            subscribe_count,
+                            unsubscribe_count,
+                            std::time::Instant::now(),
+                        );
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            })
+            .await
+            .expect("the client must receive the final recovery snapshot on both channels");
+
+        let frames = state.snapshot_frames.load(Ordering::Relaxed) - initial_frames;
+        let points = state.snapshot_points.load(Ordering::Relaxed) - initial_points;
+        let delivered = std::iter::from_fn(|| rx.try_recv().ok()).count();
+        println!(
+            "rounds={rounds} symbols=4 channels=2 subscribe={subscribe_count} unsubscribe={unsubscribe_count} snapshot_frames={frames} snapshot_points={points} elapsed_ms={} tail_ms={} published={delivered}",
+            started.elapsed().as_millis(),
+            received.duration_since(last_drop).as_millis()
+        );
+        assert_eq!(subscribe_count, unsubscribe_count);
+        let subscription_times = state.subscription_times.lock().await.clone();
+        let snapshot_times = state.snapshot_times.lock().clone();
+        let first_recovery = snapshot_times[0].duration_since(started);
+        let last_recovery = snapshot_times
+            .last()
+            .unwrap()
+            .checked_duration_since(last_drop)
+            .unwrap_or_default();
+        println!(
+            "rounds={rounds} first_snapshot_generated_ms={} final_snapshot_generated_after_last_drop_ms={}",
+            first_recovery.as_millis(),
+            last_recovery.as_millis()
+        );
+
+        for window in subscription_times.windows(21) {
+            assert!(
+                window[20].duration_since(window[0]) >= Duration::from_secs(1),
+                "more than 20 subscription frames in a rolling second"
+            );
+        }
+
+        assert!(first_recovery < Duration::from_millis(500));
+        assert!(last_recovery < Duration::from_millis(500));
+        assert!(
+            subscribe_count * 2
+                <= (started.elapsed().as_millis() / u128::from(POLYBOLT_SUBSCRIPTION_INTERVAL_MS)
+                    + 2) as usize,
+            "coalescing must bound snapshot work during sustained drops"
+        );
+
+        if rounds == 300 {
+            assert!(
+                subscription_times.len() >= 21,
+                "the sustained workload must exercise a full frame-limit window"
+            );
+        }
+
+        let subscribed_pairs = payloads
+            .iter()
+            .filter(|payload| payload["op"] == "subscribe")
+            .flat_map(subscription_pairs)
+            .collect::<Vec<_>>();
+        assert_eq!(frames, subscribed_pairs.len());
+
+        for channel in ["price.crypto", "price.equity"] {
+            let snapshots = subscribed_pairs
+                .iter()
+                .filter(|(name, _)| name == channel)
+                .count();
+            let expected_seq = (rounds * 2 + snapshots + 2) as u64;
+            assert_eq!(
+                feed.inner.last_seq_by_channel.lock()[channel],
+                expected_seq,
+                "the client must receive the final recovery snapshot on {channel}"
+            );
+        }
+
+        assert!(
+            received.duration_since(last_drop) < Duration::from_millis(500),
+            "final recovery must reach the client within the latency bound"
+        );
+        assert_eq!(points, frames * 3);
+        assert_eq!(delivered, 12 + rounds * 2);
+        feed.disconnect().await.unwrap();
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test(start_paused = true)]
+    async fn test_delay_shutdown_before_or_during_wait(#[case] registered: bool) {
+        let (feed, _rx) = make_feed();
+        let generation = *feed.inner.shutdown_generation.lock();
+        let delay = feed.wait_for_delay(Duration::from_secs(60), generation);
+        tokio::pin!(delay);
+
+        if registered {
+            assert!(futures_util::poll!(&mut delay).is_pending());
+        }
+
+        feed.begin_shutdown();
+        assert_eq!(
+            futures_util::poll!(&mut delay),
+            std::task::Poll::Ready(false)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_delay_preserves_reconcile_notification_and_schedule() {
+        let (feed, _rx) = make_feed();
+        let generation = *feed.inner.shutdown_generation.lock();
+        let delay = feed.wait_for_delay(Duration::from_secs(60), generation);
+        tokio::pin!(delay);
+        assert!(futures_util::poll!(&mut delay).is_pending());
+        feed.inner.reconcile_notify.notify_one();
+        assert!(futures_util::poll!(&mut delay).is_pending());
+        let reconcile = feed.inner.reconcile_notify.notified();
+        tokio::pin!(reconcile);
+        assert_eq!(
+            futures_util::poll!(&mut reconcile),
+            std::task::Poll::Ready(())
+        );
+        tokio::time::advance(Duration::from_secs(59)).await;
+        assert!(futures_util::poll!(&mut delay).is_pending());
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(
+            futures_util::poll!(&mut delay),
+            std::task::Poll::Ready(true)
+        );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test(start_paused = true)]
+    async fn test_retired_delay_cannot_resume_when_feed_reopens(#[case] registered: bool) {
+        let (feed, _rx) = make_feed();
+        let generation = *feed.inner.shutdown_generation.lock();
+        let delay = feed.wait_for_delay(Duration::from_secs(60), generation);
+        tokio::pin!(delay);
+
+        if registered {
+            assert!(futures_util::poll!(&mut delay).is_pending());
+        }
+
+        feed.begin_shutdown();
+        feed.inner.closing.store(false, Ordering::Release);
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert_eq!(
+            futures_util::poll!(&mut delay),
+            std::task::Poll::Ready(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_completes_message_task_during_drain() {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd")).unwrap();
+        feed.connect().await.unwrap();
+        wait_for_op(&state, "subscribe").await;
+        let guard = feed.inner.wire_mutex.lock().await;
+        state
+            .close_all_connections_with_code(POLYBOLT_CLOSE_CODE_DRAINING)
+            .await;
+
+        wait_until_async(
+            || {
+                let feed = feed.clone();
+                async move { feed.current_ws().is_none() }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        feed.begin_shutdown();
+        let tasks = feed.task_slots().unwrap();
+        let mut slot = tasks.message.lock().await;
+        let outcome = tokio::time::timeout(
+            Duration::from_millis(200),
+            std::future::poll_fn(|cx| slot.poll_join(cx)),
+        )
+        .await
+        .expect("message task must complete without grace-period abort");
+        assert!(matches!(outcome, Some(TaskJoinOutcome::Completed(()))));
+        drop(slot);
+        drop(guard);
+        feed.disconnect().await.unwrap();
+        assert_eq!(state.connection_count().await, 1);
+        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_completes_reconcile_task_during_retry() {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd")).unwrap();
+        feed.connect().await.unwrap();
+        wait_for_op(&state, "subscribe").await;
+        let guard = feed.inner.wire_mutex.lock().await;
+        feed.schedule_retry(Duration::from_secs(60));
+        wait_until_async(
+            || {
+                let feed = feed.clone();
+                async move { feed.inner.retry_delay.lock().is_none() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        feed.begin_shutdown();
+        drop(guard);
+        let tasks = feed.task_slots().unwrap();
+        let mut slot = tasks.reconcile.lock().await;
+        let outcome = tokio::time::timeout(
+            Duration::from_millis(200),
+            std::future::poll_fn(|cx| slot.poll_join(cx)),
+        )
+        .await
+        .expect("reconcile task must complete without grace-period abort");
+        assert!(matches!(outcome, Some(TaskJoinOutcome::Completed(()))));
+        drop(slot);
+        feed.disconnect().await.unwrap();
+        assert_eq!(state.connection_count().await, 1);
+        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
+    }
+
+    #[tokio::test]
+    async fn test_subscription_quota_coalesces_burst_drops() {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd")).unwrap();
+        feed.track_subscribe(crypto_data_type("ethusd")).unwrap();
+        feed.track_subscribe(equity_data_type("aapl")).unwrap();
+        feed.connect().await.unwrap();
+        wait_for_op(&state, "subscribe").await;
+        state.clear_received_payloads().await;
+        let guard = feed.inner.wire_mutex.lock().await;
+
+        for seq in 1..=100 {
+            let mut frame = fixture_json(CRYPTO_UPDATE_FIXTURE);
+            frame["seq"] = json!(seq);
+            frame["dropped"] = json!(1);
+            feed.handle_text_message(&frame.to_string(), 0).unwrap();
+        }
+
+        drop(guard);
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { ops(&state.payloads().await) == vec!["unsubscribe", "subscribe"] }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        feed.disconnect().await.unwrap();
+        let payloads = state.payloads().await;
+        assert_eq!(ops(&payloads), vec!["unsubscribe", "subscribe"]);
+
+        for payload in payloads {
+            let mut pairs = subscription_pairs(&payload);
+            pairs.sort();
+            assert_eq!(
+                pairs,
+                vec![
+                    ("price.crypto".to_string(), "btcusd".to_string()),
+                    ("price.crypto".to_string(), "ethusd".to_string()),
+                ]
+            );
+        }
+    }
+
+    #[rstest]
+    #[case("price.crypto", CRYPTO_UPDATE_FIXTURE)]
+    #[case("price.equity", EQUITY_UPDATE_FIXTURE)]
+    #[tokio::test]
+    async fn test_inflight_resubscribe_retains_gaps_and_subscriber_changes(
+        #[case] channel: &str,
+        #[case] fixture: &str,
+    ) {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd")).unwrap();
+        feed.track_subscribe(crypto_data_type("ethusd")).unwrap();
+        feed.track_subscribe(equity_data_type("aapl")).unwrap();
+        feed.connect().await.unwrap();
+        wait_for_op(&state, "subscribe").await;
+        state.clear_received_payloads().await;
+        let guard = feed.inner.wire_mutex.lock().await;
+        let ws_client = feed.current_ws().unwrap();
+        let mut first = fixture_json(CRYPTO_UPDATE_FIXTURE);
+        first["dropped"] = json!(1);
+        feed.handle_text_message(&first.to_string(), 0).unwrap();
+        let reconcile = feed.reconcile_live_locked(&ws_client, false);
+        tokio::pin!(reconcile);
+        assert!(futures_util::poll!(&mut reconcile).is_pending());
+        assert!(feed.inner.resync_channels.lock().is_empty());
+        let mut second = fixture_json(fixture);
+        second["seq"] = json!(3);
+        second["dropped"] = json!(1);
+        feed.handle_text_message(&second.to_string(), 0).unwrap();
+        feed.track_unsubscribe(&crypto_data_type("ethusd")).unwrap();
+        feed.track_subscribe(crypto_data_type("solusd")).unwrap();
+        reconcile.await.unwrap();
+        feed.reconcile_live_locked(&ws_client, false).await.unwrap();
+        drop(guard);
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { state.payloads().await.len() == 4 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        feed.disconnect().await.unwrap();
+        let payloads = state.payloads().await;
+        assert_eq!(
+            ops(&payloads),
+            vec!["unsubscribe", "subscribe", "unsubscribe", "subscribe"]
+        );
+        let mut first_pairs = subscription_pairs(&payloads[0]);
+        first_pairs.sort();
+        assert_eq!(
+            first_pairs,
+            vec![
+                ("price.crypto".to_string(), "btcusd".to_string()),
+                ("price.crypto".to_string(), "ethusd".to_string()),
+            ]
+        );
+        let mut unsubscribe = subscription_pairs(&payloads[2]);
+        unsubscribe.sort();
+        let mut subscribe = subscription_pairs(&payloads[3]);
+        subscribe.sort();
+
+        let recovering = if channel == "price.crypto" {
+            "btcusd"
+        } else {
+            "aapl"
+        };
+
+        let mut expected_unsubscribe = vec![
+            ("price.crypto".to_string(), "ethusd".to_string()),
+            (channel.to_string(), recovering.to_string()),
+        ];
+        expected_unsubscribe.sort();
+        let mut expected_subscribe = vec![
+            ("price.crypto".to_string(), "solusd".to_string()),
+            (channel.to_string(), recovering.to_string()),
+        ];
+        expected_subscribe.sort();
+        assert_eq!(unsubscribe, expected_unsubscribe);
+        assert_eq!(subscribe, expected_subscribe);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_subscription_quota_wait_cancels_on_shutdown_or_reconnect(
+        #[case] reconnect: bool,
+    ) {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, ws_client) = connect_quota_test_feed(addr, Duration::from_secs(60)).await;
+        let subscriptions = feed
+            .snapshot_wire_subscriptions()
+            .into_values()
+            .collect::<Vec<_>>();
+        let send = feed.send_wire_request(
+            &ws_client,
+            "unsubscribe",
+            &subscriptions,
+            ws_client.connection_epoch(),
+        );
+        tokio::pin!(send);
+        assert!(futures_util::poll!(&mut send).is_pending());
+        ws_client
+            .send_text_on_connection(
+                json!({"op": "marker"}).to_string(),
+                None,
+                ws_client.connection_epoch(),
+            )
+            .await
+            .unwrap();
+        wait_for_op(&state, "marker").await;
+        assert_eq!(ops(&state.payloads().await), vec!["marker"]);
+        feed.disconnect().await.unwrap();
+        if reconnect {
+            feed.connect().await.unwrap();
+            wait_for_op(&state, "subscribe").await;
+        }
+
+        tokio::time::timeout(Duration::from_millis(200), &mut send)
+            .await
+            .expect("quota wait must observe terminal connection")
+            .expect_err("retired connection must not send the queued unsubscribe");
+        feed.disconnect().await.unwrap();
+
+        let expected_ops = if reconnect {
+            vec!["marker", "auth", "subscribe"]
+        } else {
+            vec!["marker"]
+        };
+
+        assert_eq!(
+            state.connection_count().await,
+            if reconnect { 2 } else { 1 }
+        );
+        assert_eq!(ops(&state.payloads().await), expected_ops);
+    }
+
+    async fn connect_quota_test_feed(
+        addr: SocketAddr,
+        period: Duration,
+    ) -> (PolymarketPolyBoltFeed, Arc<WebSocketClient>) {
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd")).unwrap();
+        let key = Ustr::from(POLYBOLT_SUBSCRIPTION_RATE_LIMIT_KEY);
+        let quota = Quota::with_period(period).unwrap();
+        let limiter = RateLimiter::new_with_quota(None, vec![(key, quota)]);
+        let limiter = Arc::new(limiter);
+        let (handler, raw_rx) = channel_epoch_message_handler();
+        let (close_handler, close_rx) = channel_message_handler();
+
+        let ws_client = WebSocketClient::epoch_builder()
+            .config(feed.websocket_config())
+            .epoch_handler(handler)
+            .close_handler(Arc::new(move |frame| {
+                close_handler(TransportMessage::Close(frame));
+                true
+            }))
+            .rate_limiter(limiter.clone())
+            .connect()
+            .await
+            .unwrap();
+
+        let ws_client = Arc::new(ws_client);
+        limiter.check_key(&key).unwrap();
+        *feed.inner.ws_client.lock() = Some(ws_client.clone());
+        let worker = feed.worker();
+        let ws_for_task = ws_client.clone();
+        feed.task_slots()
+            .unwrap()
+            .message
+            .lock()
+            .await
+            .spawn(async move {
+                worker.run_message_loop(ws_for_task, raw_rx, close_rx).await;
+            })
+            .unwrap();
+
+        (feed, ws_client)
+    }
+
+    #[tokio::test]
+    async fn test_transport_reconnect_during_subscription_quota_wait_replays_without_auth_backoff()
+    {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, ws_client) = connect_quota_test_feed(addr, Duration::from_millis(200)).await;
+        feed.ensure_authenticated_locked(&ws_client).await.unwrap();
+        *feed.inner.live_subscriptions.lock() = feed.snapshot_wire_subscriptions();
+        feed.inner.resync_channels.lock().insert("price.crypto");
+        feed.inner.reconcile_pending.store(true, Ordering::Release);
+        feed.inner.reconcile_notify.notify_one();
+        let worker_feed = feed.worker();
+        let mut worker = Box::pin(async move {
+            worker_feed.run_reconcile_loop().await;
+        });
+
+        assert!(futures_util::poll!(&mut worker).is_pending());
+        assert!(feed.inner.resync_channels.lock().is_empty());
+        assert!(feed.inner.wire_mutex.try_lock().is_err());
+
+        feed.task_slots()
+            .unwrap()
+            .reconcile
+            .lock()
+            .await
+            .spawn(worker)
+            .unwrap();
+        let epoch = ws_client.connection_epoch();
+        assert_eq!(
+            ws_client.reconnect_handle().request_reconnect(),
+            SocketReconnectRequestOutcome::Accepted
+        );
+
+        let received =
+            tokio::time::timeout(Duration::from_secs(2), wait_for_op(&state, "subscribe")).await;
+        feed.disconnect().await.unwrap();
+        received.expect("reconnect replay must not wait for the five-second auth backoff");
+        assert_eq!(ws_client.connection_epoch(), epoch + 1);
+        assert_eq!(state.connection_count().await, 2);
+        let payloads = state.payloads().await;
+        assert_eq!(ops(&payloads), vec!["auth", "auth", "subscribe"]);
+        assert_eq!(
+            subscription_pairs(payloads.last().unwrap()),
+            vec![("price.crypto".to_string(), "btcusd".to_string())]
+        );
+        assert!(feed.inner.retry_delay.lock().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_shutdown_before_reconcile_wait_cannot_dial() {
+        let (feed, _rx) = make_feed();
+        feed.track_subscribe(crypto_data_type("btcusd")).unwrap();
+        feed.begin_shutdown();
+        let task = feed.run_reconcile_loop();
+        tokio::pin!(task);
+        assert_eq!(futures_util::poll!(&mut task), std::task::Poll::Ready(()));
+        assert!(feed.current_ws().is_none());
+        assert!(!feed.is_authenticated());
+        assert!(feed.inner.live_subscriptions.lock().is_empty());
     }
 }

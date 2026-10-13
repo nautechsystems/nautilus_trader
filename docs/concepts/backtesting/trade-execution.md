@@ -60,14 +60,16 @@ When a trade triggers a limit fill:
   the trade price, it can create a trade-driven fill at the order's limit price.
 - A trade-driven fill is capped at `min(order.leaves_qty, trade.size)`.
 
-With `liquidity_consumption=False`, the same trade size can support more than one order during an
-iteration. With `liquidity_consumption=True`, trade-driven fills share a consumption counter, so
-their total cannot exceed the unconsumed trade size. Each L1 trade has a fresh budget, including
-successive trades with the same price and size. Once that budget is exhausted, L1 fills do not
-fall back to book liquidity.
+Trade-size consumption depends on `liquidity_consumption`:
 
-The L1 budget applies to limit fills on both sides and remains in effect across subsequent matching
-and settlement passes until fresh market data replaces it.
+- With `False`, the same trade size can support more than one order during an iteration.
+- With `True`, trade-driven fills share a consumption counter, so their total cannot exceed the
+  unconsumed trade size.
+
+**L1 trade budget**: With consumption enabled, each trade has a fresh budget, including successive
+trades with the same price and size. The budget applies to limit fills on both sides and persists
+across matching and settlement passes until fresh market data replaces it. Once exhausted, L1
+fills do not fall back to book liquidity.
 
 For example, with L2 or L3 data, a `SELL` trade at 100.00 can fill a BUY LIMIT at 100.05. If no book
 level represents that fill, the engine uses 100.05 rather than granting the better trade price.
@@ -94,8 +96,7 @@ The **aggressor** is the participant that crossed the spread:
 - `NO_AGGRESSOR`: The data does not identify the aggressor. The engine considers both sides where
   the feature requires a side.
 
-A trade with aggressor side `BUY` provides evidence for passive `SELL` orders, not `BUY` orders. A
-trade with aggressor side `SELL` provides evidence for passive `BUY` orders, not `SELL` orders.
+A known aggressor side does not provide evidence for passive orders on the same side.
 
 ## Combining book and trade data
 
@@ -135,6 +136,8 @@ venue = BacktestVenueConfig(
     ),
 )
 ```
+
+### Sandbox configuration
 
 Sandbox paper trading uses the same matching-engine flags. Pass them on
 `SandboxExecutionClientConfig` (defaults remain off, matching current sandbox
