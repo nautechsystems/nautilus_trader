@@ -902,7 +902,7 @@ pub fn reconcile_fill_report(
         true, // reconciliation
         report.venue_position_id,
         Some(report.commission),
-        None,
+        report.info.clone(),
     )))
 }
 

@@ -69,7 +69,7 @@ pub struct FillReport {
     pub client_order_id: Option<ClientOrderId>,
     /// The position ID (assigned by the venue).
     pub venue_position_id: Option<PositionId>,
-    /// Venue execution provenance, including orderless execution actions.
+    /// Additional fill metadata (venue/adapter specific).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub info: Option<IndexMap<Ustr, Ustr>>,
 }

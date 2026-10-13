@@ -3229,20 +3229,27 @@ fn create_test_fill_report(
 }
 
 #[rstest]
-fn test_reconcile_fill_report_success(instrument: InstrumentAny) {
+#[case::without_info(None)]
+#[case::with_info(Some(IndexMap::from([(Ustr::from("venue_fill_direction"), Ustr::from("ordinary_fill"))])))]
+fn test_reconcile_fill_report_success(
+    instrument: InstrumentAny,
+    #[case] info: Option<IndexMap<Ustr, Ustr>>,
+) {
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("100"))
         .build();
 
-    let fill_report = create_test_fill_report(
+    let mut fill_report = create_test_fill_report(
         instrument.id(),
         VenueOrderId::from("V-001"),
         TradeId::from("T-001"),
         Quantity::from("50"),
         Price::from("1.00000"),
     );
+
+    fill_report.info = info;
 
     let result = reconcile_fill_report(
         &order,
@@ -3258,6 +3265,7 @@ fn test_reconcile_fill_report_success(instrument: InstrumentAny) {
         assert_eq!(filled.last_px, Price::from("1.00000"));
         assert_eq!(filled.trade_id, TradeId::from("T-001"));
         assert!(filled.reconciliation);
+        assert_eq!(filled.info, fill_report.info);
     } else {
         panic!("Expected OrderFilled event");
     }

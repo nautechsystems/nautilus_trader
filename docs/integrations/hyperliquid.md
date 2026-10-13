@@ -616,7 +616,9 @@ these fills with a strategy through `set_external_order_instrument_ids`. The fil
 The adapter classifies conversions from the raw venue `dir`, requiring an Outcome instrument
 and Buy for split or Sell for merge. It preserves provenance in optional `FillReport.info` and
 assigns an internal `-LEG-` identifier. Source recognition and report-to-event conversion belong
-to execution reconciliation, not the model. Ordinary fill conversion is unchanged.
+to execution reconciliation, not the model. Reconciliation preserves report metadata in
+`OrderFilled.info`, including on the ordinary order-fill path. Reports without metadata
+retain `info=None`; ordinary fill quantities, fees, and accounting behavior are unchanged.
 
 The existing orderless accounting path publishes `OrderFilled` as well as position events, so
 strategies can observe fill callbacks without a submitted/accepted order lifecycle. Account state
