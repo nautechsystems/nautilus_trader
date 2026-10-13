@@ -6046,6 +6046,7 @@ dependencies = [
  "dashmap",
  "dotenvy",
  "futures-util",
+ "indexmap 2.14.2",
  "jiff",
  "log",
  "madsim",

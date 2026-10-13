@@ -8691,8 +8691,14 @@ async fn test_mass_status_recovered_label_considers_open_order_ancestry(
         Some(ClientOrderId::from("SHARED-LABEL"))
     );
     assert_eq!(open.order_status, OrderStatus::PartiallyFilled);
-    assert_eq!(open.quantity.as_decimal(), dec!(1));
-    assert_eq!(open.filled_qty.as_decimal(), dec!(0.2));
+    assert_eq!(
+        open.quantity.as_decimal(),
+        if linear_chain { dec!(1.1) } else { dec!(1) }
+    );
+    assert_eq!(
+        open.filled_qty.as_decimal(),
+        if linear_chain { dec!(0.3) } else { dec!(0.2) }
+    );
     let closed = &orders[&VenueOrderId::from("recovered-filled")];
     assert_eq!(closed.client_order_id, expected_cid);
     assert_eq!(closed.order_status, OrderStatus::Filled);
@@ -16312,4 +16318,707 @@ async fn test_private_pagination_restarts_complete_scan(
         }
     );
     tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reports_leave_uncached_replacement_unprojected(#[values(0, 1, 2, 3, 4)] request: u8) {
+    let state = RestState::default();
+    let mut current = order_json_with(
+        "foreign-current",
+        "FOREIGN-REPLACEMENT",
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_000,
+        "open",
+    );
+    current["amount"] = json!("0.7");
+    current["filled_amount"] = json!("0.2");
+    current["average_price"] = json!("3505");
+    current["replaced_order_id"] = json!("unavailable-parent");
+    *state.open_orders_response.lock().await =
+        json!({"orders": [current.clone()], "subaccount_id": TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({
+        "orders": [current.clone()], "pagination": {"count": 1, "num_pages": 1},
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    state
+        .get_order_responses
+        .lock()
+        .await
+        .insert("foreign-current".to_string(), current);
+    let ws_state = WsState::default();
+    ws_state
+        .disconnect_after_subscribe
+        .store(request == 4, Ordering::SeqCst);
+    let mut tc = build_report_client(state.clone(), ws_state).await;
+    tc.client.connect().await.unwrap();
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        request == 0,
+        Some(InstrumentId::from("ETH-PERP.DERIVE")),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let result = if request == 4 {
+        let event = drain_until(
+            &mut tc.rx,
+            |event| {
+                matches!(
+                    event,
+                    ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+                )
+            },
+            "Uncached replacement reconnect report",
+        )
+        .await;
+
+        let ExecutionEvent::Report(ExecutionReport::MassStatus(status)) = event else {
+            unreachable!();
+        };
+
+        Ok(status.order_reports().values().cloned().collect::<Vec<_>>())
+    } else if request == 3 {
+        tc.client
+            .query_order(QueryOrder::new(
+                TraderId::from("TRADER-001"),
+                None,
+                StrategyId::from("EXTERNAL"),
+                InstrumentId::from("ETH-PERP.DERIVE"),
+                ClientOrderId::from("FOREIGN-REPLACEMENT"),
+                Some(VenueOrderId::from("foreign-current")),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        let event = drain_until(
+            &mut tc.rx,
+            |event| matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_))),
+            "Uncached replacement query report",
+        )
+        .await;
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            unreachable!();
+        };
+
+        Ok(vec![*report])
+    } else if request == 2 {
+        tc.client
+            .generate_order_status_report(&GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(InstrumentId::from("ETH-PERP.DERIVE")),
+                Some(ClientOrderId::from("FOREIGN-REPLACEMENT")),
+                Some(VenueOrderId::from("foreign-current")),
+                None,
+                None,
+            ))
+            .await
+            .map(|report| report.into_iter().collect::<Vec<_>>())
+    } else {
+        tc.client.generate_order_status_reports(&cmd).await
+    };
+
+    tc.client.disconnect().await.unwrap();
+    let reports = result.unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].client_order_id,
+        Some(ClientOrderId::from("FOREIGN-REPLACEMENT"))
+    );
+    assert_eq!(
+        reports[0].venue_order_id,
+        VenueOrderId::from("foreign-current")
+    );
+    assert_eq!(reports[0].quantity, Quantity::from("0.700"));
+    assert_eq!(reports[0].filled_qty, Quantity::from("0.200"));
+    assert_eq!(reports[0].avg_px, Some(dec!(3505)));
+    assert_eq!(
+        *state.get_order_calls.lock().await,
+        if matches!(request, 2 | 3) {
+            vec![json!({"subaccount_id": TEST_SUBACCOUNT, "order_id": "foreign-current"})]
+        } else {
+            Vec::<Value>::new()
+        },
+    );
+}
+
+#[rstest]
+#[case::history_fetch_failure(0, Some(1))]
+#[case::history_conversion_failure(1, Some(1))]
+#[case::fill_failure(2, Some(1))]
+#[case::position_failure(3, Some(1))]
+#[case::open_failure(4, Some(1))]
+#[case::missing_parent_trade_bounded(5, Some(1))]
+#[case::missing_parent_trade_unbounded(5, None)]
+#[case::wrong_leg_totals_bounded(6, Some(1))]
+#[case::wrong_leg_totals_unbounded(6, None)]
+#[case::missing_current_trade_bounded(7, Some(1))]
+#[case::missing_current_trade_unbounded(7, None)]
+#[tokio::test]
+async fn test_fresh_cache_replacement_requires_complete_reports(
+    #[case] source: u8,
+    #[case] lookback: Option<u64>,
+) {
+    let state = RestState::default();
+    let cid = ClientOrderId::from("INCOMPLETE-CHAIN");
+    let parent_id = VenueOrderId::from("incomplete-parent");
+    let current_id = VenueOrderId::from("incomplete-current");
+    let now_ms = get_atomic_clock_realtime().get_time_ns().as_u64() / 1_000_000;
+    let mut parent = order_json_with(
+        parent_id.as_str(),
+        cid.as_str(),
+        "buy",
+        "ETH-PERP",
+        i64::try_from(now_ms - 2_000).unwrap(),
+        "cancelled",
+    );
+    parent["creation_timestamp"] = json!(now_ms - 3_000);
+    parent["amount"] = json!("1.0");
+    parent["filled_amount"] = json!("0.3");
+    parent["average_price"] = json!("3500");
+    let mut current = order_json_with(
+        current_id.as_str(),
+        cid.as_str(),
+        "buy",
+        "ETH-PERP",
+        i64::try_from(now_ms - 1_000).unwrap(),
+        "open",
+    );
+    current["creation_timestamp"] = json!(now_ms - 1_000);
+    current["amount"] = json!("0.7");
+    current["filled_amount"] = json!(if source >= 5 { "0.2" } else { "0" });
+    current["average_price"] = json!(if source >= 5 { "3505" } else { "0" });
+    current["replaced_order_id"] = json!(parent_id.as_str());
+    *state.open_orders_response.lock().await =
+        json!({"orders": [current.clone()], "subaccount_id": TEST_SUBACCOUNT});
+    let source_error = json!({"id": 1, "error": {"code": -32602, "message": "source unavailable"}});
+
+    let history = if source == 1 {
+        vec![
+            parent.clone(),
+            order_json_with(
+                "missing-metadata",
+                "MISSING-METADATA",
+                "buy",
+                "UNLOADED-PERP",
+                i64::try_from(now_ms - 1_000).unwrap(),
+                "open",
+            ),
+        ]
+    } else {
+        vec![parent.clone(), current]
+    };
+
+    *state.order_history_response.lock().await = if source == 0 {
+        source_error.clone()
+    } else {
+        json!({"orders": history, "pagination": {"count": 2, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT})
+    };
+
+    let mut fill = trade_json_with_label(
+        "incomplete-parent-fill",
+        parent_id.as_str(),
+        "ETH-PERP",
+        cid.as_str(),
+    );
+    fill["timestamp"] = json!(now_ms - 2_000);
+    fill["trade_amount"] = json!("0.3");
+    fill["trade_price"] = json!("3500");
+    fill["trade_fee"] = json!("0.03");
+    let mut trades = vec![fill];
+
+    if source >= 5 {
+        let mut child = trade_json_with_label(
+            "incomplete-current-fill",
+            current_id.as_str(),
+            "ETH-PERP",
+            cid.as_str(),
+        );
+        child["timestamp"] = json!(now_ms - 1_000);
+        child["trade_amount"] = json!("0.2");
+        child["trade_price"] = json!("3505");
+        child["trade_fee"] = json!("0.05");
+        trades.push(child);
+
+        match source {
+            5 => {
+                trades.remove(0);
+            }
+            6 => {
+                trades[0]["trade_amount"] = json!("0.2");
+                trades[1]["trade_amount"] = json!("0.3");
+            }
+            7 => {
+                trades.pop();
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    *state.trade_history_response.lock().await = json!({"trades": trades, "pagination": {"count": trades.len(), "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await = json!({"positions": [sample_position_json("ETH-PERP", if source >= 5 { "0.5" } else { "0.3" })], "subaccount_id": TEST_SUBACCOUNT});
+    match source {
+        2 => *state.trade_history_response.lock().await = source_error,
+        3 => *state.positions_response.lock().await = source_error,
+        4 => *state.open_orders_response.lock().await = source_error,
+        _ => {}
+    }
+
+    state
+        .get_order_responses
+        .lock()
+        .await
+        .insert(parent_id.to_string(), parent);
+    let mut tc = build_report_client(state, WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let result = tc.client.generate_mass_status(lookback).await;
+    tc.client.disconnect().await.unwrap();
+    let error = result.unwrap_err();
+    assert!(
+        error.to_string().contains(if source >= 5 {
+            "Incomplete native fills for uncached replacement"
+        } else {
+            "Incomplete reports for uncached replacement"
+        }),
+        "{error:#}"
+    );
+    assert_eq!(
+        tc.cache.borrow().orders(None, None, None, None, None).len(),
+        0
+    );
+}
+
+#[rstest]
+#[case::empty_cache(false, 0, false)]
+#[case::cached_control(true, 0, false)]
+#[case::ancestor_before_window(false, 120_000, false)]
+#[case::streamed_parent_fill(false, 0, true)]
+#[tokio::test]
+async fn test_fresh_cache_replacement_successor(
+    #[case] cached: bool,
+    #[case] ancestor_age_ms: u64,
+    #[case] streamed_parent_fill: bool,
+    #[values(false, true)] child_fill: bool,
+    #[values(false, true)] bounded: bool,
+    #[values(false, true)] stale_parent: bool,
+    #[values(false, true)] reverse_history: bool,
+) {
+    let epoch_ms = if bounded {
+        get_atomic_clock_realtime().get_time_ns().as_u64() / 1_000_000 - 4_000
+    } else {
+        1_700_000_002_000
+    };
+
+    let parent_ms = epoch_ms - ancestor_age_ms;
+    let state = RestState::default();
+    let cid = ClientOrderId::from("FRESH-REPLACEMENT");
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let parent_id = VenueOrderId::from("fresh-parent");
+    let current_id = VenueOrderId::from("fresh-current");
+    let mut parent = order_json_with(
+        parent_id.as_str(),
+        cid.as_str(),
+        "buy",
+        "ETH-PERP",
+        i64::try_from(parent_ms).unwrap(),
+        "cancelled",
+    );
+    parent["creation_timestamp"] = json!(parent_ms - 1_000);
+    parent["amount"] = json!("1.0");
+    parent["filled_amount"] = json!("0.3");
+    parent["average_price"] = json!("3500");
+    let mut current = order_json_with(
+        current_id.as_str(),
+        cid.as_str(),
+        "buy",
+        "ETH-PERP",
+        i64::try_from(epoch_ms + 1_000).unwrap(),
+        "open",
+    );
+    current["amount"] = json!("0.7");
+    current["filled_amount"] = json!(if child_fill { "0.2" } else { "0" });
+    current["average_price"] = json!(if child_fill { "3505" } else { "0" });
+    current["limit_price"] = json!("3505");
+    current["creation_timestamp"] = json!(epoch_ms + 500);
+    current["replaced_order_id"] = json!(parent_id.as_str());
+    *state.open_orders_response.lock().await =
+        json!({"orders":[current.clone()],"subaccount_id":TEST_SUBACCOUNT});
+    let mut history = Vec::new();
+
+    if stale_parent {
+        let mut stale = parent.clone();
+        stale["filled_amount"] = json!("0.2");
+        stale["last_update_timestamp"] = json!(parent_ms - 200);
+        history.push(stale);
+    }
+
+    history.push(parent.clone());
+    if reverse_history {
+        history.reverse();
+    }
+
+    *state.order_history_response.lock().await = json!({"orders":history,"pagination":{"count":1,"num_pages":1},"subaccount_id":TEST_SUBACCOUNT});
+    let mut fill = trade_json_with_label(
+        "fresh-parent-fill",
+        parent_id.as_str(),
+        "ETH-PERP",
+        cid.as_str(),
+    );
+    fill["timestamp"] = json!(parent_ms);
+    fill["trade_amount"] = json!("0.3");
+    fill["trade_price"] = json!("3500");
+    fill["trade_fee"] = json!("0.03");
+    let mut trades = vec![fill];
+
+    if child_fill {
+        let mut child = trade_json_with_label(
+            "fresh-current-fill",
+            current_id.as_str(),
+            "ETH-PERP",
+            cid.as_str(),
+        );
+        child["timestamp"] = json!(epoch_ms + 1_000);
+        child["trade_amount"] = json!("0.2");
+        child["trade_price"] = json!("3505");
+        child["trade_fee"] = json!("0.05");
+        trades.push(child);
+    }
+
+    *state.trade_history_response.lock().await = json!({"trades":trades.clone(),"pagination":{"count":trades.len(),"num_pages":1},"subaccount_id":TEST_SUBACCOUNT});
+    let mut position = sample_position_json("ETH-PERP", if child_fill { "0.5" } else { "0.3" });
+    position["average_price"] = json!(if child_fill { "3502.16" } else { "3500.1" });
+    *state.positions_response.lock().await =
+        json!({"positions":[position],"subaccount_id":TEST_SUBACCOUNT});
+    state
+        .get_order_responses
+        .lock()
+        .await
+        .insert(parent_id.as_str().to_string(), parent);
+    state
+        .get_order_responses
+        .lock()
+        .await
+        .insert(current_id.as_str().to_string(), current);
+
+    if bounded && ancestor_age_ms > 0 {
+        state.order_history_pages.lock().await.push(json!({"orders": [], "pagination": {"count": 0, "num_pages": 0}, "subaccount_id": TEST_SUBACCOUNT}));
+        state.trade_history_pages.lock().await.push(json!({"trades": trades.iter().skip(1).cloned().collect::<Vec<_>>(), "pagination": {"count": usize::from(child_fill), "num_pages": usize::from(child_fill)}, "subaccount_id": TEST_SUBACCOUNT}));
+    }
+
+    let ws_state = WsState::default();
+    let mut tc = build_report_client(state.clone(), ws_state.clone()).await;
+    assert_eq!(
+        tc.cache.borrow().orders(None, None, None, None, None).len(),
+        0
+    );
+
+    if cached {
+        let mut order = accepted_order(
+            build_limit_order(
+                instrument_id,
+                cid,
+                OrderSide::Buy,
+                Price::from("3500.00"),
+                Quantity::from("1.000"),
+            ),
+            parent_id,
+            AccountId::from("DERIVE-001"),
+        );
+        order
+            .apply(OrderEventAny::Updated(OrderUpdated::new(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument_id,
+                cid,
+                Quantity::from("1.000"),
+                UUID4::new(),
+                UnixNanos::from(2),
+                UnixNanos::from(2),
+                false,
+                Some(current_id),
+                order.account_id(),
+                Some(Price::from("3505.00")),
+                None,
+                None,
+                false,
+            )))
+            .unwrap();
+        add_order_to_cache(&tc.cache, order, Some(ClientId::from("DERIVE")));
+    }
+
+    tc.client.connect().await.unwrap();
+
+    if streamed_parent_fill {
+        ws_state.push_notification(make_subscription_frame(
+            &format!("{TEST_SUBACCOUNT}.trades"),
+            &json!([trades[0].clone()]),
+        ));
+        let event = drain_until(
+            &mut tc.rx,
+            |event| matches!(event, ExecutionEvent::Report(ExecutionReport::Fill(_))),
+            "Streamed native parent fill before recovery",
+        )
+        .await;
+
+        let ExecutionEvent::Report(ExecutionReport::Fill(report)) = event else {
+            unreachable!();
+        };
+
+        assert_eq!(report.trade_id, TradeId::from("fresh-parent-fill"));
+        assert_eq!(report.venue_order_id, parent_id);
+        assert_eq!(report.last_qty, Quantity::from("0.300"));
+    }
+
+    let mass = tc
+        .client
+        .generate_mass_status(bounded.then_some(1))
+        .await
+        .unwrap()
+        .unwrap();
+
+    if bounded && ancestor_age_ms > 0 {
+        let calls = state.trade_history_calls.lock().await;
+        assert_eq!(calls.len(), 2);
+        assert!(calls[0]["from_timestamp"].as_u64().unwrap() > parent_ms);
+        assert!(calls[1]["from_timestamp"].as_u64().unwrap() <= parent_ms - 1_000);
+        assert!(mass.lookback_start().unwrap() <= UnixNanos::from((parent_ms - 1_000) * 1_000_000));
+    }
+
+    let aliases = tc.client.venue_order_ids(&mass);
+    assert_eq!(
+        aliases.as_ref().map_or(0, |aliases| aliases.len()),
+        usize::from(!cached)
+    );
+    assert_eq!(
+        aliases
+            .as_ref()
+            .and_then(|aliases| aliases.get(&cid))
+            .map(Vec::as_slice),
+        (!cached).then_some([parent_id, current_id].as_slice())
+    );
+    let reports = mass.order_reports();
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[&parent_id].order_status, OrderStatus::Canceled);
+    assert_eq!(reports[&current_id].client_order_id, Some(cid));
+    assert_eq!(reports[&current_id].quantity, Quantity::from("1.000"));
+    assert_eq!(
+        reports[&current_id].filled_qty,
+        Quantity::from(if child_fill { "0.500" } else { "0.300" })
+    );
+    assert_eq!(
+        reports[&current_id].avg_px,
+        Some(if child_fill { dec!(3502) } else { dec!(3500) })
+    );
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), tc.cache.clone(), None);
+    engine.register_client(Box::new(tc.client)).unwrap();
+    let engine = RefCell::new(engine);
+    let mut manager =
+        ExecutionManager::new(clock, tc.cache.clone(), ExecutionManagerConfig::default()).unwrap();
+    let first = manager.reconcile_execution_mass_status(&mass, &engine);
+    assert_eq!(
+        engine
+            .borrow()
+            .get_client(&mass.client_id)
+            .unwrap()
+            .venue_order_ids(&mass),
+        None
+    );
+    let repeated = manager.reconcile_execution_mass_status(&mass, &engine);
+    let mut engine = engine.into_inner();
+    let client = engine.get_client(&mass.client_id).unwrap();
+    client
+        .query_order(QueryOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(mass.client_id),
+            StrategyId::from("EXTERNAL"),
+            instrument_id,
+            cid,
+            Some(current_id),
+            UUID4::new(),
+            UnixNanos::from(9),
+            None,
+            None,
+        ))
+        .unwrap();
+    let event = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_))),
+        "Recovered replacement query report",
+    )
+    .await;
+
+    let ExecutionEvent::Report(ExecutionReport::Order(mut queried)) = event else {
+        unreachable!();
+    };
+
+    queried.report_id = reports[&current_id].report_id;
+    queried.ts_init = reports[&current_id].ts_init;
+    engine
+        .get_client_adapter_mut(&mass.client_id)
+        .unwrap()
+        .disconnect()
+        .await
+        .unwrap();
+    let cache = tc.cache.borrow();
+    let order = cache.order(&cid).unwrap();
+    assert_eq!(*queried, reports[&current_id]);
+    assert!(repeated.events.is_empty());
+    assert_eq!(
+        first
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        if child_fill { 2 } else { 1 }
+    );
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.venue_order_id(), Some(current_id));
+    assert_eq!(order.quantity(), Quantity::from("1.000"));
+    assert_eq!(
+        order.filled_qty(),
+        Quantity::from(if child_fill { "0.500" } else { "0.300" })
+    );
+    let mut trade_ids = vec![TradeId::from("fresh-parent-fill")];
+    if child_fill {
+        trade_ids.push(TradeId::from("fresh-current-fill"));
+    }
+
+    assert_eq!(order.trade_ids(), trade_ids.iter().collect::<Vec<_>>());
+    assert_eq!(
+        order.avg_px(),
+        Some(if child_fill { dec!(3502) } else { dec!(3500) })
+    );
+    assert_eq!(
+        order.commissions().get(&Currency::USDC()),
+        Some(&Money::from(if child_fill {
+            "0.08 USDC"
+        } else {
+            "0.03 USDC"
+        }))
+    );
+}
+
+#[rstest]
+#[case::open_root(0)]
+#[case::open_middle(1)]
+#[case::fork(2)]
+#[case::cycle(3)]
+#[tokio::test]
+async fn test_fresh_cache_replacement_rejects_invalid_head(#[case] scenario: u8) {
+    let state = RestState::default();
+    let cid = "INVALID-FRESH-CHAIN";
+    let mut parent = order_json_with(
+        "invalid-parent",
+        cid,
+        "buy",
+        "ETH-PERP",
+        1_700_000_001_000,
+        "cancelled",
+    );
+    let mut current = order_json_with(
+        "invalid-current",
+        cid,
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_000,
+        "open",
+    );
+    let mut child = order_json_with(
+        "invalid-child",
+        cid,
+        "buy",
+        "ETH-PERP",
+        1_700_000_003_000,
+        "cancelled",
+    );
+    current["replaced_order_id"] = json!("invalid-parent");
+    child["replaced_order_id"] = json!("invalid-current");
+
+    let history = match scenario {
+        0 => {
+            current["replaced_order_id"] = Value::Null;
+            vec![child]
+        }
+        1 => vec![parent, child],
+        2 => {
+            child["replaced_order_id"] = json!("invalid-parent");
+            vec![parent, child]
+        }
+        3 => {
+            parent["replaced_order_id"] = json!("invalid-current");
+            vec![parent]
+        }
+        _ => unreachable!(),
+    };
+
+    *state.open_orders_response.lock().await =
+        json!({"orders":[current],"subaccount_id":TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({"orders":history,"pagination":{"count":history.len(),"num_pages":1},"subaccount_id":TEST_SUBACCOUNT});
+    let mut tc = build_report_client(state, WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let result = tc.client.generate_mass_status(None).await;
+    tc.client.disconnect().await.unwrap();
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Invalid native replacement head in open orders"
+    );
+    assert_eq!(
+        tc.cache.borrow().orders(None, None, None, None, None).len(),
+        0
+    );
+}
+
+#[rstest]
+#[case::side("direction", json!("sell"), "Native replacement order side does not match")]
+#[case::label("label", json!("ANOTHER-LABEL"), "Native replacement order identity does not match")]
+#[case::amount("amount", json!("-1"), "Invalid native replacement amount or filled amount")]
+#[tokio::test]
+async fn test_fresh_cache_replacement_rejects_invalid_ancestry(
+    #[case] field: &str,
+    #[case] value: Value,
+    #[case] reason: &str,
+    #[values(None, Some(10_000_000))] lookback: Option<u64>,
+) {
+    let state = RestState::default();
+    let mut parent = order_json_with(
+        "invalid-ancestor",
+        "INVALID-ANCESTRY",
+        "buy",
+        "ETH-PERP",
+        1_700_000_001_000,
+        "cancelled",
+    );
+    parent[field] = value;
+    let mut current = order_json_with(
+        "invalid-successor",
+        "INVALID-ANCESTRY",
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_000,
+        "open",
+    );
+    current["replaced_order_id"] = json!("invalid-ancestor");
+    *state.open_orders_response.lock().await =
+        json!({"orders": [current], "subaccount_id": TEST_SUBACCOUNT});
+    *state.order_history_response.lock().await = json!({"orders": [parent], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT});
+    let mut tc = build_report_client(state, WsState::default()).await;
+    tc.client.connect().await.unwrap();
+    let result = tc.client.generate_mass_status(lookback).await;
+    tc.client.disconnect().await.unwrap();
+    let error = result.unwrap_err();
+    assert!(format!("{error:#}").contains(reason), "{error:#}");
+    assert_eq!(
+        tc.cache.borrow().orders(None, None, None, None, None).len(),
+        0
+    );
 }

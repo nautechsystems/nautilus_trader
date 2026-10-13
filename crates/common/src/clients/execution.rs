@@ -19,6 +19,7 @@ use std::{fmt::Debug, future::Future, pin::Pin};
 
 use anyhow::Context;
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use nautilus_core::{DurationNanos, Params, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     accounts::AccountAny,
@@ -116,6 +117,24 @@ pub trait ExecutionClient {
     /// or missing-order resolution is enabled.
     fn retain_unresolved_submissions(&self) -> bool {
         false
+    }
+
+    /// Returns venue order ID histories for startup reconciliation, keyed by client order ID.
+    ///
+    /// Each history covers one proven logical order: at least two IDs, oldest first and current last.
+    ///
+    /// - Reports share a client order ID and exclude cached orders and indexed venue IDs.
+    /// - Previous reports are closed and contribute only fills and ID history.
+    /// - The current report is open, with logical quantity and cumulative fills.
+    /// - Its acceptance time is no later than any fill in the history.
+    ///
+    /// The live execution manager consumes these histories. Defaults to `None`; overrides must not
+    /// change client state.
+    fn venue_order_ids(
+        &self,
+        _mass_status: &ExecutionMassStatus,
+    ) -> Option<IndexMap<ClientOrderId, Vec<VenueOrderId>>> {
+        None
     }
 
     /// Returns the maximum absolute position difference tolerated during reconciliation.

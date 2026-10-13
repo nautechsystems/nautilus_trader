@@ -4511,15 +4511,15 @@ mod tests {
         feed.connect().await.expect("connect feed");
         wait_for_op(&state, "subscribe").await;
         state.clear_received_payloads().await;
+        let ws_client = feed.current_ws().expect("active socket");
 
         state
             .close_all_connections_with_code(POLYBOLT_CLOSE_CODE_DRAINING)
             .await;
+
+        // The original socket stays disconnected even if recovery finishes between polls
         wait_until_async(
-            || {
-                let feed = feed.clone();
-                async move { feed.current_ws().is_none() }
-            },
+            || async { ws_client.is_disconnected() },
             Duration::from_secs(5),
         )
         .await;

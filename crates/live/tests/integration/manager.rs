@@ -27,7 +27,7 @@ use std::{
 
 use ahash::AHashSet;
 use async_trait::async_trait;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     cache::Cache,
@@ -388,10 +388,11 @@ struct ManagerLogCapture {
 impl Log for ManagerLogCapture {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         metadata.level() <= Level::Warn
-            && matches!(
+            && (matches!(
                 metadata.target(),
                 "nautilus_live::execution::manager" | "nautilus_live::execution::reconciliation"
-            )
+            ) || metadata.target() == "nautilus_common::cache"
+                && metadata.level() == Level::Error)
     }
 
     fn log(&self, record: &Record<'_>) {
@@ -14958,6 +14959,7 @@ async fn test_reconciliation_instrument_ids_filters_position_reports() {
 }
 
 struct MockExecutionClient {
+    order_venue_ids: IndexMap<ClientOrderId, Vec<VenueOrderId>>,
     retain_unresolved_submissions: bool,
     client_id: ClientId,
     account_id: AccountId,
@@ -14983,6 +14985,7 @@ impl MockExecutionClient {
     fn new(order_reports: Vec<OrderStatusReport>) -> Self {
         Self {
             retain_unresolved_submissions: false,
+            order_venue_ids: IndexMap::new(),
             client_id: test_client_id(),
             account_id: test_account_id(),
             venue: test_venue(),
@@ -15007,6 +15010,7 @@ impl MockExecutionClient {
     fn for_venue(client_id: ClientId, venue: Venue, order_reports: Vec<OrderStatusReport>) -> Self {
         Self {
             retain_unresolved_submissions: false,
+            order_venue_ids: IndexMap::new(),
             client_id,
             account_id: test_account_id(),
             venue,
@@ -15031,6 +15035,7 @@ impl MockExecutionClient {
     fn failing(client_id: ClientId, venue: Venue) -> Self {
         Self {
             retain_unresolved_submissions: false,
+            order_venue_ids: IndexMap::new(),
             client_id,
             account_id: test_account_id(),
             venue,
@@ -15096,6 +15101,13 @@ impl MockExecutionClient {
 
 #[async_trait(?Send)]
 impl ExecutionClient for MockExecutionClient {
+    fn venue_order_ids(
+        &self,
+        _mass_status: &ExecutionMassStatus,
+    ) -> Option<IndexMap<ClientOrderId, Vec<VenueOrderId>>> {
+        (!self.order_venue_ids.is_empty()).then(|| self.order_venue_ids.clone())
+    }
+
     fn retain_unresolved_submissions(&self) -> bool {
         self.retain_unresolved_submissions
     }
@@ -20597,5 +20609,429 @@ async fn test_zero_quantity_fill_does_not_suppress_hedge_position_report() {
     assert_eq!(
         cache.position(&position_id).unwrap().quantity,
         Quantity::from("5.0")
+    );
+}
+
+#[rstest]
+#[case::ordinary(false, false)]
+#[case::duplicate(true, false)]
+#[case::flat_crossing(false, true)]
+#[tokio::test]
+async fn test_fresh_cache_replacement_chain_preserves_native_fills(
+    #[values(false, true)] child_fill: bool,
+    #[values(false, true)] reverse_reports: bool,
+    #[values(false, true)] parent_label: bool,
+    #[case] duplicate_fill: bool,
+    #[case] crosses_flat: bool,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let mut ctx = TestContext::new();
+    ctx.add_instrument(test_instrument());
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    ctx.manager
+        .claim_external_orders(test_instrument_id(), strategy_id)
+        .unwrap();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+    let mut client = MockExecutionClient::new(Vec::new());
+    client.order_venue_ids.insert(
+        ClientOrderId::from("O-FRESH-CHAIN"),
+        vec![
+            VenueOrderId::from("V-FRESH-ROOT"),
+            VenueOrderId::from("V-FRESH-MIDDLE"),
+            VenueOrderId::from("V-FRESH-CURRENT"),
+        ],
+    );
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.deregister_client(test_client_id()).unwrap();
+        engine.register_client(Box::new(client)).unwrap();
+    }
+
+    let cid = ClientOrderId::from("O-FRESH-CHAIN");
+    let root_id = VenueOrderId::from("V-FRESH-ROOT");
+    let middle_id = VenueOrderId::from("V-FRESH-MIDDLE");
+    let current_id = VenueOrderId::from("V-FRESH-CURRENT");
+
+    let filled = if child_fill { "0.5" } else { "0.3" };
+
+    let average = if child_fill {
+        dec!(3500)
+    } else {
+        dec!(10300) / dec!(3)
+    };
+
+    let mut reports = vec![
+        create_order_report(
+            Some(cid),
+            root_id,
+            test_instrument_id(),
+            OrderStatus::Canceled,
+            Quantity::from("1.0"),
+            Quantity::from("0.2"),
+        ),
+        create_order_report(
+            Some(cid),
+            middle_id,
+            test_instrument_id(),
+            OrderStatus::Canceled,
+            Quantity::from("0.8"),
+            Quantity::from("0.1"),
+        ),
+        create_order_report(
+            Some(cid),
+            current_id,
+            test_instrument_id(),
+            OrderStatus::PartiallyFilled,
+            Quantity::from("1.0"),
+            Quantity::from(filled),
+        )
+        .with_avg_px(average),
+    ];
+
+    for (index, report) in reports.iter_mut().enumerate() {
+        report.ts_accepted = UnixNanos::from(100 + index as u64 * 50);
+        report.ts_last = UnixNanos::from(900 + index as u64 * 50);
+        report.price = Some(Price::from("3605.00"));
+    }
+
+    reports[2].ts_accepted = UnixNanos::from(100);
+    if reverse_reports {
+        reports.reverse();
+    }
+
+    let root_fill = FillReport::new(
+        test_account_id(),
+        test_instrument_id(),
+        root_id,
+        TradeId::from("T-FRESH-ROOT"),
+        OrderSide::Buy,
+        Quantity::from("0.2"),
+        Price::from("3400.00"),
+        Money::from("0.02 USDT"),
+        LiquiditySide::Maker,
+        parent_label.then_some(cid),
+        None,
+        UnixNanos::from(200),
+        UnixNanos::from(2000),
+        None,
+    );
+
+    let middle_fill = FillReport::new(
+        test_account_id(),
+        test_instrument_id(),
+        middle_id,
+        TradeId::from("T-FRESH-MIDDLE"),
+        OrderSide::Buy,
+        Quantity::from("0.1"),
+        Price::from("3500.00"),
+        Money::from("0.03 USDT"),
+        LiquiditySide::Taker,
+        parent_label.then_some(cid),
+        None,
+        UnixNanos::from(250),
+        UnixNanos::from(2000),
+        None,
+    );
+    let mut fills = vec![middle_fill, root_fill.clone()];
+    if child_fill {
+        fills.push(FillReport::new(
+            test_account_id(),
+            test_instrument_id(),
+            current_id,
+            TradeId::from("T-FRESH-CURRENT"),
+            OrderSide::Buy,
+            Quantity::from("0.2"),
+            Price::from("3600.00"),
+            Money::from("0.05 USDT"),
+            LiquiditySide::Taker,
+            Some(cid),
+            None,
+            UnixNanos::from(300),
+            UnixNanos::from(2000),
+            None,
+        ));
+    }
+
+    if duplicate_fill {
+        fills.push(root_fill);
+    }
+
+    let mut mass = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(2000),
+        None,
+    );
+    mass.add_order_reports(reports);
+    mass.add_fill_reports(fills);
+
+    if crosses_flat {
+        let close_id = VenueOrderId::from("V-FRESH-CLOSE");
+        mass.add_order_reports(vec![
+            create_order_report_for_side(
+                Some(ClientOrderId::from("O-FRESH-CLOSE")),
+                close_id,
+                test_instrument_id(),
+                OrderSide::Sell,
+                OrderStatus::Filled,
+                Quantity::from("0.3"),
+                Quantity::from("0.3"),
+            )
+            .with_avg_px(dec!(3550)),
+        ]);
+        mass.add_fill_reports(vec![FillReport::new(
+            test_account_id(),
+            test_instrument_id(),
+            close_id,
+            TradeId::from("T-FRESH-CLOSE"),
+            OrderSide::Sell,
+            Quantity::from("0.3"),
+            Price::from("3550.00"),
+            Money::from("0.07 USDT"),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::from("O-FRESH-CLOSE")),
+            None,
+            UnixNanos::from(275),
+            UnixNanos::from(2000),
+            None,
+        )]);
+        mass.add_position_reports(vec![PositionStatusReport::new(
+            test_account_id(),
+            test_instrument_id(),
+            if child_fill {
+                PositionSide::Long
+            } else {
+                PositionSide::Flat
+            },
+            Quantity::from(if child_fill { "0.2" } else { "0.0" }),
+            UnixNanos::from(1000),
+            UnixNanos::from(2000),
+            None,
+            None,
+            Some(dec!(3600)),
+        )]);
+    }
+
+    let first = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    let repeated = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    let order = ctx.get_order(&cid).unwrap();
+
+    let fills: Vec<_> = first
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == cid => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    let mut expected_trades = vec![
+        TradeId::from("T-FRESH-ROOT"),
+        TradeId::from("T-FRESH-MIDDLE"),
+    ];
+
+    if child_fill {
+        expected_trades.push(TradeId::from("T-FRESH-CURRENT"));
+    }
+
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.venue_order_id(), Some(current_id));
+    assert_eq!(
+        order.venue_order_ids(),
+        vec![&root_id, &middle_id, &current_id]
+    );
+    assert_eq!(order.quantity(), Quantity::from("1.0"));
+    assert_eq!(order.filled_qty(), Quantity::from(filled));
+    assert_eq!(order.avg_px(), Some(average));
+    assert_eq!(
+        order.trade_ids(),
+        expected_trades.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&Money::from(if child_fill {
+            "0.10 USDT"
+        } else {
+            "0.05 USDT"
+        }))
+    );
+    assert_eq!(fills.len(), if child_fill { 3 } else { 2 });
+    assert_eq!(fills[0].venue_order_id, root_id);
+    assert_eq!(fills[0].trade_id, TradeId::from("T-FRESH-ROOT"));
+    assert_eq!(fills[0].last_qty, Quantity::from("0.2"));
+    assert_eq!(fills[0].last_px, Price::from("3400.00"));
+    assert_eq!(fills[0].commission, Some(Money::from("0.02 USDT")));
+    assert_eq!(fills[0].liquidity_side, LiquiditySide::Maker);
+    assert_eq!(fills[0].ts_event, UnixNanos::from(200));
+    assert_eq!(fills[1].venue_order_id, middle_id);
+    assert_eq!(fills[1].trade_id, TradeId::from("T-FRESH-MIDDLE"));
+    assert_eq!(fills[1].last_qty, Quantity::from("0.1"));
+    assert_eq!(fills[1].last_px, Price::from("3500.00"));
+    assert_eq!(fills[1].commission, Some(Money::from("0.03 USDT")));
+    assert_eq!(fills[1].liquidity_side, LiquiditySide::Taker);
+    assert_eq!(fills[1].ts_event, UnixNanos::from(250));
+
+    if child_fill {
+        assert_eq!(fills[2].venue_order_id, current_id);
+        assert_eq!(fills[2].trade_id, TradeId::from("T-FRESH-CURRENT"));
+        assert_eq!(fills[2].last_qty, Quantity::from("0.2"));
+        assert_eq!(fills[2].last_px, Price::from("3600.00"));
+        assert_eq!(fills[2].commission, Some(Money::from("0.05 USDT")));
+        assert_eq!(fills[2].liquidity_side, LiquiditySide::Taker);
+        assert_eq!(fills[2].ts_event, UnixNanos::from(300));
+    }
+
+    assert!(
+        repeated
+            .events
+            .iter()
+            .all(|event| crosses_flat && event.client_order_id() != cid)
+    );
+    assert!(!MANAGER_LOG_CAPTURE.messages.lock().iter().any(|message| {
+        message.starts_with("Error indexing venue order ID")
+            || message.starts_with("Cannot initialize venue order ID history")
+    }));
+    let cache = ctx.cache.borrow();
+    assert_eq!(
+        cache.orders(None, None, None, None, None).len(),
+        1 + usize::from(crosses_flat)
+    );
+    assert_eq!(cache.venue_order_id(&cid), Some(&current_id));
+
+    for id in [root_id, middle_id, current_id] {
+        assert_eq!(cache.client_order_id(&id), Some(&cid));
+    }
+
+    let positions = cache.positions_open(None, Some(&test_instrument_id()), None, None, None);
+    assert_eq!(positions.len(), usize::from(!crosses_flat || child_fill));
+
+    if positions.is_empty() {
+        return;
+    }
+
+    assert_eq!(
+        positions[0].quantity,
+        Quantity::from(if crosses_flat { "0.2" } else { filled })
+    );
+    assert_eq!(
+        positions[0].trade_ids,
+        if crosses_flat {
+            vec![TradeId::from("T-FRESH-CURRENT")]
+        } else {
+            expected_trades
+        }
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(
+        positions[0].commissions(),
+        vec![Money::from(if child_fill && !crosses_flat {
+            "0.10 USDT"
+        } else {
+            "0.05 USDT"
+        })]
+    );
+}
+
+#[rstest]
+#[case::ordinary_client(false)]
+#[case::venue_id_history_client(true)]
+#[tokio::test]
+async fn test_fresh_cache_venue_id_history_requires_client_proof(#[case] venue_id_history: bool) {
+    let mut ctx = TestContext::new();
+    ctx.add_instrument(test_instrument());
+    let mut client = MockExecutionClient::new(Vec::new());
+    if venue_id_history {
+        client.order_venue_ids.insert(
+            ClientOrderId::from("O-LABEL-PROOF"),
+            vec![
+                VenueOrderId::from("V-LABEL-PARENT"),
+                VenueOrderId::from("V-LABEL-CURRENT"),
+            ],
+        );
+    }
+
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.deregister_client(test_client_id()).unwrap();
+        engine.register_client(Box::new(client)).unwrap();
+    }
+
+    let cid = ClientOrderId::from("O-LABEL-PROOF");
+    let parent_id = VenueOrderId::from("V-LABEL-PARENT");
+    let current_id = VenueOrderId::from("V-LABEL-CURRENT");
+    let reports = vec![
+        create_order_report(
+            Some(cid),
+            parent_id,
+            test_instrument_id(),
+            OrderStatus::Canceled,
+            Quantity::from("1.0"),
+            Quantity::from("0.0"),
+        )
+        .with_price(Price::from("3500.00")),
+        create_order_report(
+            Some(cid),
+            current_id,
+            test_instrument_id(),
+            OrderStatus::Accepted,
+            Quantity::from("1.0"),
+            Quantity::from("0.0"),
+        )
+        .with_price(Price::from("3500.00")),
+    ];
+
+    let mut mass = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(2000),
+        None,
+    );
+    mass.add_order_reports(reports);
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    let order = ctx.get_order(&cid).unwrap();
+    assert_eq!(
+        order.status(),
+        if venue_id_history {
+            OrderStatus::Accepted
+        } else {
+            OrderStatus::Canceled
+        }
+    );
+    assert_eq!(
+        order.venue_order_id(),
+        Some(if venue_id_history {
+            current_id
+        } else {
+            parent_id
+        })
+    );
+    assert_eq!(order.quantity(), Quantity::from("1.0"));
+    assert_eq!(order.filled_qty(), Quantity::from("0.0"));
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Updated(_)))
+            .count(),
+        usize::from(venue_id_history)
+    );
+    assert_eq!(
+        ctx.cache
+            .borrow()
+            .orders(None, None, None, None, None)
+            .len(),
+        1
     );
 }
