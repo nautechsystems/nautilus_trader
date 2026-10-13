@@ -754,6 +754,10 @@ jobs:
           rust-cache-workspaces: . -> target/build-macos
           rust-cache-save-if: ${{ github.event_name == 'push' }}
 
+      - name: Run check-all-targets
+        if: matrix.python-version == '3.13'
+        run: make check-all-targets
+
       - name: Update version in pyproject.toml
         if: ${{ github.ref != 'refs/heads/master' }}
         working-directory: ${{ env.PACKAGE_DIR }}
