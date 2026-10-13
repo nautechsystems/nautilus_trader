@@ -918,6 +918,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-check-docker-toolchain-pins.bash
 	$Q bash scripts/ci/test-check-miri-toolchain.bash
 	$Q bash scripts/ci/test-check-nightly-merge-status.bash
+	$Q bash scripts/ci/test-check-python-result.bash
 	$Q bash scripts/ci/test-check-workspace-test-coverage.bash
 	$Q bash scripts/ci/test-configure-r2-aws.bash
 	$Q bash scripts/ci/test-docker-workflow-scripts.bash
