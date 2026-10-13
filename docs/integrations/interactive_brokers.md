@@ -342,6 +342,15 @@ and clear the affected book side, so a one-sided market emits nothing rather tha
 Genuine zero and negative prices, including a `-1` price with a size, which calendar spreads
 produce routinely, flow through.
 
+IB reports IDEALPRO prices in steps finer than a pair's `minTick`, which is the pair's price
+increment. The adapter rounds a pair's bid prices down and its ask prices up to the increment, so
+a published bid is never above IB's bid, a published ask is never below IB's ask, and a quote IB
+sends unlocked never locks or crosses. This applies to quotes, historical bid and ask ticks, and
+the prices of bid and ask bars. Every other price (trades, midpoint, last and index prices, and the
+bars built from them) rounds to the nearest increment, with ties going to the even multiple. Order
+book levels are not rounded, because two IB levels could round to one price. Other instruments are
+not rounded.
+
 For historical data, `HistoricalInteractiveBrokersClient` accepts an instrument provider and data
 client config. Constructing this Python client connects immediately, so keep it behind the same
 explicit run gate as the request:
@@ -659,6 +668,25 @@ On connect, the execution client loads and publishes the spread and leg instrume
 combo order, so startup reconciliation restores those orders even when the node does not load the spread
 itself. Startup fill reports hold each combo order's combo-level fills. Its leg executions are left out, and
 the leg positions reconcile from IB's position reports.
+
+### Price magnifier
+
+IB prices some contracts in a sub-unit of their currency, such as CBOT grains in cents and LSE
+stocks in pence, and reports a `priceMagnifier` for them (100 for both). The adapter divides every
+price IB reports for such a contract by the magnifier (market data, historical data, fills, and
+order reports), and multiplies the prices of orders it sends by it. Nautilus prices are therefore
+in the contract's currency, so a ZC bar IB reports at 486.25 is 4.8625, and `price * multiplier`
+is the contract value. IB's `minTick` is already in the contract's currency, so the instrument's
+price increment is the `minTick` as reported. A magnified option's strike is divided by the
+magnifier too. Prices given in `IBOrderTags` (for example `starting_price`, `stock_ref_price`,
+`discretionary_amt`, and `delta_neutral_aux_price`) and in order conditions are passed to IB as
+given, in IB's units, so a magnified contract's tag or condition price is the price IB reports for
+it, not the Nautilus price.
+
+Position average cost is a price in the contract's currency times the multiplier, so the adapter
+divides it by the multiplier only. A magnified option's greeks are expressed in the same units: the
+underlying price and the price-denominated greeks (gamma, vega, and theta) are converted, while
+delta, the implied volatilities, and open interest are not.
 
 ## Configuration reference
 

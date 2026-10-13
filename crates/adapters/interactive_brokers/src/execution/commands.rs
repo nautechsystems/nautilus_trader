@@ -11,7 +11,10 @@
 
 use nautilus_common::live::sender::EventSender;
 
-use super::core::*;
+use super::{
+    core::*,
+    transform::{convert_f64, convert_price},
+};
 
 impl InteractiveBrokersExecutionClient {
     #[allow(clippy::too_many_arguments)] // Command execution uses explicit client state.
@@ -260,13 +263,13 @@ impl InteractiveBrokersExecutionClient {
             ib_order.total_quantity = quantity.as_f64();
         }
 
-        let price_magnifier = instrument_provider.get_price_magnifier(&cmd.instrument_id) as f64;
+        let price_magnifier = instrument_provider.get_price_magnifier(&cmd.instrument_id);
         if let Some(price) = cmd.price {
-            ib_order.limit_price = Some(price.as_f64() / price_magnifier);
+            ib_order.limit_price = Some(convert_price(price, price_magnifier));
         }
 
         if let Some(trigger_price) = cmd.trigger_price {
-            let converted_trigger_price = trigger_price.as_f64() / price_magnifier;
+            let converted_trigger_price = convert_price(trigger_price, price_magnifier);
 
             if matches!(ib_order.order_type.as_str(), "TRAIL" | "TRAIL LIMIT") {
                 // IB rejects a trailing stop price change that keeps the trailing amount (10067)
@@ -285,11 +288,12 @@ impl InteractiveBrokersExecutionClient {
                         )
                     })?;
 
-                // The order keeps its offset type: basis points convert to IB's percent
+                // The order keeps its offset type: basis points convert to IB's percent, a price
+                // amount to IB's price unit
                 if ib_order.trailing_percent.is_some() {
                     ib_order.trailing_percent = Some(trailing_offset / 100.0);
                 } else {
-                    ib_order.aux_price = Some(trailing_offset);
+                    ib_order.aux_price = Some(convert_f64(trailing_offset, price_magnifier));
                 }
 
                 ib_order.trail_stop_price = Some(converted_trigger_price);
@@ -837,7 +841,7 @@ impl InteractiveBrokersExecutionClient {
 #[cfg(test)]
 mod tests {
     use nautilus_core::Params;
-    use nautilus_model::identifiers::Symbol;
+    use nautilus_model::{identifiers::Symbol, instruments::stubs::equity_aapl};
     use serde_json::json;
 
     use super::*;
@@ -964,5 +968,67 @@ mod tests {
 
         assert_eq!(ib_order.aux_price, Some(149.5));
         assert_eq!(ib_order.trail_stop_price, None);
+    }
+
+    fn magnified_provider() -> Arc<InteractiveBrokersInstrumentProvider> {
+        let provider = instrument_provider();
+        provider.insert_test_instrument(InstrumentAny::Equity(equity_aapl()), 4242, 100);
+        provider
+    }
+
+    #[rstest::rstest]
+    #[case::price_offset(None, json!(0.0525), Some(5.25), None)]
+    #[case::basis_point_offset(Some(0.25), json!(50), Some(0.5), Some(0.5))]
+    fn modify_magnified_trailing_stop_scales_price_amounts_only(
+        #[case] trailing_percent: Option<f64>,
+        #[case] trailing_offset: serde_json::Value,
+        #[case] expected_aux: Option<f64>,
+        #[case] expected_percent: Option<f64>,
+    ) {
+        let mut ib_order = ibapi::orders::Order {
+            order_type: "TRAIL".to_string(),
+            aux_price: Some(0.5),
+            trailing_percent,
+            ..Default::default()
+        };
+        let mut cmd = modify_trigger_cmd();
+        cmd.instrument_id = InstrumentId::from("AAPL.XNAS");
+        cmd.trigger_price = Some(Price::from("4.8125"));
+        let mut params = Params::new();
+        params.insert(MODIFY_TRAILING_OFFSET_PARAM.to_string(), trailing_offset);
+        cmd.params = Some(params);
+
+        InteractiveBrokersExecutionClient::apply_modify_fields_to_ib_order(
+            &cmd,
+            &mut ib_order,
+            &magnified_provider(),
+        )
+        .unwrap();
+
+        assert_eq!(ib_order.trail_stop_price, Some(481.25));
+        assert_eq!(ib_order.aux_price, expected_aux);
+        assert_eq!(ib_order.trailing_percent, expected_percent);
+    }
+
+    #[rstest::rstest]
+    fn modify_magnified_limit_and_stop_send_ib_unit_prices() {
+        let mut ib_order = ibapi::orders::Order {
+            order_type: "STP LMT".to_string(),
+            ..Default::default()
+        };
+        let mut cmd = modify_trigger_cmd();
+        cmd.instrument_id = InstrumentId::from("AAPL.XNAS");
+        cmd.price = Some(Price::from("4.2525"));
+        cmd.trigger_price = Some(Price::from("4.3025"));
+
+        InteractiveBrokersExecutionClient::apply_modify_fields_to_ib_order(
+            &cmd,
+            &mut ib_order,
+            &magnified_provider(),
+        )
+        .unwrap();
+
+        assert_eq!(ib_order.limit_price, Some(425.25));
+        assert_eq!(ib_order.aux_price, Some(430.25));
     }
 }

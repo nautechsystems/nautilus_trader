@@ -35,7 +35,10 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         Venue, VenueOrderId,
     },
-    instruments::{FuturesContract, InstrumentAny, OptionSpread, stubs::equity_aapl},
+    instruments::{
+        FuturesContract, InstrumentAny, OptionSpread,
+        stubs::{equity_aapl, equity_aapl_itch},
+    },
     orders::{OrderList, builder::OrderTestBuilder},
     reports::PositionStatusReport,
     types::{Currency, Money, Price, Quantity},
@@ -3749,6 +3752,38 @@ fn test_update_order_avg_price_allows_negative_spread_avg_fill_price() {
 }
 
 #[rstest]
+fn test_update_order_avg_price_divides_magnified_avg_fill_price() {
+    let order_id = 7003;
+    let instrument_provider = create_test_instrument_provider();
+    let instrument = equity_aapl_itch();
+    let instrument_id = instrument.id();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+
+    instrument_provider.insert_test_instrument(InstrumentAny::from(instrument), 265_598, 100);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(ClientOrderId::from("O-MAGNIFIED-001"), instrument_id),
+    );
+
+    InteractiveBrokersExecutionClient::update_order_avg_price(
+        order_id,
+        &instrument_id,
+        425.25,
+        1.0,
+        &instrument_provider,
+        &orders,
+    )
+    .unwrap();
+
+    let state = orders.lock().unwrap();
+    assert_eq!(
+        state.order(order_id).unwrap().avg_px,
+        Some(Price::from("4.2525"))
+    );
+}
+
+#[rstest]
 fn test_track_pending_cancel_marks_once_without_emitting() {
     let order_id = 7002;
     let client_order_id = ClientOrderId::from("O-CANCEL-002");
@@ -5687,8 +5722,7 @@ fn create_test_mes_position_report(
     average_cost: f64,
 ) -> PositionStatusReport {
     let instrument = InstrumentAny::from(create_test_mes_instrument());
-    let avg_px_open =
-        report_context(client).position_avg_px_open(&instrument.id(), &instrument, average_cost);
+    let avg_px_open = IbReportContext::position_avg_px_open(&instrument, average_cost);
 
     PositionStatusReport::new(
         client.core.account_id,
@@ -5701,6 +5735,40 @@ fn create_test_mes_position_report(
         None,
         avg_px_open,
     )
+}
+
+#[rstest]
+// IB reports a magnified future's average cost as the price in the contract's currency times the
+// multiplier, so the price magnifier takes no part in it
+#[case::feeder_cattle(144_975.0, "2.8995")]
+#[case::no_cost(0.0, "")]
+fn test_position_avg_px_open_removes_the_multiplier_only(
+    #[case] average_cost: f64,
+    #[case] expected: &str,
+) {
+    let instrument = InstrumentAny::from(
+        FuturesContract::builder()
+            .instrument_id(InstrumentId::from("GFZ6.CME"))
+            .raw_symbol(Symbol::from("GFZ6"))
+            .asset_class(AssetClass::Commodity)
+            .exchange(Ustr::from("CME"))
+            .underlying(Ustr::from("GF"))
+            .activation_ns(UnixNanos::from(1_758_240_000_000_000_000))
+            .expiration_ns(UnixNanos::from(1_797_638_400_000_000_000))
+            .currency(Currency::USD())
+            .price_precision(4)
+            .price_increment(Price::from("0.0001"))
+            .multiplier(Quantity::from(50_000))
+            .lot_size(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
+
+    let avg_px_open = IbReportContext::position_avg_px_open(&instrument, average_cost);
+
+    assert_eq!(avg_px_open, Decimal::from_str(expected).ok());
 }
 
 #[rstest]

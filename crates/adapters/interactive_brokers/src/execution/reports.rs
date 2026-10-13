@@ -103,9 +103,8 @@ impl IbReportContext {
             .context("Failed to resolve IBKR report contract to instrument ID")
     }
 
+    /// IB's average cost is a price in the contract's currency times the multiplier.
     pub(super) fn position_avg_px_open(
-        &self,
-        instrument_id: &InstrumentId,
         instrument: &InstrumentAny,
         average_cost: f64,
     ) -> Option<Decimal> {
@@ -113,9 +112,8 @@ impl IbReportContext {
             return None;
         }
 
-        let price_magnifier = self.instrument_provider.get_price_magnifier(instrument_id) as f64;
         let multiplier = instrument.multiplier().as_f64();
-        let converted_avg_cost = average_cost / (multiplier * price_magnifier);
+        let converted_avg_cost = average_cost / multiplier;
         Decimal::from_f64_retain(converted_avg_cost)
             .map(|price| price.round_dp(instrument.price_precision() as u32))
     }
@@ -464,13 +462,9 @@ impl IbReportClient {
                     let quantity =
                         Quantity::new(position.position.abs(), instrument.size_precision());
 
-                    // Convert IB avg_cost to Nautilus Price, accounting for price magnifier and multiplier
-                    // Python: converted_avg_cost = avg_cost / (multiplier * price_magnifier)
-                    let avg_px_open = self.context.position_avg_px_open(
-                        &instrument_id,
-                        &instrument,
-                        position.average_cost,
-                    );
+                    // Convert IB avg_cost to a Nautilus Price by removing the multiplier
+                    let avg_px_open =
+                        IbReportContext::position_avg_px_open(&instrument, position.average_cost);
 
                     let report = PositionStatusReport::new(
                         self.context.account_id,

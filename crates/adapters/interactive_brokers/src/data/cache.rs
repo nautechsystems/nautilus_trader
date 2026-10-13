@@ -25,7 +25,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
-use super::parse::is_representable_size;
+use super::{convert::IbPriceConverter, parse::is_representable_size};
 
 /// IB publishes price -1 when a side has no quote; a zero or negative price
 /// with genuine size is a legitimate value for spreads. The paired zero-size
@@ -58,11 +58,11 @@ fn checked_quantity(size: f64, precision: u8) -> Option<Quantity> {
     Some(quantity)
 }
 
-fn checked_price(price: f64, precision: u8) -> Option<Price> {
-    match Price::new_checked(price, precision) {
+fn checked_price(price: anyhow::Result<Price>, ib_price: f64) -> Option<Price> {
+    match price {
         Ok(price) => Some(price),
         Err(e) => {
-            tracing::warn!("Ignoring invalid IB quote price {price}: {e}");
+            tracing::warn!("Ignoring invalid IB quote price {ib_price}: {e}");
             None
         }
     }
@@ -111,7 +111,7 @@ impl QuoteCache {
         instrument_id: InstrumentId,
         price: f64,
         size: Option<f64>,
-        price_precision: u8,
+        prices: IbPriceConverter,
         size_precision: u8,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -139,13 +139,7 @@ impl QuoteCache {
             });
 
         cached.bid_price = Some(price);
-        self.try_build_quote(
-            instrument_id,
-            price_precision,
-            size_precision,
-            ts_event,
-            ts_init,
-        )
+        self.try_build_quote(instrument_id, prices, size_precision, ts_event, ts_init)
     }
 
     /// Update ask price and return a complete quote if available.
@@ -154,7 +148,7 @@ impl QuoteCache {
         instrument_id: InstrumentId,
         price: f64,
         size: Option<f64>,
-        price_precision: u8,
+        prices: IbPriceConverter,
         size_precision: u8,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -182,13 +176,7 @@ impl QuoteCache {
             });
 
         cached.ask_price = Some(price);
-        self.try_build_quote(
-            instrument_id,
-            price_precision,
-            size_precision,
-            ts_event,
-            ts_init,
-        )
+        self.try_build_quote(instrument_id, prices, size_precision, ts_event, ts_init)
     }
 
     /// Update bid size and return a complete quote if available.
@@ -196,7 +184,7 @@ impl QuoteCache {
         &mut self,
         instrument_id: InstrumentId,
         size: f64,
-        price_precision: u8,
+        prices: IbPriceConverter,
         size_precision: u8,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -204,7 +192,7 @@ impl QuoteCache {
         self.update_bid_size_with_filter(
             instrument_id,
             size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -218,7 +206,7 @@ impl QuoteCache {
         &mut self,
         instrument_id: InstrumentId,
         size: f64,
-        price_precision: u8,
+        prices: IbPriceConverter,
         size_precision: u8,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -260,13 +248,7 @@ impl QuoteCache {
         }
 
         cached.bid_size = Some(size);
-        self.try_build_quote(
-            instrument_id,
-            price_precision,
-            size_precision,
-            ts_event,
-            ts_init,
-        )
+        self.try_build_quote(instrument_id, prices, size_precision, ts_event, ts_init)
     }
 
     /// Update ask size and return a complete quote if available.
@@ -274,7 +256,7 @@ impl QuoteCache {
         &mut self,
         instrument_id: InstrumentId,
         size: f64,
-        price_precision: u8,
+        prices: IbPriceConverter,
         size_precision: u8,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -282,7 +264,7 @@ impl QuoteCache {
         self.update_ask_size_with_filter(
             instrument_id,
             size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -296,7 +278,7 @@ impl QuoteCache {
         &mut self,
         instrument_id: InstrumentId,
         size: f64,
-        price_precision: u8,
+        prices: IbPriceConverter,
         size_precision: u8,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -338,20 +320,14 @@ impl QuoteCache {
         }
 
         cached.ask_size = Some(size);
-        self.try_build_quote(
-            instrument_id,
-            price_precision,
-            size_precision,
-            ts_event,
-            ts_init,
-        )
+        self.try_build_quote(instrument_id, prices, size_precision, ts_event, ts_init)
     }
 
     /// Try to build a complete quote from cached data.
     fn try_build_quote(
         &mut self,
         instrument_id: InstrumentId,
-        price_precision: u8,
+        prices: IbPriceConverter,
         size_precision: u8,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -370,8 +346,8 @@ impl QuoteCache {
         // Build the quote
         let quote = QuoteTick::new(
             instrument_id,
-            checked_price(bid_price, price_precision)?,
-            checked_price(ask_price, price_precision)?,
+            checked_price(prices.bid_price(bid_price), bid_price)?,
+            checked_price(prices.ask_price(ask_price), ask_price)?,
             bid_qty,
             ask_qty,
             ts_event,
@@ -426,13 +402,22 @@ impl OptionGreeksCache {
     }
 
     /// Updates cached state from an IB option computation tick.
+    ///
+    /// IB reports a magnified option's underlying price in the contract's market data unit, and
+    /// its price-denominated greeks per unit of that price. These are expressed in the
+    /// instrument's units, where prices are divided by `price_magnifier` (`M`): the underlying
+    /// price is divided by `M`, gamma, a second derivative with respect to price, is multiplied
+    /// by `M`, and vega and theta are divided by `M`. Delta, the implied volatilities, rho and
+    /// open interest are unchanged, and a `price_magnifier` below 1 means 1.
     pub fn update_from_computation(
         &mut self,
         instrument_id: InstrumentId,
         computation: &OptionComputation,
+        price_magnifier: i32,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Option<OptionGreeks> {
+        let magnifier = f64::from(price_magnifier.max(1));
         let cached = self.greeks.entry(instrument_id).or_default();
 
         match computation.field {
@@ -443,15 +428,15 @@ impl OptionGreeksCache {
                 }
 
                 if let Some(gamma) = computation.gamma {
-                    greeks.gamma = gamma;
+                    greeks.gamma = gamma * magnifier;
                 }
 
                 if let Some(vega) = computation.vega {
-                    greeks.vega = vega;
+                    greeks.vega = vega / magnifier;
                 }
 
                 if let Some(theta) = computation.theta {
-                    greeks.theta = theta;
+                    greeks.theta = theta / magnifier;
                 }
 
                 greeks.rho = 0.0; // IB does not publish rho in tickOptionComputation
@@ -477,7 +462,7 @@ impl OptionGreeksCache {
         }
 
         if let Some(underlying_price) = computation.underlying_price {
-            cached.underlying_price = Some(underlying_price);
+            cached.underlying_price = Some(underlying_price / magnifier);
         }
 
         self.try_build_greeks(instrument_id, ts_event, ts_init)
@@ -531,11 +516,13 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         identifiers::{InstrumentId, Symbol, Venue},
+        instruments::Instrument,
         types::Quantity,
     };
     use rstest::rstest;
 
     use super::{OptionGreeksCache, QuoteCache, is_sentinel_price};
+    use crate::{data::convert::IbPriceConverter, stubs::currency_pair};
 
     fn instrument_id() -> InstrumentId {
         InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"))
@@ -567,7 +554,7 @@ mod tests {
             instrument_id,
             -3.25,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(1),
             UnixNanos::new(1),
@@ -576,7 +563,7 @@ mod tests {
             instrument_id,
             -2.75,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(2),
             UnixNanos::new(2),
@@ -584,7 +571,7 @@ mod tests {
         cache.update_bid_size(
             instrument_id,
             5.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(3),
             UnixNanos::new(3),
@@ -593,7 +580,7 @@ mod tests {
             .update_ask_size(
                 instrument_id,
                 7.0,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 UnixNanos::new(4),
                 UnixNanos::new(4),
@@ -615,7 +602,7 @@ mod tests {
             instrument_id,
             100.0,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(1),
             UnixNanos::new(1),
@@ -634,7 +621,7 @@ mod tests {
             instrument_id,
             100.0,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(1),
             UnixNanos::new(1),
@@ -643,7 +630,7 @@ mod tests {
             instrument_id,
             101.0,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(2),
             UnixNanos::new(2),
@@ -653,7 +640,7 @@ mod tests {
         cache.update_bid_size(
             instrument_id,
             10.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(3),
             UnixNanos::new(3),
@@ -662,7 +649,7 @@ mod tests {
             .update_ask_size(
                 instrument_id,
                 11.0,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 UnixNanos::new(4),
                 UnixNanos::new(4),
@@ -684,7 +671,7 @@ mod tests {
             instrument_id,
             100.0,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(1),
             UnixNanos::new(1),
@@ -693,7 +680,7 @@ mod tests {
             instrument_id,
             101.0,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(2),
             UnixNanos::new(2),
@@ -701,7 +688,7 @@ mod tests {
         cache.update_bid_size(
             instrument_id,
             10.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(3),
             UnixNanos::new(3),
@@ -709,7 +696,7 @@ mod tests {
         cache.update_ask_size(
             instrument_id,
             11.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(4),
             UnixNanos::new(4),
@@ -718,7 +705,7 @@ mod tests {
         let quote = cache.update_bid_size_with_filter(
             instrument_id,
             10.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(5),
             UnixNanos::new(5),
@@ -739,7 +726,7 @@ mod tests {
             instrument_id,
             100.0,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(1),
             UnixNanos::new(1),
@@ -748,7 +735,7 @@ mod tests {
             instrument_id,
             101.0,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(2),
             UnixNanos::new(2),
@@ -756,7 +743,7 @@ mod tests {
         cache.update_bid_size(
             instrument_id,
             10.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(3),
             UnixNanos::new(3),
@@ -764,7 +751,7 @@ mod tests {
         cache.update_ask_size(
             instrument_id,
             11.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(4),
             UnixNanos::new(4),
@@ -773,7 +760,7 @@ mod tests {
         let quote = cache.update_bid_size(
             instrument_id,
             0.5,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(5),
             UnixNanos::new(5),
@@ -793,7 +780,7 @@ mod tests {
             instrument_id,
             1.16375,
             None,
-            5,
+            IbPriceConverter::new(5),
             2,
             UnixNanos::new(1),
             UnixNanos::new(1),
@@ -802,7 +789,7 @@ mod tests {
             instrument_id,
             1.1638,
             None,
-            5,
+            IbPriceConverter::new(5),
             2,
             UnixNanos::new(2),
             UnixNanos::new(2),
@@ -810,7 +797,7 @@ mod tests {
         cache.update_bid_size(
             instrument_id,
             2_500_000.0,
-            5,
+            IbPriceConverter::new(5),
             2,
             UnixNanos::new(3),
             UnixNanos::new(3),
@@ -819,7 +806,7 @@ mod tests {
             .update_ask_size(
                 instrument_id,
                 1_975_139.0,
-                5,
+                IbPriceConverter::new(5),
                 2,
                 UnixNanos::new(4),
                 UnixNanos::new(4),
@@ -838,7 +825,7 @@ mod tests {
             instrument_id,
             100.0,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(1),
             UnixNanos::new(1),
@@ -847,7 +834,7 @@ mod tests {
             instrument_id,
             101.0,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(2),
             UnixNanos::new(2),
@@ -855,7 +842,7 @@ mod tests {
         cache.update_bid_size(
             instrument_id,
             10.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(3),
             UnixNanos::new(3),
@@ -863,7 +850,7 @@ mod tests {
         cache.update_ask_size(
             instrument_id,
             11.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(4),
             UnixNanos::new(4),
@@ -873,7 +860,7 @@ mod tests {
             instrument_id,
             100.5,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(5),
             UnixNanos::new(5),
@@ -898,6 +885,7 @@ mod tests {
                 underlying_price: Some(155.0),
                 ..Default::default()
             },
+            1,
             UnixNanos::new(1),
             UnixNanos::new(1),
         );
@@ -916,6 +904,7 @@ mod tests {
                 underlying_price: Some(155.0),
                 ..Default::default()
             },
+            1,
             UnixNanos::new(2),
             UnixNanos::new(2),
         );
@@ -931,6 +920,102 @@ mod tests {
         assert_eq!(greeks.ask_iv, None);
         assert_eq!(greeks.underlying_price, Some(155.0));
         assert_eq!(greeks.open_interest, None);
+    }
+
+    fn model_computation() -> OptionComputation {
+        OptionComputation {
+            field: TickType::ModelOption,
+            implied_volatility: Some(0.25),
+            delta: Some(0.45),
+            gamma: Some(0.02),
+            vega: Some(0.5),
+            theta: Some(-0.3),
+            underlying_price: Some(486.25),
+            ..Default::default()
+        }
+    }
+
+    #[rstest]
+    fn test_option_greeks_cache_converts_magnified_option_to_instrument_units() {
+        let mut cache = OptionGreeksCache::new();
+
+        let greeks = cache
+            .update_from_computation(
+                instrument_id(),
+                &model_computation(),
+                100,
+                UnixNanos::new(1),
+                UnixNanos::new(1),
+            )
+            .unwrap();
+
+        assert_eq!(greeks.underlying_price, Some(4.8625));
+        assert!((greeks.gamma - 2.0).abs() < 1e-12);
+        assert!((greeks.vega - 0.005).abs() < 1e-15);
+        assert!((greeks.theta - -0.003).abs() < 1e-15);
+        assert_eq!(greeks.delta, 0.45);
+        assert_eq!(greeks.mark_iv, Some(0.25));
+        assert_eq!(greeks.rho, 0.0);
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(10)]
+    #[case(100)]
+    fn test_option_greeks_cache_scales_price_denominated_fields_by_magnifier(
+        #[case] magnifier: i32,
+    ) {
+        let mut cache = OptionGreeksCache::new();
+        let computation = model_computation();
+        let m = f64::from(magnifier);
+
+        let greeks = cache
+            .update_from_computation(
+                instrument_id(),
+                &computation,
+                magnifier,
+                UnixNanos::new(1),
+                UnixNanos::new(1),
+            )
+            .unwrap();
+
+        // The fields that are not prices are unchanged for every magnifier
+        assert_eq!(greeks.delta, 0.45);
+        assert_eq!(greeks.mark_iv, Some(0.25));
+        assert_eq!(greeks.rho, 0.0);
+
+        // The price-denominated fields follow the scaling identities for P' = P / M
+        assert!((greeks.underlying_price.unwrap() * m - 486.25).abs() < 1e-9);
+        assert!((greeks.gamma / m - 0.02).abs() < 1e-12);
+        assert!((greeks.vega * m - 0.5).abs() < 1e-12);
+        assert!((greeks.theta * m - -0.3).abs() < 1e-12);
+
+        if magnifier == 1 {
+            assert_eq!(greeks.underlying_price, Some(486.25));
+            assert_eq!(greeks.gamma, 0.02);
+            assert_eq!(greeks.vega, 0.5);
+            assert_eq!(greeks.theta, -0.3);
+        }
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(-5)]
+    fn test_option_greeks_cache_treats_magnifier_below_one_as_one(#[case] magnifier: i32) {
+        let mut cache = OptionGreeksCache::new();
+
+        let greeks = cache
+            .update_from_computation(
+                instrument_id(),
+                &model_computation(),
+                magnifier,
+                UnixNanos::new(1),
+                UnixNanos::new(1),
+            )
+            .unwrap();
+
+        assert_eq!(greeks.underlying_price, Some(486.25));
+        assert_eq!(greeks.gamma, 0.02);
     }
 
     #[rstest]
@@ -950,6 +1035,7 @@ mod tests {
                 underlying_price: Some(155.0),
                 ..Default::default()
             },
+            1,
             UnixNanos::new(1),
             UnixNanos::new(1),
         );
@@ -961,5 +1047,175 @@ mod tests {
         assert_eq!(greeks.open_interest, Some(1000.0));
         assert_eq!(greeks.mark_iv, Some(0.25));
         assert_eq!(greeks.delta, 0.55);
+    }
+
+    #[rstest]
+    fn test_quote_cache_rounds_fx_quote_to_increment() {
+        let mut cache = QuoteCache::new();
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        cache.update_bid_price(
+            instrument.id(),
+            1.12097,
+            Some(1_000_000.0),
+            prices,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        cache.update_ask_price(
+            instrument.id(),
+            1.12098,
+            Some(1_000_000.0),
+            prices,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        cache.update_bid_size(
+            instrument.id(),
+            1_000_000.0,
+            prices,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        let quote = cache
+            .update_ask_size(
+                instrument.id(),
+                1_000_000.0,
+                prices,
+                0,
+                UnixNanos::new(1),
+                UnixNanos::new(1),
+            )
+            .unwrap();
+
+        assert_eq!(quote.bid_price.as_f64(), 1.12095);
+        assert_eq!(quote.ask_price.as_f64(), 1.12100);
+    }
+
+    #[rstest]
+    fn test_quote_cache_does_not_lock_tight_fx_quote() {
+        let mut cache = QuoteCache::new();
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+        let (ts_event, ts_init) = (UnixNanos::new(1), UnixNanos::new(1));
+
+        cache.update_bid_price(
+            instrument.id(),
+            1.12098,
+            Some(1_000_000.0),
+            prices,
+            0,
+            ts_event,
+            ts_init,
+        );
+        cache.update_ask_price(
+            instrument.id(),
+            1.12099,
+            Some(1_000_000.0),
+            prices,
+            0,
+            ts_event,
+            ts_init,
+        );
+        cache.update_bid_size(instrument.id(), 1_000_000.0, prices, 0, ts_event, ts_init);
+        let quote = cache
+            .update_ask_size(instrument.id(), 1_000_000.0, prices, 0, ts_event, ts_init)
+            .unwrap();
+
+        assert_eq!(quote.bid_price.as_f64(), 1.12095);
+        assert_eq!(quote.ask_price.as_f64(), 1.12100);
+    }
+
+    #[rstest]
+    fn test_quote_cache_divides_magnified_quote() {
+        let mut cache = QuoteCache::new();
+        let instrument_id = instrument_id();
+        let prices = IbPriceConverter::new(4).with_price_magnifier(100);
+
+        cache.update_bid_price(
+            instrument_id,
+            425.25,
+            Some(10.0),
+            prices,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        cache.update_ask_price(
+            instrument_id,
+            425.5,
+            Some(20.0),
+            prices,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        cache.update_bid_size(
+            instrument_id,
+            10.0,
+            prices,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        let quote = cache
+            .update_ask_size(
+                instrument_id,
+                20.0,
+                prices,
+                0,
+                UnixNanos::new(1),
+                UnixNanos::new(1),
+            )
+            .unwrap();
+
+        assert_eq!(quote.bid_price.as_f64(), 4.2525);
+        assert_eq!(quote.ask_price.as_f64(), 4.255);
+    }
+
+    #[rstest]
+    fn test_quote_cache_clears_side_on_sentinel_for_magnified_contract() {
+        let mut cache = QuoteCache::new();
+        let instrument_id = instrument_id();
+        let prices = IbPriceConverter::new(4).with_price_magnifier(100);
+        let (ts_event, ts_init) = (UnixNanos::new(1), UnixNanos::new(1));
+
+        cache.update_bid_price(
+            instrument_id,
+            425.25,
+            Some(10.0),
+            prices,
+            0,
+            ts_event,
+            ts_init,
+        );
+        cache.update_ask_price(
+            instrument_id,
+            425.5,
+            Some(20.0),
+            prices,
+            0,
+            ts_event,
+            ts_init,
+        );
+        cache.update_bid_size(instrument_id, 10.0, prices, 0, ts_event, ts_init);
+        assert!(
+            cache
+                .update_ask_size(instrument_id, 20.0, prices, 0, ts_event, ts_init)
+                .is_some()
+        );
+
+        // IB's no-quote sentinel arrives as the raw -1, before any conversion, and clears the
+        // side, so a later size update has no bid to complete a quote with
+        let cleared =
+            cache.update_bid_price(instrument_id, -1.0, None, prices, 0, ts_event, ts_init);
+        let quote = cache.update_ask_size(instrument_id, 30.0, prices, 0, ts_event, ts_init);
+
+        assert!(cleared.is_none());
+        assert!(quote.is_none());
     }
 }

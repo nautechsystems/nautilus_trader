@@ -14,7 +14,7 @@ use nautilus_common::live::sender::EventSender;
 use super::{core::*, incarnations::duplicate_client_order_id};
 use crate::{
     common::enums::{IbOrderStatus, IbOrderType},
-    execution::parse,
+    execution::{parse, transform::from_ib_price},
 };
 
 const COMMISSION_REPORT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -1365,7 +1365,7 @@ impl InteractiveBrokersExecutionClient {
             }
         }
 
-        let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id) as f64;
+        let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id);
         let (price, trigger_price) = Self::open_order_price_fields(
             order_data,
             price_magnifier,
@@ -1411,7 +1411,7 @@ impl InteractiveBrokersExecutionClient {
 
     fn open_order_price_fields(
         order_data: &ibapi::orders::OrderData,
-        price_magnifier: f64,
+        price_magnifier: i32,
         price_precision: u8,
     ) -> (Option<Price>, Option<Price>) {
         let order_type = IbOrderType::from_str(order_data.order.order_type.as_str())
@@ -1419,16 +1419,16 @@ impl InteractiveBrokersExecutionClient {
         let price = order_data
             .order
             .limit_price
-            .map(|price| Price::new(price * price_magnifier, price_precision));
+            .map(|price| Price::new(from_ib_price(price, price_magnifier), price_precision));
         let trigger_price = order_data
             .order
             .aux_price
-            .map(|price| Price::new(price * price_magnifier, price_precision));
+            .map(|price| Price::new(from_ib_price(price, price_magnifier), price_precision));
         // A trailing order's aux price is its offset; IB reports its trigger separately
         let trail_stop_price = order_data
             .order
             .trail_stop_price
-            .map(|price| Price::new(price * price_magnifier, price_precision));
+            .map(|price| Price::new(from_ib_price(price, price_magnifier), price_precision));
 
         match order_type {
             OrderType::Market | OrderType::MarketToLimit => (None, None),
@@ -2240,8 +2240,8 @@ impl InteractiveBrokersExecutionClient {
             );
         };
 
-        let price_magnifier = instrument_provider.get_price_magnifier(instrument_id) as f64;
-        let converted_avg_price = avg_fill_price * price_magnifier;
+        let price_magnifier = instrument_provider.get_price_magnifier(instrument_id);
+        let converted_avg_price = from_ib_price(avg_fill_price, price_magnifier);
         let avg_px = Price::new(converted_avg_price, instrument.price_precision());
 
         let mut state = orders.lock()?;
@@ -2329,5 +2329,67 @@ impl InteractiveBrokersExecutionClient {
         instrument_provider
             .resolve_instrument_id_for_contract(contract)
             .context("Failed to resolve IBKR contract to instrument ID")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ibapi::{
+        contracts::Contract,
+        orders::{Order, OrderData, OrderState},
+    };
+    use nautilus_model::types::Price;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn open_order_data(order: Order) -> OrderData {
+        OrderData {
+            order_id: 1,
+            contract: Contract::default(),
+            order,
+            order_state: OrderState::default(),
+        }
+    }
+
+    #[rstest]
+    #[case::limit("LMT", Some(425.25), None, Some("4.2525"), None)]
+    #[case::stop_limit("STP LMT", Some(425.25), Some(430.25), Some("4.2525"), Some("4.3025"))]
+    #[case::stop("STP", None, Some(430.25), None, Some("4.3025"))]
+    fn test_open_order_price_fields_divide_magnified_prices(
+        #[case] order_type: &str,
+        #[case] limit_price: Option<f64>,
+        #[case] aux_price: Option<f64>,
+        #[case] expected_price: Option<&str>,
+        #[case] expected_trigger: Option<&str>,
+    ) {
+        let order_data = open_order_data(Order {
+            order_type: order_type.to_string(),
+            limit_price,
+            aux_price,
+            ..Default::default()
+        });
+
+        let (price, trigger_price) =
+            InteractiveBrokersExecutionClient::open_order_price_fields(&order_data, 100, 4);
+
+        assert_eq!(price, expected_price.map(Price::from));
+        assert_eq!(trigger_price, expected_trigger.map(Price::from));
+    }
+
+    #[rstest]
+    fn test_open_order_price_fields_divide_magnified_trailing_trigger() {
+        let order_data = open_order_data(Order {
+            order_type: "TRAIL".to_string(),
+            aux_price: Some(5.25),
+            trail_stop_price: Some(481.25),
+            ..Default::default()
+        });
+
+        let (price, trigger_price) =
+            InteractiveBrokersExecutionClient::open_order_price_fields(&order_data, 100, 4);
+
+        assert_eq!(price, None);
+        assert_eq!(trigger_price, Some(Price::from("4.8125")));
     }
 }

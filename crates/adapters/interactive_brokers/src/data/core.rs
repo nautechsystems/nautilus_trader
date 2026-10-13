@@ -63,10 +63,9 @@ use tokio_util::sync::CancellationToken;
 use super::{
     cache::{OptionGreeksCache, QuoteCache},
     convert::{
-        apply_bar_price_magnifier, apply_price_magnifier, bar_request_segments,
-        bar_type_to_ib_bar_size, calculate_duration_segments, extend_historical_tick_batch,
-        ib_bar_to_nautilus_bar, jiff_to_ib_datetime,
-        price_type_to_ib_realtime_what_to_show_for_security,
+        IbPriceConverter, bar_request_segments, bar_type_to_ib_bar_size,
+        calculate_duration_segments, extend_historical_tick_batch, ib_bar_to_nautilus_bar,
+        jiff_to_ib_datetime, price_type_to_ib_realtime_what_to_show_for_security,
         price_type_to_ib_what_to_show_for_security, retain_historical_ticks_in_range,
         should_continue_historical_tick_pagination,
     },
@@ -745,7 +744,11 @@ impl DataClient for InteractiveBrokersDataClient {
                 cmd.instrument_id
             ))?;
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -772,9 +775,6 @@ impl DataClient for InteractiveBrokersDataClient {
         let data_sender = self.data_sender.clone();
         let quote_cache = Arc::clone(&self.quote_cache);
         let clock = self.clock;
-
-        // Get price magnifier from instrument provider
-        let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id) as f64;
 
         let subscription_token = self.cancellation_token.child_token();
 
@@ -815,7 +815,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     client_clone,
                     contract,
                     instrument_id,
-                    price_precision,
+                    prices,
                     size_precision,
                     data_sender,
                     quote_cache,
@@ -841,12 +841,11 @@ impl DataClient for InteractiveBrokersDataClient {
                     client_clone.clone(),
                     contract.clone(),
                     instrument_id,
-                    price_precision,
+                    prices,
                     size_precision,
                     data_sender.clone(),
                     clock,
                     subscription_token.clone(),
-                    price_magnifier,
                     Arc::clone(&data_farm_state),
                     stream_config,
                 )
@@ -867,7 +866,7 @@ impl DataClient for InteractiveBrokersDataClient {
                             client_clone,
                             contract,
                             instrument_id,
-                            price_precision,
+                            prices,
                             size_precision,
                             data_sender,
                             quote_cache,
@@ -951,10 +950,11 @@ impl DataClient for InteractiveBrokersDataClient {
             return Ok(());
         }
 
-        let price_precision = instrument.price_precision();
-        let price_magnifier = self
-            .instrument_provider
-            .get_price_magnifier(&cmd.instrument_id);
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let instrument_id = cmd.instrument_id;
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
@@ -985,8 +985,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 client_clone,
                 contract,
                 instrument_id,
-                price_precision,
-                price_magnifier,
+                prices,
                 data_sender,
                 clock,
                 subscription_token,
@@ -1061,6 +1060,9 @@ impl DataClient for InteractiveBrokersDataClient {
             .context("Failed to convert instrument_id to IB contract")?;
 
         let instrument_id = cmd.instrument_id;
+        let price_magnifier = self
+            .instrument_provider
+            .get_price_magnifier(&cmd.instrument_id);
         let data_sender = self.data_sender.clone();
         let option_greeks_cache = Arc::clone(&self.option_greeks_cache);
         let clock = self.clock;
@@ -1075,6 +1077,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 client_clone,
                 contract,
                 instrument_id,
+                price_magnifier,
                 data_sender,
                 option_greeks_cache,
                 clock,
@@ -1201,7 +1204,11 @@ impl DataClient for InteractiveBrokersDataClient {
             return Ok(());
         }
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -1242,7 +1249,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 client_clone,
                 contract,
                 instrument_id,
-                price_precision,
+                prices,
                 size_precision,
                 data_sender,
                 clock,
@@ -1304,7 +1311,10 @@ impl DataClient for InteractiveBrokersDataClient {
             .find(&instrument_id)
             .context(format!("Instrument {instrument_id} not found in provider"))?;
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider.get_price_magnifier(&instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -1364,7 +1374,7 @@ impl DataClient for InteractiveBrokersDataClient {
                         bar_type.spec().price_type,
                         is_crypto,
                     ),
-                    price_precision,
+                    prices,
                     size_precision,
                     data_sender,
                     clock,
@@ -1386,7 +1396,7 @@ impl DataClient for InteractiveBrokersDataClient {
                         bar_type.spec().price_type,
                         is_crypto,
                     ),
-                    price_precision,
+                    prices,
                     size_precision,
                     use_rth,
                     start_ns,
@@ -1466,7 +1476,11 @@ impl DataClient for InteractiveBrokersDataClient {
                 cmd.instrument_id
             ))?;
 
-        let price_precision = instrument.price_precision();
+        // Book levels are not rounded to the increment: two IB levels could round to one price
+        let prices = IbPriceConverter::new(instrument.price_precision()).with_price_magnifier(
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -1517,7 +1531,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 client_clone,
                 contract,
                 instrument_id,
-                price_precision,
+                prices,
                 size_precision,
                 depth_rows,
                 is_smart_depth,
@@ -1892,7 +1906,11 @@ impl DataClient for InteractiveBrokersDataClient {
                 cmd.instrument_id
             ))?;
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -1923,7 +1941,6 @@ impl DataClient for InteractiveBrokersDataClient {
         let cmd_start = cmd.start;
         let cmd_end = cmd.end;
         let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
-        let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
 
         self.spawn_command(async move {
             let mut all_quotes = Vec::new();
@@ -1978,11 +1995,11 @@ impl DataClient for InteractiveBrokersDataClient {
 
                             match super::parse::parse_quote_tick(
                                 instrument_id,
-                                Some(apply_price_magnifier(tick.price_bid, price_magnifier)),
-                                Some(apply_price_magnifier(tick.price_ask, price_magnifier)),
+                                Some(tick.price_bid),
+                                Some(tick.price_ask),
                                 tick.size_bid,
                                 tick.size_ask,
-                                price_precision,
+                                prices,
                                 size_precision,
                                 ts_event,
                                 ts_init,
@@ -2084,7 +2101,11 @@ impl DataClient for InteractiveBrokersDataClient {
             return Ok(());
         }
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -2115,7 +2136,6 @@ impl DataClient for InteractiveBrokersDataClient {
         let cmd_start = cmd.start;
         let cmd_end = cmd.end;
         let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
-        let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
 
         self.spawn_command(async move {
             let mut all_trades = Vec::new();
@@ -2181,9 +2201,9 @@ impl DataClient for InteractiveBrokersDataClient {
 
                             match super::parse::parse_trade_tick(
                                 instrument_id,
-                                apply_price_magnifier(tick.price, price_magnifier),
+                                tick.price,
                                 size,
-                                price_precision,
+                                prices,
                                 size_precision,
                                 ts_event,
                                 ts_init,
@@ -2284,7 +2304,10 @@ impl DataClient for InteractiveBrokersDataClient {
             .find(&instrument_id)
             .context(format!("Instrument {instrument_id} not found in provider"))?;
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider.get_price_magnifier(&instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -2317,7 +2340,6 @@ impl DataClient for InteractiveBrokersDataClient {
         let start_nanos = cmd.start.map(datetime_to_unix_nanos);
         let end_nanos = cmd.end.map(datetime_to_unix_nanos);
         let limit = cmd.limit.map(|limit| limit.get());
-        let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
 
         // Spawn async task to handle the request with segmentation
         let client_clone = client.as_arc().clone();
@@ -2341,12 +2363,10 @@ impl DataClient for InteractiveBrokersDataClient {
                     Ok(historical_data) => {
                         // Convert IB bars to Nautilus bars
                         for ib_bar in &historical_data.bars {
-                            let ib_bar = apply_bar_price_magnifier(ib_bar, price_magnifier);
-
                             match ib_bar_to_nautilus_bar(
-                                &ib_bar,
+                                ib_bar,
                                 bar_type,
-                                price_precision,
+                                prices,
                                 size_precision,
                             ) {
                                 Ok(bar) => all_bars.push(bar),

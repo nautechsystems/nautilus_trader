@@ -15,6 +15,8 @@
 
 //! Conversion utilities for Interactive Brokers data types.
 
+use std::str::FromStr;
+
 use ibapi::market_data::{
     historical::{
         BarSize as HistoricalBarSize, BarTimestamp, Duration as IBDuration, ToDuration,
@@ -26,10 +28,164 @@ use jiff::Timestamp;
 use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType},
-    enums::{BarAggregation, PriceType},
+    enums::{AssetClass, BarAggregation, PriceType},
+    instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
+use rust_decimal::{Decimal, RoundingStrategy};
 use time::OffsetDateTime;
+
+/// Converts the prices IB reports for an instrument into the instrument's prices.
+///
+/// IB reports a magnified contract's prices in a sub-unit of its currency (CBOT grains in cents,
+/// LSE stocks in pence), so these are divided by the contract's price magnifier. IB also reports
+/// an FX pair's prices in steps finer than the pair's price increment, its order tick, so these
+/// are rounded to the increment: a bid down, an ask up, and any other price to the nearest, ties to
+/// the even multiple. A quote then never locks or crosses unless IB's did, and an ask is never
+/// below IB's ask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IbPriceConverter {
+    precision: u8,
+    increment: Option<Price>,
+    magnifier: i32,
+}
+
+impl IbPriceConverter {
+    /// Creates a converter that applies the precision only, with no magnifier and no rounding to
+    /// an increment.
+    #[must_use]
+    pub const fn new(precision: u8) -> Self {
+        Self {
+            precision,
+            increment: None,
+            magnifier: 1,
+        }
+    }
+
+    /// Returns the converter with the contract's price magnifier, where a value below 1 means 1.
+    #[must_use]
+    pub const fn with_price_magnifier(mut self, magnifier: i32) -> Self {
+        self.magnifier = if magnifier < 1 { 1 } else { magnifier };
+        self
+    }
+
+    /// Creates the converter for `instrument` and its contract's `price_magnifier`, rounding to
+    /// the price increment for FX pairs.
+    #[must_use]
+    pub fn for_instrument(instrument: &InstrumentAny, price_magnifier: i32) -> Self {
+        let increment = match instrument {
+            InstrumentAny::CurrencyPair(pair) if pair.asset_class() == AssetClass::FX => {
+                Some(pair.price_increment())
+            }
+            _ => None,
+        };
+
+        Self {
+            precision: instrument.price_precision(),
+            increment,
+            magnifier: 1,
+        }
+        .with_price_magnifier(price_magnifier)
+    }
+
+    /// Returns the price precision.
+    #[must_use]
+    pub const fn precision(&self) -> u8 {
+        self.precision
+    }
+
+    /// Converts a price reported by IB into the instrument's price, rounding to the nearest
+    /// multiple of the price increment, ties to the even multiple.
+    ///
+    /// Use this for a trade, midpoint, last, or index price. A quote's bid and ask use
+    /// [`Self::bid_price`] and [`Self::ask_price`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the price is not finite or cannot be represented at the converter's
+    /// precision.
+    pub fn price(&self, ib_price: f64) -> anyhow::Result<Price> {
+        self.convert(ib_price, RoundingStrategy::MidpointNearestEven)
+    }
+
+    /// Converts a bid price reported by IB, rounding down to a multiple of the price increment.
+    ///
+    /// A published bid is never above IB's bid.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the price is not finite or cannot be represented at the converter's
+    /// precision.
+    pub fn bid_price(&self, ib_price: f64) -> anyhow::Result<Price> {
+        self.convert(ib_price, RoundingStrategy::ToNegativeInfinity)
+    }
+
+    /// Converts an ask price reported by IB, rounding up to a multiple of the price increment.
+    ///
+    /// A published ask is never below IB's ask, so a limit order priced at it can fill, and the
+    /// published bid stays below the published ask whenever IB's does.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the price is not finite or cannot be represented at the converter's
+    /// precision.
+    pub fn ask_price(&self, ib_price: f64) -> anyhow::Result<Price> {
+        self.convert(ib_price, RoundingStrategy::ToPositiveInfinity)
+    }
+
+    /// Converts a price of a bar of `price_type`: a bid bar rounds down, an ask bar rounds up,
+    /// and any other bar to the nearest multiple of the price increment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the price is not finite or cannot be represented at the converter's
+    /// precision.
+    pub fn bar_price(&self, price_type: PriceType, ib_price: f64) -> anyhow::Result<Price> {
+        match price_type {
+            PriceType::Bid => self.bid_price(ib_price),
+            PriceType::Ask => self.ask_price(ib_price),
+            _ => self.price(ib_price),
+        }
+    }
+
+    /// Converts `ib_price` once, in `Decimal`, so that a midpoint is rounded a single time.
+    ///
+    /// With no increment and no magnifier the price is built as is. Otherwise the shortest
+    /// round-trip decimal form of the `f64` is divided by the magnifier and rounded to the
+    /// increment with `strategy`, or to the precision when there is no increment.
+    fn convert(&self, ib_price: f64, strategy: RoundingStrategy) -> anyhow::Result<Price> {
+        if self.increment.is_none() && self.magnifier == 1 {
+            return Price::new_checked(ib_price, self.precision)
+                .map_err(|e| anyhow::anyhow!("invalid price={ib_price}: {e}"));
+        }
+
+        if !ib_price.is_finite() {
+            anyhow::bail!("invalid price={ib_price}: not finite");
+        }
+
+        let overflow = || anyhow::anyhow!("invalid price={ib_price}: out of range");
+        let value = Decimal::from_str(&ib_price.to_string())
+            .map_err(|e| anyhow::anyhow!("invalid price={ib_price}: {e}"))?
+            .checked_div(Decimal::from(self.magnifier))
+            .ok_or_else(overflow)?;
+
+        let value = match self.increment {
+            Some(increment) if increment.raw() > 0 => {
+                let step = increment.as_decimal();
+                value
+                    .checked_div(step)
+                    .ok_or_else(overflow)?
+                    .round_dp_with_strategy(0, strategy)
+                    .checked_mul(step)
+                    .ok_or_else(overflow)?
+            }
+            _ => value,
+        };
+
+        Price::from_decimal_dp(value, self.precision)
+            .map_err(|e| anyhow::anyhow!("invalid price={ib_price}: {e}"))
+    }
+}
 
 /// Convert Nautilus BarType to IB HistoricalBarSize.
 ///
@@ -141,32 +297,6 @@ pub fn price_type_to_ib_realtime_what_to_show_for_security(
     price_type_to_ib_realtime_what_to_show(price_type)
 }
 
-#[must_use]
-pub fn apply_price_magnifier(price: f64, price_magnifier: i32) -> f64 {
-    if price_magnifier > 0 {
-        price / f64::from(price_magnifier)
-    } else {
-        price
-    }
-}
-
-#[must_use]
-pub fn apply_bar_price_magnifier(
-    ib_bar: &ibapi::market_data::historical::Bar,
-    price_magnifier: i32,
-) -> ibapi::market_data::historical::Bar {
-    ibapi::market_data::historical::Bar {
-        date: ib_bar.date,
-        open: apply_price_magnifier(ib_bar.open, price_magnifier),
-        high: apply_price_magnifier(ib_bar.high, price_magnifier),
-        low: apply_price_magnifier(ib_bar.low, price_magnifier),
-        close: apply_price_magnifier(ib_bar.close, price_magnifier),
-        volume: ib_bar.volume,
-        wap: apply_price_magnifier(ib_bar.wap, price_magnifier),
-        count: ib_bar.count,
-    }
-}
-
 /// Implement bar price validation logic.
 /// Matches Python's `_validate_bar_prices` behavior.
 fn _validate_bar_prices(open: &mut f64, high: &mut f64, low: &mut f64, close: &f64) {
@@ -194,7 +324,7 @@ fn _validate_bar_prices(open: &mut f64, high: &mut f64, low: &mut f64, close: &f
 pub fn ib_bar_to_nautilus_bar(
     ib_bar: &ibapi::market_data::historical::Bar,
     bar_type: BarType,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
 ) -> anyhow::Result<Bar> {
     let ts_event = bar_close_from_open(
@@ -211,10 +341,11 @@ pub fn ib_bar_to_nautilus_bar(
     _validate_bar_prices(&mut open, &mut high, &mut low, &close);
 
     // Create prices
-    let open_price = Price::new(open, price_precision);
-    let high_price = Price::new(high, price_precision);
-    let low_price = Price::new(low, price_precision);
-    let close_price = Price::new(close, price_precision);
+    let price_type = bar_type.spec().price_type;
+    let open_price = prices.bar_price(price_type, open)?;
+    let high_price = prices.bar_price(price_type, high)?;
+    let low_price = prices.bar_price(price_type, low)?;
+    let close_price = prices.bar_price(price_type, close)?;
 
     // Volume: IB uses -1 for unavailable volume, convert to 0
     let volume = if ib_bar.volume < 0.0 {
@@ -468,15 +599,20 @@ pub fn bar_request_segments(
 
 #[cfg(test)]
 mod tests {
+    use std::cmp::Ordering;
+
     use nautilus_model::{
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
         identifiers::{InstrumentId, Symbol, Venue},
+        instruments::Equity,
+        types::Currency,
     };
     use rstest::rstest;
     use time::macros::datetime;
 
     use super::*;
+    use crate::stubs::currency_pair;
 
     fn create_test_instrument_id() -> InstrumentId {
         InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"))
@@ -705,7 +841,7 @@ mod tests {
             BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
             AggregationSource::External,
         );
-        let result = ib_bar_to_nautilus_bar(&ib_bar, bar_type, 2, 0);
+        let result = ib_bar_to_nautilus_bar(&ib_bar, bar_type, IbPriceConverter::new(2), 0);
         assert!(result.is_ok());
         let bar = result.unwrap();
         assert_eq!(bar.open.as_f64(), 150.0);
@@ -738,7 +874,7 @@ mod tests {
             BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
             AggregationSource::External,
         );
-        let result = ib_bar_to_nautilus_bar(&ib_bar, bar_type, 2, 0);
+        let result = ib_bar_to_nautilus_bar(&ib_bar, bar_type, IbPriceConverter::new(2), 0);
         assert!(result.is_ok());
         let bar = result.unwrap();
         // Negative volume should be converted to 0
@@ -1011,5 +1147,383 @@ mod tests {
     fn test_bar_request_segments_empty_input_yields_nothing_for_continuous() {
         let result = bar_request_segments(vec![], true);
         assert!(result.is_empty());
+    }
+
+    fn create_equity() -> InstrumentAny {
+        let equity = Equity::builder()
+            .instrument_id(create_test_instrument_id())
+            .raw_symbol(Symbol::from("AAPL"))
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.05"))
+            .lot_size(Quantity::from("1"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
+        InstrumentAny::from(equity)
+    }
+
+    #[rstest]
+    #[case(1.12097, "1.12095")]
+    #[case(1.12098, "1.12100")]
+    #[case(1.12100, "1.12100")]
+    #[case(1.12095, "1.12095")]
+    #[case(-1.12097, "-1.12095")]
+    fn test_price_converter_rounds_fx_pair_to_increment(
+        #[case] ib_price: f64,
+        #[case] expected: &str,
+    ) {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        let price = prices.price(ib_price).unwrap();
+
+        assert_eq!(price, Price::from(expected));
+        assert_eq!(price.precision, 5);
+    }
+
+    #[rstest]
+    #[case(1e25)]
+    #[case(-1e25)]
+    #[case(7.9e28)]
+    #[case(1e300)]
+    fn test_price_converter_returns_error_for_out_of_range_price(#[case] ib_price: f64) {
+        let fx = IbPriceConverter::for_instrument(&currency_pair("EUR", "USD", 5, "0.00005"), 1);
+        let magnified = IbPriceConverter::new(4).with_price_magnifier(100);
+
+        assert!(fx.price(ib_price).is_err());
+        assert!(fx.bid_price(ib_price).is_err());
+        assert!(fx.ask_price(ib_price).is_err());
+        assert!(magnified.price(ib_price).is_err());
+    }
+
+    #[rstest]
+    fn test_price_converter_rounds_jpy_pair_to_increment() {
+        let instrument = currency_pair("USD", "JPY", 3, "0.005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        assert_eq!(prices.price(151.234).unwrap(), Price::from("151.235"));
+        assert_eq!(prices.price(151.232).unwrap(), Price::from("151.230"));
+    }
+
+    #[rstest]
+    #[case(1.000025, "1.00000")]
+    #[case(1.000075, "1.00010")]
+    #[case(1.000125, "1.00010")]
+    #[case(1.000026, "1.00005")]
+    #[case(1.120025, "1.12000")]
+    #[case(1.120175, "1.12020")]
+    fn test_price_converter_ties_go_to_even_multiple(
+        #[case] ib_price: f64,
+        #[case] expected: &str,
+    ) {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        let price = prices.price(ib_price).unwrap();
+
+        assert_eq!(price, Price::from(expected));
+        assert_eq!(price.precision, 5);
+    }
+
+    #[rstest]
+    #[case(151.0025, "151.000")]
+    #[case(151.0075, "151.010")]
+    #[case(151.0125, "151.010")]
+    fn test_price_converter_ties_go_to_even_multiple_for_jpy_pair(
+        #[case] ib_price: f64,
+        #[case] expected: &str,
+    ) {
+        let instrument = currency_pair("USD", "JPY", 3, "0.005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        assert_eq!(prices.price(ib_price).unwrap(), Price::from(expected));
+    }
+
+    #[rstest]
+    fn test_price_converter_rounds_every_fx_midpoint_like_exact_ties_to_even() {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        // IB prices in steps of 0.000005 around 1.12, half of the 0.00005 increment
+        for n in 223_850_i64..=224_150 {
+            let micros = n * 5;
+            let ib_price: f64 = format!("{}.{:06}", micros / 1_000_000, micros % 1_000_000)
+                .parse()
+                .unwrap();
+
+            // The expectation is in integers: n steps of 5 micros against a step of 10 micros
+            let (quotient, remainder) = (n / 10, n % 10);
+            let steps = match remainder.cmp(&5) {
+                Ordering::Less => quotient,
+                Ordering::Greater => quotient + 1,
+                Ordering::Equal => quotient + quotient % 2,
+            };
+            let hundred_thousandths = steps * 5;
+            let expected = Price::from(
+                format!(
+                    "{}.{:05}",
+                    hundred_thousandths / 100_000,
+                    hundred_thousandths % 100_000
+                )
+                .as_str(),
+            );
+
+            assert_eq!(
+                prices.price(ib_price).unwrap(),
+                expected,
+                "ib_price={ib_price}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_price_converter_does_not_round_crypto_pair() {
+        let instrument = currency_pair("BTC", "USD", 2, "0.05");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        assert_eq!(prices.price(100.03).unwrap(), Price::from("100.03"));
+    }
+
+    #[rstest]
+    fn test_price_converter_does_not_round_equity() {
+        let instrument = create_equity();
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        assert_eq!(prices.precision(), 2);
+        assert_eq!(prices.price(100.03).unwrap(), Price::from("100.03"));
+    }
+
+    #[rstest]
+    fn test_price_converter_new_applies_precision_only() {
+        let prices = IbPriceConverter::new(5);
+
+        assert_eq!(prices.precision(), 5);
+        assert_eq!(prices.price(1.12097).unwrap(), Price::from("1.12097"));
+    }
+
+    #[rstest]
+    fn test_price_converter_rejects_non_finite_price() {
+        let prices = IbPriceConverter::new(2);
+
+        assert!(prices.price(f64::NAN).is_err());
+    }
+
+    #[rstest]
+    fn test_ib_bar_to_nautilus_bar_rounds_fx_prices_to_increment() {
+        let ib_bar = ibapi::market_data::historical::Bar {
+            date: datetime!(2024-01-01 10:00:00 UTC).into(),
+            open: 1.12097,
+            high: 1.12103,
+            low: 1.12091,
+            close: 1.12098,
+            volume: 0.0,
+            wap: 0.0,
+            count: 0,
+        };
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Mid),
+            AggregationSource::External,
+        );
+
+        let bar = ib_bar_to_nautilus_bar(
+            &ib_bar,
+            bar_type,
+            IbPriceConverter::for_instrument(&instrument, 1),
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(bar.open, Price::from("1.12095"));
+        assert_eq!(bar.high, Price::from("1.12105"));
+        assert_eq!(bar.low, Price::from("1.12090"));
+        assert_eq!(bar.close, Price::from("1.12100"));
+    }
+
+    #[rstest]
+    #[case(1.12098, "1.12095", "1.12100")]
+    #[case(1.12099, "1.12095", "1.12100")]
+    #[case(1.12097, "1.12095", "1.12100")]
+    #[case(1.12095, "1.12095", "1.12095")]
+    #[case(-1.12097, "-1.12100", "-1.12095")]
+    fn test_price_converter_rounds_bid_down_and_ask_up(
+        #[case] ib_price: f64,
+        #[case] bid: &str,
+        #[case] ask: &str,
+    ) {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        assert_eq!(prices.bid_price(ib_price).unwrap(), Price::from(bid));
+        assert_eq!(prices.ask_price(ib_price).unwrap(), Price::from(ask));
+    }
+
+    #[rstest]
+    fn test_price_converter_rounds_bid_down_and_ask_up_for_jpy_pair() {
+        let instrument = currency_pair("USD", "JPY", 3, "0.005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        assert_eq!(prices.bid_price(151.0049).unwrap(), Price::from("151.000"));
+        assert_eq!(prices.ask_price(151.0001).unwrap(), Price::from("151.005"));
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid, "1.12095")]
+    #[case(PriceType::Ask, "1.12100")]
+    #[case(PriceType::Mid, "1.12095")]
+    #[case(PriceType::Last, "1.12095")]
+    fn test_price_converter_bar_price_follows_price_type(
+        #[case] price_type: PriceType,
+        #[case] expected: &str,
+    ) {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        assert_eq!(
+            prices.bar_price(price_type, 1.12097).unwrap(),
+            Price::from(expected)
+        );
+    }
+
+    #[rstest]
+    fn test_price_converter_bid_and_ask_do_not_round_equity() {
+        let instrument = create_equity();
+        let prices = IbPriceConverter::for_instrument(&instrument, 1);
+
+        assert_eq!(prices.bid_price(100.03).unwrap(), Price::from("100.03"));
+        assert_eq!(prices.ask_price(100.03).unwrap(), Price::from("100.03"));
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid, "1.12095", "1.12105", "1.12090", "1.12095")]
+    #[case(PriceType::Ask, "1.12100", "1.12110", "1.12095", "1.12100")]
+    fn test_ib_bar_to_nautilus_bar_rounds_fx_bid_and_ask_bars(
+        #[case] price_type: PriceType,
+        #[case] open: &str,
+        #[case] high: &str,
+        #[case] low: &str,
+        #[case] close: &str,
+    ) {
+        let ib_bar = ibapi::market_data::historical::Bar {
+            date: datetime!(2024-01-01 10:00:00 UTC).into(),
+            open: 1.12097,
+            high: 1.12109,
+            low: 1.12091,
+            close: 1.12096,
+            volume: 0.0,
+            wap: 0.0,
+            count: 0,
+        };
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(1, BarAggregation::Minute, price_type),
+            AggregationSource::External,
+        );
+
+        let bar = ib_bar_to_nautilus_bar(
+            &ib_bar,
+            bar_type,
+            IbPriceConverter::for_instrument(&instrument, 1),
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(bar.open, Price::from(open));
+        assert_eq!(bar.high, Price::from(high));
+        assert_eq!(bar.low, Price::from(low));
+        assert_eq!(bar.close, Price::from(close));
+        assert!(bar.high >= bar.low);
+    }
+
+    #[rstest]
+    #[case(425.25, "4.2525")]
+    #[case(486.25, "4.8625")]
+    #[case(-100.0, "-1.0000")]
+    fn test_price_converter_divides_by_price_magnifier(
+        #[case] ib_price: f64,
+        #[case] expected: &str,
+    ) {
+        let prices = IbPriceConverter::new(4).with_price_magnifier(100);
+
+        assert_eq!(prices.price(ib_price).unwrap(), Price::from(expected));
+    }
+
+    #[rstest]
+    fn test_price_converter_converts_magnified_quarter_cent_steps_exactly() {
+        let prices = IbPriceConverter::new(4).with_price_magnifier(100);
+
+        // A quarter-cent step of 0.25 cents is 0.0025 in the contract's currency
+        for n in 0_i64..=2000 {
+            let ib_price = n as f64 * 0.25;
+            let ten_thousandths = n * 25;
+            let expected = Price::from(
+                format!(
+                    "{}.{:04}",
+                    ten_thousandths / 10_000,
+                    ten_thousandths % 10_000
+                )
+                .as_str(),
+            );
+
+            assert_eq!(
+                prices.price(ib_price).unwrap(),
+                expected,
+                "ib_price={ib_price}"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(-5)]
+    #[case(1)]
+    fn test_price_converter_treats_magnifier_below_one_as_one(#[case] magnifier: i32) {
+        let prices = IbPriceConverter::new(2).with_price_magnifier(magnifier);
+
+        assert_eq!(prices.price(150.25).unwrap(), Price::from("150.25"));
+    }
+
+    #[rstest]
+    fn test_price_converter_divides_before_rounding_fx_to_increment() {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let prices = IbPriceConverter::for_instrument(&instrument, 100);
+
+        assert_eq!(prices.price(112.097).unwrap(), Price::from("1.12095"));
+    }
+
+    #[rstest]
+    fn test_ib_bar_to_nautilus_bar_divides_magnified_prices() {
+        let ib_bar = ibapi::market_data::historical::Bar {
+            date: datetime!(2024-01-01 10:00:00 UTC).into(),
+            open: 425.25,
+            high: 430.0,
+            low: 424.5,
+            close: 428.5,
+            volume: 10.0,
+            wap: 0.0,
+            count: 1,
+        };
+        let bar_type = BarType::new(
+            create_test_instrument_id(),
+            BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::External,
+        );
+
+        let bar = ib_bar_to_nautilus_bar(
+            &ib_bar,
+            bar_type,
+            IbPriceConverter::new(4).with_price_magnifier(100),
+            0,
+        )
+        .unwrap();
+
+        assert_eq!(bar.open, Price::from("4.2525"));
+        assert_eq!(bar.high, Price::from("4.3000"));
+        assert_eq!(bar.low, Price::from("4.2450"));
+        assert_eq!(bar.close, Price::from("4.2850"));
     }
 }
