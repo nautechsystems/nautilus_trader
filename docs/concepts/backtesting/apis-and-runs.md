@@ -49,9 +49,9 @@ engine.add_data(instrument3_bars)
 engine.run()
 ```
 
-Keep the default `sort=True` unless a batching workflow deliberately manages run readiness. A call
-with `sort=False` marks the engine as not ready to run. Call `sort_data()` before `run()` unless a
-later `add_data(..., sort=True)` call has restored readiness:
+**Run readiness**: Keep the default `sort=True` unless a batching workflow deliberately manages
+readiness. A call with `sort=False` marks the engine as not ready to run. Call `sort_data()` before
+`run()` unless a later `add_data(..., sort=True)` call has restored readiness:
 
 ```python
 engine.add_data(instrument1_bars, sort=False)
@@ -63,8 +63,8 @@ engine.run()
 `sort_data()` marks the independently ordered streams as ready for replay. It is safe to call more
 than once.
 
-The engine copies each input sequence. Clearing or modifying the original Python list after
-`add_data()` does not change the loaded stream.
+**Input ownership**: Clearing or modifying the original Python list after `add_data()` does not
+change the loaded stream.
 
 ### Streaming batches manually
 
@@ -153,24 +153,26 @@ data at once.
 
 ### Order book delta replay
 
-`BacktestNode` replays `OrderBookDelta` catalog data as `OrderBookDeltas` batches by default, in
-both one-shot and streaming runs. It groups each instrument's deltas in catalog order and closes a
-batch at the delta that carries the `F_LAST` flag, so each batch holds one complete book event. A
-batch takes its flags, sequence, and timestamps from its closing delta and replays at that delta's
-`ts_init`.
+`BacktestNode` replays `OrderBookDelta` catalog data as `OrderBookDeltas` batches by default in both
+one-shot and streaming runs. It groups each instrument's deltas in catalog order and closes each
+batch at the `F_LAST` delta, so the batch holds one complete book event.
+
+Each batch takes its flags, sequence, and timestamps from its closing delta and replays at that
+delta's `ts_init`.
 
 Batching changes how the backtest processes book events:
 
-- The matching engine applies a whole event before it matches orders, so an order cannot fill
-  against a book state that exists only partway through an event. Fills can differ from individual
+- **Matching**: The matching engine applies a whole event before matching orders, so an order cannot
+  fill against a book state that exists only partway through an event. Fills can differ from individual
   delta replay.
-- Strategies receive each event in one `on_book_deltas` callback, even when the data engine's
-  `buffer_deltas` is disabled.
-- In streaming runs, `chunk_size` counts each batch as one replay item, so a chunk can hold more
-  rows than `chunk_size`.
+- **Callbacks**: Strategies receive each event in one `on_book_deltas` callback, even when the data
+  engine's `buffer_deltas` is disabled.
+- **Chunk size**: In streaming runs, `chunk_size` counts each batch as one replay item, so a chunk
+  can hold more rows than `chunk_size`.
 
-Every event must end with a delta that has `F_LAST` set. If a query ends while an instrument still
-has deltas without a closing `F_LAST` delta, the run fails with an error that names the instrument.
+Every event must end with an `F_LAST` delta. If a query ends with an instrument's deltas still
+awaiting that closing delta, the run fails with an error that names the instrument.
+
 Time bounds and `filter_expr` select individual rows, so choose them to keep events complete: a
 bound that cuts off the start of an event goes undetected.
 
@@ -197,8 +199,13 @@ config = BacktestEngineConfig(shutdown_on_error=True)
 ```
 
 The backtest loop observes the request, stops the trader and engines, and returns results collected
-up to that point. It does not abort the process. Error records suppressed by component filters or
-`bypass_logging=True` still request shutdown. Python `logging.error(...)` calls do not.
+up to that point. It does not abort the process.
+
+With `shutdown_on_error=True`:
+
+- Rust logger error records still request shutdown when component filters or `bypass_logging=True`
+  suppress them.
+- Python `logging.error(...)` calls do not request shutdown.
 
 The trigger resets when a new kernel run starts. For final `on_stop` and command-settling behavior,
 see [shutdown semantics](execution-flow.md#shutdown-semantics).
@@ -206,18 +213,17 @@ see [shutdown semantics](execution-flow.md#shutdown-semantics).
 ## Repeated runs
 
 `BacktestEngine.reset()` returns trading state and loaded component state to their initial values.
-It keeps data, instruments, venues, actors, strategies, and execution algorithms registered.
 
-The reset **clears**:
+**Cleared state**:
 
 - Orders, positions, and account balances.
 - Component runtime state.
 - Engine counters and timestamps.
 
-The reset **retains**:
+**Retained data and registrations**:
 
 - Data added through `add_data()`.
-- Instruments and venue configuration.
+- Registered instruments and venues, including venue configuration.
 - Registered actors, strategies, and execution algorithms.
 
 Instruments remain loaded because the default backtest cache configuration sets
