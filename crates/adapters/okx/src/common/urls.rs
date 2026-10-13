@@ -19,30 +19,30 @@ use crate::common::enums::{OKXEnvironment, OKXRegion};
 
 // Global region (accounts registered on www.okx.com).
 const OKX_HTTP_URL: &str = "https://www.okx.com";
-const OKX_WS_PUBLIC_URL: &str = "wss://ws.okx.com:8443/ws/v5/public";
-const OKX_WS_PRIVATE_URL: &str = "wss://ws.okx.com:8443/ws/v5/private";
-const OKX_WS_BUSINESS_URL: &str = "wss://ws.okx.com:8443/ws/v5/business";
-const OKX_DEMO_WS_PUBLIC_URL: &str = "wss://wspap.okx.com:8443/ws/v5/public";
-const OKX_DEMO_WS_PRIVATE_URL: &str = "wss://wspap.okx.com:8443/ws/v5/private";
-const OKX_DEMO_WS_BUSINESS_URL: &str = "wss://wspap.okx.com:8443/ws/v5/business";
+const OKX_WS_PUBLIC_URL: &str = "wss://ws.okx.com/ws/v5/public";
+const OKX_WS_PRIVATE_URL: &str = "wss://ws.okx.com/ws/v5/private";
+const OKX_WS_BUSINESS_URL: &str = "wss://ws.okx.com/ws/v5/business";
+const OKX_DEMO_WS_PUBLIC_URL: &str = "wss://wspap.okx.com/ws/v5/public";
+const OKX_DEMO_WS_PRIVATE_URL: &str = "wss://wspap.okx.com/ws/v5/private";
+const OKX_DEMO_WS_BUSINESS_URL: &str = "wss://wspap.okx.com/ws/v5/business";
 
 // EEA region (European Economic Area, accounts registered on my.okx.com).
 const OKX_EEA_HTTP_URL: &str = "https://eea.okx.com";
-const OKX_EEA_WS_PUBLIC_URL: &str = "wss://wseea.okx.com:8443/ws/v5/public";
-const OKX_EEA_WS_PRIVATE_URL: &str = "wss://wseea.okx.com:8443/ws/v5/private";
-const OKX_EEA_WS_BUSINESS_URL: &str = "wss://wseea.okx.com:8443/ws/v5/business";
-const OKX_EEA_DEMO_WS_PUBLIC_URL: &str = "wss://wseeapap.okx.com:8443/ws/v5/public";
-const OKX_EEA_DEMO_WS_PRIVATE_URL: &str = "wss://wseeapap.okx.com:8443/ws/v5/private";
-const OKX_EEA_DEMO_WS_BUSINESS_URL: &str = "wss://wseeapap.okx.com:8443/ws/v5/business";
+const OKX_EEA_WS_PUBLIC_URL: &str = "wss://wseea.okx.com/ws/v5/public";
+const OKX_EEA_WS_PRIVATE_URL: &str = "wss://wseea.okx.com/ws/v5/private";
+const OKX_EEA_WS_BUSINESS_URL: &str = "wss://wseea.okx.com/ws/v5/business";
+const OKX_EEA_DEMO_WS_PUBLIC_URL: &str = "wss://wseeapap.okx.com/ws/v5/public";
+const OKX_EEA_DEMO_WS_PRIVATE_URL: &str = "wss://wseeapap.okx.com/ws/v5/private";
+const OKX_EEA_DEMO_WS_BUSINESS_URL: &str = "wss://wseeapap.okx.com/ws/v5/business";
 
 // US region (United States and Australia, accounts registered on app.okx.com).
 const OKX_US_HTTP_URL: &str = "https://us.okx.com";
-const OKX_US_WS_PUBLIC_URL: &str = "wss://wsus.okx.com:8443/ws/v5/public";
-const OKX_US_WS_PRIVATE_URL: &str = "wss://wsus.okx.com:8443/ws/v5/private";
-const OKX_US_WS_BUSINESS_URL: &str = "wss://wsus.okx.com:8443/ws/v5/business";
-const OKX_US_DEMO_WS_PUBLIC_URL: &str = "wss://wsuspap.okx.com:8443/ws/v5/public";
-const OKX_US_DEMO_WS_PRIVATE_URL: &str = "wss://wsuspap.okx.com:8443/ws/v5/private";
-const OKX_US_DEMO_WS_BUSINESS_URL: &str = "wss://wsuspap.okx.com:8443/ws/v5/business";
+const OKX_US_WS_PUBLIC_URL: &str = "wss://wsus.okx.com/ws/v5/public";
+const OKX_US_WS_PRIVATE_URL: &str = "wss://wsus.okx.com/ws/v5/private";
+const OKX_US_WS_BUSINESS_URL: &str = "wss://wsus.okx.com/ws/v5/business";
+const OKX_US_DEMO_WS_PUBLIC_URL: &str = "wss://wsuspap.okx.com/ws/v5/public";
+const OKX_US_DEMO_WS_PRIVATE_URL: &str = "wss://wsuspap.okx.com/ws/v5/private";
+const OKX_US_DEMO_WS_BUSINESS_URL: &str = "wss://wsuspap.okx.com/ws/v5/business";
 
 /// OKX endpoint types for determining URL and authentication requirements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,21 +166,21 @@ mod tests {
     #[rstest]
     #[case(
         OKXRegion::Global,
-        "wss://ws.okx.com:8443/ws/v5/public",
-        "wss://ws.okx.com:8443/ws/v5/private",
-        "wss://ws.okx.com:8443/ws/v5/business"
+        "wss://ws.okx.com/ws/v5/public",
+        "wss://ws.okx.com/ws/v5/private",
+        "wss://ws.okx.com/ws/v5/business"
     )]
     #[case(
         OKXRegion::Eea,
-        "wss://wseea.okx.com:8443/ws/v5/public",
-        "wss://wseea.okx.com:8443/ws/v5/private",
-        "wss://wseea.okx.com:8443/ws/v5/business"
+        "wss://wseea.okx.com/ws/v5/public",
+        "wss://wseea.okx.com/ws/v5/private",
+        "wss://wseea.okx.com/ws/v5/business"
     )]
     #[case(
         OKXRegion::Us,
-        "wss://wsus.okx.com:8443/ws/v5/public",
-        "wss://wsus.okx.com:8443/ws/v5/private",
-        "wss://wsus.okx.com:8443/ws/v5/business"
+        "wss://wsus.okx.com/ws/v5/public",
+        "wss://wsus.okx.com/ws/v5/private",
+        "wss://wsus.okx.com/ws/v5/business"
     )]
     fn test_ws_urls_live(
         #[case] region: OKXRegion,
@@ -202,21 +202,21 @@ mod tests {
     #[rstest]
     #[case(
         OKXRegion::Global,
-        "wss://wspap.okx.com:8443/ws/v5/public",
-        "wss://wspap.okx.com:8443/ws/v5/private",
-        "wss://wspap.okx.com:8443/ws/v5/business"
+        "wss://wspap.okx.com/ws/v5/public",
+        "wss://wspap.okx.com/ws/v5/private",
+        "wss://wspap.okx.com/ws/v5/business"
     )]
     #[case(
         OKXRegion::Eea,
-        "wss://wseeapap.okx.com:8443/ws/v5/public",
-        "wss://wseeapap.okx.com:8443/ws/v5/private",
-        "wss://wseeapap.okx.com:8443/ws/v5/business"
+        "wss://wseeapap.okx.com/ws/v5/public",
+        "wss://wseeapap.okx.com/ws/v5/private",
+        "wss://wseeapap.okx.com/ws/v5/business"
     )]
     #[case(
         OKXRegion::Us,
-        "wss://wsuspap.okx.com:8443/ws/v5/public",
-        "wss://wsuspap.okx.com:8443/ws/v5/private",
-        "wss://wsuspap.okx.com:8443/ws/v5/business"
+        "wss://wsuspap.okx.com/ws/v5/public",
+        "wss://wsuspap.okx.com/ws/v5/private",
+        "wss://wsuspap.okx.com/ws/v5/business"
     )]
     fn test_ws_urls_demo(
         #[case] region: OKXRegion,
@@ -237,24 +237,57 @@ mod tests {
 
     #[rstest]
     #[case(
-        "wss://ws.okx.com:8443/ws/v5/public",
-        "business",
-        "wss://ws.okx.com:8443/ws/v5/business"
+        OKXEnvironment::Live,
+        crate::common::consts::OKX_WS_PUBLIC_URL,
+        crate::common::consts::OKX_WS_PRIVATE_URL,
+        crate::common::consts::OKX_WS_BUSINESS_URL
     )]
     #[case(
-        "wss://wseea.okx.com:8443/ws/v5/public",
+        OKXEnvironment::Demo,
+        crate::common::consts::OKX_WS_DEMO_PUBLIC_URL,
+        crate::common::consts::OKX_WS_DEMO_PRIVATE_URL,
+        crate::common::consts::OKX_WS_DEMO_BUSINESS_URL
+    )]
+    fn test_ws_exported_urls(
+        #[case] environment: OKXEnvironment,
+        #[case] public: &str,
+        #[case] private: &str,
+        #[case] business: &str,
+    ) {
+        assert_eq!(
+            get_ws_base_url_public(OKXRegion::Global, environment),
+            public
+        );
+        assert_eq!(
+            get_ws_base_url_private(OKXRegion::Global, environment),
+            private
+        );
+        assert_eq!(
+            get_ws_base_url_business(OKXRegion::Global, environment),
+            business
+        );
+    }
+
+    #[rstest]
+    #[case(
+        "wss://ws.okx.com/ws/v5/public",
+        "business",
+        "wss://ws.okx.com/ws/v5/business"
+    )]
+    #[case(
+        "wss://wseea.okx.com/ws/v5/public",
         "private",
-        "wss://wseea.okx.com:8443/ws/v5/private"
+        "wss://wseea.okx.com/ws/v5/private"
     )]
     #[case(
-        "wss://wseea.okx.com:8443/ws/v5/private",
+        "wss://wseea.okx.com/ws/v5/private",
         "business",
-        "wss://wseea.okx.com:8443/ws/v5/business"
+        "wss://wseea.okx.com/ws/v5/business"
     )]
     #[case(
-        "wss://wseea.okx.com:8443/ws/v5/private/",
+        "wss://wseea.okx.com/ws/v5/private/",
         "business",
-        "wss://wseea.okx.com:8443/ws/v5/business"
+        "wss://wseea.okx.com/ws/v5/business"
     )]
     #[case(
         "wss://custom.proxy:8443/ws/v5",

@@ -511,7 +511,7 @@ load_spreads = true
 
         assert_eq!(config.region, OKXRegion::Global);
         assert_eq!(config.http_base_url(), "https://www.okx.com");
-        assert_eq!(config.ws_public_url(), "wss://ws.okx.com:8443/ws/v5/public");
+        assert_eq!(config.ws_public_url(), "wss://ws.okx.com/ws/v5/public");
     }
 
     #[rstest]
@@ -521,13 +521,10 @@ load_spreads = true
             .build();
 
         assert_eq!(config.http_base_url(), "https://eea.okx.com");
-        assert_eq!(
-            config.ws_public_url(),
-            "wss://wseea.okx.com:8443/ws/v5/public"
-        );
+        assert_eq!(config.ws_public_url(), "wss://wseea.okx.com/ws/v5/public");
         assert_eq!(
             config.ws_business_url(),
-            "wss://wseea.okx.com:8443/ws/v5/business"
+            "wss://wseea.okx.com/ws/v5/business"
         );
     }
 
@@ -538,13 +535,10 @@ load_spreads = true
             .build();
 
         assert_eq!(config.http_base_url(), "https://eea.okx.com");
-        assert_eq!(
-            config.ws_private_url(),
-            "wss://wseea.okx.com:8443/ws/v5/private"
-        );
+        assert_eq!(config.ws_private_url(), "wss://wseea.okx.com/ws/v5/private");
         assert_eq!(
             config.ws_business_url(),
-            "wss://wseea.okx.com:8443/ws/v5/business"
+            "wss://wseea.okx.com/ws/v5/business"
         );
     }
 
@@ -552,10 +546,40 @@ load_spreads = true
     fn test_config_region_override_takes_precedence() {
         let config = OKXDataClientConfig::builder()
             .region(OKXRegion::Eea)
+            .environment(OKXEnvironment::Demo)
             .base_url_http("https://custom.proxy".to_string())
+            .base_url_ws_public("wss://public.proxy:8443/ws/v5/public".to_string())
+            .base_url_ws_business("wss://data.proxy:9443/ws/v5/business".to_string())
             .build();
 
         assert_eq!(config.http_base_url(), "https://custom.proxy");
+        assert_eq!(
+            config.ws_public_url(),
+            "wss://public.proxy:8443/ws/v5/public"
+        );
+        assert_eq!(
+            config.ws_business_url(),
+            "wss://data.proxy:9443/ws/v5/business"
+        );
+    }
+
+    #[rstest]
+    fn test_exec_config_region_override_takes_precedence() {
+        let config = OKXExecutionClientConfig::builder()
+            .region(OKXRegion::Us)
+            .environment(OKXEnvironment::Demo)
+            .base_url_ws_private("wss://private.proxy:8443/ws/v5/private".to_string())
+            .base_url_ws_business("wss://execution.proxy:9443/ws/v5/business".to_string())
+            .build();
+
+        assert_eq!(
+            config.ws_private_url(),
+            "wss://private.proxy:8443/ws/v5/private"
+        );
+        assert_eq!(
+            config.ws_business_url(),
+            "wss://execution.proxy:9443/ws/v5/business"
+        );
     }
 
     #[rstest]

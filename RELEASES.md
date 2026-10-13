@@ -143,7 +143,12 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Added `BacktestNode` book delta replay benchmark comparing batched and individual dispatch
+- Migrated OKX built-in WebSocket URLs to port 443 for live and demo environments
+- Ported the Interactive Brokers adapter to the `ibapi` v5.0.0 API (#5041), thanks @faysou
+- Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
+- Improved Lighter report generation with HTTP collection on runtime workers (#5216)
 - Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
+- Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Optimized core string formatting, precision parsing, and API key masking allocations (#5225), thanks @sunlei
 - Optimized hexadecimal encoding and decoding (#5227), thanks @sunlei
 - Optimized `UUID4` byte conversion (#5230), thanks @sunlei
@@ -153,10 +158,6 @@ Released on TBD (UTC).
 - Optimized backtest funding settlements to update positions in place (#5238), thanks @XBeg9
 - Optimized portfolio snapshots to skip copying account event history (#5237), thanks @XBeg9
 - Optimized Python `Portfolio` queries to avoid copying account event history (#5260), thanks @XBeg9
-- Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
-- Ported the Interactive Brokers adapter to the `ibapi` v5.0.0 API (#5041), thanks @faysou
-- Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
-- Improved Lighter report generation with HTTP collection on runtime workers (#5216)
 - Upgraded Rust (MSRV) to 1.99.0
 - Upgraded `cargo-hawk` tool to v0.1.15
 - Upgraded `cargo-nextest` tool to v0.9.148
