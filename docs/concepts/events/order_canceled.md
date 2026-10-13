@@ -7,8 +7,10 @@ can create it from a venue report or from a local timeout or missing-order polic
 
 Typical transitions: `PENDING_CANCEL`/`ACCEPTED` -> `CANCELED`. External and recovery paths also
 allow `INITIALIZED`, `EMULATED`, `RELEASED`, `SUBMITTED`, `PENDING_UPDATE`, `TRIGGERED`, or
-`PARTIALLY_FILLED` -> `CANCELED`. A re-close can append `CANCELED` while the order is already
-canceled when a late fill arrived after its earlier cancellation. Handler: `on_order_canceled`.
+`PARTIALLY_FILLED` -> `CANCELED`. Handler: `on_order_canceled`.
+
+A re-close can append `CANCELED` while the order is already canceled when a late fill arrived after
+its earlier cancellation.
 
 ## Fields
 

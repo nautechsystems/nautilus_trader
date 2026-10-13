@@ -25,6 +25,7 @@ lifecycle fields. Its main state fields are:
 
 At opening, realized PnL subtracts the opening fill's commission when that commission is denominated
 in the instrument's [cost currency](../positions.md#currency-considerations). Otherwise, it is zero.
+
 A reopened `NETTING` position starts a new cycle; realized PnL from the prior cycle remains in the
 [closed position snapshot](../positions.md#position-snapshotting).
 

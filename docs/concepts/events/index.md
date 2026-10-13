@@ -17,8 +17,10 @@ covers the event types, their dispatch, and how order fills and corrections prod
 
 When an event reaches a strategy, the system calls handlers in a fixed order. The **specific
 handler** runs before the **aggregate handler**, so you can handle events at either granularity or
-use both. A strategy passes events to its handlers only while it is running; events that arrive
-before start or after stop are not dispatched.
+use both.
+
+A strategy passes events to its handlers **only while it is running**. Events that arrive before
+start or after stop are not dispatched.
 
 Python data actors do not expose order event callbacks or the raw message bus. Use signals to send
 derived values from a strategy to a data actor. See
@@ -39,9 +41,12 @@ For the position lifecycle events dispatched to strategies:
 ### Time events
 
 Timers and alerts produce `TimeEvent` objects. Pass a `callback` when calling `set_timer` or
-`set_time_alert` to direct events to your own method. If you omit the callback, a callback
-previously registered under the same name is used when present; otherwise the event is delivered to
-`on_time_event`.
+`set_time_alert` to direct events to your own method.
+
+If you omit the callback:
+
+- A callback previously registered under the same name is used when present.
+- Otherwise, the event is delivered to `on_time_event`.
 
 ## Order events
 
@@ -147,20 +152,20 @@ sequenceDiagram
 
 Step by step:
 
-1. **Fill arrives.** The `ExecutionEngine` receives an `OrderFilled` event through the execution
+1. **Fill arrival**: the `ExecutionEngine` receives an `OrderFilled` event through the execution
    pipeline.
-2. **Order state updates.** The engine applies the fill to the order object and writes the updated
+1. **Order state**: the engine applies the fill to the order object and writes the updated
    order to the `Cache`.
-3. **Position ID resolved.** The engine determines which position this fill belongs to, based on OMS
+1. **Position ID**: the engine determines which position this fill belongs to, based on OMS
    type and strategy configuration.
-4. **Position created or updated.** Three outcomes:
+1. **Position lifecycle**: the engine creates or updates the position in one of three ways:
    - **No position exists** for this ID: the engine creates a `Position` from the fill, adds it to
      the `Cache`, and emits `PositionOpened`.
    - **Position exists and remains open** after the fill: the engine applies the fill to the
      position, updates the `Cache`, and emits `PositionChanged`.
    - **Position exists and closes** (quantity reaches zero): the engine applies the fill, updates
      the `Cache`, and emits `PositionClosed`.
-5. **Flip case.** When a fill reverses the position, for example a sell of 15 against a long 10, the
+1. **Position flip**: when a fill reverses the position, for example a sell of 15 against a long 10, the
    engine splits the fill into two parts: one that closes the original position (`PositionClosed`)
    and one that opens the new position (`PositionOpened`).
 

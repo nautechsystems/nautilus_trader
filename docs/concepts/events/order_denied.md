@@ -1,10 +1,10 @@
 # OrderDenied
 
-`OrderDenied` represents an order having been denied by the Nautilus system. The execution pipeline
-applies it to the order, updates the `Cache`, and publishes it on the `MessageBus`. It fires when an
-otherwise valid order cannot be submitted, for example due to a risk limit or an unsupported
-feature. The risk engine, execution engine, execution algorithms, and execution clients can all deny
-an order.
+`OrderDenied` records that the Nautilus system cannot submit an otherwise valid order, for example
+because of a risk limit or an unsupported feature. The execution pipeline applies it to the order,
+updates the `Cache`, and publishes it on the `MessageBus`.
+
+The risk engine, execution engine, execution algorithms, and execution clients can all deny an order.
 
 Typical transition: `INITIALIZED` -> `DENIED`. Handler: `on_order_denied`.
 

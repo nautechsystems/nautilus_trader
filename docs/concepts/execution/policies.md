@@ -60,8 +60,10 @@ guarantee exactly-once application for every order event. Its narrower protectio
 These checks depend on the order and position evidence retained in the cache. Restored state keeps
 its earlier trade IDs and event history available after restart. If that state and the required
 venue history are absent, NautilusTrader cannot infer exactly-once application from the missing
-evidence. Reports that describe one logical fill with different trade IDs remain distinct and are
-subject to the normal overfill and integrity checks.
+evidence.
+
+Reports that describe one logical fill with different trade IDs remain distinct and are subject to
+the normal overfill and integrity checks.
 
 The optional [event store](../event_sourcing.md) has a separate boundary. Its capture adapter
 deduplicates repeated dispatches of one message identity within a bounded recent window, and replay
@@ -87,15 +89,20 @@ The failure event depends on the command and when the failure becomes definitive
 | Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.                    |
 | Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
 
-A submit command is evaluated only against orders that are eligible for it. A cached order is
-ineligible once it has left `INITIALIZED` or `RELEASED`, and while the `ExecutionEngine` has dispatched
-it to an execution client but has not yet applied that client's first status event. A repeated
-`SubmitOrder` for an ineligible order is skipped, and a `SubmitOrderList` naming one is denied
-without reaching the client: `OrderDenied` (`ORDER_LIST_DENIED`) applies only to the list's
-eligible members, while the earlier submission keeps its lifecycle and its later client events
-apply normally. The dispatch record behind this rule is process-local: a reset clears it, and it
-is absent after a restart, where a still-`INITIALIZED` dispatched order is treated like any other
-unrouted order until it is resolved by the client's events or a venue cancel or expiry report.
+A submit command is evaluated only against eligible orders. A cached order is ineligible once it
+has left `INITIALIZED` or `RELEASED`, and while the `ExecutionEngine` has dispatched it to an execution
+client but has not yet applied that client's first status event.
+
+For an ineligible order:
+
+- A repeated `SubmitOrder` is skipped.
+- A `SubmitOrderList` naming it is denied without reaching the client. `OrderDenied`
+  (`ORDER_LIST_DENIED`) applies only to the list's eligible members. The earlier submission keeps
+  its lifecycle, and its later client events apply normally.
+
+The **dispatch record is process-local**: a reset clears it, and it is absent after a restart.
+After restart, a still-`INITIALIZED` dispatched order is treated like any other unrouted order until
+the client's events or a venue cancel or expiry report resolve it.
 
 For modify or cancel preparation, NautilusTrader emits the matching rejection only when the
 failure is attributable to that command and proves it was not sent. Otherwise, it logs the failure
@@ -124,10 +131,14 @@ exactly-once delivery for submit, modify, or cancel commands.
 
 #### Safety test
 
-An adapter retries a transient failure only when a repeat is safe. A repeat is safe when it cannot
-apply a state change twice, cannot change an order the first attempt did not name, and cannot
-report an earlier success as a rejection. A repeat that only mints an additional short-lived
-session token, and does not revoke an existing session or create a lasting credential, is safe.
+An adapter retries a transient failure only when a repeat is safe. A repeat is safe when it:
+
+- Cannot apply a state change twice.
+- Cannot change an order the first attempt did not name.
+- Cannot report an earlier success as a rejection.
+
+A repeat that only mints an additional short-lived session token, and does not revoke an existing
+session or create a lasting credential, is safe.
 
 Only the venue protocol can make any other repeat safe, through stable request identity and
 duplicate detection, or through idempotent semantics for the same target. That guarantee must hold
@@ -251,20 +262,22 @@ itself distinguish a venue status report from a local policy resolution. The loc
 below apply when submission retention does not require the order to remain unresolved; explicit venue
 status reports still reconcile retained orders:
 
-| Evidence path                                                       | Prior status                        | Terminal event                  | Available event provenance                                                                        |
-| ------------------------------------------------------------------- | ----------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Explicit venue status report                                        | Any transition allowed by the model | `OrderRejected`/`OrderCanceled` | `reconciliation=true`; a rejection keeps the reported reason, or `UNKNOWN` when none is reported. |
-| In-flight retry exhaustion                                          | `SUBMITTED`                         | `OrderRejected`                 | `reconciliation=true`, reason `INFLIGHT_TIMEOUT`.                                                 |
-| In-flight retry exhaustion                                          | `PENDING_UPDATE`/`PENDING_CANCEL`   | `OrderCanceled`                 | `reconciliation=true`; the event has no reason field.                                             |
-| Full-history order remains missing after retries and targeted query | `SUBMITTED`/`ACCEPTED`              | `OrderRejected`                 | `reconciliation=true`, reason `NOT_FOUND_AT_VENUE`.                                               |
-| Full-history order remains missing after retries and targeted query | `PARTIALLY_FILLED`                  | `OrderCanceled`                 | `reconciliation=true`; the event has no reason field.                                             |
+| Evidence path                                                       | Prior status                        | Terminal event                  | Available event provenance                                                                                                        |
+| ------------------------------------------------------------------- | ----------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Explicit venue status report                                        | Any transition allowed by the model | `OrderRejected`/`OrderCanceled` | `reconciliation=true`; a rejection keeps the reported reason, or `UNKNOWN` when absent; a cancellation keeps any reported reason. |
+| In-flight retry exhaustion                                          | `SUBMITTED`                         | `OrderRejected`                 | `reconciliation=true`, reason `INFLIGHT_TIMEOUT`.                                                                                 |
+| In-flight retry exhaustion                                          | `PENDING_UPDATE`/`PENDING_CANCEL`   | `OrderCanceled`                 | `reconciliation=true`; `reason=None`.                                                                                             |
+| Full-history order remains missing after retries and targeted query | `SUBMITTED`/`ACCEPTED`              | `OrderRejected`                 | `reconciliation=true`, reason `NOT_FOUND_AT_VENUE`.                                                                               |
+| Full-history order remains missing after retries and targeted query | `PARTIALLY_FILLED`                  | `OrderCanceled`                 | `reconciliation=true`; `reason=None`.                                                                                             |
 
 The `submission_recovery_policy` setting defaults to `SubmissionRecoveryPolicy::ResolveLocally`.
 With `SubmissionRecoveryPolicy::RetainUnresolved`, orders that have never been accepted retain their
 unacknowledged state after recovery exhaustion, including a pending cancel or update. The Polymarket
-client requires this behavior regardless of the configured policy. Automatic per-order recovery
-queries stop, but later venue events and reports can still resolve the order. Already accepted orders
-continue to use the local resolution rules above.
+client requires this behavior regardless of the configured policy.
+
+For these retained orders, automatic per-order recovery queries stop, but later venue events and
+reports can still resolve the order. Already accepted orders continue to use the local resolution
+rules above.
 
 :::warning[Local terminal state is not venue confirmation]
 The first row is backed by an explicit venue status. The remaining rows restore a terminal local
@@ -272,8 +285,9 @@ state after an operator-configured retry policy expires. They do not prove that 
 the submit or canceled the working order.
 :::
 
-`OrderCanceled` has no reason field, so the event alone cannot distinguish a venue-reported
-cancellation from the two synthetic reconciliation paths. Consumers that require that distinction
+`OrderCanceled.reason` can carry a venue-reported cancellation reason, but the two synthetic
+reconciliation paths leave it unset. When no reason is present, the event alone cannot distinguish
+a venue-reported cancellation from those synthetic paths. Consumers that require that distinction
 must preserve the associated reconciliation inputs and operational logs. The optional event store
 captures raw venue reports when enabled, but no `OrderCanceled` field carries the policy reason.
 
