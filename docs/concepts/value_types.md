@@ -80,11 +80,13 @@ same type return `Decimal`:
 
 The same pattern applies to `Quantity` and `Money`.
 
-These operations do not return the original type because the result has different
-dimensional meaning. Multiplying a price by a price produces "price squared", not
-a price. Dividing a quantity by a quantity produces a dimensionless ratio, not a
-quantity. Returning `Decimal` makes the unit change explicit and prevents
-misinterpretation of the result as a value with the original unit.
+These operations return `Decimal` because the result has different dimensional meaning:
+
+- Multiplying a price by a price produces "price squared", not a price.
+- Dividing a quantity by a quantity produces a dimensionless ratio, not a quantity.
+
+Returning `Decimal` makes the unit change explicit and prevents misinterpretation of the result as a value
+with the original unit.
 
 ### Unary operations
 
@@ -184,14 +186,13 @@ str(p1)  # "1.23"
 str(p2)  # "1.230"
 ```
 
-**Precision controls display, not identity.** Two prices with the same decimal value but
-different precisions are equal. The `precision` field determines string formatting and
-how many decimal places are shown, but equality is based on the underlying numeric value.
+**Precision and identity**: two prices with the same decimal value but different precisions are equal.
+Precision controls display, not identity: the `precision` field determines string formatting and how many
+decimal places are shown, but equality is based on the underlying numeric value.
 
-**Market data serialization uses precision metadata.** When market data types (quotes,
-trades, order book deltas) are written to Parquet or Arrow format, precision is stored in
-the file metadata so that values can be correctly decoded. All market data values within
-a single file must share the same precision.
+**Market data serialization**: when market data types, such as quotes, trades, and order book deltas, are
+written to Parquet or Arrow, precision is stored in the file metadata so values can be correctly decoded.
+All market data values within a single file must share the same precision.
 
 :::warning
 If a venue changes an instrument's tick size (and thus its precision), data files written

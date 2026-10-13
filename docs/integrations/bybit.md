@@ -639,7 +639,8 @@ The following limitations apply to Spot products, as positions are not tracked o
 
 ### Options trading
 
-Bybit lists European-style options on BTC and ETH, settled in USDT or USDC.
+Bybit lists European-style options on crypto and US equity underlyings, such as BTC, ETH, SOL,
+and NVDA, settled in USDT or USDC.
 The adapter uses the `CryptoOption` instrument type and the `-OPTION` symbol
 suffix. See the [symbology section](#symbology) for the full symbol format.
 

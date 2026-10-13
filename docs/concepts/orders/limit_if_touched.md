@@ -14,9 +14,9 @@ trigger.
 
 ## Example
 
-The following example creates a *Limit-If-Touched* order to BUY 5 BTCUSDT-PERP perpetual futures
+**Example**: create a *Limit-If-Touched* order to BUY 5 BTCUSDT-PERP perpetual futures
 contracts on Binance Futures at a limit price of 30,100 USDT once the market reaches 30,150 USDT.
-The order expires one hour after creation:
+The order expires one hour after creation.
 
 ```rust tab="Rust"
 use nautilus_core::DurationNanos;

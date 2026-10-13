@@ -514,6 +514,10 @@ impl LighterOrderStatus {
             _ => None,
         }
     }
+
+    pub(crate) fn is_terminal(self) -> bool {
+        !matches!(self, Self::InProgress | Self::Pending | Self::Open)
+    }
 }
 
 /// Side string used by REST and WebSocket order payloads.

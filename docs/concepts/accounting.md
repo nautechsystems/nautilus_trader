@@ -11,11 +11,11 @@ configuration (starting balances, margin-model selection per venue), see
 
 ## Account types
 
-When you attach a venue to the engine for either live trading or a backtest, you
-pick one of three accounting modes via `account_type`: Cash, Margin, or Betting.
-A fourth account type, Wallet, models on-chain wallet state. The Blockchain
-adapter selects it; its execution client supports locally signed Uniswap V3
-market swaps but is not production-ready.
+For live trading and backtests, select Cash, Margin, or Betting via `account_type` when attaching a venue to
+the engine.
+
+Wallet models on-chain wallet state. The Blockchain adapter selects it; its execution client supports locally
+signed Uniswap V3 market swaps but is not production-ready.
 
 | Account type | Typical use case                                | What the engine locks                                                     |
 | ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
@@ -31,14 +31,13 @@ concept of margin. Locked balances reflect the value reserved for pending
 orders: the notional value of each pending buy and the quantity each pending
 sell would deliver.
 
-A sell delivers the instrument's base asset, so the reservation belongs in that
-asset. Instruments whose `base_currency()` is `None`, such as binary options and
-equities, model no such asset. A pending sell on those instruments locks nothing
-and its proceeds are not compared against the free quote balance. Reserving the
-order quantity in the quote currency instead would label a share or contract
-count as money and lock collateral the sale never consumes; comparing sale
-proceeds against free collateral would deny a sale for lack of the very balance
-it credits.
+A sell delivers the instrument's base asset, so the reservation belongs in that asset. Instruments whose
+`base_currency()` is `None`, such as binary options and equities, model no such asset. A pending sell on those
+instruments **locks nothing**, and its proceeds are not compared against the free quote balance.
+
+Reserving the order quantity in the quote currency would label a share or contract count as money and lock
+collateral the sale never consumes. Comparing sale proceeds against free collateral would deny a sale for lack
+of the very balance it credits.
 
 In live trading, inventory availability for those instruments is not tracked or
 checked locally, including across concurrent sells. The venue enforces it, and any
@@ -96,18 +95,22 @@ the stake required by the venue; leverage and margin do not apply.
 
 ### Wallet accounts
 
-Wallet accounts represent blockchain wallets: unleveraged, multi-currency
-holdings of native and ERC-20 token balances with no margin and no borrowing.
-For reported states, `total` is the observed on-chain balance; `locked` tracks
-local pending-order reservations, and `free = total - locked`. Account state
-events **contribute totals only**: the account ignores incoming `locked` and `free`
-values, retains its local reservations, and rederives `free`. It rebuilds
-transient reservations from submitted and open orders during live startup.
-While an amendment is pending, the account reserves the full observed balance
-of the debit currency because the pending event does not carry the requested
-terms. If the reserved amount exceeds the latest observed total, `locked` is
-capped at `total` and `free` remains zero until the balance or reservation
-changes.
+Wallet accounts represent blockchain wallets: unleveraged, multi-currency holdings of native and ERC-20 token
+balances with no margin and no borrowing.
+
+For reported states:
+
+- `total` is the observed on-chain balance.
+- `locked` tracks local pending-order reservations.
+- `free = total - locked`.
+
+Account state events **contribute totals only**: the account ignores incoming `locked` and `free` values,
+retains its local reservations, and rederives `free`. It rebuilds transient reservations from submitted and
+open orders during live startup.
+
+While an amendment is pending, the account reserves the full observed balance of the debit currency because
+the pending event does not carry the requested terms. If the reserved amount exceeds the latest observed
+total, `locked` is capped at `total` and `free` remains zero until the balance or reservation changes.
 
 A balance with a negative total is rejected rather than applied. ERC-20
 allowances are spender authorizations and are never represented as balances or
@@ -195,12 +198,14 @@ An `AccountState` event may carry entries in either or both scopes, and
 `instrument_id` is set.
 
 :::warning
-`MarginAccount.apply()` **replaces** both stores from the incoming event. It does
-not merge with prior state, and an event carrying neither balances nor margins
-leaves the prior stores in place. Adapters that emit partial snapshots must
-include every live margin entry on each update or those entries will be dropped
-until the next full snapshot. Balances the event carries replace the stored
-entry for their currency; currencies the event omits are retained.
+`MarginAccount.apply()` **replaces** both margin stores from the incoming event; it does not merge with prior
+state. An event carrying neither balances nor margins leaves the prior stores in place.
+
+Adapters that emit partial snapshots must include every live margin entry on each update or those entries will
+be dropped until the next full snapshot.
+
+Balances the event carries replace the stored entry for their currency; currencies the event omits are
+retained.
 :::
 
 ## Strategy query API
@@ -269,12 +274,12 @@ An `account_id` selects that account. A venue-only query resolves only when
 exactly one account is issued under the venue, so pass `account_id` when several
 accounts share a venue.
 
-When a margin account resolves, these return the same per-instrument money
-views as `MarginAccount.initial_margins` and
-`MarginAccount.maintenance_margins`; otherwise, they return `None`. For
-account-wide data on cross-margin venues, query the account directly via
-`portfolio.account(venue=venue).account_initial_margin(ccy)`. The returned account is
-a **detached snapshot** and cannot mutate Portfolio state.
+When a margin account resolves, these return the same per-instrument money views as
+`MarginAccount.initial_margins` and `MarginAccount.maintenance_margins`; otherwise, they return `None`.
+
+For account-wide data on cross-margin venues, query the account directly via
+`portfolio.account(venue=venue).account_initial_margin(ccy)`. The returned account is a **detached snapshot**
+and cannot mutate Portfolio state.
 
 PnL, exposure, mark-to-market, and equity queries all accept `venue` and an
 optional `account_id` to scope multi-account venues:
@@ -340,12 +345,14 @@ nets those sub-positions onto a hypothetical NETTING position in `ts_opened`
 order, then runs the margin model once on the resulting net signed quantity
 and average open price.
 
-The replay follows the same rules as `Position.apply`: same-side fills
-produce a quantity-weighted average open price, opposite-side fills
-partial-close at the existing average, and a fill that crosses zero makes
-the residual take the flipping fill's price. Sub-positions sharing a
-`ts_opened` fold in `(ts_opened, position_id)` order so the result does
-not depend on cache iteration order.
+The replay follows the same rules as `Position.apply`:
+
+- Same-side fills produce a quantity-weighted average open price.
+- Opposite-side fills partial-close at the existing average.
+- A fill that crosses zero makes the residual take the flipping fill's price.
+
+Sub-positions sharing a `ts_opened` fold in `(ts_opened, position_id)` order so the result does not depend on
+cache iteration order.
 
 HEDGING and NETTING accounts compute the same maintenance margin when the
 folded net quantity and average open price match under the same margin model

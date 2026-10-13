@@ -572,6 +572,8 @@ class BlackScholesGreeksResult:
     def theta(self) -> float: ...
     @property
     def itm_prob(self) -> float: ...
+    @property
+    def rho(self) -> float: ...
 
 @typing.final
 class Block:
@@ -8337,7 +8339,7 @@ def margin_account_from_account_events(
     events: typing.Sequence[dict], calculate_account_state: bool
 ) -> MarginAccount: ...
 def black_scholes_greeks(
-    s: float, r: float, b: float, vol: float, is_call: bool, k: float, t: float
+    s: float, r: float, b: float, vol: float, is_call: bool, k: float, t: float, db_dr: float = 0.0
 ) -> BlackScholesGreeksResult: ...
 def calc_bets_pnl(bets: typing.Sequence[Bet]) -> decimal.Decimal: ...
 def generic_spread_id_to_list(instrument_id: InstrumentId) -> list[tuple[InstrumentId, int]]: ...
@@ -8345,7 +8347,14 @@ def imply_vol(
     s: float, r: float, b: float, is_call: bool, k: float, t: float, price: float
 ) -> float: ...
 def imply_vol_and_greeks(
-    s: float, r: float, b: float, is_call: bool, k: float, t: float, price: float
+    s: float,
+    r: float,
+    b: float,
+    is_call: bool,
+    k: float,
+    t: float,
+    price: float,
+    db_dr: float = 0.0,
 ) -> BlackScholesGreeksResult: ...
 def inverse_probability_to_bet(
     probability: decimal.Decimal, volume: decimal.Decimal, side: OrderSide
@@ -8365,6 +8374,7 @@ def refine_vol_and_greeks(
     t: float,
     target_price: float,
     initial_vol: float,
+    db_dr: float = 0.0,
 ) -> BlackScholesGreeksResult: ...
 def register_custom_data_class(data_class: typing.Any) -> None: ...
 def register_tick_scheme(tick_scheme: FixedTickScheme | TieredTickScheme) -> None: ...

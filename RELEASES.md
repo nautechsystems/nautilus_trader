@@ -23,6 +23,7 @@ Released on TBD (UTC).
 - Added Interactive Brokers subscription idle events (#5041), thanks @faysou
 - Added Kraken Spot L2 checksum validation and resync on mismatch (#5219), thanks @zhaow-de
 - Added Lighter native transaction batching with automatic splitting for order lists and batch operations
+- Added Lighter native OTO, OCO, and OTOCO order groups with normalized Nautilus relationships
 
 ### Breaking Changes
 
@@ -97,6 +98,7 @@ Released on TBD (UTC).
 - Fixed portfolio Greeks panics when calculations, subscribers, or filters write to the cache
 - Fixed missing Python Greeks conversion, scalar-left multiplication, and portfolio addition
 - Fixed `BacktestNode` streaming runs leaving the engine running after a data load failure
+- Fixed Binance Spot quote-sized market orders remaining open after full execution
 - Fixed Bybit stale WebSocket subscriptions blocking subscriptions after reconnect (#5250), thanks @Martingale42
 - Fixed Bybit failed quote subscriptions retaining shared order book references (#5258), thanks @Martingale42
 - Fixed Bybit incomplete position reports causing held positions to reconcile as flat
@@ -131,6 +133,8 @@ Released on TBD (UTC).
 - Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
 - Fixed Lighter single and batch modify failures remaining pending after admission
+- Fixed Lighter fills and order updates preceding modification confirmation
+- Fixed Lighter duplicate fill reports across HTTP history pages
 - Fixed OKX conditional order amendments dropping prices (#5275), thanks for reporting @ProfitChef
 - Fixed Polymarket modify canceling a working order when the signed replacement is below the market minimum
 - Fixed Polymarket recovered BUY overfills being rejected instead of raising order quantity
@@ -143,7 +147,13 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Added `BacktestNode` book delta replay benchmark comparing batched and individual dispatch
+- Migrated OKX built-in WebSocket URLs to port 443 for live and demo environments
+- Ported the Interactive Brokers adapter to the `ibapi` v5.0.0 API (#5041), thanks @faysou
+- Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
+- Improved Lighter report generation with HTTP collection on runtime workers (#5216)
+- Improved Lighter execution race coverage and grouped-order signer validation
 - Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
+- Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Optimized core string formatting, precision parsing, and API key masking allocations (#5225), thanks @sunlei
 - Optimized hexadecimal encoding and decoding (#5227), thanks @sunlei
 - Optimized `UUID4` byte conversion (#5230), thanks @sunlei
@@ -153,10 +163,6 @@ Released on TBD (UTC).
 - Optimized backtest funding settlements to update positions in place (#5238), thanks @XBeg9
 - Optimized portfolio snapshots to skip copying account event history (#5237), thanks @XBeg9
 - Optimized Python `Portfolio` queries to avoid copying account event history (#5260), thanks @XBeg9
-- Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
-- Ported the Interactive Brokers adapter to the `ibapi` v5.0.0 API (#5041), thanks @faysou
-- Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
-- Improved Lighter report generation with HTTP collection on runtime workers (#5216)
 - Upgraded Rust (MSRV) to 1.99.0
 - Upgraded `cargo-hawk` tool to v0.1.15
 - Upgraded `cargo-nextest` tool to v0.9.148
@@ -194,6 +200,7 @@ Released on TBD (UTC).
 - Clarified Hyperliquid modify replacement rules and individual batch results
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
 - Clarified Lighter cancel-all scope and batch cancellation failure handling
+- Clarified Lighter contingent order mappings, execution ordering, and venue limits
 - Documented Polymarket PolyBolt reference prices and the RTDS migration (#5296)
 
 ### Deprecations

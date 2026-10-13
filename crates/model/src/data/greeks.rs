@@ -27,7 +27,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     data::{
         HasTsInit,
-        black_scholes::{compute_greeks, compute_iv_and_greeks},
+        black_scholes::{
+            REFINEMENT_VOL_MAX, REFINEMENT_VOL_MIN, compute_greeks, compute_iv_and_greeks,
+        },
     },
     identifiers::InstrumentId,
 };
@@ -37,6 +39,23 @@ const FRAC_SQRT_2_PI: f64 = f64::from_bits(0x3fd9_8845_33d4_3651);
 const THETA_DAILY_FACTOR: f64 = 1.0 / 365.25;
 /// Scale for vega to express as absolute percent change when building `BlackScholesGreeksResult`.
 const VEGA_PERCENT_FACTOR: f64 = 0.01;
+const RHO_PERCENT_FACTOR: f64 = 0.01;
+const PRICE_RELATIVE_TOLERANCE: f64 = 1e-4;
+
+/// An unsupported or invalid local option valuation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum OptionValuationError {
+    #[error("Invalid option valuation input: {0}")]
+    InvalidInput(&'static str),
+    #[error("No finite positive implied volatility for the option price")]
+    ImpliedVolatilityUnavailable,
+    #[error("Nonfinite or inconsistent option valuation result")]
+    InvalidResult,
+    #[error("Option {0} has expired")]
+    Expired(InstrumentId),
+    #[error("Local valuation of option spread {0} is unsupported")]
+    UnsupportedSpread(InstrumentId),
+}
 
 /// Core option Greek sensitivity values (the 5 standard sensitivities).
 /// Designed as a composable building block embedded in all Greeks-carrying types.
@@ -114,8 +133,11 @@ fn norm_pdf(x: f64) -> f64 {
     FRAC_SQRT_2_PI * (-0.5 * x * x).exp()
 }
 
-/// Result structure for Black-Scholes greeks calculations
-/// This is a separate f64 struct (not a type alias) for Python compatibility
+/// Result structure for Black-Scholes Greeks calculations.
+///
+/// This is a separate f64 struct (not a type alias) for Python compatibility.
+/// Rho is per percentage point and holds carry fixed in the unchecked functions.
+/// Checked functions take the carry rate sensitivity explicitly.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 #[cfg_attr(
@@ -134,6 +156,7 @@ pub struct BlackScholesGreeksResult {
     pub vega: f64,
     pub theta: f64,
     pub itm_prob: f64,
+    pub rho: f64,
 }
 
 // Standardized Generalized Black-Scholes Greeks implementation
@@ -186,6 +209,7 @@ pub fn black_scholes_greeks_exact(
         vega,
         theta,
         itm_prob: cdf_phi_d2,
+        rho: -t * price * RHO_PERCENT_FACTOR,
     }
 }
 
@@ -200,8 +224,8 @@ pub fn imply_vol(s: f64, r: f64, b: f64, is_call: bool, k: f64, t: f64, price: f
         .strike(k)
         .expiry(t)
         .is_call(is_call)
-        .build_unchecked()
-        .calculate::<DefaultSpecialFn>()
+        .build()
+        .and_then(|iv| iv.calculate::<DefaultSpecialFn>())
         .unwrap_or(0.0)
 }
 
@@ -230,6 +254,7 @@ pub fn black_scholes_greeks(
         vega: f64::from(greeks.vega) * VEGA_PERCENT_FACTOR,
         theta: f64::from(greeks.theta) * THETA_DAILY_FACTOR,
         itm_prob: f64::from(greeks.itm_prob),
+        rho: -t * f64::from(greeks.price) * RHO_PERCENT_FACTOR,
     }
 }
 
@@ -288,7 +313,234 @@ pub fn refine_vol_and_greeks(
         vega: f64::from(greeks.vega) * VEGA_PERCENT_FACTOR,
         theta: f64::from(greeks.theta) * THETA_DAILY_FACTOR,
         itm_prob: f64::from(greeks.itm_prob),
+        rho: -t * f64::from(greeks.price) * RHO_PERCENT_FACTOR,
     }
+}
+
+/// Computes validated Greeks with an explicit sensitivity of carry to the interest rate.
+///
+/// `db_dr` is zero for fixed carry and one for carry defined as `r - q`, even when `r == q`.
+/// Rho measures the price change for a one percentage point rate move.
+/// The exact implementation is used when the fast result is nonfinite or inconsistent.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Model inputs are invalid.
+/// - Valuation results are nonfinite or inconsistent.
+#[expect(clippy::too_many_arguments)]
+pub fn black_scholes_greeks_checked(
+    s: f64,
+    r: f64,
+    b: f64,
+    vol: f64,
+    is_call: bool,
+    k: f64,
+    t: f64,
+    db_dr: f64,
+) -> Result<BlackScholesGreeksResult, OptionValuationError> {
+    check_option_inputs(s, r, b, vol, k, t)?;
+    let result = black_scholes_greeks(s, r, b, vol, is_call, k, t);
+    match apply_rate_sensitivity(result, s, r, is_call, k, t, db_dr) {
+        Err(OptionValuationError::InvalidResult) => {
+            let result = black_scholes_greeks_exact(s, r, b, vol, is_call, k, t);
+            apply_rate_sensitivity(result, s, r, is_call, k, t, db_dr)
+        }
+        result => result,
+    }
+}
+
+/// Solves implied volatility and computes validated Greeks with explicit carry rate sensitivity.
+///
+/// A refinement seed is used only when it produces an interior volatility and reprices the
+/// premium within 0.01 percent, otherwise the full implied-volatility solver is used.
+/// The exact implementation is used when the fast kernel cannot reprice the solved premium
+/// within that tolerance. Carry rate sensitivity and rho units follow [`black_scholes_greeks_checked`].
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Model inputs or the premium are invalid.
+/// - The premium has no finite positive implied volatility.
+/// - Results are nonfinite, inconsistent, or fail the 0.01 percent repricing tolerance.
+#[expect(clippy::too_many_arguments)]
+pub fn imply_vol_and_greeks_checked(
+    s: f64,
+    r: f64,
+    b: f64,
+    is_call: bool,
+    k: f64,
+    t: f64,
+    price: f64,
+    db_dr: f64,
+    initial_vol: Option<f64>,
+) -> Result<BlackScholesGreeksResult, OptionValuationError> {
+    check_option_inputs(s, r, b, 1.0, k, t)?;
+
+    if !price.is_finite() || price <= 0.0 {
+        return Err(OptionValuationError::InvalidInput("option price"));
+    }
+
+    let forward = s * (b * t).exp();
+    let forward_price = price * (r * t).exp();
+
+    let intrinsic = if is_call {
+        (forward - k).max(0.0)
+    } else {
+        (k - forward).max(0.0)
+    };
+
+    let upper = if is_call { forward } else { k };
+    if !forward.is_finite()
+        || !forward_price.is_finite()
+        || forward_price <= intrinsic
+        || forward_price >= upper
+    {
+        return Err(OptionValuationError::ImpliedVolatilityUnavailable);
+    }
+
+    let price_tolerance = price * PRICE_RELATIVE_TOLERANCE;
+
+    if let Some(seed) = initial_vol {
+        check_option_inputs(s, r, b, seed, k, t)?;
+        let result = refine_vol_and_greeks(s, r, b, is_call, k, t, price, seed);
+        if result.vol > REFINEMENT_VOL_MIN
+            && result.vol < REFINEMENT_VOL_MAX
+            && (result.price - price).abs() <= price_tolerance
+        {
+            return apply_rate_sensitivity(result, s, r, is_call, k, t, db_dr);
+        }
+    }
+
+    let vol = imply_vol_checked(s, r, b, is_call, k, t, price)?;
+    let mut result = black_scholes_greeks_checked(s, r, b, vol, is_call, k, t, db_dr)?;
+    if (result.price - price).abs() > price_tolerance {
+        result = apply_rate_sensitivity(
+            black_scholes_greeks_exact(s, r, b, vol, is_call, k, t),
+            s,
+            r,
+            is_call,
+            k,
+            t,
+            db_dr,
+        )?;
+    }
+
+    if (result.price - price).abs() > price_tolerance {
+        return Err(OptionValuationError::InvalidResult);
+    }
+
+    Ok(result)
+}
+
+/// Solves implied volatility without fast-kernel repricing.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Model inputs are invalid.
+/// - The premium has no finite positive implied volatility.
+pub(crate) fn imply_vol_checked(
+    s: f64,
+    r: f64,
+    b: f64,
+    is_call: bool,
+    k: f64,
+    t: f64,
+    price: f64,
+) -> Result<f64, OptionValuationError> {
+    let vol = imply_vol(s, r, b, is_call, k, t, price);
+    if !vol.is_finite() || vol <= 0.0 {
+        return Err(OptionValuationError::ImpliedVolatilityUnavailable);
+    }
+
+    Ok(vol)
+}
+
+/// Checks model inputs against the fast pricing kernel's numeric domain.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Rates are not finite in the pricing kernel's precision.
+/// - Spot, strike, time, or volatility are not finite and positive in that precision.
+pub fn check_option_inputs(
+    s: f64,
+    r: f64,
+    b: f64,
+    vol: f64,
+    k: f64,
+    t: f64,
+) -> Result<(), OptionValuationError> {
+    for (name, value) in [
+        ("underlying price", s),
+        ("strike", k),
+        ("time to expiry", t),
+        ("volatility", vol),
+    ] {
+        let kernel_value = value as f32;
+        if !value.is_finite() || value <= 0.0 || !kernel_value.is_finite() || kernel_value <= 0.0 {
+            return Err(OptionValuationError::InvalidInput(name));
+        }
+    }
+
+    for (name, value) in [("interest rate", r), ("cost of carry", b)] {
+        if !(value as f32).is_finite() {
+            return Err(OptionValuationError::InvalidInput(name));
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_rate_sensitivity(
+    mut result: BlackScholesGreeksResult,
+    s: f64,
+    r: f64,
+    is_call: bool,
+    k: f64,
+    t: f64,
+    db_dr: f64,
+) -> Result<BlackScholesGreeksResult, OptionValuationError> {
+    if !db_dr.is_finite() {
+        return Err(OptionValuationError::InvalidInput("carry rate sensitivity"));
+    }
+
+    if db_dr != 0.0 {
+        let phi = if is_call { 1.0 } else { -1.0 };
+        // The strike term avoids subtracting spot delta and price for deep ITM options
+        result.rho = t
+            * ((db_dr - 1.0) * s * result.delta + phi * k * (-r * t).exp() * result.itm_prob)
+            * RHO_PERCENT_FACTOR;
+    }
+
+    check_valuation_result(result)
+}
+
+fn check_valuation_result(
+    result: BlackScholesGreeksResult,
+) -> Result<BlackScholesGreeksResult, OptionValuationError> {
+    if [
+        result.price,
+        result.vol,
+        result.delta,
+        result.gamma,
+        result.vega,
+        result.theta,
+        result.rho,
+        result.itm_prob,
+    ]
+    .iter()
+    .any(|value| !value.is_finite())
+        || result.price < 0.0
+        || result.gamma < 0.0
+        || result.vega < 0.0
+        || !(0.0..=1.0).contains(&result.itm_prob)
+    {
+        return Err(OptionValuationError::InvalidResult);
+    }
+
+    Ok(result)
 }
 
 #[repr(C)]
@@ -644,7 +896,7 @@ impl HasGreeks for BlackScholesGreeksResult {
             gamma: self.gamma,
             vega: self.vega,
             theta: self.theta,
-            rho: 0.0,
+            rho: self.rho,
         }
     }
 }
@@ -786,6 +1038,7 @@ mod tests {
             vega: 15.2,
             theta: -0.08,
             itm_prob: 0.55,
+            rho: 1.75,
         };
 
         assert_eq!(result.price, 25.5);
@@ -806,6 +1059,7 @@ mod tests {
             vega: 15.2,
             theta: -0.08,
             itm_prob: 0.55,
+            rho: 1.75,
         };
         let result2 = result1;
         let result3 = result1;
@@ -824,6 +1078,7 @@ mod tests {
             vega: 15.2,
             theta: -0.08,
             itm_prob: 0.55,
+            rho: 1.75,
         };
         let debug_str = format!("{result:?}");
 
@@ -842,6 +1097,7 @@ mod tests {
             vega: 15.2,
             theta: -0.08,
             itm_prob: 0.55,
+            rho: 1.75,
         };
 
         assert_eq!(result.vol, 0.2);
@@ -1988,5 +2244,291 @@ mod tests {
         check_6_sig_figs(refined_result.gamma, implied_result.gamma, "Gamma", true);
         check_6_sig_figs(refined_result.vega, implied_result.vega, "Vega", false);
         check_6_sig_figs(refined_result.theta, implied_result.theta, "Theta", false);
+    }
+
+    #[rstest]
+    #[case(true, 1.0, 0.437_729_301_518)]
+    #[case(false, 1.0, -0.513_500_122_983)]
+    #[case(true, 0.0, -0.075_770_821_464)]
+    #[case(false, 0.0, -0.075_770_821_464)]
+    fn test_checked_greeks_rho_at_zero_carry(
+        #[case] is_call: bool,
+        #[case] db_dr: f64,
+        #[case] expected: f64,
+    ) {
+        let result =
+            black_scholes_greeks_checked(100.0, 0.05, 0.0, 0.2, is_call, 100.0, 1.0, db_dr)
+                .unwrap();
+        assert!((result.rho - expected).abs() < 1e-6);
+        assert_eq!(result.greeks().rho, result.rho);
+        let raw = black_scholes_greeks(100.0, 0.05, 0.0, 0.2, is_call, 100.0, 1.0);
+        assert_eq!(
+            result,
+            BlackScholesGreeksResult {
+                rho: result.rho,
+                ..raw
+            }
+        );
+    }
+
+    #[rstest]
+    #[case(0, 0.0, "underlying price")]
+    #[case(0, -1.0, "underlying price")]
+    #[case(0, f64::INFINITY, "underlying price")]
+    #[case(0, f64::MIN_POSITIVE, "underlying price")]
+    #[case(0, f64::MAX, "underlying price")]
+    #[case(1, f64::NAN, "interest rate")]
+    #[case(2, f64::INFINITY, "cost of carry")]
+    #[case(3, 0.0, "volatility")]
+    #[case(3, -0.2, "volatility")]
+    #[case(3, f64::NAN, "volatility")]
+    #[case(4, 0.0, "strike")]
+    #[case(4, -100.0, "strike")]
+    #[case(5, 0.0, "time to expiry")]
+    #[case(5, -1.0, "time to expiry")]
+    fn test_checked_greeks_reject_invalid_inputs(
+        #[case] index: usize,
+        #[case] value: f64,
+        #[case] expected: &'static str,
+    ) {
+        let mut inputs = [100.0, 0.05, 0.03, 0.2, 110.0, 0.5];
+        inputs[index] = value;
+        let [s, r, b, vol, k, t] = inputs;
+        assert_eq!(
+            black_scholes_greeks_checked(s, r, b, vol, true, k, t, 1.0),
+            Err(OptionValuationError::InvalidInput(expected))
+        );
+    }
+
+    #[rstest]
+    #[case(true, 0.0)]
+    #[case(true, 100.0)]
+    #[case(true, 200.0)]
+    #[case(false, 0.0)]
+    #[case(false, 100.0)]
+    #[case(false, 200.0)]
+    fn test_checked_iv_rejects_zero_and_unattainable_premiums(
+        #[case] is_call: bool,
+        #[case] price: f64,
+    ) {
+        let expected = if price == 0.0 {
+            OptionValuationError::InvalidInput("option price")
+        } else {
+            OptionValuationError::ImpliedVolatilityUnavailable
+        };
+
+        assert_eq!(
+            imply_vol_and_greeks_checked(100.0, 0.0, 0.0, is_call, 100.0, 1.0, price, 1.0, None),
+            Err(expected)
+        );
+    }
+
+    #[rstest]
+    #[case(1e-8)]
+    #[case(0.21)]
+    #[case(10.0)]
+    fn test_checked_iv_refinement_falls_back_without_fabricated_volatility(#[case] seed: f64) {
+        let raw = black_scholes_greeks(100.0, 0.05, 0.0, 0.2, true, 100.0, 1.0);
+        let result = imply_vol_and_greeks_checked(
+            100.0,
+            0.05,
+            0.0,
+            true,
+            100.0,
+            1.0,
+            raw.price,
+            1.0,
+            Some(seed),
+        )
+        .unwrap();
+        assert!((result.vol - 0.2).abs() < 1e-5);
+        assert!((result.price - raw.price).abs() < 1e-4);
+        assert!((result.rho - 0.437_729_301_518).abs() < 1e-6);
+    }
+
+    #[rstest]
+    fn test_checked_greeks_rejects_nonfinite_kernel_results() {
+        assert_eq!(
+            black_scholes_greeks_checked(100.0, 0.05, 1000.0, 0.2, true, 100.0, 1.0, 1.0),
+            Err(OptionValuationError::InvalidResult)
+        );
+    }
+
+    #[rstest]
+    fn test_checked_iv_accepts_a_premium_the_fast_kernel_cannot_reprice() {
+        let result =
+            imply_vol_and_greeks_checked(100.0, 0.05, 0.05, true, 200.0, 1.0, 1e-10, 0.0, None)
+                .unwrap();
+        assert!((result.price - 1e-10).abs() < 1e-14);
+        assert_eq!(
+            result,
+            black_scholes_greeks_exact(100.0, 0.05, 0.05, result.vol, true, 200.0, 1.0)
+        );
+    }
+
+    #[rstest]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    fn test_checked_greeks_rejects_nonfinite_carry_sensitivity(#[case] db_dr: f64) {
+        assert_eq!(
+            black_scholes_greeks_checked(100.0, 0.05, 0.0, 0.2, true, 100.0, 1.0, db_dr),
+            Err(OptionValuationError::InvalidInput("carry rate sensitivity"))
+        );
+    }
+
+    #[rstest]
+    fn test_checked_iv_does_not_accept_a_clamped_deep_itm_refinement() {
+        let result = imply_vol_and_greeks_checked(
+            200.0,
+            0.0,
+            0.0,
+            true,
+            100.0,
+            1.0,
+            100.000_001,
+            1.0,
+            Some(1e-8),
+        )
+        .unwrap();
+        assert!((result.vol - 0.138_406_809_897_693_3).abs() < 1e-12);
+    }
+
+    #[rstest]
+    #[case(true, 0.460_172_162_723)]
+    #[case(false, -0.539_827_837_277)]
+    fn test_checked_greeks_rho_at_zero_rates(#[case] is_call: bool, #[case] expected: f64) {
+        let result =
+            black_scholes_greeks_checked(100.0, 0.0, 0.0, 0.2, is_call, 100.0, 1.0, 1.0).unwrap();
+        assert!((result.rho - expected).abs() < 1e-6);
+    }
+
+    #[rstest]
+    #[case(0.0)]
+    #[case(0.4)]
+    #[case(1.0)]
+    fn test_checked_greeks_rho_matches_independent_rate_bumps(#[case] db_dr: f64) {
+        let result =
+            black_scholes_greeks_checked(110.0, 0.05, 0.03, 0.25, true, 105.0, 0.75, db_dr)
+                .unwrap();
+        let epsilon = 1e-5;
+        let high = black_scholes_greeks_exact(
+            110.0,
+            0.05 + epsilon,
+            0.03 + db_dr * epsilon,
+            0.25,
+            true,
+            105.0,
+            0.75,
+        );
+        let low = black_scholes_greeks_exact(
+            110.0,
+            0.05 - epsilon,
+            0.03 - db_dr * epsilon,
+            0.25,
+            true,
+            105.0,
+            0.75,
+        );
+        let reference = (high.price - low.price) / (2.0 * epsilon) * 0.01;
+        assert!((result.rho - reference).abs() < 1e-6);
+    }
+
+    #[rstest]
+    fn test_checked_greeks_rho_is_stable_for_deep_itm_calls() {
+        let result =
+            black_scholes_greeks_checked(1e20, 0.05, 0.0, 0.2, true, 100.0, 1.0, 1.0).unwrap();
+        assert!((result.rho - 0.951_229_424_500_714).abs() < 1e-12);
+    }
+
+    #[rstest]
+    fn test_checked_implied_volatility_preserves_a_tiny_premium_solution() {
+        let vol = imply_vol_checked(100.0, 0.05, 0.05, true, 200.0, 1.0, 1e-10).unwrap();
+        assert!((vol - 0.099_420_823_233_839_27).abs() < 1e-12);
+    }
+
+    #[rstest]
+    fn test_checked_iv_does_not_accept_the_upper_refinement_clamp() {
+        let result = imply_vol_and_greeks_checked(
+            100.0,
+            0.0,
+            0.0,
+            true,
+            100.0,
+            1.0,
+            99.99998,
+            1.0,
+            Some(10.0),
+        )
+        .unwrap();
+        assert!((result.vol - 10.398_675_164_168_564).abs() < 1e-12);
+    }
+
+    #[rstest]
+    #[case(100.0, 0.0)]
+    #[case(100.0, 100.0)]
+    #[case(100.0, 200.0)]
+    #[case(0.0, 10.0)]
+    fn test_checked_implied_volatility_rejects_invalid_or_unavailable_solutions(
+        #[case] spot: f64,
+        #[case] price: f64,
+    ) {
+        assert_eq!(
+            imply_vol_checked(spot, 0.0, 0.0, true, 100.0, 1.0, price),
+            Err(OptionValuationError::ImpliedVolatilityUnavailable)
+        );
+    }
+
+    #[rstest]
+    fn test_checked_iv_accepts_valid_index_option_premium() {
+        let strike = 5085.0;
+        let time = 1.0 / 365.25;
+        let vol = 0.141;
+        let target = black_scholes_greeks_exact(5000.0, 0.0425, 0.0, vol, true, strike, time);
+        let result = imply_vol_and_greeks_checked(
+            5000.0,
+            0.0425,
+            0.0,
+            true,
+            strike,
+            time,
+            target.price,
+            0.0,
+            None,
+        )
+        .unwrap();
+        assert!((result.vol - vol).abs() < 1e-10);
+        assert_eq!(
+            result,
+            black_scholes_greeks_exact(5000.0, 0.0425, 0.0, result.vol, true, strike, time)
+        );
+    }
+
+    #[rstest]
+    fn test_checked_greeks_accepts_valid_tail_after_spot_shock() {
+        let result = black_scholes_greeks_checked(
+            4593.0,
+            0.0425,
+            0.0,
+            0.14,
+            true,
+            5100.0,
+            7.0 / 365.25,
+            0.0,
+        )
+        .unwrap();
+        assert_eq!(
+            result,
+            black_scholes_greeks_exact(4593.0, 0.0425, 0.0, 0.14, true, 5100.0, 7.0 / 365.25)
+        );
+    }
+
+    #[rstest]
+    fn test_checked_iv_rejects_a_premium_neither_kernel_can_reprice() {
+        let vol = imply_vol_checked(100.0, 0.0, 0.0, true, 100.0, 1.0, 1e-12).unwrap();
+        assert!((vol - 2.506_628_274_631_000_4e-14).abs() < 1e-27);
+        assert_eq!(
+            imply_vol_and_greeks_checked(100.0, 0.0, 0.0, true, 100.0, 1.0, 1e-12, 0.0, None),
+            Err(OptionValuationError::InvalidResult)
+        );
     }
 }

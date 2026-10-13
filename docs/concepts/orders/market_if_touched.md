@@ -15,8 +15,8 @@ slip, be rejected, or remain unfilled.
 
 ## Example
 
-In the following example we create a *Market-If-Touched* order on the Binance Futures exchange
-to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at a trigger price of 10,000 USDT, active until further notice:
+**Example**: create a *Market-If-Touched* order on the Binance Futures exchange
+to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at a trigger price of 10,000 USDT, active until further notice.
 
 ```rust tab="Rust"
 use nautilus_model::{

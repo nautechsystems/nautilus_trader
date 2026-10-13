@@ -32,7 +32,9 @@ the adapter partitions order IDs with `client_id % 1000`.
 IB refuses an order ID at or below one the same `client_id` already used, across sessions (error
 103). On connect, the execution client starts above the highest order ID its `client_id` has among
 IB's open and completed orders, and keeps IB's next valid ID only when it falls in the client's
-partition. Connecting fails if the completed orders do not arrive in full within `request_timeout`.
+partition. If IB's next valid ID lies above the partition, IB would refuse every ID in it, so
+connecting fails; use another `client_id`. Connecting also fails if the completed orders do not
+arrive in full within `request_timeout`.
 IB lists completed orders for a limited period only, so a client that left no order open can still
 start below an ID it used before that period.
 
@@ -396,8 +398,10 @@ or limit order with `AT_THE_CLOSE` becomes the corresponding market-on-close or 
 order. GTD orders include their Nautilus expiry time in the IB order.
 
 The adapter rejects post-only orders. Quote quantity is valid only for inverse instruments, and
-trailing orders support price offsets and basis-point offsets, which IB receives as a trailing
-percent. These checks emit coded `OrderDenied` reasons before the adapter sends an order to IB.
+only on BUY `MARKET` orders, which IB sizes by `cashQty` (IB rejects a cash quantity on any other
+order type with error 10244). Trailing orders support price offsets and basis-point offsets, which
+IB receives as a trailing percent. These checks, and any order the adapter cannot resolve or
+transform for IB, emit coded `OrderDenied` reasons before the adapter sends an order to IB.
 
 ### Commands and order attributes
 
@@ -426,6 +430,11 @@ conversion. The adapter normalizes `order_type`, `tif` or `timeInForce`, `action
 `trigger_method`, `origin`, `short_sale_slot`, `volatility_type`,
 `reference_price_type`, `rule_80_a`, `open_close`, and `NonGuaranteed`. Active, stop, cancel, manual,
 and good-till timestamps use `%Y%m%d %H:%M:%S UTC`.
+
+The adapter tracks each order by its IB order ID and reference and checks each execution against
+the order side, so tags cannot set `orderId`, `clientId`, `permId`, `orderRef`, `totalQuantity`,
+`cashQty`, `parentId`, or `transmit`. A tagged `action` must keep the order side: a SELL order may
+use `SSHORT` or `SLONG`, but not `BUY`. Such a tag fails the order conversion.
 
 The optional `conditions` array accepts these shapes:
 
@@ -464,9 +473,18 @@ alone by creating its internal reconciliation fill. This preserves the report bo
 reports venue state, while the engine owns inferred state needed to reconcile its cache.
 
 IB's position average cost includes commissions, while a position rebuilt from fills averages their
-prices. When the reported fills of an instrument net to exactly its position quantity, the position
-report carries the entry price of those fills instead, so a position held across a restart
-reconciles. Otherwise the report keeps IB's average cost, which the engine's reconciliation fill
+prices. The adapter replays an instrument's fills, including the leg executions of combo orders,
+from the quantity held before the fill window. When the replay passes through flat or flips, the
+position report carries the average price of the fills after the last crossing, so a position held
+across a restart reconciles. Fills that share a timestamp have no known execution order, so a group
+of them that mixes sides or flips the position leaves the entry price unknown until a later fill
+opens from flat or flips.
+
+The replay infers the quantity held before the window, so a missing execution would change the
+result. The report carries the replayed entry price only when every execution of the instrument
+was parsed and the price reproduces IB's average cost: the entry price plus the opening
+commissions per unit for a long, or minus them for a short, where a lot opened by a flip carries
+no commission. Otherwise the report keeps IB's average cost, which the engine's reconciliation fill
 uses.
 
 On connect, the execution client resolves the instrument of every open position in the account and

@@ -1,7 +1,7 @@
 # Reports
 
-This guide explains the portfolio analysis and reporting capabilities provided by the `ReportProvider`
-class, and how these reports are used for PnL accounting and backtest post-run analysis.
+This guide explains how `ReportProvider` reports support portfolio analysis, PnL accounting, and backtest
+post-run analysis.
 
 ## Overview
 
@@ -25,8 +25,8 @@ imports without pandas installed, and the `ImportError` surfaces when you genera
 
 ## Available reports
 
-The `ReportProvider` class offers several static methods to generate reports from trading data.
-Each report returns a pandas DataFrame with specific columns and indexing for easy analysis.
+`ReportProvider` provides static methods that return pandas DataFrames from trading data. Each report has its
+own columns and index for analysis.
 
 ### Orders report
 
@@ -78,9 +78,8 @@ fills_report = engine.generate_order_fills_report()
 fills_report = ReportProvider.generate_order_fills_report(cache.orders())
 ```
 
-This report includes only orders with `filled_qty > 0` and contains the same columns as the
-orders report, but filtered to executed orders only. Note that `ts_init` and `ts_last` are
-converted to datetime objects in this report for easier analysis.
+This report includes only orders with `filled_qty > 0`. It contains the same columns as the orders report,
+filtered to executed orders, and converts `ts_init` and `ts_last` to datetime objects for analysis.
 
 ### Fills report
 
@@ -205,7 +204,7 @@ per account state event.
 
 ## PnL accounting considerations
 
-Accurate PnL accounting requires careful consideration of several factors:
+PnL accounting depends on position calculations, currencies, and snapshots.
 
 ### Position-based PnL
 

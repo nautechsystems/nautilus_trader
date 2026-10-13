@@ -233,7 +233,7 @@ Nautilus subscription methods map to Databento schemas as follows:
 | `subscribe_quotes()`            | `mbp-1`        | `mbp-1`, `bbo-1s`, `bbo-1m`, `cmbp-1`, `cbbo-1s`, `cbbo-1m`, `tbbo`, `tcbbo` | `QuoteTick`                                 |
 | `subscribe_trades()`            | `trades`       | `trades`, `tbbo`, `tcbbo`, `mbp-1`, `cmbp-1`                                 | `TradeTick`                                 |
 | `subscribe_book_deltas()`       | `mbo`          | `mbo`                                                                        | `OrderBookDeltas`                           |
-| `subscribe_book_depth()`        | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth10`                          |
+| `subscribe_book_depth()`        | `mbp-10`       | `mbp-10`                                                                     | `OrderBookDepth`                            |
 | `subscribe_bars()`              | none           | `ohlcv-1s`, `ohlcv-1m`, `ohlcv-1h`, `ohlcv-1d`                               | `Bar`                                       |
 | `subscribe_data()`              | none           | `statistics`, `imbalance`                                                    | `DatabentoStatistics`, `DatabentoImbalance` |
 | `subscribe_instrument_status()` | `status`       | `status`                                                                     | `InstrumentStatus`                          |

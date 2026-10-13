@@ -16,7 +16,7 @@ Use the execution guides according to the question you need to answer:
 | How do I configure a live node?                      | [Live node configuration](../../how_to/configure_live_trading.md). |
 | How does a live node schedule and monitor execution? | [Live trading](../live.md).                                        |
 
-The main execution-related components include:
+The main execution components are:
 
 - `Strategy`
 - `ExecutionAlgorithm`
@@ -121,11 +121,15 @@ For reductions of inherited inventory, see [Reducing external positions](reconci
 
 When a strategy omits `oms_type` or uses `UNSPECIFIED`, the `ExecutionEngine` uses the owning
 execution client's OMS type. An explicit `NETTING` or `HEDGING` strategy override takes precedence.
-Submission validation uses the client selected by command routing. Fill processing uses the cached
-order's client origin, or the one registered client that matches the fill's account and handles its
-instrument venue when that origin is unavailable. This account lookup also covers spread-leg fills
-without a cached order. For fills associated with an order, an existing cached position retains its
-recorded OMS type.
+
+The engine identifies ownership according to the operation:
+
+- **Submission validation**: uses the client selected by command routing.
+- **Fill processing**: uses the cached order's client origin. When that origin is unavailable, it
+  uses the one registered client that matches the fill's account and handles its instrument venue.
+  This account lookup also covers spread-leg fills without a cached order.
+
+For fills associated with an order, an existing cached position retains its recorded OMS type.
 
 If ownership is absent or ambiguous, fills use `NETTING` unless the strategy supplies an explicit
 override. Venue and default command routes do not select the fill's OMS type. Configure a backtest
@@ -166,11 +170,12 @@ reopen:
 | `False` (default)               | Keeps only current-cycle state, bounding the per-fill cost.    |
 | `True`                          | Keeps earlier fills correctable while position state can grow. |
 
-Live trading pins the option `True`: `LiveExecutionEngineConfig` always carries the replay log, so a venue
-[`OrderFillVoided`](../events/order_fill_voided.md) referencing an earlier cycle still resolves. The
-simulated venue never emits fill voids, so backtests take the bounded default. Enable it explicitly
-for a custom or external execution client that can correct a fill from a prior cycle; without the
-carried log the engine finds no matching position fragment and rejects the correction.
+- **Live trading**: `LiveExecutionEngineConfig` always carries the replay log (`True`), so a venue
+  [`OrderFillVoided`](../events/order_fill_voided.md) referencing an earlier cycle still resolves.
+- **Backtesting**: the simulated venue never emits fill voids, so backtests take the bounded default.
+- **Custom or external execution clients**: enable the option explicitly if the client can correct a
+  fill from a prior cycle. Without the carried log, the engine finds no matching position fragment
+  and rejects the correction.
 
 Realized-PnL snapshots follow the correction. A fill void that reaches an earlier cycle rebuilds the
 position across the cycle boundary, moving the boundaries its archived snapshots describe, so the
@@ -278,11 +283,16 @@ The states become progressively more restrictive:
 | `REDUCING` |             2 | Eligible individual reduce-only submissions, cancels, and queries.           |
 | `HALTED`   |             3 | Cancels and queries only. New submissions and modifications are not allowed. |
 
-In `REDUCING`, an individual `SubmitOrder` is eligible only when the order sets
-`reduce_only=true`, the command and order identify the same instrument, and the supplied position
-ID matches the order's cached open position on the [selected account](#account-selection). The
-order side must oppose the position, and the submitted quantity must not exceed the cached position
-quantity. Order lists and modifications are denied.
+In `REDUCING`, an individual `SubmitOrder` is eligible only when all of these conditions hold:
+
+- The order sets `reduce_only=true`.
+- The command and order identify the same instrument.
+- The supplied position ID matches the order's cached open position on the
+  [selected account](#account-selection).
+- The order side opposes the position.
+- The submitted quantity does not exceed the cached position quantity.
+
+Order lists and modifications are denied.
 
 The risk engine applies these rules before forwarding commands to execution.
 
@@ -396,12 +406,15 @@ include a diagnostic suffix. Only the leading code is canonical. Messages use th
 - `CODE: value; free text` when one typed value precedes a free-text diagnostic.
 
 The table covers local denials emitted by execution algorithms and clients as well as the risk and
-execution engines. These codes are the source of truth for locally denied orders. Venue-confirmed
-`OrderRejected` events instead carry the venue-provided meaning, while synthetic reconciliation
-rejections use the reasons documented under
-[Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance).
-Adapters remove protocol wrappers and bound untrusted venue text before emission without replacing
-it with a standardized local denial code.
+execution engines. These codes are the source of truth for locally denied orders.
+
+`OrderRejected` reasons depend on their source:
+
+- **Venue-confirmed rejections**: carry the venue-provided meaning. Adapters remove protocol wrappers
+  and bound untrusted venue text before emission without replacing it with a standardized local
+  denial code.
+- **Synthetic reconciliation rejections**: use the reasons documented under
+  [Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance).
 
 Price and quantity checks can also emit these code-led reasons on `OrderModifyRejected`:
 
@@ -563,10 +576,11 @@ a restart therefore produces the same `trade_id` and is deduplicated.
 
 When the `ExecutionEngine` rejects an `OrderFilled` or `OrderFillVoided` instead of applying it,
 for example as a duplicate, an overfill, or for an order it cannot find, it publishes the unchanged
-event on the `events.order_fill_declined.{instrument_id}` topic. Each rejection site logs the reason;
-the published event does not carry it. An adapter that tracks whether its fills and corrections were
-applied can subscribe to this topic. The engine does not publish on it for reconciliation
-projections, which update only the order.
+event on `events.order_fill_declined.{instrument_id}`. An adapter that tracks whether its fills and
+corrections were applied can subscribe to this topic.
+
+Each rejection site logs the reason; the published event does not carry it. The engine does not
+publish on this topic for reconciliation projections, which update only the order.
 
 ### Configuration
 

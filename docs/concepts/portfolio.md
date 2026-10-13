@@ -83,11 +83,11 @@ aggregation.
 
 ### Conversion price types
 
-Position valuation prefers a current `MARK` price when `use_mark_prices` is enabled. Otherwise, it
-uses `BID` for a long position and `ASK` for a short position before trying the remaining price
-fallbacks. Currency conversion uses a current `MID` xrate from the cache. If `use_mark_xrates` is
-enabled, a current `MARK` xrate takes precedence and `MID` remains the fallback. Explicit
-target-currency queries do not reuse a carried stale xrate.
+- **Position valuation**: prefers a current `MARK` price when `use_mark_prices` is enabled. Otherwise, it uses
+  `BID` for a long position and `ASK` for a short position before trying the remaining price fallbacks.
+- **Currency conversion**: uses a current `MID` xrate from the cache. If `use_mark_xrates` is enabled, a
+  current `MARK` xrate takes precedence and `MID` remains the fallback. Explicit target-currency queries do
+  not reuse a carried stale xrate.
 
 ### Exposure aggregation
 
@@ -176,11 +176,11 @@ Valuation asks `Cache` for a price in this order, stopping at the first match:
 
 Set `use_mark_prices=false` to skip the mark tier and begin with the side-appropriate quote.
 
-A price at or below zero counts as a current price only for instruments that allow negative prices
-(futures, option, futures spread and option spread instruments, and spot commodities), except inverse
-instruments whose notional divides by price because they are not premium based. A quote side at or
-below zero also needs a non-zero size, since an empty side can arrive as a zero price with zero
-size. Otherwise the Portfolio skips the price and moves to the next source.
+A price at or below zero counts as a current price only for instruments that allow negative prices (futures,
+option, futures spread and option spread instruments, and spot commodities), except inverse instruments whose
+notional divides by price because they are not premium based. A quote side at or below zero also needs a
+non-zero size, since an empty side can arrive as a zero price with zero size. Otherwise the Portfolio skips
+the price and moves to the next source.
 
 If none of the four yield a current price, the Portfolio carries the last valid price
 for that instrument and position side. The next snapshot lists the instrument in
@@ -227,22 +227,26 @@ not add it to the recorded sequence; only the configured lifecycle emission reco
 
 ### Automatic equity curve
 
-`PortfolioConfig.equity_curve=true` (the default) records and publishes a
-mark-to-market snapshot when each account registers, at every UTC midnight even while
-the account is flat, and when the backtest or live node shuts down. Set
-`equity_curve=false` for workloads such as optimizer runs that do not consume an equity
-curve. On-demand `equity()` and `build_snapshot()` calculations remain available.
+`PortfolioConfig.equity_curve=true` (the default) records and publishes a mark-to-market snapshot:
+
+- When each account registers.
+- At every UTC midnight, even while the account is flat.
+- When the backtest or live node shuts down.
+
+Set `equity_curve=false` for workloads such as optimizer runs that do not consume an equity curve. On-demand
+`equity()` and `build_snapshot()` calculations remain available.
 
 The separate `snapshot_interval_ms` setting remains opt-in. When set, it adds
 fine-grained snapshots only while the account has an open position.
 
 ### Missing-price tracking
 
-The tracker keeps the latest missing set for each account-filtered query scope
-and the unfiltered venue scope. `missing_price_instruments(venue)` returns their
-venue-wide union. Pass `account_id` to return only that account's current set. Each observation
-remains authoritative until the same scope runs again; a filtered result does not declare an
-earlier unfiltered result resolved. It has two observable behaviors:
+The tracker keeps the latest missing set for each account-filtered query scope and the unfiltered venue scope.
+`missing_price_instruments(venue)` returns their venue-wide union. Pass `account_id` to return only that
+account's current set.
+
+Each observation remains authoritative until the same scope runs again; a filtered result does not declare an
+earlier unfiltered result resolved. The tracker has two observable behaviors:
 
 - A warning log fires once per instrument on the transition from no scope reporting
   it to at least one scope reporting it, not on every subsequent call. Once every
@@ -277,13 +281,13 @@ flags raised by other accounts on the same venue survive.
 
 ### Python query boundary
 
-The Python Portfolio is a read-only query facade for portfolio state. It does not expose
-initialization, reset, or update commands; the Rust engine remains responsible for authoritative
-mutation. Statistic registration is the exception, because it configures analysis rather than
-portfolio state. The facade also does not expose the internal recorded realized-PnL cache.
-`account()` returns a detached, point-in-time copy. The copy **does not reflect later account
-updates**, and changing it does not affect the Portfolio. Call `account()` again to obtain the
-latest account state.
+The Python Portfolio is a read-only query facade for portfolio state. It does not expose initialization,
+reset, or update commands; the Rust engine remains responsible for authoritative mutation. Statistic
+registration is the exception, because it configures analysis rather than portfolio state. The facade also
+does not expose the internal recorded realized-PnL cache.
+
+`account()` returns a detached, point-in-time copy. The copy **does not reflect later account updates**, and
+changing it does not affect the Portfolio. Call `account()` again to obtain the latest account state.
 
 ## Portfolio statistics
 
@@ -297,11 +301,12 @@ The result contains:
 - Return statistics from the preferred return series described below.
 - General statistics derived from positions.
 
-The default set includes `WinRate`, `ProfitFactor`, `SharpeRatio`, and `LongRatio`. See the
-[Analysis API Reference](/docs/python-api-latest/analysis.html) for all built-in statistic types.
+The default set includes `WinRate`, `ProfitFactor`, `SharpeRatio`, and `LongRatio`. See the [Analysis API
+Reference](/docs/python-api-latest/analysis.html) for all built-in statistic types.
+
 Pass another built-in type, such as `MaxDrawdown`, to `Portfolio.register_statistic()` to add it to
-`Portfolio.statistics()`, backtest results, and post-run logs. A standalone `PortfolioAnalyzer`
-keeps its own registrations, which do not reach the Portfolio.
+`Portfolio.statistics()`, backtest results, and post-run logs. A standalone `PortfolioAnalyzer` keeps its own
+registrations, which do not reach the Portfolio.
 
 After a backtest, `engine.get_result()` exposes these categories through `stats_pnls`,
 `stats_returns`, and `stats_general`, plus the selected `returns_series`. When `run_analysis=true`,
@@ -370,16 +375,21 @@ The analyzer tracks two distinct return series:
   mark-to-market account equity. A $900 gain on a $100,000 account reports roughly 0.9%
   for that day.
 
-When complete portfolio snapshots span at least two distinct UTC dates, the analyzer
-uses the final snapshot from each date and computes portfolio returns automatically.
-It uses them as the primary series for statistics, tearsheets, and the monthly returns
-heatmap. A snapshot emitted exactly at UTC midnight closes the preceding date, keeping
-the daily tier consistent with fine-grained samples. The first valid registration sample
-anchors the opening value for a partial first date. Missing or unpriced account dates are
-forward-filled after every account has an initial valid sample. Multiple snapshots on the
-same date count as one date, so intra-day trading alone does not produce portfolio returns.
-When portfolio returns are unavailable, the analyzer falls back to position returns;
-Python tearsheets can also fall back to account reports.
+When complete portfolio snapshots span **at least two distinct UTC dates**, the analyzer uses the final
+snapshot from each date and computes portfolio returns automatically. It uses them as the primary series for
+statistics, tearsheets, and the monthly returns heatmap.
+
+Daily sampling follows these rules:
+
+- A snapshot emitted exactly at UTC midnight closes the preceding date, keeping the daily tier consistent with
+  fine-grained samples.
+- The first valid registration sample anchors the opening value for a partial first date.
+- Missing or unpriced account dates are forward-filled after every account has an initial valid sample.
+- Multiple snapshots on the same date count as one date, so intra-day trading alone does not produce portfolio
+  returns.
+
+When portfolio returns are unavailable, the analyzer falls back to position returns; Python tearsheets can
+also fall back to account reports.
 
 The convenience accessor `analyzer.returns()` resolves this preference: portfolio returns
 when present, position returns otherwise.

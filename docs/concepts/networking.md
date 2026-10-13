@@ -72,12 +72,15 @@ An optional explicit `proxy_url` applies to both HTTP and HTTPS traffic and alwa
 over ambient lookup. Passing `use_system_proxy(false)` disables ambient lookup, so requests route
 directly only when `proxy_url` is unset.
 
-**HTTP status errors remain normal `HttpResponse` values** so each adapter can interpret the venue's
-body and retry rules. The transport retries requests canceled before transmission on reused
-connections, and allows two retries for remote HTTP/2 `GOAWAY(NO_ERROR)` or `REFUSED_STREAM` errors.
-Other transport failures and HTTP status codes do not trigger retries. Adapters can wrap retryable
-operations with [`RetryManager`](../../crates/network/src/retry.rs), but the adapter must decide
-which venue errors and operations are safe to retry.
+**HTTP status errors remain normal `HttpResponse` values** so each adapter can interpret the venue's body and
+retry rules. Transport retries cover:
+
+- Requests canceled before transmission on reused connections.
+- Remote HTTP/2 `GOAWAY(NO_ERROR)` or `REFUSED_STREAM` errors, with two retries allowed.
+
+Other transport failures and HTTP status codes do not trigger retries. Adapters can wrap retryable operations
+with [`RetryManager`](../../crates/network/src/retry.rs), but the adapter must decide which venue errors and
+operations are safe to retry.
 
 ### Connection reuse and response bounds
 
@@ -173,20 +176,23 @@ round-trip delay. The following cases at 100 ms RTT show the pattern, as median 
 | 4 MiB  | Warm       | 105      | 310         | 105         | 105          |
 | 16 MiB | Warm       | 212      | 935         | 315         | 108          |
 
-Warm connections had already served three requests of the same size, which gives adaptive windows
-time to grow. The 16 MiB stream window equals the adaptive ceiling, so a response gets that
-capacity from its first round trip without the probe traffic. Across 20, 100, and 250 ms RTT and
-bodies from 32 KiB to 16 MiB, on new and warm connections, fixed 16 MiB matched the faster of
-adaptive and Hyper's default within 1 ms or beat it. Fixed 8 MiB took two to three times as long
-for 16 MiB bodies. The 32 MiB connection window lets two large responses on one connection each
-use a full stream window.
+Warm connections had already served three requests of the same size, which gives adaptive windows time to
+grow. The 16 MiB stream window equals the adaptive ceiling, so a response gets that capacity from its first
+round trip without the probe traffic.
 
-A slow reader can receive up to 16 MiB per stream and 32 MiB per connection before flow control
-pushes back, against at most 16 MiB for each under adaptive windows. Loopback bandwidth is effectively unlimited, so
-the benchmark overstates large-body gains. On a real link, the window limits throughput only when
-it is smaller than bandwidth times RTT: at 100 ms RTT, 2 MiB allows about 20 MiB/s and 16 MiB
-about 160 MiB/s. The [HTTP/2 flow-control benchmark](../../crates/network/benches/BENCHMARKS.md#http2-flow-control-windows)
-has the full tables, the method, and the Cloudflare runs.
+Across 20, 100, and 250 ms RTT and bodies from 32 KiB to 16 MiB, on new and warm connections, fixed 16 MiB
+matched the faster of adaptive and Hyper's default within 1 ms or beat it. Fixed 8 MiB took two to three times
+as long for 16 MiB bodies. The 32 MiB connection window lets two large responses on one connection each use a
+full stream window.
+
+A slow reader can receive up to 16 MiB per stream and 32 MiB per connection before flow control pushes back,
+against at most 16 MiB for each under adaptive windows.
+
+Loopback bandwidth is effectively unlimited, so the benchmark overstates large-body gains. On a real link, the
+window limits throughput only when it is smaller than bandwidth times RTT: at 100 ms RTT, 2 MiB allows about
+20 MiB/s and 16 MiB about 160 MiB/s. The [HTTP/2 flow-control
+benchmark](../../crates/network/benches/BENCHMARKS.md#http2-flow-control-windows) has the full tables, the
+method, and the Cloudflare runs.
 
 ## WebSocket client
 
@@ -262,17 +268,22 @@ tunneling is not implemented. Malformed proxy URLs and other unsupported schemes
 
 ### Inbound size limits
 
-`WebSocketConfig.max_message_size_bytes` and `WebSocketConfig.max_frame_size_bytes` bound inbound
-message and frame payload sizes for one connection. Leave them unset to pass each backend's current
-default config: 64 MiB per message and 16 MiB per frame. The frame cap bounds memory for one
-inbound frame. Both backends apply the message cap after that frame payload is read, so a lower
-message cap does not shrink the buffer. A zero value is rejected on the builder
-and on both handler and stream connect paths. A message that exceeds the message cap and fits in
-the frame cap fails the read with `MessageTooLarge`. On Sockudo, a frame that exceeds the frame cap
-fails first with `FrameTooLarge`. Sockudo applies its message cap to fragmented messages, and to a
-finished single-frame message only when `max_message_size_bytes` is set. Its small-frame parser
-skips the frame cap when the whole frame of 125 bytes or less is already buffered, so that case is
-not a reliable rejection. Tungstenite reports every frame breach as `MessageTooLarge`.
+`WebSocketConfig.max_message_size_bytes` and `WebSocketConfig.max_frame_size_bytes` bound inbound message and
+frame payload sizes for one connection. Leave them unset to pass each backend's current default config: **64
+MiB per message and 16 MiB per frame**.
+
+The frame cap bounds memory for one inbound frame. Both backends apply the message cap after that frame
+payload is read, so a lower message cap does not shrink the buffer. A zero value is rejected on the builder
+and on both handler and stream connect paths.
+
+A message that exceeds the message cap and fits in the frame cap fails the read with `MessageTooLarge`.
+Frame-limit and single-frame behavior differ by backend:
+
+- **Sockudo**: a frame that exceeds the frame cap fails first with `FrameTooLarge`. Sockudo applies its
+  message cap to fragmented messages, and to a finished single-frame message only when
+  `max_message_size_bytes` is set. Its small-frame parser skips the frame cap when the whole frame of 125
+  bytes or less is already buffered, so that case is not a reliable rejection.
+- **Tungstenite**: every frame breach is reported as `MessageTooLarge`.
 
 ### Liveness and recovery
 
@@ -341,13 +352,18 @@ still trigger an immediate first reconnect.
 
 ### State reporting and explicit reconnect
 
-Clients configured with a `SocketStateSink` publish ordered `Connected` and `Disconnected`
-availability edges. A successful initial connection publishes `Connected`; transport loss or an
-accepted explicit reconnect publishes `Disconnected`; and a successful replacement publishes
-`Connected`. Initial connection failure, individual retry attempts, retry exhaustion, deliberate
-disconnect, and client drop do not add events. The sink therefore describes transport availability,
-not every internal `ConnectionMode` transition. Its callback runs synchronously and serializes
-edges, so it must return promptly and must not request another transition through the same sink.
+Clients configured with a `SocketStateSink` publish ordered `Connected` and `Disconnected` availability edges:
+
+1. A successful initial connection publishes `Connected`.
+1. Transport loss or an accepted explicit reconnect publishes `Disconnected`.
+1. A successful replacement publishes `Connected`.
+
+Initial connection failure, individual retry attempts, retry exhaustion, deliberate disconnect, and client
+drop do not add events. The sink describes transport availability, not every internal `ConnectionMode`
+transition.
+
+Its callback runs synchronously and serializes edges, so it must return promptly and must not request another
+transition through the same sink.
 
 `request_reconnect()` atomically asks a handler-mode controller to replace its active transport. A
 cloneable `WebSocketReconnectHandle` gives adapter tasks the same capability without ownership of
@@ -359,12 +375,14 @@ caller-owned.
 
 ### Send semantics
 
-Application text and binary sends wait for their rate-limit keys and for an active connection. The
-ordinary send methods return after enqueueing the frame, so **success does not prove delivery**. The
-writer keeps FIFO order for application messages buffered during reconnect or after a failed write
-and replays them on a replacement connection. A control frame belongs to the connection it was
-issued on, so a failed Ping, Pong, or Close is dropped rather than replayed. This in-memory buffer
-provides reconnect continuity, not durable or exactly-once delivery.
+Application text and binary sends wait for their rate-limit keys and for an active connection. The ordinary
+send methods return after enqueueing the frame, so **success does not prove delivery**.
+
+The writer keeps FIFO order for application messages buffered during reconnect or after a failed write and
+replays them on a replacement connection. A control frame belongs to the connection it was issued on, so a
+failed Ping, Pong, or Close is dropped rather than replayed.
+
+This in-memory buffer provides reconnect continuity, not durable or exactly-once delivery.
 
 Ownership-bound text sends take an expected connection epoch and wait for the writer result. They
 fail if ownership changes and never replay on another connection. Connection-bound Pong sends use
@@ -378,11 +396,12 @@ retry blindly.
 
 ### Writer capacity
 
-`WebSocketConfig::writer_capacity` limits ordinary messages across the writer queue, in-flight writes,
-and reconnect buffer. It defaults to 1,024 messages. Ownership-bound sends, keepalives, and control
-frames share a separate allowance of the same size so authentication can proceed when replay fills
-the ordinary allowance. A full allowance rejects new sends with `SendError::BufferFull` before
-enqueueing. These limits bound message count, not payload bytes.
+`WebSocketConfig::writer_capacity` limits ordinary messages across the writer queue, in-flight writes, and
+reconnect buffer. It defaults to 1,024 messages.
+
+Ownership-bound sends, keepalives, and control frames share a separate allowance of the same size so
+authentication can proceed when replay fills the ordinary allowance. A full allowance rejects new sends with
+`SendError::BufferFull` before enqueueing. These limits bound **message count, not payload bytes**.
 
 ### Backend benchmarks
 
@@ -453,12 +472,13 @@ partial frame across reads and strips the suffix before invoking the callback. W
 remains active, it emits complete messages in arrival order. If an unterminated frame grows past
 10 MiB, the reader stops and the controller reconnects instead of allowing unchecked memory growth.
 
-An optional heartbeat task sends a configured byte payload at a fixed interval; the writer appends
-the same suffix as it does for application messages. A raw socket has no Ping frames, so the
-payload is required. `heartbeat_timeout_secs` stops the reader when no bytes arrive within the
-window. Unset, it defaults to three intervals when a heartbeat is configured and leaves detection
-off otherwise. A zero timeout is rejected. The socket enables `TCP_NODELAY` to avoid Nagle delays
-for small protocol messages.
+An optional heartbeat task sends a configured byte payload at a fixed interval; the writer appends the same
+suffix as it does for application messages. A raw socket has no Ping frames, so the payload is required.
+
+`heartbeat_timeout_secs` stops the reader when no bytes arrive within the window. Unset, it defaults to three
+intervals when a heartbeat is configured and leaves detection off otherwise. A zero timeout is rejected.
+
+The socket enables `TCP_NODELAY` to avoid Nagle delays for small protocol messages.
 
 ### Connection and TLS policy
 
@@ -466,12 +486,13 @@ The client accepts `host:port` or URL input and supports plain or TLS mode. TLS 
 web PKI roots. A certificate directory can add trusted roots and, when it contains a matching
 certificate and private key, supply a client identity for mutual TLS.
 
-Initial connection establishment makes up to five attempts by default, with a 10-second bound per
-attempt and exponential backoff. Once connected, transport loss uses the configurable reconnect
-timeout, exponential backoff, bounded jitter, and unlimited attempts by default. As with the
-WebSocket client, 10 seconds of stable uptime resets the reconnect cycle, and the same reconnect
-throttling bounds its attempt rate once reconnects flap. An optional state sink reports semantic
-connection loss and recovery.
+Initial connection establishment makes up to five attempts by default, with a 10-second bound per attempt and
+exponential backoff.
+
+Once connected, transport loss uses the configurable reconnect timeout, exponential backoff, bounded jitter,
+and unlimited attempts by default. As with the WebSocket client, 10 seconds of stable uptime resets the
+reconnect cycle, and the same reconnect throttling bounds its attempt rate once reconnects flap. An optional
+state sink reports semantic connection loss and recovery.
 
 ### State reporting and explicit reconnect
 
@@ -489,11 +510,14 @@ normal reconnect replay and buffer ordering then apply to the replacement.
 
 ### Replay and delivery boundaries
 
-During reconnect, the writer buffers application messages in FIFO order. After installing a
-replacement writer, it can first send protocol replay messages supplied by the adapter, such as a
-logon or session setup sequence, and then drain the buffered application messages. The replacement
-reader starts only after that drain succeeds. A post-reconnection callback runs after the writer,
-buffer, and reader are ready.
+During reconnect, the writer buffers application messages in FIFO order. Recovery proceeds as follows:
+
+1. After installing a replacement writer, it can send protocol replay messages supplied by the adapter, such as
+   a logon or session setup sequence.
+1. The writer drains the buffered application messages.
+1. The replacement reader starts only after that drain succeeds.
+
+A post-reconnection callback runs after the writer, buffer, and reader are ready.
 
 ```mermaid
 sequenceDiagram

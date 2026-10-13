@@ -123,9 +123,9 @@ formula = "if(BTCUSDT.BINANCE > ETHUSDT.BINANCE, BTCUSDT.BINANCE, ETHUSDT.BINANC
 
 ## Creating a synthetic instrument
 
-Make sure all component instruments already exist in the cache, and subscribe to each
-component's quote or trade feed as well as the synthetic's. Synthetic quotes derive only from
-component quotes, and synthetic trades only from component trades.
+Before creating a synthetic instrument, ensure all component instruments exist in the cache. Subscribe to each
+component's quote or trade feed as well as the synthetic's. Synthetic quotes derive only from component
+quotes, and synthetic trades only from component trades.
 
 When a component tick arrives, the engine combines it with the latest cached prices of the other
 components to calculate the synthetic price. Until **every component has produced at least one
@@ -196,9 +196,9 @@ self.submit_order(order)
 
 ## Performance
 
-Formulas compile once at construction time and evaluate on every incoming component price tick.
-The expression engine uses a compile-once/eval-many architecture with a zero-allocation f64
-stack, so evaluation adds negligible overhead to the tick-processing path.
+Formulas compile once at construction time and evaluate on every incoming component price tick. The expression
+engine uses a zero-allocation `f64` stack for evaluation, adding negligible overhead to the tick-processing
+path.
 
 Measured on Apple M4 Pro, rustc 1.94.1, release profile (opt-level 3):
 

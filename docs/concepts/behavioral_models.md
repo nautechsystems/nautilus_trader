@@ -26,11 +26,12 @@ partial-fill, size-aware, competition-aware, volume-sensitive, or market-hours b
 [fill models](backtesting/fill-models.md) for the complete built-in list and the effect of book type
 on fill simulation.
 
-Fee models also include `ProbabilityPriceFeeModel`, `CappedOptionFeeModel`, and
-`TieredNotionalOptionFeeModel` for probability-priced instruments and option fee schedules.
-`StaticLatencyModel` adds a base delay to separately configured insert, update, and cancel delays.
-The [margin models](backtesting/accounts-and-margin.md#margin-models) select whether instrument
-margin requirements are reduced by account leverage.
+Fee models also include `ProbabilityPriceFeeModel`, `CappedOptionFeeModel`, and `TieredNotionalOptionFeeModel`
+for probability-priced instruments and option fee schedules.
+
+`StaticLatencyModel` adds a base delay to separately configured insert, update, and cancel delays. The [margin
+models](backtesting/accounts-and-margin.md#margin-models) select whether instrument margin requirements are
+reduced by account leverage.
 
 Fill and latency models control simulated execution; they do not determine whether or when a live
 venue fills an order. Model behavior applies at the engine or account boundary that consumes it.
@@ -80,10 +81,11 @@ these concrete model objects directly rather than using separate model configura
 wrappers.
 
 Adapter-specific models live in their adapter crate when a core enum variant would create a reverse
-dependency. Low-level Rust code passes these models through the corresponding handle. Python
-exposure uses an explicit bridge for the model family, either as an enum variant or as a trait
-implementation passed through the handle, depending on the storage boundary. Latency and margin
-configuration accept built-in models only from Python.
+dependency. Low-level Rust code passes these models through the corresponding handle.
+
+Python exposure uses an explicit bridge for the model family, either as an enum variant or as a trait
+implementation passed through the handle, depending on the storage boundary. Latency and margin configuration
+accept built-in models only from Python.
 
 ## Dispatch boundary
 
@@ -93,11 +95,12 @@ configuration accept built-in models only from Python.
 | `<Family>ModelAny`       | Declared built-ins and bridge variants | Enum match   | Built-in and bridge configuration or storage. |
 | `<Family>ModelHandle`    | Any accepted Rust trait implementation | Trait object | Shared runtime storage and custom types.      |
 
-`<Family>ModelAny` uses enum dispatch. `<Family>ModelHandle` uses dynamic dispatch through a trait
-object, so a built-in converted from the enum into a handle crosses a vtable before its enum match.
-Built-in-only storage remains typed as `<Family>ModelAny` where avoiding trait-object dispatch
-matters. The handle has no separate built-in fast path; the simpler single representation remains
-because no measured performance case justifies the additional variant and dispatch complexity.
+`<Family>ModelAny` uses enum dispatch. `<Family>ModelHandle` uses dynamic dispatch through a trait object, so
+a built-in converted from the enum into a handle crosses a vtable before its enum match. Built-in-only storage
+remains typed as `<Family>ModelAny` where avoiding trait-object dispatch matters.
+
+The handle has no separate built-in fast path; the simpler single representation remains because no measured
+performance case justifies the additional variant and dispatch complexity.
 
 ## Native extension boundary
 

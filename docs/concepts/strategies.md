@@ -17,11 +17,10 @@ Review the [Actors](actors.md) guide before developing a strategy. It covers the
 request, and callback behavior a strategy inherits.
 :::
 
-Add strategies to a Nautilus system in any
-[environment context](architecture.md#environment-contexts). They start sending commands and
-receiving events based on their logic as soon as the system starts. These building blocks of data
-ingest, event handling, and order management (discussed below) support any strategy type, including
-directional, momentum, re-balancing, pairs, and market making.
+Add strategies to a Nautilus system in any [environment context](architecture.md#environment-contexts). They
+start sending commands and receiving events based on their logic as soon as the system starts. Data ingest,
+event handling, and order management support any strategy type, including directional, momentum, re-balancing,
+pairs, and market making.
 
 There are two main parts of a Nautilus trading strategy:
 
@@ -38,13 +37,13 @@ simulation may not reproduce. See
 See the [`Strategy` API Reference](/docs/python-api-latest/trading.html) for all available methods.
 
 :::info Rust implementation
-Rust strategy authors implement the `DataActor` callbacks they need and use
-`nautilus_strategy!` to generate the `Strategy` implementation, then call facade
-methods such as `clock()`, `cache()`, `order()`, and `portfolio()` on `self`.
-`DataActorNative` is native-only access to runtime wiring and actor-core state;
-`StrategyNative` exposes borrowed strategy state such as order factory, order
-manager, and portfolio access. Import them only for same-binary performance
-paths or internal runtime wiring.
+Rust strategy authors implement the `DataActor` callbacks they need and use `nautilus_strategy!` to generate
+the `Strategy` implementation, then call facade methods such as `clock()`, `cache()`, `order()`, and
+`portfolio()` on `self`.
+
+`DataActorNative` is native-only access to runtime wiring and actor-core state; `StrategyNative` exposes
+borrowed strategy state such as order factory, order manager, and portfolio access. Import them only for
+same-binary performance paths or internal runtime wiring.
 :::
 
 ## Strategy implementation
@@ -243,8 +242,7 @@ Use `on_time_event()` for timer events, `on_order_event()` for aggregate order e
 
 #### Handler example
 
-The following example shows a typical `on_start` handler method implementation (taken from the example EMA cross strategy).
-Here we can see the following:
+This `on_start` implementation from the example EMA cross strategy shows:
 
 - Indicators being registered to receive bar updates.
 - Historical data being requested (to hydrate the indicators).
@@ -279,14 +277,13 @@ so a request hydrates them. Check `indicators_initialized()` before acting on in
 
 ### Clock and timers
 
-Strategies have access to a `Clock` which provides a number of methods for creating
-different timestamps, as well as setting time alerts or timers to trigger `TimeEvent`s.
+Strategies use a `Clock` to create timestamps and schedule time alerts or timers that trigger `TimeEvent`s.
 
 See the [`Clock` API Reference](/docs/python-api-latest/common.html) for all available methods.
 
 #### Current timestamps
 
-While there are multiple ways to obtain current timestamps, here are two commonly used methods as examples:
+Two common ways to obtain current timestamps are shown below.
 
 To get the current UTC timestamp as a tz-aware `datetime`:
 
@@ -305,9 +302,8 @@ unix_nanos: int = self.clock.timestamp_ns()
 
 #### Time alerts
 
-Time alerts can be set which will result in a `TimeEvent` being dispatched to the `on_time_event` handler at the
-specified alert time. In live trading, scheduling and queued work can delay delivery; the alert time
-is not a latency guarantee.
+Time alerts dispatch a `TimeEvent` to the `on_time_event` handler at the specified alert time. In live
+trading, scheduling and queued work can delay delivery; the alert time is not a latency guarantee.
 
 This example sets a time alert to trigger one minute from the current time:
 
@@ -323,8 +319,7 @@ self.clock.set_time_alert(
 
 #### Timers
 
-Continuous timers can be set up which will generate a `TimeEvent` at regular intervals until the timer expires
-or is canceled.
+Continuous timers generate a `TimeEvent` at regular intervals until they expire or are canceled.
 
 This example sets a timer to fire once per minute. The timer starts immediately and its first event
 fires one interval later; pass `fire_immediately=True` to fire at the start time instead:
@@ -542,11 +537,10 @@ See also the [Execution](execution/) guide for the full flow through the system.
 
 #### Submitting orders
 
-An `OrderFactory` is provided on the base class for every `Strategy` as a convenience, reducing
-the amount of boilerplate required to create different `Order` objects (although these objects
-can still be initialized directly with the `Order.__init__(...)` constructor if the trader prefers).
+Every `Strategy` provides an `OrderFactory` on its base class to reduce boilerplate when creating `Order`
+objects. You can also initialize orders directly with `Order.__init__(...)`.
 
-The component a `SubmitOrder` or `SubmitOrderList` command will flow to for execution depends on the following:
+A `SubmitOrder` or `SubmitOrderList` command is first routed as follows:
 
 - If an `emulation_trigger` is specified, the command will *firstly* be sent to the `OrderEmulator`.
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecutionAlgorithm`.
@@ -658,14 +652,13 @@ self.cancel_all_orders(self.instrument_id)
 ```
 
 :::warning
-Pass `strategy_only=False` to use the broad cancellation path. The strategy sends one
-`CancelAllOrders` command even when its cache has no matching order. The execution engine resolves
-one execution client and account, then routes venue, emulated, and execution-algorithm cancellation
-within that boundary. Matching orders associated with other strategies may be canceled, but orders
-assigned to other execution clients remain untouched. Use broad mode only when that cross-strategy
-scope is intended. See
-[Cancel-all routing](execution/index.md#cancel-all-routing) for the complete flow and client-selection
-rules.
+Pass `strategy_only=False` to use the broad cancellation path. The strategy sends one `CancelAllOrders`
+command even when its cache has no matching order. The execution engine resolves one execution client and
+account, then routes venue, emulated, and execution-algorithm cancellation within that boundary.
+
+Matching orders associated with other strategies may be canceled, but orders assigned to other execution
+clients remain untouched. Use broad mode only when that cross-strategy scope is intended. See [Cancel-all
+routing](execution/index.md#cancel-all-routing) for the complete flow and client-selection rules.
 :::
 
 #### Modifying orders
@@ -681,7 +674,7 @@ A strategy can resend the same quantity while the order is `PENDING_UPDATE`.
 These checks run before the closed-order and pending-cancel checks.
 :::
 
-The component a `ModifyOrder` command will flow to for execution depends on the following:
+A `ModifyOrder` command is first routed as follows:
 
 - If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`.
 - Otherwise, if the order has an `exec_algorithm_id` and is still active within the local system, the
@@ -889,8 +882,7 @@ config = MyStrategyConfig(
 strategy = MyStrategy(config=config)
 ```
 
-Access configuration values through `self.config`.
-This provides clear separation between:
+Read configuration through `self.config`, and keep runtime state in direct strategy attributes:
 
 - Configuration data (accessed via `self.config`):
   - Contains initial settings, that define how the strategy works.
@@ -900,11 +892,11 @@ This provides clear separation between:
   - Track any custom state of the strategy.
   - Example: `self.time_started`, `self.count_of_processed_bars`
 
-This separation makes code easier to understand and maintain.
+This separates initial settings from changing state, making code easier to understand and maintain.
 
 :::note
-Even though it often makes sense to define a strategy which will trade a single
-instrument. The number of instruments a single strategy can work with is only limited by machine resources.
+A strategy often trades a single instrument, but machine resources are the only limit on how many instruments
+it can work with.
 :::
 
 ### Claiming external orders
@@ -928,24 +920,35 @@ config = StrategyConfig(
 )
 ```
 
-`external_order_instrument_ids` is serializable configuration intent. When a live node registers the
-strategy, the runtime materializes that intent as active external order claims in the shared cache.
-Each claim assigns one `InstrumentId` to one `StrategyId`. Registration fails without changing the
-active claims if the shared cache is already borrowed, the list repeats an instrument, or any listed
-instrument already has a claim, including a claim for the same strategy.
+`external_order_instrument_ids` is serializable configuration intent. When a live node registers the strategy,
+the runtime materializes that intent as active external order claims in the shared cache. Each claim assigns
+one `InstrumentId` to one `StrategyId`.
 
-After registration, call `set_external_order_instrument_ids(...)` to replace the strategy's complete
-active claim set. The method retains listed claims already owned by the strategy, releases omitted
-claims, and acquires listed instruments that have no owner. Passing an empty list releases every
-claim owned by the strategy. If an instrument appears more than once or belongs to another strategy,
-the call fails and leaves the active claim set unchanged. A change affects ownership decisions made
-after the update; it does not reassign external orders already held in the cache.
+Registration fails without changing the active claims if:
 
-The strategy must be registered before it can update active claims, and the update fails if the
-shared cache is already borrowed. For Python strategies, this method changes active routing state;
-the original `strategy.config` object continues to show the construction intent. Stopping a strategy
-retains its active claims so routing remains stable if it restarts. Removing the strategy from its
-trader releases the claims. A cache reset also preserves them.
+- The shared cache is already borrowed.
+- The list repeats an instrument.
+- Any listed instrument already has a claim, including a claim for the same strategy.
+
+After registration, call `set_external_order_instrument_ids(...)` to replace the strategy's complete active
+claim set. The method:
+
+- Retains listed claims already owned by the strategy.
+- Releases omitted claims.
+- Acquires listed instruments that have no owner.
+
+Passing an empty list releases every claim owned by the strategy. If an instrument appears more than once or
+belongs to another strategy, the call fails and leaves the active claim set unchanged.
+
+A change affects ownership decisions made after the update; it does not reassign external orders already held
+in the cache.
+
+The strategy must be registered before it can update active claims, and the update fails if the shared cache
+is already borrowed. For Python strategies, this method changes active routing state; the original
+`strategy.config` object continues to show the construction intent.
+
+Stopping a strategy retains its active claims so routing remains stable if it restarts. Removing the strategy
+from its trader releases the claims. A cache reset also preserves them.
 
 :::warning
 Transferring an instrument between strategies requires two calls: the existing owner releases the
@@ -958,9 +961,8 @@ reconciliation use active claims.
 
 ### Managed GTD expiry
 
-It's possible for the strategy to manage expiry for orders with a time in force of GTD (*Good 'till Date*).
-This may be desirable if the exchange/broker does not support this time in force option, or for any
-reason you prefer the strategy to manage this.
+A strategy can manage expiry for GTD (*Good 'till Date*) orders when the exchange or broker does not support
+that time in force, or when you prefer local expiry management.
 
 To use this option, pass `manage_gtd_expiry=True` to your `StrategyConfig`. When an order is submitted with
 a time in force of GTD, the strategy will automatically start an internal time alert.
@@ -969,11 +971,14 @@ Once the internal GTD time alert is reached, the order will be canceled (if not 
 On start, the strategy also reinstates alerts for its open GTD orders held in the cache, and cancels
 any whose expiry has already passed.
 
-When a cancel request is rejected, a running strategy restores a missing expiry alert for an open
-or inflight GTD order. If expiry has already passed, it immediately retries the cancel instead.
-Existing alerts are preserved. This runs before `on_order_cancel_rejected`, so an immediate retry
-can return the order to `PENDING_CANCEL` before the callback runs. A stopped strategy does not
-restore alerts or retry cancels on rejection.
+When a cancel request is rejected, a running strategy preserves existing alerts. For an open or inflight GTD
+order with a missing expiry alert:
+
+- If expiry has already passed, it immediately retries the cancel.
+- Otherwise, it restores the expiry alert.
+
+This runs before `on_order_cancel_rejected`, so an immediate retry can return the order to `PENDING_CANCEL`
+before the callback runs. A stopped strategy does not restore alerts or retry cancels on rejection.
 
 Some venues (such as Binance Futures) support the GTD time in force, so to avoid conflicts when using
 `manage_gtd_expiry` you should set `use_gtd=False` for your execution client config.

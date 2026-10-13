@@ -56,21 +56,21 @@ def test_http_base_url_defaults_to_global() -> None:
     [
         (
             OKXRegion.GLOBAL,
-            "wss://ws.okx.com:8443/ws/v5/public",
-            "wss://ws.okx.com:8443/ws/v5/private",
-            "wss://ws.okx.com:8443/ws/v5/business",
+            "wss://ws.okx.com/ws/v5/public",
+            "wss://ws.okx.com/ws/v5/private",
+            "wss://ws.okx.com/ws/v5/business",
         ),
         (
             OKXRegion.EEA,
-            "wss://wseea.okx.com:8443/ws/v5/public",
-            "wss://wseea.okx.com:8443/ws/v5/private",
-            "wss://wseea.okx.com:8443/ws/v5/business",
+            "wss://wseea.okx.com/ws/v5/public",
+            "wss://wseea.okx.com/ws/v5/private",
+            "wss://wseea.okx.com/ws/v5/business",
         ),
         (
             OKXRegion.US,
-            "wss://wsus.okx.com:8443/ws/v5/public",
-            "wss://wsus.okx.com:8443/ws/v5/private",
-            "wss://wsus.okx.com:8443/ws/v5/business",
+            "wss://wsus.okx.com/ws/v5/public",
+            "wss://wsus.okx.com/ws/v5/private",
+            "wss://wsus.okx.com/ws/v5/business",
         ),
     ],
 )
@@ -94,7 +94,7 @@ def test_ws_urls_eea_demo() -> None:
     """
     assert (
         get_okx_ws_url_public(OKXEnvironment.DEMO, OKXRegion.EEA)
-        == "wss://wseeapap.okx.com:8443/ws/v5/public"
+        == "wss://wseeapap.okx.com/ws/v5/public"
     )
 
 

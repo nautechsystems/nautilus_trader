@@ -14,7 +14,7 @@ fill only partially.
 
 ## Example
 
-In the following example we create a *Limit* order on the Binance Futures Crypto exchange to SELL
+**Example**: create a *Limit* order on the Binance Futures Crypto exchange to SELL
 20 ETHUSDT-PERP Perpetual Futures contracts at a limit price of 5000 USDT, as a market maker.
 
 ```rust tab="Rust"

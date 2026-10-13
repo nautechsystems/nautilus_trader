@@ -697,7 +697,7 @@ impl StressVenue for Okx {
         .map(|(name, path, endpoint)| Route {
             name,
             path,
-            upstream: format!("wss://ws.okx.com:8443/ws/v5/{name}"),
+            upstream: format!("wss://ws.okx.com/ws/v5/{name}"),
             endpoint,
             headers: &[],
         })

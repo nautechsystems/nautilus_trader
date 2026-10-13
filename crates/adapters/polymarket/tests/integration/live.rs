@@ -474,9 +474,20 @@ async fn submit_venue_error_rejects_and_stays_out_of_book() {
 
 #[rstest]
 #[tokio::test]
-async fn cancel_replace_rotates_venue_id_and_updates_exact_values() {
+async fn cancel_replace_rotates_venue_id_and_updates_exact_values(
+    #[values(OrderSide::Buy, OrderSide::Sell)] order_side: OrderSide,
+) {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(h.instrument_id(), "O-1");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from(harness::TRADER_ID))
+        .strategy_id(StrategyId::from(harness::STRATEGY_ID))
+        .instrument_id(h.instrument_id())
+        .client_order_id(ClientOrderId::from("O-1"))
+        .side(order_side)
+        .price(Price::from("0.5000"))
+        .quantity(Quantity::from("100.0000"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
     h.submit_via_risk(&order);
     assert!(
         h.pump_until(DEADLINE, |cache| {
@@ -491,8 +502,9 @@ async fn cancel_replace_rotates_venue_id_and_updates_exact_values() {
         .order(&order.client_order_id())
         .and_then(|cached| cached.venue_order_id())
         .unwrap();
-    *h.mock_state.single_order_response.lock().await =
-        Some(crate::mock_venue::load_json("http_canceled_orders_harness.json")["data"][0].clone());
+    let mut canceled = load_json("http_canceled_orders_harness.json")["data"][0].clone();
+    canceled["side"] = json!(order_side.to_string());
+    *h.mock_state.single_order_response.lock().await = Some(canceled);
     *h.mock_state.trades_response_override.lock().await =
         Some(crate::mock_venue::load_json("http_empty_page.json"));
     h.mock_state
@@ -535,12 +547,146 @@ async fn cancel_replace_rotates_venue_id_and_updates_exact_values() {
         .clone();
     assert_eq!(cached.client_order_id(), order.client_order_id());
     assert_eq!(cached.venue_order_id(), Some(replacement_venue_order_id));
+    assert_eq!(cached.order_side(), order_side);
+    assert_eq!(cached.status(), OrderStatus::Accepted);
     assert_eq!(cached.price(), Some(Price::from("0.6000")));
     assert_eq!(cached.quantity(), Quantity::from("120.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Accepted(_))),
+        1,
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Updated(_))),
+        1,
+    );
     harness::invariants::assert_in_own_book(
         &h.cache().borrow(),
         &h.instrument_id(),
         &order.client_order_id(),
+        true,
+    );
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
+}
+
+#[rstest]
+#[tokio::test]
+async fn cancel_and_resubmit_limit_order_keeps_distinct_client_orders(
+    #[values(OrderSide::Buy, OrderSide::Sell)] order_side: OrderSide,
+) {
+    let mut h = harness::Harness::build().await;
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+
+    let [original, replacement] = [
+        ("O-CANCEL-ORIGINAL", "0.4321", "12.3400"),
+        ("O-CANCEL-REPLACEMENT", "0.6789", "8.7600"),
+    ]
+    .map(|(client_order_id, price, qty)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from(harness::TRADER_ID))
+            .strategy_id(StrategyId::from(harness::STRATEGY_ID))
+            .instrument_id(h.instrument_id())
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(order_side)
+            .price(Price::from(price))
+            .quantity(Quantity::from(qty))
+            .time_in_force(TimeInForce::Gtc)
+            .build()
+    });
+
+    h.submit_via_risk(&original);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &original, OrderStatus::Accepted)
+        })
+        .await,
+        "original order did not reach Accepted",
+    );
+    let old_venue_order_id = cached_order(&h, &original).venue_order_id().unwrap();
+    let mut cancel_response = load_json("http_cancel_response_ok.json");
+    cancel_response["canceled"][0] = json!(old_venue_order_id.as_str());
+    *h.mock_state.cancel_response.lock().await = Some(cancel_response);
+    h.cancel_via_execution(&original);
+    let state = h.mock_state.clone();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.cancel_delete_count.lock().await == 1 }
+        },
+        DEADLINE,
+    )
+    .await;
+
+    let mut cancellation = load_json("ws_user_order_cancellation.json");
+    cancellation["event_type"] = json!("order");
+    cancellation["id"] = json!(old_venue_order_id.as_str());
+    cancellation["side"] = json!(order_side.to_string());
+    cancellation["original_size"] = json!(original.quantity().to_string());
+    cancellation["price"] = json!(original.price().unwrap().to_string());
+    h.mock_state.send_user(cancellation).await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &original, OrderStatus::Canceled)
+        })
+        .await,
+        "original order did not reach Canceled before resubmission",
+    );
+
+    h.submit_via_risk(&replacement);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &replacement, OrderStatus::Accepted)
+        })
+        .await,
+        "replacement order did not reach Accepted",
+    );
+
+    let canceled = cached_order(&h, &original);
+    let accepted = cached_order(&h, &replacement);
+    let new_venue_order_id = accepted.venue_order_id().unwrap();
+    assert_eq!(canceled.client_order_id(), original.client_order_id());
+    assert_eq!(canceled.venue_order_id(), Some(old_venue_order_id));
+    assert_eq!(canceled.status(), OrderStatus::Canceled);
+    assert_eq!(canceled.order_side(), order_side);
+    assert_eq!(canceled.price(), original.price());
+    assert_eq!(canceled.quantity(), original.quantity());
+    assert_eq!(accepted.client_order_id(), replacement.client_order_id());
+    assert_ne!(accepted.client_order_id(), canceled.client_order_id());
+    assert_ne!(new_venue_order_id, old_venue_order_id);
+    assert_eq!(accepted.status(), OrderStatus::Accepted);
+    assert_eq!(accepted.order_side(), order_side);
+    assert_eq!(accepted.price(), replacement.price());
+    assert_eq!(accepted.quantity(), replacement.quantity());
+
+    for order in [&canceled, &accepted] {
+        assert_eq!(
+            event_count(order, |event| matches!(event, OrderEventAny::Accepted(_))),
+            1,
+        );
+        assert_eq!(
+            event_count(order, |event| matches!(event, OrderEventAny::Updated(_))),
+            0,
+        );
+    }
+
+    assert_eq!(*h.mock_state.order_post_count.lock().await, 2);
+    assert_eq!(
+        *h.mock_state.open_order_ids.lock().await,
+        std::collections::HashSet::from([new_venue_order_id.to_string()]),
+    );
+    assert_eq!(h.risk_command_count(), 2);
+    harness::invariants::assert_tracked_used_events(h.routed());
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &original.client_order_id(),
+        false,
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &replacement.client_order_id(),
         true,
     );
     harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());

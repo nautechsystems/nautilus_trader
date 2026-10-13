@@ -8,9 +8,9 @@ code and add custom charts and themes.
 
 The visualization system has three parts:
 
-1. **Chart Registry** - Decoupled chart definitions that can be extended with custom visualizations.
-2. **Theme System** - Consistent styling with built-in and custom themes.
-3. **Configuration** - Declarative specification of what to render and how to display it.
+- **Chart registry**: decoupled chart definitions that can be extended with custom visualizations.
+- **Theme system**: consistent styling with built-in and custom themes.
+- **Configuration**: declarative specification of what to render and how to display it.
 
 Tearsheets are written as **self-contained HTML files** that can be viewed in any modern
 browser, shared with stakeholders, or archived for future reference. Passing a static
@@ -129,12 +129,11 @@ create_tearsheet(
 )
 ```
 
-When `currency` is `None` (default), statistics for all currencies are displayed
-separately in the tearsheet. For `BacktestEngine` input, return-based charts require a
-single currency: they are derived from portfolio equity snapshots, falling back to
-account reports, and cannot be built for mixed-currency accounts without a filter;
-pass `currency` for multi-currency backtests so return charts use the selected
-currency.
+When `currency` is `None` (default), statistics for all currencies are displayed separately in the tearsheet.
+
+For `BacktestEngine` input, return-based charts require a single currency. They are derived from portfolio
+equity snapshots, falling back to account reports, and cannot be built for mixed-currency accounts without a
+filter. Pass `currency` for multi-currency backtests so return charts use the selected currency.
 
 For `BacktestResult` input, `currency` filters PnL statistics and account balances. The result's
 **stored return series remains unchanged**.
@@ -513,13 +512,14 @@ This approach is useful for:
 
 ### Custom statistics integration
 
-Custom charts work best when paired with statistics supplied through the same
-`stats_pnls`, `stats_returns`, and `stats_general` dictionaries used by the built-in
-tearsheet charts. For `BacktestEngine` input these values come from
-`engine.get_result()`, so a statistic registered with `Portfolio.register_statistic()` reaches the
-tearsheet without any extra wiring; see
-[Custom statistics](portfolio.md#custom-statistics). For offline analysis, pass compatible
-dictionaries directly to `create_tearsheet_from_stats()`:
+Pair custom charts with statistics supplied through the same `stats_pnls`, `stats_returns`, and
+`stats_general` dictionaries used by the built-in tearsheet charts.
+
+For `BacktestEngine` input, these values come from `engine.get_result()`, so a statistic registered with
+`Portfolio.register_statistic()` reaches the tearsheet without any extra wiring; see [Custom
+statistics](portfolio.md#custom-statistics).
+
+For offline analysis, pass compatible dictionaries directly to `create_tearsheet_from_stats()`:
 
 ```python
 stats_returns = {

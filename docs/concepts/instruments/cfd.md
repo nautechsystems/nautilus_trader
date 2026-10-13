@@ -33,7 +33,7 @@ Examples include CFD contracts on FX, equities, indexes, and commodities.
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`; Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -105,9 +105,8 @@ audusd = Cfd(
 
 ## Adapters
 
-Representative adapters that create or consume `Cfd` instruments include:
-
-- [Interactive Brokers](../../integrations/interactive_brokers.md) for CFD contracts.
+The [Interactive Brokers](../../integrations/interactive_brokers.md) adapter creates or consumes
+`Cfd` instruments for CFD contracts.
 
 ## Related guides
 

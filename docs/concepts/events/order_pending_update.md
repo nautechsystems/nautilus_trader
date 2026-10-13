@@ -1,9 +1,8 @@
 # OrderPendingUpdate
 
-`OrderPendingUpdate` represents a `ModifyOrder` command having been sent to the trading
-venue. The `ExecutionEngine` applies it to the order, updates the `Cache`, and publishes
-it on the `MessageBus`. It fires when the system dispatches a modify request and awaits
-venue acknowledgement.
+`OrderPendingUpdate` records that the system has sent a `ModifyOrder` request to the trading venue
+and awaits acknowledgement. The `ExecutionEngine` applies it to the order, updates the `Cache`,
+and publishes it on the `MessageBus`.
 
 Typical transition: `ACCEPTED` -> `PENDING_UPDATE`. Handler: `on_order_pending_update`.
 

@@ -1,11 +1,8 @@
 # Simulation Modules
 
-This page describes simulation module configuration, lifecycle, and failure handling.
-
-The [behavioral model design](../behavioral_models.md) explains the enum and
-shared-handle representations used below.
-
-Simulation modules use the enum and handle forms at different configuration boundaries:
+Simulation modules use enum and shared-handle forms, explained in the
+[behavioral model design](../behavioral_models.md). The configuration boundary determines which
+form is stored:
 
 | Boundary                                       | Stored form              | Accepted implementations              |
 | ---------------------------------------------- | ------------------------ | ------------------------------------- |
@@ -16,7 +13,7 @@ Simulation modules use the enum and handle forms at different configuration boun
 `SimulationModuleHandle` owns an `Rc<dyn SimulationModule>`, so cloning a handle shares the module
 and its state. Cloning a built-in enum value copies its state, while cloning a Python bridge retains
 the same Python object. Venues or runs that require isolated state therefore use distinct module
-instances, including distinct Python objects.
+instances, including **distinct Python objects**.
 :::
 
 ## Lifecycle
@@ -33,11 +30,11 @@ The exchange runs each module through this lifecycle:
 
 ## Failure handling
 
-- Failures from `pre_process`, `process`, `acknowledge`, or `reset` leave the exchange in an error
-  state until every module resets successfully. This prevents a failed acknowledgement from
-  replaying adjustments that the account may already contain.
-- Diagnostic failures return to the engine with the module index and hook name without changing the
-  exchange error state.
+- **Lifecycle failures**: Failures from `pre_process`, `process`, `acknowledge`, or `reset` leave the
+  exchange in an error state until every module resets successfully. This prevents a failed
+  acknowledgement from replaying adjustments that the account may already contain.
+- **Diagnostic failures**: These return to the engine with the module index and hook name without
+  changing the exchange error state.
 
 ## Python modules
 
@@ -69,11 +66,12 @@ registration does not create a runtime ABI for trait objects across a `cdylib` b
 
 ## Built-in modules
 
-The built-in FX rollover and CFD swap modules use the completed-batch acknowledgement flow. CFD swap
-rates are per-instrument signed daily `Decimal` fractions of settlement notional, with separate long
-and short values, a configurable UTC rollover time, and a configurable triple-roll weekday. For a
-single-currency account, the module converts the adjustment to the account base currency at the
-cached mid exchange rate.
+The built-in FX rollover and CFD swap modules use the completed-batch acknowledgement flow.
+
+CFD swap rates are per-instrument signed daily `Decimal` fractions of settlement notional, with
+separate long and short values. The UTC rollover time and triple-roll weekday are configurable.
+For a single-currency account, the module converts the adjustment to the account base currency at
+the cached mid exchange rate.
 
 The CFD swap module defers the whole batch when any of these inputs is missing:
 

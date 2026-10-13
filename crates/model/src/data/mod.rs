@@ -883,6 +883,9 @@ pub enum NautilusRecordType {
     ExecutionMassStatus,
     #[cfg(feature = "defi")]
     Defi,
+    GreeksData,
+    PortfolioGreeks,
+    YieldCurveData,
 }
 
 impl FromStr for NautilusRecordType {
@@ -918,6 +921,9 @@ impl FromStr for NautilusRecordType {
             "FillReport" | "fill_report" => Ok(Self::FillReport),
             "PositionStatusReport" | "position_status_report" => Ok(Self::PositionStatusReport),
             "ExecutionMassStatus" | "execution_mass_status" => Ok(Self::ExecutionMassStatus),
+            "GreeksData" | "greeks_data" => Ok(Self::GreeksData),
+            "PortfolioGreeks" | "portfolio_greeks" => Ok(Self::PortfolioGreeks),
+            "YieldCurveData" | "yield_curve_data" => Ok(Self::YieldCurveData),
             "custom" | "CustomData" => {
                 anyhow::bail!("custom data queries require NautilusDataType::Custom")
             }
@@ -1376,6 +1382,9 @@ mod tests {
     #[case(NautilusRecordType::OrderFilled, "OrderFilled")]
     #[case(NautilusRecordType::OrderFillVoided, "OrderFillVoided")]
     #[case(NautilusRecordType::ExecutionMassStatus, "ExecutionMassStatus")]
+    #[case(NautilusRecordType::GreeksData, "GreeksData")]
+    #[case(NautilusRecordType::PortfolioGreeks, "PortfolioGreeks")]
+    #[case(NautilusRecordType::YieldCurveData, "YieldCurveData")]
     fn nautilus_record_type_display_from_str_roundtrips(
         #[case] record_type: NautilusRecordType,
         #[case] expected: &str,
@@ -1389,6 +1398,9 @@ mod tests {
     #[case("order_filled", NautilusRecordType::OrderFilled)]
     #[case("order_fill_voided", NautilusRecordType::OrderFillVoided)]
     #[case("position_snapshot", NautilusRecordType::PositionSnapshot)]
+    #[case("greeks_data", NautilusRecordType::GreeksData)]
+    #[case("portfolio_greeks", NautilusRecordType::PortfolioGreeks)]
+    #[case("yield_curve_data", NautilusRecordType::YieldCurveData)]
     fn nautilus_record_type_storage_names_parse(
         #[case] value: &str,
         #[case] expected: NautilusRecordType,

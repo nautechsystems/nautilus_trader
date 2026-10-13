@@ -206,17 +206,20 @@ sequenceDiagram
    succeeded and no later quote has replaced it before the read.
 
 :::note
-For quotes, trades, and bars, the engine attempts cache insertion before publication. A synchronous
-persistence or enqueue error prevents the in-memory insertion, but the engine logs the error and
-still publishes the value. Built-in database backings perform the actual write asynchronously, so a
-later database error does not roll back the cache insertion. A published quote can therefore be
-absent from the cache after a synchronous insertion failure. A callback can also observe newer cache
-state than the event it handles, including during synchronous reentry. Delivery order does not
-provide an event-time snapshot, and the
-[queued dispatch requirements](../developer_guide/callback_dispatch.md#maintenance-and-observable-state)
-do not add one.
-Order book deltas and depth snapshots are published directly, while `BookUpdater` subscriptions
-maintain book state separately.
+For quotes, trades, and bars, the engine attempts cache insertion before publication:
+
+- A synchronous persistence or enqueue error prevents the in-memory insertion, but the engine logs the error
+  and still publishes the value. A published quote can therefore be absent from the cache after a synchronous
+  insertion failure.
+- Built-in database backings perform the actual write asynchronously, so a later database error does not roll
+  back the cache insertion.
+
+A callback can also observe newer cache state than the event it handles, including during synchronous reentry.
+Delivery order does not provide an event-time snapshot, and the [queued dispatch
+requirements](../developer_guide/callback_dispatch.md#maintenance-and-observable-state) do not add one.
+
+Order book deltas and depth snapshots are published directly, while `BookUpdater` subscriptions maintain book
+state separately.
 :::
 
 #### Execution flow: life of an order
@@ -334,10 +337,11 @@ stateDiagram-v2
 - **DEGRADING**: The component is executing its `degrade` actions.
 - **FAULTING**: The component is executing its `fault` actions.
 
-Transitional states cover the corresponding lifecycle callback and should remain brief. If a
-callback returns an error, the transition halts in its transitional state. `dispose()` is the
-exception: a failing `on_dispose` moves the component to FAULTED so it can still be retired.
-A failed `on_stop` or `on_fault` leaves the component in its transitional state, from which trader
+Transitional states cover the corresponding lifecycle callback and should remain brief. If a callback returns
+an error, the transition halts in its transitional state.
+
+`dispose()` is the exception: a failing `on_dispose` moves the component to FAULTED so it can still be
+retired. A failed `on_stop` or `on_fault` leaves the component in its transitional state, from which trader
 retirement can still invoke `dispose()` and finish cleanup.
 
 After a successful reset, the component releases its retained data subscriptions before returning
@@ -442,14 +446,17 @@ This separation allows:
   management and targeted dispatch.
 
 :::warning
-Separate thread-local registries support these access patterns. Both registry `get` methods return
-shared `Rc<UnsafeCell<dyn ...>>` handles. Component lifecycle wrapper functions use a private borrow
-guard to reject overlapping lifecycle access; that protection does not apply to arbitrary access
-through a raw registry handle. Typed actor accessors return `ActorRef` guards, which do not prevent
-two simultaneous guards for the same actor. Creating overlapping mutable references is undefined
-behavior. Obtain, use, and drop an `ActorRef` within one synchronous scope. Never store one or hold
-it across an `.await` point. Same-actor re-entrant lookup is a constraint of the current dispatch
-model, not a safe aliasing guarantee.
+Separate thread-local registries support these access patterns. Both registry `get` methods return shared
+`Rc<UnsafeCell<dyn ...>>` handles.
+
+- **Component access**: lifecycle wrapper functions use a private borrow guard to reject overlapping lifecycle
+  access. That protection does not apply to arbitrary access through a raw registry handle.
+- **Actor access**: typed accessors return `ActorRef` guards, which do not prevent two simultaneous guards for
+  the same actor.
+
+Creating overlapping mutable references is undefined behavior. Obtain, use, and drop an `ActorRef` within
+one synchronous scope. **Never store one or hold it across an `.await` point.** Same-actor re-entrant lookup
+is a constraint of the current dispatch model, not a safe aliasing guarantee.
 :::
 
 For queued dispatch, releasing an actor guard alone does not establish a safe delivery boundary:

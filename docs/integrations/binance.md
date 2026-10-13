@@ -11,8 +11,8 @@ data types.
 Supported products:
 
 - **Binance Spot** (including Binance US)
-- **Binance USDT-Margined Futures** (crypto and TradFi perpetuals; current and next monthly and
-  quarterly delivery contracts)
+- **Binance USDT-Margined Futures** (crypto and TradFi perpetuals; current and next weekly,
+  monthly, and quarterly delivery contracts)
 - **Binance Coin-Margined Futures** (perpetuals and current or next quarterly delivery contracts)
 
 ## Examples
@@ -81,12 +81,12 @@ side values raise `RuntimeError`.
 
 ### Product support
 
-| Product Type                            | Supported | Notes                                     |
-| --------------------------------------- | --------- | ----------------------------------------- |
-| Spot Markets (incl. Binance US)         | ✓         |                                           |
-| Margin Accounts (Cross & Isolated)      | -         | *Not implemented.*                        |
-| USDT-Margined Futures (PERP & Delivery) | ✓         | Monthly and quarterly delivery contracts. |
-| Coin-Margined Futures (PERP & Delivery) | ✓         | Quarterly delivery contracts.             |
+| Product Type                            | Supported | Notes                                              |
+| --------------------------------------- | --------- | -------------------------------------------------- |
+| Spot Markets (incl. Binance US)         | ✓         |                                                    |
+| Margin Accounts (Cross & Isolated)      | -         | *Not implemented.*                                 |
+| USDT-Margined Futures (PERP & Delivery) | ✓         | Weekly, monthly, and quarterly delivery contracts. |
+| Coin-Margined Futures (PERP & Delivery) | ✓         | Quarterly delivery contracts.                      |
 
 :::note
 Margin account features such as borrow, repay, and isolated margin management are not implemented.
@@ -149,10 +149,12 @@ The adapter preserves Binance's native `_PERP` suffix for COIN-M
 perpetuals, so `BTCUSD_PERP` remains unchanged.
 
 Delivery symbols keep Binance's `_YYMMDD` suffix. For example,
-`BTCUSDT_260925` and `BTCUSD_260925` remain unchanged within Nautilus. USD-M
+`BTCUSDT_270326` and `BTCUSD_270326` remain unchanged within Nautilus. USD-M
 supports the documented `CURRENT_MONTH`, `NEXT_MONTH`, `CURRENT_QUARTER`, and
-`NEXT_QUARTER` contract types. COIN-M supports `CURRENT_QUARTER` and
-`NEXT_QUARTER`. Contract availability varies by environment and listing cycle.
+`NEXT_QUARTER` contract types, plus the weekly `CURRENT_WEEK` and `NEXT_WEEK`
+types that Binance's common definitions do not list. COIN-M supports
+`CURRENT_QUARTER` and `NEXT_QUARTER`. Contract availability varies by
+environment and listing cycle.
 
 USD-M delivery instruments are linear and settle in the margin asset. COIN-M
 delivery instruments are inverse, settle in the margin asset (the base
@@ -165,7 +167,7 @@ and [COIN-M common definitions](https://developers.binance.com/en/docs/products/
 The Rust Futures data tester accepts a delivery instrument without source edits:
 
 ```bash
-BINANCE_FUTURES_INSTRUMENT_ID=BTCUSDT_260925.BINANCE \
+BINANCE_FUTURES_INSTRUMENT_ID=BTCUSDT_270326.BINANCE \
   cargo run -p nautilus-binance --example binance-futures-data-tester --features examples
 ```
 

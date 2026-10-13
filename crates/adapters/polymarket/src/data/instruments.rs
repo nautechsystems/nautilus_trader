@@ -403,8 +403,7 @@ pub(super) async fn refresh_expired_market_closure(
     cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     sender: &EventSender<DataEvent>,
     now_ns: UnixNanos,
-    closed_condition_ids: &Arc<parking_lot::Mutex<AHashSet<String>>>,
-    ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
+    subscriptions: &super::subscriptions::DataSubscriptions,
     cancellation: Option<&CancellationToken>,
 ) -> anyhow::Result<usize> {
     let mut carried: AHashMap<String, Vec<InstrumentId>> = AHashMap::new();
@@ -448,14 +447,7 @@ pub(super) async fn refresh_expired_market_closure(
     // Serialize terminal application with reset. If reset wins the boundary, this old generation
     // must not mutate or publish from the cache it captured before the request.
     for condition_id in &closed_ids {
-        if !crate::data::runtime::register_closed_condition_for_live_data(
-            closed_condition_ids,
-            ws_sub_mutex,
-            condition_id,
-            cancellation,
-        )
-        .await
-        {
+        if !subscriptions.mark_closed(condition_id, cancellation).await {
             return Ok(0);
         }
     }
@@ -508,10 +500,10 @@ impl PolymarketDataClient {
         self.provider.initialize(false).await?;
 
         let total = cache_and_publish_instruments(
-            &self.closed_condition_ids,
+            &self.subscriptions.closed_condition_ids,
             &self.instrument_update_state,
             &self.instruments,
-            &self.token_meta,
+            &self.subscriptions.token_meta,
             &self.data_sender,
             self.clock.get_time_ns(),
             self.provider
@@ -547,8 +539,8 @@ impl PolymarketDataClient {
         let instrument_config = self.config.instrument_config.clone();
         let instruments_cache = self.instruments.clone();
         let instrument_update_state = self.instrument_update_state.clone();
-        let token_meta = self.token_meta.clone();
-        let closed_condition_ids = self.closed_condition_ids.clone();
+        let token_meta = self.subscriptions.token_meta.clone();
+        let closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
 
@@ -966,15 +958,24 @@ mod tests {
         )
         .unwrap();
 
-        let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
-        let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
+        let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        let ws_client =
+            crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
+
+        let subscriptions = crate::data::DataSubscriptions::new(
+            instruments.clone(),
+            Arc::new(AtomicMap::new()),
+            Arc::new(AtomicMap::new()),
+            Arc::new(Mutex::new(())),
+            ws_client,
+            false,
+        );
         let result = refresh_expired_market_closure(
             &client,
             &instruments,
             &tx.clone().into(),
             UnixNanos::from(u64::MAX),
-            &closed_condition_ids,
-            &ws_sub_mutex,
+            &subscriptions,
             None,
         )
         .await;
@@ -1059,15 +1060,25 @@ mod tests {
         )
         .unwrap();
 
-        let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
-        let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
+        let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        let ws_client =
+            crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
+
+        let subscriptions = crate::data::DataSubscriptions::new(
+            instruments.clone(),
+            Arc::new(AtomicMap::new()),
+            Arc::new(AtomicMap::new()),
+            Arc::new(Mutex::new(())),
+            ws_client,
+            false,
+        );
+        let closed_condition_ids = subscriptions.closed_condition_ids.clone();
         let result = refresh_expired_market_closure(
             &client,
             &instruments,
             &tx.clone().into(),
             UnixNanos::from(u64::MAX),
-            &closed_condition_ids,
-            &ws_sub_mutex,
+            &subscriptions,
             None,
         )
         .await;

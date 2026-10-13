@@ -187,8 +187,8 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     let instrument_config = client.provider.config().clone();
     let instruments_cache = client.instruments.clone();
     let instrument_update_state = client.instrument_update_state.clone();
-    let token_meta = client.token_meta.clone();
-    let closed_condition_ids = client.closed_condition_ids.clone();
+    let token_meta = client.subscriptions.token_meta.clone();
+    let closed_condition_ids = client.subscriptions.closed_condition_ids.clone();
     let request_id = request.request_id;
     let client_id = request.client_id.unwrap_or(client.client_id);
     let venue = *POLYMARKET_VENUE;
@@ -275,8 +275,8 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
     let sender = client.data_sender.clone();
     let instruments_cache = client.instruments.clone();
     let instrument_update_state = client.instrument_update_state.clone();
-    let token_meta = client.token_meta.clone();
-    let closed_condition_ids = client.closed_condition_ids.clone();
+    let token_meta = client.subscriptions.token_meta.clone();
+    let closed_condition_ids = client.subscriptions.closed_condition_ids.clone();
     let client_id = request.client_id.unwrap_or(client.client_id);
     let request_id = request.request_id;
     let start = request.start;

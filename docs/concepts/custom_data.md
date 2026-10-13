@@ -143,12 +143,12 @@ It includes:
 - Optional `identifier` for persistence paths and cache database lookups. It
   does not affect routing, equality, or hashing.
 
-**Equality, hashing, and topic routing** are derived from `type_name` and
-`metadata` only. Two `DataType` values with the same type name and metadata but
-different identifiers compare equal and publish to the same message bus topic.
-The `identifier` selects the catalog path under
-`data/custom/<type_name>/<identifier...>` and participates in PostgreSQL and
-Redis filtering.
+**Equality, hashing, and topic routing** are derived from `type_name` and `metadata` only. Two `DataType`
+values with the same type name and metadata but different identifiers compare equal and publish to the same
+message bus topic.
+
+The `identifier` selects the catalog path under `data/custom/<type_name>/<identifier...>` and participates in
+PostgreSQL and Redis filtering.
 
 Persistence stores the full `DataType` with each `CustomData` value and restores
 it on query, while handler lookup uses `type_name`. The same logical type can
@@ -283,14 +283,15 @@ On query:
 1. Reconstructs `CustomData` with the original `DataType`.
 
 This makes custom-data query resolution symmetric with write-time registration.
-When converting a Feather stream to Parquet, such as after a backtest, the
-custom-data branch transforms the Arrow batches and writes the result directly
-to the matching custom-data path. Pass the data class as `custom/{TypeName}`
-with the registered type name verbatim, because a Feather session stores custom
-data under `data/custom/{TypeName}` rather than under a snake_case directory. Set
-`promote_on_close=False` when you intend to convert manually, because promotion on close is the
-default and converting an already promoted session rewrites the same `ts_init` interval under a
-different filename, which the catalog rejects as non-disjoint.
+
+When converting a Feather stream to Parquet, such as after a backtest, the custom-data branch transforms the
+Arrow batches and writes the result directly to the matching custom-data path:
+
+- Pass the data class as `custom/{TypeName}` with the registered type name verbatim, because a Feather session
+  stores custom data under `data/custom/{TypeName}` rather than under a snake_case directory.
+- Set `promote_on_close=False` when you intend to convert manually. Promotion on close is the default;
+  converting an already promoted session rewrites the same `ts_init` interval under a different filename,
+  which the catalog rejects as non-disjoint.
 
 :::info
 Python `StreamingFeatherWriter.write()` accepts `CustomData` wrappers for registered Arrow-capable

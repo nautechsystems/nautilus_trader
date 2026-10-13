@@ -1,10 +1,11 @@
 # OrderFillVoided
 
 `OrderFillVoided` records that all or part of a previously reported fill no longer has economic
-effect. The `ExecutionEngine` applies every successful correction to the order. When the referenced
-fill exists locally, it also rebuilds each affected position and refreshes portfolio position and
-PnL caches before publishing the correction. Venue adapters refresh account balances from their
-authoritative account endpoints.
+effect. The `ExecutionEngine` applies every successful correction to the order.
+
+When the referenced fill exists locally, the engine also rebuilds each affected position and
+refreshes portfolio position and PnL caches before publishing the correction. Venue adapters refresh
+account balances from their authoritative account endpoints.
 
 Strategies receive `OrderFillVoided` after the corrected cache state is available. When a cached
 position changes, the engine then publishes `PositionChanged` if it remains open or `PositionClosed`
@@ -34,9 +35,14 @@ interprets the correction:
 
 An unapplied non-reopened correction is an **order-level terminal assertion**. This remains true
 when `voided_qty` is less than the order quantity: the value records the ineffective fill quantity,
-not working leaves. The event must match the order identity, cannot exceed the order quantity, and
-cannot void a non-zero commission. Nautilus does not reverse position or account exposure without a
-local fill.
+not working leaves.
+
+For an unapplied non-reopened correction:
+
+- The event must match the order identity.
+- `voided_qty` cannot exceed the order quantity.
+- The event cannot void a non-zero commission.
+- Nautilus does not reverse position or account exposure without a local fill.
 
 ### Adapter requirements
 

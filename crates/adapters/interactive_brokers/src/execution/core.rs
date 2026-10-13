@@ -120,6 +120,7 @@ pub(super) use crate::{
 pub(super) const MODIFY_TRAILING_OFFSET_PARAM: &str = "trailing_offset";
 
 pub(super) const DENIAL_CLIENT_NOT_READY: &str = "IB_CLIENT_NOT_READY";
+pub(super) const DENIAL_ORDER_INVALID: &str = "ORDER_INVALID";
 pub(super) const DENIAL_ORDER_LIST_INVALID: &str = "ORDER_LIST_INVALID";
 pub(super) const DENIAL_ORDER_LIST_SIBLING_SUBMIT_FAILED: &str = "ORDER_LIST_SIBLING_SUBMIT_FAILED";
 pub(super) const DENIAL_POST_ONLY_UNSUPPORTED: &str = "UNSUPPORTED_POST_ONLY";
@@ -643,18 +644,27 @@ impl InteractiveBrokersExecutionClient {
         Ok(order_id)
     }
 
-    fn apply_client_order_id_floor(next_id: i32, client_id: i32) -> i32 {
+    // IB refuses every order ID below the client's next valid ID (error 103). When that ID lies
+    // above the client's partition no ID in it can be used, so this fails instead of mapping
+    fn apply_client_order_id_floor(next_id: i32, client_id: i32) -> anyhow::Result<i32> {
         let client_slot = client_id.unsigned_abs() % 1000;
         if client_slot == 0 {
-            return next_id;
+            return Ok(next_id);
         }
 
         let order_id_floor = (client_slot as i32) * ORDER_ID_PARTITION_SIZE;
         let order_id_ceiling = order_id_floor + ORDER_ID_PARTITION_SIZE;
-        if next_id > order_id_floor && next_id < order_id_ceiling {
-            next_id
+        anyhow::ensure!(
+            next_id < order_id_ceiling,
+            "IB next valid order ID {next_id} for client_id {client_id} is above its partition ({} to {}), so IB would refuse every order with error 103; use another client_id",
+            order_id_floor + 1,
+            order_id_ceiling - 1,
+        );
+
+        if next_id > order_id_floor {
+            Ok(next_id)
         } else {
-            order_id_floor + next_id.rem_euclid(ORDER_ID_PARTITION_SIZE).max(1)
+            Ok(order_id_floor + next_id.rem_euclid(ORDER_ID_PARTITION_SIZE).max(1))
         }
     }
 
@@ -668,14 +678,20 @@ impl InteractiveBrokersExecutionClient {
         order_id > order_id_floor && order_id < order_id_floor + ORDER_ID_PARTITION_SIZE
     }
 
-    // IB refuses an order ID at or below one the same client already used (error 103). Its next
-    // valid ID can belong to another client's partition and then says nothing about this
-    // client's IDs, so the start also clears the highest ID this client has in orders IB lists
-    fn initial_order_id(next_id: i32, client_id: i32, highest_used_order_id: Option<i32>) -> i32 {
-        let client_scoped_next_id = Self::apply_client_order_id_floor(next_id, client_id);
-        highest_used_order_id.map_or(client_scoped_next_id, |order_id| {
-            client_scoped_next_id.max(order_id.saturating_add(1))
-        })
+    // IB refuses an order ID at or below one the same client already used (error 103). A next
+    // valid ID below the client's partition says nothing about this client's IDs, so the start
+    // also clears the highest ID this client has in orders IB lists
+    fn initial_order_id(
+        next_id: i32,
+        client_id: i32,
+        highest_used_order_id: Option<i32>,
+    ) -> anyhow::Result<i32> {
+        let client_scoped_next_id = Self::apply_client_order_id_floor(next_id, client_id)?;
+        Ok(
+            highest_used_order_id.map_or(client_scoped_next_id, |order_id| {
+                client_scoped_next_id.max(order_id.saturating_add(1))
+            }),
+        )
     }
 
     /// Gets the next valid order ID from IB.
@@ -1103,7 +1119,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             next_id,
             self.config.client_id,
             highest_open_order_id.max(highest_completed_order_id),
-        );
+        )?;
 
         if starting_order_id == next_id {
             tracing::debug!(
@@ -1365,16 +1381,17 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let (mut order_reports, fill_reports, mut position_reports) = tokio::try_join!(
+        let report_client = self.report_client()?;
+        let (mut order_reports, fill_evidence, mut position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),
-            self.generate_fill_reports(fill_cmd),
+            report_client.generate_fill_evidence(fill_cmd),
             self.generate_position_status_reports(&position_cmd),
         )?;
 
         tracing::info!(
             "generate_mass_status: {} order reports, {} fill reports, {} position reports",
             order_reports.len(),
-            fill_reports.len(),
+            fill_evidence.reports.len(),
             position_reports.len()
         );
 
@@ -1390,8 +1407,13 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         // cannot be claimed complete.
         mass_status.set_report_window(start, start.is_some());
 
-        parse::fill_missing_avg_px(&mut order_reports, &fill_reports);
-        parse::fill_position_avg_px_from_fills(&mut position_reports, &fill_reports);
+        parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);
+        parse::fill_position_avg_px_from_fills(
+            &mut position_reports,
+            &fill_evidence,
+            &self.instrument_provider,
+        );
+        let fill_reports = fill_evidence.reports;
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);

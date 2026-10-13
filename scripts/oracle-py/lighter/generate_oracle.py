@@ -43,11 +43,16 @@ UPSTREAM_REVISION = "a38b6405f362fc14a562fe7a97df03f3ee756bc1"
 
 # Tx type discriminants, mirrored from the lighter-go constants.
 TX_TYPE_L2_CREATE_ORDER = 14
+TX_TYPE_L2_CREATE_GROUPED_ORDERS = 28
 TX_TYPE_L2_CANCEL_ORDER = 15
 TX_TYPE_L2_CANCEL_ALL_ORDERS = 16
 TX_TYPE_L2_MODIFY_ORDER = 17
 TX_TYPE_L2_UPDATE_LEVERAGE = 20
 TX_TYPE_L2_APPROVE_INTEGRATOR = 45
+
+GROUPING_TYPE_OTO = 1
+GROUPING_TYPE_OCO = 2
+GROUPING_TYPE_OTOCO = 3
 
 
 class SignedTxResponse(ctypes.Structure):
@@ -61,6 +66,25 @@ class SignedTxResponse(ctypes.Structure):
         ("txHash", ctypes.c_void_p),
         ("messageToSign", ctypes.c_void_p),
         ("err", ctypes.c_void_p),
+    ]
+
+
+class CreateOrderTxReq(ctypes.Structure):
+    """
+    Per-order body accepted by the grouped-order signer.
+    """
+
+    _fields_ = [
+        ("MarketIndex", ctypes.c_int),
+        ("ClientOrderIndex", ctypes.c_longlong),
+        ("BaseAmount", ctypes.c_longlong),
+        ("Price", ctypes.c_uint32),
+        ("IsAsk", ctypes.c_uint8),
+        ("Type", ctypes.c_uint8),
+        ("TimeInForce", ctypes.c_uint8),
+        ("ReduceOnly", ctypes.c_uint8),
+        ("TriggerPrice", ctypes.c_uint32),
+        ("OrderExpiry", ctypes.c_longlong),
     ]
 
 
@@ -120,6 +144,22 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_longlong,
     ]
     lib.SignCreateOrder.restype = SignedTxResponse
+
+    lib.SignCreateGroupedOrders.argtypes = [
+        ctypes.c_uint8,
+        ctypes.POINTER(CreateOrderTxReq),
+        ctypes.c_int,
+        ctypes.c_longlong,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_uint8,
+        ctypes.c_uint8,
+        ctypes.c_uint8,
+        ctypes.c_longlong,
+        ctypes.c_int,
+        ctypes.c_longlong,
+    ]
+    lib.SignCreateGroupedOrders.restype = SignedTxResponse
 
     lib.SignCancelOrder.argtypes = [
         ctypes.c_int,
@@ -546,6 +586,7 @@ def main() -> int:
         default=None,
         help="optional output path for the auth-token oracle fixture",
     )
+    parser.add_argument("--grouped-out", type=Path, help="optional grouped-order oracle fixture")
     args = parser.parse_args()
 
     lib = setup_lib(args.signer)
@@ -596,10 +637,66 @@ def main() -> int:
         f.write("\n")
     print(f"wrote {len(vectors)} vectors to {args.out}")
 
+    if args.grouped_out is not None:
+        payload["vectors"] = build_grouped_tx_vectors(lib, base_ctx)
+        args.grouped_out.parent.mkdir(parents=True, exist_ok=True)
+        args.grouped_out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {len(payload['vectors'])} grouped vectors to {args.grouped_out}")
+
     if args.auth_out is not None:
         write_auth_oracle(lib, sk, chain_id, account_index, api_key_index, args.auth_out)
 
     return 0
+
+
+def build_grouped_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
+    """
+    Generate OTO, OCO, and OTOCO bodies with distinct fields and attributes.
+    """
+    expiry = 1_999_999_999_000
+    parent = CreateOrderTxReq(0, 301, 1000, 405000, 0, 0, 1, 0, 0, expiry)
+    take_profit = CreateOrderTxReq(0, 302, 0, 419000, 1, 5, 1, 1, 420000, expiry)
+    stop_loss = CreateOrderTxReq(0, 303, 0, 379000, 1, 3, 1, 1, 380000, expiry)
+    vectors = []
+    for grouping in (GROUPING_TYPE_OTO, GROUPING_TYPE_OCO, GROUPING_TYPE_OTOCO):
+        siblings = [take_profit, stop_loss]
+        if grouping == GROUPING_TYPE_OTO:
+            orders = [parent, stop_loss]
+        elif grouping == GROUPING_TYPE_OCO:
+            orders = [CreateOrderTxReq.from_buffer_copy(order) for order in siblings]
+            for order in orders:
+                order.BaseAmount = 1000
+        else:
+            orders = [parent, *siblings]
+        bodies = (CreateOrderTxReq * len(orders))(*orders)
+        for attributes in (False, True):
+            ctx = {**base_ctx, "nonce": 30 + grouping * 2 + int(attributes)}
+            integrator = 190 if attributes else 0
+            response = lib.SignCreateGroupedOrders(
+                grouping,
+                bodies,
+                len(orders),
+                integrator,
+                2 if attributes else 0,
+                3 if attributes else 0,
+                0,
+                0,
+                int(attributes),
+                ctx["nonce"],
+                ctx["api_key_index"],
+                ctx["account_index"],
+            )
+            decoded = decode_expected(lib, response, TX_TYPE_L2_CREATE_GROUPED_ORDERS)
+            fields = {
+                "grouping_type": grouping,
+                "orders": decoded["tx_info_decoded"]["Orders"],
+                "integrator_account_index": integrator,
+                "integrator_taker_fee": 2 if attributes else 0,
+                "integrator_maker_fee": 3 if attributes else 0,
+                "skip_nonce": int(attributes),
+            }
+            vectors.append(build_vector("create_grouped_orders", ctx, fields, decoded))
+    return vectors
 
 
 def _widened_tx_vectors(
@@ -723,7 +820,12 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
     }
     ctx = {**base_ctx, "nonce": 0}
     vectors.append(
-        build_vector("create_order", ctx, create_fields, gen_create_order(lib, ctx, create_fields)),
+        build_vector(
+            "create_order",
+            ctx,
+            create_fields,
+            gen_create_order(lib, ctx, create_fields),
+        ),
     )
 
     # CreateOrder with integrator attribution (non-empty L2TxAttributes).
@@ -752,7 +854,12 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
     }
     ctx = {**base_ctx, "nonce": 2}
     vectors.append(
-        build_vector("cancel_order", ctx, cancel_fields, gen_cancel_order(lib, ctx, cancel_fields)),
+        build_vector(
+            "cancel_order",
+            ctx,
+            cancel_fields,
+            gen_cancel_order(lib, ctx, cancel_fields),
+        ),
     )
 
     # ModifyOrder: bump size and price.
@@ -769,7 +876,12 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
     }
     ctx = {**base_ctx, "nonce": 3}
     vectors.append(
-        build_vector("modify_order", ctx, modify_fields, gen_modify_order(lib, ctx, modify_fields)),
+        build_vector(
+            "modify_order",
+            ctx,
+            modify_fields,
+            gen_modify_order(lib, ctx, modify_fields),
+        ),
     )
 
     # ApproveIntegrator off the trading critical path.

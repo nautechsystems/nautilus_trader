@@ -215,11 +215,13 @@ In `HEDGING` mode, multiple positions can exist for the same instrument:
 - A virtual position flip creates a new ID and keeps the original closed position in the cache,
   so that path does not need a closed-cycle snapshot.
 
-After a virtual flip, later fills for the same order follow the destination position even if they
-carry the original position ID. The engine derives the destination from retained order and position
-history, including after cache recovery and fill-void corrections, and rejects fills when that history
-is incomplete or ambiguous. Virtual `HEDGING` positions always retain replay history across reopens,
-even when `carry_replay_events_on_reopen=False`, to preserve this routing when a position ID is reused.
+After a virtual flip, later fills for the same order follow the destination position even if they carry the
+original position ID. The engine derives the destination from retained order and position history, including
+after cache recovery and fill-void corrections, and rejects fills when that history is incomplete or
+ambiguous.
+
+Virtual `HEDGING` positions always retain replay history across reopens, even when
+`carry_replay_events_on_reopen=False`, to preserve this routing when a position ID is reused.
 
 :::warning
 `HEDGING` can increase margin requirements when a venue maintains long and short positions
@@ -278,13 +280,15 @@ corrected history actually closes, keeping each counted once. See
 [Position replay across NETTING cycles](execution/index.md#position-replay-across-netting-cycles).
 
 :::note
-This closed-cycle archive differs from optional position state snapshots. Setting
-`snapshot_positions=True` publishes state when a position opens, changes, or closes, while
-`snapshot_positions_interval_secs` periodically publishes all open positions. A cache with a
-Redis or Postgres backing also persists these snapshots. Without cache backing, both paths publish
-snapshots on the in-process message bus without persisting them. See
-[`LiveExecutionEngineConfig`](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecutionEngineConfig) for
-these settings.
+This closed-cycle archive differs from optional position state snapshots:
+
+- `snapshot_positions=True` publishes state when a position opens, changes, or closes.
+- `snapshot_positions_interval_secs` periodically publishes all open positions.
+
+A cache with a Redis or Postgres backing also persists these snapshots. Without cache backing, both paths
+publish snapshots on the in-process message bus without persisting them. See
+[`LiveExecutionEngineConfig`](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecutionEngineConfig)
+for these settings.
 :::
 
 ### Example scenario
@@ -479,11 +483,13 @@ See the [Execution guide](execution/) for reconciliation best practices.
 
 ## Numerical precision
 
-`Position` uses `f64` for signed quantity, average prices, realized returns, and PnL intermediates.
-`Price`, `Quantity`, and `Money` retain their fixed-point representations at the API boundary, but
-conversions between these types and `f64` can introduce rounding. `f64` represents every integer
-exactly only through `2^53`; above that boundary, conversion can lose low-order bits. It provides
-roughly 15 to 16 significant decimal digits rather than a fixed number of exact decimal places.
+`Position` uses `f64` for signed quantity, average prices, realized returns, and PnL intermediates. `Price`,
+`Quantity`, and `Money` retain their fixed-point representations at the API boundary, but conversions between
+these types and `f64` can introduce rounding.
+
+`f64` represents every integer exactly only through `2^53`; above that boundary, conversion can lose low-order
+bits. It provides roughly 15 to 16 significant decimal digits rather than a fixed number of exact decimal
+places.
 
 The design avoids the higher computational cost of arbitrary-precision arithmetic. The
 average-price calculation also avoids multiplying raw fixed-point values because those products can
@@ -491,12 +497,15 @@ overflow their integer representation. Average prices reuse the prior `f64` aver
 PnL is converted between `Money` and `f64` as fills accumulate. The resulting precision depends on
 the values, settlement-currency precision, and sequence of fills.
 
-`quantity` is derived from `signed_qty` at the instrument's `size_precision`. If that conversion
-rounds a residual quantity to zero, the position becomes `FLAT` and normalizes `signed_qty` to zero.
-Inverse PnL calculations for non-premium instruments reject nonpositive open or close prices and
-positive prices below `1e-15`.
-With the `defi` feature, converting a `Price` or `Quantity` with more than 16 decimal places to
-`f64` panics, so `Position` does not support 17- or 18-decimal fill values.
+Numerical limits affect quantity, inverse PnL, and high-precision fills:
+
+- **Quantity**: `quantity` is derived from `signed_qty` at the instrument's `size_precision`. If that
+  conversion rounds a residual quantity to zero, the position becomes `FLAT` and normalizes `signed_qty` to
+  zero.
+- **Inverse PnL**: calculations for non-premium instruments reject nonpositive open or close prices and
+  positive prices below `1e-15`.
+- **DeFi precision**: with the `defi` feature, converting a `Price` or `Quantity` with more than 16 decimal
+  places to `f64` panics, so `Position` does not support 17- or 18-decimal fill values.
 
 Tests in `crates/model/src/position.rs` cover a `0.01` USD commission, nine-decimal price inputs, 100
 sequential fills, prices from `0.00001` to `99999.99999`, and same-price round trips. These cases do

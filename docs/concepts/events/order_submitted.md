@@ -1,9 +1,8 @@
 # OrderSubmitted
 
-`OrderSubmitted` represents an order having been submitted by the system to the trading
-venue. The `ExecutionEngine` applies it to the order, updates the `Cache`, and publishes
-it on the `MessageBus`. It fires when the system sends the order to the venue and awaits
-acknowledgement.
+`OrderSubmitted` records that the system has sent an order to the trading venue and awaits
+acknowledgement. The `ExecutionEngine` applies it to the order, updates the `Cache`, and publishes
+it on the `MessageBus`.
 
 Typical transition: `INITIALIZED` / `RELEASED` -> `SUBMITTED`. Handler: `on_order_submitted`.
 

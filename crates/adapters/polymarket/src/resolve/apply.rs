@@ -18,7 +18,7 @@ use std::sync::Arc;
 use ahash::{AHashMap, AHashSet};
 use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::{live::sender::EventSender, messages::DataEvent};
-use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
+use nautilus_core::{AtomicMap, time::AtomicTime};
 use nautilus_model::{
     data::{Data as NautilusData, InstrumentClose, InstrumentStatus},
     enums::{InstrumentCloseType, MarketStatusAction},
@@ -158,39 +158,15 @@ pub(crate) struct ResolveContext {
     pub(crate) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     pub(crate) watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
     pub(crate) apply_mutex: Arc<Mutex<()>>,
-    pub(crate) active_quote_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(crate) active_delta_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(crate) active_trade_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(crate) active_status_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(crate) active_close_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(crate) closed_condition_ids: Arc<Mutex<AHashSet<String>>>,
-    pub(crate) ws_open_tokens: Arc<AtomicSet<Ustr>>,
-    pub(crate) ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
-    pub(crate) ws: crate::websocket::pool::PolymarketMarketPoolHandle,
     pub(crate) pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     pub(crate) deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
-    pub(crate) subscribe_new_markets: bool,
     pub(crate) cancellation_token: CancellationToken,
+    pub(crate) subscriptions: crate::data::DataSubscriptions,
 }
 
 impl ResolveContext {
     pub(crate) async fn sync_ws_subscription(&self, instrument_id: InstrumentId, token_id: String) {
-        crate::data::sync_ws_subscription_with_resolution_and_terminal_async(
-            instrument_id,
-            token_id,
-            self.active_quote_subs.clone(),
-            self.active_delta_subs.clone(),
-            self.active_trade_subs.clone(),
-            self.active_status_subs.clone(),
-            self.active_close_subs.clone(),
-            self.closed_condition_ids.clone(),
-            self.ws_open_tokens.clone(),
-            self.ws_sub_mutex.clone(),
-            self.ws.clone(),
-            self.watchlist.clone(),
-            self.subscribe_new_markets,
-        )
-        .await;
+        self.subscriptions.reconcile(instrument_id, token_id).await;
     }
 }
 
@@ -208,10 +184,7 @@ pub(crate) async fn pause_and_reconcile_resolve_watch_entries(
             .values()
             .filter(|entry| entry.paused)
             .flat_map(|entry| entry.tracked.values())
-            .filter(|tracked| {
-                ctx.ws_open_tokens
-                    .contains(&Ustr::from(tracked.token_id.as_str()))
-            })
+            .filter(|tracked| ctx.subscriptions.is_token_open(&tracked.token_id))
             .map(|tracked| (tracked.instrument_id, tracked.token_id.clone()))
             .collect::<Vec<_>>()
     };
@@ -438,8 +411,14 @@ pub(crate) async fn admit_data_resolution_instrument(
     let resolution = {
         let _guard = ctx.apply_mutex.lock();
         if ctx.cancellation_token.is_cancelled()
-            || (!ctx.active_status_subs.contains(&instrument.id())
-                && !ctx.active_close_subs.contains(&instrument.id()))
+            || (!ctx
+                .subscriptions
+                .status_subscriptions()
+                .contains(&instrument.id())
+                && !ctx
+                    .subscriptions
+                    .close_subscriptions()
+                    .contains(&instrument.id()))
         {
             return;
         }
@@ -506,7 +485,7 @@ async fn apply_condition_resolution_inner(
     let condition_id_string = condition_id.to_string();
     let reconcile_guard = tokio::select! {
         () = ctx.cancellation_token.cancelled() => return ResolveApplyResult::Ignored,
-        guard = ctx.ws_sub_mutex.lock() => guard,
+        guard = ctx.subscriptions.lock_reconciliation() => guard,
     };
     let (reconciliation_targets, emitted_closes) = {
         let _guard = ctx.apply_mutex.lock();
@@ -543,8 +522,10 @@ async fn apply_condition_resolution_inner(
             .flat_map(|entry| entry.tracked.values())
             .map(|tracked| tracked.instrument_id)
             .collect();
+
         let active_status_ids: AHashSet<InstrumentId> = ctx
-            .active_status_subs
+            .subscriptions
+            .status_subscriptions()
             .load()
             .iter()
             .filter(|instrument_id| {
@@ -552,8 +533,10 @@ async fn apply_condition_resolution_inner(
             })
             .copied()
             .collect();
+
         let active_close_ids: AHashSet<InstrumentId> = ctx
-            .active_close_subs
+            .subscriptions
+            .close_subscriptions()
             .load()
             .iter()
             .filter(|instrument_id| {
@@ -740,32 +723,11 @@ async fn apply_condition_resolution_inner(
             .map(|tracked| (tracked.instrument_id, tracked.token_id.clone()))
             .collect();
 
-        for subscriptions in [
-            &ctx.active_quote_subs,
-            &ctx.active_delta_subs,
-            &ctx.active_trade_subs,
-            &ctx.active_status_subs,
-            &ctx.active_close_subs,
-        ] {
-            for instrument_id in subscriptions.load().iter().copied() {
-                if !crate::providers::extract_condition_id(&instrument_id)
-                    .is_ok_and(|candidate| candidate == condition_id)
-                {
-                    continue;
-                }
-
-                let token_id = loaded
-                    .get(&instrument_id)
-                    .map(|instrument| instrument.raw_symbol().as_str().to_string())
-                    .or_else(|| crate::providers::extract_token_id(&instrument_id).ok());
-
-                if let Some(token_id) = token_id {
-                    reconciliation_targets
-                        .entry(instrument_id)
-                        .or_insert(token_id);
-                }
-            }
-        }
+        ctx.subscriptions.extend_reconciliation_targets(
+            condition_id,
+            &loaded,
+            &mut reconciliation_targets,
+        );
 
         // Clear settlement state before releasing the corresponding subscription intents
         ctx.watchlist.remove(&condition_id_string);
@@ -776,32 +738,10 @@ async fn apply_condition_resolution_inner(
             }
         }
 
-        for subscriptions in [&ctx.active_status_subs, &ctx.active_close_subs] {
-            subscriptions.rcu(|entries| {
-                entries.retain(|instrument_id| {
-                    deferred_ids.contains(instrument_id)
-                        || (!matches_condition(instrument_id)
-                            && !tracked_instruments.contains_key(instrument_id))
-                });
-            });
-        }
-
-        for subscriptions in [
-            &ctx.active_quote_subs,
-            &ctx.active_delta_subs,
-            &ctx.active_trade_subs,
-        ] {
-            subscriptions.rcu(|entries| {
-                entries.retain(|instrument_id| {
-                    !matches_condition(instrument_id)
-                        && !tracked_instruments.contains_key(instrument_id)
-                });
-            });
-        }
-        let newly_closed = ctx
-            .closed_condition_ids
-            .lock()
-            .insert(condition_id_string.clone());
+        let tracked_ids = tracked_instruments.keys().copied().collect();
+        let newly_closed =
+            ctx.subscriptions
+                .finish_resolution(condition_id, &tracked_ids, &deferred_ids);
 
         if newly_closed {
             log::info!("Market resolved for condition {condition_id}, reconciling live data state");
@@ -816,7 +756,7 @@ async fn apply_condition_resolution_inner(
     reconciliation_targets.sort_unstable_by(|left, right| left.1.cmp(&right.1));
 
     for (instrument_id, token_id) in reconciliation_targets {
-        if !ctx.ws_open_tokens.contains(&Ustr::from(token_id.as_str())) {
+        if !ctx.subscriptions.is_token_open(&token_id) {
             continue;
         }
 
@@ -845,24 +785,29 @@ mod tests {
     ) {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        let instruments = Arc::new(AtomicMap::new());
+        let watchlist = Arc::new(AtomicMap::new());
+        let owner_lock = Arc::new(Mutex::new(()));
+        let deferred_resolutions = Arc::new(AtomicMap::new());
+
+        let subscriptions = crate::data::DataSubscriptions::new(
+            instruments.clone(),
+            watchlist.clone(),
+            deferred_resolutions.clone(),
+            owner_lock.clone(),
+            crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]),
+            false,
+        );
+
         let ctx = ResolveContext {
+            subscriptions,
             clock: get_atomic_clock_realtime(),
             data_sender: data_tx.into(),
-            instruments: Arc::new(AtomicMap::new()),
-            watchlist: Arc::new(AtomicMap::new()),
-            apply_mutex: Arc::new(Mutex::new(())),
-            active_quote_subs: Arc::new(AtomicSet::new()),
-            active_delta_subs: Arc::new(AtomicSet::new()),
-            active_trade_subs: Arc::new(AtomicSet::new()),
-            active_status_subs: Arc::new(AtomicSet::new()),
-            active_close_subs: Arc::new(AtomicSet::new()),
-            closed_condition_ids: Arc::new(Mutex::new(AHashSet::new())),
-            ws_open_tokens: Arc::new(AtomicSet::new()),
-            ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
-            ws: crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]),
+            instruments,
+            watchlist,
+            apply_mutex: owner_lock,
             pending_resolutions: Arc::new(DashMap::new()),
-            deferred_resolutions: Arc::new(AtomicMap::new()),
-            subscribe_new_markets: false,
+            deferred_resolutions,
             cancellation_token: CancellationToken::new(),
         };
 
@@ -873,7 +818,8 @@ mod tests {
     #[tokio::test]
     async fn data_status_subscription_emits_status_without_close() {
         let (ctx, mut data_rx) = make_resolve_context();
-        ctx.active_status_subs
+        ctx.subscriptions
+            .status_subscriptions()
             .insert(InstrumentId::from("0xCOND-0xYES.POLYMARKET"));
         ctx.watchlist.insert(
             "0xCOND".to_string(),
@@ -971,18 +917,30 @@ mod tests {
     async fn resolution_without_watch_entry_completes_active_data_subscription_intent() {
         let (ctx, mut data_rx) = make_resolve_context();
         let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
-        ctx.active_status_subs.insert(instrument_id);
-        ctx.active_close_subs.insert(instrument_id);
+        ctx.subscriptions
+            .status_subscriptions()
+            .insert(instrument_id);
+        ctx.subscriptions
+            .close_subscriptions()
+            .insert(instrument_id);
 
         assert_eq!(
             apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes").await,
             ResolveApplyResult::Applied { emitted_closes: 1 }
         );
 
-        assert!(!ctx.active_status_subs.contains(&instrument_id));
-        assert!(!ctx.active_close_subs.contains(&instrument_id));
+        assert!(
+            !ctx.subscriptions
+                .status_subscriptions()
+                .contains(&instrument_id)
+        );
+        assert!(
+            !ctx.subscriptions
+                .close_subscriptions()
+                .contains(&instrument_id)
+        );
         assert!(!ctx.pending_resolutions.contains_key("0xCOND"));
-        assert!(ctx.closed_condition_ids.lock().contains("0xCOND"));
+        assert!(ctx.subscriptions.is_condition_closed("0xCOND"));
         assert!(matches!(
             data_rx.try_recv(),
             Ok(DataEvent::InstrumentStatus(_))
@@ -998,7 +956,9 @@ mod tests {
     async fn direct_resolution_installs_pending_barrier_before_ws_reconciliation() {
         let (ctx, _data_rx) = make_resolve_context();
         let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
-        ctx.active_status_subs.insert(instrument_id);
+        ctx.subscriptions
+            .status_subscriptions()
+            .insert(instrument_id);
         ctx.watchlist.insert(
             "0xCOND".to_string(),
             ResolveWatchEntry {
@@ -1018,7 +978,7 @@ mod tests {
             },
         );
 
-        let reconcile_guard = ctx.ws_sub_mutex.lock().await;
+        let reconcile_guard = ctx.subscriptions.lock_reconciliation().await;
         let apply_ctx = ctx.clone();
         let apply_task = tokio::spawn(async move {
             apply_condition_resolution(&apply_ctx, "0xCOND", "0xYES", "Yes").await
@@ -1040,15 +1000,21 @@ mod tests {
     async fn deferred_auto_load_keeps_manual_resolution_pending_barrier() {
         let (ctx, mut data_rx) = make_resolve_context();
         let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
-        ctx.active_status_subs.insert(instrument_id);
-        ctx.active_close_subs.insert(instrument_id);
+        ctx.subscriptions
+            .status_subscriptions()
+            .insert(instrument_id);
+        ctx.subscriptions
+            .close_subscriptions()
+            .insert(instrument_id);
+
         let resolution = StrictResolvedMarket {
             condition_id: "0xCOND".to_string(),
             asset_ids: vec!["0xYES".to_string(), "0xNO".to_string()],
             winning_asset_id: "0xYES".to_string(),
             winning_outcome: "Yes".to_string(),
         };
-        let reconcile_guard = ctx.ws_sub_mutex.lock().await;
+
+        let reconcile_guard = ctx.subscriptions.lock_reconciliation().await;
         let mut auto_load = Box::pin(apply_watched_condition_resolution(&ctx, &resolution));
         let mut manual = Box::pin(apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes"));
         assert!(futures_util::poll!(&mut auto_load).is_pending());
@@ -1069,7 +1035,7 @@ mod tests {
 
         assert!(ctx.deferred_resolutions.is_empty());
         assert!(ctx.pending_resolutions.is_empty());
-        assert!(ctx.closed_condition_ids.lock().contains("0xCOND"));
+        assert!(ctx.subscriptions.is_condition_closed("0xCOND"));
         assert_eq!(std::iter::from_fn(|| data_rx.try_recv().ok()).count(), 2);
     }
 
@@ -1082,9 +1048,13 @@ mod tests {
     ) {
         let (ctx, mut data_rx) = make_resolve_context();
         let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
-        ctx.active_status_subs.insert(instrument_id);
-        ctx.active_close_subs.insert(instrument_id);
-        let reconcile_guard = ctx.ws_sub_mutex.lock().await;
+        ctx.subscriptions
+            .status_subscriptions()
+            .insert(instrument_id);
+        ctx.subscriptions
+            .close_subscriptions()
+            .insert(instrument_id);
+        let reconcile_guard = ctx.subscriptions.lock_reconciliation().await;
         let mut first = Box::pin(apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes"));
         let mut second = Box::pin(apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes"));
         assert!(futures_util::poll!(&mut first).is_pending());
@@ -1107,7 +1077,7 @@ mod tests {
         );
 
         assert!(ctx.pending_resolutions.is_empty());
-        assert!(ctx.closed_condition_ids.lock().contains("0xCOND"));
+        assert!(ctx.subscriptions.is_condition_closed("0xCOND"));
         assert_eq!(std::iter::from_fn(|| data_rx.try_recv().ok()).count(), 2);
     }
 
@@ -1143,7 +1113,7 @@ mod tests {
         )
         .expect("pending WebSocket claim");
 
-        let reconcile_guard = ctx.ws_sub_mutex.lock().await;
+        let reconcile_guard = ctx.subscriptions.lock_reconciliation().await;
         let apply_ctx = ctx.clone();
 
         let apply_task = tokio::spawn(async move {

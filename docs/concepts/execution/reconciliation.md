@@ -109,11 +109,14 @@ Within `nautilus-live`, the source modules divide these responsibilities as foll
 The separate `nautilus_execution::reconciliation` module supplies report-to-event and arithmetic
 operations shared with the execution engine.
 
-At startup, the manager publishes raw reports, applies order and fill events, verifies historical
-fill application, and then evaluates positions against the updated cache. During continuous
-position checks, the node coordinates authoritative fill queries and dispatch before asking the
-manager to generate synthetic events. Activity revisions detect local changes during requests or
-callbacks; applying authoritative fills defers synthetic reconciliation until a fresh position report.
+Reconciliation follows different paths at startup and during continuous checks:
+
+- **Startup**: the manager publishes raw reports, applies order and fill events, verifies historical
+  fill application, and then evaluates positions against the updated cache.
+- **Continuous position checks**: the node coordinates authoritative fill queries and dispatch before
+  asking the manager to generate synthetic events. Activity revisions detect local changes during
+  requests or callbacks; applying authoritative fills defers synthetic reconciliation until a fresh
+  position report.
 
 A fill that fails preparation or that the engine does not apply also defers synthetic
 reconciliation, but only until `position_check_threshold_ms` has passed since its first failure.
@@ -152,10 +155,13 @@ writes remain asynchronous, so enqueue order does not guarantee that the origin 
 the order reaches the client.
 
 At startup, each client's mass status is checked against the cached origins: an order the client
-reports is expected to be bound to that same client. A missing origin logs an aggregated warning
-and remains compatible with existing cache data. A conflicting origin logs an aggregated
-deprecation warning and reconciles for compatibility. A future release rejects the conflict as a
-startup error. See the origin rows in [Startup scenarios](#startup-scenarios).
+reports is expected to be bound to that same client.
+
+- **Missing origin**: logs an aggregated warning and remains compatible with existing cache data.
+- **Conflicting origin**: logs an aggregated deprecation warning and reconciles for compatibility.
+  A future release rejects the conflict as a startup error.
+
+See the origin rows in [Startup scenarios](#startup-scenarios).
 
 This is separate from [external order claims](#external-order-creation), which attribute
 venue-sourced orders to a *strategy*. The execution-client origin records which *client* an order
@@ -203,8 +209,11 @@ Snapshot corrections require a distinction between:
   [OrderFillVoided contract](../events/order_fill_voided.md), including its identity, quantity,
   and ordering checks. It does not depend on inferring a correction from a snapshot total.
 
-Timestamp meaning matters when establishing coverage. The Derive adapter reports an order-update timestamp;
-Betfair's `matchedDate` describes the last match, not the time of a snapshot or correction.
+Timestamp meaning matters when establishing coverage:
+
+- The Derive adapter reports an order-update timestamp.
+- Betfair's `matchedDate` describes the last match, not the time of a snapshot or correction.
+
 Response arrival time, equal timestamps, or timestamps from different clocks do not by themselves
 prove that a snapshot includes a fill.
 
@@ -213,7 +222,9 @@ until later reconciliation resolves the discrepancy. Conversely, a stale snapsho
 misleadingly newer timestamp can still cause a false void if freshness checks trust that timestamp.
 
 The execution engine applies mass-status filled-quantity decreases to retained fills even when the
-snapshot contains no companion trades. It automatically skips an order snapshot when a cached fill
+snapshot contains no companion trades.
+
+**Overlapping fill activity**: the engine automatically skips an order snapshot when a cached fill
 or fill void has a local initialization timestamp at or after collection starts
 (`ExecutionMassStatus.ts_init`). This skips all changes from that order report, including status,
 quantity, and price updates.
@@ -224,18 +235,20 @@ correction once collection starts after the cached fill activity. The skip requi
 configuration and does not suppress explicit fill-void events.
 
 This protection applies to runtime mass-status handling in `ExecutionEngine`. Startup reconciliation
-uses `ExecutionManager`, which does not apply this timestamp boundary. For runtime protection,
-adapters must capture the mass-status timestamp before collecting reports, using the same local
-clock as fill events. This boundary protects against overlapping local activity; it cannot detect
-venue state that is already stale when collection starts.
+uses `ExecutionManager`, which does not apply this timestamp boundary.
+
+For runtime protection, adapters must capture the mass-status timestamp before collecting reports,
+using the same local clock as fill events. This boundary protects against overlapping local activity;
+it cannot detect venue state that is already stale when collection starts.
 
 ### Order-only fill projection
 
 During startup reconciliation, a bounded historical fill does not change a position or the portfolio
-when that instrument has no in-scope explicit position report. Omission is not a flat report. The order still
-reaches the reported status and filled quantity. An explicit position report, open or flat, is the
-quantity target: the engine applies the available fills, generates the difference when configured,
-or leaves the position unresolved.
+when that instrument has no in-scope explicit position report. Omission is not a flat report. The
+order still reaches the reported status and filled quantity.
+
+An explicit position report, open or flat, is the quantity target: the engine applies the available
+fills, generates the difference when configured, or leaves the position unresolved.
 
 This projection applies only to reconciliation recovery. Raw reports remain available. Setting
 `filter_position_reports` makes bounded historical fills order-only, even when the mass status
@@ -262,8 +275,10 @@ instrument or any instrument that already has a claim, including a claim for the
 The strategy method `set_external_order_instrument_ids(...)` delegates to the cache operation
 `set_external_order_claims`. This operation treats its input as the strategy's complete desired
 active set. It can retain or release that strategy's existing claims and acquire unclaimed
-instruments, but it cannot take a claim from another strategy. Validation covers the complete input
-before changing the cache, so a conflict leaves every existing claim unchanged.
+instruments, but it cannot take a claim from another strategy.
+
+Validation covers the complete input before changing the cache, so a conflict leaves every existing
+claim unchanged.
 
 The `ExecutionManager` and `ExecutionEngine` read the same canonical claim map from the cache when
 they process external reports. They assign an external order to:
@@ -277,8 +292,10 @@ keep their assigned `StrategyId`; changing a claim does not reassign them.
 
 Transferring an instrument between strategies requires the current owner to release it before the
 new owner claims it. There is no atomic handoff across strategies. A report processed between the
-release and acquisition has no active claim and is assigned to `EXTERNAL`. Cache resets preserve
-active claims so registered routing remains configured, while retiring a strategy clears its claims.
+release and acquisition has no active claim and is assigned to `EXTERNAL`.
+
+Cache resets preserve active claims so registered routing remains configured, while retiring a
+strategy clears its claims.
 
 The external order uses the report's `client_order_id` when present and otherwise derives one from
 the `venue_order_id`. The engine adds the order to the cache, registers its venue order ID, and
@@ -371,11 +388,15 @@ fills still follow the [bounded history safety](#bounded-history-safety) rules w
 
 ### Submission recovery
 
-`submission_recovery_policy` defaults to `ResolveLocally`. Selecting `RetainUnresolved` enables
-submission identity tracking, exhaustion diagnostics, and preservation of the submission's recovery
-budget until acknowledgement. Exhausted unacknowledged submissions remain unresolved, with further
-automatic per-order recovery queries stopped. Clients can also require this protection independently
-of the configured policy. Polymarket enables this protection automatically.
+`submission_recovery_policy` defaults to `ResolveLocally`. Selecting `RetainUnresolved` enables:
+
+- Submission identity tracking.
+- Exhaustion diagnostics.
+- Preservation of the submission's recovery budget until acknowledgement.
+
+Exhausted unacknowledged submissions remain unresolved, with further automatic per-order recovery
+queries stopped. Clients can also require this protection independently of the configured policy.
+Polymarket enables this protection automatically.
 
 Retained submissions also affect the [node shutdown result](../live.md#submission-recovery-at-shutdown).
 Rust `LiveNode::stop` and `run`, and hosted runs, report unresolved client order IDs after teardown
@@ -387,9 +408,11 @@ outcome or position flatness.
 
 With tracking enabled, a native `LiveNode` publishes `SubmissionRecoveryExhausted` on
 `reconciliation.SubmissionRecoveryExhausted` when an unacknowledged submission reaches an existing
-recovery limit. The diagnostic carries the original submission identity, recovery source, check
-count, and event timestamp. It is published after processing reconciliation events, once per
-tracked submission. It is not an order event and does not establish a venue outcome.
+recovery limit. It publishes the diagnostic after processing reconciliation events, once per tracked
+submission.
+
+The diagnostic carries the original submission identity, recovery source, check count, and event
+timestamp. It is not an order event and does not establish a venue outcome.
 
 #### Recovery budget
 
@@ -400,9 +423,11 @@ Acknowledgement retires it without transferring recovery to an overlapping comma
 A command dispatched after acknowledgement starts its own in-flight check at dispatch, even if its
 pending event has not arrived, and uses the existing command cleanup rules. For example, a
 `PARTIALLY_FILLED` order status report stops a pending cancel's timeout under both policies. That
-cleanup rule does not apply to standalone fill reports. Without submission tracking
-(`ResolveLocally` and no client-required retention), command dispatch starts a fresh recovery
-budget, and native fill or `Triggered` events do not retire the pending command's timeout.
+cleanup rule does not apply to standalone fill reports.
+
+Without submission tracking (`ResolveLocally` and no client-required retention), command dispatch
+starts a fresh recovery budget, and native fill or `Triggered` events do not retire the pending
+command's timeout.
 
 #### Acknowledgement
 
@@ -411,28 +436,34 @@ Incoming reports and bulk or targeted query responses use the same confirmation 
 `OrderUpdated` with venue identity also confirms the submission; local updates without venue
 identity do not.
 
-The registry remembers report-only confirmation, including for cached orders not yet registered
-for recovery, so duplicate submission registration cannot restart the timeout. Exhausted submission
-identity also remains in the registry until venue evidence resolves it; duplicate registration and
-cancel or modify dispatch cannot restart its automatic recovery. Missing-order bookkeeping does not
-register an acknowledged submission again. Later commands do not produce submission-exhaustion
-diagnostics.
+The registry preserves submission identity across later activity:
+
+- **Confirmed submission**: report-only confirmation is remembered, including for cached orders not
+  yet registered for recovery, so duplicate submission registration cannot restart the timeout.
+  Missing-order bookkeeping does not register an acknowledged submission again.
+- **Exhausted submission**: its identity remains in the registry until venue evidence resolves it.
+  Duplicate registration and cancel or modify dispatch cannot restart its automatic recovery.
+
+Later commands do not produce submission-exhaustion diagnostics.
 
 #### Registration
 
-`LiveNode` registers submission identity before dispatch. Direct `ExecutionManager` callers use
-`register_submission` for submissions; `register_inflight` only starts command recovery and does not
-infer submission identity from the cache. `LiveNode` registers client-required retention
-automatically. Direct manager hosts must select `RetainUnresolved` or run `check_open_orders` with
-their clients before relying on client-required retention in inflight checks.
+- **Live node**: `LiveNode` registers submission identity before dispatch and client-required
+  retention automatically.
+- **Direct `ExecutionManager` callers**: use `register_submission` for submissions. `register_inflight`
+  only starts command recovery and does not infer submission identity from the cache. Direct manager
+  hosts must select `RetainUnresolved` or run `check_open_orders` with their clients before relying on
+  client-required retention in inflight checks.
 
 #### Recovery limits
 
-The existing limits and coverage checks still apply. `inflight_check_retries` counts checks: a limit
-of `N` permits `N - 1` intermediate order queries before exhaustion. Missing-order checks use
-`open_check_missing_retries` and require completed, matching client coverage plus a successful
-targeted query with no order found before reporting exhaustion. Failed or deferred targeted queries
-do not produce that diagnostic.
+The existing limits and coverage checks still apply:
+
+- **In-flight checks**: `inflight_check_retries` counts checks. A limit of `N` permits `N - 1`
+  intermediate order queries before exhaustion.
+- **Missing-order checks**: use `open_check_missing_retries` and require completed, matching client
+  coverage plus a successful targeted query with no order found before reporting exhaustion. Failed
+  or deferred targeted queries do not produce that diagnostic.
 
 ### Instrument availability
 
@@ -614,10 +645,11 @@ the tolerance remain acceptable, including tiny residuals around zero.
 
 For an open position with a reported `avg_px_open`, startup also checks the entry average using
 the fill-adjustment relative tolerance of 0.01%. Average entry prices can fall between instrument
-price ticks; the comparison does not round them to instrument price precision. NETTING reports
-use quantity-weighted entry averages for each reported side. If a side spans several reports,
-all contributing reports must supply an average to establish that side's price target. A report
-can skip this check or widen its tolerance, as described in
+price ticks; the comparison does not round them to instrument price precision.
+
+NETTING reports use quantity-weighted entry averages for each reported side. If a side spans several
+reports, all contributing reports must supply an average to establish that side's price target. A
+report can skip this check or widen its tolerance, as described in
 [reported entry averages](#reported-entry-averages).
 
 Matching quantity alone does not resolve a reported entry-price mismatch. When quantities already
@@ -667,10 +699,14 @@ Creating a position in an empty cache from a report without order or fill histor
 ### Fill adjustment
 
 The engine can analyze zero-crossings, remove closed lifecycles, and generate a synthetic fill when
-the reported fills do not explain the current venue position. A declared `lookback_start` does not
-skip this adjustment. Without a reported `avg_px_open`, the engine preserves the original
-orders and fills instead of inventing a price for synthetic fill adjustment. Setting
-`filter_position_reports` skips fill adjustment for both declared and undeclared windows.
+the reported fills do not explain the current venue position.
+
+The following conditions govern fill adjustment:
+
+- A declared `lookback_start` does not skip the adjustment.
+- Without a reported `avg_px_open`, the engine preserves the original orders and fills instead of
+  inventing a price for synthetic fill adjustment.
+- Setting `filter_position_reports` skips fill adjustment for both declared and undeclared windows.
 
 Fill adjustment uses these terms:
 
@@ -694,11 +730,12 @@ It does not authorize leaving an explicit position report unmatched.
 
 ### Bounded history safety
 
-**An explicit position report is authoritative for the position, whether open or flat.
-The engine either aligns to that report within reconciliation tolerances or fails closed.** It does
-not replay the bounded window to decide whether the report is authoritative. It applies the available
-orders and fills, and by default generates the orders and fills required to reach the report. Disabling
-`generate_missing_orders` does not allow a mismatch to stand.
+An **explicit position report** is authoritative for the position, whether open or flat. The engine
+either aligns to that report within reconciliation tolerances or fails closed. It does not replay
+the bounded window to decide whether the report is authoritative.
+
+The engine applies the available orders and fills, and by default generates the orders and fills
+required to reach the report. Disabling `generate_missing_orders` does not allow a mismatch to stand.
 
 A bounded fill for an instrument with no in-scope explicit position report does not open, close, or change a
 position, and it does not update portfolio economics. The order still reaches the reported status
@@ -753,13 +790,16 @@ lists the outcome of each check.
 
 ### In-flight checks
 
-After exhausting the configured retries, the in-flight checker rejects a timed-out `SUBMITTED`
-order with reason `INFLIGHT_TIMEOUT` and resolves a timed-out `PENDING_CANCEL` or `PENDING_UPDATE`
-order to `CANCELED`, unless the order has never been accepted and submission retention applies.
-`SubmissionRecoveryPolicy::RetainUnresolved` retains those orders, and Polymarket requires retention
-regardless of the configured policy. Retention stops automatic per-order recovery queries while
-allowing later venue evidence to resolve the order. See [Submission recovery](#submission-recovery)
-for the retention rules.
+After exhausting the configured retries, the in-flight checker resolves timed-out orders as follows,
+unless the order has never been accepted and submission retention applies:
+
+- `SUBMITTED`: rejects the order with reason `INFLIGHT_TIMEOUT`.
+- `PENDING_CANCEL` or `PENDING_UPDATE`: resolves the order to `CANCELED`.
+
+For orders that have never been accepted, `SubmissionRecoveryPolicy::RetainUnresolved` requires
+retention, as does Polymarket regardless of the configured policy. Retention stops automatic
+per-order recovery queries while allowing later venue evidence to resolve the order. See
+[Submission recovery](#submission-recovery) for the retention rules.
 
 [Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance) distinguishes
 local policy resolutions from venue-reported outcomes.
@@ -868,10 +908,10 @@ checks, open-order polls, own-books audits), fill adjustment, and bounded histor
 | **Fill commission failure**            | An adapter cannot represent a required fill commission while building reports.  | Fails mass-status generation and stops startup before applying that client's reports.                    |
 | **Inferred-fill commission failure**   | The responsible execution client cannot calculate a required commission.        | Defers inferred work; an external order remains absent, while valid explicit fills can still apply.      |
 | **Duplicate order reports**            | Multiple orders share the same identifier.                                      | Deduplicates with warning logged.                                                                        |
-| **Position quantity mismatch (long)**  | Internal long position differs from venue (e.g., 100 vs 150).                   | Generates BUY LIMIT with calculated price when `generate_missing_orders=True`.                           |
-| **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`.                          |
-| **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long). | Generates opposite-side LIMIT order with calculated price.                                               |
-| **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).  | Generates LIMIT order to close internal and open external position.                                      |
+| **Position quantity mismatch (long)**  | Internal long position differs from venue (e.g., 100 vs 150).                   | Generates BUY MARKET with calculated price when `generate_missing_orders=True`.                          |
+| **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                | Generates SELL MARKET with calculated price when `generate_missing_orders=True`.                         |
+| **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long). | Generates opposite-side MARKET order with calculated price.                                              |
+| **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).  | Generates MARKET order to close internal and open external position.                                     |
 | **Internal reconciliation orders**     | Orders generated to align position discrepancies.                               | Tags `RECONCILIATION`; uses a claim when configured, otherwise `EXTERNAL`.                               |
 
 ### Runtime scenarios

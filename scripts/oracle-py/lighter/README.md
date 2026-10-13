@@ -6,7 +6,7 @@ trading-critical L2 transaction types, and dumps the canonical `tx_info`,
 `tx_hash`, signature bytes, and pubkey bytes as JSON. The fixture lands at
 `crates/adapters/lighter/test_data/signing_tx_oracle.json` and is loaded by
 `#[cfg(test)] mod tests` in `signing/tx/encode.rs` to assert byte-equivalence
-with the official signer outputs.
+with the official signer outputs. The optional grouped fixture covers native OTO, OCO, and OTOCO.
 
 This is the "Layer 2" gate from the signing plan: open-source Go reference
 behavior is verified by the field/curve/hash/Schnorr fixture vectors, and the
@@ -30,13 +30,19 @@ added.
 ## How to run
 
 ```bash
-git clone --depth 1 https://github.com/elliottech/lighter-python.git /tmp/lighter-python
+git clone https://github.com/elliottech/lighter-python.git /tmp/lighter-python
+git -C /tmp/lighter-python checkout a38b6405f362fc14a562fe7a97df03f3ee756bc1
 cd scripts/oracle-py/lighter
 python3 generate_oracle.py \
     --signer /tmp/lighter-python/lighter/signers/lighter-signer-linux-amd64.so \
     --out ../../../crates/adapters/lighter/test_data/signing_tx_oracle.json \
-    --auth-out ../../../crates/adapters/lighter/test_data/signing_auth_token_oracle.json
+    --auth-out ../../../crates/adapters/lighter/test_data/signing_auth_token_oracle.json \
+    --grouped-out ../../../crates/adapters/lighter/test_data/signing_grouped_tx_oracle.json
 ```
+
+`--grouped-out` optionally writes the grouped fixture to the supplied path, covering OTO, OCO, and
+OTOCO with empty and populated transaction attributes. For every fixture, use the signer at the
+pinned `UPSTREAM_REVISION` in `generate_oracle.py`.
 
 `--auth-out` is optional. When set, the script also drives the signer's
 `CreateAuthToken` against fixed `(deadline, account_index, api_key_index)`

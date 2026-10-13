@@ -312,38 +312,20 @@ pub(super) fn confirm_modify_replacement(
     ws_dispatch_state: &Arc<Mutex<WsDispatchState>>,
 ) -> bool {
     let mut state = ws_dispatch_state.lock();
-    let Some(promotion) = state.claim_modify_replacement(venue_order_id) else {
+
+    let Some(activity) = state.promote_modify_replacement(
+        venue_order_id,
+        order_contexts,
+        fill_tracker,
+        emitter,
+        clock,
+        |_| Some((OrderContext::from(order), emitter.account_id())),
+        || clock.get_time_ns(),
+    ) else {
         return false;
     };
 
-    let context = OrderContext {
-        quantity: promotion.quantity,
-        price: Some(promotion.price),
-        ..OrderContext::from(order)
-    };
-    order_contexts.register_context(promotion.venue_order_id, context);
-    order_contexts.mark_accepted(promotion.venue_order_id);
-
-    emitter.emit_order_updated(
-        order,
-        promotion.venue_order_id,
-        promotion.quantity,
-        Some(promotion.price),
-        None,
-        None,
-        clock.get_time_ns(),
-    );
-
-    let fills = fill_tracker.register_and_take_pending_fills(
-        promotion.venue_order_id,
-        Some(promotion.client_order_id),
-        promotion.leg_quantity,
-        promotion.quantity.saturating_sub(promotion.leg_quantity),
-        promotion.prior_filled,
-        context.identity.order_side,
-    );
-    let buffered = fill_tracker.take_pending_reports(&promotion.venue_order_id);
-    for report in buffered.iter().filter(|report| {
+    for report in activity.reports.iter().filter(|report| {
         matches!(
             report.order_status,
             OrderStatus::Canceled | OrderStatus::Expired
@@ -354,9 +336,9 @@ pub(super) fn confirm_modify_replacement(
 
     emit_drained_activity(
         order,
-        promotion.venue_order_id,
-        fills,
-        &buffered,
+        venue_order_id,
+        activity.fills,
+        &activity.reports,
         fill_tracker,
         settlement,
         emitter,
@@ -1211,10 +1193,10 @@ mod tests {
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
-        events::order::spec::OrderFillVoidedSpec,
+        events::{OrderCanceled, order::spec::OrderFillVoidedSpec},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
-        orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
+        orders::{LimitOrder, MarketOrder, Order, OrderTestBuilder, stubs::TestOrderEventStubs},
         reports::FillReport,
         types::{Currency, Money},
     };
@@ -1700,6 +1682,282 @@ mod tests {
         assert_eq!(last_update, Some((Quantity::from("10.999990"), true)));
         assert_eq!(order.filled_qty(), Quantity::from("10.999990"));
         assert_eq!(order.status(), OrderStatus::Filled);
+    }
+
+    #[rstest]
+    #[case::http_first(true)]
+    #[case::ws_first(false)]
+    fn test_modify_replacement_confirmation_sources_emit_once_before_buffered_activity(
+        #[case] http_first: bool,
+        #[values(OrderSide::Buy, OrderSide::Sell)] order_side: OrderSide,
+    ) {
+        let instrument = test_instrument();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TESTER-001"))
+            .strategy_id(StrategyId::from("S-PROMOTION"))
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-PROMOTION"))
+            .side(order_side)
+            .quantity(Quantity::from("10.00"))
+            .price(Price::from("0.4321"))
+            .time_in_force(TimeInForce::Gtc)
+            .post_only(true)
+            .build();
+        let old_id = VenueOrderId::from("V-PROMOTION-OLD");
+        let new_id = VenueOrderId::from("V-PROMOTION-NEW");
+        let account_id = AccountId::from("POLY-001");
+        let quantity = Quantity::from("12.34");
+        let leg_qty = Quantity::from("8.76");
+        let prior_filled = Quantity::from("2.13");
+        let price = Price::from("0.6789");
+        let local_ts = UnixNanos::from(1_700_000_000_999_000_000);
+        let ws_ts = UnixNanos::from(1_700_000_000_123_000_000);
+        let fill_ts = UnixNanos::from(1_700_000_000_089_000_000);
+        let cancel_ts = UnixNanos::from(1_700_000_000_456_000_000);
+        let clock = Box::leak(Box::new(AtomicTime::new(false, local_ts)));
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            order.trader_id(),
+            account_id,
+            AccountType::Cash,
+            Some(Currency::pUSD()),
+        );
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let original = OrderContext {
+            is_post_only: false,
+            ..OrderContext::from(&order)
+        };
+
+        let registry = OrderContextRegistry::default();
+        registry.register_context(old_id, original);
+        registry.mark_accepted(old_id);
+        let mut state = WsDispatchState::default();
+        assert!(state.begin_modify(order.client_order_id(), old_id, instrument.id()));
+        assert!(state.set_modify_replacement(
+            order.client_order_id(),
+            new_id,
+            quantity,
+            leg_qty,
+            prior_filled,
+            price,
+        ));
+        let state = Arc::new(Mutex::new(state));
+        let tracker = Arc::new(OrderFillTrackerMap::new());
+        tracker.restore_order(
+            old_id,
+            order.quantity(),
+            Quantity::zero(2),
+            Quantity::zero(2),
+            prior_filled,
+            order_side,
+        );
+        let mut buffered_fill =
+            test_fill_report(instrument.id(), new_id, Quantity::from("1.23"), fill_ts);
+        buffered_fill.order_side = order_side;
+        buffered_fill.last_px = Price::from("0.6543");
+        buffered_fill.commission = Money::from("0.012345 pUSD");
+        buffered_fill.ts_init = UnixNanos::from(1_700_000_000_091_000_000);
+        tracker.buffer_fill_for_test(new_id, buffered_fill.clone());
+        tracker.buffer_report_for_test(
+            new_id,
+            OrderStatusReport::new(
+                account_id,
+                instrument.id(),
+                Some(order.client_order_id()),
+                new_id,
+                Some(order_side),
+                OrderType::Limit,
+                TimeInForce::Gtc,
+                OrderStatus::Canceled,
+                leg_qty,
+                buffered_fill.last_qty,
+                ws_ts,
+                cancel_ts,
+                local_ts,
+                None,
+            ),
+        );
+        let settlement = SettlementRegistry::new(account_id);
+        let pending_submits = PendingSubmitTracker::default();
+        let token_instruments = AtomicMap::new();
+        let mut replacement: PolymarketUserOrder = load("ws_user_order_placement.json");
+        token_instruments.insert(replacement.asset_id, instrument.clone());
+        replacement.id = new_id.to_string();
+        replacement.side = PolymarketOrderSide::from(order_side);
+        replacement.original_size = leg_qty.to_string();
+        replacement.price = price.to_string();
+        replacement.timestamp = (ws_ts.as_u64() / 1_000_000).to_string();
+        let message = UserWsMessage::Order(replacement);
+
+        let ctx = WsDispatchContext {
+            signer_type: crate::common::enums::PolymarketSignerType::Owner,
+            token_instruments: &token_instruments,
+            fill_tracker: &tracker,
+            settlement: &settlement,
+            pending_submits: &pending_submits,
+            order_contexts: &registry,
+            emitter: &emitter,
+            account_id,
+            clock,
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+
+        for (index, from_http) in [http_first, !http_first, http_first, !http_first]
+            .into_iter()
+            .enumerate()
+        {
+            if index > 0 {
+                clock.set_time(UnixNanos::from(local_ts.as_u64() + 1_000_000_000));
+            }
+
+            if from_http {
+                assert_eq!(
+                    confirm_modify_replacement(
+                        &order,
+                        new_id,
+                        &emitter,
+                        clock,
+                        &tracker,
+                        &settlement,
+                        &registry,
+                        &state,
+                    ),
+                    index == 0,
+                );
+            } else {
+                dispatch_user_message(&message, &ctx, &mut state.lock());
+            }
+        }
+
+        let mut events = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            events.push(event);
+        }
+
+        assert_eq!(events.len(), 3);
+
+        let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = &events[0] else {
+            panic!(
+                "expected promotion before buffered activity, was {:?}",
+                events[0]
+            );
+        };
+
+        assert_eq!(
+            *updated,
+            OrderUpdated::new(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                quantity,
+                updated.event_id,
+                if http_first { local_ts } else { ws_ts },
+                local_ts,
+                false,
+                Some(new_id),
+                Some(account_id),
+                Some(price),
+                None,
+                None,
+                false,
+            ),
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = &events[1] else {
+            panic!(
+                "expected buffered fill before cancellation, was {:?}",
+                events[1]
+            );
+        };
+
+        assert_eq!(
+            *fill,
+            OrderFilled::new(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                new_id,
+                account_id,
+                buffered_fill.trade_id,
+                order_side,
+                OrderType::Limit,
+                buffered_fill.last_qty,
+                buffered_fill.last_px,
+                Currency::pUSD(),
+                LiquiditySide::Taker,
+                fill.event_id,
+                fill_ts,
+                if http_first {
+                    local_ts
+                } else {
+                    buffered_fill.ts_init
+                },
+                false,
+                None,
+                Some(buffered_fill.commission),
+                None,
+            ),
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = &events[2] else {
+            panic!("expected buffered cancellation, was {:?}", events[2]);
+        };
+
+        assert_eq!(
+            *canceled,
+            OrderCanceled::new(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                canceled.event_id,
+                cancel_ts,
+                local_ts,
+                false,
+                Some(new_id),
+                Some(account_id),
+                None,
+            ),
+        );
+        assert_eq!(registry.get(&old_id), Some(original));
+        assert_eq!(
+            registry.get(&new_id),
+            Some(OrderContext {
+                quantity,
+                price: Some(price),
+                ..if http_first {
+                    OrderContext::from(&order)
+                } else {
+                    original
+                }
+            }),
+        );
+        assert_eq!(
+            registry.venue_order_id(&order.client_order_id()),
+            Some(new_id)
+        );
+        assert!(!registry.mark_accepted(new_id));
+        assert!(!state.lock().is_modifying(&order.client_order_id()));
+        assert!(state.lock().suppress_modify_cancel_reemit(old_id));
+        assert_eq!(tracker.submitted_qty(&new_id), Some(leg_qty));
+        assert_eq!(tracker.prior_filled(&new_id), Some(prior_filled));
+        assert_eq!(
+            tracker.get_cumulative_filled(&new_id),
+            Some(buffered_fill.last_qty)
+        );
+        assert_eq!(tracker.get_cumulative_filled(&old_id), Some(prior_filled));
+
+        tracker.record_fill(&new_id, leg_qty);
+        assert_eq!(
+            tracker.buy_overfill_bump(&new_id),
+            (order_side == OrderSide::Buy).then_some(quantity + buffered_fill.last_qty),
+        );
     }
 
     #[rstest]

@@ -2,8 +2,8 @@
 
 [AX Exchange](https://architect.exchange) is a centralized and regulated derivatives exchange for
 traditional underlying asset classes. Operated by Architect Bermuda Ltd. and licensed by the
-[Bermuda Monetary Authority (BMA)](https://www.bma.bm), AX lists perpetual contracts in production
-and also exposes dated futures in its sandbox catalog.
+[Bermuda Monetary Authority (BMA)](https://www.bma.bm), AX lists perpetual and dated futures
+contracts in both its production and sandbox catalogs.
 
 This integration supports live market data ingest and order execution with AX Exchange.
 
@@ -42,19 +42,19 @@ Refer to the AX Exchange documentation in conjunction with this NautilusTrader i
 
 ## Products
 
-The production catalog contains perpetual contracts across these venue categories:
+The production catalog lists perpetual and dated futures contracts in these venue categories:
 
 | Venue category   | Examples                     | Nautilus asset class |
 | ---------------- | ---------------------------- | -------------------- |
 | Foreign exchange | `EURUSD-PERP`, `JPYUSD-PERP` | FX                   |
 | Equities         | `AAPL-PERP`, `NVDA-PERP`     | Equity               |
-| Energy ETFs      | `USO-PERP`, `UNG-PERP`       | Equity               |
-| Metals           | `XAU-PERP`, `XAG-PERP`       | Commodity            |
-| Energy           | `WTI-PERP`                   | Commodity            |
+| Metals           | `XAU-PERP`, `XAU-2026-DEC`   | Commodity            |
+| Energy           | `WTIOIL-PERP`                | Commodity            |
 | Treasuries       | `UST10Y-PERP`                | Debt                 |
-| Compute          | `OCPI-H100-PERP`             | Alternative          |
+| Compute          | `NVDA-H100-2027-MAR`         | Alternative          |
 
-The sandbox also lists dated gold contracts such as `XAU-2026-SEP` and `XAU-2026-DEC`.
+The sandbox catalog differs. It also lists `energy_etfs` contracts such as `USO-PERP` and
+`UNG-PERP`, which map to the Equity asset class, and compute perpetuals such as `OCPI-H100-PERP`.
 
 The adapter maps a `crypto` venue category to the `CRYPTOCURRENCY` asset class, and any category it
 does not recognize to `ALTERNATIVE`.
@@ -89,7 +89,7 @@ symbols use the `-PERP` suffix. Dated symbols include their year and contract mo
 | ------------ | -------------- | --------------------- |
 | EUR/USD perp | `EURUSD-PERP`  | `EURUSD-PERP.AX`      |
 | Gold perp    | `XAU-PERP`     | `XAU-PERP.AX`         |
-| Dated gold   | `XAU-2026-SEP` | `XAU-2026-SEP.AX`     |
+| Dated gold   | `XAU-2026-DEC` | `XAU-2026-DEC.AX`     |
 
 The venue identifier is `AX`. To construct a Nautilus `InstrumentId`:
 

@@ -33,7 +33,7 @@ examples use `nautilus_model`; Python examples use `nautilus_trader.model`.
 
 ## Taxonomy
 
-NautilusTrader groups instruments by the market structure they represent:
+**Market structure**: NautilusTrader groups instruments by the market structure they represent.
 
 ```mermaid
 flowchart TD
@@ -105,15 +105,17 @@ A named tick scheme defines the price grid used by an instrument's `next_bid_pri
 and `next_ask_price` methods. Use `FixedTickScheme` for a constant increment or
 `TieredTickScheme` when the increment changes across price ranges.
 
-Register a scheme before passing its name as an instrument's `tick_scheme` constructor
-argument. Register custom schemes before loading saved instrument definitions from a catalog:
-saved definitions contain the scheme name, and loading validates that name against the current
-process's registry.
+Register a scheme before passing its name as an instrument's `tick_scheme` constructor argument.
 
-When migrating from v1, `FixedTickScheme` no longer accepts `min_tick` or `max_tick` and has no
-`min_price` or `max_price` attributes. Fixed schemes use the representable `Price` range, including
-negative prices; the built-in Forex schemes no longer impose their v1 price bounds.
-The `increment` argument requires a `Price`; replace float values with `Price.from_str("0.05")`.
+Register custom schemes **before loading saved instrument definitions** from a catalog. Saved
+definitions contain the scheme name, and loading validates it against the current process's registry.
+
+**Migration from v1**:
+
+- `FixedTickScheme` no longer accepts `min_tick` or `max_tick` and has no `min_price` or `max_price`
+  attributes. Fixed schemes use the representable `Price` range, including negative prices; the
+  built-in Forex schemes no longer impose their v1 price bounds.
+- The `increment` argument requires a `Price`. Replace float values with `Price.from_str("0.05")`.
 
 Fixed tick increments use `Price` to preserve their exact value. Navigation returns `None` if the
 instrument's price precision cannot represent the increment exactly.
@@ -168,20 +170,33 @@ register_tick_scheme(
 )
 ```
 
-Names are ASCII, trimmed, and case-insensitive. Registration lasts for the process lifetime;
-a registered name cannot be replaced or removed. Built-in names such as `BETFAIR` and
-`TOPIX100` are protected, as are aliases such as `FIXED_PRECISION_01` for `FIXED_PRECISION_1`.
-`list_tick_schemes()` returns canonical built-in and registered names in sorted order.
-Rust registration and construction return `TickSchemeError` on invalid input or duplicates;
-lookup returns `None` for an unknown name. Python uses `ValueError` for these failures and
-`TypeError` when registration receives an unsupported object.
-Python callers that catch v1's `KeyError` for unknown or duplicate names must catch `ValueError` instead.
+### Registration and lookup
+
+- **Names**: ASCII, trimmed, and case-insensitive.
+- **Lifetime**: registration lasts for the process lifetime; a registered name cannot be replaced
+  or removed.
+- **Protected names**: built-ins such as `BETFAIR` and `TOPIX100`, and aliases such as
+  `FIXED_PRECISION_01` for `FIXED_PRECISION_1`, cannot be replaced or removed.
+- **Listing**: `list_tick_schemes()` returns canonical built-in and registered names in sorted order.
+
+**Failure results**: Rust and Python return different results.
+
+| Failure                                    | Rust              | Python       |
+| ------------------------------------------ | ----------------- | ------------ |
+| Invalid construction or registration input | `TickSchemeError` | `ValueError` |
+| Duplicate name on registration             | `TickSchemeError` | `ValueError` |
+| Unknown name on lookup                     | `None`            | `ValueError` |
+
+Python registration raises `TypeError` for an unsupported object. Callers that catch v1's `KeyError`
+for unknown or duplicate names must catch `ValueError` instead.
 
 ## Symbology
 
 Every instrument has a unique `InstrumentId` made from a Nautilus symbol and venue,
 separated by a period. The separate `raw_symbol` field preserves the venue's native
-symbol. For example, Binance Futures represents the Ethereum perpetual contract as:
+symbol.
+
+**Binance Futures example**: the Ethereum perpetual contract uses this identifier.
 
 ```text
 ETHUSDT-PERP.BINANCE
@@ -198,13 +213,13 @@ the wrong currency, or make a backtest accept prices a live venue would reject.
 
 ## Rust and Python surfaces
 
-Rust users work with the `nautilus_model` instrument structs and `InstrumentAny`:
+**Rust**: use the `nautilus_model` instrument structs and `InstrumentAny`.
 
 ```rust
 use nautilus_model::instruments::{CurrencyPair, InstrumentAny};
 ```
 
-Python users normally work with instrument classes from `nautilus_trader.model`:
+**Python**: normally use instrument classes from `nautilus_trader.model`.
 
 ```python
 from nautilus_trader.model import CurrencyPair
@@ -215,7 +230,7 @@ currencies, limits, margins, fees, metadata, and timestamps.
 
 ## Loading instruments
 
-Generic test instruments can be instantiated through the `TestInstrumentProvider`:
+**Test instruments**: instantiate generic instruments through the `TestInstrumentProvider`.
 
 ```python
 from nautilus_trader.testkit.providers import TestInstrumentProvider
@@ -230,7 +245,7 @@ the matching instrument definition to exist in the central cache.
 
 ## Finding instruments
 
-Strategies and actors retrieve instruments from the central cache:
+**Cache lookup**: strategies and actors retrieve instruments from the central cache.
 
 ```rust tab="Rust"
 use nautilus_model::identifiers::InstrumentId;
@@ -246,7 +261,7 @@ instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 instrument = self.cache.instrument(instrument_id)
 ```
 
-It is also possible to subscribe to one instrument or all instruments for a venue:
+**Subscriptions**: subscribe to one instrument or all instruments for a venue.
 
 ```python
 self.subscribe_instrument(instrument_id)
@@ -271,7 +286,7 @@ The price increment precision must match `price_precision`, and the size increme
 precision must match `size_precision`. For example, `price_precision=2` pairs with
 `price_increment=Price(0.01, 2)`.
 
-Use the instrument factory methods to round values to the configured precision:
+**Rounding**: use the instrument factory methods to round values to the configured precision.
 
 ```python
 instrument = self.cache.instrument(instrument_id)
@@ -294,16 +309,18 @@ quantities match the venue steps before submission.
 
 ## Limits, margins, and fees
 
-Venue and adapter definitions can include optional limits:
+**Optional limits**: venue and adapter definitions can include the following limits.
 
 - `max_quantity` and `min_quantity`.
 - `max_notional` and `min_notional`.
 - `max_price` and `min_price`.
 
-Margin models use `margin_init` and `margin_maint` to calculate initial and maintenance
-margin. Instruments do not carry maker or taker fee rates. Backtest and sandbox
-commission uses a [fee model](../behavioral_models.md). Live commissions come from
-venue fills. Fee models use one rate convention:
+Margin models use `margin_init` and `margin_maint` to calculate initial and maintenance margin.
+
+Instruments do not carry maker or taker fee rates. Backtest and sandbox commission uses a
+[fee model](../behavioral_models.md); live commissions come from venue fills.
+
+**Fee model rate convention**:
 
 - Positive fee rates represent commissions.
 - Negative fee rates represent rebates.

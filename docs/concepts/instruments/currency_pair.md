@@ -33,7 +33,7 @@ Examples include `EUR/USD.SIM`, `BTCUSDT.BINANCE`, and `ETH/USD.KRAKEN`.
 | `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`; Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -117,7 +117,7 @@ btcusdt = CurrencyPair(
 
 ## Adapters
 
-Representative adapters that create or consume `CurrencyPair` instruments include:
+**Adapters that create or consume `CurrencyPair` instruments include**:
 
 - [Binance](../../integrations/binance.md) for spot markets.
 - [Kraken](../../integrations/kraken.md) for spot markets.

@@ -74,6 +74,7 @@ enum CancelReplaceOutcome {
 ///
 /// Provides the strategy and instrument metadata needed to construct proper
 /// order events without accessing the cache from the async dispatch task.
+/// The quantity and quote-sizing flag retain the submitted intent.
 #[derive(Debug, Clone)]
 pub struct OrderIdentity {
     pub instrument_id: InstrumentId,
@@ -82,6 +83,7 @@ pub struct OrderIdentity {
     pub order_type: OrderType,
     pub price: Option<Price>,
     pub quantity: Quantity,
+    pub is_quote_quantity: bool,
     pub venue_position_id: Option<PositionId>,
 }
 

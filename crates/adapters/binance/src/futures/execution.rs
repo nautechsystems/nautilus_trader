@@ -564,6 +564,7 @@ impl BinanceFuturesExecutionClient {
                 order_type,
                 price,
                 quantity,
+                is_quote_quantity: false,
                 venue_position_id,
             },
         );
@@ -3362,6 +3363,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     order_type: order.order_type(),
                     price: order.price(),
                     quantity: order.quantity(),
+                    is_quote_quantity: false,
                     venue_position_id,
                 },
             );

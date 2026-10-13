@@ -25,7 +25,13 @@
 //! Any reordering breaks the byte-equality property the Layer 2 oracle
 //! vectors enforce.
 
-use crate::{common::enums::LighterTxType, signing::field::Fp};
+use crate::{
+    common::enums::{LighterGroupingType, LighterTxType},
+    signing::{
+        field::Fp,
+        hash::{HASH_OUT, hash_no_pad, hash_two_to_one},
+    },
+};
 
 /// Number of attribute slots reserved per L2 transaction.
 ///
@@ -99,8 +105,7 @@ impl L2TxAttributes {
     }
 }
 
-/// Common per-order body fields shared by [`CreateOrderTxInfo`] and the
-/// not-yet-implemented `CreateGroupedOrders` variant.
+/// Common per-order body fields shared by [`CreateOrderTxInfo`] and [`CreateGroupedOrdersTxInfo`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct OrderInfo {
     /// Market identifier in the venue's 64-bit allocation. Legacy markets keep
@@ -223,6 +228,54 @@ impl LighterTx for CreateOrderTxInfo {
 
     fn push_body_elements(&self, elems: &mut Vec<Fp>) {
         self.order.append_body_elements(elems);
+    }
+}
+
+/// `CreateGroupedOrders` (`tx_type = 28`): creates native OTO, OCO, or OTOCO relationships.
+///
+/// Orders are hashed individually and compressed in submission order. OTO and OTOCO put
+/// the parent first and submit reduce-only children with zero base amount.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CreateGroupedOrdersTxInfo {
+    /// Common preamble fields.
+    pub context: TxContext,
+    /// Native venue relationship.
+    pub grouping_type: LighterGroupingType,
+    /// Order bodies, with the parent first for OTO and OTOCO.
+    pub orders: Vec<OrderInfo>,
+    /// L2 attributes.
+    pub attributes: L2TxAttributes,
+}
+
+impl LighterTx for CreateGroupedOrdersTxInfo {
+    fn tx_type(&self) -> LighterTxType {
+        LighterTxType::CreateGroupedOrders
+    }
+
+    fn context(&self) -> TxContext {
+        self.context
+    }
+
+    fn attributes(&self) -> L2TxAttributes {
+        self.attributes
+    }
+
+    fn push_body_elements(&self, elems: &mut Vec<Fp>) {
+        elems.push(field_from_u8(self.grouping_type as u8));
+        let mut aggregate = [Fp::ZERO; HASH_OUT];
+
+        for (index, order) in self.orders.iter().enumerate() {
+            let mut body = Vec::with_capacity(10);
+            order.append_body_elements(&mut body);
+            let digest = hash_no_pad(&body);
+            aggregate = if index == 0 {
+                digest
+            } else {
+                hash_two_to_one(aggregate, digest)
+            };
+        }
+
+        elems.extend_from_slice(&aggregate);
     }
 }
 

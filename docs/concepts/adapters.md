@@ -64,17 +64,19 @@ adapters implement the same data and execution responsibilities as built-in adap
 alongside them in one `LiveNode`. Strategies continue to use the standard request, subscription, and
 order APIs; the node routes those operations to the registered clients.
 
-A custom package can implement its clients in Python or delegate venue operations to its own
-Rust/PyO3 extension. Both use the [Python client interface](../developer_guide/python_adapters.md).
-An independent extension exchanges Python objects from the installed NautilusTrader wheel through
-PyO3 and the GIL. It does not require a shared Rust ABI or a second copy of the Nautilus model types.
-Choose a package version tested against your installed NautilusTrader release.
+A custom package can implement its clients in Python or delegate venue operations to its own Rust/PyO3
+extension. Both use the [Python client interface](../developer_guide/python_adapters.md).
 
-Register the package's factories and configs with the node under distinct client names. Custom
-configs can retain venue-specific fields, and importable configs support loading factories from
-package paths. Set venue and default routes as you would for built-in clients, or select a client
-explicitly from a strategy. The [deterministic Python template](../../examples/live/_template/README.md)
-demonstrates data delivery, execution reconciliation, and an order fill without a venue connection.
+An independent extension exchanges Python objects from the installed NautilusTrader wheel through PyO3 and the
+GIL. It does not require a shared Rust ABI or a second copy of the Nautilus model types. Choose a package
+version tested against your installed NautilusTrader release.
+
+Register the package's factories and configs with the node under distinct client names. Custom configs can
+retain venue-specific fields, and importable configs support loading factories from package paths. Set venue
+and default routes as you would for built-in clients, or select a client explicitly from a strategy.
+
+The [deterministic Python template](../../examples/live/_template/README.md) demonstrates data delivery,
+execution reconciliation, and an order fill without a venue connection.
 
 ### Cache and state ownership
 
@@ -82,11 +84,12 @@ Custom clients receive a read-only cache view. They can inspect instruments, quo
 accounts, and positions, but cannot mutate the core cache. Returned objects are snapshots: changing
 a snapshot does not change the state seen by strategies or engines.
 
-Adapters operate outside the synchronous core boundary. They submit typed data, responses, and
-execution events for the core to process, so an adapter's output call does not mean the corresponding
-cache update has already occurred. This keeps cache mutation and engine state transitions under
-core ownership. Cache access and output remain bound to the owning node's thread and lifetime;
-holding the GIL alone does not permit access from another thread or after disposal.
+Adapters operate outside the synchronous core boundary. They submit typed data, responses, and execution
+events for the core to process, so an adapter's output call does not mean the corresponding cache update has
+already occurred. This keeps cache mutation and engine state transitions under core ownership.
+
+Cache access and output remain bound to the owning node's thread and lifetime; holding the GIL alone does not
+permit access from another thread or after disposal.
 
 ### Running and stopping
 
@@ -103,12 +106,13 @@ Await shutdown before closing a host event loop. Disconnection stops admission a
 work to terminate; requesting cancellation does not prove that work has finished. Incomplete
 cleanup is reported. Client instances belong to one node run and must not be reused for another.
 
-Redis/PostgreSQL cache backing is unsupported with custom clients in either launch mode. The
-interface also requires migration of v1 Cython adapters rather than accepting their source
-unchanged. See the [migration details and remaining limitations](../developer_guide/python_adapters.md#migration-from-v1)
-for historical request completion, revised bars, custom publication/subscription, and networking
-API differences. For independent extensions, see
-[package construction and installed-wheel validation](../developer_guide/python_adapters.md#independent-rustpyo3-packages).
+Redis/PostgreSQL cache backing is unsupported with custom clients in either launch mode. The interface also
+requires migration of v1 Cython adapters rather than accepting their source unchanged.
+
+See the [migration details and remaining limitations](../developer_guide/python_adapters.md#migration-from-v1)
+for historical request completion, revised bars, custom publication/subscription, and networking API
+differences. For independent extensions, see [package construction and installed-wheel
+validation](../developer_guide/python_adapters.md#independent-rustpyo3-packages).
 
 ## Instrument providers
 

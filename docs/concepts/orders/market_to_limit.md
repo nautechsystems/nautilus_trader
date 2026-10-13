@@ -13,8 +13,8 @@ remainder can stay unfilled if the market moves away from the first fill price.
 
 ## Example
 
-In the following example we create a *Market-To-Limit* order on the Interactive Brokers
-[IdealPro](https://ibkr.info/node/1708) Forex ECN to BUY 200,000 USD using JPY:
+**Example**: create a *Market-To-Limit* order on the Interactive Brokers
+[IdealPro](https://ibkr.info/node/1708) Forex ECN to BUY 200,000 USD using JPY.
 
 ```rust tab="Rust"
 use nautilus_model::{

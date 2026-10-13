@@ -79,11 +79,14 @@ The sandbox adapter supplies simulated execution for a `sandbox` environment.
 
 ## Distributed
 
-The platform integrates into larger distributed systems. The
-[external message bus](message_bus.md#encoding) supports JSON and MessagePack payloads, plus
-Cap'n Proto and Simple Binary Encoding (SBE) for schema-covered market data. Apache Arrow and
-Parquet provide columnar interchange and persistence through the
-[data catalog](data/catalog.md). Format support varies by payload type.
+The platform integrates into larger distributed systems:
+
+- The [external message bus](message_bus.md#encoding) supports JSON and MessagePack payloads, plus Cap'n Proto
+  and Simple Binary Encoding (SBE) for schema-covered market data.
+- Apache Arrow and Parquet provide columnar interchange and persistence through the [data
+  catalog](data/catalog.md).
+
+Format support varies by payload type.
 
 ## Common core
 
@@ -100,11 +103,12 @@ Feed data to a `BacktestEngine` either directly or through a higher-level `Backt
 
 ## Live trading
 
-A `LiveNode` ingests data and events from multiple data and execution clients, supporting
-demo, paper, and real accounts. The Rust-native node, including its PyO3 interface, runs the kernel
-event loop on the calling thread, while asynchronous I/O and background tasks use a shared
-multi-threaded Tokio runtime. See [Live trading](live.md) for the node lifecycle and risk considerations, and
-[Execution reconciliation](execution/reconciliation.md) for state recovery.
+A `LiveNode` ingests data and events from multiple data and execution clients, supporting demo, paper, and
+real accounts. The Rust-native node, including its PyO3 interface, runs the kernel event loop on the calling
+thread, while asynchronous I/O and background tasks use a shared multi-threaded Tokio runtime.
+
+See [Live trading](live.md) for the node lifecycle and risk considerations, and [Execution
+reconciliation](execution/reconciliation.md) for state recovery.
 
 ## Domain model
 

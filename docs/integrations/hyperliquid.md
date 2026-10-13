@@ -1035,7 +1035,7 @@ def on_data(self, data: CustomData) -> None:
 
 `HyperliquidAllDexsAssetCtxs` exposes a whole-feed aggregate rather than one
 topic per instrument, so strategies subscribe once and filter the normalized
-entries they need:
+entries they need. The table describes the Rust types:
 
 | Field             | Type                              | Description                                                                |
 | ----------------- | --------------------------------- | -------------------------------------------------------------------------- |
@@ -1053,6 +1053,12 @@ entries they need:
 | `day_base_volume` | `Decimal`                         | 24h base volume.                                                           |
 | `ts_event`        | `int`                             | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`. |
 | `ts_init`         | `int`                             | UNIX timestamp in nanoseconds when the object was built.                   |
+
+In Python, `entries` is a `list` of `dict` objects keyed by the entry fields.
+Prices, decimals, and instrument IDs arrive as strings, `impact_prices` as a
+`dict` with `bid` and `ask` strings, and missing optional fields as `None`.
+Convert a value before using it, for example `Decimal(entry["open_interest"])`.
+`ts_event` and `ts_init` belong to the aggregate itself and arrive as `int`.
 
 The underlying Hyperliquid wire payload arrives as
 `ctxs: [[dex, ctxs[]], ...]`. The adapter decodes that live venue format and
@@ -1076,8 +1082,11 @@ dex logs a warning until the next rebuild; entries stay aligned positionally,
 which is correct for appended listings.
 
 ```python
+from decimal import Decimal
+
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
 from nautilus_trader.adapters.hyperliquid import HyperliquidAllDexsAssetCtxs
+from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 
 self.subscribe_data(
@@ -1086,11 +1095,13 @@ self.subscribe_data(
 )
 
 
-def on_data(self, data) -> None:
-    if isinstance(data, HyperliquidAllDexsAssetCtxs):
-        for entry in data.entries:
-            if entry.dex == "xyz":
-                self.log.info(f"{entry.instrument_id} OI={entry.open_interest}")
+def on_data(self, data: CustomData) -> None:
+    payload = data.data
+    if isinstance(payload, HyperliquidAllDexsAssetCtxs):
+        for entry in payload.entries:
+            if entry["dex"] == "xyz":
+                open_interest = Decimal(entry["open_interest"])
+                self.log.info(f"{entry['instrument_id']} OI={open_interest}")
 ```
 
 ### Supported bar intervals

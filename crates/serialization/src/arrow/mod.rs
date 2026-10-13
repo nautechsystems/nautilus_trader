@@ -23,6 +23,7 @@ pub mod custom;
 pub mod delta;
 pub mod depth;
 pub mod funding;
+pub mod greeks;
 pub mod index_price;
 pub mod instrument;
 pub mod instrument_status;
@@ -1711,7 +1712,7 @@ pub fn instrument_closes_to_arrow_record_batch_bytes(
     encode_batch_with_metadata(data)
 }
 
-fn encode_batch_with_metadata<T>(data: &[T]) -> Result<RecordBatch, EncodingError>
+pub(crate) fn encode_batch_with_metadata<T>(data: &[T]) -> Result<RecordBatch, EncodingError>
 where
     T: EncodeToRecordBatch,
 {

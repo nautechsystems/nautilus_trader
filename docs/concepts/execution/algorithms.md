@@ -29,10 +29,11 @@ Orders routed to TWAP require these string-valued `exec_algorithm_params`:
 | `horizon_secs`  | Horizon used with the interval to determine the slices. |
 | `interval_secs` | Time between slices.                                    |
 
-Both values must parse as positive numbers, and `horizon_secs` must be at least
-`interval_secs`. The algorithm submits the first slice immediately and the remaining slices at
-the configured interval. TWAP denies the primary order before submission when the order type,
-instrument, or schedule is unsupported or invalid.
+Both values must parse as positive numbers, and `horizon_secs` must be at least `interval_secs`.
+The algorithm submits the first slice immediately and the remaining slices at the configured interval.
+
+TWAP denies the primary order before submission when the order type, instrument, or schedule is
+unsupported or invalid.
 
 ## Custom execution algorithms
 
@@ -84,22 +85,25 @@ When `reduce_primary=True`, the spawned quantity must not exceed the primary ord
 (remaining unfilled quantity).
 :::
 
-If a spawned order is denied, rejected, canceled, expired, or refused before submission, its
-unfilled proportion is restored in the primary order's quantity units while the primary remains
-local. This also applies when a venue converts a quote-quantity spawn to base quantity. Once primary
-submission is handed off, its quantity is committed and is not changed by a later spawn outcome. A
-late fill on a canceled spawn re-deducts the corresponding restored quantity while the primary
-remains locally mutable; if that quantity was already reused by a later spawn, the excess is netted
-from that spawn's own restoration instead.
+While the primary remains local, spawned-order outcomes affect its quantity as follows:
+
+- **Unfilled quantity**: if a spawned order is denied, rejected, canceled, expired, or refused before
+  submission, its unfilled proportion is restored in the primary order's quantity units. This also
+  applies when a venue converts a quote-quantity spawn to base quantity.
+- **Late fill**: a late fill on a canceled spawn re-deducts the corresponding restored quantity while
+  the primary remains locally mutable. If that quantity was already reused by a later spawn, the
+  excess is netted from that spawn's own restoration instead.
+
+Once primary submission is handed off, its quantity is committed and is not changed by a later
+spawn outcome.
 
 Converted quote-quantity spawns calculate the remaining unfilled quantity from cumulative fills and
 round it down to the primary's quantity precision. The total deduction does not depend on how many
 fill events report the filled quantity.
 
 If a [fill is voided](../events/order_fill_voided.md) after any spawn's unfilled quantity was
-restored, the correction returns the additional unfilled quantity
-while the primary remains local. It first offsets any late-fill quantity that could not be deducted
-from the primary.
+restored, the correction returns the additional unfilled quantity while the primary remains local.
+It first offsets any late-fill quantity that could not be deducted from the primary.
 
 An execution algorithm can keep spawning orders, submit the remaining primary order, or do both.
 The built-in TWAP algorithm submits the remaining primary order on the final interval.

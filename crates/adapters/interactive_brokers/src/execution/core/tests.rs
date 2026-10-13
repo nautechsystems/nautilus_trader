@@ -17,9 +17,9 @@ use ibapi::{
         Symbol as IBSymbol,
     },
     orders::{
-        CommissionReport, Execution, ExecutionData, ExecutionSide, Liquidity, Order as IBOrder,
-        OrderData as IBOrderData, OrderState, OrderStatus as IBOrderStatus, OrderStatusKind,
-        OrderUpdate,
+        CommissionReport, Execution, ExecutionData, ExecutionSide, Executions, Liquidity,
+        Order as IBOrder, OrderData as IBOrderData, OrderState, OrderStatus as IBOrderStatus,
+        OrderStatusKind, OrderUpdate,
     },
 };
 use nautilus_common::{
@@ -29,25 +29,29 @@ use nautilus_common::{
 use nautilus_core::Params;
 use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
-    enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType},
+    enums::{AccountType, AssetClass, OmsType, OrderSide, OrderType, PositionSide},
     events::OrderInitialized,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         Venue, VenueOrderId,
     },
-    instruments::{InstrumentAny, OptionSpread, stubs::equity_aapl},
+    instruments::{FuturesContract, InstrumentAny, OptionSpread, stubs::equity_aapl},
     orders::{OrderList, builder::OrderTestBuilder},
+    reports::PositionStatusReport,
     types::{Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::*;
 use crate::{
     common::consts::{IB_CLIENT_ID, IB_VENUE},
     config::InteractiveBrokersInstrumentProviderConfig,
-    execution::account::check_external_position_change,
+    execution::{
+        account::check_external_position_change, parse::FillEvidence, reports::FillReportCollector,
+    },
     stubs::ChannelSubscription,
 };
 
@@ -260,7 +264,8 @@ fn next_order_event(
 #[case(1, 0, 1)]
 #[case(1, 310, 310_000_001)]
 #[case(42, 1_402, 402_000_042)]
-#[case(450_000_123, 402, 402_000_123)]
+#[case(310_000_123, 402, 402_000_123)]
+#[case(402_999_999, 402, 402_999_999)]
 #[case(1, -12, 12_000_001)]
 fn apply_client_order_id_floor(
     #[case] next_id: i32,
@@ -268,14 +273,30 @@ fn apply_client_order_id_floor(
     #[case] expected: i32,
 ) {
     assert_eq!(
-        InteractiveBrokersExecutionClient::apply_client_order_id_floor(next_id, client_id),
+        InteractiveBrokersExecutionClient::apply_client_order_id_floor(next_id, client_id).unwrap(),
         expected
     );
 }
 
 #[rstest]
-#[case::foreign_next_id_without_used_ids(770_000_006, None, 760_000_006)]
-#[case::foreign_next_id_below_used_ids(770_000_006, Some(760_000_017), 760_000_018)]
+#[case::partition_ceiling(403_000_000, 402)]
+#[case::higher_partition(450_000_123, 402)]
+#[case::issue_5277(770_000_006, 7760)]
+fn apply_client_order_id_floor_rejects_next_id_above_partition(
+    #[case] next_id: i32,
+    #[case] client_id: i32,
+) {
+    let error = InteractiveBrokersExecutionClient::apply_client_order_id_floor(next_id, client_id)
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains(&next_id.to_string()), "{error}");
+    assert!(error.contains(&client_id.to_string()), "{error}");
+}
+
+#[rstest]
+#[case::lower_next_id_without_used_ids(750_000_006, None, 760_000_006)]
+#[case::lower_next_id_below_used_ids(750_000_006, Some(760_000_017), 760_000_018)]
 #[case::own_next_id_above_used_ids(760_000_020, Some(760_000_017), 760_000_020)]
 fn initial_order_id_clears_used_order_ids(
     #[case] next_id: i32,
@@ -283,8 +304,24 @@ fn initial_order_id_clears_used_order_ids(
     #[case] expected: i32,
 ) {
     assert_eq!(
-        InteractiveBrokersExecutionClient::initial_order_id(next_id, 7760, highest_used_order_id),
+        InteractiveBrokersExecutionClient::initial_order_id(next_id, 7760, highest_used_order_id)
+            .unwrap(),
         expected
+    );
+}
+
+// IB reported next valid ID 770000006 for client 7760 and refused 760002000 with 103 (#5277)
+#[rstest]
+#[case::without_used_ids(None)]
+#[case::with_used_ids(Some(760_000_017))]
+fn initial_order_id_rejects_next_id_above_partition(#[case] highest_used_order_id: Option<i32>) {
+    assert!(
+        InteractiveBrokersExecutionClient::initial_order_id(
+            770_000_006,
+            7760,
+            highest_used_order_id
+        )
+        .is_err()
     );
 }
 
@@ -2123,6 +2160,47 @@ fn list_submit_failure_denies_every_unsubmitted_tail_order() {
 }
 
 #[rstest]
+fn unpreparable_order_is_denied_with_coded_reason() {
+    let client_order_id = ClientOrderId::from("O-UNPREPARABLE-001");
+    let order = create_test_limit_order(client_order_id);
+    let trader_id = TraderId::from("TRADER-001");
+    let cmd = SubmitOrder::from_order(
+        &order,
+        trader_id,
+        Some(*IB_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let error = anyhow::anyhow!("contract not found");
+
+    let result = InteractiveBrokersExecutionClient::deny_unpreparable_order(
+        &cmd,
+        &error,
+        &exec_sender.clone().into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+    );
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "ORDER_INVALID: contract not found"
+    );
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Denied(event)) => {
+            assert_eq!(event.trader_id, trader_id);
+            assert_eq!(event.strategy_id, cmd.strategy_id);
+            assert_eq!(event.instrument_id, cmd.instrument_id);
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.reason.as_str(), "ORDER_INVALID: contract not found");
+        }
+        event => panic!("Expected denied order event, was {event:?}"),
+    }
+    assert!(exec_receiver.try_recv().is_err());
+}
+
+#[rstest]
 fn prepare_order_list_fails_before_submission_on_an_untransformable_child() {
     let equity = equity_aapl();
     let instrument_id = equity.id();
@@ -2187,6 +2265,74 @@ fn prepare_order_list_fails_before_submission_on_an_untransformable_child() {
     assert_eq!(
         format!("{error:#}"),
         "Failed to transform order: `TrailingOffsetType` Ticks is not supported"
+    );
+}
+
+#[rstest]
+fn prepare_order_list_fails_before_submission_on_a_child_tagged_with_the_other_side() {
+    let equity = equity_aapl();
+    let instrument_id = equity.id();
+    let instrument_provider = create_test_instrument_provider();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
+    let entry = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LIST-ENTRY"))
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from(1))
+        .build();
+    // Tracking would expect SLD executions for this child while IB fills a BUY
+    let stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LIST-STOP"))
+        .parent_order_id(entry.client_order_id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(1))
+        .trigger_price(Price::from("95.00"))
+        .tags(vec![Ustr::from(r#"IBOrderTags:{"action":"BUY"}"#)])
+        .build();
+    let orders = vec![entry.clone(), stop.clone()];
+
+    let cmd = SubmitOrderList::new(
+        TraderId::from("TRADER-001"),
+        Some(*IB_CLIENT_ID),
+        entry.strategy_id(),
+        OrderList::new(
+            OrderListId::from("OL-IB-SIDE-CONFLICT"),
+            instrument_id,
+            entry.strategy_id(),
+            vec![entry.client_order_id(), stop.client_order_id()],
+            UnixNanos::default(),
+        ),
+        vec![
+            OrderInitialized::from(&entry),
+            OrderInitialized::from(&stop),
+        ],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let ib_order_ids = AHashMap::from([
+        (entry.client_order_id(), 7411),
+        (stop.client_order_id(), 7412),
+    ]);
+
+    let error = InteractiveBrokersExecutionClient::prepare_order_list(
+        &cmd,
+        &orders,
+        &ib_order_ids,
+        &OrderTracker::new(NATIVE_CLIENT_ID),
+        &instrument_provider,
+        Ustr::from("DU001"),
+    )
+    .expect_err("a child whose IB action conflicts with its side fails preparation");
+
+    assert_eq!(
+        format!("{error:#}"),
+        "Failed to transform order: IBOrderTags action BUY conflicts with the SELL order side"
     );
 }
 
@@ -3320,7 +3466,7 @@ fn report_context(client: &InteractiveBrokersExecutionClient) -> IbReportContext
 }
 
 #[rstest]
-fn test_parse_historical_fill_report_uses_provider_resolved_stock_venue() {
+fn test_fill_report_collector_uses_provider_resolved_stock_venue() {
     let (client, _, _) = create_test_execution_client();
     let equity = equity_aapl();
     let instrument_id = equity.id();
@@ -3333,10 +3479,21 @@ fn test_parse_historical_fill_report_uses_provider_resolved_stock_venue() {
         .build()
         .unwrap();
 
-    let report = report_context(&client)
-        .parse_historical_fill_report(&cmd, &exec_data, 1.25, "USD", UnixNanos::default())
-        .unwrap();
+    let context = report_context(&client);
+    let mut collector = FillReportCollector::new(&context, &cmd, UnixNanos::default());
+    collector.push(Ok(Executions::ExecutionData(exec_data)));
+    collector.push(Ok(Executions::CommissionReport(
+        create_test_commission_report("exec-aapl-001", 1.25),
+    )));
 
+    let (evidence, combo_executions) = collector.finish().unwrap();
+
+    assert_eq!(evidence.reports.len(), 1);
+    assert!(evidence.combo_leg_reports.is_empty());
+    assert!(!evidence.missing_all);
+    assert!(evidence.missing_instruments.is_empty());
+    assert!(combo_executions.is_empty());
+    let report = &evidence.reports[0];
     assert_eq!(report.instrument_id, instrument_id);
     assert_eq!(
         report.client_order_id,
@@ -3346,6 +3503,7 @@ fn test_parse_historical_fill_report_uses_provider_resolved_stock_venue() {
     assert_eq!(report.venue_order_id, VenueOrderId::from("123"));
     assert_eq!(report.last_qty, Quantity::from(10));
     assert_eq!(report.last_px, Price::from("150.25"));
+    assert_eq!(report.commission, Money::from("1.25 USD"));
 }
 
 #[rstest]
@@ -3365,7 +3523,7 @@ fn test_report_contract_resolution_preserves_canonical_opra_id() {
 }
 
 #[rstest]
-fn test_parse_historical_fill_report_uses_cached_bag_spread_id() {
+fn test_report_contract_resolution_uses_cached_bag_spread_id() {
     let (client, _, _) = create_test_execution_client();
     let spread = create_test_option_spread();
     let instrument_id = spread.id;
@@ -3380,24 +3538,12 @@ fn test_parse_historical_fill_report_uses_cached_bag_spread_id() {
         InstrumentId::new(Symbol::from("SPY C410"), Venue::from("SMART")),
     );
     let exec_data = create_test_bag_execution_data(7001, "exec-spread-001");
-    let cmd = GenerateFillReportsBuilder::default()
-        .ts_init(UnixNanos::default())
-        .build()
+
+    let resolved = report_context(&client)
+        .resolve_report_contract_instrument_id(&exec_data.contract)
         .unwrap();
 
-    let report = report_context(&client)
-        .parse_historical_fill_report(&cmd, &exec_data, 2.00, "USD", UnixNanos::default())
-        .unwrap();
-
-    assert_eq!(report.instrument_id, instrument_id);
-    assert_eq!(
-        report.client_order_id,
-        Some(ClientOrderId::from("O-IB-SPREAD"))
-    );
-    assert_eq!(report.trade_id, TradeId::from("exec-spread-001"));
-    assert_eq!(report.venue_order_id, VenueOrderId::from("7001"));
-    assert_eq!(report.last_qty, Quantity::from(1));
-    assert_eq!(report.last_px, Price::from("1.25"));
+    assert_eq!(resolved, instrument_id);
 }
 
 #[tokio::test]
@@ -5186,4 +5332,528 @@ async fn test_inline_reports_report_not_connected_while_disconnected() {
     let error = client.generate_fill_reports(fills_cmd).await.unwrap_err();
 
     assert_eq!(error.to_string(), "IB client not connected");
+}
+
+// -------------------------------------------------------------------------------------------------
+// Position reports
+// -------------------------------------------------------------------------------------------------
+
+fn create_test_position_report(
+    instrument_id: InstrumentId,
+    side: PositionSide,
+    quantity: &str,
+    avg_px_open: Decimal,
+    ts: u64,
+) -> PositionStatusReport {
+    PositionStatusReport::new(
+        AccountId::from("IB-DUR151935"),
+        instrument_id,
+        side,
+        Quantity::from(quantity),
+        UnixNanos::new(ts),
+        UnixNanos::new(ts),
+        None,
+        None,
+        Some(avg_px_open),
+    )
+}
+
+#[rstest]
+fn test_upsert_position_report_replaces_duplicate_for_same_instrument() {
+    // IB resends the position set after a [2100] account-data notice while the positions
+    // subscription is still open; the later report supersedes, it must not double the quantity
+    let mnq = InstrumentId::new(Symbol::from("MNQZ6"), Venue::from("CME"));
+    let btc = InstrumentId::new(Symbol::from("BTC/USD"), Venue::from("PAXOS"));
+    let mut reports = Vec::new();
+
+    let first =
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 1);
+    let btc_report =
+        create_test_position_report(btc, PositionSide::Long, "0.01", Decimal::new(8750000, 2), 2);
+    let resent =
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 3);
+
+    assert!(!IbReportClient::upsert_position_report(&mut reports, first));
+    assert!(!IbReportClient::upsert_position_report(
+        &mut reports,
+        btc_report
+    ));
+    assert!(IbReportClient::upsert_position_report(
+        &mut reports,
+        resent.clone()
+    ));
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].instrument_id, mnq);
+    assert_eq!(reports[0].ts_last, UnixNanos::new(3));
+    assert_eq!(reports[0].signed_decimal_qty, resent.signed_decimal_qty);
+    assert_eq!(reports[1].instrument_id, btc);
+
+    let venue_total: Decimal = reports
+        .iter()
+        .filter(|report| report.instrument_id == mnq)
+        .map(|report| report.signed_decimal_qty)
+        .sum();
+    assert_eq!(venue_total, Decimal::NEGATIVE_ONE);
+}
+
+#[rstest]
+fn test_upsert_position_report_keeps_latest_quantity_for_changed_position() {
+    let mnq = InstrumentId::new(Symbol::from("MNQZ6"), Venue::from("CME"));
+    let mut reports = Vec::new();
+
+    let stale =
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 1);
+    let flat = create_test_position_report(mnq, PositionSide::Flat, "0", Decimal::ZERO, 2);
+
+    IbReportClient::upsert_position_report(&mut reports, stale);
+    assert!(IbReportClient::upsert_position_report(&mut reports, flat));
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].position_side, PositionSide::Flat);
+    assert_eq!(reports[0].signed_decimal_qty, Decimal::ZERO);
+}
+
+// -------------------------------------------------------------------------------------------------
+// Fill evidence
+// -------------------------------------------------------------------------------------------------
+
+fn create_test_commission_report(execution_id: &str, commission: f64) -> CommissionReport {
+    CommissionReport {
+        execution_id: execution_id.to_string(),
+        commission,
+        currency: String::from("USD"),
+        realized_pnl: None,
+        yields: None,
+        yield_redemption_date: String::new(),
+    }
+}
+
+const MES_CONTRACT_ID: i32 = 815_824_257;
+
+// MESZ6 executions recorded from a paper TWS session on 2026-10-12: execution ID, time, side,
+// shares, price, order ID, permanent ID, and commission in USD
+const MES_SESSION_EXECUTIONS: [(&str, &str, &str, f64, f64, i32, i64, f64); 8] = [
+    (
+        "0000e1a7.6acc4ab7.01.01",
+        "20261012 02:38:42 US/Central",
+        "BOT",
+        1.0,
+        7880.75,
+        1,
+        1_560_507_249,
+        0.61,
+    ),
+    (
+        "0000e1a7.6acc4ac1.01.01",
+        "20261012 02:38:55 US/Central",
+        "BOT",
+        2.0,
+        7880.75,
+        2,
+        1_560_507_250,
+        1.22,
+    ),
+    (
+        "0000e1a7.6acc4ade.01.01",
+        "20261012 02:39:11 US/Central",
+        "SLD",
+        1.0,
+        7881.25,
+        3,
+        1_560_507_251,
+        0.61,
+    ),
+    (
+        "0000e1a7.6acc4b1a.01.01",
+        "20261012 02:39:19 US/Central",
+        "SLD",
+        4.0,
+        7882.5,
+        4,
+        1_560_507_253,
+        2.44,
+    ),
+    (
+        "0000e1a7.6acc4b4a.01.01",
+        "20261012 02:39:41 US/Central",
+        "BOT",
+        2.0,
+        7882.5,
+        5,
+        1_560_507_258,
+        1.22,
+    ),
+    (
+        "0000e1a7.6acc4b54.01.01",
+        "20261012 02:39:57 US/Central",
+        "SLD",
+        1.0,
+        7882.5,
+        6,
+        1_560_507_263,
+        0.61,
+    ),
+    (
+        "0000e1a7.6acc4b9d.01.01",
+        "20261012 02:40:36 US/Central",
+        "BOT",
+        3.0,
+        7881.25,
+        7,
+        1_560_507_269,
+        1.83,
+    ),
+    (
+        "0000e1a7.6acc4bd1.01.01",
+        "20261012 02:42:00 US/Central",
+        "BOT",
+        1.0,
+        7881.75,
+        8,
+        1_560_507_276,
+        0.61,
+    ),
+];
+
+fn create_test_mes_instrument() -> FuturesContract {
+    FuturesContract::builder()
+        .instrument_id(InstrumentId::from("MESZ6.CME"))
+        .raw_symbol(Symbol::from("MESZ6"))
+        .asset_class(AssetClass::Index)
+        .exchange(Ustr::from("CME"))
+        .underlying(Ustr::from("MES"))
+        .activation_ns(UnixNanos::from(1_758_240_000_000_000_000))
+        .expiration_ns(UnixNanos::from(1_797_638_400_000_000_000))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.25"))
+        .multiplier(Quantity::from(5))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
+}
+
+fn create_test_mes_execution_data(index: usize) -> ExecutionData {
+    let (execution_id, time, side, shares, price, order_id, perm_id, _) =
+        MES_SESSION_EXECUTIONS[index];
+    let contract = Contract {
+        contract_id: MES_CONTRACT_ID,
+        symbol: IBSymbol::from("MES"),
+        security_type: SecurityType::Future,
+        last_trade_date_or_contract_month: String::from("20261218"),
+        multiplier: String::from("5"),
+        exchange: Exchange::from("CME"),
+        currency: IBCurrency::from("USD"),
+        local_symbol: String::from("MESZ6"),
+        trading_class: String::from("MES"),
+        ..Default::default()
+    };
+    let execution = Execution {
+        execution_id: execution_id.to_string(),
+        order_id,
+        time: time.to_string(),
+        side: if side == "BOT" {
+            ExecutionSide::Bought
+        } else {
+            ExecutionSide::Sold
+        },
+        shares,
+        price,
+        perm_id,
+        client_id: 187,
+        liquidation: 0,
+        account_number: String::from("DU187075"),
+        exchange: String::from("CME"),
+        cumulative_quantity: shares,
+        average_price: price,
+        order_reference: String::new(),
+        ev_rule: String::new(),
+        ev_multiplier: None,
+        model_code: String::new(),
+        last_liquidity: Liquidity::AddedLiquidity,
+        pending_price_revision: false,
+        submitter: String::new(),
+    };
+
+    ExecutionData {
+        request_id: 0,
+        contract,
+        execution,
+    }
+}
+
+fn create_test_fills_cmd() -> GenerateFillReports {
+    GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
+}
+
+// Feeds the first `count` recorded MES executions, each followed by its commission report as
+// IB delivers them, and returns the collected evidence
+fn collect_mes_session(
+    context: &IbReportContext,
+    count: usize,
+    exec_data_for: impl Fn(usize) -> ExecutionData,
+) -> FillEvidence {
+    let cmd = create_test_fills_cmd();
+    let mut collector = FillReportCollector::new(context, &cmd, UnixNanos::default());
+
+    for (index, (execution_id, .., commission)) in
+        MES_SESSION_EXECUTIONS.iter().take(count).enumerate()
+    {
+        collector.push(Ok(Executions::ExecutionData(exec_data_for(index))));
+        collector.push(Ok(Executions::CommissionReport(
+            create_test_commission_report(execution_id, *commission),
+        )));
+    }
+
+    let (evidence, combo_executions) = collector.finish().unwrap();
+    assert!(combo_executions.is_empty());
+    evidence
+}
+
+fn create_test_mes_position_report(
+    client: &InteractiveBrokersExecutionClient,
+    side: PositionSide,
+    quantity: u64,
+    average_cost: f64,
+) -> PositionStatusReport {
+    let instrument = InstrumentAny::from(create_test_mes_instrument());
+    let avg_px_open =
+        report_context(client).position_avg_px_open(&instrument.id(), &instrument, average_cost);
+
+    PositionStatusReport::new(
+        client.core.account_id,
+        instrument.id(),
+        side,
+        Quantity::from(quantity),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+        None,
+        avg_px_open,
+    )
+}
+
+#[rstest]
+// Each case replays the session up to a step and checks the position IB reported after it:
+// IB's avgCost adds the opening commissions to a long, subtracts them from a short, keeps them
+// through a reduction, and leaves them out of a lot opened by a flip
+#[case::opened_from_flat(1, PositionSide::Long, 1, 39_404.36, "7880.87", dec!(7880.75))]
+#[case::added(2, PositionSide::Long, 3, 39_404.36, "7880.87", dec!(7880.75))]
+#[case::reduced(3, PositionSide::Long, 2, 39_404.36, "7880.87", dec!(7880.75))]
+#[case::flipped_short(4, PositionSide::Short, 2, 39_412.5, "7882.50", dec!(7882.50))]
+#[case::short_from_flat(6, PositionSide::Short, 1, 39_411.89, "7882.38", dec!(7882.50))]
+#[case::flipped_long(7, PositionSide::Long, 2, 39_406.25, "7881.25", dec!(7881.25))]
+#[case::added_after_flip(
+    8,
+    PositionSide::Long,
+    3,
+    39_407.286_666_666_66,
+    "7881.46",
+    (dec!(7881.25) * dec!(2) + dec!(7881.75)) / dec!(3)
+)]
+fn test_fill_position_avg_px_from_recorded_mes_session(
+    #[case] count: usize,
+    #[case] side: PositionSide,
+    #[case] quantity: u64,
+    #[case] average_cost: f64,
+    #[case] venue_avg_px: &str,
+    #[case] expected: Decimal,
+) {
+    let (client, _, _) = create_test_execution_client();
+    client.instrument_provider.insert_test_instrument(
+        InstrumentAny::from(create_test_mes_instrument()),
+        MES_CONTRACT_ID,
+        1,
+    );
+    let context = report_context(&client);
+    let evidence = collect_mes_session(&context, count, create_test_mes_execution_data);
+    let mut position_reports = vec![create_test_mes_position_report(
+        &client,
+        side,
+        quantity,
+        average_cost,
+    )];
+
+    assert_eq!(
+        position_reports[0].avg_px_open,
+        Some(Decimal::from_str(venue_avg_px).unwrap())
+    );
+
+    parse::fill_position_avg_px_from_fills(
+        &mut position_reports,
+        &evidence,
+        &client.instrument_provider,
+    );
+
+    assert_eq!(evidence.reports.len(), count);
+    assert_eq!(position_reports[0].avg_px_open, Some(expected));
+}
+
+#[rstest]
+fn test_fill_position_avg_px_keeps_venue_average_when_an_execution_fails_to_parse() {
+    let (client, _, _) = create_test_execution_client();
+    client.instrument_provider.insert_test_instrument(
+        InstrumentAny::from(create_test_mes_instrument()),
+        MES_CONTRACT_ID,
+        1,
+    );
+    let context = report_context(&client);
+    let evidence = collect_mes_session(&context, 8, |index| {
+        let mut exec_data = create_test_mes_execution_data(index);
+        if index == 5 {
+            exec_data.execution.time = String::from("not a time");
+        }
+        exec_data
+    });
+    let mut position_reports = vec![create_test_mes_position_report(
+        &client,
+        PositionSide::Long,
+        3,
+        39_407.286_666_666_66,
+    )];
+
+    parse::fill_position_avg_px_from_fills(
+        &mut position_reports,
+        &evidence,
+        &client.instrument_provider,
+    );
+
+    assert_eq!(evidence.reports.len(), 7);
+    assert!(
+        evidence
+            .reports
+            .iter()
+            .all(|report| report.trade_id != TradeId::from("0000e1a7.6acc4b54.01.01"))
+    );
+    assert!(!evidence.missing_all);
+    assert_eq!(
+        evidence.missing_instruments,
+        AHashSet::from([InstrumentId::from("MESZ6.CME")])
+    );
+    assert_eq!(
+        position_reports[0].avg_px_open,
+        Some(Decimal::from_str("7881.46").unwrap())
+    );
+}
+
+#[rstest]
+fn test_fill_report_collector_marks_all_missing_on_stream_error() {
+    let (client, _, _) = create_test_execution_client();
+    let context = report_context(&client);
+    let cmd = create_test_fills_cmd();
+    let mut collector = FillReportCollector::new(&context, &cmd, UnixNanos::default());
+
+    collector.push(Err(ibapi::Error::ConnectionReset));
+    let (evidence, _) = collector.finish().unwrap();
+
+    assert!(evidence.reports.is_empty());
+    assert!(evidence.missing_all);
+    assert!(evidence.missing_instruments.is_empty());
+}
+
+#[rstest]
+fn test_fill_report_collector_marks_all_missing_on_commission_without_execution() {
+    let (client, _, _) = create_test_execution_client();
+    let context = report_context(&client);
+    let cmd = create_test_fills_cmd();
+    let mut collector = FillReportCollector::new(&context, &cmd, UnixNanos::default());
+
+    collector.push(Ok(Executions::CommissionReport(
+        create_test_commission_report("exec-unseen-001", 0.61),
+    )));
+    let (evidence, _) = collector.finish().unwrap();
+
+    assert!(evidence.reports.is_empty());
+    assert!(evidence.missing_all);
+    assert!(evidence.missing_instruments.is_empty());
+}
+
+#[rstest]
+fn test_fill_report_collector_marks_instrument_missing_when_not_cached() {
+    let (client, _, _) = create_test_execution_client();
+    let context = report_context(&client);
+    let cmd = create_test_fills_cmd();
+    let mut collector = FillReportCollector::new(&context, &cmd, UnixNanos::default());
+
+    collector.push(Ok(Executions::ExecutionData(
+        create_test_mes_execution_data(0),
+    )));
+    collector.push(Ok(Executions::CommissionReport(
+        create_test_commission_report(MES_SESSION_EXECUTIONS[0].0, 0.61),
+    )));
+    let (evidence, _) = collector.finish().unwrap();
+
+    assert!(evidence.reports.is_empty());
+    assert!(!evidence.missing_all);
+    assert_eq!(
+        evidence.missing_instruments,
+        AHashSet::from([InstrumentId::from("MESZ6.CME")])
+    );
+}
+
+#[rstest]
+fn test_fill_report_collector_fails_on_execution_without_commission() {
+    let (client, _, _) = create_test_execution_client();
+    client.instrument_provider.insert_test_instrument(
+        InstrumentAny::from(create_test_mes_instrument()),
+        MES_CONTRACT_ID,
+        1,
+    );
+    let context = report_context(&client);
+    let cmd = create_test_fills_cmd();
+    let mut collector = FillReportCollector::new(&context, &cmd, UnixNanos::default());
+
+    collector.push(Ok(Executions::ExecutionData(
+        create_test_mes_execution_data(0),
+    )));
+
+    assert_eq!(
+        collector.finish().unwrap_err().to_string(),
+        "IB did not provide commission reports for execution IDs: 0000e1a7.6acc4ab7.01.01"
+    );
+}
+
+#[rstest]
+fn test_fill_report_collector_moves_combo_leg_fills_to_evidence() {
+    let (client, _, _) = create_test_execution_client();
+    let mut leg = equity_aapl();
+    leg.id = create_test_leg_instrument();
+    client
+        .instrument_provider
+        .insert_test_instrument(InstrumentAny::from(leg), 12345, 1);
+    let context = report_context(&client);
+    let cmd = create_test_fills_cmd();
+    let mut collector = FillReportCollector::new(&context, &cmd, UnixNanos::default());
+    let mut combo = create_test_bag_execution_data(7001, "exec-combo-001");
+    combo.execution.perm_id = 99_001;
+    let mut leg_exec = create_test_execution_data(7001, "exec-leg-001", 1.0, 3.25, "BOT");
+    leg_exec.execution.perm_id = 99_001;
+
+    collector.push(Ok(Executions::ExecutionData(combo)));
+    collector.push(Ok(Executions::ExecutionData(leg_exec)));
+    collector.push(Ok(Executions::CommissionReport(
+        create_test_commission_report("exec-leg-001", 0.65),
+    )));
+    let (evidence, combo_executions) = collector.finish().unwrap();
+
+    assert!(evidence.reports.is_empty());
+    assert_eq!(evidence.combo_leg_reports.len(), 1);
+    let leg_report = &evidence.combo_leg_reports[0];
+    assert_eq!(leg_report.instrument_id, create_test_leg_instrument());
+    assert_eq!(leg_report.trade_id, TradeId::from("exec-leg-001"));
+    assert_eq!(leg_report.venue_order_id, VenueOrderId::from("PERM-99001"));
+    assert_eq!(leg_report.order_side, OrderSide::Buy);
+    assert_eq!(leg_report.last_qty, Quantity::from(1));
+    assert_eq!(leg_report.last_px, Price::from("3.25"));
+    assert_eq!(leg_report.commission, Money::from("0.65 USD"));
+    assert!(!evidence.missing_all);
+    assert!(evidence.missing_instruments.is_empty());
+    assert_eq!(combo_executions.len(), 1);
+    assert_eq!(combo_executions[0].execution.execution_id, "exec-combo-001");
 }
