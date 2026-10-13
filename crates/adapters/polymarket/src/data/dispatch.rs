@@ -5504,6 +5504,14 @@ mod tests {
             async move { state.market_payloads.lock().await.len() == count }
         };
 
+        // Keep the quote task queued until both subscription intents are registered
+        let ws_sub_mutex = client.subscriptions.ws_sub_mutex.clone();
+        let guard = if quotes_first && !quotes_settled {
+            Some(ws_sub_mutex.lock().await)
+        } else {
+            None
+        };
+
         if quotes_first {
             client
                 .subscribe_quotes(SubscribeQuotes::new(
@@ -5536,6 +5544,8 @@ mod tests {
                 None,
             ))
             .expect("subscribe book deltas");
+
+        drop(guard);
 
         let expected_count = if quotes_settled { 3 } else { 1 };
         wait_until_async(|| payload_count(expected_count), StdDuration::from_secs(3)).await;
