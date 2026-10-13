@@ -20,25 +20,25 @@ target integration's capabilities before relying on an option.
 
 ### Terminology
 
-- An order is **aggressive** if its type is `MARKET` or it executes as a marketable order and takes
-  liquidity.
-- An order is **passive** if it rests without taking liquidity.
-- An order is **active local** if it remains within the local system boundary in one of these
+- **Aggressive**: an order whose type is `MARKET`, or one that executes as a marketable order and
+  takes liquidity.
+- **Passive**: an order that rests without taking liquidity.
+- **Active local**: an order that remains within the local system boundary at one of these
   non-terminal statuses:
   - `INITIALIZED`
   - `EMULATED`
   - `RELEASED`
-- An order is **in-flight** when at one of the following statuses:
+- **In-flight**: an order at one of the following statuses:
   - `SUBMITTED`
   - `PENDING_UPDATE`
   - `PENDING_CANCEL`
-- An order is **open** when at one of the following (non-terminal) statuses:
+- **Open**: an order at one of the following non-terminal statuses:
   - `ACCEPTED`
   - `TRIGGERED`
   - `PENDING_UPDATE`
   - `PENDING_CANCEL`
   - `PARTIALLY_FILLED`
-- An order is **closed** when at one of the following (terminal) statuses:
+- **Closed**: an order at one of the following terminal statuses:
   - `DENIED`
   - `REJECTED`
   - `CANCELED`
@@ -46,10 +46,12 @@ target integration's capabilities before relying on an option.
   - `FILLED`
   - `VOIDED`
 
-These groups overlap, so open and closed are not opposites. `PENDING_UPDATE` and `PENDING_CANCEL`
-are both open and in-flight: the order is working at the venue while a modify or cancel request is
-outstanding. Four statuses are neither open nor closed: `INITIALIZED`, `EMULATED`, and `RELEASED`
-are active local, and `SUBMITTED` is in-flight until the venue acknowledges the order.
+**Overlapping groups**: open and closed are not opposites.
+
+- `PENDING_UPDATE` and `PENDING_CANCEL` are both open and in-flight: the order is working at the
+  venue while a modify or cancel request is outstanding.
+- Four statuses are neither open nor closed: `INITIALIZED`, `EMULATED`, and `RELEASED` are active
+  local, and `SUBMITTED` is in-flight until the venue acknowledges the order.
 
 :::warning[Open and closed are not complements]
 Test for a finished order with `is_closed`, never by negating `is_open`. An order at one of the four
@@ -60,9 +62,9 @@ processing. Use `is_inflight` for the awaiting-venue case.
 
 ### Order state flow
 
-The following diagram illustrates the order lifecycle and primary state transitions. Each status
-appears once, so `PENDING_UPDATE` and `PENDING_CANCEL` are drawn under In-Flight although they are
-also open:
+**Primary transitions**: the diagram shows the order lifecycle and primary state transitions.
+Each status appears once, so `PENDING_UPDATE` and `PENDING_CANCEL` are drawn under In-Flight
+although they are also open.
 
 ```mermaid
 flowchart TB
@@ -129,8 +131,11 @@ set for recovery and venue edge cases. An order status describes local state, no
 produced it. See [Execution policies](../execution/policies.md) for command outcome classes,
 event provenance, delivery limits, and reconciliation policy.
 
-A fill can arrive after an order expires. The fill still updates the order and position. A partial
-fill leaves the order `EXPIRED`; a fill that completes its quantity changes it to `FILLED`.
+**Fills after expiry**: fills still update the order and position.
+
+- A partial fill leaves the order `EXPIRED`.
+- A fill that completes its quantity changes it to `FILLED`.
+
 If a fill arrives after the most recent expiry and the order is still `EXPIRED` or `FILLED`, the
 next `OrderExpired` leaves its status and timestamps unchanged. The event remains in the order's
 history, and the execution engine publishes it to strategy handlers. Further expiry events are
@@ -165,14 +170,14 @@ Support varies by venue and adapter.
 
 Time in force specifies how long an order remains active before any unfilled quantity is canceled.
 
-- `GTC` (Good Till Cancel): The order remains active until canceled by the trader or the venue.
-- `IOC` (Immediate or Cancel / Fill and Kill): The order executes immediately, with any
+- **`GTC` (Good Till Cancel)**: The order remains active until canceled by the trader or the venue.
+- **`IOC` (Immediate or Cancel / Fill and Kill)**: The order executes immediately, with any
   unfilled portion canceled.
-- `FOK` (Fill or Kill): The order executes immediately in full or not at all.
-- `GTD` (Good Till Date): The order remains active until a specified expiration date and time.
-- `DAY` (Good for session/day): The order remains active until the end of the current trading session.
-- `AT_THE_OPEN` (OPG): The order is only active at the open of the trading session.
-- `AT_THE_CLOSE`: The order is only active at the close of the trading session.
+- **`FOK` (Fill or Kill)**: The order executes immediately in full or not at all.
+- **`GTD` (Good Till Date)**: The order remains active until a specified expiration date and time.
+- **`DAY` (Good for session/day)**: The order remains active until the end of the current trading session.
+- **`AT_THE_OPEN` (OPG)**: The order is only active at the open of the trading session.
+- **`AT_THE_CLOSE`**: The order is only active at the close of the trading session.
 
 ### Expire time
 
@@ -190,7 +195,7 @@ maker fees.
 An order marked `reduce_only` may reduce an existing position but must not increase exposure or open
 a position while flat. Exact behavior varies by venue.
 
-The Nautilus `SimulatedExchange` applies these rules:
+**Simulated reduce-only behavior**: the Nautilus `SimulatedExchange` applies these rules.
 
 - It cancels the order when the associated position becomes flat.
 - It reduces the order quantity as the associated position shrinks.
@@ -209,15 +214,15 @@ specifies the market price used to trigger a conditional order.
 
 An absent trigger type is represented by `None` and is invalid for an order that requires one.
 
-- `DEFAULT`: Uses the venue's default trigger type.
-- `LAST_PRICE`: Uses the last traded price.
-- `BID_ASK`: Uses the ask for BUY orders and the bid for SELL orders.
-- `DOUBLE_LAST`: Requires two consecutive matching last prices.
-- `DOUBLE_BID_ASK`: Requires two consecutive matching bid or ask prices, based on the order side.
-- `LAST_OR_BID_ASK`: Uses either the last price or the side-appropriate bid or ask.
-- `MID_POINT`: Uses the midpoint between the bid and ask.
-- `MARK_PRICE`: Uses the venue's mark price for the instrument.
-- `INDEX_PRICE`: Uses the venue's index price for the instrument.
+- **`DEFAULT`**: Uses the venue's default trigger type.
+- **`LAST_PRICE`**: Uses the last traded price.
+- **`BID_ASK`**: Uses the ask for BUY orders and the bid for SELL orders.
+- **`DOUBLE_LAST`**: Requires two consecutive matching last prices.
+- **`DOUBLE_BID_ASK`**: Requires two consecutive matching bid or ask prices, based on the order side.
+- **`LAST_OR_BID_ASK`**: Uses either the last price or the side-appropriate bid or ask.
+- **`MID_POINT`**: Uses the midpoint between the bid and ask.
+- **`MARK_PRICE`**: Uses the venue's mark price for the instrument.
+- **`INDEX_PRICE`**: Uses the venue's index price for the instrument.
 
 ### Trailing offset type
 
@@ -226,10 +231,10 @@ applicable market price.
 
 An absent trailing offset type is represented by `None` and is invalid for a trailing order.
 
-- `PRICE`: Uses a price difference.
-- `BASIS_POINTS`: Uses a percentage difference in basis points, where 100 basis points equals 1%.
-- `TICKS`: Uses a number of ticks.
-- `PRICE_TIER`: Uses a venue-specific price tier.
+- **`PRICE`**: Uses a price difference.
+- **`BASIS_POINTS`**: Uses a percentage difference in basis points, where 100 basis points equals 1%.
+- **`TICKS`**: Uses a number of ticks.
+- **`PRICE_TIER`**: Uses a venue-specific price tier.
 
 ### Contingent orders
 
@@ -240,9 +245,10 @@ their constraints.
 ## Order factory
 
 Use the built-in `OrderFactory` to create orders. Each Python `Strategy` exposes one as
-`self.order_factory`; the Rust strategy API exposes it through `self.order()`. The factory assigns
-the trader and strategy IDs, generates client order and initialization IDs when needed, records the
-initial timestamp, and applies defaults for the selected order type.
+`self.order_factory`; the Rust strategy API exposes it through `self.order()`.
+
+The factory assigns the trader and strategy IDs, generates client order and initialization IDs when
+needed, records the initial timestamp, and applies defaults for the selected order type.
 
 The examples in these guides create orders from a `Strategy` context.
 
@@ -269,9 +275,9 @@ example; optional parameters are marked with a comment showing the default value
 
 ### FIX OrdType mapping
 
-Each type maps to the nearest FIX 5.0 SP2
+**FIX mapping**: each type maps to the nearest FIX 5.0 SP2
 [`OrdType <40>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_40.html) value, where the protocol
-defines one:
+defines one.
 
 | Order type           | FIX `OrdType <40>`                   |
 | -------------------- | ------------------------------------ |

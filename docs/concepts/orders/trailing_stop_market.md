@@ -14,9 +14,9 @@ sharp reversal.
 
 ## Example
 
-In the following example we create a *Trailing-Stop-Market* order on the Binance Futures exchange
+**Example**: create a *Trailing-Stop-Market* order on the Binance Futures exchange
 to SELL 10 ETHUSD-PERP COIN_M margined Perpetual Futures Contracts. It activates at a price of
-5,000 USD, then trails at an offset of 1% (in basis points) from the current last traded price:
+5,000 USD, then trails at an offset of 1% (in basis points) from the current last traded price.
 
 ```rust tab="Rust"
 use nautilus_model::{

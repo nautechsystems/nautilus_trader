@@ -15,11 +15,12 @@ An order list groups contingent orders or a larger batch under one `order_list_i
 list do not need a contingency relationship; their own metadata defines any relationship.
 
 Production constructors require every order in a list to use the same venue. Orders may target
-different instruments at that venue, such as pairs, calendar spreads, or multi-leg strategies. The
-list takes its representative `instrument_id` from the first order; consumers that need the actual
-instrument must resolve each order individually.
+different instruments at that venue, such as pairs, calendar spreads, or multi-leg strategies.
 
-Caveats for mixed-instrument lists:
+The list takes its representative `instrument_id` from the first order. Consumers that need the
+actual instrument must resolve each order individually.
+
+**Mixed-instrument caveats**:
 
 - **Pre-trade checks**: Price precision, quantity precision, and GTD expiry use each order's own
   instrument.
@@ -58,13 +59,14 @@ commands through the normal execution path before it calls the specific and aggr
 order-event handlers.
 
 The `OrderEmulator` always owns active-local orders. Enabling strategy management therefore does
-not make the strategy and emulator manage the same order. The option does not add native venue
-support or submit a non-active-local OTO child: it manages non-active-local orders that are already
-open.
+not make the strategy and emulator manage the same order.
+
+The option manages non-active-local orders that are already open. It does not add native venue
+support or submit a non-active-local OTO child.
 
 ### One-Triggers-Other (OTO)
 
-An OTO relationship has two parts:
+**OTO sequence**: an OTO relationship has two parts.
 
 1. The parent order enters its execution path.
 1. One or more child orders reference the parent and wait for the configured release condition.
@@ -81,7 +83,8 @@ non-active-local OTO children.
 After filling starts, each parent event starts the child target at the parent's cumulative filled
 quantity. For an execution spawn, this quantity includes fills from every order in the spawn.
 
-For a parent linked to a position, the manager then adjusts the target in order:
+**Position-linked sizing**: for a parent linked to a position, the manager then adjusts the target
+in order.
 
 1. For a non-spread parent with a reduce-only child, cap the total target at the child's filled
    quantity plus the current [commission-adjusted](../positions.md#base-currency-commissions)
@@ -89,16 +92,17 @@ For a parent linked to a position, the manager then adjusts the target in order:
 1. Round the total target down to a multiple of the child instrument's size increment.
 1. When configured, treat a rounded target below the child instrument's minimum quantity as zero.
 
-The calculation does not round position or account state. A remaining position too small to meet
-the child instrument's size increment and optional minimum quantity stays open without reduce-only
-child coverage. Spread parents skip the position cap because the execution engine does not create
-positions for them. Non-reduce-only children also skip the cap. Both still use the child
-instrument's size rules.
+**Uncovered remainder**: the calculation does not round position or account state. A remaining
+position too small to meet the child instrument's size increment and optional minimum quantity
+stays open without reduce-only child coverage.
+
+Spread parents skip the position cap because the execution engine does not create positions for
+them. Non-reduce-only children also skip the cap. Both still use the child instrument's size rules.
 
 #### Required sizing state
 
-When a fill event, cached parent, or filled execution-spawn sibling identifies a position, sizing
-requires:
+**Sizing prerequisites**: when a fill event, cached parent, or filled execution-spawn sibling
+identifies a position, sizing requires the following.
 
 - The parent and child instruments in the cache.
 - A positive size increment for the child instrument.
@@ -111,7 +115,7 @@ with the remaining linked children.
 
 #### Child lifecycle
 
-Parent events apply the validated target according to the child and parent state:
+**Target application**: parent events apply the validated target according to the child and parent state.
 
 | Condition                                                | Action                                                     |
 | -------------------------------------------------------- | ---------------------------------------------------------- |
@@ -139,10 +143,15 @@ promise pro rata child sizing. Verify child quantities when the parent fills par
 
 With `support_contingent_orders` enabled, the backtest venue sizes each child as if it covers the
 parent's whole quantity. When the parent is modified or closes, each child's remaining quantity
-covers what the parent can still hold, less what the children have filled between them: the
-parent's quantity while it works, and its filled quantity once it is canceled, expires, or is
-reduced to its filled quantity. A modify grows children only when it raises the parent's quantity,
-and closing the parent only shrinks them:
+covers what the parent can still hold, less what the children have filled between them.
+
+**Parent capacity**:
+
+- Its quantity while it works.
+- Its filled quantity once it is canceled, expires, or is reduced to its filled quantity.
+
+**Child lifecycle**: under the same enabled setting, a modify grows children only when it raises
+the parent's quantity, and closing the parent only shrinks them.
 
 - Released children keep working for the parent's filled quantity. A child with nothing left to
   cover is canceled.
@@ -152,7 +161,7 @@ and closing the parent only shrinks them:
 - Canceling or expiring the parent cancels held children, so a partially filled parent that closes
   this way under `OtoTriggerMode.FULL` leaves its fills without children.
 
-The venue compares quantities in the parent's units:
+**Quantity units**: the venue compares quantities in the parent's units.
 
 - A child that still holds a quote quantity, under a parent whose quantity is in base, is compared
   as the base quantity at its price, else its trigger price, else the best bid for a sell or the
@@ -177,7 +186,8 @@ reaches its matching price.
 
 #### Enforcing a full-fill trigger in strategy code
 
-If the execution context does not provide the required full-fill behavior:
+**Full-fill fallback**: if the execution context does not provide the required full-fill behavior,
+follow these steps.
 
 1. Submit the parent order without contingent children.
 1. Handle `OrderFilled` events for the parent.
@@ -194,18 +204,22 @@ as complete protection.
 
 ### One-Cancels-Other (OCO)
 
-In backtest local matching, a full or partial fill in one OCO order causes a best-effort request to
-cancel its open siblings. The local order manager applies this behavior only while a sibling remains
-active local. With strategy management enabled, the strategy requests cancellation for open,
-non-active-local siblings. Otherwise, the adapter or venue determines cancellation behavior.
+**Cancellation ownership**: OCO cancellation depends on the component handling the relationship.
+
+- **Backtest local matching**: a full or partial fill in one OCO order causes a best-effort request
+  to cancel its open siblings.
+- **Local order manager**: applies this behavior only while a sibling remains active local.
+- **Strategy management enabled**: the strategy requests cancellation for open, non-active-local
+  siblings. Otherwise, the adapter or venue determines cancellation behavior.
+
 Another sibling can fill before cancellation completes.
 
 ### One-Updates-Other (OUO)
 
 #### Updates after a sibling fill
 
-In backtest local matching, a fill in one OUO order uses that order's remaining quantity as the
-target for each open sibling:
+**Sibling target**: in backtest local matching, a fill in one OUO order uses that order's remaining
+quantity as the target for each open sibling.
 
 - If the target is zero or the sibling's filled quantity already meets the target, cancel the sibling.
 - Otherwise, update the sibling's quantity when needed.
@@ -218,13 +232,16 @@ support.
 #### Backtest reduce-only resizing
 
 With reduce-only enforcement enabled, a fill can resize resting reduce-only orders to the available
-position quantity, subject to parent caps. When contingent-order support is also enabled, a resized
-OUO order propagates its remaining quantity to siblings that are:
+position quantity, subject to parent caps.
+
+**Eligible siblings**: when contingent-order support is also enabled, a resized OUO order propagates
+its remaining quantity to siblings that meet both conditions.
 
 - Open and not active local.
 - Passive orders resting on the same instrument's book.
 
-Siblings do not need to be `reduce_only`. Each sibling's quantity update follows these rules:
+**Sibling quantities**: siblings do not need to be `reduce_only`. Each sibling's quantity update
+follows these rules.
 
 - Add the sibling's prior fills to the propagated remaining quantity to obtain its total quantity.
 - Apply the sibling's own cached parent's filled-quantity cap, when available.
@@ -239,7 +256,7 @@ instruments have no quote conversion, so the order keeps its quantity denominati
 
 #### Backtest cancellation at zero capacity
 
-With reduce-only enforcement and contingent-order support enabled:
+**Zero capacity**: with reduce-only enforcement and contingent-order support enabled, apply these rules.
 
 - When the reduce-only order has no remaining capacity, cancel it and its eligible siblings without
   resizing the siblings. This also covers siblings whose acceptance event is still awaiting delivery.
@@ -247,11 +264,16 @@ With reduce-only enforcement and contingent-order support enabled:
 
 ## Constructing contingent orders
 
-Use `OrderFactory.bracket` to construct a bracket's contingency metadata. In Rust,
-`self.order().create_list(...)` assigns a fresh `order_list_id` to an existing group of orders.
-Python code instead passes a plain list to `self.submit_order_list(...)`, which creates an
-`OrderList` when needed. These grouping paths do not create parent or linked-order relationships.
-The current model enforces only part of the remaining consistency:
+Use `OrderFactory.bracket` to construct a bracket's contingency metadata.
+
+**Grouping existing orders**:
+
+- **Rust**: `self.order().create_list(...)` assigns a fresh `order_list_id` to the group.
+- **Python**: pass a plain list to `self.submit_order_list(...)`, which creates an `OrderList` when
+  needed.
+
+**Validation limits**: these grouping paths do not create parent or linked-order relationships.
+The model enforces only part of the remaining consistency.
 
 - A contingent order must have at least one `linked_order_id`.
 - A child identifies its parent through `parent_order_id`.
@@ -284,10 +306,8 @@ Create brackets with
 [`OrderFactory`](/docs/python-api-latest/common.html#nautilus_trader.common.OrderFactory), which
 also supports different entry and exit types, trigger settings, and execution instructions.
 
-In the following example we bracket a *Market* entry to BUY 10 ETHUSDT-PERP contracts with a
-take-profit *Limit* at 3,300 USDT and a stop-loss *Stop-Market* triggering at 2,800 USDT. The entry
-defaults to `MARKET`, the take-profit to `LIMIT`, and the stop-loss to `STOP_MARKET`; the take-profit
-and stop-loss legs are `reduce_only` and linked with the `OUO` contingency:
+**Example**: bracket a *Market* entry to BUY 10 ETHUSDT-PERP contracts with a take-profit *Limit*
+at 3,300 USDT and a stop-loss *Stop-Market* triggering at 2,800 USDT.
 
 ```rust tab="Rust"
 use nautilus_model::{

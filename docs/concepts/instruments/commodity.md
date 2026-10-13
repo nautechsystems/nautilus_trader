@@ -32,7 +32,7 @@ Examples include `XAUUSD.IDEALPRO` and venue-specific commodity cash symbols.
 | `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`; Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -96,9 +96,8 @@ gold = Commodity(
 
 ## Adapters
 
-Representative adapters that create or consume `Commodity` instruments include:
-
-- [Interactive Brokers](../../integrations/interactive_brokers.md) for spot commodity and metal contracts.
+The [Interactive Brokers](../../integrations/interactive_brokers.md) adapter creates or consumes
+`Commodity` instruments for spot commodity and metal contracts.
 
 ## Related guides
 

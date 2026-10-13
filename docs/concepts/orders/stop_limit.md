@@ -13,9 +13,9 @@ the order may not fill and can leave a position unprotected.
 
 ## Example
 
-The following example creates a *Stop-Limit* order on the Currenex FX ECN to BUY 50,000 GBP at a
+**Example**: create a *Stop-Limit* order on the Currenex FX ECN to BUY 50,000 GBP at a
 limit price of 1.3000 USD once the market reaches 1.30010 USD. The order expires one hour after
-creation:
+creation.
 
 ```rust tab="Rust"
 use nautilus_core::DurationNanos;
