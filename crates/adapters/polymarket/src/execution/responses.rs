@@ -312,38 +312,20 @@ pub(super) fn confirm_modify_replacement(
     ws_dispatch_state: &Arc<Mutex<WsDispatchState>>,
 ) -> bool {
     let mut state = ws_dispatch_state.lock();
-    let Some(promotion) = state.claim_modify_replacement(venue_order_id) else {
+
+    let Some(activity) = state.promote_modify_replacement(
+        venue_order_id,
+        order_contexts,
+        fill_tracker,
+        emitter,
+        clock,
+        |_| Some((OrderContext::from(order), emitter.account_id())),
+        || clock.get_time_ns(),
+    ) else {
         return false;
     };
 
-    let context = OrderContext {
-        quantity: promotion.quantity,
-        price: Some(promotion.price),
-        ..OrderContext::from(order)
-    };
-    order_contexts.register_context(promotion.venue_order_id, context);
-    order_contexts.mark_accepted(promotion.venue_order_id);
-
-    emitter.emit_order_updated(
-        order,
-        promotion.venue_order_id,
-        promotion.quantity,
-        Some(promotion.price),
-        None,
-        None,
-        clock.get_time_ns(),
-    );
-
-    let fills = fill_tracker.register_and_take_pending_fills(
-        promotion.venue_order_id,
-        Some(promotion.client_order_id),
-        promotion.leg_quantity,
-        promotion.quantity.saturating_sub(promotion.leg_quantity),
-        promotion.prior_filled,
-        context.identity.order_side,
-    );
-    let buffered = fill_tracker.take_pending_reports(&promotion.venue_order_id);
-    for report in buffered.iter().filter(|report| {
+    for report in activity.reports.iter().filter(|report| {
         matches!(
             report.order_status,
             OrderStatus::Canceled | OrderStatus::Expired
@@ -354,9 +336,9 @@ pub(super) fn confirm_modify_replacement(
 
     emit_drained_activity(
         order,
-        promotion.venue_order_id,
-        fills,
-        &buffered,
+        venue_order_id,
+        activity.fills,
+        &activity.reports,
         fill_tracker,
         settlement,
         emitter,

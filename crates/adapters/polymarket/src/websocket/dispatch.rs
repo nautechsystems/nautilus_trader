@@ -29,6 +29,16 @@
 //! uninterrupted session, failed or conflicting stream evidence quarantines the trade for
 //! targeted terminal REST resolution, and only a REST-established `FAILED` outcome voids
 //! applied fills or tombstones absent legs.
+//!
+//! Execution-client and dispatch replacement confirmations share one promotion under the dispatch
+//! lock. Execution-client confirmation uses logical-order context and local event time. Dispatch
+//! confirmation uses old-leg context and stream or REST evidence time, with local time as fallback
+//! for invalid order-update timestamps. Promotion publishes `OrderUpdated` before registering and
+//! releasing fills.
+//!
+//! Execution-client confirmation drains the returned activity immediately; dispatch handlers retain
+//! their own emission order. Execution-client confirmation sets drained fill `ts_init` at emission;
+//! dispatch preserves buffered `ts_init`.
 
 use std::fmt::Debug;
 
@@ -186,6 +196,73 @@ impl WsDispatchState {
             price,
         });
         true
+    }
+
+    /// Promotes the winning replacement and releases its buffered activity after `OrderUpdated`.
+    ///
+    /// Source context resolution follows the consuming claim. Event time is resolved after
+    /// context registration, while initialization time uses the caller's local clock.
+    ///
+    /// # Errors
+    ///
+    /// Returns `None` if no pending replacement matches or its source context cannot be resolved.
+    /// Failed context resolution still consumes the claim.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "promotion coordinates dispatch, contexts, fills, emission, and source-specific time"
+    )]
+    pub(crate) fn promote_modify_replacement(
+        &mut self,
+        venue_order_id: VenueOrderId,
+        order_contexts: &OrderContextRegistry,
+        fill_tracker: &OrderFillTrackerMap,
+        emitter: &ExecutionEventEmitter,
+        clock: &'static AtomicTime,
+        resolve_context: impl FnOnce(VenueOrderId) -> Option<(OrderContext, AccountId)>,
+        event_time: impl FnOnce() -> UnixNanos,
+    ) -> Option<ModifyPromotionActivity> {
+        let promotion = self.claim_modify_replacement(venue_order_id)?;
+        let (mut context, account_id) = resolve_context(promotion.old_venue_order_id)?;
+        context.quantity = promotion.quantity;
+        context.price = Some(promotion.price);
+        order_contexts.register_context(venue_order_id, context);
+        order_contexts.mark_accepted(venue_order_id);
+
+        let ts_event = event_time();
+
+        let updated = OrderUpdated::new(
+            emitter.trader_id(),
+            context.identity.strategy_id,
+            context.identity.instrument_id,
+            promotion.client_order_id,
+            promotion.quantity,
+            UUID4::new(),
+            ts_event,
+            clock.get_time_ns(),
+            false,
+            Some(venue_order_id),
+            Some(account_id),
+            Some(promotion.price),
+            None,
+            None,
+            false,
+        );
+        emitter.send_order_event(OrderEventAny::Updated(updated));
+
+        let fills = fill_tracker.register_and_take_pending_fills(
+            venue_order_id,
+            Some(promotion.client_order_id),
+            promotion.leg_quantity,
+            promotion.quantity.saturating_sub(promotion.leg_quantity),
+            promotion.prior_filled,
+            context.identity.order_side,
+        );
+        let reports = fill_tracker.take_pending_reports(&venue_order_id);
+        Some(ModifyPromotionActivity {
+            client_order_id: promotion.client_order_id,
+            fills,
+            reports,
+        })
     }
 
     pub(crate) fn claim_modify_replacement(
@@ -487,6 +564,14 @@ pub(crate) struct ModifyPromotion {
     pub(crate) price: Price,
 }
 
+/// Buffered activity released by a replacement promotion after its update is published.
+#[derive(Debug)]
+pub(crate) struct ModifyPromotionActivity {
+    pub(crate) client_order_id: ClientOrderId,
+    pub(crate) fills: Vec<BufferedFill>,
+    pub(crate) reports: Vec<OrderStatusReport>,
+}
+
 #[derive(Clone, Debug)]
 struct PendingTerminalOrder {
     trade_ids: Vec<String>,
@@ -766,50 +851,28 @@ fn promote_modify_replacement_from_ws(
     buffered_fills: &mut Vec<BufferedFill>,
     buffered_reports: &mut Vec<OrderStatusReport>,
 ) -> Option<ClientOrderId> {
-    let promotion = state.claim_modify_replacement(venue_order_id)?;
-    let Some(mut context) = ctx.order_contexts.get(&promotion.old_venue_order_id) else {
-        log::error!(
-            "Cannot promote Polymarket replacement {venue_order_id}: old venue leg {} has no context",
-            promotion.old_venue_order_id,
-        );
-        return None;
-    };
-
-    context.quantity = promotion.quantity;
-    context.price = Some(promotion.price);
-    ctx.order_contexts.register_context(venue_order_id, context);
-    ctx.order_contexts.mark_accepted(venue_order_id);
-
-    let updated = OrderUpdated::new(
-        ctx.emitter.trader_id(),
-        context.identity.strategy_id,
-        context.identity.instrument_id,
-        promotion.client_order_id,
-        promotion.quantity,
-        UUID4::new(),
-        ts_event,
-        ctx.clock.get_time_ns(),
-        false,
-        Some(venue_order_id),
-        Some(ctx.account_id),
-        Some(promotion.price),
-        None,
-        None,
-        false,
-    );
-    ctx.emitter
-        .send_order_event(OrderEventAny::Updated(updated));
-
-    buffered_fills.extend(ctx.fill_tracker.register_and_take_pending_fills(
+    let activity = state.promote_modify_replacement(
         venue_order_id,
-        Some(promotion.client_order_id),
-        promotion.leg_quantity,
-        promotion.quantity.saturating_sub(promotion.leg_quantity),
-        promotion.prior_filled,
-        context.identity.order_side,
-    ));
-    buffered_reports.extend(ctx.fill_tracker.take_pending_reports(&venue_order_id));
-    Some(promotion.client_order_id)
+        ctx.order_contexts,
+        ctx.fill_tracker,
+        ctx.emitter,
+        ctx.clock,
+        |old_venue_order_id| {
+            let Some(context) = ctx.order_contexts.get(&old_venue_order_id) else {
+                log::error!(
+                    "Cannot promote Polymarket replacement {venue_order_id}: old venue leg {old_venue_order_id} has no context"
+                );
+                return None;
+            };
+
+            Some((context, ctx.account_id))
+        },
+        || ts_event,
+    )?;
+
+    buffered_fills.extend(activity.fills);
+    buffered_reports.extend(activity.reports);
+    Some(activity.client_order_id)
 }
 
 fn reject_modify_replacement(
@@ -5980,6 +6043,66 @@ mod tests {
             })
         );
         assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_modify_replacement_missing_context_consumes_claim_without_publication() {
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+        let client_order_id = ClientOrderId::from("O-MISSING-CONTEXT");
+        let old_id = VenueOrderId::from("V-MISSING-CONTEXT-OLD");
+        let new_id = VenueOrderId::from("V-MISSING-CONTEXT-NEW");
+        let mut state = WsDispatchState::default();
+        assert!(state.begin_modify(client_order_id, old_id, instrument_id));
+        assert!(state.set_modify_replacement(
+            client_order_id,
+            new_id,
+            Quantity::from("12.34"),
+            Quantity::from("9.87"),
+            Quantity::from("2.47"),
+            Price::from("0.6789"),
+        ));
+        let order_contexts = OrderContextRegistry::default();
+        let fill_tracker = OrderFillTrackerMap::new();
+        let clock = nautilus_core::time::get_atomic_clock_realtime();
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let activity = state.promote_modify_replacement(
+            new_id,
+            &order_contexts,
+            &fill_tracker,
+            &emitter,
+            clock,
+            |old_venue_order_id| {
+                assert_eq!(old_venue_order_id, old_id);
+                order_contexts
+                    .get(&old_venue_order_id)
+                    .map(|context| (context, emitter.account_id()))
+            },
+            || panic!("missing context must stop before resolving event time"),
+        );
+
+        let duplicate = state.promote_modify_replacement(
+            new_id,
+            &order_contexts,
+            &fill_tracker,
+            &emitter,
+            clock,
+            |_| panic!("a consumed claim must stop before resolving context"),
+            || panic!("a consumed claim must stop before resolving event time"),
+        );
+
+        assert!(activity.is_none());
+        assert!(duplicate.is_none());
+        assert!(!state.is_modifying(&client_order_id));
+        assert!(state.pending_modify_promotion(new_id).is_none());
+        assert!(state.suppress_modify_cancel(old_id));
+        assert_eq!(order_contexts.get(&new_id), None);
+        assert_eq!(order_contexts.venue_order_id(&client_order_id), None);
+        assert!(!fill_tracker.contains(&new_id));
+        assert!(receiver.try_recv().is_err());
+        assert!(order_contexts.mark_accepted(new_id));
     }
 
     #[rstest]
