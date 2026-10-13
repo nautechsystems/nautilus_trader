@@ -31,20 +31,20 @@ use nautilus_common::{
     msgbus::{
         MStr, ShareableMessageHandler, TypedHandler, subscribe_account_state, subscribe_any,
         subscribe_bars, subscribe_book_deltas, subscribe_book_depth as subscribe_book_depths,
-        subscribe_funding_rates, subscribe_index_prices, subscribe_instruments,
+        subscribe_funding_rates, subscribe_greeks, subscribe_index_prices, subscribe_instruments,
         subscribe_mark_prices, subscribe_option_greeks, subscribe_order_events,
         subscribe_position_events, subscribe_quotes, subscribe_trades, unsubscribe_account_state,
         unsubscribe_any, unsubscribe_bars, unsubscribe_book_deltas,
         unsubscribe_book_depth as unsubscribe_book_depths, unsubscribe_funding_rates,
-        unsubscribe_index_prices, unsubscribe_instruments, unsubscribe_mark_prices,
-        unsubscribe_option_greeks, unsubscribe_order_events, unsubscribe_position_events,
-        unsubscribe_quotes, unsubscribe_trades,
+        unsubscribe_greeks, unsubscribe_index_prices, unsubscribe_instruments,
+        unsubscribe_mark_prices, unsubscribe_option_greeks, unsubscribe_order_events,
+        unsubscribe_position_events, unsubscribe_quotes, unsubscribe_trades,
     },
 };
 use nautilus_model::{
     data::{
         Bar, CustomData, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks,
-        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick, greeks::GreeksData,
     },
     events::{AccountState, OrderEventAny, PositionEvent},
     instruments::{Instrument, InstrumentAny},
@@ -68,6 +68,7 @@ pub struct StreamingSinkSubscription {
     index_prices_handler: TypedHandler<IndexPriceUpdate>,
     funding_rates_handler: TypedHandler<FundingRateUpdate>,
     option_greeks_handler: TypedHandler<OptionGreeks>,
+    greeks_handler: TypedHandler<GreeksData>,
     instruments_handler: TypedHandler<InstrumentAny>,
     account_state_handler: TypedHandler<AccountState>,
     order_events_handler: TypedHandler<OrderEventAny>,
@@ -116,6 +117,8 @@ impl StreamingSinkSubscription {
         );
         let option_greeks_handler =
             typed_handler::<OptionGreeks>(Rc::clone(&sink), clock_bridge.clone(), name.clone());
+        let greeks_handler =
+            typed_handler::<GreeksData>(Rc::clone(&sink), clock_bridge.clone(), name.clone());
         let instruments_handler =
             typed_handler::<InstrumentAny>(Rc::clone(&sink), clock_bridge.clone(), name.clone());
         let account_state_handler =
@@ -140,6 +143,7 @@ impl StreamingSinkSubscription {
         subscribe_index_prices(pattern, index_prices_handler.clone(), None);
         subscribe_funding_rates(pattern, funding_rates_handler.clone(), None);
         subscribe_option_greeks(pattern, option_greeks_handler.clone(), None);
+        subscribe_greeks(pattern, greeks_handler.clone(), None);
         subscribe_instruments(pattern, instruments_handler.clone(), None);
         subscribe_account_state(pattern, account_state_handler.clone(), None);
         subscribe_order_events(order_events_pattern, order_events_handler.clone(), None);
@@ -158,6 +162,7 @@ impl StreamingSinkSubscription {
             index_prices_handler,
             funding_rates_handler,
             option_greeks_handler,
+            greeks_handler,
             instruments_handler,
             account_state_handler,
             order_events_handler,
@@ -200,6 +205,7 @@ impl StreamingSinkSubscription {
         unsubscribe_index_prices(pattern, &self.index_prices_handler);
         unsubscribe_funding_rates(pattern, &self.funding_rates_handler);
         unsubscribe_option_greeks(pattern, &self.option_greeks_handler);
+        unsubscribe_greeks(pattern, &self.greeks_handler);
         unsubscribe_instruments(pattern, &self.instruments_handler);
         unsubscribe_account_state(pattern, &self.account_state_handler);
         unsubscribe_order_events(order_events_pattern, &self.order_events_handler);

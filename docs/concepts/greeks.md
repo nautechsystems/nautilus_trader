@@ -353,6 +353,24 @@ The Python API does not expose the Rust `YieldCurveData` type. Pass `flat_intere
 from the defaults. Rust callers can use `YieldCurveData` for interpolated interest rate or dividend
 yield curves.
 
+### Recording calculated values
+
+`GreeksData`, `PortfolioGreeks`, and `YieldCurveData` support native Arrow recording under their
+matching `NautilusRecordType` selectors. Rust streaming writers accept these records directly.
+A subscribed writer also captures the Rust calculator's typed `GreeksData` publications.
+
+In Python, `StreamingFeatherWriter.write()` accepts `GreeksData` and `PortfolioGreeks`.
+Use `nautilus_trader.serialization.pyobjects_to_arrow_record_batch_bytes()` to encode these objects, then
+`ParquetDataCatalog.write_record_arrow_bytes()` with the matching record selector to store them.
+
+Python does not expose a `YieldCurveData` class. Before the first yield-curve write, call
+`query_record_arrow_bytes(NautilusRecordType.YieldCurveData)` to obtain an empty Arrow stream with
+the native schema. Its columns are `ts_init`, `ts_event`, `curve_name`, `tenors`, and `interest_rates`.
+
+Read recorded values with `query_record_arrow_bytes()` or `query_record_arrow_stream()`.
+These queries return Arrow data. Calculated records do not participate in `OptionGreeks`
+market-data replay or populate the calculator's caches.
+
 ## Choosing between the two paths
 
 | Criterion             | Venue-provided (`OptionGreeks`)                       | Local calculator (`GreeksCalculator`)             |

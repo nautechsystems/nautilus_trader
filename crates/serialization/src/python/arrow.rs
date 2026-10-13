@@ -25,7 +25,9 @@ use nautilus_core::python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OptionGreeks,
-        OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
+        OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
+        close::InstrumentClose,
+        greeks::{GreeksData, PortfolioGreeks},
     },
     python::data::{
         pyobjects_to_bars, pyobjects_to_book_deltas, pyobjects_to_index_prices,
@@ -40,12 +42,13 @@ use pyo3::{
 };
 
 use crate::arrow::{
-    ArrowSchemaProvider, DecodeFromRecordBatch, DecodeTypedFromRecordBatch,
+    ArrowSchemaProvider, DecodeFromRecordBatch, DecodeTypedFromRecordBatch, EncodeToRecordBatch,
     bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
-    book_depths_to_arrow_record_batch_bytes, index_prices_to_arrow_record_batch_bytes,
-    instrument_closes_to_arrow_record_batch_bytes, instrument_status_to_arrow_record_batch_bytes,
-    mark_prices_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
-    quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
+    book_depths_to_arrow_record_batch_bytes, encode_batch_with_metadata,
+    index_prices_to_arrow_record_batch_bytes, instrument_closes_to_arrow_record_batch_bytes,
+    instrument_status_to_arrow_record_batch_bytes, mark_prices_to_arrow_record_batch_bytes,
+    option_greeks_to_arrow_record_batch_bytes, quotes_to_arrow_record_batch_bytes,
+    trades_to_arrow_record_batch_bytes,
 };
 
 /// Transforms the given record `batch` into Python `bytes`.
@@ -123,6 +126,8 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
         stringify!(InstrumentStatus) => InstrumentStatus::get_schema_map(),
         stringify!(OptionGreeks) => OptionGreeks::get_schema_map(),
         stringify!(InstrumentClose) => InstrumentClose::get_schema_map(),
+        stringify!(GreeksData) => GreeksData::get_schema_map(),
+        stringify!(PortfolioGreeks) => PortfolioGreeks::get_schema_map(),
         _ => {
             return Err(to_pytype_err(format!(
                 "Arrow schema for `{cls_str}` is not currently implemented in Rust."
@@ -154,6 +159,8 @@ pub fn get_arrow_schema_bytes(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResu
         stringify!(InstrumentStatus) => InstrumentStatus::get_schema(None),
         stringify!(OptionGreeks) => OptionGreeks::get_schema(None),
         stringify!(InstrumentClose) => InstrumentClose::get_schema(None),
+        stringify!(GreeksData) => GreeksData::get_schema(None),
+        stringify!(PortfolioGreeks) => PortfolioGreeks::get_schema(None),
         _ => {
             return Err(to_pytype_err(format!(
                 "Arrow schema for `{cls_str}` is not currently implemented in Rust."
@@ -164,7 +171,15 @@ pub fn get_arrow_schema_bytes(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResu
     arrow_record_batches_to_pybytes(py, &schema, &[])
 }
 
-/// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.
+/// Encodes supported Nautilus data or record objects as an Arrow IPC stream.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty.
+/// - `data` contains unsupported or incompatible objects.
+/// - `GreeksData` records have different instrument IDs.
+/// - Arrow encoding or IPC serialization fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::missing_panics_doc)] // Guarded by empty check
@@ -227,10 +242,29 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
             let closes = pyobjects_to_instrument_closes(data)?;
             py_instrument_closes_to_arrow_record_batch_bytes(py, closes)
         }
+        stringify!(GreeksData) => encode_py_records::<GreeksData>(py, data),
+        stringify!(PortfolioGreeks) => encode_py_records::<PortfolioGreeks>(py, data),
         _ => Err(to_pyvalue_err(format!(
             "unsupported data type: {data_type}"
         ))),
     }
+}
+
+fn encode_py_records<T>(py: Python<'_>, data: Vec<Bound<'_, PyAny>>) -> PyResult<Py<PyBytes>>
+where
+    T: EncodeToRecordBatch + pyo3::PyClass + Clone,
+{
+    let values = data
+        .into_iter()
+        .map(|obj| {
+            obj.extract::<PyRef<'_, T>>()
+                .map(|value| (*value).clone())
+                .map_err(PyErr::from)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let batch = encode_batch_with_metadata(&values).map_err(to_pyvalue_err)?;
+    arrow_record_batch_to_pybytes(py, &batch)
 }
 
 /// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.

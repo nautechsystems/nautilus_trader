@@ -33,6 +33,7 @@ from nautilus_trader.model import CurrencyPair
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import FundingRateUpdate
+from nautilus_trader.model import GreeksData
 from nautilus_trader.model import InstrumentClose
 from nautilus_trader.model import InstrumentCloseType
 from nautilus_trader.model import InstrumentId
@@ -49,6 +50,9 @@ from nautilus_trader.persistence import RustTestCustomData
 from nautilus_trader.persistence import RustTestPriceMapCustomData
 from nautilus_trader.persistence import StreamingFeatherWriter
 from nautilus_trader.persistence.catalog_to_df import ArrowCStream
+from nautilus_trader.serialization import get_arrow_schema_bytes
+from nautilus_trader.serialization import get_arrow_schema_map
+from nautilus_trader.serialization import pyobjects_to_arrow_record_batch_bytes
 
 
 def _catalog(tmp_path: Path, backend: str) -> Any:
@@ -659,3 +663,103 @@ def test_parquet_catalog_files_are_open_to_external_arrow_and_json_readers(
 
     assert quote_table.column("ts_init").cast(pa.int64())[0].as_py() == timestamp
     assert custom_table.column("ts_init").cast(pa.int64())[0].as_py() == timestamp + 1
+
+
+@pytest.mark.parametrize("portfolio", [False, True])
+def test_calculated_greeks_native_record_round_trip(tmp_path: Path, portfolio: bool) -> None:
+    """
+    Preserve Python Greeks objects through native Feather and catalog recording.
+    """
+    greeks = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11)
+    value = greeks.to_portfolio_greeks() if portfolio else greeks
+    name = type(value).__name__
+    selector = getattr(NautilusRecordType, name)
+    encoded = pyobjects_to_arrow_record_batch_bytes([value])
+    table = _read_arrow_bytes(encoded)
+    schema = pa.ipc.open_stream(pa.py_buffer(get_arrow_schema_bytes(type(value)))).schema
+    expected = {field: getattr(value, field) for field in table.column_names}
+    if not portfolio:
+        expected["instrument_id"] = str(value.instrument_id)
+    scalar_table = table.cast(
+        pa.schema(
+            [
+                pa.field(
+                    field.name,
+                    pa.int64() if field.name in {"ts_event", "ts_init"} else field.type,
+                )
+                for field in table.schema
+            ],
+        ),
+    )
+
+    assert table.schema == schema
+    assert set(get_arrow_schema_map(type(value))) == set(table.column_names)
+    assert scalar_table.to_pylist() == [expected]
+    assert selector == NautilusRecordType(name)
+
+    staging = tmp_path / "staging"
+    writer = StreamingFeatherWriter(path=str(staging), cache=Cache(), clock=Clock.new_test())
+    writer.write(value)
+    writer.close()
+    [feather_path] = staging.rglob("*.feather")
+    staged = _read_arrow_bytes(feather_path.read_bytes())
+    assert staged.select(table.column_names).to_pylist() == table.to_pylist()
+
+    catalog = _catalog(tmp_path, "parquet")
+    catalog.write_record_arrow_bytes(selector, encoded)
+    actual = _read_arrow_bytes(catalog.query_record_arrow_bytes(selector, display=False))
+    assert actual.to_pylist() == table.to_pylist()
+
+
+def test_yield_curve_native_record_round_trip(tmp_path: Path) -> None:
+    """
+    Preserve native yield curves through the Python catalog Arrow interface.
+    """
+    catalog = _catalog(tmp_path, "parquet")
+    selector = NautilusRecordType.YieldCurveData
+    empty = _read_arrow_bytes(catalog.query_record_arrow_bytes(selector, display=False))
+    row = {
+        "ts_init": 29,
+        "ts_event": 23,
+        "curve_name": "USD-SOFR",
+        "tenors": [0.25, 1.0, 5.0],
+        "interest_rates": [0.043, 0.041, 0.038],
+    }
+    batch = pa.RecordBatch.from_pylist([row], schema=empty.schema)
+    catalog.write_record_arrow_bytes(selector, _record_batch_bytes(batch))
+    actual = _read_arrow_bytes(catalog.query_record_arrow_bytes(selector, display=False))
+
+    assert empty.num_rows == 0
+    assert actual.to_pylist() == pa.Table.from_batches([batch]).to_pylist()
+    assert selector == NautilusRecordType("yield_curve_data")
+
+
+def test_calculated_greeks_reject_mixed_object_types() -> None:
+    """
+    Reject a portfolio result inside an instrument Greeks batch.
+    """
+    greeks = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11)
+
+    with pytest.raises(TypeError, match="GreeksData"):
+        pyobjects_to_arrow_record_batch_bytes([greeks, greeks.to_portfolio_greeks()])
+
+
+def test_calculated_greeks_reject_mixed_instruments() -> None:
+    """
+    Reject instrument Greeks that cannot share one batch's metadata.
+    """
+    first = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11)
+    second = GreeksData.from_delta(InstrumentId.from_str("NQ.GLBX"), -0.75, 7.0, 13)
+
+    with pytest.raises(ValueError, match="Mixed metadata at row 1"):
+        pyobjects_to_arrow_record_batch_bytes([first, second])
+
+
+def test_calculated_greeks_reject_timestamp_overflow() -> None:
+    """
+    Reject timestamps outside Arrow's signed nanosecond range.
+    """
+    greeks = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 1 << 63)
+
+    with pytest.raises(ValueError, match="exceeds Arrow's signed timestamp range"):
+        pyobjects_to_arrow_record_batch_bytes([greeks])
