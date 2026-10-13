@@ -899,24 +899,23 @@ mod tests {
         assert_eq!(report.order_side, None);
     }
 
-    /// A report's price is the order's limit alone, never a fill price: a trade frame, which
-    /// carries no limit, states no price, as does a market order's; Kraken's executions example
-    /// fills a sell limit at 26500.0 for an average of 26599.9.
+    /// A report's price is the order's limit alone, never a fill price. Kraken's executions
+    /// example places a sell limit at 26500.0, then fills part of it at 26599.9 in a trade frame,
+    /// which carries no limit and so states no price.
     #[rstest]
-    #[case::trade_frame_without_the_limit(KrakenOrderType::Limit, None, None)]
-    #[case::frame_with_the_limit(KrakenOrderType::Limit, Some(dec!(26500.0)), Some("26500.0"))]
-    #[case::market_order(KrakenOrderType::Market, None, None)]
+    #[case::pending_new_frame("ws_executions_pending_new_doc_example.json", Some("26500.0"), None)]
+    #[case::trade_frame(
+        "ws_executions_trade_doc_example.json",
+        None,
+        Some(dec!(26599.9))
+    )]
     fn test_parse_ws_order_status_report_prices_the_order_at_its_limit(
-        #[case] order_type: KrakenOrderType,
-        #[case] limit_price: Option<Decimal>,
+        #[case] filename: &str,
         #[case] expected_price: Option<&str>,
+        #[case] expected_avg_px: Option<Decimal>,
     ) {
-        let mut execution = ws_execution_data(Some(KrakenOrderSide::Sell));
-        execution.exec_type = KrakenExecType::Trade;
-        execution.order_type = Some(order_type);
-        execution.limit_price = limit_price;
-        execution.avg_price = Some(dec!(26599.9));
-        execution.last_price = Some(dec!(26599.9));
+        let message: KrakenWsRawMessage = serde_json::from_str(&load_test_json(filename)).unwrap();
+        let execution: KrakenWsExecutionData = serde_json::from_str(message.data[0].get()).unwrap();
 
         let report = parse_ws_order_status_report(
             &execution,
@@ -928,7 +927,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.price, expected_price.map(Price::from));
-        assert_eq!(report.avg_px, Some(dec!(26599.9)));
+        assert_eq!(report.avg_px, expected_avg_px);
     }
 
     #[rstest]

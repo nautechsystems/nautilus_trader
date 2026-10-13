@@ -784,17 +784,11 @@ pub fn parse_order_status_report(
         |value: &str, field: &str| parse_spot_order_price(order_id, value, price_precision, field);
     let price = match order.descr.ordertype {
         KrakenOrderType::Limit => row_price(&order.descr.price, "descr.price")?,
-        KrakenOrderType::StopLossLimit | KrakenOrderType::TakeProfitLimit => {
-            row_price(&order.descr.price2, "descr.price2")?
-        }
-        // AddOrder takes a trailing-stop-limit's limit as an offset from its trigger, so only the
-        // limit the order carries once triggered is a price
-        KrakenOrderType::TrailingStopLimit => order
-            .limitprice
-            .as_deref()
-            .map(|value| row_price(value, "limitprice"))
-            .transpose()?
-            .flatten(),
+        // A trailing-stop-limit's `descr.price2` holds the offset AddOrder took until the order
+        // triggers and the limit after, while its `limitprice` holds the peak price in both states
+        KrakenOrderType::StopLossLimit
+        | KrakenOrderType::TakeProfitLimit
+        | KrakenOrderType::TrailingStopLimit => row_price(&order.descr.price2, "descr.price2")?,
         KrakenOrderType::Market
         | KrakenOrderType::SettlePosition
         | KrakenOrderType::StopLoss
@@ -1499,7 +1493,6 @@ mod tests {
         instruments::crypto_perpetual::CryptoPerpetual,
     };
     use rstest::rstest;
-    use serde_json::json;
 
     use super::*;
     use crate::{
@@ -1509,7 +1502,9 @@ mod tests {
         },
         http::{
             futures::models::{FuturesFillsResponse, FuturesOpenOrder, FuturesOrderEvent},
-            models::{AssetPairsResponse, KrakenResponse},
+            models::{
+                AssetPairsResponse, KrakenResponse, SpotClosedOrdersResult, SpotOpenOrdersResult,
+            },
         },
     };
 
@@ -1993,127 +1988,106 @@ mod tests {
     }
 
     /// A spot report carries the order's own prices, never the row's top-level `price`, which is
-    /// the average fill price and reads `0.00000` on an unfilled order. The limit comes from
-    /// `descr.price` for a limit order, `descr.price2` for a stop-loss-limit or take-profit-limit
-    /// order and `limitprice` for a triggered trailing-stop-limit order; a market,
-    /// settle-position, stop-loss, take-profit, trailing-stop or untriggered trailing-stop-limit
-    /// order carries none. The trigger comes from `stopprice`, or, for a non-trailing conditional
-    /// order with none, from `descr.price`, which never stands in for a trailing order's. An
-    /// empty, zero or relative price reads as none. The base row is a live OpenOrders capture of
-    /// an unfilled limit buy at 20000.00.
+    /// the average fill price. The limit comes from `descr.price` for a limit order and from
+    /// `descr.price2` for a stop-loss-limit, take-profit-limit or trailing-stop-limit order, where
+    /// a trailing-stop-limit's offset before the trigger reads as none and its `limitprice`, the
+    /// peak price, never stands in. The trigger comes from `stopprice`, which a non-trailing order
+    /// fills only once triggered, so `descr.price` stands in before. Each row is a Kraken response
+    /// listed in `test_data/README.md`.
     #[rstest]
-    #[case::unfilled_limit(json!({}), Some("20000.00"), None, None)]
-    #[case::limit_filled_below_its_limit(
-        json!({"status": "closed", "price": "19990.00", "vol_exec": "0.00010000", "cost": "1.99900"}),
-        Some("20000.00"),
-        None,
-        Some(dec!(19990))
+    #[case::untriggered_open_orders(
+        "http_open_orders_conditional.json",
+        usdc_eur_instrument(),
+        &[
+            ("OCAP01-STOPL-000001", None, Some("1.3403"), None),
+            ("OCAP02-STOPL-000002", None, Some("1.3402"), None),
+            ("OCAP03-TAKEP-000003", None, Some("0.4467"), None),
+            ("OCAP04-STLMT-000004", Some("1.3403"), Some("1.3403"), None),
+            ("OCAP05-TPLMT-000005", Some("0.4467"), Some("0.4467"), None),
+            ("OCAP06-TRAIL-000006", None, Some("1.3402"), None),
+            ("OCAP07-TRLMT-000007", None, Some("1.3402"), None),
+            ("OCAP08-LIMIT-000008", Some("0.4467"), None, None),
+        ]
     )]
-    #[case::filled_market(
-        json!({"descr": {"ordertype": "market", "price": "0"}, "status": "closed", "price": "30000.00", "vol_exec": "0.00010000", "cost": "3.00000"}),
-        None,
-        None,
-        Some(dec!(30000))
+    #[case::untriggered_canceled_orders_one_amended(
+        "http_closed_orders_conditional_canceled.json",
+        usdc_eur_instrument(),
+        &[
+            ("OCAP01-STOPL-000001", None, Some("1.4296"), None),
+            ("OCAP02-STOPL-000002", None, Some("1.3402"), None),
+            ("OCAP03-TAKEP-000003", None, Some("0.4467"), None),
+            ("OCAP04-STLMT-000004", Some("1.3403"), Some("1.3403"), None),
+            ("OCAP05-TPLMT-000005", Some("0.4467"), Some("0.4467"), None),
+            ("OCAP06-TRAIL-000006", None, Some("1.3401"), None),
+            ("OCAP07-TRLMT-000007", None, Some("1.3401"), None),
+            ("OCAP08-LIMIT-000008", Some("0.4467"), None, None),
+        ]
     )]
-    #[case::settled_position(
-        json!({"descr": {"ordertype": "settle-position", "price": "0"}, "status": "closed", "price": "30000.00", "vol_exec": "0.00010000", "cost": "3.00000"}),
-        None,
-        None,
-        Some(dec!(30000))
+    #[case::canceled_orders_three_triggered(
+        "http_closed_orders_conditional_triggered.json",
+        usdc_eur_instrument(),
+        &[
+            ("OCAP09-STLMT-000009", Some("0.4464"), Some("1.3394"), None),
+            ("OCAP10-TPLMT-000010", Some("0.4455"), Some("0.4465"), None),
+            ("OCAP11-STLMT-000011", Some("0.4464"), Some("0.8929"), None),
+            ("OCAP12-TPLMT-000012", Some("0.4464"), Some("0.8929"), None),
+            ("OCAP13-TRLMT-000013", Some("0.4465"), Some("0.8930"), None),
+        ]
     )]
-    #[case::stop_loss(
-        json!({"descr": {"ordertype": "stop-loss", "price": "19000.00"}}),
-        None,
-        Some("19000.00"),
-        None
+    #[case::documented_open_limit_orders(
+        "http_open_orders_doc_example.json",
+        xbt_usd_instrument(),
+        &[
+            ("OQCLML-BW3P3-BUCMWZ", Some("30010.0"), None, Some(dec!(11253.7) / dec!(0.375))),
+            ("OB5VMB-B4U2U-DK2WRW", Some("14500.0"), None, None),
+        ]
     )]
-    #[case::take_profit(
-        json!({"descr": {"ordertype": "take-profit", "price": "21000.00"}}),
-        None,
-        Some("21000.00"),
-        None
+    #[case::documented_filled_market_order(
+        "http_query_orders_doc_example.json",
+        xbt_usd_instrument(),
+        &[("OMMDB2-FSB6Z-7W3HPO", None, None, Some(dec!(30000)))]
     )]
-    #[case::stop_loss_limit(
-        json!({"descr": {"ordertype": "stop-loss-limit", "price": "19000.00", "price2": "18990.00"}}),
-        Some("18990.00"),
-        Some("19000.00"),
-        None
-    )]
-    #[case::take_profit_limit(
-        json!({"descr": {"ordertype": "take-profit-limit", "price": "21000.00", "price2": "21010.00"}}),
-        Some("21010.00"),
-        Some("21000.00"),
-        None
-    )]
-    #[case::take_profit_limit_with_its_stop_price(
-        json!({"descr": {"ordertype": "take-profit-limit", "price": "21000.00", "price2": "21010.00"}, "stopprice": "21005.00"}),
-        Some("21010.00"),
-        Some("21005.00"),
-        None
-    )]
-    #[case::trailing_stop(
-        json!({"descr": {"ordertype": "trailing-stop", "price": "+50.00"}, "stopprice": "19950.00"}),
-        None,
-        Some("19950.00"),
-        None
-    )]
-    #[case::trailing_stop_without_its_stop_price(
-        json!({"descr": {"ordertype": "trailing-stop", "price": "50.00"}}),
-        None,
-        None,
-        None
-    )]
-    #[case::untriggered_trailing_stop_limit(
-        json!({"descr": {"ordertype": "trailing-stop-limit", "price": "+50.00", "price2": "+0"}}),
-        None,
-        None,
-        None
-    )]
-    #[case::triggered_trailing_stop_limit(
-        json!({"descr": {"ordertype": "trailing-stop-limit", "price": "+50.00", "price2": "-10.00"}, "stopprice": "19960.00", "limitprice": "19950.00"}),
-        Some("19950.00"),
-        Some("19960.00"),
-        None
-    )]
-    #[case::limit_above_the_market(json!({"descr": {"price": "+1.5"}}), None, None, None)]
-    #[case::limit_below_the_market(json!({"descr": {"price": "-1.5"}}), None, None, None)]
-    #[case::limit_off_the_market(json!({"descr": {"price": "#1.5"}}), None, None, None)]
-    #[case::limit_as_a_percentage(json!({"descr": {"price": "1.5%"}}), None, None, None)]
-    #[case::empty_stop_price(json!({"stopprice": ""}), Some("20000.00"), None, None)]
     fn test_parse_order_status_report_prices_the_order_from_its_own_fields(
-        #[case] overrides: serde_json::Value,
-        #[case] expected_price: Option<&str>,
-        #[case] expected_trigger_price: Option<&str>,
-        #[case] expected_avg_px: Option<Decimal>,
+        #[case] filename: &str,
+        #[case] instrument: InstrumentAny,
+        #[case] expected: &[(&str, Option<&str>, Option<&str>, Option<Decimal>)],
     ) {
-        let (order_id, order) = live_spot_order_row(overrides);
+        let rows = spot_order_rows(filename);
 
-        let report = parse_order_status_report(
-            &order_id,
-            &order,
-            &spot_usdt_instrument(),
-            AccountId::new("KRAKEN-001"),
-            TS,
-        )
-        .unwrap();
+        for &(order_id, expected_price, expected_trigger_price, expected_avg_px) in expected {
+            let report = parse_order_status_report(
+                order_id,
+                &rows[order_id],
+                &instrument,
+                AccountId::new("KRAKEN-001"),
+                TS,
+            )
+            .unwrap();
 
-        assert_eq!(report.price, expected_price.map(Price::from));
-        assert_eq!(
-            report.trigger_price,
-            expected_trigger_price.map(Price::from)
-        );
-        assert_eq!(report.avg_px, expected_avg_px);
+            assert_eq!(report.price, expected_price.map(Price::from), "{order_id}");
+            assert_eq!(
+                report.trigger_price,
+                expected_trigger_price.map(Price::from),
+                "{order_id}"
+            );
+            assert_eq!(report.avg_px, expected_avg_px, "{order_id}");
+        }
     }
 
-    /// A description price that is neither a price nor a relative expression fails the row.
+    /// A description price that is neither a price nor a relative expression fails the row. The
+    /// input is synthetic: a captured limit row with its `descr.price` replaced.
     #[rstest]
     fn test_parse_order_status_report_fails_on_a_malformed_order_price() {
-        let (order_id, order) = live_spot_order_row(json!({"descr": {"price": "abc"}}));
+        let order_id = "OCAP08-LIMIT-000008";
+        let mut order = spot_order_rows("http_open_orders_conditional.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.descr.price = "abc".to_string();
 
         let result = parse_order_status_report(
-            &order_id,
+            order_id,
             &order,
-            &spot_usdt_instrument(),
+            &usdc_eur_instrument(),
             AccountId::new("KRAKEN-001"),
             TS,
         );
@@ -2121,41 +2095,74 @@ mod tests {
         assert!(result.is_err(), "{result:?}");
     }
 
-    /// The live OpenOrders row in `http_open_orders_live_limit.json`, with `overrides` merged in.
-    fn live_spot_order_row(overrides: serde_json::Value) -> (String, SpotOrder) {
-        fn merge(target: &mut serde_json::Value, overrides: serde_json::Value) {
-            match (target, overrides) {
-                (serde_json::Value::Object(target), serde_json::Value::Object(overrides)) => {
-                    for (key, value) in overrides {
-                        merge(target.entry(key).or_insert(serde_json::Value::Null), value);
-                    }
-                }
-                (target, value) => *target = value,
-            }
-        }
-
-        let response: serde_json::Value =
-            serde_json::from_str(&load_test_json("http_open_orders_live_limit.json")).unwrap();
-        let (order_id, row) = response["result"]["open"]
-            .as_object()
-            .and_then(|rows| rows.iter().next())
-            .map(|(order_id, row)| (order_id.clone(), row.clone()))
+    /// An empty price field reads as none rather than failing the row. The input is synthetic: a
+    /// captured stop-loss row with its `stopprice` emptied, so `descr.price` stands in.
+    #[rstest]
+    fn test_parse_order_status_report_reads_an_empty_stop_price_as_none() {
+        let order_id = "OCAP02-STOPL-000002";
+        let mut order = spot_order_rows("http_open_orders_conditional.json")
+            .swap_remove(order_id)
             .unwrap();
-        let mut row = row;
-        merge(&mut row, overrides);
-        (order_id, serde_json::from_value(row).unwrap())
+        order.stopprice = Some(String::new());
+
+        let report = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.trigger_price, Some(Price::from("1.3402")));
     }
 
-    fn spot_usdt_instrument() -> InstrumentAny {
+    /// The rows of a spot OpenOrders, ClosedOrders or QueryOrders response in `test_data`.
+    fn spot_order_rows(filename: &str) -> IndexMap<String, SpotOrder> {
+        let json = load_test_json(filename);
+        if filename.starts_with("http_open_orders") {
+            let response: KrakenResponse<SpotOpenOrdersResult> =
+                serde_json::from_str(&json).unwrap();
+            response.result.unwrap().open
+        } else if filename.starts_with("http_closed_orders") {
+            let response: KrakenResponse<SpotClosedOrdersResult> =
+                serde_json::from_str(&json).unwrap();
+            response.result.unwrap().closed
+        } else {
+            let response: KrakenResponse<IndexMap<String, SpotOrder>> =
+                serde_json::from_str(&json).unwrap();
+            response.result.unwrap()
+        }
+    }
+
+    fn usdc_eur_instrument() -> InstrumentAny {
         InstrumentAny::CurrencyPair(
             CurrencyPair::builder()
-                .instrument_id(InstrumentId::new(Symbol::new("BTC/USDT"), *KRAKEN_VENUE))
-                .raw_symbol(Symbol::new("XBTUSDT"))
-                .base_currency(Currency::BTC())
-                .quote_currency(Currency::USDT())
-                .price_precision(2)
+                .instrument_id(InstrumentId::new(Symbol::new("USDC/EUR"), *KRAKEN_VENUE))
+                .raw_symbol(Symbol::new("USDCEUR"))
+                .base_currency(Currency::USDC())
+                .quote_currency(Currency::EUR())
+                .price_precision(4)
                 .size_precision(8)
-                .price_increment(Price::from("0.01"))
+                .price_increment(Price::from("0.0001"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn xbt_usd_instrument() -> InstrumentAny {
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::new(Symbol::new("BTC/USD"), *KRAKEN_VENUE))
+                .raw_symbol(Symbol::new("XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
                 .size_increment(Quantity::from("0.00000001"))
                 .ts_event(TS)
                 .ts_init(TS)
