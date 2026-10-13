@@ -784,16 +784,23 @@ pub fn parse_order_status_report(
         |value: &str, field: &str| parse_spot_order_price(order_id, value, price_precision, field);
     let price = match order.descr.ordertype {
         KrakenOrderType::Limit => row_price(&order.descr.price, "descr.price")?,
-        // A trailing-stop-limit's `descr.price2` holds the offset AddOrder took until the order
-        // triggers and the limit after, while its `limitprice` holds the peak price in both states
-        KrakenOrderType::StopLossLimit
-        | KrakenOrderType::TakeProfitLimit
-        | KrakenOrderType::TrailingStopLimit => row_price(&order.descr.price2, "descr.price2")?,
+        KrakenOrderType::StopLossLimit | KrakenOrderType::TakeProfitLimit => {
+            row_price(&order.descr.price2, "descr.price2")?
+        }
+        // A trailing-stop-limit's `descr.price2` holds the offset AddOrder took until `misc` marks
+        // the order `stopped` and the limit after, while its `limitprice` holds the peak price in
+        // both states
+        KrakenOrderType::TrailingStopLimit
+            if order.misc.split(',').any(|info| info == "stopped") =>
+        {
+            row_price(&order.descr.price2, "descr.price2")?
+        }
         KrakenOrderType::Market
         | KrakenOrderType::SettlePosition
         | KrakenOrderType::StopLoss
         | KrakenOrderType::TakeProfit
-        | KrakenOrderType::TrailingStop => None,
+        | KrakenOrderType::TrailingStop
+        | KrakenOrderType::TrailingStopLimit => None,
     };
 
     let stop_price = order
@@ -1987,13 +1994,16 @@ mod tests {
         assert_eq!(report.quantity, Quantity::from("0.50000000"));
     }
 
+    /// An order ID with the price, trigger price and average fill price its report carries.
+    type ExpectedPrices<'a> = (&'a str, Option<&'a str>, Option<&'a str>, Option<Decimal>);
+
     /// A spot report carries the order's own prices, never the row's top-level `price`, which is
     /// the average fill price. The limit comes from `descr.price` for a limit order and from
-    /// `descr.price2` for a stop-loss-limit, take-profit-limit or trailing-stop-limit order, where
-    /// a trailing-stop-limit's offset before the trigger reads as none and its `limitprice`, the
-    /// peak price, never stands in. The trigger comes from `stopprice`, which a non-trailing order
-    /// fills only once triggered, so `descr.price` stands in before. Each row is a Kraken response
-    /// listed in `test_data/README.md`.
+    /// `descr.price2` for a stop-loss-limit or take-profit-limit order, or a trailing-stop-limit
+    /// order once `misc` marks it `stopped`; a trailing-stop-limit's `limitprice`, the peak price,
+    /// never stands in. The trigger comes from `stopprice`, which a non-trailing order fills only
+    /// once triggered, so `descr.price` stands in before. Each row is a Kraken response listed in
+    /// `test_data/README.md`.
     #[rstest]
     #[case::untriggered_open_orders(
         "http_open_orders_conditional.json",
@@ -2050,7 +2060,7 @@ mod tests {
     fn test_parse_order_status_report_prices_the_order_from_its_own_fields(
         #[case] filename: &str,
         #[case] instrument: InstrumentAny,
-        #[case] expected: &[(&str, Option<&str>, Option<&str>, Option<Decimal>)],
+        #[case] expected: &[ExpectedPrices],
     ) {
         let rows = spot_order_rows(filename);
 
@@ -2095,15 +2105,20 @@ mod tests {
         assert!(result.is_err(), "{result:?}");
     }
 
-    /// An empty price field reads as none rather than failing the row. The input is synthetic: a
-    /// captured stop-loss row with its `stopprice` emptied, so `descr.price` stands in.
+    /// An empty price or a relative expression reads as none rather than failing the row. The
+    /// inputs are synthetic: a captured stop-loss row with its `stopprice` replaced, so
+    /// `descr.price` stands in.
     #[rstest]
-    fn test_parse_order_status_report_reads_an_empty_stop_price_as_none() {
+    #[case::empty("")]
+    #[case::relative("+1.5%")]
+    fn test_parse_order_status_report_reads_an_unpriced_stop_price_as_none(
+        #[case] stop_price: &str,
+    ) {
         let order_id = "OCAP02-STOPL-000002";
         let mut order = spot_order_rows("http_open_orders_conditional.json")
             .swap_remove(order_id)
             .unwrap();
-        order.stopprice = Some(String::new());
+        order.stopprice = Some(stop_price.to_string());
 
         let report = parse_order_status_report(
             order_id,
@@ -2114,6 +2129,30 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(report.trigger_price, Some(Price::from("1.3402")));
+    }
+
+    /// An untriggered trailing-stop-limit carries no price whatever its `descr.price2` holds, so an
+    /// unsigned offset, the form Nautilus submits, never reads as its limit. The input is
+    /// synthetic: a captured untriggered row with its offset written unsigned.
+    #[rstest]
+    fn test_parse_order_status_report_prices_no_untriggered_trailing_stop_limit() {
+        let order_id = "OCAP07-TRLMT-000007";
+        let mut order = spot_order_rows("http_open_orders_conditional.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.descr.price2 = "1.0000".to_string();
+
+        let report = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.price, None);
         assert_eq!(report.trigger_price, Some(Price::from("1.3402")));
     }
 

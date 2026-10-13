@@ -711,11 +711,12 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
 - A report carries the order's own prices, not the row's top-level `price`, which is the average
   fill price and reads zero on an unfilled order; the report's `avg_px` comes from `cost` and
   `vol_exec`. The limit comes from `descr.price` for a limit order and `descr.price2` for a
-  stop-loss-limit, take-profit-limit or trailing-stop-limit order. A trailing-stop-limit's
-  `limitprice` holds the peak price, not its limit. A market, settle-position, stop-loss,
-  take-profit or trailing-stop order carries no limit. The trigger comes from `stopprice`, which a
-  stop-loss, take-profit, stop-loss-limit or take-profit-limit order fills only once triggered, so
-  `descr.price`, as AddOrder takes it, stands in before. A zero or relative price reads as none.
+  stop-loss-limit or take-profit-limit order, or a trailing-stop-limit order once `misc` marks it
+  `stopped`. A trailing-stop-limit's `limitprice` holds the peak price, not its limit. A market,
+  settle-position, stop-loss, take-profit or trailing-stop order carries no limit. The trigger comes
+  from `stopprice`, which a stop-loss, take-profit, stop-loss-limit or take-profit-limit order fills
+  only once triggered, so `descr.price`, as AddOrder takes it, stands in before. A zero or relative
+  price reads as none.
 - An untriggered trailing-stop-limit order has no absolute limit, so its report carries no price,
   and an order the cache does not hold cannot be rebuilt from it until it triggers.
 - An executions frame states the order's price only when it carries `limit_price`, never at a

@@ -5,9 +5,10 @@
 `http_open_orders_conditional.json`, `http_closed_orders_conditional_canceled.json` and
 `http_closed_orders_conditional_triggered.json` are OpenOrders and ClosedOrders responses Kraken
 returned on 2026-10-13 for 5 USDC buy orders on USDC/EUR, placed on a live account and canceled
-there. Each limit sat at half the market price or less, so no order could fill. The order IDs are
-replaced with IDs of the same form (`OCAP01-STOPL-000001` onward); every other value is as Kraken
-returned it, with two-space indentation.
+there. No order could fill: the untriggered orders had triggers 50% from the market and the limit
+order a limit at half of it, and the orders meant to trigger had limits at half the market or less.
+The order IDs are replaced with IDs of the same form (`OCAP01-STOPL-000001` onward); every other
+value is as Kraken returned it, with two-space indentation.
 
 - `http_open_orders_conditional.json` holds eight untriggered orders: two stop-losses, one placed
   at `+50%`, a take-profit, a stop-loss-limit, a take-profit-limit, a trailing-stop at `+50%`, a
@@ -30,8 +31,9 @@ endpoints and received equal rows. The query example's stop-loss-limit row `OBCM
 describes its order as `@ limit 27500.0` with `price2` `0`, a form neither capture returned for a
 canceled or triggered stop-loss-limit, so no test asserts it.
 
-Two negative tests change one field of a captured row, a malformed `descr.price` and an empty
-`stopprice`. Those variants are not venue responses.
+Three robustness tests change one field of a captured row: a malformed `descr.price`, an empty or
+relative `stopprice`, and an untriggered trailing-stop-limit's offset written unsigned. Those
+variants are not venue responses.
 
 ## Spot executions frames
 
