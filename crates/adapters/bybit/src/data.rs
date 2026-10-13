@@ -748,8 +748,14 @@ fn handle_ws_message(
             if sub_set.is_some_and(|s| s.contains("quotes")) {
                 match parse_ticker_option_quote(msg, instrument, ts_init) {
                     Ok(quote) => {
+                        // Compare prices and sizes only; timestamps always differ between messages
                         let last = quote_cache.get(&instrument_id);
-                        if last.is_none_or(|q| *q != quote) {
+                        if last.is_none_or(|q| {
+                            q.bid_price != quote.bid_price
+                                || q.ask_price != quote.ask_price
+                                || q.bid_size != quote.bid_size
+                                || q.ask_size != quote.ask_size
+                        }) {
                             quote_cache.insert(instrument_id, quote);
                             send_data(data_sender, Data::Quote(quote));
                         }
@@ -3740,6 +3746,96 @@ mod tests {
 
         let event = rx.try_recv().unwrap();
         assert!(matches!(event, DataEvent::OptionGreeks(_)));
+    }
+
+    #[rstest]
+    fn test_handle_ticker_option_quote_dedup() {
+        // Key the option instrument by the fixture ticker symbol with OPTION suffix
+        let instrument = option_instrument();
+        let instrument_id = instrument.id();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC-6JAN23-17500-C-OPTION"), instrument.clone());
+
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
+            empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
+
+        let mut subs = AHashSet::new();
+        subs.insert("quotes");
+        ticker_subs.insert(instrument_id, subs);
+
+        let mut quote_cache = QuoteCache::new();
+        let mut funding_cache = AHashMap::new();
+        let ts1 = UnixNanos::new(1_672_917_511_100_000_000);
+        let ts2 = UnixNanos::new(1_672_917_511_200_000_000);
+        let ts3 = UnixNanos::new(1_672_917_511_300_000_000);
+        let clock = AtomicTime::new(false, ts1);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let json = load_test_json("ws_ticker_option.json");
+        let msg: BybitWsTickerOptionMsg = serde_json::from_str(&json).unwrap();
+
+        // The second ticker repeats the top of book, the third has a new ask price
+        let mut unchanged = msg.clone();
+        unchanged.ts += 100;
+        let mut changed = msg.clone();
+        changed.ts += 200;
+        changed.data.ask_price = "11".to_string();
+
+        for (ts_init, msg) in [(ts1, msg), (ts2, unchanged), (ts3, changed)] {
+            clock.set_time(ts_init);
+            handle_ws_message(
+                &BybitWsMessage::TickerOption(msg),
+                &tx.clone().into(),
+                &instruments,
+                Some(BybitProductType::Option),
+                &trade_subs,
+                &ticker_subs,
+                &quote_subs,
+                &book_depths,
+                &book_sync,
+                &ws_client,
+                &greeks_subs,
+                &Arc::new(AtomicMap::new()),
+                &bar_types,
+                true,
+                &mut quote_cache,
+                &mut funding_cache,
+                Duration::ZERO,
+                &tasks,
+                &clock,
+            );
+        }
+
+        let mut quotes = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            let DataEvent::Data(Data::Quote(quote)) = event else {
+                panic!("Expected quote");
+            };
+
+            quotes.push(quote);
+        }
+
+        let expected_quote = |ask_price: f64, ts_event: u64, ts_init: UnixNanos| {
+            QuoteTick::new(
+                instrument_id,
+                instrument.make_price(0.0),
+                instrument.make_price(ask_price),
+                instrument.make_qty(0.0, None),
+                instrument.make_qty(5.1, None),
+                UnixNanos::new(ts_event),
+                ts_init,
+            )
+        };
+
+        assert_eq!(
+            quotes,
+            vec![
+                expected_quote(10.0, 1_672_917_511_074_000_000, ts1),
+                expected_quote(11.0, 1_672_917_511_274_000_000, ts3),
+            ],
+        );
     }
 
     #[rstest]

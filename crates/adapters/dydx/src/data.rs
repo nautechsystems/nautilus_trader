@@ -1847,9 +1847,13 @@ impl DydxDataClient {
             };
 
             if let Some(quote) = quote_opt {
+                // Compare prices and sizes only; timestamps always differ between messages
                 let emit_quote = !matches!(
                     last_quotes.get(&instrument_id),
-                    Some(existing) if *existing == quote
+                    Some(existing) if existing.bid_price == quote.bid_price
+                        && existing.ask_price == quote.ask_price
+                        && existing.bid_size == quote.bid_size
+                        && existing.ask_size == quote.ask_size
                 );
 
                 if emit_quote {
@@ -2142,5 +2146,105 @@ mod tests {
             })
             .count();
         assert_eq!(deletes_count, 2);
+    }
+
+    fn book_update_deltas(
+        instrument_id: InstrumentId,
+        bids: &[(f64, f64)],
+        asks: &[(f64, f64)],
+        ts: UnixNanos,
+    ) -> OrderBookDeltas {
+        let bids = bids.iter().map(|level| (OrderSide::Buy, level));
+        let asks = asks.iter().map(|level| (OrderSide::Sell, level));
+
+        let mut deltas: Vec<OrderBookDelta> = bids
+            .chain(asks)
+            .map(|(side, (price, size))| {
+                OrderBookDelta::new(
+                    instrument_id,
+                    BookAction::Update,
+                    BookOrder::new(side, Price::new(*price, 2), Quantity::new(*size, 8), 0),
+                    0,
+                    0,
+                    ts,
+                    ts,
+                )
+            })
+            .collect();
+
+        if let Some(last) = deltas.last_mut() {
+            last.flags = RecordFlag::F_LAST as u8;
+        }
+
+        OrderBookDeltas::new(instrument_id, deltas)
+    }
+
+    #[rstest]
+    fn test_handle_deltas_message_emits_quote_only_on_top_of_book_change() {
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let instrument_cache = Arc::new(InstrumentCache::new());
+        instrument_cache.insert_instrument_only(instrument);
+        let order_books = Arc::new(DashMap::new());
+        let last_quotes = Arc::new(DashMap::new());
+        let active_quote_subs = Arc::new(AtomicSet::new());
+        active_quote_subs.insert(instrument_id);
+        let active_delta_subs = Arc::new(AtomicSet::new());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let data_sender: EventSender<DataEvent> = tx.into();
+        let ts1 = UnixNanos::new(1_700_000_000_000_000_000);
+        let ts2 = UnixNanos::new(1_700_000_000_100_000_000);
+        let ts3 = UnixNanos::new(1_700_000_000_200_000_000);
+
+        // The second message changes a level below the top, the third the best bid size
+        let messages = [
+            book_update_deltas(
+                instrument_id,
+                &[(99.00, 1.25), (98.50, 2.00)],
+                &[(100.05, 0.50), (100.50, 3.00)],
+                ts1,
+            ),
+            book_update_deltas(instrument_id, &[(98.50, 2.75)], &[], ts2),
+            book_update_deltas(instrument_id, &[(99.00, 1.75)], &[], ts3),
+        ];
+
+        for deltas in messages {
+            DydxDataClient::handle_deltas_message(
+                deltas,
+                &data_sender,
+                &order_books,
+                &last_quotes,
+                &instrument_cache,
+                &active_quote_subs,
+                &active_delta_subs,
+            );
+        }
+
+        let mut quotes = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            let DataEvent::Data(NautilusData::Quote(quote)) = event else {
+                panic!("Expected quote");
+            };
+
+            quotes.push(quote);
+        }
+
+        let expected_quote = |bid_size: f64, ts: UnixNanos| {
+            QuoteTick::new(
+                instrument_id,
+                Price::new(99.00, 2),
+                Price::new(100.05, 2),
+                Quantity::new(bid_size, 8),
+                Quantity::new(0.50, 8),
+                ts,
+                ts,
+            )
+        };
+
+        assert_eq!(
+            quotes,
+            vec![expected_quote(1.25, ts1), expected_quote(1.75, ts3)],
+        );
     }
 }
