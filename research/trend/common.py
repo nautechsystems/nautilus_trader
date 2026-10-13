@@ -1,31 +1,125 @@
 """
-Backtest statistics (AFML ch. 14), factor regression, return concentration, bet-level and
-classification metrics.
+Shared tools for the trend research: sealed 1-minute kline loading, the trial registry, and
+backtest statistics (AFML ch. 14) with performance, factor and concentration reports.
 """
 
 from __future__ import annotations
 
 import math
+import re
+from datetime import UTC
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import polars as pl
 import statsmodels.api as sm
 from scipy.stats import kurtosis
+from scipy.stats import norm
 from scipy.stats import skew
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import f1_score
-from sklearn.metrics import log_loss
-from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import roc_auc_score
-
-from bocpd_long import bars
-from bocpd_long import config
-from bocpd_long import execution
-from bocpd_long import stats
 
 
-HEDGE_SYMBOL = "BTCUSDT"
+ROOT = Path(__file__).resolve().parents[2]
+KLINES_DIR = ROOT / "binance_data" / "klines_1m"
+OUT_DIR = ROOT / "binance_data" / "trend"
+REGISTRY_PATH = OUT_DIR / "trial_registry.csv"
+DAY_MS = 86_400_000
+FEE = 0.0005  # taker fee per side, no slippage
+
+# Data from SEAL_START_MS on is sealed and never loaded (2026-H1 was unsealed on 2026-10-13)
+SEAL_START_MS = int(datetime(2026, 7, 1, tzinfo=UTC).timestamp() * 1000)
+_SEAL = datetime.fromtimestamp(SEAL_START_MS / 1000, UTC)
+SEAL_MONTH = (_SEAL.year, _SEAL.month)
+_MONTH_RE = re.compile(r"-1m-(\d{4})-(\d{2})\.parquet$")
+EULER_GAMMA = 0.5772156649015329
+
+
+# Data
+
+
+def unsealed_files(symbol: str) -> list[Path]:
+    """
+    Monthly kline files before the seal month, selected by name before anything is read.
+    """
+    out = []
+    for path in sorted((KLINES_DIR / symbol).glob("*.parquet")):
+        m = _MONTH_RE.search(path.name)
+        if m is None:
+            raise ValueError(f"Unexpected file name: {path}")
+        if (int(m[1]), int(m[2])) < SEAL_MONTH:
+            out.append(path)
+    return out
+
+
+def load_minutes(symbol: str) -> pl.DataFrame:
+    """
+    1-minute bars (open_time, close_time, high, low, close) before the seal, sorted.
+    """
+    return (
+        pl.read_parquet(
+            unsealed_files(symbol), columns=["open_time", "close_time", "high", "low", "close"]
+        )
+        .filter(pl.col("close_time") < SEAL_START_MS)
+        .with_columns(pl.col("high", "low", "close").cast(pl.Float64))
+        .sort("open_time")
+        .unique("open_time", keep="first", maintain_order=True)
+    )
+
+
+# Trial registry
+
+
+def load_registry() -> pl.DataFrame:
+    if not REGISTRY_PATH.exists():
+        return pl.DataFrame(schema={"name": pl.String, "sharpe_daily": pl.Float64})
+    return pl.read_csv(REGISTRY_PATH, schema={"name": pl.String, "sharpe_daily": pl.Float64})
+
+
+def register(name: str, sharpe_daily: float) -> None:
+    """
+    Record a variant's daily Sharpe; re-running a variant updates its row. Never delete rows:
+    the deflated Sharpe ratio depends on every trial evaluated.
+    """
+    reg = load_registry().filter(pl.col("name") != name)
+    reg = pl.concat([reg, pl.DataFrame({"name": [name], "sharpe_daily": [sharpe_daily]})])
+    REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    reg.write_csv(REGISTRY_PATH)
+
+
+# Statistics (Sharpe ratios per day unless annualized)
+
+
+def sharpe(r: np.ndarray) -> float:
+    sd = r.std(ddof=1)
+    return float(r.mean() / sd) if sd > 0 else 0.0
+
+
+def psr(r: np.ndarray, sr_benchmark: float = 0.0) -> float:
+    """
+    Probability that the true Sharpe exceeds `sr_benchmark` given non-normal returns.
+    """
+    sr = sharpe(r)
+    g3 = skew(r)
+    g4 = kurtosis(r, fisher=False)
+    denom = math.sqrt(max(1e-12, 1 - g3 * sr + (g4 - 1) / 4 * sr**2))
+    return float(norm.cdf((sr - sr_benchmark) * math.sqrt(r.shape[0] - 1) / denom))
+
+
+def expected_max_sharpe(n_trials: int, var_sharpe: float) -> float:
+    """
+    Expected maximum Sharpe of `n_trials` unskilled trials (False Strategy Theorem).
+    """
+    if n_trials < 2 or var_sharpe <= 0:
+        return 0.0
+    return math.sqrt(var_sharpe) * (
+        (1 - EULER_GAMMA) * norm.ppf(1 - 1 / n_trials)
+        + EULER_GAMMA * norm.ppf(1 - 1 / (n_trials * math.e))
+    )
+
+
+def dsr(r: np.ndarray, trial_sharpes: np.ndarray) -> float:
+    var = float(np.var(trial_sharpes, ddof=1)) if trial_sharpes.shape[0] > 1 else 0.0
+    return psr(r, expected_max_sharpe(trial_sharpes.shape[0], var))
 
 
 def hhi(r: np.ndarray) -> float:
@@ -62,38 +156,16 @@ def drawdown_runs(r: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return np.array(dd), np.array(tuw)
 
 
-def market_betas(daily: pl.DataFrame) -> dict:
-    """
-    HAC-robust betas of daily strategy returns on the equal-weight real market and on BTC.
-    """
-    ew = (
-        pl.concat([execution.daily_returns(s) for s in bars.real_symbols()])
-        .group_by("day")
-        .agg(pl.col("r").mean().alias("ew"))
-    )
-    btc = execution.daily_returns(HEDGE_SYMBOL).rename({"r": "btc"})
-    d = (
-        daily.join(ew, on="day", how="left")
-        .join(btc, on="day", how="left")
-        .with_columns(pl.col("ew", "btc").fill_null(0.0))
-    )
-    out = {}
-    for name in ("ew", "btc"):
-        fit = sm.OLS(d["ret"].to_numpy(), sm.add_constant(d[name].to_numpy())).fit(
-            cov_type="HAC",
-            cov_kwds={"maxlags": 5},
-        )
-        out[f"beta_{name}"] = float(fit.params[1])
-        out[f"beta_{name}_t"] = float(fit.tvalues[1])
-        out[f"alpha_bp_vs_{name}"] = float(fit.params[0] * 1e4)
-        out[f"alpha_t_vs_{name}"] = float(fit.tvalues[0])
-    return out
+# Reports
 
 
 def performance(daily: pl.DataFrame, trial_sr: np.ndarray) -> dict:
+    """
+    Daily portfolio metrics; `daily` has day, ret, gross, turnover, trades and active_symbols.
+    """
     r = daily["ret"].to_numpy()
     cap = np.maximum(1.0, daily["gross"].to_numpy())
-    fee_ret = config.FEE * daily["turnover"].to_numpy() / cap
+    fee_ret = FEE * daily["turnover"].to_numpy() / cap
     years = r.shape[0] / 365
     equity = np.cumprod(1 + r)
     dd, tuw = drawdown_runs(r)
@@ -101,15 +173,14 @@ def performance(daily: pl.DataFrame, trial_sr: np.ndarray) -> dict:
     pos, neg = r[r > 0], r[r < 0]
     monthly = (
         daily.with_columns(
-            pl.from_epoch(pl.col("day") * config.DAY_MS, time_unit="ms")
-            .dt.strftime("%Y-%m")
-            .alias("m")
+            pl.from_epoch(pl.col("day") * DAY_MS, time_unit="ms").dt.strftime("%Y-%m").alias("m")
         )
         .group_by("m")
         .agg(pl.col("ret").sum())["ret"]
         .to_numpy()
     )
-    sr = stats.sharpe(r)
+    sr = sharpe(r)
+    var_trials = float(np.var(trial_sr, ddof=1)) if trial_sr.size > 1 else 0.0
     return {
         # General
         "days": r.shape[0],
@@ -150,12 +221,10 @@ def performance(daily: pl.DataFrame, trial_sr: np.ndarray) -> dict:
         )
         if down.size
         else float("inf"),
-        "psr_0": stats.psr(r),
-        "dsr": stats.dsr(r, trial_sr),
+        "psr_0": psr(r),
+        "dsr": dsr(r, trial_sr),
         "trials_counted": int(trial_sr.size),
-        "expected_max_sharpe_annual": stats.expected_max_sharpe(
-            trial_sr.size, float(np.var(trial_sr, ddof=1))
-        )
+        "expected_max_sharpe_annual": expected_max_sharpe(trial_sr.size, var_trials)
         * math.sqrt(365),
         # Costs
         "annual_fee_drag": float(fee_ret.sum() / years),
@@ -164,13 +233,13 @@ def performance(daily: pl.DataFrame, trial_sr: np.ndarray) -> dict:
         "return_per_unit_turnover_bp": float(
             r.sum() / (daily["turnover"].to_numpy() / cap).sum() * 1e4,
         ),
-    } | market_betas(daily)
+    }
 
 
 def yearly(daily: pl.DataFrame) -> pl.DataFrame:
     rows = []
     d = daily.with_columns(
-        pl.from_epoch(pl.col("day") * config.DAY_MS, time_unit="ms").dt.year().alias("year")
+        pl.from_epoch(pl.col("day") * DAY_MS, time_unit="ms").dt.year().alias("year")
     )
     for (year,), g in d.group_by("year", maintain_order=True):
         r = g["ret"].to_numpy()
@@ -180,7 +249,7 @@ def yearly(daily: pl.DataFrame) -> pl.DataFrame:
                 "year": year,
                 "days": r.shape[0],
                 "return_compounded": float(np.prod(1 + r) - 1),
-                "sharpe_annual": stats.sharpe(r) * math.sqrt(365),
+                "sharpe_annual": sharpe(r) * math.sqrt(365),
                 "max_drawdown": float(dd.max()) if dd.size else 0.0,
                 "hit_days": float((r > 0).mean()),
             },
@@ -188,16 +257,14 @@ def yearly(daily: pl.DataFrame) -> pl.DataFrame:
     return pl.DataFrame(rows).sort("year")
 
 
-def factor_regression(daily: pl.DataFrame) -> dict:
-    ew = (
-        pl.concat([execution.daily_returns(s) for s in bars.real_symbols()])
-        .group_by("day")
-        .agg(pl.col("r").mean().alias("ew"))
-    )
-    btc = execution.daily_returns(HEDGE_SYMBOL).rename({"r": "btc"})
+def factor_regression(daily: pl.DataFrame, market: pl.DataFrame) -> dict:
+    """
+    HAC regression of daily returns on BTC and on the equal-weight market minus BTC.
+
+    `market` has day, btc and ew (daily simple returns realized over that day).
+    """
     d = (
-        daily.join(ew, on="day", how="left")
-        .join(btc, on="day", how="left")
+        daily.join(market, on="day", how="left")
         .with_columns(pl.col("ew", "btc").fill_null(0.0))
         .with_columns((pl.col("ew") - pl.col("btc")).alias("alt_minus_btc"))
     )
@@ -212,7 +279,7 @@ def factor_regression(daily: pl.DataFrame) -> dict:
         "ff_alpha_bp": float(fit.params[0] * 1e4),
         "ff_alpha_t": float(fit.tvalues[0]),
         "ff_r2": float(fit.rsquared),
-        "ff_neutral_sharpe_annual": stats.sharpe(resid) * math.sqrt(365),
+        "ff_neutral_sharpe_annual": sharpe(resid) * math.sqrt(365),
     }
 
 
@@ -222,66 +289,5 @@ def concentration(r: np.ndarray) -> dict:
     for k in (1, 5, 10, 20):
         out[f"top{k}_days_share_of_total"] = float(srt[:k].sum() / r.sum())
         rest = np.sort(r)[: r.shape[0] - k]
-        out[f"sharpe_annual_without_top{k}"] = stats.sharpe(rest) * math.sqrt(365)
-    return out
-
-
-def _share_positive(x: pl.Series) -> float:
-    return float((x > 0).mean()) if x.len() else float("nan")
-
-
-def bet_metrics(sized: pl.DataFrame, all_bets: pl.DataFrame) -> dict:
-    real = sized.filter(~pl.col("mirror"))
-    gross = real["side"] * (real["exit_px"] / real["entry_px"] - 1)
-    net = gross - 2 * config.FEE
-    pnl_equity = real["weight"] * (real["exit_px"] / real["entry_px"] - 1)
-    hold = (real["exit_t"] - real["t0"]) / config.DAY_MS
-    hits, misses = net.filter(net > 0), net.filter(net <= 0)
-    return {
-        "events_real": int((~all_bets["mirror"]).sum()),
-        "bets_approved_real": int(((all_bets["size"] != 0) & ~all_bets["mirror"]).sum()),
-        "bets_traded_real": real.height,
-        "symbols_traded": real["symbol"].n_unique(),
-        "long_share_traded": float((real["side"] == 1).mean()),
-        "avg_abs_weight": float(real["weight"].abs().mean()),
-        "max_abs_weight": float(real["weight"].abs().max()),
-        "hold_days_median": float(hold.median()),
-        "hold_days_mean": float(hold.mean()),
-        "exit_profit_share": float((real["exit_reason"] == execution.PROFIT).mean()),
-        "exit_loss_share": float((real["exit_reason"] == execution.LOSS_AT_CLOSE).mean()),
-        "exit_vertical_share": float((real["exit_reason"] == execution.VERTICAL).mean()),
-        "bet_hit_ratio_net": float((net > 0).mean()),
-        "bet_avg_return_net": float(net.mean()),
-        "bet_avg_hit_net": float(hits.mean()),
-        "bet_avg_miss_net": float(misses.mean()),
-        "bet_payoff_ratio": float(hits.mean() / -misses.mean()),
-        "long_hit_ratio_net": _share_positive(net.filter(real["side"] == 1)),
-        "short_hit_ratio_net": _share_positive(net.filter(real["side"] == -1)),
-        "best_bet_pnl_of_equity": float(pnl_equity.max()),
-        "worst_bet_pnl_of_equity": float(pnl_equity.min()),
-    }
-
-
-def classification(y: np.ndarray, p: np.ndarray, ym: np.ndarray, pm: np.ndarray) -> dict:
-    out = {}
-    for name, yt, pp in (("primary", y, p), ("meta", ym, pm)):
-        yhat = (pp >= 0.5).astype(int)
-        n = yt.shape[0]
-        auc = roc_auc_score(yt, pp)
-        q1, q2 = auc / (2 - auc), 2 * auc**2 / (1 + auc)
-        n1, n0 = yt.sum(), n - yt.sum()
-        se = math.sqrt(
-            (auc * (1 - auc) + (n1 - 1) * (q1 - auc**2) + (n0 - 1) * (q2 - auc**2)) / (n1 * n0)
-        )
-        out |= {
-            f"{name}_n": n,
-            f"{name}_accuracy": accuracy_score(yt, yhat),
-            f"{name}_precision": precision_score(yt, yhat, zero_division=0),
-            f"{name}_recall": recall_score(yt, yhat, zero_division=0),
-            f"{name}_f1": f1_score(yt, yhat, zero_division=0),
-            f"{name}_neg_logloss": -log_loss(yt, pp),
-            f"{name}_auc": auc,
-            f"{name}_auc_se": se,
-            f"{name}_base_rate": float(yt.mean()),
-        }
+        out[f"sharpe_annual_without_top{k}"] = sharpe(rest) * math.sqrt(365)
     return out
