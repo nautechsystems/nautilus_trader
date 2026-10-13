@@ -122,6 +122,10 @@ toml = { workspace = true }
 name = "websocket"
 harness = false
 
+[[bench]]
+name = "market_data"
+harness = false
+
 # Run with `cargo run -p nautilus-bybit --bin bybit-http`.
 [[bin]]
 name = "bybit-http"

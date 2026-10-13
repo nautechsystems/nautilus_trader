@@ -6088,6 +6088,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "bon",
+ "codspeed-criterion-compat",
  "cosmrs",
  "dashmap",
  "derive_builder",

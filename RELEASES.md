@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added `OptionSideFilter` and `StrikeSearchProfile` model types for option selection, thanks @faysou
 - Added tick scheme registration, thanks @faysou
 - Added WebSocket peer-close callbacks to control automatic reconnection
+- Added Rust `QuoteTick::has_same_bid_ask` to compare prices and sizes independently of instrument IDs and timestamps
 - Added Bybit public liquidation custom data for linear and inverse contracts (#5152), thanks @Martingale42
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 - Added Derive adapter support for API v3
@@ -102,11 +103,13 @@ Released on TBD (UTC).
 - Fixed Bybit stale WebSocket subscriptions blocking subscriptions after reconnect (#5250), thanks @Martingale42
 - Fixed Bybit failed quote subscriptions retaining shared order book references (#5258), thanks @Martingale42
 - Fixed Bybit incomplete position reports causing held positions to reconcile as flat
+- Fixed Bybit option quotes repeating when only timestamps change
 - Fixed Databento data client intraday requests failing to resolve price precision
 - Fixed Deribit position reports failing on fractional leverage (#5240), thanks @abhijeetvichare76
 - Fixed Deribit duplicate fills from order responses and user trade subscriptions
 - Fixed Derive accepting null or empty order book prices and amounts as zero
 - Fixed Derive fill history marked complete when trades lack trade or venue order IDs
+- Fixed dYdX quotes repeating when only timestamps change
 - Fixed Hyperliquid HIP-4 outcome price and size precision (#5266), thanks @vignesh-chaturvedi
 - Fixed Hyperliquid place and modify requests retaining trailing zeros in signed order values
 - Fixed Hyperliquid cancel actions to omit explicit `fast: Some(false)` flags
@@ -129,6 +132,8 @@ Released on TBD (UTC).
 - Fixed Kraken futures order-history parsing and filled-order pricing (#5247), thanks @zhaow-de
 - Fixed Kraken futures status reports restoring full client order IDs (#5293), thanks @zhaow-de
 - Fixed Kraken futures startup reconciliation omitting order history (#5114), thanks @zhaow-de
+- Fixed Kraken futures quotes repeating when only timestamps change
+- Fixed Kraken futures quotes using stale books when joining an existing order book subscription
 - Fixed Lighter transaction nonce send ordering under concurrent preparation
 - Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
@@ -163,6 +168,7 @@ Released on TBD (UTC).
 - Optimized backtest funding settlements to update positions in place (#5238), thanks @XBeg9
 - Optimized portfolio snapshots to skip copying account event history (#5237), thanks @XBeg9
 - Optimized Python `Portfolio` queries to avoid copying account event history (#5260), thanks @XBeg9
+- Optimized dYdX order book delta processing
 - Upgraded Rust (MSRV) to 1.99.0
 - Upgraded `cargo-hawk` tool to v0.1.15
 - Upgraded `cargo-nextest` tool to v0.9.148

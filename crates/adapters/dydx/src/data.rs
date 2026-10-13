@@ -79,8 +79,8 @@ use crate::{
     config::DydxDataClientConfig,
     http::client::DydxHttpClient,
     websocket::{
-        client::{DydxWebSocketClient, candle_ids_from_topics},
-        enums::DydxWsOutputMessage,
+        client::{DYDX_WS_TOPIC_DELIMITER, DydxWebSocketClient, candle_ids_from_topics},
+        enums::{DydxWsChannel, DydxWsOutputMessage},
         parse as ws_parse,
     },
 };
@@ -374,6 +374,7 @@ impl DataClient for DydxDataClient {
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         self.ws_client.begin_shutdown();
+        self.last_quotes.clear();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -391,6 +392,7 @@ impl DataClient for DydxDataClient {
         log::info!("Connecting");
 
         self.prepare_task_groups().await?;
+        self.last_quotes.clear();
         let ws_client = self.ws_client.clone();
         let setup_guard =
             TaskGroupGuard::new(&[&self.session_tasks, &self.command_tasks], move || {
@@ -475,6 +477,7 @@ impl DataClient for DydxDataClient {
 
         self.teardown_partial_connect().await?;
 
+        self.last_quotes.clear();
         self.last_instrument_statuses.clear();
         self.is_connected.store(false, Ordering::Relaxed);
         log::info!("Disconnected dYdX data client");
@@ -545,6 +548,7 @@ impl DataClient for DydxDataClient {
             cmd.instrument_id
         );
 
+        self.last_quotes.remove(&cmd.instrument_id);
         self.ensure_order_book(cmd.instrument_id, BookType::L2_MBP);
         self.active_quote_subs.insert(cmd.instrument_id);
         let ws = self.ws_client.clone();
@@ -680,6 +684,7 @@ impl DataClient for DydxDataClient {
         );
 
         self.active_quote_subs.remove(&cmd.instrument_id);
+        self.last_quotes.remove(&cmd.instrument_id);
 
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
@@ -1362,6 +1367,7 @@ impl DydxDataClient {
                 log::warn!("dYdX WS error: {err}");
             }
             DydxWsOutputMessage::Reconnected { topics } => {
+                Self::clear_reconnected_quotes(&topics, ctx);
                 let reconnected_candles = candle_ids_from_topics(&topics);
                 ctx.pending_bars
                     .retain(|id, _| !reconnected_candles.contains(id));
@@ -1379,6 +1385,21 @@ impl DydxDataClient {
                     ctx.active_trade_subs.len(),
                     ctx.active_bar_subs.len()
                 );
+            }
+        }
+    }
+
+    fn clear_reconnected_quotes(topics: &[String], ctx: &WsMessageContext) {
+        let prefix = format!(
+            "{}{}",
+            DydxWsChannel::Orderbook.as_ref(),
+            DYDX_WS_TOPIC_DELIMITER,
+        );
+
+        for topic in topics {
+            if let Some(ticker) = topic.strip_prefix(&prefix) {
+                ctx.last_quotes
+                    .remove(&Self::instrument_id_from_ticker(ticker));
             }
         }
     }
@@ -1620,12 +1641,11 @@ impl DydxDataClient {
 
     fn resolve_crossed_order_book(
         book: &mut OrderBook,
-        venue_deltas: &OrderBookDeltas,
+        venue_deltas: OrderBookDeltas,
         instrument: &InstrumentAny,
     ) -> anyhow::Result<OrderBookDeltas> {
         let instrument_id = venue_deltas.instrument_id;
         let ts_init = venue_deltas.ts_init;
-        let mut all_deltas = venue_deltas.deltas.clone();
 
         // If the input batch is a snapshot, every synthetic and terminator delta must
         // carry F_SNAPSHOT as well so consumers apply the whole batch as one
@@ -1637,7 +1657,8 @@ impl DydxDataClient {
             .any(|d| d.flags & snapshot_flag != 0);
         let synthetic_flags = if is_snapshot_batch { snapshot_flag } else { 0 };
 
-        book.apply_deltas(venue_deltas)?;
+        book.apply_deltas(&venue_deltas)?;
+        let mut all_deltas = venue_deltas.deltas;
 
         let mut is_crossed = if let (Some(bid_price), Some(ask_price)) =
             (book.best_bid_price(), book.best_ask_price())
@@ -1761,9 +1782,9 @@ impl DydxDataClient {
                 ));
             }
 
-            let temp_deltas_obj = OrderBookDeltas::new(instrument_id, temp_deltas.clone());
+            let temp_deltas_obj = OrderBookDeltas::new(instrument_id, temp_deltas);
             book.apply_deltas(&temp_deltas_obj)?;
-            all_deltas.extend(temp_deltas);
+            all_deltas.extend(temp_deltas_obj.deltas);
 
             is_crossed = if let (Some(bid_price), Some(ask_price)) =
                 (book.best_bid_price(), book.best_ask_price())
@@ -1812,14 +1833,14 @@ impl DydxDataClient {
             .entry(instrument_id)
             .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
 
-        let resolved_deltas =
-            match Self::resolve_crossed_order_book(&mut book, &deltas, &instrument) {
-                Ok(d) => d,
-                Err(e) => {
-                    log::error!("Failed to resolve crossed order book for {instrument_id}: {e}");
-                    return;
-                }
-            };
+        let resolved_deltas = match Self::resolve_crossed_order_book(&mut book, deltas, &instrument)
+        {
+            Ok(d) => d,
+            Err(e) => {
+                log::error!("Failed to resolve crossed order book for {instrument_id}: {e}");
+                return;
+            }
+        };
 
         if active_quote_subs.contains(&instrument_id) {
             // Edge case: If orderbook is empty after deltas, fall back to last quote
@@ -1849,7 +1870,7 @@ impl DydxDataClient {
             if let Some(quote) = quote_opt {
                 let emit_quote = !matches!(
                     last_quotes.get(&instrument_id),
-                    Some(existing) if *existing == quote
+                    Some(existing) if existing.has_same_bid_ask(&quote)
                 );
 
                 if emit_quote {
@@ -1902,8 +1923,15 @@ struct WsMessageContext {
 }
 
 #[cfg(test)]
-mod tests {
-    use nautilus_core::UnixNanos;
+#[path = "../benches"]
+pub(crate) mod tests {
+    // These routines are exercised by Criterion, not the unit-test harness
+    #[allow(dead_code)]
+    #[path = "quotes/mod.rs"]
+    pub(crate) mod benchmarks;
+
+    use nautilus_common::live::runner::set_data_event_sender;
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{BookOrder, OrderBookDelta, OrderBookDeltas},
         enums::{BookAction, BookType, OrderSide, RecordFlag},
@@ -1916,7 +1944,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::consts::DYDX_VENUE;
+    use crate::common::{consts::DYDX_VENUE, enums::DydxNetwork};
 
     fn test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
@@ -2032,7 +2060,7 @@ mod tests {
         let venue_deltas = crossing_bid_deltas(instrument_id, 100.10, 1.00000001);
 
         let resolved =
-            DydxDataClient::resolve_crossed_order_book(&mut book, &venue_deltas, &instrument)
+            DydxDataClient::resolve_crossed_order_book(&mut book, venue_deltas, &instrument)
                 .expect("resolution should succeed");
 
         // An Update on the Buy side at the crossing price must carry the exact
@@ -2096,7 +2124,7 @@ mod tests {
         let venue_deltas = crossing_snapshot_batch(instrument_id, 100.10, 1.00000001);
 
         let resolved =
-            DydxDataClient::resolve_crossed_order_book(&mut book, &venue_deltas, &instrument)
+            DydxDataClient::resolve_crossed_order_book(&mut book, venue_deltas, &instrument)
                 .expect("resolution should succeed");
 
         let snapshot = RecordFlag::F_SNAPSHOT as u8;
@@ -2129,7 +2157,7 @@ mod tests {
         let venue_deltas = crossing_bid_deltas(instrument_id, 100.10, 1.00000000);
 
         let resolved =
-            DydxDataClient::resolve_crossed_order_book(&mut book, &venue_deltas, &instrument)
+            DydxDataClient::resolve_crossed_order_book(&mut book, venue_deltas, &instrument)
                 .expect("resolution should succeed");
 
         let deletes_count = resolved
@@ -2142,5 +2170,324 @@ mod tests {
             })
             .count();
         assert_eq!(deletes_count, 2);
+    }
+
+    #[rstest]
+    #[case::bid_price(dec!(99.25), dec!(100.05), dec!(1.25), dec!(0.50))]
+    #[case::ask_price(dec!(99.00), dec!(99.75), dec!(1.25), dec!(0.50))]
+    #[case::bid_size(dec!(99.00), dec!(100.05), dec!(1.75), dec!(0.50))]
+    #[case::ask_size(dec!(99.00), dec!(100.05), dec!(1.25), dec!(0.75))]
+    fn test_handle_deltas_message_emits_quote_only_on_top_of_book_change(
+        #[case] bid_price: Decimal,
+        #[case] ask_price: Decimal,
+        #[case] bid_size: Decimal,
+        #[case] ask_size: Decimal,
+    ) {
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        let instrument_cache = Arc::new(InstrumentCache::new());
+        instrument_cache.insert_instrument_only(instrument);
+        let order_books = Arc::new(DashMap::new());
+        let last_quotes = Arc::new(DashMap::new());
+        let active_quote_subs = Arc::new(AtomicSet::new());
+        active_quote_subs.insert(instrument_id);
+        let active_delta_subs = Arc::new(AtomicSet::new());
+        active_delta_subs.insert(instrument_id);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let data_sender: EventSender<DataEvent> = tx.into();
+        let ts1 = UnixNanos::new(1_700_000_000_000_000_000);
+        let ts2 = UnixNanos::new(1_700_000_000_100_000_000);
+        let ts3 = UnixNanos::new(1_700_000_000_200_000_000);
+        let ts4 = UnixNanos::new(1_700_000_000_300_000_000);
+
+        // The second message changes depth only; the third changes one top-of-book field
+        let messages = [
+            book_update_deltas(
+                instrument_id,
+                &[(dec!(99.00), dec!(1.25)), (dec!(98.50), dec!(2.00))],
+                &[(dec!(100.05), dec!(0.50)), (dec!(100.50), dec!(3.00))],
+                ts1,
+            ),
+            book_update_deltas(instrument_id, &[(dec!(98.50), dec!(2.75))], &[], ts2),
+            book_update_deltas(
+                instrument_id,
+                &[(bid_price, bid_size)],
+                &[(ask_price, ask_size)],
+                ts3,
+            ),
+            book_update_deltas(
+                instrument_id,
+                &[(bid_price, bid_size)],
+                &[(ask_price, ask_size)],
+                ts4,
+            ),
+        ];
+        let expected_deltas = messages.to_vec();
+
+        for deltas in messages {
+            DydxDataClient::handle_deltas_message(
+                deltas,
+                &data_sender,
+                &order_books,
+                &last_quotes,
+                &instrument_cache,
+                &active_quote_subs,
+                &active_delta_subs,
+            );
+        }
+
+        let mut quotes = Vec::new();
+        let mut book_deltas = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                DataEvent::Data(NautilusData::Quote(quote)) => quotes.push(quote),
+                DataEvent::Data(NautilusData::BookDeltas(deltas)) => book_deltas.push(*deltas),
+                other => panic!("Unexpected event: {other:?}"),
+            }
+        }
+
+        let initial = QuoteTick::new(
+            instrument_id,
+            Price::from_decimal_dp(dec!(99.00), 2).unwrap(),
+            Price::from_decimal_dp(dec!(100.05), 2).unwrap(),
+            Quantity::from_decimal_dp(dec!(1.25), 8).unwrap(),
+            Quantity::from_decimal_dp(dec!(0.50), 8).unwrap(),
+            ts1,
+            ts1,
+        );
+
+        let changed = QuoteTick::new(
+            instrument_id,
+            Price::from_decimal_dp(bid_price, 2).unwrap(),
+            Price::from_decimal_dp(ask_price, 2).unwrap(),
+            Quantity::from_decimal_dp(bid_size, 8).unwrap(),
+            Quantity::from_decimal_dp(ask_size, 8).unwrap(),
+            ts3,
+            ts3,
+        );
+
+        assert_eq!(quotes, vec![initial, changed]);
+
+        // PartialEq omits batch content and nested order values
+        assert_eq!(
+            serde_json::to_value(&book_deltas).unwrap(),
+            serde_json::to_value(&expected_deltas).unwrap(),
+        );
+    }
+
+    #[rstest]
+    #[case::resubscribe(false, false)]
+    #[case::resubscribe_after_late_quote(false, true)]
+    #[case::reconnect(true, false)]
+    #[tokio::test]
+    async fn test_quote_subscription_emits_unchanged_initial_quote(
+        #[case] reconnect: bool,
+        #[case] late_quote: bool,
+    ) {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let http = DydxHttpClient::new(None, 10, None, DydxNetwork::Testnet, None).unwrap();
+        let ws = DydxWebSocketClient::new_public("ws://127.0.0.1:1".to_string(), None, None);
+
+        ws.begin_shutdown();
+
+        let client_id = ClientId::from("DYDX");
+        let mut client =
+            DydxDataClient::new(client_id, DydxDataClientConfig::default(), http, ws).unwrap();
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+        client.instrument_cache.insert_instrument_only(instrument);
+        let ts1 = UnixNanos::new(1_700_000_000_000_000_000);
+        let ts2 = UnixNanos::new(1_700_000_000_100_000_000);
+        let ts3 = UnixNanos::new(1_700_000_000_200_000_000);
+
+        let initial = QuoteTick::new(
+            instrument_id,
+            Price::from("99.00"),
+            Price::from("100.05"),
+            Quantity::from("1.25000000"),
+            Quantity::from("0.50000000"),
+            ts1,
+            ts1,
+        );
+
+        let subscribe = |instrument_id| {
+            SubscribeQuotes::new(
+                instrument_id,
+                Some(client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        };
+
+        let handle = |client: &DydxDataClient, instrument_id, ts| {
+            let deltas = book_update_deltas(
+                instrument_id,
+                &[(dec!(99.00), dec!(1.25))],
+                &[(dec!(100.05), dec!(0.50))],
+                ts,
+            );
+
+            DydxDataClient::handle_deltas_message(
+                deltas,
+                &client.data_sender,
+                &client.order_books,
+                &client.last_quotes,
+                &client.instrument_cache,
+                &client.active_quote_subs,
+                &client.active_delta_subs,
+            );
+        };
+
+        client.subscribe_quotes(subscribe(instrument_id)).unwrap();
+        handle(&client, instrument_id, ts1);
+        let healthy_id = InstrumentId::from("ETH-USD-PERP.DYDX");
+
+        if reconnect {
+            let InstrumentAny::CryptoPerpetual(mut healthy) = test_instrument() else {
+                panic!("Expected perpetual instrument");
+            };
+
+            healthy.id = healthy_id;
+            healthy.raw_symbol = healthy_id.symbol;
+            client
+                .instrument_cache
+                .insert_instrument_only(InstrumentAny::CryptoPerpetual(healthy));
+            client.subscribe_quotes(subscribe(healthy_id)).unwrap();
+            handle(&client, healthy_id, ts1);
+
+            let ctx = WsMessageContext {
+                clock: client.clock,
+                data_sender: client.data_sender.clone(),
+                instrument_cache: client.instrument_cache.clone(),
+                order_books: client.order_books.clone(),
+                last_quotes: client.last_quotes.clone(),
+                ws_client: client.ws_client.clone(),
+                http_client: client.http_client.clone(),
+                active_quote_subs: client.active_quote_subs.clone(),
+                active_delta_subs: client.active_delta_subs.clone(),
+                active_trade_subs: client.active_trade_subs.clone(),
+                active_bar_subs: client.active_bar_subs.clone(),
+                incomplete_bars: client.incomplete_bars.clone(),
+                bar_type_mappings: client.bar_type_mappings.clone(),
+                active_mark_price_subs: client.active_mark_price_subs.clone(),
+                active_index_price_subs: client.active_index_price_subs.clone(),
+                active_funding_rate_subs: client.active_funding_rate_subs.clone(),
+                active_instrument_status_subs: client.active_instrument_status_subs.clone(),
+                last_instrument_statuses: client.last_instrument_statuses.clone(),
+                bars_timestamp_on_close: client.ws_client.bars_timestamp_on_close(),
+                pending_bars: Arc::new(DashMap::new()),
+                seen_tickers: Arc::new(AtomicSet::new()),
+                command_spawner: client.command_tasks.spawner().unwrap(),
+            };
+
+            DydxDataClient::handle_ws_message(
+                DydxWsOutputMessage::Reconnected {
+                    topics: vec![
+                        "v4_orderbook:BTC-USD".to_string(),
+                        "v4_trades:ETH-USD".to_string(),
+                        "v4_candles:ETH-USD/1MIN".to_string(),
+                    ],
+                },
+                &ctx,
+            );
+
+            handle(&client, healthy_id, ts3);
+        } else {
+            client
+                .unsubscribe_quotes(&UnsubscribeQuotes::new(
+                    instrument_id,
+                    Some(client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+            handle(&client, instrument_id, ts2);
+            if late_quote {
+                client.last_quotes.insert(instrument_id, initial);
+            }
+
+            client.subscribe_quotes(subscribe(instrument_id)).unwrap();
+        }
+
+        handle(&client, instrument_id, ts3);
+        let mut quotes = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                DataEvent::Data(NautilusData::Quote(quote)) => quotes.push(quote),
+                other => panic!("Unexpected event: {other:?}"),
+            }
+        }
+
+        let mut expected = vec![initial];
+        if reconnect {
+            expected.push(QuoteTick {
+                instrument_id: healthy_id,
+                ..initial
+            });
+        }
+
+        expected.push(QuoteTick {
+            ts_event: ts3,
+            ts_init: ts3,
+            ..initial
+        });
+
+        let subscription_error = client
+            .ws_client
+            .subscribe_orderbook(instrument_id)
+            .await
+            .unwrap_err();
+
+        assert_eq!(quotes, expected);
+        assert_eq!(
+            subscription_error.to_string(),
+            "WebSocket transport error: WebSocket connection pool is closed"
+        );
+    }
+
+    fn book_update_deltas(
+        instrument_id: InstrumentId,
+        bids: &[(Decimal, Decimal)],
+        asks: &[(Decimal, Decimal)],
+        ts: UnixNanos,
+    ) -> OrderBookDeltas {
+        let bids = bids.iter().map(|level| (OrderSide::Buy, level));
+        let asks = asks.iter().map(|level| (OrderSide::Sell, level));
+
+        let mut deltas: Vec<OrderBookDelta> = bids
+            .chain(asks)
+            .map(|(side, (price, size))| {
+                OrderBookDelta::new(
+                    instrument_id,
+                    BookAction::Update,
+                    BookOrder::new(
+                        side,
+                        Price::from_decimal_dp(*price, 2).unwrap(),
+                        Quantity::from_decimal_dp(*size, 8).unwrap(),
+                        0,
+                    ),
+                    0,
+                    0,
+                    ts,
+                    ts,
+                )
+            })
+            .collect();
+
+        if let Some(last) = deltas.last_mut() {
+            last.flags = RecordFlag::F_LAST as u8;
+        }
+
+        OrderBookDeltas::new(instrument_id, deltas)
     }
 }
