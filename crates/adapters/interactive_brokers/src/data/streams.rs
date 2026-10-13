@@ -719,7 +719,13 @@ impl HistoricalBarStreamState {
     /// The replay resumes at the last sent bar, so bars lost during an outage are replayed
     /// however the outage ended. The request starts one bar earlier so the replay includes
     /// that bar, which is sent again with its replayed values when revised bars are enabled.
+    ///
+    /// A bar still pending from the previous stream is discarded without being published:
+    /// its grace deadline may have passed during the outage, and on re-entry the zero wait
+    /// would publish the pre-outage revision as final, resulting in the replayed true final
+    /// being dropped as already published.
     fn begin_subscription(&mut self, bar_span_ns: u64) -> UnixNanos {
+        self.completion.discard_pending();
         self.resume_ns = resolve_historical_bar_resume_ns(self.first_start_ns, self.last_sent_ns);
         UnixNanos::from(self.resume_ns.as_u64().saturating_sub(bar_span_ns))
     }
@@ -736,7 +742,8 @@ const HISTORICAL_BAR_COMPLETION_GRACE: DurationNanos = DurationNanos::from_secs(
 /// IB revises the open bar every 5 seconds and marks no update as final. A bar completes on
 /// the first of: an update received after its close, the grace period after its close, or the
 /// next bar's first update. It persists across resubscriptions, so a replayed history cannot
-/// publish a bar twice.
+/// publish a bar twice. A bar still pending at a resubscribe is discarded without being
+/// published and completed from the replay instead.
 #[derive(Debug, Default)]
 struct HistoricalBarCompletion {
     pending: Option<Bar>,
@@ -775,6 +782,11 @@ impl HistoricalBarCompletion {
         self.pending
             .as_ref()
             .map(|bar| bar.ts_event.saturating_add(HISTORICAL_BAR_COMPLETION_GRACE))
+    }
+
+    // Drops the pending bar without publishing it
+    fn discard_pending(&mut self) {
+        self.pending = None;
     }
 
     fn expire(&mut self, now: UnixNanos) -> Option<Bar> {
@@ -4636,6 +4648,38 @@ mod tests {
         assert_eq!(first_retry, secs(0.0));
         assert_eq!(second_retry, secs(0.0));
         assert_eq!(state.resume_ns, secs(60.0));
+    }
+
+    // Holds a revision of the bar closing at 120 s, resubscribes at 200 s (past the
+    // 122 s grace deadline) and replays a batch whose bar for it carries its final values
+    #[rstest]
+    fn test_historical_bar_resubscribe_after_grace_publishes_replayed_final() {
+        let mut state = historical_bar_stream_state();
+        replay(
+            &mut state,
+            false,
+            &[minute_bar(60, "100.00"), minute_bar(120, "100.10")],
+            secs(115.0),
+        );
+
+        let request_start_ns = state.begin_subscription(MINUTE_NS);
+
+        // Re-entry: an expired deadline wins against the replay read
+        let expired = state.completion.expire(secs(200.0));
+        let mut published = Vec::new();
+        super::send_bars(&mut state, expired, |bar| {
+            published.push(bar);
+            true
+        });
+        published.extend(replay(
+            &mut state,
+            false,
+            &[minute_bar(60, "100.00"), minute_bar(120, "100.20")],
+            secs(200.0),
+        ));
+
+        assert_eq!(published, vec![minute_bar(120, "100.20")]);
+        assert_eq!(request_start_ns, secs(0.0));
     }
 
     #[rstest]
