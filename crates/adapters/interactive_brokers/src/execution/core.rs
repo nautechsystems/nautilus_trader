@@ -2094,9 +2094,24 @@ impl InteractiveBrokersExecutionClient {
             self.core.account_type,
             self.core.base_currency,
         );
+        let base_currency = self.core.base_currency;
+        let mismatch_logged = AtomicBool::new(false);
         let exec_sender = get_exec_event_sender();
         let clock = get_atomic_clock_realtime();
         move |(balances, margins, info)| {
+            // IB reports the summary tags in the account's base currency, so a balance in
+            // another currency means the configured base currency is not the account's
+            if let Some(base_currency) = base_currency
+                && let Some(balance) = balances.iter().find(|b| b.currency != base_currency)
+                && !mismatch_logged.swap(true, Ordering::Relaxed)
+            {
+                tracing::error!(
+                    "IB account summary reports a balance in {}, but the configured \
+                     `base_currency` is {base_currency}",
+                    balance.currency,
+                );
+            }
+
             let ts_now = clock.get_time_ns();
             let state =
                 factory.generate_account_state(balances, margins, true, ts_now, ts_now, info);

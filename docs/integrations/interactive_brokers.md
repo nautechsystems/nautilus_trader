@@ -467,6 +467,12 @@ under its IB name, so values IB publishes only on `updateAccountValue` (for exam
 `PostExpirationExcess` and `PostExpirationMargin`) are readable from Python alongside the summary
 tags such as `TotalCashValue`. A key reported once per currency keeps the last value IB sends.
 
+The account has no base currency by default and keeps one balance per currency. Set `base_currency`
+to the account's base currency, the currency IB reports the summary tags in, for a single-currency
+account. The portfolio then converts P&L in other currencies with exchange rates from the cache, as
+for any account with a base currency. The client logs an error if IB reports a balance in another
+currency.
+
 ## Reconciliation
 
 Mass status requests query three independent IB sources:
@@ -696,6 +702,7 @@ not restart a subscription.
 | `port`                                       | `4002`                  | TWS or IB Gateway socket port.                       |
 | `client_id`                                  | `1`                     | IB API client ID.                                    |
 | `account_id`                                 | `None`                  | Raw IB account code such as `DU123456`.              |
+| `base_currency`                              | `None`                  | Account base currency; `None` is multi-currency.     |
 | `connection_timeout`                         | `300` seconds           | Set the socket connection timeout.                   |
 | `request_timeout`                            | `60` seconds            | Set the IB request timeout.                          |
 | `fetch_all_open_orders`                      | `False`                 | Request all open orders visible to the session.      |

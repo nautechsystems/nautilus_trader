@@ -5276,6 +5276,70 @@ fn test_account_state_sender_delivers_from_worker_thread() {
 }
 
 #[rstest]
+fn test_account_state_carries_configured_base_currency() {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        TraderId::from("TESTER-001"),
+        *IB_CLIENT_ID,
+        *IB_VENUE,
+        OmsType::Netting,
+        AccountId::from("IB-001"),
+        AccountType::Margin,
+        Some(Currency::USD()),
+        cache,
+    );
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_exec_event_sender(tx);
+    let client = InteractiveBrokersExecutionClient::new(
+        core,
+        InteractiveBrokersExecutionClientConfig {
+            base_currency: Some(Currency::USD()),
+            ..Default::default()
+        },
+        create_test_instrument_provider(),
+    )
+    .unwrap();
+    let balances = vec![
+        AccountBalance::from_total_and_free(
+            Decimal::new(100050, 2),
+            Decimal::new(90025, 2),
+            Currency::USD(),
+        )
+        .unwrap(),
+    ];
+
+    client.account_state_sender()((balances.clone(), Vec::new(), None));
+
+    match rx.try_recv().unwrap() {
+        ExecutionEvent::Account(state) => {
+            assert_eq!(state.base_currency, Some(Currency::USD()));
+            assert_eq!(state.balances, balances);
+        }
+        other => panic!("expected account state, was {other:?}"),
+    }
+}
+
+#[rstest]
+fn test_account_state_has_no_base_currency_by_default() {
+    let (client, mut rx, _cache) = create_test_execution_client();
+    let balances = vec![
+        AccountBalance::from_total_and_free(
+            Decimal::new(100050, 2),
+            Decimal::new(90025, 2),
+            Currency::USD(),
+        )
+        .unwrap(),
+    ];
+
+    client.account_state_sender()((balances, Vec::new(), None));
+
+    match rx.try_recv().unwrap() {
+        ExecutionEvent::Account(state) => assert_eq!(state.base_currency, None),
+        other => panic!("expected account state, was {other:?}"),
+    }
+}
+
+#[rstest]
 fn test_report_hooks_fall_back_to_inline_collection_while_disconnected() {
     let (client, _, _) = create_test_execution_client();
 
