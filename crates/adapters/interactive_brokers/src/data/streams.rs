@@ -733,6 +733,15 @@ struct HistoricalBarStreamState {
     completion: HistoricalBarCompletion,
 }
 
+impl HistoricalBarStreamState {
+    /// Prepares a (re)subscribe and returns the replay start.
+    fn begin_subscription(&mut self) -> UnixNanos {
+        self.replay_start_ns =
+            resolve_historical_bar_replay_start_ns(self.first_start_ns, self.last_disconnection_ns);
+        self.replay_start_ns
+    }
+}
+
 /// How long after its close a bar still waiting for IB's final update is published anyway.
 ///
 /// IB sends the final update of a keepUpToDate bar about 0.5 seconds after the bar closes, but
@@ -849,14 +858,7 @@ pub(super) async fn handle_historical_bars_subscription(
             let contract = contract.clone();
             let stream_state = Arc::clone(&stream_state);
             Box::pin(async move {
-                let replay_start_ns = {
-                    let mut state = stream_state.lock().await;
-                    state.replay_start_ns = resolve_historical_bar_replay_start_ns(
-                        state.first_start_ns,
-                        state.last_disconnection_ns,
-                    );
-                    state.replay_start_ns
-                };
+                let replay_start_ns = stream_state.lock().await.begin_subscription();
 
                 let duration = calculate_historical_bar_subscription_duration(
                     bar_type,
@@ -944,7 +946,7 @@ where
                     .expire(context.clock.get_time_ns());
 
                 if let Some(bar) = expired
-                    && context.data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err()
+                    && !send_bar(context, bar)
                 {
                     return Ok(StreamAction::Stop);
                 }
@@ -953,7 +955,7 @@ where
                 match update {
                     Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::Historical(data)))) => {
                         if !data.bars.is_empty() { monitor.received_data(); }
-                        let replay_start_ns = mark_historical_bar_connected(&stream_state).await;
+                        mark_historical_bar_connected(&stream_state).await;
 
                         for ib_bar in &data.bars {
                             let bar = ib_bar_to_nautilus_bar(
@@ -963,22 +965,14 @@ where
                                 context.size_precision,
                             )?;
 
-                            if !should_emit_historical_bar(&bar, replay_start_ns) {
-                                continue;
-                            }
-
-                            if handle_revised_bars {
-                                if context.data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err() {
-                                    return Ok(StreamAction::Stop);
-                                }
-                            } else if !send_completed_historical_bars(context, &stream_state, bar).await {
+                            if !send_historical_bar(context, &stream_state, handle_revised_bars, bar).await {
                                 return Ok(StreamAction::Stop);
                             }
                         }
                     }
                     Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::Update(ib_bar)))) => {
                         monitor.received_data();
-                        let replay_start_ns = mark_historical_bar_connected(&stream_state).await;
+                        mark_historical_bar_connected(&stream_state).await;
                         let bar = ib_bar_to_nautilus_bar(
                             &ib_bar,
                             bar_type,
@@ -986,15 +980,7 @@ where
                             context.size_precision,
                         )?;
 
-                        if !should_emit_historical_bar(&bar, replay_start_ns) {
-                            continue;
-                        }
-
-                        if handle_revised_bars {
-                            if context.data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err() {
-                                return Ok(StreamAction::Stop);
-                            }
-                        } else if !send_completed_historical_bars(context, &stream_state, bar).await {
+                        if !send_historical_bar(context, &stream_state, handle_revised_bars, bar).await {
                             return Ok(StreamAction::Stop);
                         }
                     }
@@ -1051,22 +1037,32 @@ where
 }
 
 // Returns false when the data channel is closed
-async fn send_completed_historical_bars(
+async fn send_historical_bar(
     context: &StreamContext,
     stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
+    handle_revised_bars: bool,
     bar: Bar,
 ) -> bool {
-    let completed = stream_state
-        .lock()
-        .await
-        .completion
-        .observe(bar, context.clock.get_time_ns());
-    completed.into_iter().all(|bar| {
-        context
-            .data_sender
-            .send(DataEvent::Data(Data::Bar(bar)))
-            .is_ok()
-    })
+    let mut state = stream_state.lock().await;
+
+    if !should_emit_historical_bar(&bar, state.replay_start_ns) {
+        return true;
+    }
+
+    let bars = if handle_revised_bars {
+        vec![bar]
+    } else {
+        state.completion.observe(bar, context.clock.get_time_ns())
+    };
+    bars.into_iter().all(|bar| send_bar(context, bar))
+}
+
+// Returns false when the data channel is closed
+fn send_bar(context: &StreamContext, bar: Bar) -> bool {
+    context
+        .data_sender
+        .send(DataEvent::Data(Data::Bar(bar)))
+        .is_ok()
 }
 
 async fn sleep_or_pending(duration: Option<Duration>) {
@@ -1078,10 +1074,8 @@ async fn sleep_or_pending(duration: Option<Duration>) {
 
 async fn mark_historical_bar_connected(
     stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
-) -> UnixNanos {
-    let mut state = stream_state.lock().await;
-    state.had_connection = true;
-    state.replay_start_ns
+) {
+    stream_state.lock().await.had_connection = true;
 }
 
 async fn mark_historical_bar_disconnected(
