@@ -225,6 +225,7 @@ impl LiveNode {
         kernel: NautilusKernel,
         runner: AsyncRunner,
         config: LiveNodeConfig,
+        handle: LiveNodeHandle,
         mut exec_manager: ExecutionManager,
         exec_clients: Vec<LiveExecutionClient>,
         socket_registry: SocketReconnectRegistry,
@@ -240,7 +241,7 @@ impl LiveNode {
             kernel,
             runner: Some(runner),
             config,
-            handle: LiveNodeHandle::new(),
+            handle,
             exec_manager,
             exec_clients,
             socket_registry,
@@ -290,8 +291,9 @@ impl LiveNode {
             );
         }
 
+        let handle = LiveNodeHandle::new();
         let runner = AsyncRunner::new();
-        runner.bind_senders();
+        runner.bind_senders_for_node(handle.clone());
 
         let kernel = NautilusKernel::new(name, config.clone())?;
         #[cfg(feature = "python")]
@@ -320,7 +322,7 @@ impl LiveNode {
             kernel,
             runner: Some(runner),
             config,
-            handle: LiveNodeHandle::new(),
+            handle,
             exec_manager,
             exec_clients: Vec::new(),
             socket_registry: SocketReconnectRegistry::default(),

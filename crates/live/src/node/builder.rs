@@ -49,7 +49,7 @@ use nautilus_system::{
 use nautilus_trading::ImportableControllerConfig;
 
 use super::{
-    LiveNode,
+    LiveNode, LiveNodeHandle,
     config::{
         LiveDataEngineConfig, LiveExecutionEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
         RoutingConfig, validate_live_environment,
@@ -603,8 +603,9 @@ impl LiveNodeBuilder {
             );
         }
 
+        let handle = LiveNodeHandle::new();
         let runner = AsyncRunner::new();
-        runner.bind_senders();
+        runner.bind_senders_for_node(handle.clone());
 
         let socket_registry = SocketReconnectRegistry::default();
 
@@ -805,6 +806,7 @@ impl LiveNodeBuilder {
             kernel,
             runner,
             self.config.clone(),
+            handle,
             exec_manager,
             exec_clients,
             socket_registry,
