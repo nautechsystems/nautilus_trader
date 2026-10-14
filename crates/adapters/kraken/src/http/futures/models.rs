@@ -374,6 +374,12 @@ pub struct FuturesOrderEventsResponse {
     pub continuation_token: Option<String>,
     /// Rows the projection could not represent, which leave the set incomplete.
     pub skipped_rows: usize,
+    /// The order of each skipped row that names one; a row of an undocumented kind names none.
+    pub skipped_order_ids: Vec<String>,
+    /// The earliest event time on the page in milliseconds, over every element including the
+    /// skipped ones. The venue returns history newest first, so with a continuation token this is
+    /// how far back the page reaches.
+    pub oldest_event_ms: Option<i64>,
 }
 
 // Futures Order History Models
@@ -593,6 +599,8 @@ impl FuturesOrderHistoryResponse {
         };
 
         let mut skipped_rows = 0usize;
+        let mut skipped_order_ids = Vec::new();
+        let oldest_event_ms = elements.iter().map(|element| element.timestamp).min();
         let order_events = elements
             .into_iter()
             .filter_map(|element| {
@@ -643,6 +651,7 @@ impl FuturesOrderHistoryResponse {
                         order.tradeable
                     );
                     skipped_rows += 1;
+                    skipped_order_ids.push(order.uid);
                     return None;
                 };
 
@@ -657,6 +666,7 @@ impl FuturesOrderHistoryResponse {
                             order.tradeable
                         );
                         skipped_rows += 1;
+                        skipped_order_ids.push(order.uid);
                         return None;
                     }
                 };
@@ -678,6 +688,7 @@ impl FuturesOrderHistoryResponse {
                             order.tradeable
                         );
                         skipped_rows += 1;
+                        skipped_order_ids.push(order.uid);
                         return None;
                     }
                     Some(kind) => kind,
@@ -735,6 +746,8 @@ impl FuturesOrderHistoryResponse {
             order_events,
             continuation_token: self.continuation_token,
             skipped_rows,
+            skipped_order_ids,
+            oldest_event_ms,
         })
     }
 }
@@ -1616,6 +1629,52 @@ mod tests {
             response.skipped_rows, 2,
             "the Unknown type and the undocumented kind count; the not-found event does not"
         );
+    }
+
+    /// A page reaches back to its oldest event whatever the projection keeps, so the oldest time
+    /// counts a not-found or undocumented element as well as a kept one.
+    #[rstest]
+    #[case::not_found(r#"{"OrderNotFound":{"orderId":"gone"}}"#)]
+    #[case::undocumented(r#"{"OrderSomethingNew":{"order":{"uid":"x"}}}"#)]
+    fn test_parse_futures_order_events_oldest_time_counts_every_element(#[case] oldest: &str) {
+        let kept = r#"{"OrderPlaced":{"order":{"uid":"o1","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250},"reason":"new_user_order"}}"#;
+        let data = format!(
+            r#"{{"elements":[{{"uid":"e2","timestamp":1680876931000,"event":{kept}}},{{"uid":"e1","timestamp":1680876930000,"event":{oldest}}}]}}"#
+        );
+
+        let response = order_history_events_from(&data);
+
+        assert_eq!(response.order_events.len(), 1);
+        assert_eq!(response.oldest_event_ms, Some(1_680_876_930_000));
+    }
+
+    /// A row skipped for a timestamp before the epoch names the order it carries, so a lookup
+    /// cannot rule that order out.
+    #[rstest]
+    fn test_parse_futures_order_events_names_the_order_of_a_pre_epoch_row() {
+        let data = r#"{"elements":[{"uid":"e1","timestamp":1680876930250,"event":{"OrderPlaced":{"order":{"uid":"o-pre","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":-1,"lastUpdateTimestamp":-1},"reason":"new_user_order"}}}]}"#;
+
+        let response = order_history_events_from(data);
+
+        assert!(response.order_events.is_empty());
+        assert_eq!(response.skipped_rows, 1);
+        assert_eq!(response.skipped_order_ids, vec!["o-pre".to_string()]);
+    }
+
+    /// A page reaches back to its oldest event whatever the projection keeps, so a skipped row
+    /// counts toward the oldest time. A skipped row names its order when it carries one; an
+    /// undocumented kind names none.
+    #[rstest]
+    fn test_parse_futures_order_events_reports_what_the_page_covers() {
+        let response = order_history_events("http_futures_order_events_unknown.json");
+
+        assert_eq!(
+            response.oldest_event_ms,
+            Some(1_779_062_400_000),
+            "the oldest element is the skipped Unknown-type row"
+        );
+        assert_eq!(response.skipped_order_ids, vec!["abc".to_string()]);
+        assert_eq!(response.skipped_rows, 2);
     }
 
     /// `Unknown` is how the venue reports a source type it could not decode, so neither it nor a

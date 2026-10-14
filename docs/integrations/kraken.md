@@ -684,17 +684,45 @@ never held that order or position.
 Futures makes one exception: an untouched reduce-only stop or take-profit can have no
 unfilled size until it fires. If its contract has no open position from which to size
 it, the read skips the order and its history rows with a warning and marks the set
-incomplete. A failed open-position read fails the order read too.
+incomplete. A failed open-position read fails the order read too. A single-order status
+lookup for that trigger fails while it is skipped, so reconciliation defers it.
 
 Both clients return no rows for a query scoped to an instrument they do not hold.
 Spot and Futures share the `KRAKEN` venue, so either client can receive a query for an
 order it did not route. Single-order status lookups and `query_order` inspect only
 the command's instrument; unresolved or unparsable records on another instrument
-cannot fail that scoped read.
+cannot fail that scoped read, though a lookup cannot rule out an order such a record
+may name.
 
 Other gaps mark the set incomplete: closed or historical orders and fills that
 cannot be parsed, or whose instruments cannot be resolved. Position records do not
 contribute to the completeness flag; in-scope position failures fail the read.
+
+#### Single-order lookups
+
+A single-order status lookup that finds no report tells reconciliation that the venue
+has no such order, and reconciliation resolves the order on that answer. The lookup
+gives that answer only from a read that rules the order out, and otherwise fails, so
+reconciliation defers the order:
+
+- A complete read rules out any order it could have returned. A held futures order
+  shows only in the orders-status window, which the Futures lookup reads for a cached
+  order before answering.
+- A read that skipped a row, including one whose instrument the client cannot
+  resolve, rules out an order with a venue order ID that no skipped row carries. A
+  skipped row that names no order, such as an undocumented history event kind, rules
+  out none.
+- A lookup on an instrument of the other product reads complete, since the other
+  client answers for its orders. One on an instrument of the client's own product
+  that it does not hold reads nothing and rules out none.
+- A read cut short rules out an order placed after the oldest event it holds, by more
+  than a 60-second clock skew allowance, taking the earlier of the order's creation
+  and acceptance times. Futures history pages are newest first, so a page that hands
+  back a continuation token reaches back to its oldest event. A spot closed-order read
+  stopped at its page cap rules out none.
+
+An order a read cannot rule out is deferred again on every open-order check; on Futures
+each such lookup draws one order-history token.
 
 #### Spot pagination limits
 
@@ -705,6 +733,8 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
   window, so the engine sees the truncated set as incomplete.
 - `generate_order_status_reports` and `generate_fill_reports` return the records
   read up to the cap without exposing a completeness flag.
+- A single-order status lookup that finds nothing in a closed-order read cut short
+  by the cap fails, so reconciliation defers the order.
 
 ### Spot reconciliation
 
@@ -747,13 +777,15 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
   pair's own records whichever way Kraken spells it.
 - A read scoped to an instrument the client does not hold returns nothing. Spot and futures IDs
   share the `KRAKEN` venue, so a futures ID can reach the spot client and the reverse; neither
-  falls back to returning every instrument's records.
+  falls back to returning every instrument's records. A single-order lookup on an unheld
+  instrument of the client's own product rules out no order.
 - A spot instrument whose altname differs from its `AssetPairs` key carries the altname in its
   `info` map, so a client whose instruments arrive through `cache_instrument` or
   `cache_instruments` resolves altname-spelled records without refetching `AssetPairs`.
 - On an unscoped read, an open order whose pair cannot be resolved to a cached instrument fails the
   read, rather than being omitted from an otherwise successful one. A scoped read skips a record it
-  cannot resolve, since it cannot belong to the requested instrument.
+  cannot resolve, which may be another instrument's, and a single-order lookup cannot rule out the
+  order it names.
 - A closed order or fill that cannot be resolved is logged as a warning and skipped, preserving the
   records that do resolve. Historical records routinely outlive the loaded instrument set.
 
@@ -842,7 +874,9 @@ Each read takes one page: Kraken `/history` endpoints share a pool
 of 100 tokens, replenished at 100 every 10 minutes. An order-history page costs one
 token, so a page that hands back a continuation token, in the body or
 the `Next-Continuation-Token` header, logs a warning and leaves the set incomplete rather than
-reading further.
+reading further. A single-order status lookup can still report a cached order absent when it
+was placed after the page's oldest event by more than the clock skew allowance; see
+[Single-order lookups](#single-order-lookups).
 
 The history lists every lifecycle event, so the read hands back one report per
 order: the open-order snapshot when the venue still lists the order, else its latest history

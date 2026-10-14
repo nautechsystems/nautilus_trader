@@ -63,9 +63,10 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    command_failure_from_cancel_error, command_failure_from_modify_error,
-    command_failure_from_spot_batch_error, command_failure_from_spot_batch_item,
-    command_failure_from_spot_cancel_error, command_failure_from_submit_error,
+    absent_unless_unread, cached_order_for_status_command, command_failure_from_cancel_error,
+    command_failure_from_modify_error, command_failure_from_spot_batch_error,
+    command_failure_from_spot_batch_item, command_failure_from_spot_cancel_error,
+    command_failure_from_submit_error, earliest_venue_time, status_command_label,
 };
 use crate::{
     common::{
@@ -1227,14 +1228,14 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         let account_id = self.core.account_id;
         // Scoped to the command's instrument, so an unresolvable open order on another pair is out
         // of scope for this lookup rather than failing it.
-        let reports = self
+        let (reports, coverage) = self
             .http
-            .request_order_status_reports(account_id, cmd.instrument_id, None, None, false)
+            .request_order_status_reports_checked(account_id, cmd.instrument_id, None, None, false)
             .await?;
 
         // Match by venue_order_id or client_order_id (comparing truncated form
         // since Kraken stores the truncated cl_ord_id for long IDs)
-        Ok(reports.into_iter().find(|r| {
+        let matched = reports.into_iter().find(|r| {
             cmd.venue_order_id
                 .is_some_and(|id| r.venue_order_id.as_str() == id.as_str())
                 || cmd.client_order_id.is_some_and(|id| {
@@ -1242,7 +1243,25 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                         .as_ref()
                         .is_some_and(|r_id| r_id.as_str() == truncate_cl_ord_id(&id))
                 })
-        }))
+        });
+
+        if matched.is_some() {
+            return Ok(matched);
+        }
+
+        // Absence answers that the venue has no such order, so it needs a read that rules the
+        // order out; otherwise reconciliation defers.
+        let cached = cached_order_for_status_command(&self.core.cache(), cmd);
+        let venue_order_id = cmd
+            .venue_order_id
+            .or_else(|| cached.as_ref().and_then(|order| order.venue_order_id()));
+
+        absent_unless_unread(
+            &coverage,
+            venue_order_id,
+            cached.as_ref().map(earliest_venue_time),
+            &status_command_label(cmd, venue_order_id),
+        )
     }
 
     async fn generate_order_status_reports(
@@ -1320,10 +1339,11 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         // Read closed orders as well as open ones, matching the shared default. An order that
         // reached a terminal state while the node was down is only visible through ClosedOrders.
         // The lookback cutoff and the closed-order page cap bound the read.
-        let (order_reports, orders_complete) = self
+        let (order_reports, orders_coverage) = self
             .http
             .request_order_status_reports_checked(account_id, None, start, None, false)
             .await?;
+        let orders_complete = orders_coverage.is_complete();
         let (fill_reports, fills_complete) = self
             .http
             .request_fill_reports_checked(account_id, None, start, None)

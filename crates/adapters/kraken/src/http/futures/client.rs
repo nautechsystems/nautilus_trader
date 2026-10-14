@@ -66,7 +66,7 @@ use crate::{
         enums::{
             KrakenApiResult, KrakenEnvironment, KrakenFuturesOrderStatus, KrakenFuturesOrderType,
             KrakenFuturesQtyMode, KrakenOrderSide, KrakenProductType, KrakenSendStatus,
-            KrakenTriggerSignal,
+            KrakenTriggerSignal, product_type_from_symbol,
         },
         parse::{
             bar_type_to_futures_resolution, normalize_asset_key, parse_bar,
@@ -79,6 +79,7 @@ use crate::{
     },
     http::{
         apply_count_limit,
+        coverage::ReportCoverage,
         error::{
             KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
             kraken_http_should_retry,
@@ -812,6 +813,11 @@ impl KrakenFuturesRawHttpClient {
         if let Some(token) = continuation_token {
             query_params.push(format!("continuation_token={token}"));
         }
+
+        // A page that hands back a continuation token must hold the newest events, which the
+        // single-order lookup relies on to tell how far back the page reaches, so the order is
+        // pinned rather than left to the venue default
+        query_params.push("sort=desc".to_string());
 
         // Build URL with query params
         let query_string = query_params.join("&");
@@ -1759,16 +1765,19 @@ impl KrakenFuturesHttpClient {
             .map(|(reports, _)| reports)
     }
 
-    /// Requests order status reports, also reporting whether the set is complete.
+    /// Requests order status reports, also reporting what the read covered.
     ///
     /// An in-scope open order whose instrument cannot be resolved, or that cannot be parsed, fails
     /// the read, except an untouched reduce-only trigger listed without an unfilled size that no
-    /// open position sizes, which is skipped. The flag is `false` when such a trigger is skipped, a
-    /// history row cannot be parsed, a historical record's instrument cannot be resolved, a history
-    /// row could not be represented, or the history page hands back a continuation token: the read
-    /// takes one page, since every Kraken `/history` endpoint draws on one pool of 100 tokens,
-    /// replenished at 100 every 10 minutes, at a token per page.
-    /// `ExecutionMassStatus::set_report_window` records the flag for bounded history.
+    /// open position sizes, which is skipped, and an order a read scoped to one instrument cannot
+    /// resolve, which may be on another instrument and is skipped. The coverage records each such
+    /// skip, each history row that cannot be parsed, resolved or represented, and a continuation
+    /// token, which cuts the read short at the page's oldest event: the read takes one page, since
+    /// every Kraken `/history` endpoint draws on one pool of 100 tokens, replenished at 100 every
+    /// 10 minutes, at a token per page. A read scoped to an unheld futures instrument reads nothing
+    /// and rules out no order. `ExecutionMassStatus::set_report_window` records whether it is
+    /// complete for bounded history, and the single-order lookup whether it rules out an order it
+    /// did not return.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -1776,17 +1785,22 @@ impl KrakenFuturesHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         open_only: bool,
-    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
-        let mut complete = true;
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, ReportCoverage)> {
+        let mut coverage = ReportCoverage::default();
 
         // A scoped read for an instrument this client does not hold can match nothing, so
-        // return before the request rather than reporting every instrument's rows.
+        // return before the request rather than reporting every instrument's rows. A spot
+        // instrument names none of this client's orders, so that read is complete; a futures one
+        // the listing lacks read nothing, so it rules out none of its orders.
         if let Some(ref target_id) = instrument_id
             && self
                 .get_cached_instrument(&target_id.symbol.inner())
                 .is_none()
         {
-            return Ok((Vec::new(), complete));
+            if product_type_from_symbol(target_id.symbol.as_str()) == KrakenProductType::Futures {
+                coverage.truncate(None);
+            }
+            return Ok((Vec::new(), coverage));
         }
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
@@ -1836,10 +1850,16 @@ impl KrakenFuturesHttpClient {
             // Resolve the row and compare instrument ids, so a scoped read cannot match on a
             // spelling and cannot fall through to every instrument when the id is not held.
             let resolved = self.get_instrument_by_raw_symbol(&order.symbol);
-            if let Some(ref target_id) = instrument_id
-                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-            {
-                continue;
+            if let Some(ref target_id) = instrument_id {
+                match &resolved {
+                    Some(inst) if inst.id() != *target_id => continue,
+                    // Unresolved, the row may be the scoped instrument's own
+                    None => {
+                        coverage.skip(&order.order_id);
+                        continue;
+                    }
+                    Some(_) => {}
+                }
             }
 
             if let Some(instrument) = resolved {
@@ -1876,7 +1896,7 @@ impl KrakenFuturesHttpClient {
                         order.order_id,
                         order.symbol
                     );
-                    complete = false;
+                    coverage.skip(&order.order_id);
                     skipped_open_order_ids.insert(VenueOrderId::new(order.order_id.as_str()));
                     continue;
                 }
@@ -1931,7 +1951,13 @@ impl KrakenFuturesHttpClient {
                 log::warn!(
                     "Order history window since={start_ms:?} before={end_ms:?} holds more events than one page; the events beyond it are not read, marking the set incomplete"
                 );
-                complete = false;
+                // The page holds the newest events, so it covers every event from its oldest one
+                // on; a page with no usable event time covers nothing it can place.
+                coverage.truncate(
+                    response
+                        .oldest_event_ms
+                        .and_then(UnixNanos::from_millis_checked),
+                );
             }
 
             // The history lists every lifecycle event, so an order appears once per event. Each
@@ -1950,7 +1976,14 @@ impl KrakenFuturesHttpClient {
                     "Order history page had {} row(s) the adapter could not represent; marking the set incomplete",
                     response.skipped_rows
                 );
-                complete = false;
+
+                for order_id in &response.skipped_order_ids {
+                    coverage.skip(order_id);
+                }
+
+                if response.skipped_rows > response.skipped_order_ids.len() {
+                    coverage.skip_unidentified();
+                }
             }
 
             for event_wrapper in response.order_events {
@@ -1959,10 +1992,16 @@ impl KrakenFuturesHttpClient {
                 // Resolve the row and compare instrument ids, so a scoped read cannot match on a
                 // spelling and cannot fall through to every instrument when the id is not held.
                 let resolved = self.get_instrument_by_history_tradeable(&event.symbol);
-                if let Some(ref target_id) = instrument_id
-                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-                {
-                    continue;
+                if let Some(ref target_id) = instrument_id {
+                    match &resolved {
+                        Some(inst) if inst.id() != *target_id => continue,
+                        // Unresolved, the row may be the scoped instrument's own
+                        None => {
+                            coverage.skip(&event.order_id);
+                            continue;
+                        }
+                        Some(_) => {}
+                    }
                 }
 
                 if let Some(instrument) = resolved {
@@ -1988,7 +2027,7 @@ impl KrakenFuturesHttpClient {
                         Err(e) => {
                             let order_id = &event.order_id;
                             log::warn!("Failed to parse futures order event {order_id}: {e}");
-                            complete = false;
+                            coverage.skip(order_id);
                         }
                     }
                 } else {
@@ -1996,14 +2035,14 @@ impl KrakenFuturesHttpClient {
                         "Instrument not in cache for futures symbol {}, skipping order event",
                         event.symbol
                     );
-                    complete = false;
+                    coverage.skip(&event.order_id);
                 }
             }
 
             all_reports.extend(latest.into_values());
         }
 
-        Ok((all_reports, complete))
+        Ok((all_reports, coverage))
     }
 
     /// Requests order status reports from the venue's `/orders/status`
@@ -2080,7 +2119,8 @@ impl KrakenFuturesHttpClient {
 
     /// Requests fill reports, also reporting whether the set is complete.
     ///
-    /// See [`Self::request_order_status_reports_checked`] for what the flag means.
+    /// The flag is `false` when an in-scope fill cannot be resolved or parsed, which
+    /// `ExecutionMassStatus::set_report_window` records for bounded history.
     pub(crate) async fn request_fill_reports_checked(
         &self,
         account_id: AccountId,
@@ -4353,7 +4393,7 @@ mod tests {
         let client = history_test_client(history, header_token).await;
         cache_test_futures_instrument(&client);
 
-        let (reports, complete) = client
+        let (reports, coverage) = client
             .request_order_status_reports_checked(
                 AccountId::from("KRAKEN-001"),
                 None,
@@ -4364,7 +4404,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(complete, expected_complete);
+        assert_eq!(coverage.is_complete(), expected_complete);
         assert_eq!(
             reports
                 .iter()
@@ -4439,7 +4479,7 @@ mod tests {
         let client = history_test_client(Arc::new(RwLock::new(page)), None).await;
         cache_test_futures_instrument(&client);
 
-        let (reports, complete) = client
+        let (reports, coverage) = client
             .request_order_status_reports_checked(
                 AccountId::from("KRAKEN-001"),
                 None,
@@ -4450,7 +4490,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(complete);
+        assert!(coverage.is_complete());
         assert_eq!(reports.len(), 1, "{reports:?}");
         assert_eq!(reports[0].venue_order_id, VenueOrderId::from("H-CLOSED"));
         assert_eq!(reports[0].order_status, OrderStatus::Canceled);
@@ -4469,24 +4509,24 @@ mod tests {
 
         // Control: the same page with a decodable type reads complete, so the flag below is
         // driven by the undecodable type rather than by the page itself.
-        let (control, complete) = client
+        let (control, coverage) = client
             .request_order_status_reports_checked(account_id, None, None, None, false)
             .await
             .unwrap();
         assert!(
-            complete,
+            coverage.is_complete(),
             "the control must be complete, or the skip proves nothing"
         );
         assert_eq!(control.len(), 2);
 
         *history.write() = history_page("Unknown", None);
-        let (reports, complete) = client
+        let (reports, coverage) = client
             .request_order_status_reports_checked(account_id, None, None, None, false)
             .await
             .unwrap();
 
         assert!(
-            !complete,
+            !coverage.is_complete(),
             "a skipped history row must leave the set incomplete"
         );
         assert_eq!(reports.len(), 1);
@@ -4500,6 +4540,58 @@ mod tests {
         assert_eq!(report.quantity, Quantity::from("2"));
         assert_eq!(report.filled_qty, Quantity::from("0.5"));
         assert_eq!(report.price, Some(Price::from("69500")));
+    }
+
+    /// The order history request asks for the newest events first rather than relying on the
+    /// venue default, since a page with a continuation token is read as reaching back to its
+    /// oldest event.
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_order_events_asks_for_the_newest_events_first() {
+        use axum::{Router, extract::RawQuery, routing::any};
+
+        let query: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
+        let recorded = query.clone();
+        let app = Router::new().route(
+            "/api/history/v3/orders",
+            any(move |RawQuery(raw): RawQuery| {
+                let recorded = recorded.clone();
+                async move {
+                    *recorded.write() = raw;
+                    r#"{"elements":[]}"#
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+
+        client
+            .inner
+            .get_order_events(None, None, None)
+            .await
+            .unwrap();
+
+        let query = query.read().clone().unwrap_or_default();
+        assert!(
+            query.split('&').any(|param| param == "sort=desc"),
+            "{query}"
+        );
     }
 
     fn cache_test_futures_instrument(client: &KrakenFuturesHttpClient) -> InstrumentId {

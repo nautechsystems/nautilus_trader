@@ -70,7 +70,7 @@ use crate::{
         credential::KrakenCredential,
         enums::{
             KrakenAssetClass, KrakenEnvironment, KrakenOrderSide, KrakenOrderType,
-            KrakenProductType,
+            KrakenProductType, product_type_from_symbol,
         },
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, normalize_spot_symbol, parse_bar,
@@ -81,6 +81,7 @@ use crate::{
     },
     http::{
         apply_count_limit,
+        coverage::ReportCoverage,
         error::{
             KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
             kraken_http_should_retry,
@@ -2215,12 +2216,16 @@ impl KrakenSpotHttpClient {
             .map(|(reports, _)| reports)
     }
 
-    /// Requests order status reports, also reporting whether the set is complete.
+    /// Requests order status reports, also reporting what the read covered.
     ///
     /// An in-scope open order whose pair cannot be resolved, or that cannot be parsed, fails the
-    /// read. The flag is `false` when an in-scope closed order cannot be resolved or parsed, or the
-    /// closed-order read stops at its page cap, which `ExecutionMassStatus::set_report_window`
-    /// records for bounded history.
+    /// read, except that a read scoped to one instrument skips an order whose pair it cannot
+    /// resolve, since that order may be on another instrument. The coverage records each such
+    /// skip, each closed order that cannot be resolved, each in-scope one that cannot be parsed,
+    /// and a closed-order read that stops at its page cap, which it cannot place in time. A read
+    /// scoped to an unheld spot instrument reads nothing and rules out no order.
+    /// `ExecutionMassStatus::set_report_window` records whether it is complete for bounded history,
+    /// and the single-order lookup whether it rules out an order it did not return.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -2228,21 +2233,26 @@ impl KrakenSpotHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         open_only: bool,
-    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, ReportCoverage)> {
         const PAGE_SIZE: i32 = 50;
 
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
-        let mut complete = true;
+        let mut coverage = ReportCoverage::default();
 
         // A scoped read for an instrument this client does not hold can match nothing, so return
         // before the request rather than falling through and reporting every instrument's rows.
+        // A futures instrument names none of this client's orders, so that read is complete; a
+        // spot one the listing lacks read nothing, so it rules out none of its orders.
         if let Some(ref target_id) = instrument_id
             && self
                 .get_cached_instrument(&target_id.symbol.inner())
                 .is_none()
         {
-            return Ok((all_reports, complete));
+            if product_type_from_symbol(target_id.symbol.as_str()) == KrakenProductType::Spot {
+                coverage.truncate(None);
+            }
+            return Ok((all_reports, coverage));
         }
 
         let open_orders = self.inner.get_open_orders(Some(true), None).await?;
@@ -2251,10 +2261,16 @@ impl KrakenSpotHttpClient {
             // Kraken spells a pair two ways, so resolve the row and compare instrument ids rather
             // than the row's spelling against the cached `raw_symbol`.
             let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
-            if let Some(ref target_id) = instrument_id
-                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-            {
-                continue;
+            if let Some(ref target_id) = instrument_id {
+                match &resolved {
+                    Some(inst) if inst.id() != *target_id => continue,
+                    // Unresolved, the row may be the scoped instrument's own
+                    None => {
+                        coverage.skip(order_id);
+                        continue;
+                    }
+                    Some(_) => {}
+                }
             }
 
             let instrument = resolved.ok_or_else(|| {
@@ -2275,7 +2291,7 @@ impl KrakenSpotHttpClient {
         }
 
         if open_only {
-            return Ok((all_reports, complete));
+            return Ok((all_reports, coverage));
         }
 
         // Kraken API expects Unix timestamps in seconds
@@ -2288,9 +2304,9 @@ impl KrakenSpotHttpClient {
         loop {
             if pages >= MAX_REPORT_PAGES {
                 log::warn!(
-                    "ClosedOrders pagination hit the cap of {MAX_REPORT_PAGES} pages; returning a truncated set and marking it incomplete, which only mass status surfaces"
+                    "ClosedOrders pagination hit the cap of {MAX_REPORT_PAGES} pages; returning a truncated set and marking it incomplete"
                 );
-                complete = false;
+                coverage.truncate(None);
                 break;
             }
 
@@ -2307,10 +2323,16 @@ impl KrakenSpotHttpClient {
 
             for (order_id, order) in &closed_orders {
                 let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
-                if let Some(ref target_id) = instrument_id
-                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-                {
-                    continue;
+                if let Some(ref target_id) = instrument_id {
+                    match &resolved {
+                        Some(inst) if inst.id() != *target_id => continue,
+                        // Unresolved, the row may be the scoped instrument's own
+                        None => {
+                            coverage.skip(order_id);
+                            continue;
+                        }
+                        Some(_) => {}
+                    }
                 }
 
                 // A historical record can reference an instrument absent from the current
@@ -2320,7 +2342,7 @@ impl KrakenSpotHttpClient {
                         "ClosedOrders: instrument not in cache for pair {}, skipping order {order_id}",
                         order.descr.pair
                     );
-                    complete = false;
+                    coverage.skip(order_id);
                     continue;
                 };
 
@@ -2328,7 +2350,7 @@ impl KrakenSpotHttpClient {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
                         log::warn!("Failed to parse order {order_id}: {e}");
-                        complete = false;
+                        coverage.skip(order_id);
                     }
                 }
             }
@@ -2336,7 +2358,7 @@ impl KrakenSpotHttpClient {
             offset += PAGE_SIZE;
         }
 
-        Ok((all_reports, complete))
+        Ok((all_reports, coverage))
     }
 
     /// Requests fill/trade reports from Kraken.
@@ -2354,7 +2376,8 @@ impl KrakenSpotHttpClient {
 
     /// Requests fill reports, also reporting whether the set is complete.
     ///
-    /// See [`Self::request_order_status_reports_checked`] for what the flag means.
+    /// The flag is `false` when an in-scope trade cannot be resolved or parsed, or the read stops
+    /// at its page cap, which `ExecutionMassStatus::set_report_window` records for bounded history.
     pub(crate) async fn request_fill_reports_checked(
         &self,
         account_id: AccountId,
