@@ -378,8 +378,9 @@ position smaller than the order. During startup mass status, and when it looks u
 by venue order ID, the adapter clamps such an order to the total of its fills, so it closes
 `Filled` at a quantity smaller than the size originally submitted. The clamp applies only when the
 `userFills` history is complete and under its 2,000-record limit. Otherwise the adapter keeps the
-venue's quantity, and reconciliation can infer the missing fill. A single-order lookup fetches
-`userFills` only for a reduce-only order reported `Filled`.
+venue's quantity, and reconciliation can infer the missing fill. For this clamp, a single-order
+lookup fetches `userFills` only for a reduce-only order reported `Filled`. `QueryOrder` also reads
+fill history for [eligible ordinary filled orders](#order-fill-recovery).
 
 #### Command and direct requests
 
@@ -1536,6 +1537,53 @@ Upstream references:
 
 - [WebSocket `userEvents` (`liquidation` and `FillLiquidation`)](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions)
 - [Liquidation mechanics](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/liquidations)
+
+## Order fill recovery
+
+`QueryOrder` recovers missed venue fills before forwarding a fully filled order's status report.
+
+### Eligible orders
+
+Recovery requires all of these conditions:
+
+- The order is a cached ordinary limit order sized in base currency and tracked by this client
+  since submission, without reduce-only behavior or contingent relationships.
+- At query start, it has one venue order ID, no modification history or pending modify, and no
+  applied fills.
+- The venue reports the same order as `Filled`, with quantity and filled quantity equal to its
+  cached quantity.
+
+### Recovery and fallback
+
+After the status lookup, the adapter reads `userFills` once with `aggregateByTime=false`. It validates
+fill identities and complete unique trade coverage, rejecting matching fills whose quantity, price,
+or fee loses precision in its domain type. Identical records count once; conflicting records for a
+trade ID reject recovery. Complete coverage allows recovery even at the 2,000-fill response cap.
+
+The adapter emits validated fills in chronological order, then the ordinary status report. It discards them
+if the binding or order terms change during the history read, or a modify is pending afterward.
+Engine deduplication handles live fills arriving during the request.
+
+Unavailable history, incomplete coverage, or any row that cannot be decoded, resolved to an
+instrument, or converted into a report yields no recovery fills. This validation includes other
+orders' fills. Ordinary status reconciliation continues; any inferred fill has no commission
+(see [Inferred-fill commissions](#inferred-fill-commissions)).
+
+### Fees
+
+Recovery preserves zero fees, negative rebates, and supported fee currencies. `fee` includes
+`builderFee`. Zero fees in unregistered or outcome side tokens use the instrument's quote currency;
+nonzero fees in either reject recovery.
+
+### Limits
+
+`GenerateOrderStatusReport` and mass-status collection do not trigger this recovery. It does not
+cover partial or canceled orders, replacement chains, unknown external orders, or orders reloaded
+after a restart.
+
+Status and history reads are separate venue requests. Recovery cannot replace an execution inferred
+by another reconciliation before recovered fills apply, or repair its commission. It adds no
+pagination or retry loop; existing HTTP timeouts, retries, and rate-limit waits apply.
 
 ## Connection management
 

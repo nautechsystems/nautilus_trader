@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::Serialize;
+use serde::{Serialize, ser::SerializeStruct};
 
 use crate::{
     common::{
@@ -115,9 +115,21 @@ pub struct RecentTradesParams {
 }
 
 /// Parameters for user fills request.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct UserFillsParams {
     pub user: String,
+}
+
+impl Serialize for UserFillsParams {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("UserFillsParams", 2)?;
+        state.serialize_field("user", &self.user)?;
+        state.serialize_field("aggregateByTime", &false)?;
+        state.end()
+    }
 }
 
 /// Parameters for order status request.

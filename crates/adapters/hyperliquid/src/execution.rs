@@ -47,7 +47,7 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType},
-    events::OrderDeniedReason,
+    events::{OrderDeniedReason, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -1862,6 +1862,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let dispatch_state = self.ws_dispatch_state.clone();
         let clock = self.clock;
 
+        let recovery_context = self
+            .core
+            .cache()
+            .order(&client_order_id)
+            .filter(|order| {
+                order.account_id() == Some(self.core.account_id)
+                    && order.instrument_id() == cmd.instrument_id
+                    && order.strategy_id() == cmd.strategy_id
+            })
+            .and_then(|order| {
+                query_order_recovery_context(&order, venue_order_id, &dispatch_state)
+            });
+
         self.spawn_task("query_order", async move {
             // Search open orders by cloid first so modify/cancel-replace
             // resolves to the live replacement rather than a stale cached oid.
@@ -1919,6 +1932,19 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     } else {
                         clamp_reduce_only_report_to_fills(&http_client, &account_address, &mut report)
                             .await;
+
+                        if let Some(context) = recovery_context {
+                            recover_query_order_fills(
+                                &http_client,
+                                &account_address,
+                                &report,
+                                &context,
+                                &dispatch_state,
+                                &emitter,
+                            )
+                            .await;
+                        }
+
                         attach_known_client_order_id(&mut report, client_order_id);
                         log::debug!("Queried order status for oid {oid}");
                         emitter.send_order_status_report(report);
@@ -3274,6 +3300,209 @@ impl StagedBracketState {
     }
 }
 
+fn query_order_recovery_context(
+    order: &OrderAny,
+    venue_order_id: Option<VenueOrderId>,
+    dispatch_state: &WsDispatchState,
+) -> Option<OrderContext> {
+    if order.order_type() != OrderType::Limit
+        || order.is_quote_quantity()
+        || order.is_reduce_only()
+        || order.is_contingency()
+        || order.linked_order_ids().is_some()
+        || order.parent_order_id().is_some()
+        || !order.is_open()
+        || order.is_pending_update()
+        || !order.filled_qty().is_zero()
+        || !order.trade_ids().is_empty()
+        || order.venue_order_ids().len() != 1
+        || order.venue_order_id() != venue_order_id
+        || order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Updated(_)))
+    {
+        return None;
+    }
+
+    let client_order_id = order.client_order_id();
+    let context = OrderContext::from(order);
+    if dispatch_state.lookup_context(&client_order_id) != Some(context)
+        || dispatch_state.cached_venue_order_id(&client_order_id) != venue_order_id
+        || dispatch_state.has_pending_modify(&client_order_id)
+    {
+        return None;
+    }
+
+    Some(context)
+}
+
+async fn recover_query_order_fills(
+    http_client: &HyperliquidHttpClient,
+    account_address: &str,
+    report: &OrderStatusReport,
+    context: &OrderContext,
+    dispatch_state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let client_order_id = context.identity.client_order_id;
+    let cloid = http_client
+        .cached_client_order_id_cloid(&client_order_id)
+        .unwrap_or_else(|| Cloid::from_client_order_id(client_order_id));
+    let cloid_hex = cloid.to_hex();
+
+    if report.order_status != OrderStatus::Filled
+        || report.reduce_only
+        || report.order_type != OrderType::Limit
+        || report.instrument_id != context.identity.instrument_id
+        || report.order_side != Some(context.identity.order_side)
+        || report.quantity != context.quantity
+        || report.filled_qty != context.quantity
+        || report
+            .client_order_id
+            .is_some_and(|id| id != client_order_id && id.as_str() != cloid_hex)
+        || dispatch_state.cached_venue_order_id(&client_order_id) != Some(report.venue_order_id)
+    {
+        return;
+    }
+
+    let fills =
+        match collect_query_order_fills(http_client, account_address, report, context, cloid).await
+        {
+            Ok(fills) => fills,
+            Err(e) => {
+                log::warn!("Failed to recover fills for {client_order_id}: {e:#}");
+                return;
+            }
+        };
+
+    // Admission does not own a leg across HTTP awaits; only unchanged bindings may recover
+    if dispatch_state.lookup_context(&client_order_id) != Some(*context)
+        || dispatch_state.cached_venue_order_id(&client_order_id) != Some(report.venue_order_id)
+        || dispatch_state.has_pending_modify(&client_order_id)
+    {
+        log::warn!(
+            "Discarding query fill recovery for {client_order_id}: order binding or terms changed"
+        );
+        return;
+    }
+
+    for fill in fills {
+        emitter.send_fill_report(fill);
+    }
+}
+
+async fn collect_query_order_fills(
+    http_client: &HyperliquidHttpClient,
+    account_address: &str,
+    report: &OrderStatusReport,
+    context: &OrderContext,
+    cloid: Cloid,
+) -> anyhow::Result<Vec<FillReport>> {
+    if http_client.get_account_address()? != account_address {
+        anyhow::bail!("fill history account does not match the execution account");
+    }
+
+    let fills = http_client.info_user_fills(account_address).await?;
+    let oid = report.venue_order_id.as_str().parse::<u64>()?;
+
+    if let Some(fill) = fills
+        .iter()
+        .find(|fill| fill.time.checked_mul(1_000_000).is_none())
+    {
+        anyhow::bail!("invalid fill timestamp for venue order {}", fill.oid);
+    }
+
+    for fill in fills.iter().filter(|fill| fill.oid == oid) {
+        let fill_cloid = fill
+            .cloid
+            .as_deref()
+            .map(Cloid::from_hex)
+            .transpose()
+            .map_err(anyhow::Error::msg)?;
+
+        if fill_cloid.is_some_and(|value| value != cloid)
+            || fill.sz <= Decimal::ZERO
+            || fill.px <= Decimal::ZERO
+        {
+            anyhow::bail!("invalid fill CLOID, quantity, or price for venue order {oid}");
+        }
+    }
+
+    let sweep = http_client.fill_reports_from_response(fills.clone(), None)?;
+    if !sweep.complete {
+        anyhow::bail!("fill history could not be fully resolved or parsed");
+    }
+
+    for (raw, parsed) in fills.iter().zip(&sweep.reports) {
+        if raw.oid == oid
+            && (raw.sz != parsed.last_qty.as_decimal()
+                || raw.px != parsed.last_px.as_decimal()
+                || raw.fee != parsed.commission.as_decimal())
+        {
+            anyhow::bail!(
+                "fill quantity, price, or commission loses precision for venue order {oid}"
+            );
+        }
+    }
+
+    validate_query_order_fills(sweep.reports, report, context)
+}
+
+fn validate_query_order_fills(
+    fills: Vec<FillReport>,
+    report: &OrderStatusReport,
+    context: &OrderContext,
+) -> anyhow::Result<Vec<FillReport>> {
+    let venue_order_id = report.venue_order_id;
+    let client_order_id = context.identity.client_order_id;
+    let mut unique: AHashMap<_, FillReport> = AHashMap::new();
+    let mut filled_qty = Decimal::ZERO;
+
+    for mut fill in fills {
+        if fill.venue_order_id != venue_order_id {
+            continue;
+        }
+
+        if fill.account_id != report.account_id
+            || fill.instrument_id != report.instrument_id
+            || fill.order_side != context.identity.order_side
+            || fill.client_order_id.is_some_and(|id| id != client_order_id)
+            || fill.last_qty.is_zero()
+        {
+            anyhow::bail!("fill identity or quantity mismatch for venue order {venue_order_id}");
+        }
+
+        fill.client_order_id = Some(client_order_id);
+        if let Some(previous) = unique.get(&fill.trade_id) {
+            fill.report_id = previous.report_id;
+            fill.ts_init = previous.ts_init;
+            if fill != *previous {
+                anyhow::bail!(
+                    "conflicting duplicate trade {} for venue order {venue_order_id}",
+                    fill.trade_id
+                );
+            }
+
+            continue;
+        }
+
+        filled_qty += fill.last_qty.as_decimal();
+        unique.insert(fill.trade_id, fill);
+    }
+
+    if filled_qty != report.filled_qty.as_decimal() || filled_qty != context.quantity.as_decimal() {
+        anyhow::bail!(
+            "incomplete fills for venue order {venue_order_id}: expected {}, recovered {filled_qty}",
+            context.quantity,
+        );
+    }
+
+    let mut fills: Vec<_> = unique.into_values().collect();
+    fills.sort_by_key(|fill| (fill.ts_event, fill.trade_id));
+    Ok(fills)
+}
+
 fn attach_known_client_order_id(report: &mut OrderStatusReport, client_order_id: ClientOrderId) {
     if report.client_order_id.is_none() {
         report.client_order_id = Some(client_order_id);
@@ -4477,6 +4706,7 @@ mod tests {
         can_fast_cancel_order, classify_post_failure, determine_order_list_grouping,
         handle_execution_report, reconnect_reports_from_history, register_order_context_into,
         resolve_order_legs, split_fast_cancel_requests, ts_venue, validate_order_for_hyperliquid,
+        validate_query_order_fills,
     };
     use crate::{
         common::{
@@ -4650,6 +4880,28 @@ mod tests {
             status,
             Quantity::from("0.0001"),
         )
+    }
+
+    #[rstest]
+    #[case::account(true)]
+    #[case::client(false)]
+    fn test_query_order_fill_validation_rejects_linkage(#[case] wrong_account: bool) {
+        let context = test_context(ClientOrderId::from("O-QUERY"));
+        let mut report = make_status_report(Some("O-QUERY"), "100", OrderStatus::Filled);
+        report.filled_qty = context.quantity;
+        let mut fill = make_fill_report(Some("O-QUERY"), "100", "TRADE-QUERY");
+        if wrong_account {
+            fill.account_id = AccountId::from("HYPERLIQUID-OTHER");
+        } else {
+            fill.client_order_id = Some(ClientOrderId::from("OTHER-ORDER"));
+        }
+
+        assert_eq!(
+            validate_query_order_fills(vec![fill], &report, &context)
+                .unwrap_err()
+                .to_string(),
+            "fill identity or quantity mismatch for venue order 100"
+        );
     }
 
     fn make_status_report_with_quantity(
