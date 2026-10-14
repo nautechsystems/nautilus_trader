@@ -648,14 +648,12 @@ impl DataClient for InteractiveBrokersDataClient {
         let data_farm_state = Arc::clone(&self.data_farm_state);
         let is_connected = Arc::clone(&self.is_connected);
         let cancellation_token = self.cancellation_token.child_token();
-        let clock = self.clock;
 
         if let Err(e) = self.session_tasks.spawn(async move {
             if let Err(e) = monitor_data_farm_notices(
                 client,
                 data_farm_state,
                 ib_data_type,
-                clock,
                 cancellation_token,
                 is_connected,
             )

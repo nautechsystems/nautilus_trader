@@ -9,15 +9,9 @@
 
 //! Interactive Brokers market data stream processing.
 
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Debug,
-    pin::Pin,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashSet, fmt::Debug, pin::Pin, sync::Arc, time::Duration};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use futures_util::Stream;
 use ibapi::{
@@ -321,7 +315,6 @@ impl IntoSubscriptionTick for SubscriptionItem<TickTypes> {
 }
 
 const SUBSCRIPTION_DISCONNECTED_CODE: i32 = 10182;
-const DATA_FARM_RECOVERY_HISTORY_LIMIT: usize = 1_024;
 const HISTORICAL_BAR_MIN_COUNT: i64 = 300;
 const HISTORICAL_BAR_RETRY_DELAY: Duration = Duration::from_secs(1);
 const IB_GENERIC_TICK_OPTION_OPEN_INTEREST: &str = "101";
@@ -379,31 +372,19 @@ impl DataFarmIdentity {
 
 #[derive(Debug, Default)]
 struct DataFarmRecoveryState {
-    recoveries: VecDeque<(u64, UnixNanos)>,
     recovery_generation: u64,
 }
 
 impl DataFarmRecoveryState {
-    fn record_recovery(&mut self, degraded_since_ns: UnixNanos) {
+    fn record_recovery(&mut self) {
         self.recovery_generation = self.recovery_generation.wrapping_add(1);
-        self.recoveries
-            .push_back((self.recovery_generation, degraded_since_ns));
-
-        if self.recoveries.len() > DATA_FARM_RECOVERY_HISTORY_LIMIT {
-            let (_, pruned_since_ns) = self.recoveries.pop_front().unwrap();
-
-            if let Some((_, retained_since_ns)) = self.recoveries.front_mut() {
-                // Keep the earliest degraded time across pruned entries
-                *retained_since_ns = (*retained_since_ns).min(pruned_since_ns);
-            }
-        }
     }
 }
 
 #[derive(Debug, Default)]
 struct DataFarmState {
-    degraded_farms: HashMap<DataFarmIdentity, UnixNanos>,
-    degraded_scopes: AHashMap<DataFarmRecoveryScope, UnixNanos>,
+    degraded_farms: HashSet<DataFarmIdentity>,
+    degraded_scopes: AHashSet<DataFarmRecoveryScope>,
     market_data: DataFarmRecoveryState,
     historical_data: DataFarmRecoveryState,
     security_definition: DataFarmRecoveryState,
@@ -447,20 +428,20 @@ impl DataFarmConnectionState {
         }
 
         let state = self.state.lock();
-        state.degraded_farms.contains_key(&farm)
+        state.degraded_farms.contains(&farm)
             || state
                 .degraded_scopes
-                .contains_key(&DataFarmRecoveryScope::from(farm.kind))
+                .contains(&DataFarmRecoveryScope::from(farm.kind))
     }
 
-    pub(super) fn handle_notice(&self, notice: &Notice, clock: &'static AtomicTime) {
+    pub(super) fn handle_notice(&self, notice: &Notice) {
         let Some(farm) = DataFarmIdentity::from_notice(notice) else {
             return;
         };
 
         match notice.connectivity_status() {
             Some(ConnectivityStatus::Broken) => {
-                self.mark_farm_degraded(farm, clock.get_time_ns());
+                self.mark_farm_degraded(farm);
                 tracing::debug!(
                     "IB data farm degraded by notice {} - {}; waiting for farm OK before resubscribe",
                     notice.code,
@@ -478,75 +459,53 @@ impl DataFarmConnectionState {
         }
     }
 
-    pub(super) fn mark_degraded(&self, generation: u64, degraded_since_ns: UnixNanos) {
-        self.mark_degraded_for(
-            DataFarmRecoveryScope::MarketData,
-            generation,
-            degraded_since_ns,
-        );
+    pub(super) fn mark_degraded(&self, generation: u64) {
+        self.mark_degraded_for(DataFarmRecoveryScope::MarketData, generation);
     }
 
-    fn mark_degraded_for(
-        &self,
-        scope: DataFarmRecoveryScope,
-        generation: u64,
-        degraded_since_ns: UnixNanos,
-    ) {
+    fn mark_degraded_for(&self, scope: DataFarmRecoveryScope, generation: u64) {
         let mut state = self.state.lock();
 
         if state.recovery(scope).recovery_generation != generation {
             return;
         }
 
-        state
-            .degraded_scopes
-            .entry(scope)
-            .and_modify(|current| *current = (*current).min(degraded_since_ns))
-            .or_insert(degraded_since_ns);
+        state.degraded_scopes.insert(scope);
     }
 
-    fn mark_farm_degraded(&self, farm: DataFarmIdentity, degraded_since_ns: UnixNanos) {
-        let mut state = self.state.lock();
-
-        state
-            .degraded_farms
-            .entry(farm)
-            .and_modify(|current| *current = (*current).min(degraded_since_ns))
-            .or_insert(degraded_since_ns);
+    fn mark_farm_degraded(&self, farm: DataFarmIdentity) {
+        self.state.lock().degraded_farms.insert(farm);
     }
 
     fn mark_ok(&self, farm: &DataFarmIdentity) -> bool {
         let mut state = self.state.lock();
 
         let family_scope = DataFarmRecoveryScope::from(farm.kind);
-        let farm_degraded_since_ns = state.degraded_farms.remove(farm);
-        let scope_degraded_since_ns = state.degraded_scopes.remove(&family_scope);
-        let family_degraded_since_ns =
-            earliest_data_loss_ns(farm_degraded_since_ns, scope_degraded_since_ns);
+        let farm_recovered = state.degraded_farms.remove(farm);
+        let scope_recovered = state.degraded_scopes.remove(&family_scope);
+        let family_recovered = farm_recovered || scope_recovered;
 
-        let historical_bars_recovery_since_ns = match farm.kind {
-            DataFarmKind::MarketData | DataFarmKind::HistoricalData => earliest_data_loss_ns(
-                family_degraded_since_ns,
-                state
+        let historical_bars_recovered = match farm.kind {
+            DataFarmKind::MarketData | DataFarmKind::HistoricalData => {
+                let scope_recovered = state
                     .degraded_scopes
-                    .remove(&DataFarmRecoveryScope::HistoricalBars),
-            ),
-            DataFarmKind::SecurityDefinition => None,
+                    .remove(&DataFarmRecoveryScope::HistoricalBars);
+                family_recovered || scope_recovered
+            }
+            DataFarmKind::SecurityDefinition => false,
         };
 
-        if let Some(degraded_since_ns) = family_degraded_since_ns {
-            state
-                .recovery_mut(family_scope)
-                .record_recovery(degraded_since_ns);
+        if family_recovered {
+            state.recovery_mut(family_scope).record_recovery();
         }
 
-        if let Some(degraded_since_ns) = historical_bars_recovery_since_ns {
+        if historical_bars_recovered {
             state
                 .recovery_mut(DataFarmRecoveryScope::HistoricalBars)
-                .record_recovery(degraded_since_ns);
+                .record_recovery();
         }
 
-        if family_degraded_since_ns.is_none() && historical_bars_recovery_since_ns.is_none() {
+        if !family_recovered && !historical_bars_recovered {
             return false;
         }
 
@@ -584,15 +543,6 @@ impl DataFarmConnectionState {
 fn is_subscription_disconnected_error(error: &Error) -> bool {
     matches!(error, Error::ConnectionReset)
         || matches!(error, Error::Notice(notice) if notice.code == SUBSCRIPTION_DISCONNECTED_CODE)
-}
-
-fn earliest_data_loss_ns(first: Option<UnixNanos>, second: Option<UnixNanos>) -> Option<UnixNanos> {
-    match (first, second) {
-        (Some(first), Some(second)) => Some(first.min(second)),
-        (Some(first), None) => Some(first),
-        (None, Some(second)) => Some(second),
-        (None, None) => None,
-    }
 }
 
 async fn wait_for_data_farm_recovery_or_cancel(
@@ -666,7 +616,6 @@ pub(super) async fn monitor_data_farm_notices(
     client: Arc<ibapi::Client>,
     data_farm_state: Arc<DataFarmConnectionState>,
     market_data_type: Option<ibapi::market_data::MarketDataType>,
-    clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
     is_connected: Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<()> {
@@ -702,7 +651,7 @@ pub(super) async fn monitor_data_farm_notices(
                     }
                     tracing::info!("Restored IB market data type to {market_data_type:?}");
                 }
-                data_farm_state.handle_notice(&notice, clock);
+                data_farm_state.handle_notice(&notice);
             }
         }
     }
@@ -970,13 +919,12 @@ where
                     }
                     Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::End { .. }))) => {}
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        context.data_farm_state.handle_notice(&notice, context.clock);
+                        context.data_farm_state.handle_notice(&notice);
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
                         context.data_farm_state.mark_degraded_for(
                             DataFarmRecoveryScope::HistoricalBars,
                             farm_generation,
-                            context.clock.get_time_ns(),
                         );
 
                         if !wait_for_data_farm_recovery_or_cancel_for(
@@ -1136,7 +1084,7 @@ where
                 {
                     context
                         .data_farm_state
-                        .mark_degraded(farm_generation, context.clock.get_time_ns());
+                        .mark_degraded(farm_generation);
                     tracing::warn!(
                         "IB market data stream disconnected for {}; waiting for data farm recovery: {:?}",
                         context.instrument_id,
@@ -1156,7 +1104,7 @@ where
                 }
 
                 if let Ok(SubscriptionItem::Notice(notice)) = &tick_result {
-                    context.data_farm_state.handle_notice(notice, context.clock);
+                    context.data_farm_state.handle_notice(notice);
                 }
 
                 match process_fn(tick_result, context).await? {
@@ -1521,7 +1469,7 @@ where
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        data_farm_state.handle_notice(&notice, clock);
+                        data_farm_state.handle_notice(&notice);
                         tracing::debug!(
                             "IB tick-by-tick quote notice for {}: {} - {}",
                             instrument_id,
@@ -1530,7 +1478,7 @@ where
                         );
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
-                        data_farm_state.mark_degraded(farm_generation, clock.get_time_ns());
+                        data_farm_state.mark_degraded(farm_generation);
                         if !wait_for_data_farm_recovery_or_cancel(
                             data_farm_state,
                             farm_generation,
@@ -1692,7 +1640,6 @@ pub(super) async fn handle_realtime_bars_subscription(
                     &context.cancellation_token,
                     &context.data_farm_state,
                     farm_generation,
-                    context.clock,
                     context.monitor(format!("bars:{bar_type}"), farm_generation),
                 )
                 .await
@@ -1789,7 +1736,7 @@ where
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        data_farm_state.handle_notice(&notice, clock);
+                        data_farm_state.handle_notice(&notice);
                         tracing::debug!(
                             "IB trade notice for {}: {} - {}",
                             instrument_id,
@@ -1798,7 +1745,7 @@ where
                         );
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
-                        data_farm_state.mark_degraded(farm_generation, clock.get_time_ns());
+                        data_farm_state.mark_degraded(farm_generation);
                         tracing::warn!(
                             "Trade subscription disconnected for {}; waiting for data farm recovery: {:?}",
                             instrument_id,
@@ -1848,7 +1795,6 @@ async fn process_realtime_bar_stream<S>(
     cancellation_token: &CancellationToken,
     data_farm_state: &DataFarmConnectionState,
     farm_generation: u64,
-    clock: &'static AtomicTime,
     mut monitor: SubscriptionMonitor,
 ) -> anyhow::Result<StreamAction>
 where
@@ -1906,7 +1852,7 @@ where
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        data_farm_state.handle_notice(&notice, clock);
+                        data_farm_state.handle_notice(&notice);
                         tracing::debug!(
                             "IB realtime bar notice for {}: {} - {}",
                             bar_type,
@@ -1915,7 +1861,7 @@ where
                         );
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
-                        data_farm_state.mark_degraded(farm_generation, clock.get_time_ns());
+                        data_farm_state.mark_degraded(farm_generation);
                         tracing::warn!(
                             "Realtime bar subscription disconnected for {}; waiting for data farm recovery: {:?}",
                             bar_type,
@@ -2090,7 +2036,7 @@ where
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        data_farm_state.handle_notice(&notice, clock);
+                        data_farm_state.handle_notice(&notice);
                         tracing::debug!(
                             "IB market depth notice for {}: {} - {}",
                             instrument_id,
@@ -2099,7 +2045,7 @@ where
                         );
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
-                        data_farm_state.mark_degraded(farm_generation, clock.get_time_ns());
+                        data_farm_state.mark_degraded(farm_generation);
                         tracing::warn!(
                             "Market depth subscription disconnected for {}; waiting for data farm recovery: {:?}",
                             instrument_id,
@@ -2749,38 +2695,32 @@ mod tests {
 
     #[rstest]
     fn test_data_farm_state_records_recovery_generation() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:usfarm"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:usfarm",
+        ));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
 
         assert_eq!(data_farm_state.recovery_generation(), 1);
     }
 
     #[rstest]
     fn test_data_farm_state_reports_pending_market_data_recovery() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
         let recovered = notice(2104, "Market data farm connection is OK:usfarm");
 
         assert!(!data_farm_state.recovery_pending(&recovered));
-        data_farm_state.mark_degraded(data_farm_state.recovery_generation(), UnixNanos::from(10));
+        data_farm_state.mark_degraded(data_farm_state.recovery_generation());
         assert!(data_farm_state.recovery_pending(&recovered));
 
-        data_farm_state.handle_notice(&recovered, clock);
+        data_farm_state.handle_notice(&recovered);
         assert!(!data_farm_state.recovery_pending(&recovered));
     }
 
     #[tokio::test]
     async fn test_historical_bar_recovery_tracks_market_data_recovery() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = Arc::new(DataFarmConnectionState::default());
         let initial_generation =
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars);
@@ -2795,14 +2735,11 @@ mod tests {
             state_for_waiter.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars)
         });
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:usfarm"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:usfarm",
+        ));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
 
         let observed_generation = tokio::time::timeout(Duration::from_millis(100), waiter)
             .await
@@ -2814,7 +2751,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_historical_bar_recovery_tracks_historical_data_recovery() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = Arc::new(DataFarmConnectionState::default());
         let initial_generation =
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars);
@@ -2829,14 +2765,8 @@ mod tests {
             state_for_waiter.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars)
         });
 
-        data_farm_state.handle_notice(
-            &notice(2105, "HMDS data farm connection is broken:ushmds"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2106, "HMDS data farm connection is OK:ushmds"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2105, "HMDS data farm connection is broken:ushmds"));
+        data_farm_state.handle_notice(&notice(2106, "HMDS data farm connection is OK:ushmds"));
 
         let observed_generation = tokio::time::timeout(Duration::from_millis(100), waiter)
             .await
@@ -2853,72 +2783,42 @@ mod tests {
 
     #[rstest]
     fn test_historical_bar_recovery_ignores_stale_subscription_degradation() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
         let initial_generation =
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars);
 
-        data_farm_state.mark_degraded_for(
-            DataFarmRecoveryScope::HistoricalBars,
-            initial_generation,
-            UnixNanos::from(10),
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm"),
-            clock,
-        );
-        data_farm_state.mark_degraded_for(
-            DataFarmRecoveryScope::HistoricalBars,
-            initial_generation,
-            UnixNanos::from(20),
-        );
-        data_farm_state.handle_notice(
-            &notice(2106, "HMDS data farm connection is OK:ushmds"),
-            clock,
-        );
+        data_farm_state
+            .mark_degraded_for(DataFarmRecoveryScope::HistoricalBars, initial_generation);
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
+        data_farm_state
+            .mark_degraded_for(DataFarmRecoveryScope::HistoricalBars, initial_generation);
+        data_farm_state.handle_notice(&notice(2106, "HMDS data farm connection is OK:ushmds"));
 
         let state = data_farm_state.state.lock();
         assert_eq!(state.historical_bars.recovery_generation, 1);
-        assert_eq!(
-            state.historical_bars.recoveries.front(),
-            Some(&(1, UnixNanos::from(10)))
-        );
         assert_eq!(state.market_data.recovery_generation, 0);
         assert_eq!(state.historical_data.recovery_generation, 0);
         assert!(state.degraded_scopes.is_empty());
     }
 
     #[rstest]
-    fn test_historical_bar_recovery_preserves_earliest_cross_family_boundary() {
-        let clock = get_atomic_clock_realtime();
+    fn test_historical_bar_recovery_counts_each_family_recovery() {
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.mark_farm_degraded(
-            DataFarmIdentity {
-                kind: DataFarmKind::MarketData,
-                name: Some(String::from("usfarm")),
-            },
-            UnixNanos::from(20),
-        );
+        data_farm_state.mark_farm_degraded(DataFarmIdentity {
+            kind: DataFarmKind::MarketData,
+            name: Some(String::from("usfarm")),
+        });
 
-        data_farm_state.mark_farm_degraded(
-            DataFarmIdentity {
-                kind: DataFarmKind::HistoricalData,
-                name: Some(String::from("ushmds")),
-            },
-            UnixNanos::from(10),
-        );
+        data_farm_state.mark_farm_degraded(DataFarmIdentity {
+            kind: DataFarmKind::HistoricalData,
+            name: Some(String::from("ushmds")),
+        });
 
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
         let market_recovery_generation =
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars);
-        data_farm_state.handle_notice(
-            &notice(2106, "HMDS data farm connection is OK:ushmds"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2106, "HMDS data farm connection is OK:ushmds"));
 
         assert_eq!(market_recovery_generation, 1);
         assert_eq!(
@@ -2929,17 +2829,13 @@ mod tests {
 
     #[rstest]
     fn test_security_definition_recovery_does_not_advance_historical_bars() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.handle_notice(
-            &notice(2157, "Sec-def data farm connection is broken:secdefil"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2158, "Sec-def data farm connection is OK:secdefil"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2157,
+            "Sec-def data farm connection is broken:secdefil",
+        ));
+        data_farm_state.handle_notice(&notice(2158, "Sec-def data farm connection is OK:secdefil"));
 
         assert_eq!(
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::SecurityDefinition),
@@ -2953,81 +2849,55 @@ mod tests {
 
     #[rstest]
     fn test_data_farm_state_recovers_each_reported_farm_independently() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:usfarm.nj"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:cashfarm"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2105, "HMDS data farm connection is broken:ushmds"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:usfarm.nj",
+        ));
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:cashfarm",
+        ));
+        data_farm_state.handle_notice(&notice(2105, "HMDS data farm connection is broken:ushmds"));
 
-        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK"), clock);
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK"));
         assert_eq!(data_farm_state.recovery_generation(), 0);
 
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm.nj"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm.nj"));
         assert_eq!(data_farm_state.recovery_generation(), 1);
         assert_eq!(
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalData),
             0
         );
 
-        data_farm_state.handle_notice(
-            &notice(2106, "HMDS data farm connection is OK:ushmds"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2106, "HMDS data farm connection is OK:ushmds"));
         assert_eq!(data_farm_state.recovery_generation(), 1);
         assert_eq!(
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalData),
             1
         );
 
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:cashfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:cashfarm"));
         assert_eq!(data_farm_state.recovery_generation(), 2);
     }
 
     #[rstest]
-    fn test_data_farm_state_preserves_each_farm_degradation_time() {
-        let clock = get_atomic_clock_realtime();
+    fn test_data_farm_state_counts_each_farm_recovery() {
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.mark_farm_degraded(
-            DataFarmIdentity {
-                kind: DataFarmKind::MarketData,
-                name: Some(String::from("usfarm.nj")),
-            },
-            UnixNanos::from(20),
-        );
+        data_farm_state.mark_farm_degraded(DataFarmIdentity {
+            kind: DataFarmKind::MarketData,
+            name: Some(String::from("usfarm.nj")),
+        });
 
-        data_farm_state.mark_farm_degraded(
-            DataFarmIdentity {
-                kind: DataFarmKind::MarketData,
-                name: Some(String::from("cashfarm")),
-            },
-            UnixNanos::from(10),
-        );
+        data_farm_state.mark_farm_degraded(DataFarmIdentity {
+            kind: DataFarmKind::MarketData,
+            name: Some(String::from("cashfarm")),
+        });
 
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm.nj"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:cashfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm.nj"));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:cashfarm"));
         let latest_generation = data_farm_state.recovery_generation();
 
         assert_eq!(latest_generation, 2);
@@ -3035,16 +2905,12 @@ mod tests {
 
     #[rstest]
     fn test_data_farm_state_ignores_stale_subscription_degradation() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
         let initial_generation = data_farm_state.recovery_generation();
 
-        data_farm_state.mark_degraded(initial_generation, UnixNanos::from(10));
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm.nj"),
-            clock,
-        );
-        data_farm_state.mark_degraded(initial_generation, UnixNanos::from(20));
+        data_farm_state.mark_degraded(initial_generation);
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm.nj"));
+        data_farm_state.mark_degraded(initial_generation);
 
         let state = data_farm_state.state.lock();
         assert_eq!(state.market_data.recovery_generation, 1);
@@ -3054,18 +2920,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_data_farm_state_preserves_recovery_during_resubscription() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = Arc::new(DataFarmConnectionState::default());
         let initial_generation = data_farm_state.recovery_generation();
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:usfarm.nj"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm.nj"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:usfarm.nj",
+        ));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm.nj"));
         data_farm_state
             .wait_for_recovery_after(initial_generation)
             .await;
@@ -3082,14 +2944,11 @@ mod tests {
             state_for_resubscription.recovery_generation()
         });
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:cashfarm"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:cashfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:cashfarm",
+        ));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:cashfarm"));
         release_sender.send(()).unwrap();
         let observed_generation = resubscription_task.await.unwrap();
 
@@ -3948,12 +3807,10 @@ mod tests {
                     .state
                     .lock()
                     .degraded_scopes
-                    .contains_key(&DataFarmRecoveryScope::MarketData)
+                    .contains(&DataFarmRecoveryScope::MarketData)
                 {
-                    state_for_recovery.handle_notice(
-                        &notice(2104, "Market data farm connection is OK:usfarm"),
-                        clock,
-                    );
+                    state_for_recovery
+                        .handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
                     break;
                 }
 
@@ -3991,7 +3848,6 @@ mod tests {
         let cancellation_token = CancellationToken::new();
         let last_bars = Arc::new(tokio::sync::Mutex::new(AHashMap::new()));
         let timeout_tasks = Arc::new(tokio::sync::Mutex::new(AHashMap::new()));
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
 
         bar_sender
@@ -4022,7 +3878,6 @@ mod tests {
             &cancellation_token,
             &data_farm_state,
             data_farm_state.recovery_generation(),
-            clock,
             disabled_monitor(),
         )
         .await
@@ -4459,7 +4314,7 @@ mod tests {
         first.received_data();
         second
             .data_farm_state
-            .handle_notice(&notice(2108, "Market data farm is inactive"), second.clock);
+            .handle_notice(&notice(2108, "Market data farm is inactive"));
         assert_eq!(first.deadline, Some(started + Duration::from_secs(7)));
         assert_eq!(second.deadline, Some(started + Duration::from_secs(5)));
         tokio::time::advance(Duration::from_secs(3)).await;
@@ -4481,14 +4336,13 @@ mod tests {
         match state {
             "cancel" => monitor.cancellation_token.cancel(),
             "recovered" => {
-                monitor.data_farm_state.handle_notice(
-                    &notice(2103, "Market data farm connection is broken:usfarm"),
-                    monitor.clock,
-                );
-                monitor.data_farm_state.handle_notice(
-                    &notice(2104, "Market data farm connection is OK:usfarm"),
-                    monitor.clock,
-                );
+                monitor.data_farm_state.handle_notice(&notice(
+                    2103,
+                    "Market data farm connection is broken:usfarm",
+                ));
+                monitor
+                    .data_farm_state
+                    .handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
             }
             _ => unreachable!(),
         }
@@ -4543,7 +4397,7 @@ mod tests {
         tokio::time::advance(Duration::from_secs(2)).await;
 
         for _ in 0..1000 {
-            notices.handle_notice(&notice(2108, "Market data farm is inactive"), clock);
+            notices.handle_notice(&notice(2108, "Market data farm is inactive"));
         }
 
         tokio::time::advance(Duration::from_secs(3)).await;
@@ -4586,9 +4440,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn farm_notice_does_not_mask_subscription_inactivity() {
         let (mut monitor, mut receiver) = idle_monitor(Some(5));
-        monitor
-            .data_farm_state
-            .mark_degraded(0, UnixNanos::from(17_u64));
+        monitor.data_farm_state.mark_degraded(0);
         tokio::time::advance(Duration::from_secs(5)).await;
         monitor.wait_for_idle().await;
         assert!(monitor.notify_idle());
