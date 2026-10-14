@@ -172,14 +172,17 @@ class ReportProvider:
             return pd.DataFrame()
         data = [p.to_dict() for p in all_positions]
         sort = ["ts_opened", "ts_closed", "position_id"]
-        report = pd.DataFrame(data=data).set_index("position_id").sort_values(sort)
+        report = pd.DataFrame(data=data).sort_values(sort)
+
+        # Preserve source nanoseconds: pandas coerces mixed int/None columns to float64
+        ts_closed = [data[i]["ts_closed"] for i in report.index]
+        report = report.set_index("position_id")
         for col in ("signed_qty", "quote_currency", "base_currency", "settlement_currency"):
             if col in report.columns:
                 del report[col]
         report["ts_opened"] = [_ns_to_dt(ts) for ts in report["ts_opened"]]
         report["ts_closed"] = [
-            _ns_to_dt(ts) if ts is not None and not pd.isna(ts) else pd.NA
-            for ts in report["ts_closed"]
+            _ns_to_dt(ts) if ts is not None and not pd.isna(ts) else pd.NA for ts in ts_closed
         ]
         report["is_snapshot"] = report.index.isin(snapshot_ids)
         return report
