@@ -15,14 +15,17 @@
 
 //! Benchmarks for [`BacktestNode`] catalog replay of order book deltas.
 //!
-//! The benchmark writes one synthetic L2 delta catalog that both cases share. Each case times a
-//! one-shot `BacktestNode::run`, which covers the catalog query, decoding, delta batching, and
-//! engine replay on an `L2_MBP` venue. Node construction and instrument loading happen before
-//! timing, and disposal happens after it.
+//! The benchmark writes synthetic L2 delta catalogs with spaced and equal timestamps. Each case
+//! times a oneshot or streaming `BacktestNode::run`, covering the catalog query, decoding, delta
+//! batching, and engine replay on an `L2_MBP` venue. Node construction and instrument loading
+//! happen before timing, and disposal happens after it.
 //!
 //! Cases:
 //! - `batched`: `batch_deltas` enabled, so each event replays as one `OrderBookDeltas`.
 //! - `individual`: `batch_deltas` disabled, so each delta replays on its own.
+//! - `batched_streaming`, `individual_streaming`, and `individual_streaming_*`: timestamp-aligned
+//!   chunks, including small chunks, eight configs, and an equal-time burst above the target size.
+//! - `batched_streaming_large_frame`: one frame across all catalog batches, closed by the last row.
 //!
 //! Run with `cargo bench -p nautilus-backtest --features streaming --bench node`.
 
@@ -58,18 +61,75 @@ const EVENT_INTERVAL_NS: u64 = 1_000_000;
 
 fn bench_book_delta_replay(c: &mut Criterion) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-    let (_temp_dir, catalog_path) = create_catalog(&instrument);
+    let (_temp_dir, catalog_path) = create_catalog(&instrument, EVENT_INTERVAL_NS, false);
+    let (_burst_dir, burst_path) = create_catalog(&instrument, 0, false);
+    let (_frame_dir, frame_path) = create_catalog(&instrument, EVENT_INTERVAL_NS, true);
     let delta_count = EVENT_COUNT * DELTAS_PER_EVENT;
 
     let mut group = c.benchmark_group("backtest_node/book_delta_replay");
     group.sample_size(10);
-    group.throughput(Throughput::Elements(delta_count as u64));
 
-    for (case, batch_deltas, expected_iterations) in [
-        ("batched", true, EVENT_COUNT),
-        ("individual", false, delta_count),
+    for (case, batch_deltas, chunk_size, config_count, path, iterations) in [
+        ("batched", true, None, 1, &catalog_path, EVENT_COUNT),
+        ("individual", false, None, 1, &catalog_path, delta_count),
+        (
+            "batched_streaming",
+            true,
+            Some(1_000),
+            1,
+            &catalog_path,
+            EVENT_COUNT,
+        ),
+        (
+            "individual_streaming",
+            false,
+            Some(1_000),
+            1,
+            &catalog_path,
+            delta_count,
+        ),
+        (
+            "individual_streaming_small_chunks",
+            false,
+            Some(1),
+            1,
+            &catalog_path,
+            delta_count,
+        ),
+        (
+            "individual_streaming_8_configs",
+            false,
+            Some(1_000),
+            8,
+            &catalog_path,
+            delta_count,
+        ),
+        (
+            "individual_streaming_equal_time",
+            false,
+            Some(1_000),
+            1,
+            &burst_path,
+            delta_count,
+        ),
+        (
+            "batched_streaming_large_frame",
+            true,
+            Some(1_000),
+            1,
+            &frame_path,
+            1,
+        ),
     ] {
-        let config = run_config(&catalog_path, instrument.id(), batch_deltas);
+        let config = run_config(
+            path,
+            instrument.id(),
+            batch_deltas,
+            chunk_size,
+            config_count,
+        );
+        group.throughput(Throughput::Elements((delta_count * config_count) as u64));
+        let expected_iterations = iterations * config_count;
         group.bench_function(BenchmarkId::from_parameter(case), |b| {
             b.iter_custom(|iters| run_iterations(iters, &config, expected_iterations));
         });
@@ -99,8 +159,12 @@ fn run_iterations(iters: u64, config: &BacktestRunConfig, expected_iterations: u
 }
 
 // Writes an opening event that adds every level, then events that update every level, each
-// event closing with `F_LAST`
-fn create_catalog(instrument: &InstrumentAny) -> (TempDir, String) {
+// event closing with `F_LAST` unless the whole catalog forms one frame
+fn create_catalog(
+    instrument: &InstrumentAny,
+    event_interval_ns: u64,
+    single_frame: bool,
+) -> (TempDir, String) {
     let temp_dir = TempDir::new().expect("temp dir should be created");
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
@@ -114,10 +178,13 @@ fn create_catalog(instrument: &InstrumentAny) -> (TempDir, String) {
             BookAction::Update
         };
 
-        let ts = UnixNanos::from(BASE_TS_NS + event as u64 * EVENT_INTERVAL_NS);
+        let ts = UnixNanos::from(BASE_TS_NS + event as u64 * event_interval_ns);
 
         for index in 0..DELTAS_PER_EVENT {
-            let flags = if index == DELTAS_PER_EVENT - 1 {
+            let closes_frame =
+                index == DELTAS_PER_EVENT - 1 && (!single_frame || event == EVENT_COUNT - 1);
+
+            let flags = if closes_frame {
                 RecordFlag::F_LAST as u8
             } else {
                 0
@@ -170,6 +237,8 @@ fn run_config(
     catalog_path: &str,
     instrument_id: InstrumentId,
     batch_deltas: bool,
+    chunk_size: Option<usize>,
+    config_count: usize,
 ) -> BacktestRunConfig {
     let venue = BacktestVenueConfig::builder()
         .name(Ustr::from("BINANCE"))
@@ -198,7 +267,8 @@ fn run_config(
 
     BacktestRunConfig::builder()
         .venues(vec![venue])
-        .data(vec![data])
+        .data(vec![data; config_count])
+        .maybe_chunk_size(chunk_size)
         .engine(engine)
         .raise_exception(true)
         .dispose_on_completion(false)

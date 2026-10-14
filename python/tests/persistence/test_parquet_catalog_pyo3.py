@@ -44,6 +44,7 @@ from nautilus_trader.model import NautilusRecordType
 from nautilus_trader.model import Price
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import Venue
+from nautilus_trader.model import YieldCurve
 from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import RustTestCustomData
@@ -711,27 +712,43 @@ def test_calculated_greeks_native_record_round_trip(tmp_path: Path, portfolio: b
     assert actual.to_pylist() == table.to_pylist()
 
 
-def test_yield_curve_native_record_round_trip(tmp_path: Path) -> None:
+def test_yield_curve_custom_data_round_trip(tmp_path: Path) -> None:
     """
-    Preserve native yield curves through the Python catalog Arrow interface.
+    Preserve yield curves as custom data through the catalog and JSON.
     """
     catalog = _catalog(tmp_path, "parquet")
-    selector = NautilusRecordType.YieldCurveData
-    empty = _read_arrow_bytes(catalog.query_record_arrow_bytes(selector, display=False))
-    row = {
-        "ts_init": 29,
-        "ts_event": 23,
-        "curve_name": "USD-SOFR",
-        "tenors": [0.25, 1.0, 5.0],
-        "interest_rates": [0.043, 0.041, 0.038],
-    }
-    batch = pa.RecordBatch.from_pylist([row], schema=empty.schema)
-    catalog.write_record_arrow_bytes(selector, _record_batch_bytes(batch))
-    actual = _read_arrow_bytes(catalog.query_record_arrow_bytes(selector, display=False))
+    data_type = DataType("YieldCurve", {"curve_name": "USD-SOFR"})
+    curve = YieldCurve("USD-SOFR", [0.25, 1.0, 5.0], [0.043, 0.041, 0.038], 23, 29)
 
-    assert empty.num_rows == 0
-    assert actual.to_pylist() == pa.Table.from_batches([batch]).to_pylist()
-    assert selector == NautilusRecordType("yield_curve_data")
+    catalog.write_custom_data([CustomData(data_type, curve)])
+    [item] = catalog.query_custom_data(NautilusDataType.Custom("YieldCurve"))
+    restored = CustomData.from_json_bytes(item.to_json_bytes())
+
+    for value in (item, restored):
+        assert value.data_type == data_type
+        assert isinstance(value.data, YieldCurve)
+        assert value.data.curve_name == "USD-SOFR"
+        assert value.data.tenors == [0.25, 1.0, 5.0]
+        assert value.data.interest_rates == [0.043, 0.041, 0.038]
+        assert value.ts_event == 23
+        assert value.ts_init == 29
+    assert not hasattr(NautilusRecordType, "YieldCurve")
+
+
+def test_cache_rejects_yield_curve_decoded_without_points() -> None:
+    """
+    Reject a decoded curve the Greeks calculator cannot evaluate.
+    """
+    data_type = DataType("YieldCurve", {"curve_name": "USD"})
+    curve = YieldCurve("USD", [0.0], [0.04], 1, 2)
+    envelope = json.loads(CustomData(data_type, curve).to_json_bytes())
+    envelope["payload"]["tenors"] = []
+    envelope["payload"]["interest_rates"] = []
+    decoded = CustomData.from_json_bytes(json.dumps(envelope).encode())
+    cache = Cache()
+
+    with pytest.raises(ValueError, match="one rate or at least three points"):
+        cache.add_yield_curve(decoded.data)
 
 
 def test_calculated_greeks_reject_mixed_object_types() -> None:

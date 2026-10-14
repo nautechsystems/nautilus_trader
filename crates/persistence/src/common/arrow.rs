@@ -29,7 +29,7 @@ use nautilus_model::data::{
 use nautilus_model::{
     data::{
         NautilusDataType, NautilusRecordType,
-        greeks::{GreeksData, PortfolioGreeks, YieldCurveData},
+        greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -307,7 +307,6 @@ macro_rules! dispatch_record_type {
             NautilusRecordType::ExecutionMassStatus => $call::<ExecutionMassStatus>($($arg),*),
             NautilusRecordType::GreeksData => $call::<GreeksData>($($arg),*),
             NautilusRecordType::PortfolioGreeks => $call::<PortfolioGreeks>($($arg),*),
-            NautilusRecordType::YieldCurveData => $call::<YieldCurveData>($($arg),*),
             #[cfg(feature = "defi")]
             NautilusRecordType::Defi => {
                 anyhow::bail!("Catalog Arrow queries do not support DeFi records")

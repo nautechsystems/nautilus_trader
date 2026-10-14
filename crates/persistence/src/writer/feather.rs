@@ -58,7 +58,7 @@ use nautilus_model::{
         OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         close::InstrumentClose,
         encode_custom_to_arrow, get_arrow_schema,
-        greeks::{GreeksData, PortfolioGreeks, YieldCurveData},
+        greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -1354,7 +1354,6 @@ impl FeatherWriter {
         try_write!(message, ExecutionMassStatus);
         try_write!(message, GreeksData);
         try_write!(message, PortfolioGreeks);
-        try_write!(message, YieldCurveData);
 
         if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
             let deltas = deltas.deltas.clone();
@@ -1888,7 +1887,7 @@ mod tests {
     #[rstest]
     fn test_subscription_records_greeks_once_and_unsubscribes() {
         use nautilus_common::msgbus::{MStr, publish_any, publish_greeks};
-        use nautilus_model::data::greeks::{GreeksData, YieldCurveData};
+        use nautilus_model::data::greeks::GreeksData;
         use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
         let temp_dir = TempDir::new().unwrap();
 
@@ -1901,25 +1900,14 @@ mod tests {
         )));
         let greeks = GreeksData::from_delta("AUD/USD.SIM".parse().unwrap(), 1.25, 8.0, 11.into());
         let portfolio = greeks.to_portfolio_greeks();
-
-        let curve = YieldCurveData::new(
-            13.into(),
-            12.into(),
-            "USD-SOFR".to_string(),
-            vec![0.25, 1.0],
-            vec![0.04, 0.03],
-        );
         let greeks_topic = MStr::topic("data.GreeksData.instrument_id=AUD/USD.SIM").unwrap();
         let portfolio_topic = MStr::topic("data.PortfolioGreeks").unwrap();
-        let curve_topic = MStr::topic("data.YieldCurveData").unwrap();
         let handler = FeatherWriter::subscribe_to_message_bus(writer.clone()).unwrap();
         publish_greeks(greeks_topic, &greeks);
         publish_any(portfolio_topic, &portfolio);
-        publish_any(curve_topic, &curve);
         FeatherWriter::unsubscribe_from_message_bus(&handler);
         publish_greeks(greeks_topic, &greeks);
         publish_any(portfolio_topic, &portfolio);
-        publish_any(curve_topic, &curve);
         writer.borrow_mut().close().unwrap();
         let mut counts = HashMap::new();
 
@@ -1943,14 +1931,6 @@ mod tests {
                     assert_eq!(values[0].greeks, portfolio.greeks);
                     assert_eq!(values[0].ts_init, portfolio.ts_init);
                 }
-                "YieldCurveData" => {
-                    let values =
-                        YieldCurveData::decode_typed_batch(schema.metadata(), batch).unwrap();
-                    assert_eq!(values[0].curve_name, curve.curve_name);
-                    assert_eq!(values[0].tenors, curve.tenors);
-                    assert_eq!(values[0].interest_rates, curve.interest_rates);
-                    assert_eq!(values[0].ts_init, curve.ts_init);
-                }
                 _ => panic!("unexpected record type {name}"),
             }
         }
@@ -1960,7 +1940,6 @@ mod tests {
             HashMap::from([
                 ("GreeksData".to_string(), 1),
                 ("PortfolioGreeks".to_string(), 1),
-                ("YieldCurveData".to_string(), 1)
             ])
         );
     }

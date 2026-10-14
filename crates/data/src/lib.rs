@@ -134,6 +134,8 @@ pub mod aggregation;
 pub mod client;
 pub mod engine;
 pub mod option_chains;
+#[doc(hidden)]
+pub mod replay;
 
 #[cfg(feature = "python")]
 pub mod python;

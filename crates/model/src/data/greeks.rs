@@ -16,17 +16,24 @@
 //! Option *Greeks* data structures (delta, gamma, theta, vega, rho) used throughout the platform.
 
 use std::{
+    any::Any,
     fmt::Display,
     ops::{Add, Deref, Mul},
+    sync::Arc,
 };
 
 use implied_vol::{DefaultSpecialFn, ImpliedBlackVolatility, SpecialFn};
-use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, math::quadratic_interpolation};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{CorrectnessResult, check_equal_usize, check_predicate_true},
+    datetime::unix_nanos_to_iso8601,
+    math::quadratic_interpolation,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     data::{
-        HasTsInit,
+        CustomDataTrait, HasTsInit,
         black_scholes::{
             REFINEMENT_VOL_MAX, REFINEMENT_VOL_MIN, compute_greeks, compute_iv_and_greeks,
         },
@@ -901,8 +908,16 @@ impl HasGreeks for BlackScholesGreeksResult {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct YieldCurveData {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
+pub struct YieldCurve {
     pub ts_init: UnixNanos,
     pub ts_event: UnixNanos,
     pub curve_name: String,
@@ -910,7 +925,7 @@ pub struct YieldCurveData {
     pub interest_rates: Vec<f64>,
 }
 
-impl YieldCurveData {
+impl YieldCurve {
     #[must_use]
     pub fn new(
         ts_init: UnixNanos,
@@ -937,9 +952,41 @@ impl YieldCurveData {
 
         quadratic_interpolation(expiry_in_years, &self.tenors, &self.interest_rates)
     }
+
+    /// Validates that [`Self::get_rate`] can evaluate this curve.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `tenors` and `interest_rates` differ in length, hold two points or
+    /// none, or hold a non-finite value, or if `tenors` is not strictly increasing.
+    pub fn validate(&self) -> CorrectnessResult<()> {
+        check_equal_usize(
+            self.tenors.len(),
+            self.interest_rates.len(),
+            "tenors",
+            "interest_rates",
+        )?;
+
+        // Interpolation needs at least three points; a single rate is a flat curve
+        check_predicate_true(
+            self.interest_rates.len() == 1 || self.interest_rates.len() >= 3,
+            "`interest_rates` must hold one rate or at least three points",
+        )?;
+        check_predicate_true(
+            self.tenors
+                .iter()
+                .chain(&self.interest_rates)
+                .all(|value| value.is_finite()),
+            "`tenors` and `interest_rates` must be finite",
+        )?;
+        check_predicate_true(
+            self.tenors.is_sorted_by(|a, b| a < b),
+            "`tenors` must be strictly increasing",
+        )
+    }
 }
 
-impl Display for YieldCurveData {
+impl Display for YieldCurve {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -951,13 +998,53 @@ impl Display for YieldCurveData {
     }
 }
 
-impl HasTsInit for YieldCurveData {
+impl HasTsInit for YieldCurve {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl Default for YieldCurveData {
+impl CustomDataTrait for YieldCurve {
+    fn type_name(&self) -> &'static str {
+        Self::type_name_static()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn ts_event(&self) -> UnixNanos {
+        self.ts_event
+    }
+
+    fn to_json(&self) -> anyhow::Result<String> {
+        Ok(serde_json::to_string(self)?)
+    }
+
+    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
+        Arc::new(self.clone())
+    }
+
+    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
+        other.as_any().downcast_ref::<Self>() == Some(self)
+    }
+
+    #[cfg(feature = "python")]
+    fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
+        crate::data::custom::clone_pyclass_to_pyobject(self, py)
+    }
+
+    fn type_name_static() -> &'static str {
+        "YieldCurve"
+    }
+
+    fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
+        let parsed: Self = serde_json::from_value(value)?;
+        Ok(Arc::new(parsed))
+    }
+}
+
+impl Default for YieldCurve {
     fn default() -> Self {
         Self {
             ts_init: UnixNanos::default(),
@@ -1018,8 +1105,8 @@ mod tests {
         )
     }
 
-    fn create_test_yield_curve() -> YieldCurveData {
-        YieldCurveData::new(
+    fn create_test_yield_curve() -> YieldCurve {
+        YieldCurve::new(
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(1_500_000_000),
             "USD".to_string(),
@@ -1514,7 +1601,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_yield_curve_data_new() {
+    fn test_yield_curve_new() {
         let curve = create_test_yield_curve();
 
         assert_eq!(curve.ts_init, UnixNanos::from(1_000_000_000));
@@ -1525,8 +1612,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_yield_curve_data_default() {
-        let curve = YieldCurveData::default();
+    fn test_yield_curve_default() {
+        let curve = YieldCurve::default();
 
         assert_eq!(curve.ts_init, UnixNanos::default());
         assert_eq!(curve.ts_event, UnixNanos::default());
@@ -1536,8 +1623,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_yield_curve_data_get_rate_single_point() {
-        let curve = YieldCurveData::new(
+    fn test_yield_curve_get_rate_single_point() {
+        let curve = YieldCurve::new(
             UnixNanos::default(),
             UnixNanos::default(),
             "USD".to_string(),
@@ -1551,7 +1638,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_yield_curve_data_get_rate_interpolation() {
+    fn test_yield_curve_get_rate_interpolation() {
         let curve = create_test_yield_curve();
 
         // Test exact matches
@@ -1565,7 +1652,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_yield_curve_data_display() {
+    fn test_yield_curve_display() {
         let curve = create_test_yield_curve();
         let display_str = format!("{curve}");
 
@@ -1574,19 +1661,86 @@ mod tests {
     }
 
     #[rstest]
-    fn test_yield_curve_data_has_ts_init() {
+    fn test_yield_curve_has_ts_init() {
         let curve = create_test_yield_curve();
         assert_eq!(curve.ts_init(), UnixNanos::from(1_000_000_000));
     }
 
     #[rstest]
-    fn test_yield_curve_data_clone() {
+    fn test_yield_curve_clone() {
         let curve1 = create_test_yield_curve();
         let curve2 = curve1.clone();
 
         assert_eq!(curve1.curve_name, curve2.curve_name);
         assert_eq!(curve1.tenors, curve2.tenors);
         assert_eq!(curve1.interest_rates, curve2.interest_rates);
+    }
+
+    #[rstest]
+    #[case(vec![0.0], vec![0.04])]
+    #[case(vec![0.25, 1.0, 5.0], vec![0.043, 0.041, 0.038])]
+    fn test_yield_curve_validate_accepts_evaluable_curves(
+        #[case] tenors: Vec<f64>,
+        #[case] interest_rates: Vec<f64>,
+    ) {
+        let curve = YieldCurve::new(
+            UnixNanos::default(),
+            UnixNanos::default(),
+            "USD".to_string(),
+            tenors,
+            interest_rates,
+        );
+
+        assert!(curve.validate().is_ok());
+    }
+
+    #[rstest]
+    #[case(vec![0.5, 1.0, 2.0], vec![0.04, 0.05], "'tenors' usize of 3 was not equal")]
+    #[case(vec![0.5, 1.0], vec![0.04, 0.05], "one rate or at least three points")]
+    #[case(vec![], vec![], "one rate or at least three points")]
+    #[case(vec![0.25, 1.0, 5.0], vec![0.04, f64::NAN, 0.05], "must be finite")]
+    #[case(vec![0.25, f64::INFINITY, 5.0], vec![0.04, 0.05, 0.06], "must be finite")]
+    #[case(vec![0.05, 0.05, 1.0], vec![0.04, 0.05, 0.06], "strictly increasing")]
+    #[case(vec![1.0, 0.5, 2.0], vec![0.04, 0.05, 0.06], "strictly increasing")]
+    fn test_yield_curve_validate_rejects_curves_get_rate_cannot_evaluate(
+        #[case] tenors: Vec<f64>,
+        #[case] interest_rates: Vec<f64>,
+        #[case] message: &str,
+    ) {
+        let curve = YieldCurve::new(
+            UnixNanos::default(),
+            UnixNanos::default(),
+            "USD".to_string(),
+            tenors,
+            interest_rates,
+        );
+
+        let error = curve.validate().unwrap_err();
+
+        assert!(
+            error.to_string().contains(message),
+            "error was {error}, expected to contain {message}"
+        );
+    }
+
+    #[rstest]
+    fn test_yield_curve_custom_data_json_round_trip() {
+        let curve = create_test_yield_curve();
+        let mut other = curve.clone();
+        other.interest_rates[0] = 0.02;
+
+        let json = curve.to_json().unwrap();
+        let restored = YieldCurve::from_json(serde_json::from_str(&json).unwrap()).unwrap();
+
+        assert_eq!(curve.type_name(), "YieldCurve");
+        assert_eq!(YieldCurve::type_name_static(), "YieldCurve");
+        assert_eq!(
+            CustomDataTrait::ts_event(&curve),
+            UnixNanos::from(1_500_000_000)
+        );
+        assert!(restored.eq_arc(&curve));
+        assert!(!restored.eq_arc(&other));
+        assert_eq!(restored.as_any().downcast_ref::<YieldCurve>(), Some(&curve));
     }
 
     #[rstest]

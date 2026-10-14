@@ -13,30 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Replay ordering for DeFi data.
+//! Ordered batch consumption shared by historical replay callers.
+//!
+//! Source fetching, timestamp-aligned output chunks, and replay finalization remain with callers.
 
-use nautilus_model::defi::DefiData;
+mod batch;
+mod iterator;
 
-pub(crate) fn replay_position(data: &DefiData) -> (u64, u32, u32, u8) {
-    let (block_number, transaction_index, log_index) = data.block_position();
-    (
-        block_number,
-        transaction_index,
-        log_index,
-        replay_phase(data),
-    )
-}
-
-const fn replay_phase(data: &DefiData) -> u8 {
-    match data {
-        DefiData::Block(_) => 0,
-        DefiData::Pool(_) => 1,
-        DefiData::PoolSnapshot(_) => 2,
-        DefiData::PoolSwap(_)
-        | DefiData::PoolLiquidityUpdate(_)
-        | DefiData::PoolFeeCollect(_)
-        | DefiData::PoolFeeProtocolUpdate(_)
-        | DefiData::PoolFeeProtocolCollect(_)
-        | DefiData::PoolFlash(_) => 3,
-    }
-}
+pub use batch::ReplayBatch;
+pub use iterator::DataIterator;

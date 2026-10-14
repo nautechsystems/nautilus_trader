@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added tick scheme registration, thanks @faysou
 - Added WebSocket peer-close callbacks to control automatic reconnection
 - Added Rust `QuoteTick::has_same_bid_ask` to compare prices and sizes independently of instrument IDs and timestamps
+- Added `YieldCurve` custom data for catalog storage and backtest replay, including Python, thanks @faysou
 - Added Bybit public liquidation custom data for linear and inverse contracts (#5152), thanks @Martingale42
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 - Added Derive adapter support for API v3
@@ -32,6 +33,7 @@ Released on TBD (UTC).
 - Removed Interactive Brokers connection wrappers; use `ibapi::Client` (#5041), thanks @faysou
 - Removed Interactive Brokers `ErrorCategory` and `InteractiveBrokersErrorKind` exports (#5041), thanks @faysou
 - Removed Polymarket 30-second TWAP support; use `window_seconds=60` (#5296)
+- Renamed `YieldCurveData` to `YieldCurve`
 - Renamed Polymarket reference-price types to drop `Rtds`, without aliases (#5296)
 - Renamed Polymarket `base_url_rtds` to `base_url_reference_prices` (#5296)
 - Replaced Interactive Brokers symbology functions with `Symbology` methods (#5041), thanks @faysou
@@ -158,6 +160,7 @@ Released on TBD (UTC).
 - Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
 - Improved Lighter report generation with HTTP collection on runtime workers (#5216)
 - Improved Lighter execution race coverage and grouped-order signer validation
+- Refined backtest replay with shared ordered batch consumption, thanks @faysou
 - Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
 - Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Optimized core string formatting, precision parsing, and API key masking allocations (#5225), thanks @sunlei

@@ -69,7 +69,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
         Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData,
+        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick, YieldCurve,
         option_chain::OptionGreeks,
     },
     enums::{
@@ -129,7 +129,7 @@ pub struct Cache {
     bars: AHashMap<BarType, BoundedVecDeque<Bar>>,
     greeks: AHashMap<InstrumentId, GreeksData>,
     option_greeks: AHashMap<InstrumentId, OptionGreeks>,
-    yield_curves: AHashMap<String, YieldCurveData>,
+    yield_curves: AHashMap<String, YieldCurve>,
     external_order_claims: AHashMap<InstrumentId, StrategyId>,
     client_accounts: AHashMap<ClientId, AccountId>,
     client_routes: AHashMap<Venue, ClientId>,
@@ -2527,9 +2527,13 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if persisting the yield curve data to the backing database fails.
-    pub fn add_yield_curve(&mut self, yield_curve: YieldCurveData) -> anyhow::Result<()> {
-        log::debug!("Adding `YieldCurveData` {}", yield_curve.curve_name);
+    /// Returns an error if:
+    /// - The yield curve fails [`YieldCurve::validate`].
+    /// - Persisting the yield curve data to the backing database fails.
+    pub fn add_yield_curve(&mut self, yield_curve: YieldCurve) -> anyhow::Result<()> {
+        yield_curve.validate()?;
+
+        log::debug!("Adding `YieldCurve` {}", yield_curve.curve_name);
 
         if self.config.save_market_data
             && let Some(_database) = &mut self.database

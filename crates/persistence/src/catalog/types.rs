@@ -27,7 +27,7 @@ use nautilus_model::{
         Bar, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
         MarkPriceUpdate, NautilusDataType, NautilusRecordType, OptionGreeks, OrderBookDelta,
         OrderBookDepth, QuoteTick, TradeTick,
-        greeks::{GreeksData, PortfolioGreeks, YieldCurveData},
+        greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -490,7 +490,6 @@ pub fn record_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str>
         NautilusRecordType::ExecutionMassStatus => Cow::Borrowed("execution_mass_status"),
         NautilusRecordType::GreeksData => Cow::Borrowed("greeks_data"),
         NautilusRecordType::PortfolioGreeks => Cow::Borrowed("portfolio_greeks"),
-        NautilusRecordType::YieldCurveData => Cow::Borrowed("yield_curve_data"),
 
         #[cfg(feature = "defi")]
         NautilusRecordType::Defi => Cow::Borrowed("defi"),
@@ -703,7 +702,6 @@ impl_catalog_record_family!(PositionStatusReport, "position_status_report");
 impl_catalog_record_family!(ExecutionMassStatus, "execution_mass_status");
 impl_catalog_record_family!(GreeksData, "greeks_data");
 impl_catalog_record_family!(PortfolioGreeks, "portfolio_greeks");
-impl_catalog_record_family!(YieldCurveData, "yield_curve_data");
 
 impl NautilusDataTypePrefix for NautilusDataType {
     fn path_prefix(&self) -> Cow<'static, str> {
@@ -1008,7 +1006,6 @@ mod tests {
             ExecutionMassStatus,
             GreeksData,
             PortfolioGreeks,
-            YieldCurveData,
         );
     }
 

@@ -41,6 +41,10 @@ pub mod types;
 pub mod defi;
 
 use crate::{
+    data::{
+        CustomDataTrait, ensure_py_extractor_registered, ensure_rust_extractor_registered,
+        get_rust_extractor, greeks::YieldCurve,
+    },
     identifiers::{InstrumentIdError, OptionSeriesIdError},
     types::CurrencyLookupError,
 };
@@ -82,6 +86,12 @@ pub fn currency_lookup_error_to_pyvalue_err(e: CurrencyLookupError) -> PyErr {
 /// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let _result = ensure_rust_extractor_registered::<YieldCurve>();
+    let type_name = YieldCurve::type_name_static();
+    if let Some(extractor) = get_rust_extractor(type_name) {
+        let _result = ensure_py_extractor_registered(type_name, extractor);
+    }
+
     // Types
     m.add("HIGH_PRECISION", crate::types::fixed::HIGH_PRECISION_MODE)?;
     m.add("FIXED_SCALAR", crate::types::fixed::FIXED_SCALAR)?;
@@ -150,6 +160,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::greeks::BlackScholesGreeksResult>()?;
     m.add_class::<crate::data::greeks::GreeksData>()?;
     m.add_class::<crate::data::greeks::PortfolioGreeks>()?;
+    m.add_class::<crate::data::greeks::YieldCurve>()?;
     m.add_class::<crate::data::option_chain::OptionGreeks>()?;
     m.add_class::<crate::data::option_chain::OptionChainSlice>()?;
     m.add_class::<crate::data::option_chain::OptionStrikeData>()?;

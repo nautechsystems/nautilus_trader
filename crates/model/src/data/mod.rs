@@ -81,7 +81,7 @@ pub use depth::{DEPTH_INLINE_LEN, DEPTH10_LEN, OrderBookDepth};
 pub use funding::FundingRateUpdate;
 pub use greeks::{
     BlackScholesGreeksResult, GreeksData, HasGreeks, OptionGreekValues, PortfolioGreeks,
-    YieldCurveData, black_scholes_greeks, imply_vol_and_greeks, refine_vol_and_greeks,
+    YieldCurve, black_scholes_greeks, imply_vol_and_greeks, refine_vol_and_greeks,
 };
 pub use option_chain::{
     OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange, StrikeSearchProfile,
@@ -370,6 +370,7 @@ impl DataRef<'_> {
 }
 
 impl HasTsInit for DataRef<'_> {
+    #[inline]
     fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Custom(custom) => custom.data.ts_init(),
@@ -885,7 +886,6 @@ pub enum NautilusRecordType {
     Defi,
     GreeksData,
     PortfolioGreeks,
-    YieldCurveData,
 }
 
 impl FromStr for NautilusRecordType {
@@ -923,7 +923,6 @@ impl FromStr for NautilusRecordType {
             "ExecutionMassStatus" | "execution_mass_status" => Ok(Self::ExecutionMassStatus),
             "GreeksData" | "greeks_data" => Ok(Self::GreeksData),
             "PortfolioGreeks" | "portfolio_greeks" => Ok(Self::PortfolioGreeks),
-            "YieldCurveData" | "yield_curve_data" => Ok(Self::YieldCurveData),
             "custom" | "CustomData" => {
                 anyhow::bail!("custom data queries require NautilusDataType::Custom")
             }
@@ -1384,7 +1383,6 @@ mod tests {
     #[case(NautilusRecordType::ExecutionMassStatus, "ExecutionMassStatus")]
     #[case(NautilusRecordType::GreeksData, "GreeksData")]
     #[case(NautilusRecordType::PortfolioGreeks, "PortfolioGreeks")]
-    #[case(NautilusRecordType::YieldCurveData, "YieldCurveData")]
     fn nautilus_record_type_display_from_str_roundtrips(
         #[case] record_type: NautilusRecordType,
         #[case] expected: &str,
@@ -1400,7 +1398,6 @@ mod tests {
     #[case("position_snapshot", NautilusRecordType::PositionSnapshot)]
     #[case("greeks_data", NautilusRecordType::GreeksData)]
     #[case("portfolio_greeks", NautilusRecordType::PortfolioGreeks)]
-    #[case("yield_curve_data", NautilusRecordType::YieldCurveData)]
     fn nautilus_record_type_storage_names_parse(
         #[case] value: &str,
         #[case] expected: NautilusRecordType,

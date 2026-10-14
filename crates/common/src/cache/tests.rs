@@ -31,7 +31,8 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick, greeks::OptionGreekValues,
+        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
+        greeks::{OptionGreekValues, YieldCurve},
         option_chain::OptionGreeks,
     },
     enums::{
@@ -1828,6 +1829,35 @@ fn test_add_instrument_close_persists_replacement() {
         restored.instrument_close(&instrument_id),
         Some(&replacement)
     );
+}
+
+#[rstest]
+fn test_add_yield_curve_rejects_curve_get_rate_cannot_evaluate(mut cache: Cache) {
+    let valid = YieldCurve::new(
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+        "USD".to_string(),
+        vec![0.0],
+        vec![0.04],
+    );
+
+    let invalid = YieldCurve::new(
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+        "USD".to_string(),
+        vec![],
+        vec![],
+    );
+    cache.add_yield_curve(valid).unwrap();
+
+    let error = cache.add_yield_curve(invalid).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("one rate or at least three points")
+    );
+    assert_eq!(cache.yield_curve("USD").unwrap()(1.0), 0.04);
 }
 
 // -- EXECUTION -------------------------------------------------------------------------------

@@ -24,6 +24,7 @@ use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
         Bar, BarType, FundingRateUpdate, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick,
+        YieldCurve,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
@@ -170,6 +171,14 @@ impl PyCache {
         self.0
             .borrow_mut()
             .add_instrument_close(close)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add_yield_curve")]
+    fn py_add_yield_curve(&mut self, yield_curve: YieldCurve) -> PyResult<()> {
+        self.0
+            .borrow_mut()
+            .add_yield_curve(yield_curve)
             .map_err(to_pyvalue_err)
     }
 

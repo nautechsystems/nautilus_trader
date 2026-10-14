@@ -17,7 +17,7 @@ use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use pyo3::{prelude::*, types::PyType};
 
 use crate::data::greeks::{
-    BlackScholesGreeksResult, GreeksData, OptionGreekValues, PortfolioGreeks,
+    BlackScholesGreeksResult, GreeksData, OptionGreekValues, PortfolioGreeks, YieldCurve,
     black_scholes_greeks_checked, imply_vol_and_greeks_checked, imply_vol_checked,
 };
 
@@ -245,6 +245,59 @@ impl PortfolioGreeks {
     #[getter]
     fn rho(&self) -> f64 {
         self.greeks.rho
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl YieldCurve {
+    #[new]
+    fn py_new(
+        curve_name: String,
+        tenors: Vec<f64>,
+        interest_rates: Vec<f64>,
+        ts_event: u64,
+        ts_init: u64,
+    ) -> PyResult<Self> {
+        let curve = Self::new(
+            ts_init.into(),
+            ts_event.into(),
+            curve_name,
+            tenors,
+            interest_rates,
+        );
+        curve.validate().map_err(to_pyvalue_err)?;
+        Ok(curve)
+    }
+
+    fn __repr__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    fn ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
+
+    #[getter]
+    fn ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    fn curve_name(&self) -> &str {
+        &self.curve_name
+    }
+
+    #[getter]
+    fn tenors(&self) -> Vec<f64> {
+        self.tenors.clone()
+    }
+
+    #[getter]
+    fn interest_rates(&self) -> Vec<f64> {
+        self.interest_rates.clone()
     }
 }
 

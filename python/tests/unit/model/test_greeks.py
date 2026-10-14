@@ -21,6 +21,7 @@ import pytest
 from nautilus_trader.model import GreeksData
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import PortfolioGreeks
+from nautilus_trader.model import YieldCurve
 
 
 @pytest.fixture
@@ -180,3 +181,25 @@ def test_greeks_right_scalar_multiplication_unsupported(
 
     with pytest.raises(TypeError):
         data * 2.0
+
+
+@pytest.mark.parametrize(
+    ("tenors", "interest_rates", "message"),
+    [
+        ([0.5, 1.0, 2.0], [0.04, 0.05], "'tenors' usize of 3 was not equal"),
+        ([0.5, 1.0], [0.04, 0.05], "one rate or at least three points"),
+        ([], [], "one rate or at least three points"),
+        ([0.25, 1.0, 5.0], [0.04, float("nan"), 0.05], "must be finite"),
+        ([0.05, 0.05, 1.0], [0.04, 0.05, 0.06], "strictly increasing"),
+    ],
+)
+def test_yield_curve_rejects_shapes_that_cannot_interpolate(
+    tenors: list[float],
+    interest_rates: list[float],
+    message: str,
+) -> None:
+    """
+    Reject curves the calculator cannot evaluate.
+    """
+    with pytest.raises(ValueError, match=message):
+        YieldCurve("USD", tenors, interest_rates, 1, 2)

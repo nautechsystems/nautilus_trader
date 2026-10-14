@@ -1468,7 +1468,7 @@ mod tests {
 
     use jiff::{Timestamp, civil::Date, tz::Offset};
     use nautilus_model::{
-        data::{IndexPriceUpdate, QuoteTick, YieldCurveData},
+        data::{IndexPriceUpdate, QuoteTick, YieldCurve},
         enums::{AssetClass, OmsType, OptionKind, OrderSide, PositionSide},
         events::order::spec::OrderFilledSpec,
         identifiers::{
@@ -4262,7 +4262,7 @@ mod tests {
         calculator
             .cache
             .borrow_mut()
-            .add_yield_curve(YieldCurveData::new(
+            .add_yield_curve(YieldCurve::new(
                 now_ns,
                 now_ns,
                 "AAPL.OPRA".to_string(),
@@ -5342,7 +5342,7 @@ mod tests {
         calculator
             .cache
             .borrow_mut()
-            .add_yield_curve(YieldCurveData::new(
+            .add_yield_curve(YieldCurve::new(
                 now,
                 now,
                 "AAPL.OPRA".to_string(),

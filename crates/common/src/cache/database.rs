@@ -24,7 +24,7 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{
         Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
-        greeks::{GreeksData, YieldCurveData},
+        greeks::{GreeksData, YieldCurve},
     },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
@@ -112,7 +112,7 @@ pub struct CacheMap {
     pub orders: AHashMap<ClientOrderId, OrderAny>,
     pub positions: AHashMap<PositionId, Position>,
     pub greeks: AHashMap<InstrumentId, GreeksData>,
-    pub yield_curves: AHashMap<String, YieldCurveData>,
+    pub yield_curves: AHashMap<String, YieldCurve>,
 }
 
 /// Factory for constructing cache database adapters at runtime.
@@ -224,12 +224,12 @@ pub trait CacheDatabaseAdapter {
         Ok(AHashMap::new())
     }
 
-    /// Loads all [`YieldCurveData`] from the cache.
+    /// Loads all [`YieldCurve`] from the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if loading yield curve data fails.
-    async fn load_yield_curves(&self) -> anyhow::Result<AHashMap<String, YieldCurveData>> {
+    async fn load_yield_curves(&self) -> anyhow::Result<AHashMap<String, YieldCurve>> {
         Ok(AHashMap::new())
     }
 
@@ -510,7 +510,7 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if adding yield curve data fails.
-    fn add_yield_curve(&self, _yield_curve: &YieldCurveData) -> anyhow::Result<()> {
+    fn add_yield_curve(&self, _yield_curve: &YieldCurve) -> anyhow::Result<()> {
         Ok(())
     }
 
