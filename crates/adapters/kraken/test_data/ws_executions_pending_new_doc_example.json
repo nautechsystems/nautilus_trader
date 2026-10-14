@@ -1,0 +1,25 @@
+{
+  "channel": "executions",
+  "type": "update",
+  "data": [
+    {
+      "order_id": "OK4GJX-KSTLS-7DZZO5",
+      "order_userref": 3,
+      "symbol": "BTC/USD",
+      "order_qty": 0.005,
+      "cum_cost": 0.0,
+      "time_in_force": "GTC",
+      "exec_type": "pending_new",
+      "side": "sell",
+      "order_type": "limit",
+      "limit_price_type": "static",
+      "limit_price": 26500.0,
+      "stop_price": 0.0,
+      "order_status": "pending_new",
+      "fee_usd_equiv": 0.0,
+      "fee_ccy_pref": "fciq",
+      "timestamp": "2023-09-22T10:33:05.709950Z"
+    }
+  ],
+  "sequence": 8
+}
