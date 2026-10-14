@@ -2497,8 +2497,9 @@ funds. It only publishes market-outcome close events into Nautilus.
 
 Polymarket auto-loads instruments on demand, so a long-running session keeps growing the cache as
 markets resolve, new markets appear, and strategies cycle through events. Use `cache.purge_instrument`
-to drop markets the strategy no longer tracks. The call removes the instrument record and every
-cache-owned map keyed by it (order book, quotes, trades, bars).
+to drop markets the strategy no longer tracks. The call removes the instrument record and its
+cached market data (order book, quotes, trades, bars). Order and position history remains indexed
+until purged separately, preserving realized PnL reporting.
 
 ```python
 class PolymarketHousekeeping(Strategy):

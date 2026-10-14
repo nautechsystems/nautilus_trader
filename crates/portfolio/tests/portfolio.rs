@@ -666,6 +666,12 @@ fn test_unrealized_pnl_for_instrument_when_no_instrument_returns_none(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
 ) {
+    portfolio.update_account(&get_margin_account(Some("SIM-001")));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .purge_instrument(instrument_audusd.id());
+
     let result = portfolio.unrealized_pnl(&instrument_audusd.id());
     assert!(result.is_none());
 }
@@ -684,6 +690,12 @@ fn test_realized_pnl_for_instrument_when_no_instrument_returns_none(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
 ) {
+    portfolio.update_account(&get_margin_account(Some("SIM-001")));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .purge_instrument(instrument_audusd.id());
+
     let result = portfolio.realized_pnl(&instrument_audusd.id());
     assert!(result.is_none());
 }
@@ -6346,6 +6358,48 @@ fn add_closed_netting_position_with_snapshots(
         .borrow_mut()
         .add_position(&position, OmsType::Netting)
         .unwrap();
+}
+
+#[rstest]
+#[case::without_snapshots(&[])]
+#[case::snapshotted_final_cycle(&[Money::from("0.20 USD")])]
+fn test_snapshot_retains_realized_pnl_after_instrument_purge(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+    #[case] archived_pnls: &[Money],
+) {
+    let account_id = AccountId::new("SIM-001");
+    let position_id = PositionId::new("P-CLOSED");
+    portfolio.update_account(&get_margin_account(Some("SIM-001")));
+    add_closed_netting_position_with_snapshots(
+        &portfolio,
+        &instrument_audusd,
+        account_id,
+        position_id,
+        archived_pnls,
+        Money::from("0.20 USD"),
+    );
+
+    // Refresh the cache indexes because the helper inserts an already-closed position
+    let cache = Rc::clone(portfolio.cache());
+    let position = cache.borrow().position_owned(&position_id).unwrap();
+    cache.borrow_mut().update_position(&position).unwrap();
+
+    let before = portfolio.build_snapshot(&account_id).unwrap();
+    assert_eq!(before.realized_pnls, vec![Money::from("0.20 USD")]);
+
+    cache.borrow_mut().purge_instrument(instrument_audusd.id());
+    assert!(cache.borrow().instrument(&instrument_audusd.id()).is_none());
+
+    let after = portfolio
+        .build_snapshot(&account_id)
+        .expect("instrument cleanup must preserve portfolio reporting");
+    assert_eq!(after.realized_pnls, before.realized_pnls);
+    assert_eq!(after.total_equity, before.total_equity);
+    assert_eq!(
+        portfolio.total_pnl(&instrument_audusd.id()),
+        Some(Money::from("0.20 USD")),
+    );
 }
 
 #[rstest]

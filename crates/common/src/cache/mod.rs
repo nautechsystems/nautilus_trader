@@ -1893,11 +1893,11 @@ impl Cache {
 
     /// Purges the instrument with the `instrument_id` from the cache (if found).
     ///
-    /// All cache-owned data keyed by the instrument is removed: the instrument record,
+    /// The instrument record and its market data are removed:
     /// any synthetic with the same id, order book and own-order-book state, quote/trade
     /// histories, mark/index/funding price histories, instrument status and close, bars
-    /// for any `BarType` referencing the instrument, and the `instrument_orders` /
-    /// `instrument_positions` index entries.
+    /// for any `BarType` referencing the instrument. Order and position indexes remain
+    /// while their records are retained, preserving historical queries and realized PnL.
     ///
     /// For safety, an instrument is prevented from being purged while any associated
     /// order is non-terminal (anything not in `orders_closed`, including
@@ -1980,9 +1980,6 @@ impl Cache {
             self.defi.pool_profilers.remove(&instrument_id);
         }
 
-        self.index.instrument_orders.remove(&instrument_id);
-        self.index.instrument_positions.remove(&instrument_id);
-
         log::info!("Purged instrument {instrument_id}");
     }
 
@@ -2000,8 +1997,8 @@ impl Cache {
     /// This still refuses to purge when any associated position is non-closed. Intended
     /// for actors which own an instrument-expiration lifecycle and have already invalidated
     /// any remaining order state externally, but may still observe order-terminal events
-    /// arriving later than the cleanup decision. During that window, the order objects may
-    /// still exist even though `instrument_orders` is removed from the cache index.
+    /// arriving later than the cleanup decision. Order objects and their indexes remain
+    /// available even after the instrument record is removed.
     pub fn purge_instrument_skip_order_guard(&mut self, instrument_id: InstrumentId) {
         self.purge_instrument_inner(instrument_id, true);
     }
