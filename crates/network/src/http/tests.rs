@@ -636,8 +636,8 @@ fn platform_tls_http2_and_protocol_retries() {
                     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                     let addr = listener.local_addr().unwrap();
                     let attempts = Arc::new(AtomicUsize::new(0));
-                    let count = attempts.clone();
-                    let acceptor = tokio_rustls::TlsAcceptor::from(config.clone());
+                    let count = Arc::clone(&attempts);
+                    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::clone(&config));
 
                     let peer = tokio::spawn(async move {
                         let (stream, _) = listener.accept().await.unwrap();
