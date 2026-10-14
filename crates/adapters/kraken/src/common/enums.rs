@@ -816,6 +816,15 @@ impl From<KrakenOrderStatus> for OrderStatus {
     }
 }
 
+/// How Kraken Futures applies an edit's size: `Absolute` sets the order's total size, fills
+/// included, and `Relative`, the venue's default, sets its open size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum KrakenFuturesQtyMode {
+    Absolute,
+    Relative,
+}
+
 /// Order direction as the Kraken Futures order history reports it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum KrakenFuturesHistoryDirection {
