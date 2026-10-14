@@ -1,10 +1,8 @@
 # On-Chain Grid Market Making with Short-Term Orders (dYdX)
 
-This tutorial runs the shipped `GridMarketMaker` strategy on dYdX v4
-through the Rust `LiveNode`. The strategy places symmetric limit orders
-around the mid, skews the grid to manage inventory, and lets the venue
-cycle short-term orders by time-to-block expiry instead of explicit
-cancels.
+This tutorial runs the shipped `GridMarketMaker` strategy on dYdX v4 through the Rust `LiveNode`. The strategy
+places symmetric limit orders around the mid and skews the grid to manage inventory. The venue cycles
+short-term orders through time-to-block expiry instead of explicit cancels.
 
 ## Introduction
 
@@ -45,14 +43,13 @@ flowchart LR
 
 ### Inventory skewing (Avellaneda-Stoikov inspired)
 
-When the position grows long the entire grid shifts down (cheaper buys,
-cheaper sells) to encourage the next fill on the sell side. When the
-position grows short the grid shifts up. This mirrors the Avellaneda-Stoikov
-framework adapted to a discrete grid.
+When the long position increases, the entire grid shifts down (cheaper buys, cheaper sells) to encourage a
+sell-side fill. When the short position increases, the grid shifts up. This follows the Avellaneda-Stoikov
+framework, adapted to a discrete grid.
 
 ### Why dYdX v4
 
-dYdX v4 fits market-making well:
+dYdX v4 has these features for market making:
 
 - **Short-term orders** with ~20-second expiry: low-latency placement, no
   on-chain storage cost.
@@ -93,7 +90,7 @@ export DYDX_TESTNET_WALLET_ADDRESS="dydx1..."
 
 Each level is a fixed percentage (basis points) away from mid:
 
-```
+```text
 Buy level N:  mid * (1 - bps/10000)^N - skew
 Sell level N: mid * (1 + bps/10000)^N - skew
 ```
@@ -102,7 +99,7 @@ Where `skew = skew_factor * net_position`.
 
 For a 3-level grid with `grid_step_bps=100` (1%) around a mid of 1000.00:
 
-```
+```text
                         Sell 3: 1030.30
                     Sell 2: 1020.10
                 Sell 1: 1010.00
@@ -115,7 +112,7 @@ For a 3-level grid with `grid_step_bps=100` (1%) around a mid of 1000.00:
 With a long-2 position and `skew_factor=1.0`, the entire grid shifts down
 by 2.0:
 
-```
+```text
                         Sell 3: 1028.30
                     Sell 2: 1018.10
                 Sell 1: 1008.00
@@ -129,16 +126,13 @@ by 2.0:
 
 The strategy enforces position limits through two mechanisms:
 
-1. **`max_position`**: a hard cap on net exposure (long or short). When the
-   projected exposure from adding the next grid level would breach this
-   cap, that level is skipped.
-2. **Projected exposure tracking**: before placing each level the strategy
-   tracks the worst-case per-side exposure (current position + all pending
-   buy / sell orders) to avoid over-committing.
+- **`max_position`**: a hard cap on net exposure (long or short).
+  The strategy skips a level if its projected exposure would exceed this cap.
+- **Projected exposure**: before each level, the strategy tracks worst-case exposure per side
+  (current position + all pending buy / sell orders). This prevents commitments beyond the limit.
 
-`cancel_all_orders` is asynchronous, so pending orders may still fill
-between the cancel request and acknowledgement. Tracking worst-case
-per-side exposure prevents momentary over-exposure during cancel-requote
+The `cancel_all_orders` call is asynchronous. Pending orders can still fill between the cancel request and
+acknowledgement. The worst-case exposure check per side prevents momentary over-exposure during cancel-requote
 transitions.
 
 ### Requote threshold
@@ -146,7 +140,7 @@ transitions.
 `requote_threshold_bps` controls how much the mid must move before the
 strategy cancels all open orders and places a fresh grid:
 
-- **Lower threshold** (5 bps): more responsive, more cancel/place
+- **Lower threshold** (5 bps): faster response, more cancel/place
   transactions.
 - **Higher threshold** (50 bps): fewer transactions, but orders may sit
   further from the current price.
@@ -167,23 +161,21 @@ strategy cancels all open orders and places a fresh grid:
 
 ### Choosing parameters
 
-- **`grid_step_bps`**: 50-100 bps in volatile markets, 5-20 bps in calm
+- **`grid_step_bps`**: [50, 100] bps in volatile markets, [5, 20] bps in calm
   conditions. Wider grids capture more spread per fill but fill less
   often.
 - **`skew_factor`**: start at `0.0`. A value of `0.5` shifts the grid by
-  0.5 price units per unit of net position. Too aggressive a skew can move
+   0.5 price units per unit of net position. Too much skew can move
   the grid entirely above or below mid.
 - **`expire_time_secs`**: for dYdX short-term orders, set to `8` seconds.
-  That fits inside the 40-block (~20 s) short-term window and keeps the
+   This fits inside the 40-block (~20 s) short-term window and keeps the
   orders on the fast short-term path. When `None`, orders use GTC and the
   long-term path.
 - **`on_cancel_resubmit`**: triggers a resubmission on the next quote tick
   after a cancel that the strategy did not initiate (short-term order
-  expiry from the indexer, self-trade prevention, risk limits). The
-  indexer emits a cancel event for each short-term order shortly after
-  it expires; this flag resets the requote anchor so the next quote
-  rebuilds the grid even if the mid has not moved beyond
-  `requote_threshold_bps`.
+  expiry from the indexer, self-trade prevention, risk limits). The indexer emits a cancel event for each short-term order shortly after it expires.
+   This flag resets the requote anchor so the next quote rebuilds the grid,
+   even if the mid has not moved beyond `requote_threshold_bps`.
 
 ## dYdX-specific considerations
 
@@ -193,13 +185,12 @@ When `expire_time_secs=8`, orders are classified as short-term by the
 adapter:
 
 1. The adapter checks `8s < max_short_term_secs (40 blocks * ~0.5s = ~20s)`.
-2. The order is submitted as short-term with
+1. The adapter submits the order as short-term with
    `GoodTilBlock = current_height + N`.
-3. The order expires on chain after about eight seconds if not filled.
-   Expiry costs no gas (GTB replay protection handles it on chain), but
-   the indexer still emits an `OrderCanceled` event for each expired
-   order shortly after the expiry block, so the strategy observes the
-   expiry through the normal cancel event path.
+1. The order expires on chain after approximately eight seconds if it does not fill.
+   Expiry costs no gas (GTB replay protection handles it on chain).
+   The indexer still emits an `OrderCanceled` event for each expired order shortly after the expiry block.
+   Thus, the strategy observes expiry through the normal cancel event path.
 
 This is the recommended configuration for market making because:
 
@@ -218,42 +209,37 @@ unexpected cancels:
 
 1. When the strategy calls `cancel_all_orders`, it records all open order
    IDs in `pending_self_cancels`.
-2. When `on_order_canceled` fires:
-   - If the order ID is in `pending_self_cancels`, it is a self-cancel
-     and no action is needed.
-   - Otherwise it was not strategy-initiated (short-term order expiry,
-     self-trade prevention, or a risk limit). Reset `last_quoted_mid` so
-     the next quote triggers a full grid resubmission.
+1. When `on_order_canceled` runs:
+   - If the order ID is in `pending_self_cancels`, it is a self-cancel and requires no action.
+   - Otherwise, the strategy did not initiate the cancel (short-term order expiry, self-trade prevention, or a risk limit).
+     With `on_cancel_resubmit=true`, it resets `last_quoted_mid` so the next quote triggers a full grid resubmission.
 
-This stops the strategy re-quoting unnecessarily during its own cancel
-waves while still responding to surprises.
+This prevents unnecessary requotes during the strategy's own cancel requests, while it still responds to
+unexpected cancels.
 
-`on_order_filled` also removes the order from `pending_self_cancels`. If
-an order fills before the cancel acknowledgement arrives, this prevents
-stale entries from accumulating.
+The `on_order_filled` callback also removes fully filled orders from `pending_self_cancels`. If an order fills
+before the cancel acknowledgement arrives, this prevents stale entries from accumulating. Partial fills retain
+the order ID so a later self-cancel is still identified correctly.
 
 ### Order quantization
 
-Price and size quantization for dYdX markets is handled automatically by
-the adapter's `OrderMessageBuilder`. No manual rounding or conversion is
-needed. See
-[Price and size quantization](../integrations/dydx.md#price-and-size-quantization)
-for details.
+The adapter's `OrderMessageBuilder` automatically quantizes price and size for dYdX markets. No manual
+rounding or conversion is needed. See [Price and size
+quantization](../integrations/dydx.md#price-and-size-quantization) for details.
 
 ### Post-only orders
 
-All grid orders are submitted with `post_only=true`. The exchange accepts
-and then immediately cancels any post-only order that would cross the
-spread at match time (the strategy sees `OrderCanceled`, not
-`OrderRejected`), so every fill lands at the maker fee rate and the grid
-never inadvertently lifts its own offers during requote transitions.
+The strategy submits all grid orders with `post_only=true`. The exchange accepts, then immediately cancels,
+any post-only order that would cross the spread at match time. The strategy sees `OrderCanceled`, not
+`OrderRejected`. Thus, every fill uses the maker fee rate, and the grid never takes its own offers during
+requote transitions.
 
 ## Running and stopping
 
 ### Environment setup
 
-Credentials load from environment variables or a `.env` file at the
-project root (loaded automatically via `dotenvy`):
+Credentials load from environment variables or a `.env` file at the project root (loaded automatically through
+`dotenvy`):
 
 ```bash
 # Direct export
@@ -270,10 +256,11 @@ DYDX_WALLET_ADDRESS=dydx1...
 ### Run the example
 
 :::warning
-This command places real orders on **dYdX mainnet** by default: the `DYDX_NETWORK` constant near
-the top of `crates/adapters/dydx/examples/node_grid_mm.rs` is `DydxNetwork::Mainnet`, and the
-example reads `DYDX_PRIVATE_KEY` and `DYDX_WALLET_ADDRESS`. To run against testnet, set
-`DYDX_NETWORK` to `DydxNetwork::Testnet` and rebuild; the example then reads
+This command places real orders on **dYdX mainnet** by default.
+The `DYDX_NETWORK` constant near the top of `crates/adapters/dydx/examples/node_grid_mm.rs` is `DydxNetwork::Mainnet`.
+The example reads `DYDX_PRIVATE_KEY` and `DYDX_WALLET_ADDRESS`.
+To run against testnet, set `DYDX_NETWORK` to `DydxNetwork::Testnet` and rebuild.
+The example then reads
 `DYDX_TESTNET_PRIVATE_KEY` and `DYDX_TESTNET_WALLET_ADDRESS`.
 :::
 
@@ -285,10 +272,10 @@ cargo run --example dydx-grid-mm --package nautilus-dydx --features examples
 
 Press **Ctrl+C** to stop the node. The shutdown sequence:
 
-1. SIGINT received, trader stops, `on_stop` fires.
-2. Strategy cancels all orders and closes positions.
-3. 5-second grace period (`delay_post_stop_secs`) processes residual events.
-4. Clients disconnect, node exits.
+1. The node receives SIGINT, the trader stops, and `on_stop` runs.
+1. The strategy cancels all orders and closes positions.
+1. The node processes residual events during a 5-second grace period (`delay_post_stop_secs`).
+1. The clients disconnect and the node exits.
 
 ## Code walkthrough
 
@@ -388,14 +375,17 @@ flowchart TB
 
 ## Strategy internals
 
-The following Rust snippets are simplified from the strategy source in
+The following Rust snippets simplify the strategy source in
 [`crates/trading/src/examples/strategies/grid_mm/strategy.rs`](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/trading/src/examples/strategies/grid_mm/strategy.rs),
-which adds error handling and state tracking omitted here.
+which includes error handling and state tracking that these snippets omit.
 
 ### Trade size resolution (`on_start`)
 
-Trade size resolves from the instrument cache: config value first, then
-the instrument's `min_quantity`, then `1.0` as a final fallback.
+The strategy resolves trade size from the instrument cache in this order:
+
+1. The configured value.
+1. The instrument's `min_quantity`.
+1. `1.0` as a final fallback.
 
 ```rust
 fn on_start(&mut self) -> anyhow::Result<()> {
@@ -484,7 +474,7 @@ fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
 
 ### Grid pricing (`grid_orders`)
 
-Computes geometric grid prices and enforces `max_position` per level:
+The `grid_orders` method calculates geometric grid prices and enforces `max_position` per level:
 
 ```rust
 fn grid_orders(
@@ -537,32 +527,27 @@ fn grid_orders(
 
 ## What a 35-second mainnet run produces
 
-A 35-second mainnet run on `ETH-USD-PERP.DYDX` with the example config
-(`grid_step_bps=100`, `num_levels=3`, `skew_factor=0.5`,
-`requote_threshold_bps=10`, `expire_time_secs=8`) captures 47 requote
-events, 276 order submissions, 67 accepts, and 54 cancels. ETH was
-trading near 2,281 USD: the price never moved enough to trip the 10 bps
-requote threshold, so most cycles trigger from the periodic 8-second
-short-term order expiry rather than from price movement.
+A 35-second mainnet run on `ETH-USD-PERP.DYDX` with the example config (`grid_step_bps=100`, `num_levels=3`,
+`skew_factor=0.5`, `requote_threshold_bps=10`, `expire_time_secs=8`) captures 47 requote events, 276 order
+submissions, 67 accepts, and 54 cancels. ETH was trading near 2,281 USD. The price never moved sufficiently to
+trigger the 10 bps requote threshold. Thus, most cycles start from periodic 8-second short-term order expiry
+rather than price movement.
 
 ![ETH-USD-PERP mid with theoretical grid bands](./assets/grid_market_maker_dydx/panel_a_grid_overlay.png)
 
-**Figure 1.** *ETH-USD-PERP mid at every requote with the six theoretical
-grid bands (3 levels each side, 100 bps step). Mid sits near 2,281 USD;
-the inner buy and sell levels are at ~2,258 and ~2,304 USD.*
+**Figure 1.** *ETH-USD-PERP mid at every requote with the six theoretical grid bands (3 levels each side, 100
+bps step). Mid is near 2,281 USD. The inner buy and sell levels are at ~2,258 and ~2,304 USD.*
 
 ![Order lifetime distribution](./assets/grid_market_maker_dydx/panel_b_order_lifetime.png)
 
-**Figure 2.** *Time from `OrderAccepted` to `OrderCanceled` per short-term
-order, in seconds. The mass near 7-8 seconds matches the
-`expire_time_secs=8` setting; the smaller cluster below 6 seconds is
+**Figure 2.** *Time from `OrderAccepted` to `OrderCanceled` per short-term order, in seconds. The mass near
+[7, 8] seconds matches the `expire_time_secs=8` setting. The smaller cluster below 6 seconds is
 strategy-initiated cancels during requote transitions.*
 
 ![Orders submitted per 250-ms bucket](./assets/grid_market_maker_dydx/panel_c_orders_per_cycle.png)
 
-**Figure 3.** *Order submission count per 250-ms bucket, split by side.
-Each requote cycle places six orders (3 buys + 3 sells); the spacing
-between bursts is the requote interval.*
+**Figure 3.** *Order submission count per 250-ms bucket, split by side. Each requote cycle places six orders
+(3 buys + 3 sells). The spacing between bursts is the requote interval.*
 
 ![Short-term order timeline](./assets/grid_market_maker_dydx/panel_d_short_term_timeline.png)
 
@@ -597,13 +582,13 @@ DYDX_LOG=/tmp/dydx_main.log \
 
 ### Log messages
 
-| Log message                                         | Meaning                                                 |
-| --------------------------------------------------- | ------------------------------------------------------- |
-| `Requoting grid: mid=X, last_mid=Y`                 | Mid moved beyond threshold, refreshing grid.            |
-| `Submit short-term order N`                         | Order submitted via short-term broadcast path.          |
-| `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.         |
-| `benign cancel error, treating as success`          | Cancel for an already-filled or expired order (normal). |
-| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto-recovering.             |
+| Log message                                         | Meaning                                                           |
+| --------------------------------------------------- | ----------------------------------------------------------------- |
+| `Requoting grid: mid=X, last_mid=Y`                 | Grid refresh after a threshold move, anchor reset, or empty grid. |
+| `Submit short-term order N`                         | Order submitted through short-term broadcast path.                |
+| `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.                   |
+| `benign cancel error, treating as success`          | Cancel for an already-filled or expired order (normal).           |
+| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto-recovering.                       |
 
 The `Submit short-term order`, `BatchCancel`, and benign cancel lines log at DEBUG level. The
 example sets `stdout_level: LevelFilter::Info`, so change it to `LevelFilter::Debug` to see them.
@@ -612,25 +597,25 @@ example sets `stdout_level: LevelFilter::Info`, so change it to `LevelFilter::De
 
 1. **Startup**: instruments load, WebSocket connects, first quote
    triggers initial grid.
-2. **Steady state**: grid persists across ticks; requotes only when mid
-   moves more than `requote_threshold_bps`.
-3. **Fills**: position updates, skew adjusts, the next requote shifts the
+1. **Steady state**: the grid persists across ticks.
+   Requotes occur when mid moves by at least `requote_threshold_bps`, the grid is empty, or an event resets the anchor.
+   Rejections and expiry events reset the anchor. Unexpected cancels reset it with `on_cancel_resubmit=true`.
+1. **Fills**: position updates, skew adjusts, the next requote shifts the
    grid.
-4. **Expiry**: short-term orders expire on chain after about eight
-   seconds; the indexer emits a cancel event for each, and the next
-   quote refreshes the grid.
-5. **Shutdown**: all orders cancelled, positions closed, WebSocket
+1. **Expiry**: short-term orders expire on chain after approximately eight seconds.
+   The indexer emits a cancel event for each, and the next quote refreshes the grid.
+1. **Shutdown**: all orders canceled, positions closed, WebSocket
    disconnected.
 
 ## Customization tips
 
 ### High vs low volatility
 
-| Condition       | Adjustment                                                                |
-| --------------- | ------------------------------------------------------------------------- |
-| High volatility | Wider `grid_step_bps` (100-200), fewer `num_levels`, lower `skew_factor`. |
-| Low volatility  | Tighter `grid_step_bps` (10-30), more `num_levels`, higher `skew_factor`. |
-| Thin liquidity  | Increase `requote_threshold_bps` to reduce cancel frequency.              |
+| Condition       | Adjustment                                                                   |
+| --------------- | ---------------------------------------------------------------------------- |
+| High volatility | Wider `grid_step_bps` ([100, 200]), fewer `num_levels`, lower `skew_factor`. |
+| Low volatility  | Tighter `grid_step_bps` ([10, 30]), more `num_levels`, higher `skew_factor`. |
+| Thin liquidity  | Increase `requote_threshold_bps` to reduce cancel frequency.                 |
 
 ### Multiple instruments
 

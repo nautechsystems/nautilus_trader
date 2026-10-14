@@ -1,41 +1,33 @@
 # Hurst/VPIN Directional Strategy (Kraken Futures)
 
 :::note
-This is a **Rust-only** tutorial. The strategy, backtest wiring, and tests
-all live in the compiled core.
+This **Rust-only** tutorial uses a strategy, backtest setup, and tests from the compiled core.
 :::
 
-This tutorial backtests a directional strategy on **PF_XBTUSD**, the
-USD-margined Bitcoin perpetual on [Kraken Futures](https://futures.kraken.com).
-The strategy combines a **Hurst-exponent regime filter** with a **VPIN**
-(Volume-synchronized Probability of Informed Trading) flow signal.
-Historical trades and quotes come from [Tardis.dev](https://tardis.dev)
-and replay through the Rust `BacktestEngine`.
+This tutorial backtests a directional strategy on **PF_XBTUSD**, the USD-margined Bitcoin perpetual on [Kraken
+Futures](https://futures.kraken.com). The strategy combines a **Hurst-exponent regime filter** with a **VPIN**
+(Volume-synchronized Probability of Informed Trading) flow signal. The Rust `BacktestEngine` replays
+historical trades and quotes from [Tardis.dev](https://tardis.dev).
 
 ## Introduction
 
-The strategy combines three components: a **slow regime filter** derived from bars,
-a **fast informed-flow signal** derived from trades, and a **quote-driven
-entry** that fires only when both align.
+The strategy combines a slow regime filter from bars and a fast informed-flow signal from trades. Quote-driven
+entry occurs only when both signals agree.
 
-- **Hurst exponent on dollar bars.** Sampled on constant-notional (value)
+- **Hurst exponent**: Sampled on constant-notional (value)
   bars, following Lopez de Prado (*Advances in Financial Machine
-  Learning*, Chapter 2). A rescaled-range (R/S) estimate above `0.55`
-  indicates persistent, trending behavior; below `0.50` the series is
-  mean-reverting or noise.
+  Learning*, Chapter 2). A rescaled-range (R/S) estimate greater than `0.55` indicates persistent, trending behavior.
+  An estimate less than `0.50` indicates mean reversion or noise.
 
-- **VPIN from trade aggressor flow.** Each completed dollar bar is
-  treated as one volume bucket. The absolute imbalance between aggressive
-  buy and aggressive sell volume, averaged over the last fifty buckets,
-  gives the VPIN level. The signed imbalance gives the net informed
-  direction.
+- **VPIN**: Each completed dollar bar is one volume bucket.
+  VPIN is the average absolute imbalance between aggressive buy and aggressive sell volume over the last fifty buckets.
+  The signed imbalance gives the net informed direction.
 
-- **Quote-driven entry.** Once both signals agree, the strategy opens a
+- **Quote-driven entry**: Once both signals agree, the strategy opens a
   position on the next quote tick. Entry timing stays tied to the live
   top of book rather than to bar closes.
 
-Exit is driven by the same ingredients: position is closed when the
-Hurst estimate decays back through a lower threshold, or when a
+The strategy closes the position when the Hurst estimate decreases through a lower threshold or the
 holding-time cap is reached.
 
 The strategy is shipped as
@@ -51,18 +43,17 @@ Kraken Futures lists perpetuals on Bitcoin and Ether in two forms:
 - **`PI_` inverse perpetuals**: quoted in USD, margined and settled in
   the underlying.
 - **`PF_` linear perpetuals**: quoted in USD, margined and settled in
-  USD (via multi-collateral).
+  USD (through multi-collateral).
 
 The tutorial uses **`PF_XBTUSD`** so the account currency, quote
 currency, and dollar-bar sampling frame are all USD.
 
 ### Why dollar bars and VPIN together
 
-VPIN is defined on *volume* buckets rather than *time* buckets. Dollar
-bars (`VALUE` aggregation in NautilusTrader) close after a fixed
-notional has traded, so the sampling frame adapts to market activity.
-Defining each VPIN bucket as one dollar bar keeps both signals on the
-same clock, and Hurst sampled on the same bars uses the same frame.
+VPIN is defined on *volume* buckets rather than *time* buckets. Dollar bars (`VALUE` aggregation in
+NautilusTrader) close after a fixed notional has traded, so the sampling frame adapts to market activity. Each
+VPIN bucket is one dollar bar, and Hurst uses the same bars. Thus, both signals use the same clock and
+sampling frame.
 
 ## Prerequisites
 
@@ -73,11 +64,10 @@ same clock, and Hurst sampled on the same bars uses the same frame.
 
 ## Data preparation
 
-Kraken Futures is published by Tardis under the historical slug
-`cryptofacilities`. The first day of each month is available for free
-without an API key, which is enough for a single-day plumbing check. A
-full backtest needs at least two sessions to warm the 128-bar Hurst
-window, which requires a paid Tardis API key (see the tip below).
+Kraken Futures is published by Tardis under the historical slug `cryptofacilities`. The first day of each
+month is free without an API key. This sample is sufficient for a single-day setup check. A full backtest
+needs at least two sessions to fill the 128-bar Hurst window. Those historical ranges require a paid Tardis
+API key (see the tip below).
 
 ```bash
 mkdir -p /tmp/tardis_kraken
@@ -89,19 +79,17 @@ curl -L -o /tmp/tardis_kraken/PF_XBTUSD_quotes.csv.gz \
   https://datasets.tardis.dev/v1/cryptofacilities/quotes/2024/01/01/PF_XBTUSD.csv.gz
 ```
 
-The runnable example binary shown later in this tutorial reads from
-`/tmp/tardis_kraken/` by default, so downloading into that directory up front
-means `cargo run` works without editing the example's path constants.
+The runnable example binary reads from `/tmp/tardis_kraken/` by default. If you download into that directory,
+`cargo run` works without changes to the example's path constants.
 
 :::tip
 Full historical ranges require a paid Tardis API key. Use the
 [Tardis download utility](https://docs.tardis.dev/downloadable-csv-files)
-for bulk fetches once you move beyond single-day samples.
+for bulk downloads beyond single-day samples.
 :::
 
-The Rust Tardis loader parses `.csv.gz` directly and tags each record
-with the instrument ID we supply, so no symbology mapping is needed at
-the strategy level:
+The Rust Tardis loader parses `.csv.gz` directly and assigns the supplied instrument ID to each record. The
+strategy therefore needs no symbology mapping:
 
 ```rust
 use nautilus_model::identifiers::InstrumentId;
@@ -124,16 +112,14 @@ let quotes = load_quotes(
 )?;
 ```
 
-Pass the instrument's `price_precision` and `size_precision` explicitly. The
-loader otherwise infers precision from the first few records, and a sample
-day without fractional prices can infer `0`, which the matching engine will
-reject when it sees a quote tick that does not match the instrument's
-declared precision.
+Pass the instrument's `price_precision` and `size_precision` explicitly. The loader otherwise infers precision
+from the first few records. For a sample day without fractional prices, it can infer `0`. The matching engine
+rejects a quote tick whose precision does not match the instrument's declared precision.
 
 ## Instrument definition
 
-Since we are loading CSV data directly rather than through the live
-Kraken adapter, we define `PF_XBTUSD` manually as a
+This tutorial loads CSV data directly, without the live Kraken adapter. It therefore defines `PF_XBTUSD`
+manually as a
 [`CryptoPerpetual`](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/model/src/instruments/crypto_perpetual.rs).
 Linear perpetuals on Kraken Futures are quoted and margined in USD:
 
@@ -171,10 +157,9 @@ for current rates.
 
 ## Dollar-bar sampling
 
-NautilusTrader ships all the information-driven bar aggregators from
-AFML Chapter 2: tick, volume, value (dollar), plus imbalance and runs
-variants for each. We use plain `VALUE` bars here, which close after a
-fixed notional has traded on the tape.
+NautilusTrader ships all the information-driven bar aggregators from AFML Chapter 2: tick, volume, value
+(dollar), plus imbalance and runs variants for each. This tutorial uses plain `VALUE` bars, which close after
+a fixed notional has traded on the tape.
 
 The bar type is expressed as a string. The `INTERNAL` suffix tells the
 engine to aggregate inside NautilusTrader from the underlying trade
@@ -186,25 +171,23 @@ use nautilus_model::data::BarType;
 let bar_type = BarType::from("PF_XBTUSD.KRAKEN-2000000-VALUE-LAST-INTERNAL");
 ```
 
-Each bar closes after **USD 2,000,000** of traded notional. A session
-typically prints under 150 bars at this size, short of the 128-bar Hurst
-window, so warming the defaults needs multiple sessions. For a single-day
-run, either shrink the bar size to **USD 500,000** or drop `hurst_window`
-and `vpin_window` accordingly. Full multi-day backtests should use the
-defaults.
+Each bar closes after **USD 2,000,000** of traded notional. A session typically produces fewer than 150 bars
+and can fall short of the 128-bar Hurst window. Thus, the default configuration needs multiple sessions for
+warmup. For a single-day run, reduce the bar size to **USD 500,000** or reduce `hurst_window` and
+`vpin_window` accordingly. For full multi-day backtests, use the defaults.
 
 :::note
 `VALUE` bars are a *view* onto the trade tape. The backtest engine
-consumes the same stream that drives VPIN, so there is no double
-counting.
+consumes the same stream that drives VPIN. The bars do not cause double counting.
 :::
 
 ## Strategy overview
 
-The `HurstVpinDirectional` strategy runs three concurrent pipelines that
-synchronize at bar close: trades feed a bucket accumulator, bar close
-triggers signal recomputation, and quotes drive entry and timeout
-checks.
+The `HurstVpinDirectional` strategy runs three concurrent pipelines that synchronize at bar close:
+
+- Trades feed a bucket accumulator.
+- Bar close triggers new signal calculations.
+- Quotes drive entry and timeout checks.
 
 ```mermaid
 flowchart LR
@@ -255,33 +238,28 @@ flowchart LR
     X -->|yes| Cl
 ```
 
-1. **Per trade**: accumulate aggressive buy and aggressive sell volume
-   for the current dollar-bar bucket using `TradeTick::aggressor_side`.
-2. **Per bar** (bucket close): append the bar's log return to the Hurst
-   window, compute the bucket's signed and absolute imbalance, reset
-   the accumulators, re-estimate rolling Hurst and VPIN, clear
-   `exit_cooldown`, and check regime exit.
-3. **Per quote**: if flat and both signals agree (Hurst trending, VPIN
-   above threshold, signed imbalance non-zero), open a market IOC
-   order. If already positioned, check the holding-time cap.
+- **Per trade**: The strategy accumulates aggressive buy and aggressive sell volume
+  for the current dollar-bar bucket through `TradeTick::aggressor_side`.
+- **Per bar** (bucket close): The strategy appends the bar's log return to the Hurst window.
+  It calculates the bucket's signed and absolute imbalance, then resets the accumulators.
+  It estimates rolling Hurst and VPIN again, clears `exit_cooldown`, and checks regime exit.
+- **Per quote**: The Hurst and VPIN signals must agree before a flat strategy can open a market IOC order.
+  Hurst must meet `hurst_enter`, VPIN must meet `vpin_threshold`, and signed imbalance must be nonzero.
+  If a position is already open, it checks the holding-time cap.
 
-Regime exit fires from the bar pipeline when Hurst drops below
-`hurst_exit`. Holding timeout fires from the quote pipeline when the
-position has been open longer than `max_holding_secs`.
+Regime exit occurs in the bar pipeline when Hurst decreases to less than `hurst_exit`. Holding timeout occurs
+in the quote pipeline when the position has been open longer than `max_holding_secs`.
 
 ![Signal dashboard during an active trading window](./assets/hurst_vpin_kraken/panel_b_dashboard.png)
 
-**Figure 1.** *Signal dashboard for 2024-01-16 14:09-16:15 UTC: close, Hurst,
-VPIN. Markers sit at actual fill price; dotted connector shows slip against
-the bar-close line.*
+**Figure 1.** *Signal dashboard for 2024-01-16 14:09-16:15 UTC: close, Hurst, VPIN. Markers show actual fill
+price. The dotted connector shows slippage against the bar-close line.*
 
 ### Hurst estimator
 
-The strategy uses classical rescaled-range (R/S) regression. For each
-lag `k` in `(4, 8, 16, 32)`, the return window
-is split into non-overlapping chunks of length `k`, each chunk's
-rescaled range is computed, and the mean R/S is recorded. The slope of
-`log(R/S)` vs `log(k)` across the lag set gives the Hurst estimate.
+The strategy uses classical rescaled-range (R/S) regression. For each lag `k` in `(4, 8, 16, 32)`, it divides
+the return window into non-overlapping chunks of length `k`. It calculates each chunk's rescaled range and
+records the mean R/S. The slope of `log(R/S)` against `log(k)` across the lag set gives the Hurst estimate.
 
 ![Hurst exponent over the full backtest](./assets/hurst_vpin_kraken/panel_e_hurst_only.png)
 
@@ -293,15 +271,13 @@ rescaled range is computed, and the mean R/S is recorded. The slope of
 With explicit trade aggressor side available from the venue feed,
 VPIN collapses to
 
-```
+```text
 VPIN = mean_k ( |V_B_k - V_S_k| / (V_B_k + V_S_k) )
 ```
 
-over the last `k` completed dollar-bar buckets. The signed variant
-retains the sign of `V_B - V_S` and is used to choose direction. This
-is more accurate than the bulk-volume classification used in the
-original Easley/Lopez de Prado formulation, which was only necessary
-when aggressor side was not directly observable.
+over the last `k` completed dollar-bar buckets. The signed variant retains the sign of `V_B - V_S` and is used
+to choose direction. This is more accurate than the bulk-volume classification in the original Easley/Lopez de
+Prado formulation. That classification was only necessary when aggressor side was not directly observable.
 
 ![VPIN distribution across the backtest](./assets/hurst_vpin_kraken/panel_d_vpin_hist.png)
 
@@ -315,7 +291,7 @@ when aggressor side was not directly observable.
 | `trade_size`       | `0.0100`         | 0.0100 XBT per trade (matches instrument precision).              |
 | `hurst_window`     | `128`            | Rolling window of dollar bar log returns.                         |
 | `hurst_lags`       | `[4, 8, 16, 32]` | Lag set used in the R/S regression.                               |
-| `hurst_enter`      | `0.55`           | Above this, the regime is treated as trending.                    |
+| `hurst_enter`      | `0.55`           | Minimum Hurst value for a trending regime.                        |
 | `hurst_exit`       | `0.50`           | Below this, open positions are flattened.                         |
 | `vpin_window`      | `50`             | Completed volume buckets averaged for VPIN.                       |
 | `vpin_threshold`   | `0.30`           | Minimum VPIN for flow to be considered informed.                  |
@@ -325,7 +301,7 @@ Set `hurst_window` and `vpin_window` to values in `[1, 16_384]`.
 
 :::tip
 Dollar-bar size, Hurst lags, and VPIN window are all coupled. Smaller
-bars give faster reaction but noisier Hurst; larger bars smooth both
+bars give faster reaction but noisier Hurst. Larger bars smooth both
 signals but risk too few samples in a single-day backtest.
 :::
 
@@ -397,20 +373,15 @@ engine.add_strategy(HurstVpinDirectional::new(config))?;
 engine.run(None, None, None, false)?;
 ```
 
-With the default 128/50 windows and USD 2,000,000 bars, a single-day
-sample stays in warmup for the whole run. The run will show the engine
-aggregating dollar bars and driving the strategy at trade and quote
-granularity, but Hurst and VPIN will not emit until the windows are
-full. To see signal updates and entry/exit logic fire on a single day,
-shrink the bar size or windows as noted above, or provide two or more
-sessions of data.
+With the default 128/50 windows and USD 2,000,000 bars, a single-day sample stays in warmup for the whole run.
+The engine aggregates dollar bars and drives the strategy on individual trades and quotes. Hurst and VPIN do
+not emit until the windows are full. For signal updates and entries or exits on a single day, reduce the bar
+size or windows as described above. Alternatively, provide two or more sessions of data.
 
-A 14-day run (2024-01-15 to 2024-01-28) on this configuration prints
-1,224 bars and fires only 2 entries, 1 partial cover, and 1 close.
-Entries are sparse by design: both `hurst_enter` and `vpin_threshold`
-must clear on the same quote. The residual size after the partial IOC
-cover stays open through the rest of the session, which is how a Netting
-OMS resolves an exit IOC that only fills part of the resting position.
+A 14-day run (2024-01-15 to 2024-01-28) on this configuration prints 1,224 bars and produces only 2 entries, 1
+partial cover, and 1 close. Entries are sparse by design: Hurst and VPIN must meet their respective thresholds
+on the same quote. The remaining size after the partial IOC cover stays open through the rest of the session.
+A Netting OMS leaves this residual position when an exit IOC only fills part of the position.
 
 The wiring above is shipped as a runnable binary:
 
@@ -425,10 +396,9 @@ from `/tmp/tardis_kraken/`. To read other files, edit the `TRADES_PATH` and
 
 ![Trade detail during the active window](./assets/hurst_vpin_kraken/panel_a_price_regime.png)
 
-**Figure 4.** *Close price for 2024-01-16 14:09-16:15 UTC. Teal bands mark
-`Hurst >= 0.55` bars; gold bands mark periods with an open position. Markers
-sit at actual fill price; dotted connector shows slip against the bar-close
-line.*
+**Figure 4.** *Close price for 2024-01-16 14:09-16:15 UTC. Teal bands mark `Hurst >= 0.55` bars. Gold bands
+mark periods with an open position. Markers sit at actual fill price; dotted connector shows slip against the
+bar-close line.*
 
 ![Decision space across every bar](./assets/hurst_vpin_kraken/panel_c_decision_scatter.png)
 
@@ -437,9 +407,9 @@ VPIN. Shaded quadrant marks the entry-eligible region.*
 
 ### Regenerate the panels
 
-The backtest strategy logs `Hurst=… VPIN=… signed=… bar_close=…` on every
-bar close and standard `OrderFilled` events on entries and exits, so the
-panels above are fully reproducible from the run's stdout.
+The backtest strategy logs `Hurst=… VPIN=… signed=… bar_close=…` on every bar close. It also logs standard
+`OrderFilled` events on entries and exits. These logs make the panels above fully reproducible from the run's
+stdout.
 
 After building NautilusTrader from source, run these commands from the repository root:
 
@@ -454,37 +424,35 @@ BACKTEST_LOG=/tmp/backtest.log \
         python docs/tutorials/assets/hurst_vpin_kraken/render_panels.py
 ```
 
-The renderer uses the shared `nautilus_dark` tearsheet theme and writes
-static PNGs via Plotly's Kaleido exporter.
+The renderer uses the shared `nautilus_dark` tearsheet theme and writes static PNGs through Plotly's Kaleido
+exporter.
 
 ## Next steps
 
-- **Tune the sampling frame**. Try larger or smaller dollar-bar
+- **Sampling frame**: Try larger or smaller dollar-bar
   thresholds. The `VALUE_IMBALANCE` and `VALUE_RUNS` aggregators
-  produce bars that close on information arrival itself, which may be
-  an interesting substitute for constant-dollar sampling.
-- **Tighten the thresholds**. `hurst_enter`, `hurst_exit`, and
+  produce bars that close on information arrival. These are alternatives to constant-dollar sampling.
+- **Thresholds**: `hurst_enter`, `hurst_exit`, and
   `vpin_threshold` all interact: a higher enter threshold makes signals
-  rarer but more specific; a tighter exit shortens average holding
+  rarer but more specific. A tighter exit shortens average holding
   time.
-- **Add a volatility gate**. Overlay a realized-volatility estimator
+- **Volatility gate**: Add a realized-volatility estimator
   on the same bars to suppress entries during clearly chaotic
   sessions.
-- **Go live on Kraken Futures**. Once the backtest behaves, drive the
+- **Live trading**: Once the backtest behaves, drive the
   same strategy through the Kraken live client factories. A runnable live
   wiring ships as `kraken-hurst-vpin-live`.
 
-  The example trades **Kraken Futures production with real funds** by
-  default: both clients use the default `KrakenEnvironment::Live`, and it
-  reads `KRAKEN_FUTURES_API_KEY` and `KRAKEN_FUTURES_API_SECRET`. To paper
-  trade on [demo-futures.kraken.com](https://demo-futures.kraken.com)
-  instead, edit `crates/adapters/kraken/examples/node_hurst_vpin_live.rs`
-  before running: pass `true` as the `demo` argument to
-  `KrakenCredential::resolve_futures`, and set
-  `environment: KrakenEnvironment::Demo` (from `nautilus_kraken::common::enums`)
-  on both `KrakenDataClientConfig` and `KrakenExecutionClientConfig`. The
-  example then reads `KRAKEN_FUTURES_DEMO_API_KEY` and
-  `KRAKEN_FUTURES_DEMO_API_SECRET`.
+The example trades **Kraken Futures production with real funds** by default: both clients use the default
+`KrakenEnvironment::Live`, and it reads `KRAKEN_FUTURES_API_KEY` and `KRAKEN_FUTURES_API_SECRET`. To paper
+trade on [demo-futures.kraken.com](https://demo-futures.kraken.com) instead, first edit
+`crates/adapters/kraken/examples/node_hurst_vpin_live.rs`:
+
+  1. Pass `true` as the `demo` argument to `KrakenCredential::resolve_futures`.
+  1. Set `environment: KrakenEnvironment::Demo` (from `nautilus_kraken::common::enums`) on both
+     `KrakenDataClientConfig` and `KrakenExecutionClientConfig`.
+
+The example then reads `KRAKEN_FUTURES_DEMO_API_KEY` and `KRAKEN_FUTURES_DEMO_API_SECRET`.
 
   ```bash
   cargo run -p nautilus-kraken --features examples \

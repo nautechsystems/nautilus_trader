@@ -1,11 +1,11 @@
 # Tutorials
 
-Step-by-step walkthroughs demonstrating specific features and workflows.
+These tutorials give step-by-step instructions for NautilusTrader features and workflows.
 
 :::info
 Most Python tutorials are Jupytext percent-format files in the docs
 [tutorials directory](https://github.com/nautechsystems/nautilus_trader/tree/develop/docs/tutorials).
-You can run those directly as scripts or open them as notebooks with Jupytext.
+You can run these files directly as scripts or open them as notebooks with Jupytext.
 Rust tutorials use the commands shown on their pages.
 :::
 
@@ -20,19 +20,17 @@ Rust tutorials use the commands shown on their pages.
 
 ## Recommended order
 
-New to NautilusTrader? Work through these in sequence:
+If you are new to NautilusTrader, complete these tutorials in order:
 
-1. [Quickstart](../getting_started/quickstart) - run your first backtest in five minutes
-   with synthetic data
-2. [Backtest (low-level API)](../getting_started/backtest_low_level) - direct
-   `BacktestEngine` usage with real market data and execution algorithms
-3. [Backtest (high-level API)](../getting_started/backtest_high_level) - config-driven
-   backtesting with `BacktestNode` and the Parquet data catalog
-4. [Loading external data][loading_external_data] - load CSV or other external data
-   into the `ParquetDataCatalog` (how-to guide)
-5. [Backtest with FX bar data][backtest_fx_bars] - FX bar backtesting with rollover
-   interest simulation
-6. Pick a topic-specific tutorial below
+1. [Quickstart](../getting_started/quickstart): Run your first backtest in five minutes with synthetic data.
+1. [Backtest (low-level API)](../getting_started/backtest_low_level): Use `BacktestEngine` directly
+   with real market data and execution algorithms.
+1. [Backtest (high-level API)](../getting_started/backtest_high_level): Run config-driven backtests
+   with `BacktestNode` and the Parquet data catalog.
+1. [Loading external data][loading_external_data]: Load CSV or other external data into the
+   `ParquetDataCatalog` (how-to guide).
+1. [Backtest with FX bar data][backtest_fx_bars]: Backtest FX bars with rollover interest simulation.
+1. Select a topic-specific tutorial below.
 
 ## Backtesting
 

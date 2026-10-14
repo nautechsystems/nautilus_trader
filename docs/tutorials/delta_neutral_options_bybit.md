@@ -1,22 +1,21 @@
 # Delta-Neutral Options Strategy (Bybit)
 
 :::note
-This is a **Rust-only** system tutorial. It runs a live delta-neutral
+This **Rust-only** tutorial runs a live delta-neutral
 short-volatility strategy on Bybit using the Rust `LiveNode`.
 :::
 
-This tutorial runs a short OTM strangle on Bybit BTC options and
-delta-hedges with the BTCUSDT perpetual. The strategy selects call and
-put strikes at startup, enters via implied-volatility limit orders,
-tracks portfolio delta from venue-provided Greeks, and submits market
-hedge orders on the perpetual when the delta drifts beyond a threshold.
+This tutorial runs a short out-of-the-money (OTM) strangle on Bybit BTC options and delta-hedges with the
+BTCUSDT perpetual. The strategy selects call and put strikes at startup and enters through implied-volatility
+limit orders. It tracks portfolio delta from venue-provided Greeks. When delta moves beyond a threshold, it
+submits market hedge orders on the perpetual.
 
 :::warning
 This strategy trades real money on mainnet. Setting `enter_strangle: false`
-only disables the initial strangle entry orders. The strategy still
-hydrates existing positions from the cache at startup and still submits
-hedge orders on the perpetual when portfolio delta breaches the
-threshold. If the account holds option or hedge positions from a prior
+only disables the initial strangle entry orders.
+The strategy still loads existing positions from the cache at startup.
+It still submits hedge orders on the perpetual when portfolio delta breaches the threshold.
+If the account holds option or hedge positions from a prior
 session, the strategy will trade.
 :::
 
@@ -43,16 +42,16 @@ module and runs in five stages:
 1. **Strike selection**: queries the instrument cache for all BTC
    options, filters to the nearest expiry, selects OTM call and put
    strikes by percentile rank.
-2. **Entry**: places SELL limit orders on both legs priced by implied
-   volatility (via Bybit's `order_iv` parameter). Entry is optional and
+1. **Entry**: places SELL limit orders on both legs priced by implied
+   volatility (through Bybit's `order_iv` parameter). Entry is optional and
    disabled by default in the example.
-3. **Greeks tracking**: subscribes to `OptionGreeks` for both legs.
+1. **Greeks tracking**: subscribes to `OptionGreeks` for both legs.
    Deltas and IVs come directly from Bybit's option ticker stream.
-4. **Rehedging**: computes portfolio delta and submits a market order on
+1. **Rehedging**: calculates portfolio delta and submits a market order on
    the BTCUSDT perpetual when the threshold is breached. Triggers on
    every Greeks update and on a periodic safety timer.
-5. **Position tracking**: tracks call, put, and hedge positions via
-   `on_order_filled`. Hydrates existing positions from the cache at
+1. **Position tracking**: tracks call, put, and hedge positions through
+   `on_order_filled`. Loads existing positions from the cache at
    startup.
 
 ```mermaid
@@ -90,9 +89,9 @@ flowchart LR
 
 ### Portfolio delta
 
-The strategy computes net exposure as:
+The strategy calculates net exposure as:
 
-```
+```text
 portfolio_delta = call_delta * call_position
                 + put_delta * put_position
                 + hedge_position
@@ -127,9 +126,8 @@ let strategy_config = DeltaNeutralVolConfig::builder()
 let strategy = DeltaNeutralVol::new(strategy_config);
 ```
 
-Parameters (defaults shown are the struct defaults; the example
-overrides `enter_strangle` to `false` and `iv_param_key` to
-`"order_iv"`):
+The table shows struct defaults and example overrides. The example overrides `enter_strangle` to `false` and
+`iv_param_key` to `"order_iv"`:
 
 | Parameter                 | Default    | Example          | Description                                 |
 | ------------------------- | ---------- | ---------------- | ------------------------------------------- |
@@ -145,10 +143,9 @@ overrides `enter_strangle` to `false` and `iv_param_key` to
 | `entry_iv_offset`         | `0.0`      | -                | Vol points below mark IV for entry pricing. |
 | `iv_param_key`            | `"px_vol"` | `"order_iv"`     | Adapter-specific IV parameter key.          |
 
-The `iv_param_key` is the key difference between venues. Bybit uses
-`order_iv`, which the adapter maps to the `orderIv` field in the
-place-order API. OKX uses `px_vol`. Setting this correctly is required
-for IV-based order placement.
+The `iv_param_key` differs between venues. Bybit uses `order_iv`, which the adapter maps to the `orderIv`
+field in the place-order API. OKX uses `px_vol`. For IV-based order placement, set the correct key for the
+venue.
 
 ## Node setup
 
@@ -189,20 +186,18 @@ node.add_strategy(strategy)?;
 node.run().await?;
 ```
 
-`with_reconciliation(true)` queries Bybit at startup for open orders and
-positions, hydrating the cache before the strategy starts. The strategy
-then picks up any existing positions from a prior session.
+At startup, `with_reconciliation(true)` queries Bybit for open orders and positions. Reconciliation loads the
+cache before the strategy starts. The strategy then loads any existing positions from a prior session.
 
 ## How the strategy works
 
 ### Strike selection
 
-On start the strategy queries the cache for all option instruments
-matching `option_family`. It discards expired options, selects the
-nearest expiry, separates calls and puts, and sorts each list by strike
+At startup, the strategy queries the cache for all option instruments that match `option_family`. It removes
+expired options and selects the nearest expiry. It separates calls and puts, then sorts each list by strike
 price.
 
-Strikes are chosen by percentile in the sorted list:
+The strategy selects strikes by percentile in the sorted list:
 
 - **Call**: index = `(1.0 - target_call_delta) * count`. With 0.20
   target delta and 50 calls, this selects the 40th strike (80th
@@ -226,25 +221,22 @@ call_params.insert("order_iv".to_string(), json!(call_entry_iv.to_string()));
 self.submit_order(call_order, None, Some(client_id), Some(call_params))?;
 ```
 
-Bybit converts `orderIv` to a limit price server-side and gives it
-priority over any explicit price. The `entry_iv_offset` config subtracts
-vol points from mark IV: an offset of 0.02 sells two vol points below
-mark for faster fills.
+Bybit converts `orderIv` to a limit price on the server and gives it priority over any explicit price. The
+`entry_iv_offset` setting subtracts vol points from mark IV. An offset of 0.02 sells two vol points below mark
+for faster fills.
 
 :::note
-In Bybit's demo environment, new orders carry `order_iv` through the HTTP
-create-order endpoint. Amending an order by `order_iv` is not supported in
-demo: the adapter drops the modify with a warning before it reaches the API.
+In Bybit's demo environment, new orders carry `order_iv` through the HTTP create-order endpoint.
+Demo does not support order amendments through `order_iv`.
+The adapter discards the modification with a warning before it reaches the API.
 :::
 
 ### Rehedging
 
 Two triggers check portfolio delta:
 
-- **Every Greeks update**: `on_option_greeks` recomputes portfolio delta
-  after updating the leg's delta value.
-- **Periodic timer**: fires every `rehedge_interval_secs` as a safety
-  net when Greeks updates stop arriving.
+- **Greeks updates**: On each update, `on_option_greeks` updates the leg's delta value, then calculates portfolio delta again.
+- **Periodic timer**: checks every `rehedge_interval_secs`, including when Greeks updates stop.
 
 When `|portfolio_delta| > rehedge_delta_threshold`, the strategy submits
 a market order on the hedge instrument. A `hedge_pending` flag prevents
@@ -252,30 +244,25 @@ duplicate submissions while an order is in flight.
 
 ### Position tracking
 
-The strategy tracks positions via `on_order_filled`, not by querying
-the cache on every tick. Each fill updates the corresponding position
-counter (call, put, or hedge). At startup, the strategy hydrates the
-counters from the cache (populated by reconciliation): it sums the signed
-quantity of every open position on the selected call, the selected put,
-and the hedge instrument. It does not filter by strategy, so positions
-opened elsewhere on those instruments count. Option positions on other
-strikes do not.
+The strategy tracks positions through `on_order_filled`. It does not query the cache on every tick. Each fill
+updates the corresponding position counter (call, put, or hedge).
+
+At startup, the strategy loads the counters from the cache that reconciliation populates. For the selected
+call, selected put, and hedge instrument, it sums the signed quantity of every open position. It does not
+filter by strategy, so positions opened elsewhere on those instruments count. Option positions on other
+strikes do not count.
 
 :::warning
-Hydration treats any open `BTCUSDT-LINEAR` position as part of the hedge.
-With no option positions, an unrelated perpetual position larger than
-`rehedge_delta_threshold` breaches the threshold once Greeks arrive for
-both legs, and the strategy submits a market order that flattens it. Run
-the strategy on an account with no unrelated positions on the hedge
-instrument.
+Use an account with no unrelated positions on the hedge instrument.
+At startup, the strategy treats any open `BTCUSDT-LINEAR` position as part of the hedge.
+With no option positions, an unrelated perpetual position larger than `rehedge_delta_threshold` exceeds the threshold
+once Greeks arrive for both legs. The strategy then submits a market order to close that position.
 :::
 
 ### Shutdown
 
-On stop the strategy cancels open orders, unsubscribes from all data
-feeds, and resets the hedge-pending flag. It does not close positions.
-Unwinding the strangle and hedge requires manual action or a separate
-exit strategy.
+On stop the strategy cancels open orders, unsubscribes from all data feeds, and resets the hedge-pending flag.
+It does not close positions. To close the strangle and hedge, use manual action or a separate exit strategy.
 
 ## What the run produces
 
@@ -283,49 +270,42 @@ A 30-second mainnet run with `enter_strangle: false` against a clean
 account places no orders. The strategy logs the discovered instruments
 and the strike selection:
 
-```
+```text
 Selected call: BTC-28APR26-81000-C-USDT-OPTION.BYBIT (strike=81000)
 Selected put: BTC-28APR26-75000-P-USDT-OPTION.BYBIT (strike=75000)
 Strangle: 1 contracts per leg, hedge on BTCUSDT-LINEAR.BYBIT
 ```
 
-That is enough to reason about the strategy's structural behavior. The
-panels below visualize the mechanics around the actual selected strikes
-(75,000 / 81,000) at the captured underlying.
+The log shows instrument discovery and strike selection. The panels below show the mechanics around the actual
+selected strikes (75,000 / 81,000) at the captured underlying.
 
 ![Short strangle payoff at expiry](./assets/delta_neutral_options_bybit/panel_a_strangle_payoff.png)
 
-**Figure 1.** *Pnl at expiry of the short 75,000 PUT plus short 81,000
-CALL combination, assuming a 1,500 USDT total premium and zero discount.
-The flat top is the credit-only zone between strikes; loss grows
-linearly past either strike.*
+**Figure 1.** *Pnl at expiry of the short 75,000 PUT plus short 81,000 CALL combination, assuming a 1,500 USDT
+total premium and zero discount. The flat top is the credit-only zone between strikes. Loss increases linearly
+past either strike.*
 
 ![Synthetic delta drift with rehedge](./assets/delta_neutral_options_bybit/panel_c_hedge_threshold.png)
 
-**Figure 2.** *Synthetic Brownian delta drift over 150 seconds with
-`rehedge_delta_threshold=0.5`. The dotted curve is the un-hedged drift;
-the line is the strategy's portfolio delta after each market hedge fire
-(crosses).*
+**Figure 2.** *Synthetic Brownian delta drift over 150 seconds with `rehedge_delta_threshold=0.5`. The dotted
+curve is the unhedged drift. The line is the strategy's portfolio delta after each market hedge (crosses).*
 
 ![Portfolio delta drift around entry](./assets/delta_neutral_options_bybit/panel_b_delta_drift.png)
 
-**Figure 3.** *Toy approximation of how the short call and short put leg
-deltas move with a 5% spot range around entry, plus the resulting
-portfolio delta before hedging. Negative gamma compresses the curve in
-the wings and steepens it across the strikes.*
+**Figure 3.** *Illustrative short call and short put deltas across a 5% spot range around entry. The panel
+also shows the resulting portfolio delta before hedging. Negative gamma compresses the curve in the wings and
+steepens it across the strikes.*
 
 ![Strike selection on the IV smile](./assets/delta_neutral_options_bybit/panel_d_strike_picker.png)
 
-**Figure 4.** *The strike-selection heuristic against an illustrative IV
-smile. The CALL strike sits at the (1 - 0.20) percentile and the PUT at
-the 0.20 percentile, placing both legs OTM at roughly equal-magnitude
+**Figure 4.** *The strike-selection heuristic against an illustrative IV smile. The CALL strike is at the (1 -
+0.20) percentile and the PUT at the 0.20 percentile. Both legs are OTM with approximately equal-magnitude
 deltas around the underlying.*
 
 ### Regenerate the panels
 
-The log comes from `bybit-delta-neutral`, the live trading binary. It
-connects to Bybit mainnet with your API keys. With the default config it
-places no entry orders, but it submits hedge orders if the account holds
+The log comes from `bybit-delta-neutral`, the live trading binary. It connects to Bybit mainnet with your API
+keys. With the default config, it places no entry orders. It submits hedge orders if the account holds
 positions on the selected legs or the hedge instrument.
 
 After building NautilusTrader from source, run these commands from the repository root:
@@ -341,8 +321,8 @@ DN_LOG=/tmp/bybit_dn.log \
         python docs/tutorials/assets/delta_neutral_options_bybit/render_panels.py
 ```
 
-The renderer parses selected strikes from the log; the panels themselves
-are illustrative because the default config does not place orders.
+The renderer parses selected strikes from the log. The panels are illustrative: the captured run uses a clean
+account and places no orders.
 
 ## Risk considerations
 
@@ -364,21 +344,22 @@ are illustrative because the default config does not place orders.
 The example trades on Bybit **mainnet** by default. It has no network
 constant: both client configs use `..Default::default()`, which selects
 `BybitEnvironment::Mainnet` and reads `BYBIT_API_KEY` and
-`BYBIT_API_SECRET`. To run on testnet, add
-`environment: BybitEnvironment::Testnet` to both `data_config` and
-`exec_config` in `node_delta_neutral.rs`, import `BybitEnvironment` from
-`nautilus_bybit::common::enums`, and rebuild. On testnet the adapter reads
-`BYBIT_TESTNET_API_KEY` and `BYBIT_TESTNET_API_SECRET`.
+`BYBIT_API_SECRET`. To run on testnet:
+
+1. Import `BybitEnvironment` from `nautilus_bybit::common::enums` in `node_delta_neutral.rs`.
+1. Add `environment: BybitEnvironment::Testnet` to both `data_config` and `exec_config`.
+1. Rebuild the example.
+
+On testnet, the adapter reads `BYBIT_TESTNET_API_KEY` and `BYBIT_TESTNET_API_SECRET`.
 :::
 
 ```bash
 cargo run --example bybit-delta-neutral --package nautilus-bybit --features examples
 ```
 
-The example runs with `enter_strangle: false` by default, so it does not
-place strangle entry orders. It still hydrates existing positions and
-submits hedge orders if portfolio delta breaches the threshold. On a
-clean account with no prior positions, no orders are placed.
+The example runs with `enter_strangle: false` by default, so it does not place strangle entry orders. It still
+loads existing positions and submits hedge orders if portfolio delta breaches the threshold. On a clean
+account with no prior positions, the strategy places no orders.
 
 Stop with Ctrl+C. The strategy cancels open orders and unsubscribes
 before shutdown.
