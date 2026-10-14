@@ -3220,7 +3220,7 @@ mod tests {
                 details.contract.last_trade_date_or_contract_month,
                 "20261218"
             );
-            assert_eq!(details.last_trade_time, "08:30:00");
+            assert_eq!(details.last_trade_time, "08:30:00 US/Central");
         }
     }
 
