@@ -127,7 +127,7 @@ use crate::{
     enums::SerializationEncoding,
     messages::{
         data::{DataCommand, DataResponse},
-        execution::{ExecutionReport, TradingCommand},
+        execution::{ExecutionActionResult, ExecutionReport, TradingCommand},
     },
 };
 
@@ -248,6 +248,7 @@ pub struct MessageBus {
     pub(crate) router_funding_rates: TopicRouter<FundingRateUpdate>,
     pub(crate) router_order_events: TopicRouter<OrderEventAny>,
     pub(crate) router_position_events: TopicRouter<PositionEvent>,
+    pub(crate) router_execution_action_results: TopicRouter<ExecutionActionResult>,
     pub(crate) router_account_state: TopicRouter<AccountState>,
     pub(crate) router_orders: TopicRouter<OrderAny>,
     pub(crate) router_positions: TopicRouter<Position>,
@@ -344,6 +345,7 @@ impl MessageBus {
             router_funding_rates: TopicRouter::new(),
             router_order_events: TopicRouter::new(),
             router_position_events: TopicRouter::new(),
+            router_execution_action_results: TopicRouter::new(),
             router_account_state: TopicRouter::new(),
             router_portfolio: TopicRouter::new(),
             router_orders: TopicRouter::new(),
@@ -548,6 +550,7 @@ impl MessageBus {
         self.router_funding_rates.clear();
         self.router_order_events.clear();
         self.router_position_events.clear();
+        self.router_execution_action_results.clear();
         self.router_account_state.clear();
         self.router_portfolio.clear();
         self.router_orders.clear();

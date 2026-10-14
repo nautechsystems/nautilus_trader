@@ -516,6 +516,10 @@ define_switchboard! {
     get_event_position_topic(strategy_id: StrategyId) -> strategy_id,
     "events.position.{}", strategy_id;
 
+    execution_action_result_topics: StrategyId,
+    get_execution_action_result_topic(strategy_id: StrategyId) -> strategy_id,
+    "events.execution_action.{}", strategy_id;
+
     snapshot_order_topics: ClientOrderId,
     get_snapshot_order_topic(client_order_id: ClientOrderId) -> client_order_id,
     "snapshots.order.{}", client_order_id;
@@ -728,6 +732,7 @@ define_wrappers! {
     get_snapshot_position_topic(position_id: PositionId) -> MStr<Topic>,
     get_event_order_topic(strategy_id: StrategyId) -> MStr<Topic>,
     get_event_position_topic(strategy_id: StrategyId) -> MStr<Topic>,
+    get_execution_action_result_topic(strategy_id: StrategyId) -> MStr<Topic>,
 }
 
 /// Returns a wildcard subscription pattern that matches all instrument topics

@@ -43,8 +43,9 @@ use nautilus_common::{
             InstrumentsResponse, OptionChainReferencePriceResponse, QuotesResponse, TradesResponse,
         },
         execution::{
-            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecutionReport,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecuteAction,
+            ExecutionReport, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            TradingCommand,
         },
     },
     timer::TimeEvent,
@@ -93,6 +94,8 @@ pub const PAYLOAD_TYPE_BATCH_CANCEL_ORDERS: &str = "BatchCancelOrders";
 pub const PAYLOAD_TYPE_QUERY_ORDER: &str = "QueryOrder";
 /// The canonical `payload_type` tag for [`QueryAccount`].
 pub const PAYLOAD_TYPE_QUERY_ACCOUNT: &str = "QueryAccount";
+/// The canonical `payload_type` tag for [`ExecuteAction`].
+pub const PAYLOAD_TYPE_EXECUTE_ACTION: &str = "ExecuteAction";
 
 /// The canonical `payload_type` tag for [`OrderInitialized`].
 pub const PAYLOAD_TYPE_ORDER_INITIALIZED: &str = "OrderInitialized";
@@ -220,6 +223,7 @@ pub(crate) const DEFAULT_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_BATCH_CANCEL_ORDERS,
     PAYLOAD_TYPE_QUERY_ORDER,
     PAYLOAD_TYPE_QUERY_ACCOUNT,
+    PAYLOAD_TYPE_EXECUTE_ACTION,
     PAYLOAD_TYPE_ORDER_INITIALIZED,
     PAYLOAD_TYPE_ORDER_DENIED,
     PAYLOAD_TYPE_ORDER_EMULATED,
@@ -305,6 +309,10 @@ pub fn default_registry() -> EncoderRegistry {
 pub fn register_default(registry: &mut EncoderRegistry) {
     registry
         .register::<SubmitOrder, _>(payload_type(PAYLOAD_TYPE_SUBMIT_ORDER), encode_submit_order);
+    registry.register::<ExecuteAction, _>(
+        payload_type(PAYLOAD_TYPE_EXECUTE_ACTION),
+        encode_execute_action,
+    );
     registry
         .register::<OrderFilled, _>(payload_type(PAYLOAD_TYPE_ORDER_FILLED), encode_order_filled);
     registry.register::<OrderStatusReport, _>(
@@ -361,6 +369,7 @@ pub fn register_default(registry: &mut EncoderRegistry) {
 /// for them, the entry just carries no correlation metadata until the field set arrives.
 fn register_default_headers(registry: &mut EncoderRegistry) {
     registry.register_headers::<SubmitOrder, _>(extract_submit_order_headers);
+    registry.register_headers::<ExecuteAction, _>(extract_execute_action_headers);
     registry.register_headers::<SubmitOrderList, _>(extract_submit_order_list_headers);
     registry.register_headers::<ModifyOrder, _>(extract_modify_order_headers);
     registry.register_headers::<BatchModifyOrders, _>(extract_batch_modify_orders_headers);
@@ -383,6 +392,7 @@ fn register_default_headers(registry: &mut EncoderRegistry) {
 /// engine-bound dispatch are distinct capture boundaries.
 fn register_default_identities(registry: &mut EncoderRegistry) {
     registry.register_identity::<SubmitOrder, _>(|command| Some(command.command_id));
+    registry.register_identity::<ExecuteAction, _>(|command| Some(command.command_id));
     registry.register_identity::<OrderFilled, _>(|event| Some(event.event_id));
     registry.register_identity::<TradingCommand, _>(|c| Some(extract_trading_command_identity(c)));
     registry.register_identity::<OrderEventAny, _>(|e| Some(extract_order_event_any_identity(e)));
@@ -408,6 +418,7 @@ fn extract_data_command_identity(command: &DataCommand) -> Option<UUID4> {
 
 fn extract_trading_command_identity(command: &TradingCommand) -> UUID4 {
     match command {
+        TradingCommand::ExecuteAction(c) => c.command_id,
         TradingCommand::SubmitOrder(c) => c.command_id,
         TradingCommand::SubmitOrderList(c) => c.command_id,
         TradingCommand::ModifyOrder(c) => c.command_id,
@@ -453,6 +464,10 @@ fn extract_submit_order_headers(cmd: &SubmitOrder) -> Headers {
     headers_from_fields(cmd.correlation_id, cmd.causation_id)
 }
 
+fn extract_execute_action_headers(cmd: &ExecuteAction) -> Headers {
+    headers_from_fields(cmd.correlation_id, cmd.causation_id)
+}
+
 fn extract_submit_order_list_headers(cmd: &SubmitOrderList) -> Headers {
     headers_from_fields(cmd.correlation_id, cmd.causation_id)
 }
@@ -490,6 +505,7 @@ fn extract_query_account_headers(cmd: &QueryAccount) -> Headers {
 // correlation metadata on the captured entry.
 fn extract_trading_command_headers(command: &TradingCommand) -> Headers {
     match command {
+        TradingCommand::ExecuteAction(cmd) => extract_execute_action_headers(cmd),
         TradingCommand::SubmitOrder(cmd) => extract_submit_order_headers(cmd),
         TradingCommand::SubmitOrderList(cmd) => extract_submit_order_list_headers(cmd),
         TradingCommand::ModifyOrder(cmd) => extract_modify_order_headers(cmd),
@@ -553,6 +569,15 @@ pub fn encode_submit_order(message: &SubmitOrder) -> Result<EncodedPayload, Enco
     Ok(EncodedPayload::new(payload, index_keys))
 }
 
+fn encode_execute_action(cmd: &ExecuteAction) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(cmd)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_EXECUTE_ACTION),
+        payload,
+        Vec::new(),
+    ))
+}
+
 /// Encodes an [`OrderFilled`] event into canonical bytes plus its `client_order_id` and
 /// `venue_order_id` indices.
 ///
@@ -584,6 +609,7 @@ pub fn encode_order_filled(message: &OrderFilled) -> Result<EncodedPayload, Enco
 /// MessagePack rejects the inner payload for another variant.
 pub fn encode_trading_command(command: &TradingCommand) -> Result<EncodedPayload, EncodeError> {
     match command {
+        TradingCommand::ExecuteAction(cmd) => encode_execute_action(cmd),
         TradingCommand::SubmitOrder(cmd) => {
             Ok(retag(encode_submit_order(cmd)?, PAYLOAD_TYPE_SUBMIT_ORDER))
         }
@@ -1520,14 +1546,17 @@ fn encode_bars_response(response: &BarsResponse) -> Result<EncodedPayload, Encod
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::data::{
-        RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes, UnsubscribeCommand,
-        UnsubscribeQuotes,
-    };
     #[cfg(feature = "defi")]
     use nautilus_common::messages::defi::{
         DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
         SubscribeBlocks, UnsubscribeBlocks,
+    };
+    use nautilus_common::messages::{
+        data::{
+            RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes, UnsubscribeCommand,
+            UnsubscribeQuotes,
+        },
+        execution::{BinaryOptionAction, BinaryOptionPair, ExecutionAction},
     };
     use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     #[cfg(feature = "defi")]
@@ -1693,6 +1722,10 @@ mod tests {
                 registry.contains::<SubmitOrder>(),
             ),
             (
+                "send_any_value(ExecuteAction) / bare ExecuteAction",
+                registry.contains::<ExecuteAction>(),
+            ),
+            (
                 "publish_order_event(OrderFilled) / bare OrderFilled",
                 registry.contains::<OrderFilled>(),
             ),
@@ -1768,6 +1801,16 @@ mod tests {
 
         let decoded: SubmitOrder = rmp_serde::from_slice(&encoded.payload).expect("decode");
         assert_eq!(decoded, cmd);
+    }
+
+    #[rstest]
+    fn execute_action_payload_round_trips_through_msgpack() {
+        let command = make_execute_action();
+        let encoded = encode_execute_action(&command).expect("encode");
+
+        let decoded: ExecuteAction = rmp_serde::from_slice(&encoded.payload).expect("decode");
+        assert_eq!(decoded, command);
+        assert!(encoded.index_keys.is_empty());
     }
 
     #[rstest]
@@ -1863,6 +1906,27 @@ mod tests {
             UnixNanos::from(5),
             None,
             None, // correlation_id
+        )
+    }
+
+    fn make_execute_action() -> ExecuteAction {
+        ExecuteAction::new(
+            trader_id(),
+            Some(ClientId::from("HYPERLIQUID")),
+            strategy_id(),
+            AccountId::from("HYPERLIQUID-001"),
+            ExecutionAction::BinaryOption(BinaryOptionAction::Split {
+                pair: BinaryOptionPair::new(
+                    InstrumentId::from("42-YES-OUTCOME.HYPERLIQUID"),
+                    InstrumentId::from("42-NO-OUTCOME.HYPERLIQUID"),
+                )
+                .expect("valid binary-option pair"),
+                quantity: Quantity::from("1.25"),
+                params: None,
+            }),
+            UUID4::new(),
+            UnixNanos::from(10),
+            None,
         )
     }
 
@@ -2215,6 +2279,11 @@ mod tests {
         TradingCommand::SubmitOrder(make_submit_order()),
         PAYLOAD_TYPE_SUBMIT_ORDER,
         1
+    )]
+    #[case::execute_action(
+        TradingCommand::ExecuteAction(make_execute_action()),
+        PAYLOAD_TYPE_EXECUTE_ACTION,
+        0
     )]
     #[case::submit_order_list(
         TradingCommand::SubmitOrderList(make_submit_order_list(vec![
@@ -3886,6 +3955,7 @@ mod tests {
 
     #[rstest]
     #[case::submit_order(trading_command_submit_order)]
+    #[case::execute_action(trading_command_execute_action)]
     #[case::submit_order_list(trading_command_submit_order_list)]
     #[case::modify_order(trading_command_modify_order)]
     #[case::batch_modify_orders(trading_command_batch_modify_orders)]
@@ -3918,6 +3988,15 @@ mod tests {
         cmd.correlation_id = Some(corr);
         cmd.causation_id = Some(caus);
         (TradingCommand::SubmitOrder(cmd), corr, caus)
+    }
+
+    fn trading_command_execute_action() -> (TradingCommand, UUID4, UUID4) {
+        let corr = UUID4::new();
+        let caus = UUID4::new();
+        let mut cmd = make_execute_action();
+        cmd.correlation_id = Some(corr);
+        cmd.causation_id = Some(caus);
+        (TradingCommand::ExecuteAction(cmd), corr, caus)
     }
 
     fn trading_command_submit_order_list() -> (TradingCommand, UUID4, UUID4) {

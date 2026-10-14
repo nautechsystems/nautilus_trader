@@ -320,6 +320,7 @@ pub(super) fn parse_validated_fill_report(
         ts_init: ctx.ts_init,
         client_order_id: ctx.client_order_id,
         venue_position_id: None,
+        info: None,
     })
 }
 
@@ -432,6 +433,7 @@ pub(super) fn parse_validated_maker_fill_report(
         ts_init: ctx.ts_init,
         client_order_id: None,
         venue_position_id: None,
+        info: None,
     })
 }
 

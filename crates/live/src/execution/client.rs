@@ -35,9 +35,10 @@ use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
     live::dst::task::JoinHandle,
     messages::execution::{
-        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecuteAction,
+        GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
+        GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList,
     },
 };
 use nautilus_core::{Params, UnixNanos};
@@ -388,6 +389,10 @@ impl ExecutionClient for LiveExecutionClient {
         self.client.borrow().submit_order(cmd)
     }
 
+    fn execute_action(&self, cmd: ExecuteAction) -> anyhow::Result<()> {
+        self.client.borrow().execute_action(cmd)
+    }
+
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         self.client.borrow().submit_order_list(cmd)
     }
@@ -532,6 +537,9 @@ mod tests {
         time::Duration,
     };
 
+    use nautilus_common::messages::execution::{BinaryOptionAction, BinaryOptionPair};
+    use nautilus_core::UUID4;
+    use nautilus_model::identifiers::TraderId;
     use rstest::rstest;
 
     use super::*;
@@ -578,6 +586,21 @@ mod tests {
         fn stop(&mut self) -> anyhow::Result<()> {
             Ok(())
         }
+        fn execute_action(&self, cmd: ExecuteAction) -> anyhow::Result<()> {
+            anyhow::ensure!(cmd.account_id == self.account_id(), "Unexpected account ID");
+            anyhow::ensure!(
+                cmd.command_id == UUID4::from("00000000-0000-4000-8000-000000000001"),
+                "Unexpected command ID"
+            );
+
+            match cmd.action.binary_option() {
+                Some(BinaryOptionAction::Split { quantity, .. }) => {
+                    anyhow::ensure!(*quantity == Quantity::from("1"), "Unexpected quantity");
+                    Ok(())
+                }
+                _ => anyhow::bail!("adapter action rejected"),
+            }
+        }
         async fn generate_mass_status(
             &self,
             _lookback_mins: Option<u64>,
@@ -593,6 +616,47 @@ mod tests {
             _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
+        }
+    }
+
+    #[rstest]
+    #[case::accepted(true)]
+    #[case::rejected(false)]
+    fn execution_action_is_forwarded_to_adapter(#[case] split: bool) {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let pair = BinaryOptionPair::new(
+            InstrumentId::from("42-YES-OUTCOME.HYPERLIQUID"),
+            InstrumentId::from("42-NO-OUTCOME.HYPERLIQUID"),
+        )
+        .unwrap();
+        let action = if split {
+            BinaryOptionAction::Split {
+                pair,
+                quantity: Quantity::from("1"),
+                params: None,
+            }
+        } else {
+            BinaryOptionAction::Merge {
+                pair,
+                quantity: Quantity::from("1"),
+                params: None,
+            }
+        };
+        let command = ExecuteAction::new(
+            TraderId::from("TRADER-001"),
+            Some(client.client_id()),
+            StrategyId::from("STRATEGY-001"),
+            client.account_id(),
+            action.into(),
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1),
+            None,
+        );
+        let result = client.execute_action(command);
+        if split {
+            result.unwrap();
+        } else {
+            assert_eq!(result.unwrap_err().to_string(), "adapter action rejected");
         }
     }
 

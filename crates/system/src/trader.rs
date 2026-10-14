@@ -39,11 +39,13 @@ use nautilus_common::{
     },
     enums::{ComponentState, ComponentTrigger, Environment},
     logging::RECV,
-    messages::execution::TradingCommand,
+    messages::execution::{ExecutionActionResult, TradingCommand},
     msgbus,
     msgbus::{
         ShareableMessageHandler, TypedHandler, get_message_bus,
-        switchboard::{get_event_order_topic, get_event_position_topic},
+        switchboard::{
+            get_event_order_topic, get_event_position_topic, get_execution_action_result_topic,
+        },
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -127,8 +129,8 @@ pub struct Trader {
     strategy_state_callbacks: AHashMap<StrategyId, ComponentStateCallbacks>,
     /// Strategy stop functions for managed stop behavior.
     strategy_stop_fns: AHashMap<StrategyId, Box<dyn FnMut() -> bool>>,
-    /// Msgbus handler IDs for strategy event subscriptions (order, position).
-    strategy_handler_ids: AHashMap<StrategyId, (Ustr, Ustr)>,
+    /// Msgbus handler IDs for strategy event subscriptions (order, position, action result).
+    strategy_handler_ids: AHashMap<StrategyId, (Ustr, Ustr, Ustr)>,
     /// Registered exec algorithm IDs (algorithms stored in global registry).
     pub(crate) exec_algorithm_ids: Vec<ExecAlgorithmId>,
     /// Restores strategy event subscriptions for concrete execution algorithms.
@@ -484,6 +486,24 @@ impl Trader {
         let position_handler_id = position_handler.id();
         msgbus::subscribe_position_events(position_topic.into(), position_handler, None);
 
+        let action_result_topic = get_execution_action_result_topic(strategy_id);
+        let action_result_actor_id = actor_id;
+        let action_result_handler = TypedHandler::from(move |result: &ExecutionActionResult| {
+            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&action_result_actor_id) {
+                strategy.handle_execution_action_result(result.clone());
+            } else {
+                log::error!(
+                    "Strategy {action_result_actor_id} not found for execution action result handling"
+                );
+            }
+        });
+        let action_result_handler_id = action_result_handler.id();
+        msgbus::subscribe_execution_action_results(
+            action_result_topic.into(),
+            action_result_handler,
+            None,
+        );
+
         let control_actor_id = actor_id;
         let control_handler = TypedHandler::from(move |command: &StrategyCommand| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&control_actor_id) {
@@ -513,8 +533,14 @@ impl Trader {
                 save: Self::save_component_state::<T>,
             },
         );
-        self.strategy_handler_ids
-            .insert(strategy_id, (order_handler_id, position_handler_id));
+        self.strategy_handler_ids.insert(
+            strategy_id,
+            (
+                order_handler_id,
+                position_handler_id,
+                action_result_handler_id,
+            ),
+        );
 
         // Register stop hook
         let stop_actor_id = actor_id;
@@ -602,6 +628,10 @@ impl Trader {
     /// Returns an error if:
     /// - The trader is not in a valid state for adding components.
     /// - A strategy with the same ID is already registered.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "registers a strategy's complete lifecycle and message-bus callback set"
+    )]
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
         T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
@@ -671,6 +701,24 @@ impl Trader {
         let position_handler_id = position_handler.id();
         msgbus::subscribe_position_events(position_topic.into(), position_handler, None);
 
+        let action_result_topic = get_execution_action_result_topic(strategy_id);
+        let action_result_actor_id = actor_id;
+        let action_result_handler = TypedHandler::from(move |result: &ExecutionActionResult| {
+            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&action_result_actor_id) {
+                strategy.handle_execution_action_result(result.clone());
+            } else {
+                log::error!(
+                    "Strategy {action_result_actor_id} not found for execution action result handling"
+                );
+            }
+        });
+        let action_result_handler_id = action_result_handler.id();
+        msgbus::subscribe_execution_action_results(
+            action_result_topic.into(),
+            action_result_handler,
+            None,
+        );
+
         let control_actor_id = actor_id;
         let control_handler = TypedHandler::from(move |command: &StrategyCommand| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&control_actor_id) {
@@ -700,8 +748,14 @@ impl Trader {
                 save: Self::save_component_state::<T>,
             },
         );
-        self.strategy_handler_ids
-            .insert(strategy_id, (order_handler_id, position_handler_id));
+        self.strategy_handler_ids.insert(
+            strategy_id,
+            (
+                order_handler_id,
+                position_handler_id,
+                action_result_handler_id,
+            ),
+        );
 
         let stop_actor_id = actor_id;
         let stop_fn = Box::new(move || -> bool {
@@ -1524,13 +1578,18 @@ impl Trader {
 
     /// Removes the msgbus registrations the trader installed for `strategy_id`.
     fn remove_strategy_subscriptions(&mut self, strategy_id: StrategyId) {
-        if let Some((order_handler_id, position_handler_id)) =
+        if let Some((order_handler_id, position_handler_id, action_result_handler_id)) =
             self.strategy_handler_ids.remove(&strategy_id)
         {
             let order_topic = get_event_order_topic(strategy_id);
             let position_topic = get_event_position_topic(strategy_id);
+            let action_result_topic = get_execution_action_result_topic(strategy_id);
             msgbus::remove_order_event_handler(order_topic.into(), order_handler_id);
             msgbus::remove_position_event_handler(position_topic.into(), position_handler_id);
+            msgbus::remove_execution_action_result_handler(
+                action_result_topic.into(),
+                action_result_handler_id,
+            );
         }
 
         get_message_bus()
@@ -1850,13 +1909,13 @@ mod tests {
             arm_shutdown_on_error, disarm_shutdown_on_error, init_logging, logger::LoggerConfig,
             take_shutdown_on_error_trigger, writer::FileWriterConfig,
         },
-        messages::execution::SubmitOrder,
+        messages::execution::{ExecutionActionStatus, SubmitOrder},
         msgbus,
         msgbus::{
             MessageBus, MessagingSwitchboard, TypedHandler, set_message_bus,
             switchboard::{
                 get_bars_topic, get_book_deltas_topic, get_book_depth_topic, get_custom_topic,
-                get_event_order_topic,
+                get_event_order_topic, get_execution_action_result_topic,
             },
         },
         nautilus_actor,
@@ -1880,8 +1939,8 @@ mod tests {
             },
         },
         identifiers::{
-            AccountId, ActorId, ClientOrderId, ComponentId, InstrumentId, PositionId, TraderId,
-            VenueOrderId,
+            AccountId, ActorId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId,
+            TraderId, VenueOrderId,
         },
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         orders::{OrderAny, OrderTestBuilder},
@@ -2083,6 +2142,7 @@ mod tests {
     struct TestStrategy {
         core: StrategyCore,
         fail_stop: bool,
+        action_results: Vec<ExecutionActionResult>,
     }
 
     impl TestStrategy {
@@ -2090,6 +2150,7 @@ mod tests {
             Self {
                 core: StrategyCore::new(config),
                 fail_stop: false,
+                action_results: Vec::new(),
             }
         }
     }
@@ -2103,7 +2164,11 @@ mod tests {
         }
     }
 
-    nautilus_strategy!(TestStrategy);
+    nautilus_strategy!(TestStrategy, {
+        fn on_execution_action_result(&mut self, result: ExecutionActionResult) {
+            self.action_results.push(result);
+        }
+    });
 
     #[derive(Debug)]
     struct TimerRoutingStrategy {
@@ -2376,6 +2441,59 @@ mod tests {
                 .strategy_ids()
                 .contains(&StrategyId::from("Test-Strategy"))
         );
+    }
+
+    #[rstest]
+    fn strategy_receives_local_execution_action_result() {
+        std::thread::spawn(|| {
+            let (msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+                create_trader_components();
+            set_message_bus(msgbus);
+
+            let trader_id = TraderId::test_default();
+            let strategy_id = StrategyId::from(format!("ActionResult-{}", UUID4::new()));
+            let mut trader = Trader::new(
+                trader_id,
+                UUID4::new(),
+                Environment::Backtest,
+                clock_factory,
+                cache,
+                portfolio,
+            );
+            trader
+                .add_strategy(TestStrategy::new(StrategyConfig {
+                    strategy_id: Some(strategy_id),
+                    ..Default::default()
+                }))
+                .unwrap();
+            trader.start_components().unwrap();
+
+            let result = ExecutionActionResult {
+                trader_id,
+                client_id: Some(ClientId::from("HYPERLIQUID")),
+                strategy_id,
+                account_id: AccountId::from("HYPERLIQUID-001"),
+                action: "binary_option.split".to_string(),
+                command_id: UUID4::new(),
+                status: ExecutionActionStatus::Accepted,
+                reason: None,
+                info: None,
+                ts_event: 1.into(),
+            };
+
+            msgbus::publish_execution_action_result(
+                get_execution_action_result_topic(strategy_id),
+                &result,
+            );
+
+            let strategy = get_actor_unchecked::<TestStrategy>(&strategy_id.inner());
+            assert_eq!(strategy.action_results, vec![result]);
+
+            trader.stop_components().unwrap();
+            trader.clear_strategies().unwrap();
+        })
+        .join()
+        .unwrap();
     }
 
     #[rstest]

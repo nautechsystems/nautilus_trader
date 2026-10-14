@@ -18,6 +18,7 @@
 
 use std::cmp::Ordering;
 
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{
@@ -53,6 +54,7 @@ use nautilus_model::{
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use ustr::Ustr;
 use uuid::Uuid;
 
 use super::{ids::*, orders::*, positions::*, types::*};
@@ -60,6 +62,87 @@ use super::{ids::*, orders::*, positions::*, types::*};
 #[fixture]
 fn instrument() -> InstrumentAny {
     InstrumentAny::CurrencyPair(audusd_sim())
+}
+
+#[rstest]
+#[case::split(
+    Some("execution_action"),
+    Some("ACTION-1-LEG-YES"),
+    OrderSide::Buy,
+    true
+)]
+#[case::merge(
+    Some("execution_action"),
+    Some("ACTION-2-LEG-NO"),
+    OrderSide::Sell,
+    true
+)]
+#[case::ordinary_id(Some("execution_action"), Some("ORDER-1"), OrderSide::Buy, false)]
+#[case::ordinary_source(Some("order"), Some("ACTION-1-LEG-YES"), OrderSide::Buy, false)]
+#[case::missing_info(None, Some("ACTION-1-LEG-YES"), OrderSide::Buy, false)]
+#[case::missing_client_order_id(Some("execution_action"), None, OrderSide::Buy, false)]
+fn test_orderless_action_report(
+    #[case] source: Option<&str>,
+    #[case] client_order_id: Option<&str>,
+    #[case] side: OrderSide,
+    #[case] expected: bool,
+) {
+    let mut report = FillReport::new(
+        AccountId::from("SIM-001"),
+        InstrumentId::from("AUDUSD.SIM"),
+        VenueOrderId::from("1"),
+        TradeId::from("T-1"),
+        side,
+        Quantity::from("1.25"),
+        Price::from("0.50000"),
+        Money::from("0.01 USD"),
+        LiquiditySide::NoLiquiditySide,
+        client_order_id.map(ClientOrderId::from),
+        Some(PositionId::from("P-001")),
+        UnixNanos::from(10),
+        UnixNanos::from(11),
+        None,
+    );
+    report.info = source.map(|source| {
+        IndexMap::from([
+            (Ustr::from("source"), Ustr::from(source)),
+            (Ustr::from("transaction_hash"), Ustr::from("venue-hash")),
+        ])
+    });
+    let trader_id = TraderId::from("TRADER-001");
+    let strategy_id = StrategyId::from("ACTION-001");
+
+    let fill = orderless_action_fill(&report, trader_id, strategy_id, Currency::USD());
+
+    assert_eq!(
+        is_execution_action_fill(report.info.as_ref()),
+        source == Some("execution_action")
+    );
+    assert_eq!(is_orderless_action(&report), expected);
+    assert_eq!(fill.is_some(), expected);
+
+    if let Some(fill) = fill {
+        assert_eq!(fill.trader_id, trader_id);
+        assert_eq!(fill.strategy_id, strategy_id);
+        assert_eq!(fill.account_id, report.account_id);
+        assert_eq!(fill.instrument_id, report.instrument_id);
+        assert_eq!(Some(fill.client_order_id), report.client_order_id);
+        assert_eq!(fill.venue_order_id, report.venue_order_id);
+        assert_eq!(fill.trade_id, report.trade_id);
+        assert_eq!(fill.position_id, report.venue_position_id);
+        assert_eq!(fill.order_side, report.order_side);
+        assert_eq!(fill.order_type, OrderType::Market);
+        assert_eq!(fill.last_qty, report.last_qty);
+        assert_eq!(fill.last_px, report.last_px);
+        assert_eq!(fill.currency, Currency::USD());
+        assert_eq!(fill.commission, Some(report.commission));
+        assert_eq!(fill.liquidity_side, report.liquidity_side);
+        assert_eq!(fill.info, report.info);
+        assert_eq!(fill.event_id, report.report_id);
+        assert_eq!(fill.ts_event, report.ts_event);
+        assert_eq!(fill.ts_init, report.ts_init);
+        assert!(fill.reconciliation);
+    }
 }
 
 #[rstest]
@@ -3146,20 +3229,27 @@ fn create_test_fill_report(
 }
 
 #[rstest]
-fn test_reconcile_fill_report_success(instrument: InstrumentAny) {
+#[case::without_info(None)]
+#[case::with_info(Some(IndexMap::from([(Ustr::from("venue_fill_direction"), Ustr::from("ordinary_fill"))])))]
+fn test_reconcile_fill_report_success(
+    instrument: InstrumentAny,
+    #[case] info: Option<IndexMap<Ustr, Ustr>>,
+) {
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("100"))
         .build();
 
-    let fill_report = create_test_fill_report(
+    let mut fill_report = create_test_fill_report(
         instrument.id(),
         VenueOrderId::from("V-001"),
         TradeId::from("T-001"),
         Quantity::from("50"),
         Price::from("1.00000"),
     );
+
+    fill_report.info = info;
 
     let result = reconcile_fill_report(
         &order,
@@ -3175,6 +3265,7 @@ fn test_reconcile_fill_report_success(instrument: InstrumentAny) {
         assert_eq!(filled.last_px, Price::from("1.00000"));
         assert_eq!(filled.trade_id, TradeId::from("T-001"));
         assert!(filled.reconciliation);
+        assert_eq!(filled.info, fill_report.info);
     } else {
         panic!("Expected OrderFilled event");
     }

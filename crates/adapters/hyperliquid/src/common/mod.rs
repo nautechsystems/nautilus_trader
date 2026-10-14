@@ -32,7 +32,7 @@ pub use converters::{
     hyperliquid_time_in_force_to_nautilus, nautilus_order_type_to_hyperliquid,
     nautilus_time_in_force_to_hyperliquid, nautilus_to_hyperliquid_conditional,
     outcome_asset_id_from_instrument_id, outcome_asset_id_to_coin,
-    outcome_asset_id_to_instrument_id, outcome_asset_id_to_token,
+    outcome_asset_id_to_instrument_id, outcome_asset_id_to_token, outcome_pair_instrument_ids,
 };
 pub use enums::{HyperliquidOrderStatus, HyperliquidProductType};
 pub use models::{

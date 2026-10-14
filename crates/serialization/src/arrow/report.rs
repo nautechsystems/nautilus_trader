@@ -77,6 +77,7 @@ const FILL_REPORT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::timestamp("ts_init", false),
     JsonFieldSpec::utf8("client_order_id", true),
     JsonFieldSpec::utf8("venue_position_id", true),
+    JsonFieldSpec::utf8_json("info", true),
 ];
 
 const POSITION_STATUS_REPORT_FIELDS: &[JsonFieldSpec] = &[
@@ -160,13 +161,27 @@ impl_report_arrow!(
     "OrderStatusReport",
     ORDER_STATUS_REPORT_FIELDS
 );
-impl_report_arrow!(FillReport, "FillReport", FILL_REPORT_FIELDS);
+impl_report_arrow!(
+    FillReport,
+    "FillReport",
+    FILL_REPORT_FIELDS,
+    fill_report_decode_fields
+);
 impl_report_arrow!(
     PositionStatusReport,
     "PositionStatusReport",
     POSITION_STATUS_REPORT_FIELDS,
     position_status_report_decode_fields
 );
+
+// Files written before fill provenance was added lack the trailing info column
+fn fill_report_decode_fields(record_batch: &RecordBatch) -> &'static [JsonFieldSpec] {
+    if record_batch.schema().index_of("info").is_ok() {
+        FILL_REPORT_FIELDS
+    } else {
+        &FILL_REPORT_FIELDS[..FILL_REPORT_FIELDS.len() - 1]
+    }
+}
 
 // Files written before the average reconciliation fields lack their two trailing columns
 fn position_status_report_decode_fields(record_batch: &RecordBatch) -> &'static [JsonFieldSpec] {
@@ -233,16 +248,69 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{
-            AvgPxReconciliation, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+            AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+            TimeInForce,
         },
-        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
         reports::{OrderStatusReport, PositionStatusReport},
-        types::{Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::*;
+
+    fn fill_report() -> FillReport {
+        FillReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            VenueOrderId::from("1"),
+            TradeId::from("T-1"),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            Price::from("0.5"),
+            Money::zero(Currency::USD()),
+            LiquiditySide::NoLiquiditySide,
+            Some(ClientOrderId::from("ACTION-1-LEG-YES")),
+            None,
+            UnixNanos::from(10),
+            UnixNanos::from(11),
+            None,
+        )
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(serde_json::json!({})))]
+    #[case(Some(serde_json::json!({"source": "execution_action", "action": "binary_option.split", "leg": "yes"})))]
+    fn test_fill_report_round_trip(#[case] info: Option<serde_json::Value>) {
+        let mut report = fill_report();
+        report.info = info.map(|value| serde_json::from_value(value).unwrap());
+        let metadata = report.metadata();
+        let batch = FillReport::encode_batch(&metadata, std::slice::from_ref(&report)).unwrap();
+
+        let decoded = FillReport::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![report]);
+    }
+
+    #[rstest]
+    fn test_fill_report_decodes_without_info_column() {
+        let report = fill_report();
+        let metadata = report.metadata();
+        let batch = encode_batch(
+            "FillReport",
+            &metadata,
+            [&report],
+            &FILL_REPORT_FIELDS[..FILL_REPORT_FIELDS.len() - 1],
+        )
+        .unwrap();
+
+        let decoded = FillReport::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![report]);
+        assert!(decoded[0].info.is_none());
+    }
 
     #[rstest]
     fn test_order_status_report_round_trip() {

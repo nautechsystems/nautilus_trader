@@ -984,6 +984,7 @@ pub fn parse_fill_report(
         ts_init,
         client_order_id: None,
         venue_position_id: None,
+        info: None,
     })
 }
 
@@ -1353,6 +1354,7 @@ pub fn parse_futures_fill_report(
         ts_init,
         client_order_id: fill.cli_ord_id.as_ref().map(|s| s.as_str().into()),
         venue_position_id: None,
+        info: None,
     })
 }
 

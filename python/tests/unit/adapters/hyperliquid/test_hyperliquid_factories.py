@@ -26,6 +26,7 @@ from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientFactory
 from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientFactory
+from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid import hyperliquid_resolve_execution_account_address
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -38,6 +39,37 @@ HYPERLIQUID = "HYPERLIQUID"
 SMOKE_PRIVATE_KEY = "0x0000000000000000000000000000000000000000000000000000000000000001"
 hyperliquid_data_tester = load_example_module("hyperliquid", "data_tester")
 hyperliquid_exec_tester = load_example_module("hyperliquid", "exec_tester")
+
+
+@pytest.mark.parametrize("explicit_none", [False, True])
+def test_execution_product_scope_defaults(explicit_none: bool) -> None:
+    """
+    Omitted and None scopes retain all supported execution products.
+    """
+    config = (
+        HyperliquidExecutionClientConfig(product_types=None)
+        if explicit_none
+        else HyperliquidExecutionClientConfig()
+    )
+
+    assert config.product_types == [
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.SPOT,
+        HyperliquidProductType.OUTCOME,
+    ]
+
+
+@pytest.mark.parametrize(
+    "product",
+    [HyperliquidProductType.PERP, HyperliquidProductType.SPOT, HyperliquidProductType.OUTCOME],
+)
+def test_execution_product_scope(product: HyperliquidProductType) -> None:
+    """
+    Explicit execution product scopes survive the Python config boundary.
+    """
+    config = HyperliquidExecutionClientConfig(product_types=[product])
+
+    assert config.product_types == [product]
 
 
 def test_hyperliquid_factories_expose_python_names() -> None:

@@ -76,6 +76,23 @@ pub fn outcome_asset_id_to_instrument_id(
     Ok(InstrumentId::new(Symbol::new(symbol), *HYPERLIQUID_VENUE))
 }
 
+/// Resolves the canonical Yes and No instrument IDs for a HIP-4 outcome.
+///
+/// # Errors
+///
+/// Returns an error if the outcome cannot be represented by a HIP-4 asset ID.
+pub fn outcome_pair_instrument_ids(outcome: u32) -> anyhow::Result<[InstrumentId; 2]> {
+    let yes = HyperliquidAssetId::try_outcome(outcome, 0)
+        .ok_or_else(|| anyhow::anyhow!("Invalid Hyperliquid outcome index {outcome}"))?;
+    let no = HyperliquidAssetId::try_outcome(outcome, 1)
+        .ok_or_else(|| anyhow::anyhow!("Invalid Hyperliquid outcome index {outcome}"))?;
+
+    Ok([
+        outcome_asset_id_to_instrument_id(yes)?,
+        outcome_asset_id_to_instrument_id(no)?,
+    ])
+}
+
 /// Parses an outcome (HIP-4) asset ID from a Nautilus instrument ID.
 ///
 /// Accepts the Nautilus symbol form (`{N}-{YES|NO}-OUTCOME.HYPERLIQUID`) and,
@@ -351,6 +368,24 @@ mod tests {
         assert_eq!(
             instrument_id,
             InstrumentId::from("25-YES-OUTCOME.HYPERLIQUID")
+        );
+    }
+
+    #[rstest]
+    fn test_outcome_pair_instrument_ids() {
+        let [yes, no] = outcome_pair_instrument_ids(25).unwrap();
+
+        assert_eq!(yes, InstrumentId::from("25-YES-OUTCOME.HYPERLIQUID"));
+        assert_eq!(no, InstrumentId::from("25-NO-OUTCOME.HYPERLIQUID"));
+    }
+
+    #[rstest]
+    fn test_outcome_pair_instrument_ids_rejects_overflow() {
+        let err = outcome_pair_instrument_ids(u32::MAX).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Invalid Hyperliquid outcome index 4294967295"
         );
     }
 

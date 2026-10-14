@@ -2636,6 +2636,7 @@ impl LiveNode {
         let mut order_ids = Vec::new();
 
         match evt {
+            ExecutionEvent::Action(_) | ExecutionEvent::Account(_) => {}
             ExecutionEvent::Order(order_evt) => {
                 self.exec_manager.observe_order_event(order_evt);
                 order_ids.push(order_evt.client_order_id());
@@ -2681,7 +2682,6 @@ impl LiveNode {
                     order_ids.push(client_order_id);
                 }
             }
-            ExecutionEvent::Account(_) => {}
         }
 
         Some(order_ids)
@@ -3376,10 +3376,13 @@ impl PendingEvents {
                 }
             };
 
-            // Account events are safe to process immediately. Reports and orders need
-            // ExecEngine access, which may conflict with the driven startup future's borrow.
+            // Account and action-result events are safe to process immediately. Reports and
+            // orders need ExecEngine access, which may conflict with the driven startup future's
+            // borrow.
             match event {
-                ExecutionEvent::Account(_) => AsyncRunner::handle_exec_event(event),
+                ExecutionEvent::Account(_) | ExecutionEvent::Action(_) => {
+                    AsyncRunner::handle_exec_event(event);
+                }
                 ExecutionEvent::Report(report) => self.exec_reports.push(if rooted {
                     DispatchMessage::new(report, owner)
                 } else {

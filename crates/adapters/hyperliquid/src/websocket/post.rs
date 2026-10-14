@@ -45,8 +45,25 @@ use crate::{
 };
 
 #[derive(Debug)]
+pub(crate) enum PostRequestError {
+    BeforeDispatch(Error),
+    AfterDispatch(Error),
+    Rejected { error: Error, reason: String },
+}
+
+impl PostRequestError {
+    pub(super) fn into_error(self) -> Error {
+        match self {
+            Self::BeforeDispatch(error)
+            | Self::AfterDispatch(error)
+            | Self::Rejected { error, .. } => error,
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Waiter {
-    tx: oneshot::Sender<PostResponse>,
+    tx: oneshot::Sender<std::result::Result<PostResponse, PostRequestError>>,
     cancellation_token: CancellationToken,
     // When this is dropped, the permit is released, shrinking inflight
     _permit: OwnedSemaphorePermit,
@@ -80,7 +97,11 @@ impl PostRouter {
     }
 
     /// Registers interest in a post id, enforcing inflight cap.
-    pub async fn register(&self, id: u64) -> Result<oneshot::Receiver<PostResponse>> {
+    #[cfg(test)]
+    pub(super) async fn register(
+        &self,
+        id: u64,
+    ) -> Result<oneshot::Receiver<std::result::Result<PostResponse, PostRequestError>>> {
         self.register_waiter(id, &CancellationToken::new()).await
     }
 
@@ -88,7 +109,7 @@ impl PostRouter {
         self: &Arc<Self>,
         id: u64,
         cancellation_token: &CancellationToken,
-    ) -> Result<oneshot::Receiver<PostResponse>> {
+    ) -> Result<oneshot::Receiver<std::result::Result<PostResponse, PostRequestError>>> {
         let rx = self.register_waiter(id, cancellation_token).await?;
         let post_router = Arc::clone(self);
         let cancellation_token = cancellation_token.clone();
@@ -106,7 +127,7 @@ impl PostRouter {
         &self,
         id: u64,
         cancellation_token: &CancellationToken,
-    ) -> Result<oneshot::Receiver<PostResponse>> {
+    ) -> Result<oneshot::Receiver<std::result::Result<PostResponse, PostRequestError>>> {
         // Acquire and retain a permit per inflight call
         let permit = self
             .inflight
@@ -115,7 +136,7 @@ impl PostRouter {
             .await
             .map_err(|_| Error::transport("post router semaphore closed"))?;
 
-        let (tx, rx) = oneshot::channel::<PostResponse>();
+        let (tx, rx) = oneshot::channel::<std::result::Result<PostResponse, PostRequestError>>();
         let mut map = self.inner.lock().await;
         if map.contains_key(&id) {
             return Err(Error::transport(format!("post id {id} already registered")));
@@ -141,12 +162,39 @@ impl PostRouter {
 
         if let Some(waiter) = waiter {
             waiter.cancellation_token.cancel();
-            if waiter.tx.send(resp).is_err() {
+            if waiter.tx.send(Ok(resp)).is_err() {
                 log::warn!("Post waiter dropped before delivery: id={id}");
             }
             // waiter drops here → permit released
         } else {
             log::warn!("Post response with unknown id (late/duplicate?): id={id}");
+        }
+    }
+
+    /// Completes a waiting caller with a failure whose delivery evidence is known.
+    pub(super) async fn complete_failure(
+        &self,
+        id: u64,
+        cancellation_token: &CancellationToken,
+        e: PostRequestError,
+    ) {
+        let waiter = {
+            let mut map = self.inner.lock().await;
+            if map
+                .get(&id)
+                .is_some_and(|waiter| &waiter.cancellation_token == cancellation_token)
+            {
+                map.remove(&id)
+            } else {
+                None
+            }
+        };
+
+        if let Some(waiter) = waiter {
+            waiter.cancellation_token.cancel();
+            if waiter.tx.send(Err(e)).is_err() {
+                log::warn!("Post waiter dropped before failure delivery: id={id}");
+            }
         }
     }
 
@@ -182,12 +230,13 @@ impl PostRouter {
     }
 
     /// Await a response with timeout. On timeout or closed channel, cancels the id.
-    pub async fn await_with_timeout(
+    #[cfg(test)]
+    pub(super) async fn await_with_timeout(
         &self,
         id: u64,
-        rx: oneshot::Receiver<PostResponse>,
+        rx: oneshot::Receiver<std::result::Result<PostResponse, PostRequestError>>,
         timeout: Duration,
-    ) -> Result<PostResponse> {
+    ) -> Result<std::result::Result<PostResponse, PostRequestError>> {
         match time::timeout(timeout, rx).await {
             Ok(Ok(resp)) => Ok(resp),
             Ok(Err(_closed)) => {
@@ -839,7 +888,7 @@ mod tests {
                 },
             })
             .await;
-        let response = rx.await.unwrap();
+        let response = rx.await.unwrap().expect("expected post response");
 
         assert_eq!(response.id, id);
         assert!(matches!(
@@ -851,6 +900,37 @@ mod tests {
             .register(id)
             .await
             .expect("id should be reusable after completion");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn definitive_failure_completes_waiter_and_allows_reregister() {
+        let router = PostRouter::new();
+        let id = 9;
+        let cancellation_token = CancellationToken::new();
+        let rx = router
+            .register_with_cancellation(id, &cancellation_token)
+            .await
+            .unwrap();
+
+        router
+            .complete_failure(
+                id,
+                &cancellation_token,
+                PostRequestError::BeforeDispatch(Error::transport("writer unavailable")),
+            )
+            .await;
+
+        let error = rx
+            .await
+            .unwrap()
+            .expect_err("expected definitive post failure");
+        assert!(matches!(error, PostRequestError::BeforeDispatch(_)));
+        assert!(cancellation_token.is_cancelled());
+        router
+            .register(id)
+            .await
+            .expect("id should be reusable after failure");
     }
 
     #[rstest]

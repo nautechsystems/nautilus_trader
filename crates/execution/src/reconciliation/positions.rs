@@ -31,6 +31,7 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
+    position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Quantity},
 };
@@ -39,6 +40,7 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use super::{
     RECONCILIATION_ORDER_TAG,
     ids::{create_synthetic_trade_id, create_synthetic_venue_order_id},
+    orders::is_orderless_action,
     reconciliation_price,
     types::{FillAdjustmentResult, FillSnapshot, ReconciliationResult, VenuePositionSnapshot},
 };
@@ -488,6 +490,39 @@ pub fn check_position_reconciliation(
 /// to the position would count the execution twice.
 #[must_use]
 pub fn fill_precedes_snapshot_reconciled_position(cache: &Cache, report: &FillReport) -> bool {
+    let included_in_snapshot = |position: &Position| {
+        report.ts_event < position.ts_opened
+            && !position.trade_ids.contains(&report.trade_id)
+            && cache
+                .order(&position.opening_order_id)
+                .is_some_and(|order| {
+                    order.tags().is_some_and(|tags| {
+                        tags.iter()
+                            .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
+                    })
+                })
+    };
+
+    if is_orderless_action(report) {
+        // A later merge may close or archive a balance-reconstructed position,
+        // its snapshot still proves that earlier conversion fills were included.
+        return cache
+            .positions(
+                None,
+                Some(&report.instrument_id),
+                None,
+                Some(&report.account_id),
+                None,
+            )
+            .into_iter()
+            .any(|position| included_in_snapshot(&position))
+            || cache
+                .position_snapshots(None, Some(&report.account_id))
+                .iter()
+                .any(|position| {
+                    position.instrument_id == report.instrument_id && included_in_snapshot(position)
+                });
+    }
     cache
         .positions_open(
             None,
@@ -497,18 +532,7 @@ pub fn fill_precedes_snapshot_reconciled_position(cache: &Cache, report: &FillRe
             None,
         )
         .into_iter()
-        .any(|position| {
-            report.ts_event < position.ts_opened
-                && !position.trade_ids.contains(&report.trade_id)
-                && cache
-                    .order(&position.opening_order_id)
-                    .is_some_and(|order| {
-                        order.tags().is_some_and(|tags| {
-                            tags.iter()
-                                .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
-                        })
-                    })
-        })
+        .any(|position| included_in_snapshot(&position))
 }
 
 /// Caps a price at the instrument's maximum price.

@@ -167,6 +167,7 @@ fn assert_event_types(events: &[ExecutionEvent], expected: &[&str]) {
     let kinds: Vec<&str> = events
         .iter()
         .map(|e| match e {
+            ExecutionEvent::Action(_) => "Action",
             ExecutionEvent::Order(OrderEventAny::Accepted(_)) => "Accepted",
             ExecutionEvent::Order(OrderEventAny::Canceled(_)) => "Canceled",
             ExecutionEvent::Order(OrderEventAny::Updated(_)) => "Updated",

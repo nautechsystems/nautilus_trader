@@ -1103,7 +1103,7 @@ mod tests {
             assert_eq!(
                 err.value(py).to_string(),
                 format!(
-                    "MessageBusConfig.encoding_builtin has unsupported value: {} is not supported by AccountState, OrderEventAny, PositionEvent, PortfolioSnapshot",
+                    "MessageBusConfig.encoding_builtin has unsupported value: {} is not supported by AccountState, OrderEventAny, PositionEvent, PortfolioSnapshot, ExecutionActionResult",
                     SerializationEncoding::Capnp
                 )
             );

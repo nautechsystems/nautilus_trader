@@ -64,7 +64,7 @@ use nautilus_hyperliquid::{
     HyperliquidHttpClient, HyperliquidWebSocketClient,
     common::{
         consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
-        enums::HyperliquidEnvironment,
+        enums::{HyperliquidEnvironment, HyperliquidProductType},
         parse::make_fill_trade_id,
     },
     config::HyperliquidExecutionClientConfig,
@@ -7975,20 +7975,34 @@ fn make_modify_cmd(order: &OrderAny, venue_order_id: Option<VenueOrderId>) -> Mo
 }
 
 #[rstest]
-#[case::unsupported_symbol("BTC-USD-FUT.HYPERLIQUID", "Unsupported instrument symbol format")]
+#[case::unsupported_symbol(
+    "BTC-USD-FUT.HYPERLIQUID",
+    None,
+    "Unsupported instrument symbol format"
+)]
+#[case::outside_scope(
+    "BTC-PERP.HYPERLIQUID",
+    Some(HyperliquidProductType::Spot),
+    "Order outside execution product scope"
+)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_submit_order_unsupported_symbol_emits_denied(
+async fn test_submit_order_instrument_validation_emits_denied(
     #[case] instrument_str: &str,
+    #[case] product: Option<HyperliquidProductType>,
     #[case] reason_substr: &str,
 ) {
-    // Symbol does not match -PERP, -SPOT, or HIP-4 outcome wire forms, so
-    // `validate_order_submission` bails before any trading action and the client
-    // emits OrderDenied. A regression that drops the suffix check would land
-    // orders on a venue that cannot route them.
+    // Both unsupported symbols and products outside the configured execution scope
+    // must be denied locally, without sending a trading action to the venue.
     let state = TestServerState::default();
     let exchange_count = state.exchange_request_count.clone();
     let addr = start_mock_server(state).await;
-    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    let mut config = create_test_exec_config(addr);
+
+    if let Some(product) = product {
+        config.product_types = vec![product];
+    }
+
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
     client.start().unwrap();
     client.connect().await.unwrap();

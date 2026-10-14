@@ -37,11 +37,15 @@ use nautilus_common::{
     clock::Clock,
     component::{Component, with_component_registry},
     enums::ComponentState,
-    messages::system::{QueueStateChanged, SocketStateChanged},
+    messages::{
+        execution::ExecutionActionResult,
+        system::{QueueStateChanged, SocketStateChanged},
+    },
     python::{
         cache::PyCache,
         clock::PyClock,
         config_error_to_pyvalue_err,
+        execution_action::pyobject_to_execution_action,
         indicators::{registered_python_indicators, wrap_python_indicator},
         logging::{PyLogger, format_exception},
         order_factory::PyOrderFactory,
@@ -637,6 +641,15 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_execution_action_result(&self, result: ExecutionActionResult) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_execution_action_result", (result.into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
         if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_data", (data,)))?;
@@ -1097,6 +1110,13 @@ impl Strategy for PyStrategyInner {
         self.logger.log_callback_error(
             "on_position_closed",
             self.dispatch_on_position_closed(event),
+        );
+    }
+
+    fn on_execution_action_result(&mut self, result: ExecutionActionResult) {
+        self.logger.log_callback_error(
+            "on_execution_action_result",
+            self.dispatch_on_execution_action_result(result),
         );
     }
 }
@@ -2257,6 +2277,20 @@ impl PyStrategy {
             .map_err(to_pyruntime_err)
     }
 
+    #[pyo3(name = "execute_action")]
+    #[pyo3(signature = (account_id, action, client_id=None))]
+    fn py_execute_action(
+        &mut self,
+        py: Python<'_>,
+        account_id: AccountId,
+        action: Py<PyAny>,
+        client_id: Option<ClientId>,
+    ) -> PyResult<nautilus_core::UUID4> {
+        let action = pyobject_to_execution_action(py, action)?;
+        Strategy::execute_action(self.inner_mut(), account_id, client_id, action)
+            .map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "query_order")]
     #[pyo3(signature = (order, client_id=None, params=None))]
     fn py_query_order(
@@ -2474,6 +2508,10 @@ impl PyStrategy {
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_closed")]
     fn py_on_position_closed(_slf: &Bound<'_, Self>, event: PositionClosed) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_execution_action_result")]
+    fn py_on_execution_action_result(_slf: &Bound<'_, Self>, result: ExecutionActionResult) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_data")]
@@ -3864,6 +3902,7 @@ class TrackingStrategy:
         "on_position_event",
         "on_position_changed",
         "on_position_closed",
+        "on_execution_action_result",
     }
 
     def __init__(self):

@@ -36,9 +36,9 @@ use rust_decimal::Decimal;
 
 use super::log_not_implemented;
 use crate::messages::execution::{
-    BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-    GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-    GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+    BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecuteAction,
+    GenerateFillReports, GenerateFillReportsBuilder, GenerateOrderStatusReport,
+    GenerateOrderStatusReports, GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
     GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
     SubmitOrderList,
 };
@@ -261,6 +261,20 @@ pub trait ExecutionClient {
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
+    }
+
+    /// Executes an adapter-defined action at the execution venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client does not support the action or cannot
+    /// schedule its delivery.
+    fn execute_action(&self, cmd: ExecuteAction) -> anyhow::Result<()> {
+        Err(anyhow::anyhow!(
+            "Execution action '{}' is not supported by client {}",
+            cmd.action,
+            self.client_id(),
+        ))
     }
 
     /// Submits a list of orders to the execution venue.

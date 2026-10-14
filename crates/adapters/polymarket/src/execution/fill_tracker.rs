@@ -680,6 +680,7 @@ mod tests {
             ts_init: UnixNanos::default(),
             client_order_id: None,
             venue_position_id: None,
+            info: None,
         };
 
         let venue_trade_id = "trade-failed-before-drain-order-failed-before-drain";
@@ -1230,6 +1231,7 @@ mod tests {
             ts_init: UnixNanos::from(93_456_789u64),
             client_order_id: None,
             venue_position_id: None,
+            info: None,
         };
 
         tracker.buffer_fill_for_test(venue_order_id, report.clone());

@@ -21,7 +21,7 @@ use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
-    common::enums::HyperliquidEnvironment,
+    common::enums::{HyperliquidEnvironment, HyperliquidProductType},
     config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig},
 };
 
@@ -139,6 +139,7 @@ impl HyperliquidExecutionClientConfig {
         include_builder_attribution = None,
         ws_post_timeout_secs = None,
         transport_backend = None,
+        product_types = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -160,10 +161,12 @@ impl HyperliquidExecutionClientConfig {
         include_builder_attribution: Option<bool>,
         ws_post_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
+        product_types: Option<Vec<HyperliquidProductType>>,
     ) -> Self {
         let defaults = Self::default();
         Self {
             account_id: account_id.unwrap_or(defaults.account_id),
+            product_types: product_types.unwrap_or(defaults.product_types),
             private_key: private_key.map(SecretString::from),
             vault_address,
             account_address,

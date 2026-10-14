@@ -456,7 +456,7 @@ pub fn parse_ws_fill_report(
     // No client order ID available in fill data directly
     let client_order_id = None;
 
-    Ok(FillReport::new(
+    let mut report = FillReport::new(
         account_id,
         instrument_id,
         venue_order_id,
@@ -471,7 +471,9 @@ pub fn parse_ws_fill_report(
         ts_event,
         ts_init,
         None, // report_id
-    ))
+    );
+    crate::common::parse::annotate_outcome_action_fill(&mut report, &fill.dir, &fill.hash)?;
+    Ok(report)
 }
 
 /// Parses a WebSocket ActiveAssetCtx message into mark price, index price, and funding rate updates.
@@ -932,6 +934,83 @@ mod tests {
         assert_eq!(report.commission.currency.code, "USDC");
         assert!(report.commission.as_decimal().is_zero());
         assert_eq!(report.order_side, OrderSide::Buy);
+        assert!(report.info.is_none());
+        assert!(report.client_order_id.is_none());
+    }
+
+    #[rstest]
+    fn test_rest_and_ws_outcome_action_fills_from_testnet() {
+        use crate::http::{
+            models::{HyperliquidFill, OutcomeMarket, OutcomeMeta},
+            parse::{create_instrument_from_def, parse_fill_report, parse_outcome_instruments},
+        };
+
+        // Recorded from a quantity-1 testnet cycle, with transaction hashes anonymized
+        let values: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../../test_data/outcome_action_fills.json"))
+                .unwrap();
+        let meta = OutcomeMeta {
+            outcomes: vec![OutcomeMarket {
+                outcome: 23276,
+                name: "BTC daily".to_string(),
+                description: String::new(),
+                quote_token: Some("USDC".to_string()),
+                side_specs: vec![],
+            }],
+            questions: vec![],
+        };
+        let defs = parse_outcome_instruments(&meta).unwrap();
+
+        assert_eq!(values.len(), 4);
+
+        for (index, value) in values.into_iter().enumerate() {
+            let instrument =
+                create_instrument_from_def(&defs[index % 2], UnixNanos::default()).unwrap();
+            let rest_data: HyperliquidFill = serde_json::from_value(value.clone()).unwrap();
+            let ws_data: WsFillData = serde_json::from_value(value).unwrap();
+            let account_id = AccountId::from("HYPERLIQUID-001");
+            let rest = parse_fill_report(&rest_data, &instrument, account_id, UnixNanos::from(100))
+                .unwrap();
+            let ws = parse_ws_fill_report(&ws_data, &instrument, account_id, UnixNanos::from(100))
+                .unwrap();
+            let action = if index < 2 {
+                "binary_option.split"
+            } else {
+                "binary_option.merge"
+            };
+
+            assert!(rest.client_order_id.unwrap().as_str().contains("-LEG-"));
+            assert_eq!(
+                rest.info.as_ref().unwrap()[&Ustr::from("source")],
+                Ustr::from("execution_action")
+            );
+            assert_eq!(rest.trade_id, ws.trade_id);
+            assert_eq!(
+                rest.venue_order_id,
+                VenueOrderId::from(rest_data.oid.to_string())
+            );
+            assert_eq!(rest.venue_order_id, ws.venue_order_id);
+            assert_eq!(rest.client_order_id, ws.client_order_id);
+            assert_eq!(rest.last_qty.as_decimal(), dec!(1));
+            assert_eq!(rest.last_qty, ws.last_qty);
+            assert_eq!(rest.last_px.as_decimal(), dec!(0.5));
+            assert_eq!(rest.last_px, ws.last_px);
+            assert_eq!(
+                rest.commission.as_decimal(),
+                if index < 2 { dec!(0) } else { dec!(0.00035) }
+            );
+            assert_eq!(rest.commission, ws.commission);
+            assert_eq!(rest.liquidity_side, LiquiditySide::NoLiquiditySide);
+            assert_eq!(rest.info, ws.info);
+            assert_eq!(
+                rest.info.as_ref().unwrap()[&Ustr::from("action")],
+                Ustr::from(action)
+            );
+            assert_eq!(
+                rest.info.as_ref().unwrap()[&Ustr::from("transaction_hash")].as_str(),
+                rest_data.hash
+            );
+        }
     }
 
     #[rstest]

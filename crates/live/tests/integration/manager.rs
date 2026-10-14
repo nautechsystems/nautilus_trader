@@ -101,6 +101,7 @@ use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use ustr::Ustr;
 
 #[cfg(all(feature = "simulation", madsim))]
 async fn advance_clock(d: dst::time::Duration) {
@@ -14347,6 +14348,91 @@ async fn test_orphan_fills_without_order_reports_processed() {
         .reconcile_execution_mass_status(&replay_status, &ctx.exec_engine);
 
     assert!(replay.events.is_empty());
+}
+
+#[rstest]
+#[case::claimed(true, true, 2)]
+#[case::external(false, false, 2)]
+#[case::filtered(false, true, 0)]
+fn test_orderless_action_mass_status_recovery(
+    #[case] claimed: bool,
+    #[case] filter_unclaimed_external: bool,
+    #[case] expected_events: usize,
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        filter_unclaimed_external,
+        ..Default::default()
+    });
+    let instrument_id = test_instrument_id();
+    let strategy_id = if claimed {
+        StrategyId::from("ACTION-001")
+    } else {
+        StrategyId::external()
+    };
+    ctx.add_instrument(test_instrument());
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+
+    if claimed {
+        ctx.exec_engine
+            .borrow_mut()
+            .register_external_order_claims(strategy_id, &HashSet::from([instrument_id]))
+            .unwrap();
+    }
+
+    let mut split = create_fill_report(
+        ClientOrderId::from("ACTION-1-LEG-YES"),
+        VenueOrderId::from("V-ACTION-1"),
+        instrument_id,
+        TradeId::from("T-ACTION-1"),
+        "1.0",
+    );
+    split.info = Some(
+        [(Ustr::from("source"), Ustr::from("execution_action"))]
+            .into_iter()
+            .collect(),
+    );
+    let mut merge = split.clone();
+    merge.client_order_id = Some(ClientOrderId::from("ACTION-2-LEG-YES"));
+    merge.venue_order_id = VenueOrderId::from("V-ACTION-2");
+    merge.trade_id = TradeId::from("T-ACTION-2");
+    merge.order_side = OrderSide::Sell;
+    merge.ts_event = UnixNanos::from(2_000_000);
+    let mass_status = create_mass_status(vec![], vec![merge, split]);
+
+    for _ in 0..2 {
+        let result = ctx
+            .manager
+            .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+        assert_eq!(result.events.len(), expected_events);
+        assert!(
+            result
+                .events
+                .iter()
+                .all(|event| matches!(event, OrderEventAny::Filled(_)))
+        );
+        assert!(
+            ctx.cache
+                .borrow()
+                .orders(None, None, None, None, None)
+                .is_empty()
+        );
+        assert!(
+            ctx.cache
+                .borrow()
+                .positions_open(None, None, None, None, None)
+                .is_empty()
+        );
+        assert_eq!(
+            ctx.cache
+                .borrow()
+                .positions_closed(None, None, None, None, None)
+                .len(),
+            usize::from(expected_events > 0),
+        );
+    }
 }
 
 #[tokio::test]
