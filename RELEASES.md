@@ -195,6 +195,7 @@ Released on TBD (UTC).
 - Upgraded `jiff` crate to v0.2.38
 - Upgraded `libc` crate to v0.2.190
 - Upgraded `pyo3` crates to v0.29.3
+- Upgraded `rustls` crate to v0.23.46 (fixes RUSTSEC-2026-0346 through RUSTSEC-2026-0349)
 - Upgraded `tokio` crate to v1.53.2
 - Upgraded `tokio-rustls` crate to v0.26.6
 - Upgraded `tokio-util` crate to v0.7.20

@@ -3717,6 +3717,12 @@ criteria = "safe-to-deploy"
 delta = "0.23.44 -> 0.23.45"
 notes = "Reviewed the published Rust source and manifest delta. Fixes RUSTSEC-2026-0285 by rejecting pending handshake messages across key changes, tightens HelloRetryRequest validation, and zeroizes private key input after loading. No new dependencies or unsafe code."
 
+[[audits.rustls]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.23.45 -> 0.23.46"
+notes = "Reviewed the published source and manifest delta. Fixes RUSTSEC-2026-0346 through RUSTSEC-2026-0349 by limiting Brotli decompression, omitting session secrets from Debug, delaying key-exchange hints until handshake confirmation, and rejecting ECH before releasing buffered application data. Also tightens TLS record limits, key updates, HPKE nonce sequencing, handshake validation, decompression input consumption, and I/O error handling, and corrects cache capacity. No new dependencies, unsafe code, build-script changes, process execution, filesystem access, or network destinations."
+
 [[audits.rustls-native-certs]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

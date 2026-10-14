@@ -253,7 +253,7 @@ rmp-serde = "1.3.1"
 ruint = { version = "1.20.1", default-features = false }
 rust_decimal = { version = "1.43.0", features = ["serde-with-float"] }
 rust_decimal_macros = "1.40.0"
-rustls = { version = "0.23.45", default-features = false, features = [
+rustls = { version = "0.23.46", default-features = false, features = [
   "aws-lc-rs",
   "logging",
   "std",
@@ -421,6 +421,7 @@ trusted-base = "origin/develop"
 
 [workspace.metadata.cooldown.allow]
 ibapi = "5.0.0"
+rustls = "0.23.46"
 
 # -----------------------------------------------------------------------------
 # Profiles
