@@ -112,7 +112,7 @@ This installs:
 - **uv**, installed at the shared pinned version. The supported local uv minor series is defined in
   `python/pyproject.toml`.
 
-Cap'n Proto is also pinned in `.nautilus-engineering/tools.toml` but installs separately; see the
+Cap'n Proto is also pinned in `.nautilus-engineering/tools.toml` but installs separately. See the
 [Cap'n Proto](#capn-proto) section below.
 
 Fuzz targets also require a Rust nightly toolchain at runtime because `cargo-fuzz` uses
@@ -142,9 +142,8 @@ This is a one-time step. Subsequent runs of `make install-tools` reuse the insta
 
 #### Single source of truth for versions
 
-The repository manifests are the canonical source for dependency and tool versions. Do not copy
-current version numbers into docs, runner images, or scripts unless there is no manifest-backed way
-to read them.
+The repository manifests are the canonical source for dependency and tool versions. If a manifest-backed way
+to read current version numbers exists, do not copy them into docs, runner images, or scripts.
 
 | Source file or section                    | Defines                                                  |
 | ----------------------------------------- | -------------------------------------------------------- |
@@ -189,28 +188,32 @@ Make sure the Rust compiler reports **zero errors** -- broken builds slow everyo
 
 ### 4. Configure environment variables
 
-NautilusTrader keeps its uv-managed environment at `python/.venv`, beside
-`python/pyproject.toml`. This follows
-[uv's default project environment layout](https://docs.astral.sh/uv/concepts/projects/layout/#the-project-environment),
-which keeps the environment where uv and Python editors expect to discover it. Run direct uv project
-commands from `python/` or pass `--project python` from the repository root. Make targets and CI
-select the project themselves.
+NautilusTrader keeps its uv-managed environment at `python/.venv`, beside `python/pyproject.toml`.
+This follows [uv's default project environment layout](https://docs.astral.sh/uv/concepts/projects/layout/#the-project-environment),
+where uv and Python editors expect to discover the environment.
+
+Run direct uv project commands from `python/` or pass `--project python` from the repository root.
+Make targets and CI select the project themselves.
 
 :::warning
-If this checkout previously used the root `.venv`, remove any `UV_PROJECT_ENVIRONMENT` export from
-your shell startup files and the current shell before running Make or uv. This override takes
-precedence over uv's project discovery.
-Also replace any `PYO3_PYTHON` export that points to the root `.venv/bin/python` with this
-checkout's `python/.venv/bin/python`. Editing a startup file does not update existing shells or
-running applications: repeat the exports in each shell and restart applications that inherited
-the old environment.
+If this checkout previously used the root `.venv`, update your shell startup files and current shell. Complete
+these changes before you run Make or uv:
+
+- Remove any `UV_PROJECT_ENVIRONMENT` export. This override takes precedence over uv's project discovery.
+- Replace any `PYO3_PYTHON` export pointing to the root `.venv/bin/python` with this checkout's
+  `python/.venv/bin/python`.
+
+Editing a startup file does not update existing shells or running applications. Repeat the exports
+in each shell and restart applications that inherited the old environment.
 :::
 
-**Required for Rust/PyO3 (Linux and macOS)**: When using Python installed via `uv` on Linux or
-macOS, set the following environment variables from the repository root after `make sync`:
+**Required for Rust/PyO3 (Linux and macOS)**:
 
-Use the commands for your shell. Bash and Zsh use `export` and `activate`; Fish uses `set -gx`
-and `activate.fish`. Source Fish scripts only from Fish.
+If `uv` installed Python on Linux or macOS, run `make sync` first. Then set these environment variables from
+the repository root:
+
+Use the commands for your shell. Bash and Zsh use `export` and `activate`. Fish uses `set -gx` and
+`activate.fish`. Source Fish scripts only from Fish.
 
 ```bash tab="Bash / Zsh"
 # Set the Python executable path for PyO3
@@ -257,34 +260,39 @@ echo "PYTHONHOME: $PYTHONHOME"
 Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.uv]` section in
 `python/pyproject.toml` enforces three supply chain safety settings:
 
-- **`required-version`**: local uv commands accept any patch release in the supported minor series.
-  If your local uv is outside that range, `uv lock` and `uv sync` fail with a version mismatch.
-  `.nautilus-engineering/tools.toml` separately pins the exact version used by CI, Docker,
-  pre-commit, and `make update-uv`. The stub targets run through `make sync`, so they enforce the
-  same supported range; see [Generated Python artifacts](rust.md#generated-python-artifacts).
-- **`exclude-newer = "7 days"`**: `uv lock` ignores package versions published within the last
-  7 days. This gives the community time to detect and quarantine compromised releases before they
-  enter the lockfile. The value accepts an RFC 3339 timestamp (`"2026-03-30T00:00:00Z"`), a friendly
-  duration (`"7 days"`, `"1 week"`, `"24 hours"`), or an ISO 8601 duration (`"P7D"`, `"P1W"`,
-  `"PT24H"`). uv 0.11.8+ stores the friendly/ISO form as `exclude-newer-span` inside
-  `python/uv.lock` and emits a sentinel `exclude-newer` timestamp alongside it for backwards
-  compatibility. `python/uv.lock` uses that format.
-- **`no-build-package`**: explicit list of every third-party package locked in `python/uv.lock`. `uv`
-  refuses to build any of them from source. In normal operation uv prefers wheels, so the setting
-  is a no-op; it triggers only if a listed package stops publishing wheels for the target platform,
-  in which case `uv lock` fails rather than silently building from an sdist. The local workspace
-  package is intentionally not in the list because it must be built by the workspace's own build
-  backend. The list is kept in sync with `python/uv.lock` by
-  `scripts/check-no-build-packages.sh`, which also runs as a pre-commit hook on changes to the
-  lockfile or manifest.
+- **`required-version`**: local uv commands accept any patch release in the supported minor series. If your
+  local uv is outside that range, `uv lock` and `uv sync` fail with a version mismatch.
+  `.nautilus-engineering/tools.toml` separately pins the exact version used by CI, Docker, pre-commit, and
+  `make update-uv`. The stub targets run through `make sync`, so they enforce the same supported range. See
+  [Generated Python artifacts](rust.md#generated-python-artifacts).
+- **`exclude-newer = "7 days"`**: `uv lock` ignores package versions published within the last 7 days. This
+  gives the community time to detect and quarantine compromised releases before they enter the lockfile. The
+  value accepts these forms:
+
+  - An RFC 3339 timestamp (`"2026-03-30T00:00:00Z"`).
+  - A friendly duration (`"7 days"`, `"1 week"`, `"24 hours"`).
+  - An ISO 8601 duration (`"P7D"`, `"P1W"`, `"PT24H"`).
+
+  uv 0.11.8+ stores the friendly/ISO form as `exclude-newer-span` inside `python/uv.lock`. It emits a sentinel
+  `exclude-newer` timestamp alongside that field for backwards compatibility. `python/uv.lock` uses that
+  format.
+- **`no-build-package`**: explicit list of all third-party packages locked in `python/uv.lock`. `uv` refuses
+  to build any of them from source. In normal operation, uv prefers wheels, so the setting is a no-op. It
+  triggers only if a listed package stops publishing wheels for the target platform. In that case, `uv lock`
+  fails. It does not silently build from an sdist.
+
+  The local workspace package is intentionally not in the list because it must be built by the workspace's own
+  build backend. The list is kept in sync with `python/uv.lock` by `scripts/check-no-build-packages.sh`, which
+  also runs as a pre-commit hook on changes to the lockfile or manifest.
 
 ### Bypassing the cooldown
 
-When a security patch or critical bug fix must be pulled in immediately, review the release and
-override `exclude-newer` for that lock operation. Prefer a package-scoped override so unrelated
-packages remain subject to the 7-day default. Do not add persistent package overrides to
-`python/pyproject.toml`. All forms accept a timestamp, friendly duration, or ISO duration; package
-overrides additionally accept `false` to exempt a package from the cooldown entirely.
+A security patch or critical bug fix can need an immediate update. For this case, review the release. Override
+`exclude-newer` for that lock operation. Prefer a package-scoped override so unrelated packages stay subject
+to the 7-day default. Do not add persistent package overrides to `python/pyproject.toml`.
+
+All forms accept a timestamp, friendly duration, or ISO duration. Package overrides additionally accept
+`false` to exempt a package from the cooldown entirely.
 
 ```bash
 # Shorten the cooldown for a single package (friendly duration)
@@ -305,10 +313,14 @@ remains unchanged for subsequent runs.
 
 ### Updating uv
 
-To support a new uv minor series, change `required-version` in `python/pyproject.toml`. To update the
-exact project version within that range, update Nautilus Engineering's `[uv].version`, sync the
-shared catalog, then update the `rev` in `.pre-commit-config.yaml` and each digest-pinned uv Docker
-image. Run `make update-uv` to install the project version locally.
+To support a new uv minor series, change `required-version` in `python/pyproject.toml`. To update the exact
+project version within that range:
+
+1. Update Nautilus Engineering's `[uv].version`.
+1. Sync the shared catalog.
+1. Update the `rev` in `.pre-commit-config.yaml`.
+1. Update each digest-pinned uv Docker image.
+1. Run `make update-uv` to install the project version locally.
 
 ### Rust dependency cooldown
 
@@ -333,47 +345,50 @@ The check runs at these points:
 Make compilation targets also pass `--locked`, so Cargo fails rather than resolve versions the
 check has not seen.
 
-A version inside the cooldown window requires both an exact entry in
-`[workspace.metadata.cooldown.allow]` and a matching cargo-vet audit. Unsupported registries fail
-the check. Publication dates come from the committed database at
-`.supply-chain/crate-dates.json`. Recorded dates are trusted offline; versions missing from the
-database are looked up on crates.io and fail closed when the registry is unreachable. A clean Git
-diff does not establish that dependencies are old enough.
+A version inside the cooldown window requires both an exact entry in `[workspace.metadata.cooldown.allow]` and
+a matching cargo-vet audit. Unsupported registries fail the check. Publication dates come from the committed
+database at `.supply-chain/crate-dates.json`. Recorded dates are trusted offline. Versions missing from the
+database are looked up on crates.io and fail closed when the registry is unreachable. A clean Git diff does
+not establish that dependencies are old enough.
 
 A branch could add a backdated database entry beside the version it introduces. The
 `trusted-base = "origin/develop"` setting closes that gap: the check re-verifies against crates.io
-each database entry that `origin/develop` lacks, then caches the pass. A branch therefore repeats
-those requests only when it or `origin/develop` changes, not on every build. A clone without
-`origin/develop` fails the check until you fetch it. Shallow CI checkouts cannot resolve it and
-trust recorded dates instead, while the full-history pre-commit job verifies against it.
+each database entry that `origin/develop` lacks, then caches the pass. A branch repeats those requests
+only when it or `origin/develop` changes, not on every build.
 
-`make cargo-update` records dates for every change it accepts. After a manual lockfile edit, run
-`bash scripts/check-cargo-cooldown.sh --update-db` to reconcile the database, which also prunes
-entries no tracked lock resolves. The dependency-update command separately re-verifies newly added
-dates against crates.io; routine pre-commit and full checks use the committed database offline.
+- **Clone without `origin/develop`**: The check fails until you fetch it.
+- **Shallow CI checkout**: The check cannot resolve the trusted base and trusts recorded dates instead.
+- **Full-history pre-commit job**: The check verifies against the trusted base.
+
+`make cargo-update` records dates for each change it accepts. After a manual lockfile edit, run
+`bash scripts/check-cargo-cooldown.sh --update-db` to reconcile the database, which also prunes entries no
+tracked lock resolves. The dependency-update command separately re-verifies newly added dates against
+crates.io. Routine pre-commit and full checks use the committed database offline.
 
 The pre-commit hook and `make check-cargo-cooldown` cache successful full checks as
 `.cargo-cooldown.json` in `CARGO_TARGET_DIR`. When no Cargo target directory is set, the hook uses
-`target/` at the repository root and Make uses its `TARGET_DIR`. CI uses its configured Cargo
-target directory so persistent runners retain the cache between jobs. Changes to any checked
-lockfile, the policy, audits, database, check script, or the trusted base's database and lockfiles
-invalidate the cache. Failed checks are not cached. Treat this file as local verification state; do
-not restore it from an untrusted source.
+`target/` at the repository root and Make uses its `TARGET_DIR`. CI uses its configured Cargo target
+directory so persistent runners retain the cache between jobs.
 
-This gate reduces exposure to newly published malicious registry releases. It does not establish
-that older releases are safe, sandbox build scripts, or vet Git and local path dependencies.
-Development-tool bootstrap commands such as `make install-tools` install external packages with
-separate dependency resolutions and are outside this repository-lockfile gate. Direct Cargo and
-Maturin invocations bypass Make, and editor integrations such as rust-analyzer can run build scripts
-as soon as a lockfile changes. Run `make check-cargo-cooldown` before opening an untrusted branch in
-an editor, and pass `--locked` when building repository code directly. Keep manifests and lockfiles
-unchanged between the check and compilation.
+Changes to any checked lockfile, the policy, audits, database, check script, or the trusted base's database
+and lockfiles invalidate the cache. Failed checks are not cached. Treat this file as local verification state.
+Do not restore it from an untrusted source.
+
+**Gate limits**: The cooldown reduces exposure to newly published malicious registry releases. It
+does not establish that older releases are safe, sandbox build scripts, or vet Git and local path
+dependencies. Development-tool bootstrap commands such as `make install-tools` install external
+packages with separate dependency resolutions and stay outside this repository-lockfile gate.
+
+Direct Cargo and Maturin invocations bypass Make. Editor integrations such as rust-analyzer can run
+build scripts as soon as a lockfile changes. Before opening an untrusted branch in an editor, run
+`make check-cargo-cooldown`. Pass `--locked` when building repository code directly, and keep manifests
+and lockfiles unchanged between the check and compilation.
 
 ## Builds
 
-The Python package and the standalone Nautilus CLI are separate build artifacts. `make build-debug`
-and `make build` install the Python package into `python/.venv`; neither command updates the
-`nautilus` binary in Cargo's binary directory. See the
+The Python package and the standalone Nautilus CLI are separate build artifacts. `make build-debug` and
+`make build` install the Python package into `python/.venv`. Neither command updates the `nautilus` binary in
+Cargo's binary directory. See the
 [Nautilus CLI developer guide](#nautilus-cli-developer-guide) when changing or using the CLI.
 
 After changing Rust bindings or Python package code, use a debug build for normal development. It
@@ -421,8 +436,8 @@ command -v python
 python --version
 ```
 
-In Fish, use `source python/.venv/bin/activate.fish` for activation. Activation alone does not
-refresh `PYO3_PYTHON`; repeat the environment variable commands above for the selected checkout.
+In Fish, use `source python/.venv/bin/activate.fish` for activation. Activation alone does not refresh
+`PYO3_PYTHON`. Repeat the environment variable commands above for the selected checkout.
 
 ## Cap'n Proto
 

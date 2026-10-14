@@ -1,10 +1,11 @@
 # Plugins
 
-The `nautilus-plugin` crate defines the artifact contract for NautilusTrader plug-ins: an
-independently compiled Rust `cdylib` that identifies itself with a versioned manifest and exchanges
-values across a C-ABI boundary. The crate covers artifact identity and the boundary primitives only.
-It does not load, register, or run plug-ins; the loading host is an internal Nautilus deployment
-detail and is not part of this repository.
+The `nautilus-plugin` crate defines the artifact contract for NautilusTrader plug-ins. A plug-in is an
+independently compiled Rust `cdylib`. It identifies itself with a versioned manifest and exchanges values
+across a C-ABI boundary.
+
+The crate covers artifact identity and boundary primitives only. It does not load, register, or run plug-ins.
+The loading host is an internal Nautilus deployment detail outside this repository.
 
 :::warning
 The plug-in ABI is early alpha and the contract is unstable. Pin plug-in builds to the matching
@@ -31,10 +32,10 @@ the matching `nautilus-plugin` version.
 
 ## Manifest compatibility
 
-`nautilus_plugin_init` takes an opaque host pointer and returns a `PluginManifest` held in
-process-lifetime storage, or null when the host pointer is null or the call panics.
-`PluginManifest::validate` checks the invariants a host relies on before registration. It reports
-every structural problem it finds and fails when:
+`nautilus_plugin_init` takes an opaque host pointer. It returns a `PluginManifest` in process-lifetime
+storage. If the host pointer is null or the call panics, it returns null. `PluginManifest::validate` checks
+the invariants a host relies on before registration. It reports each structural problem it finds and fails
+when:
 
 - `abi_version` does not equal `NAUTILUS_PLUGIN_ABI_VERSION`, or `build_id.schema_version` does not
   equal `PLUGIN_BUILD_ID_VERSION`.
@@ -49,10 +50,10 @@ diagnostic.
 
 ## Boundary rules
 
-Only the `#[repr(C)]` types in `nautilus_plugin::boundary`, and `#[repr(C)]` types built from them,
-may appear in a signature that crosses the boundary. `String`, `Vec`, and `Box<dyn Trait>` rely on
-Rust's unstable ABI and must never cross it. Panics must not unwind across the boundary either; the
-generated entry symbol catches them and returns null.
+Only the `#[repr(C)]` types in `nautilus_plugin::boundary`, and `#[repr(C)]` types built from them, may appear
+in a signature that crosses the boundary. `String`, `Vec`, and `Box<dyn Trait>` rely on Rust's unstable ABI
+and must never cross it. Panics must not unwind across the boundary either. The generated entry symbol catches
+them and returns null.
 
 Under the current ABI, plug-ins are not unloaded, so manifest storage stays valid for the life of the
 process.

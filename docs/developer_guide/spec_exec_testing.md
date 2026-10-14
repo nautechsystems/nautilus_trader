@@ -1,10 +1,9 @@
 # Execution Testing Spec
 
-This section defines a rigorous test matrix for validating adapter execution
-functionality using the Rust `ExecTester` strategy. Python exposes it as a
-built-in strategy configured through `nautilus_trader.testkit.ExecTesterConfig`;
-Rust code imports it from `nautilus_testkit::testers`. Each test case is
-identified by a prefixed ID (e.g. TC-E01) and grouped by functionality.
+Use this test matrix to validate adapter execution functionality with the Rust `ExecTester` strategy. Python
+exposes it as a built-in strategy configured through `nautilus_trader.testkit.ExecTesterConfig`. Rust code
+imports it from `nautilus_testkit::testers`. Cases use prefixed IDs (for example, TC-E01) and are grouped by
+functionality.
 
 **Each adapter must pass the subset of tests matching its supported capabilities.**
 
@@ -26,9 +25,9 @@ Before running execution tests:
 - Account funded with sufficient margin for the test instrument and quantities.
 - Target instrument available and loadable via the instrument provider.
 - Environment variables set: `{VENUE}_API_KEY`, `{VENUE}_API_SECRET` (or sandbox variants).
-- If the venue offers a demo/testnet mode, use credentials created
-  for that environment. Demo and production API keys are typically separate and not
-  interchangeable; using the wrong credentials produces authentication errors (e.g. HTTP 401).
+- If the venue offers a demo/testnet mode, use credentials created for that environment. Demo and production
+  API keys are typically separate and not interchangeable. Using the wrong credentials produces authentication
+  errors (e.g. HTTP 401).
 - Risk engine bypassed (`LiveRiskEngineConfig(bypass=True)`) to avoid interference.
 - Reconciliation enabled to verify state consistency.
 
@@ -109,7 +108,7 @@ development iterations. The tester opens a position with a market order on start
 buy and sell post-only limit order, waits 30 seconds, then stops (cancelling open orders and
 closing the position).
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -122,7 +121,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -140,14 +139,14 @@ ExecTesterConfig::builder()
     .build()?
 ```
 
-**Expected behavior:**
+**Expected behavior**:
 
 1. On start: market order fills, opening a position.
 2. Two limit orders placed at `tob_offset_ticks` away from best bid/ask (default 500 ticks).
 3. Strategy idles for 30 seconds. Check logs for errors, rejected orders, or disconnections.
 4. On stop: open limit orders cancelled, position closed with a market order.
 
-**Pass criteria:** No errors in logs, position opened and closed cleanly, and limit orders
+**Pass criteria**: No errors in logs, position opened and closed cleanly, and limit orders
 acknowledged by the venue.
 
 ---
@@ -180,14 +179,14 @@ Test market order submission and fills. Market orders should execute immediately
 | **Pass criteria**  | Position opened with side=LONG, quantity matches config, fill price within market range, `AccountState` updated. |
 | **Skip when**      | Adapter does not support market orders.                                                                          |
 
-**Considerations:**
+**Considerations**:
 
 - Some adapters simulate market orders as aggressive limit IOC orders (check adapter guide).
 - The event sequence from the strategy's perspective should be identical regardless of the venue mechanism.
 - Fill price should be within the recent bid/ask spread.
-- Partial fills are valid; verify the cumulative filled quantity matches the order quantity.
+- Partial fills are valid. Verify the cumulative filled quantity matches the order quantity.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -199,7 +198,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -226,7 +225,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Position opened with side=SHORT, quantity matches config, fill price within market range. |
 | **Skip when**      | Adapter does not support market orders or short selling.                                  |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -238,7 +237,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -262,15 +261,15 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.                  |
 | **Action**         | Open position with `open_position_time_in_force=IOC`.                       |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | Same as TC-E01; the IOC TIF is explicitly set on the order.                 |
+| **Pass criteria**  | Same as TC-E01. The IOC TIF is explicitly set on the order.                 |
 | **Skip when**      | No IOC support.                                                             |
 
-**Considerations:**
+**Considerations**:
 
 - Some adapters simulate market orders as aggressive limit IOC. An unfilled simulated
   market maps to `OrderCanceled`, not `OrderRejected`.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -283,7 +282,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -308,15 +307,15 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, instrument loaded, market data flowing.                  |
 | **Action**         | Open position with `open_position_time_in_force=FOK`.                       |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | Same as TC-E01; the FOK TIF is explicitly set on the order.                 |
+| **Pass criteria**  | Same as TC-E01. The FOK TIF is explicitly set on the order.                 |
 | **Skip when**      | No FOK support.                                                             |
 
-**Considerations:**
+**Considerations**:
 
 - FOK requires the entire quantity to be fillable immediately or the order is canceled.
 - Use small test quantities so book depth is sufficient for a complete fill.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -329,7 +328,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -354,10 +353,10 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, instrument loaded, adapter supports quote quantity.           |
 | **Action**         | Open position with `use_quote_quantity=True`, quantity in quote currency.        |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`.      |
-| **Pass criteria**  | Order submitted with quote currency quantity; fill quantity is in base currency. |
+| **Pass criteria**  | Order submitted with quote currency quantity. Fill quantity is in base currency. |
 | **Skip when**      | Adapter does not support quote quantity orders.                                  |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -370,7 +369,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -393,12 +392,12 @@ ExecTesterConfig::builder()
 | Field              | Value                                                                                       |
 | ------------------ | ------------------------------------------------------------------------------------------- |
 | **Prerequisite**   | Open position from TC-E01 or TC-E02.                                                        |
-| **Action**         | Stop the strategy; ExecTester closes position via market order.                             |
+| **Action**         | Stop the strategy. ExecTester closes position via market order.                             |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled` (closing order). |
-| **Pass criteria**  | Position closed, or only the exact sub-precision residual remains; no open orders remain.   |
+| **Pass criteria**  | Position closed, or only the exact sub-precision residual remains. No open orders remain.   |
 | **Skip when**      | Adapter does not support market orders.                                                     |
 
-**Considerations:**
+**Considerations**:
 
 - This test naturally follows TC-E01 or TC-E02 as part of the same session.
 - `close_positions_on_stop=True` is the default.
@@ -406,7 +405,7 @@ ExecTesterConfig::builder()
 - Set `close_positions_qty_precision` when the venue accepts fewer size decimals than the
   instrument. The tester closes only that venue-fillable quantity and logs any exact residual.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -419,7 +418,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -466,13 +465,13 @@ Test limit order submission, acceptance, and behavior across time-in-force optio
 | **Pass criteria**  | Order is open on the venue with correct price, quantity, side=BUY, TIF=GTC. |
 | **Skip when**      | Never.                                                                      |
 
-**Considerations:**
+**Considerations**:
 
 - The `tob_offset_ticks` (default 500) places the order well away from the market to avoid accidental fills.
 - Verify the order appears in the cache with `OrderStatus.ACCEPTED`.
 - The order should remain open until explicitly canceled.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -483,7 +482,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -509,7 +508,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Order is open on the venue with correct price, quantity, side=SELL, TIF=GTC. |
 | **Skip when**      | Never.                                                                       |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -520,7 +519,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -546,7 +545,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Both orders open on venue, buy below bid, sell above ask.                                  |
 | **Skip when**      | Never.                                                                                     |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -557,7 +556,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -580,14 +579,14 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                       |
 | **Action**         | Submit a limit buy IOC at or above the best ask (aggressive price).         |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | Order fills immediately; position opened.                                   |
+| **Pass criteria**  | Order fills immediately. Position opened.                                   |
 | **Skip when**      | Adapter does not support IOC TIF.                                           |
 
-**Considerations:**
+**Considerations**:
 
 - This test requires manual order creation or adapter-specific configuration, as the ExecTester's
   default limit order placement uses GTC TIF.
-- IOC orders that don't fill immediately are canceled by the venue.
+- The venue cancels IOC orders that do not fill immediately.
 
 ### TC-E14: Limit IOC passive - no fill
 
@@ -599,10 +598,10 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Order is immediately canceled by venue with no fill.                          |
 | **Skip when**      | Adapter does not support IOC TIF.                                             |
 
-**Considerations:**
+**Considerations**:
 
-- The venue should cancel the unfilled IOC order; verify `OrderCanceled` (not `OrderExpired`
-  or `OrderRejected`).
+- The venue should cancel the unfilled IOC order. Verify `OrderCanceled` (not `OrderExpired` or
+  `OrderRejected`).
 
 ### TC-E15: Limit FOK fill
 
@@ -614,9 +613,9 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Order fills completely in a single fill event.                                     |
 | **Skip when**      | Adapter does not support FOK TIF.                                                  |
 
-**Considerations:**
+**Considerations**:
 
-- FOK requires the entire quantity to be fillable; use small quantities so book depth is sufficient.
+- FOK requires the entire quantity to be fillable. Use small quantities so book depth is sufficient.
 
 ### TC-E16: Limit FOK no fill
 
@@ -638,7 +637,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Order accepted with GTD TIF and correct expiry timestamp.                   |
 | **Skip when**      | Adapter does not support GTD TIF.                                           |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -650,7 +649,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -677,9 +676,9 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Order reaches the adapter-documented terminal status at venue expiry.       |
 | **Skip when**      | Adapter does not support GTD TIF.                                           |
 
-**Considerations:**
+**Considerations**:
 
-- Use the shortest expiry accepted by the venue; do not assume one or two minutes is valid.
+- Use the shortest expiry accepted by the venue. Do not assume one or two minutes is valid.
 - Some venues report GTD expiry as a cancel. Preserve and verify the documented adapter mapping
   instead of normalizing every venue to `OrderExpired`.
 
@@ -690,10 +689,10 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, instrument loaded, market is in trading hours.                  |
 | **Action**         | Submit limit buy with DAY TIF.                                                     |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                         |
-| **Pass criteria**  | Order accepted with DAY TIF; will be automatically canceled at end of trading day. |
+| **Pass criteria**  | Order accepted with DAY TIF. Will be automatically canceled at end of trading day. |
 | **Skip when**      | Adapter does not support DAY TIF.                                                  |
 
-**Considerations:**
+**Considerations**:
 
 - DAY orders may behave differently on 24/7 crypto venues vs traditional markets.
 - Verify behavior when submitted outside trading hours (if applicable).
@@ -727,17 +726,17 @@ orders appear in restart reconciliation, not only in the normal open-order endpo
 | **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=BUY. |
 | **Skip when**      | Adapter does not support `StopMarket` orders.                         |
 
-**Considerations:**
+**Considerations**:
 
 - The trigger price should be above the current ask by `stop_offset_ticks`.
 - The order should NOT trigger immediately (trigger price is above market).
-- For venues with long-lived trigger signatures, verify the trigger-order signing expiry uses
-  the venue's trigger-order window rather than the normal order expiry.
+- For venues with long-lived trigger signatures, check trigger-order signing expiry against the venue's
+  trigger-order window, rather than normal order expiry.
 - Verifying trigger and fill requires the market to move, which may not happen during the test.
-- After acceptance, restart or force reconciliation and verify the order still appears as an
-  open order report when the venue keeps trigger orders in a separate endpoint.
+- After acceptance, restart or force reconciliation. If the venue keeps trigger orders in a separate endpoint,
+  check the open order reports. Make sure that the order still appears there.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -751,7 +750,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -780,7 +779,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Stop order accepted on venue with correct trigger price and side=SELL. |
 | **Skip when**      | Adapter does not support `StopMarket` orders.                          |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -794,7 +793,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -823,11 +822,11 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Stop-limit order accepted with correct trigger price, limit price, and side=BUY.  |
 | **Skip when**      | Adapter does not support `StopLimit` orders.                                      |
 
-**Considerations:**
+**Considerations**:
 
 - Requires `stop_limit_offset_ticks` to be set for the limit price offset from the trigger price.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -842,7 +841,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -872,7 +871,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Stop-limit order accepted with correct trigger price, limit price, and side=SELL. |
 | **Skip when**      | Adapter does not support `StopLimit` orders.                                      |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -887,7 +886,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -975,22 +974,22 @@ combinations.
 | **Prerequisite**   | Open GTC limit buy from TC-E10.                                              |
 | **Action**         | ExecTester modifies the open limit buy to a new price.                       |
 | **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                      |
-| **Pass criteria**  | `OrderUpdated` event logged with the new price; order exits `PendingUpdate`. |
+| **Pass criteria**  | `OrderUpdated` event logged with the new price. Order exits `PendingUpdate`. |
 | **Skip when**      | Adapter does not support order modification.                                 |
 
-**Considerations:**
+**Considerations**:
 
 - `trigger_limit_order_maintenance_once=True` amends to a different valid price directly from
   the first `OrderAccepted`, preferring one tick more passive. A quiet book is not inconclusive.
-- The one-shot workflow stops further limit maintenance for that side after it starts, so the
-  tester does not immediately amend the order back to the TOB target.
+- After the one-shot workflow starts, it stops further limit maintenance for that side. Thus, the tester does
+  not immediately amend the order back to the TOB target.
 - Without that flag, the modify waits for the order price to drift from the target
   TOB offset. No movement and no `OrderUpdated` is inconclusive, not a failure.
 - Verify the `OrderUpdated` log shows the expected price. If the event never
   arrives after a forced or drift-triggered amend, the order stays in `PendingUpdate`
   and the tester stops modifying it.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1003,7 +1002,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1028,14 +1027,14 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Open GTC limit sell from TC-E11.                                             |
 | **Action**         | ExecTester modifies the open limit sell to a new price.                      |
 | **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                      |
-| **Pass criteria**  | `OrderUpdated` event logged with the new price; order exits `PendingUpdate`. |
+| **Pass criteria**  | `OrderUpdated` event logged with the new price. Order exits `PendingUpdate`. |
 | **Skip when**      | Adapter does not support order modification.                                 |
 
-**Considerations:**
+**Considerations**:
 
 - Same one-shot trigger and quiet-book guidance as TC-E30.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1048,7 +1047,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1076,7 +1075,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Original order canceled, new order accepted at updated price.                                         |
 | **Skip when**      | Never (cancel-replace is always available).                                                           |
 
-**Considerations:**
+**Considerations**:
 
 - This is the universal alternative when the adapter does not support native modify.
 - Two distinct orders in the cache: the canceled original and the new replacement.
@@ -1085,7 +1084,7 @@ ExecTesterConfig::builder()
 - Without the one-shot trigger, cancel-replace waits for TOB drift. No movement and no replacement
   is inconclusive, not a failure.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1098,7 +1097,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1126,11 +1125,11 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Original order canceled, new order accepted at updated price.                                         |
 | **Skip when**      | Never.                                                                                                |
 
-**Considerations:**
+**Considerations**:
 
 - Same one-shot trigger and quiet-book guidance as TC-E32.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1143,7 +1142,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1168,15 +1167,15 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Open stop order from TC-E20 or TC-E22.                                                                 |
 | **Action**         | ExecTester modifies stop trigger price as market moves (`modify_stop_orders_to_maintain_offset=True`). |
 | **Event sequence** | `OrderPendingUpdate` -> `OrderUpdated`.                                                                |
-| **Pass criteria**  | `OrderUpdated` event logged with the new trigger price; order exits `PendingUpdate`.                   |
+| **Pass criteria**  | `OrderUpdated` event logged with the new trigger price. Order exits `PendingUpdate`.                   |
 | **Skip when**      | Adapter does not support native stop modify, or no stop order support.                                 |
 
-**Considerations:**
+**Considerations**:
 
 - Some venues allow limit-order modify but reject trigger-order replace. For those adapters,
   skip TC-E34 and run TC-E35 instead.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1187,7 +1186,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1213,13 +1212,13 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Original stop canceled, new stop accepted at updated trigger price.                                   |
 | **Skip when**      | No stop order support.                                                                                |
 
-**Considerations:**
+**Considerations**:
 
 - This is the required path for venues that do not support native trigger-order replace.
 - After the new stop is accepted, restart or force reconciliation and verify exactly one
   current trigger order remains.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1230,7 +1229,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1253,10 +1252,10 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Open limit order, adapter does NOT support modify.                                                   |
 | **Action**         | Attempt to modify the order (programmatically, not via ExecTester auto-maintain).                    |
 | **Event sequence** | `OrderModifyRejected`.                                                                               |
-| **Pass criteria**  | Modify attempt results in `OrderModifyRejected` event with reason; original order remains unchanged. |
+| **Pass criteria**  | Modify attempt results in `OrderModifyRejected` event with reason. Original order remains unchanged. |
 | **Skip when**      | Adapter supports order modification.                                                                 |
 
-**Considerations:**
+**Considerations**:
 
 - This tests the adapter's rejection path, not the ExecTester's cancel-replace logic.
 - The rejection reason should indicate that modification is not supported.
@@ -1280,17 +1279,17 @@ Test order cancellation workflows.
 | Field              | Value                                                           |
 | ------------------ | --------------------------------------------------------------- |
 | **Prerequisite**   | Open GTC limit order from TC-E10 or TC-E11.                     |
-| **Action**         | Stop the strategy; ExecTester cancels the open limit order.     |
+| **Action**         | Stop the strategy. ExecTester cancels the open limit order.     |
 | **Event sequence** | `OrderPendingCancel` -> `OrderCanceled`.                        |
-| **Pass criteria**  | Order status transitions to CANCELED; no open orders remaining. |
+| **Pass criteria**  | Order status transitions to CANCELED. No open orders remaining. |
 | **Skip when**      | Never.                                                          |
 
-**Considerations:**
+**Considerations**:
 
 - `cancel_orders_on_stop=True` (default) triggers cancellation when the strategy stops.
 - Verify the `OrderCanceled` event contains the correct `venue_order_id`.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1302,7 +1301,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1326,16 +1325,16 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Multiple open orders (limit buy + limit sell from TC-E12).     |
 | **Action**         | Stop the strategy with `cancel_orders_on_stop=True` (default). |
 | **Event sequence** | For each order: `OrderPendingCancel` -> `OrderCanceled`.       |
-| **Pass criteria**  | All open orders canceled; no open orders remaining.            |
+| **Pass criteria**  | All open orders canceled. No open orders remaining.            |
 | **Skip when**      | Never.                                                         |
 
-**Considerations:**
+**Considerations**:
 
 - Default stop uses `cancel_all`. Some venues implement that as account-wide. Confirm
   the adapter's `CancelAllOrders` scope before running beside other open orders.
   Use `use_individual_cancels_on_stop` or `use_batch_cancel_on_stop` to isolate.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1347,7 +1346,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1371,10 +1370,10 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Multiple open orders.                                               |
 | **Action**         | Stop with `use_individual_cancels_on_stop=True`.                    |
 | **Event sequence** | Individual `OrderPendingCancel` -> `OrderCanceled` for each order.  |
-| **Pass criteria**  | Each order canceled individually; all orders reach CANCELED status. |
+| **Pass criteria**  | Each order canceled individually. All orders reach CANCELED status. |
 | **Skip when**      | Never.                                                              |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1386,7 +1385,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1410,10 +1409,10 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Multiple open orders, adapter supports batch cancel.                     |
 | **Action**         | Stop with `use_batch_cancel_on_stop=True`.                               |
 | **Event sequence** | Batch `OrderPendingCancel` -> `OrderCanceled` for all orders.            |
-| **Pass criteria**  | All orders canceled via single batch request; all reach CANCELED status. |
+| **Pass criteria**  | All orders canceled via single batch request. All reach CANCELED status. |
 | **Skip when**      | Adapter does not support batch cancel.                                   |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1425,7 +1424,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1452,7 +1451,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Result matches the adapter contract without a duplicate terminal event.               |
 | **Skip when**      | Never.                                                                                |
 
-**Considerations:**
+**Considerations**:
 
 - The default contract tests the adapter's error handling for invalid cancel requests. The
   rejection reason should indicate the order is not in a cancelable state.
@@ -1482,11 +1481,11 @@ Test bracket order submission (entry + take-profit + stop-loss).
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                                                                                   |
 | **Action**         | ExecTester submits a bracket order: limit buy entry + take-profit sell + stop-loss sell.                                                |
-| **Event sequence** | Entry: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`; TP and SL: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
+| **Event sequence** | Entry: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. TP and SL: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`. |
 | **Pass criteria**  | Three orders created and accepted: entry below bid, TP above ask, SL below entry.                                                       |
 | **Skip when**      | Adapter does not support bracket orders.                                                                                                |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1500,7 +1499,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1534,12 +1533,12 @@ ExecTesterConfig::builder()
 | Field              | Value                                                                 |
 | ------------------ | --------------------------------------------------------------------- |
 | **Prerequisite**   | Bracket order from TC-E50 where entry order fills.                    |
-| **Action**         | Entry order fills; verify contingent TP and SL orders activate.       |
-| **Event sequence** | Entry: `OrderFilled`; TP and SL transition from contingent to active. |
+| **Action**         | Entry order fills. Verify contingent TP and SL orders activate.       |
+| **Event sequence** | Entry: `OrderFilled`. TP and SL transition from contingent to active. |
 | **Pass criteria**  | After entry fill, TP and SL orders are live on the venue.             |
 | **Skip when**      | Adapter does not support bracket orders.                              |
 
-**Considerations:**
+**Considerations**:
 
 - This requires the entry order to actually fill, which may need aggressive pricing.
 - The TP/SL activation mechanism varies by venue (some activate immediately, some are OCA groups).
@@ -1551,7 +1550,7 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter supports brackets and post-only.                                |
 | **Action**         | Submit bracket with `use_post_only=True` (applied to entry and TP).     |
 | **Event sequence** | Same as TC-E50 with post-only flag on entry.                            |
-| **Pass criteria**  | Entry and TP orders accepted as post-only (maker); SL is not post-only. |
+| **Pass criteria**  | Entry and TP orders accepted as post-only (maker). SL is not post-only. |
 | **Skip when**      | No bracket support or no post-only support.                             |
 
 ---
@@ -1574,10 +1573,10 @@ Test order-level flags and special parameters.
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                   |
 | **Action**         | ExecTester places limit buy with `use_post_only=True` at passive price. |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.              |
-| **Pass criteria**  | Order accepted as a maker order; post-only flag acknowledged by venue.  |
+| **Pass criteria**  | Order accepted as a maker order. Post-only flag acknowledged by venue.  |
 | **Skip when**      | Adapter does not support post-only flag.                                |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1589,7 +1588,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1611,12 +1610,12 @@ ExecTesterConfig::builder()
 | Field              | Value                                                                                          |
 | ------------------ | ---------------------------------------------------------------------------------------------- |
 | **Prerequisite**   | Open position (from TC-E01).                                                                   |
-| **Action**         | Stop strategy with `reduce_only_on_stop=True`; closing order uses reduce-only flag.            |
+| **Action**         | Stop strategy with `reduce_only_on_stop=True`. Closing order uses reduce-only flag.            |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled` (with reduce-only). |
-| **Pass criteria**  | Closing order has reduce-only flag; position fully closed.                                     |
+| **Pass criteria**  | Closing order has reduce-only flag. Position fully closed.                                     |
 | **Skip when**      | Adapter does not support reduce-only flag.                                                     |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1630,7 +1629,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1656,10 +1655,10 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, adapter supports display quantity.                           |
 | **Action**         | Place limit order with `order_display_qty` < `order_qty`.                       |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                      |
-| **Pass criteria**  | Order accepted with display quantity set; only display qty visible on the book. |
+| **Pass criteria**  | Order accepted with display quantity set. Only display qty visible on the book. |
 | **Skip when**      | Adapter does not support display quantity / iceberg orders.                     |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1671,7 +1670,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1695,10 +1694,10 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, adapter accepts additional parameters.                    |
 | **Action**         | Place order with `order_params` dict containing adapter-specific parameters. |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.                   |
-| **Pass criteria**  | Order accepted; adapter-specific parameters passed through to venue.         |
+| **Pass criteria**  | Order accepted. Adapter-specific parameters passed through to venue.         |
 | **Skip when**      | N/A (adapter-specific).                                                      |
 
-**Considerations:**
+**Considerations**:
 
 - The `order_params` dict is opaque to the ExecTester and passed through to the adapter.
 - Consult the adapter's guide for supported parameters.
@@ -1726,12 +1725,12 @@ WebSocket boundary rather than a live venue.
 
 ### Ambiguous outcome failures
 
-These cases prove that adapter request failures do not turn into terminal rejection events when
-the venue outcome is unknown. The pass criteria also define the local prepare-failure carve-out:
-when a command is known not to have been sent and is attributable to one cancel or modify command,
-the adapter may emit the matching rejection event.
+These cases prove that adapter request failures do not turn into terminal rejection events when the venue
+outcome is unknown. The pass criteria also define an exception for local prepare failures. The command must be
+known not to have been sent. The failure must be attributable to one cancel or modify command. If both
+conditions hold, the adapter can emit the matching rejection event.
 
-**Pass criteria:**
+**Pass criteria**:
 
 - Submit failures from transport errors, timeouts, WebSocket send failures, retry exhaustion, or
   response parse failures do not emit `OrderRejected`.
@@ -1758,17 +1757,17 @@ reconciliation pass resolves it.
 | **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                                                                           |
 | **Action**         | ExecTester places post-only order on the wrong side of the book (`test_reject_post_only=True`), causing it to cross the spread. |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.                                                                      |
-| **Pass criteria**  | Venue rejects order; `OrderRejected.due_post_only=true`; reason names post-only violation.                                      |
+| **Pass criteria**  | Venue rejects order. `OrderRejected.due_post_only=true`. Reason names post-only violation.                                      |
 | **Skip when**      | Adapter does not support post-only flag.                                                                                        |
 
-**Considerations:**
+**Considerations**:
 
 - The ExecTester's `test_reject_post_only` mode intentionally prices the order to cross.
-- Some venues may partially fill instead of rejecting; behavior is venue-specific.
+- Some venues may partially fill instead of rejecting. Behavior is venue-specific.
 - Adapters that emit `OrderRejected` for a post-only crossing reject should set
   `due_post_only=true` so strategies can distinguish this from other venue rejections.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1781,7 +1780,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1806,16 +1805,16 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, no open position for the instrument.                                                                                                            |
 | **Action**         | ExecTester opens a market position with `reduce_only=True` via `test_reject_reduce_only=True` and `open_position_on_start_qty`, when no position exists to reduce. |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`.                                                                                                         |
-| **Pass criteria**  | Order rejected; `OrderRejected` event with reason indicating reduce-only violation.                                                                                |
+| **Pass criteria**  | Order rejected. `OrderRejected` event with reason indicating reduce-only violation.                                                                                |
 | **Skip when**      | Adapter does not support reduce-only flag.                                                                                                                         |
 
-**Considerations:**
+**Considerations**:
 
 - The `test_reject_reduce_only` flag only applies to the opening market order submitted via
   `open_position_on_start_qty`.
 - Verify no prior position exists for the instrument before running this test.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1828,7 +1827,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1853,15 +1852,15 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, order type not in adapter's supported set.        |
 | **Action**         | Submit an order type the adapter does not support.                   |
 | **Event sequence** | `OrderDenied` (pre-submission rejection by adapter).                 |
-| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason. |
+| **Pass criteria**  | Order denied before reaching venue. `OrderDenied` event with reason. |
 | **Skip when**      | Never (every adapter has unsupported order types to test).           |
 
-**Considerations:**
+**Considerations**:
 
 - `OrderDenied` occurs at the adapter level before the order reaches the venue.
-- This differs from the normal `OrderRejected` path, which follows a venue rejection.
-  Reconciliation can also synthesize `OrderRejected`; see
-  [Terminal reconciliation provenance](../concepts/execution/policies.md#terminal-reconciliation-provenance).
+- This differs from the normal `OrderRejected` path, which follows a venue rejection. Reconciliation can also
+  synthesize `OrderRejected`. See [Terminal reconciliation
+  provenance](../concepts/execution/policies.md#terminal-reconciliation-provenance).
 - Test by configuring a stop order type that the adapter does not support.
 
 ### TC-E73: Unsupported TIF
@@ -1871,10 +1870,10 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Adapter connected, TIF not in adapter's supported set.               |
 | **Action**         | Submit an order with a TIF the adapter does not support.             |
 | **Event sequence** | `OrderDenied` (pre-submission rejection by adapter).                 |
-| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason. |
+| **Pass criteria**  | Order denied before reaching venue. `OrderDenied` event with reason. |
 | **Skip when**      | Never (every adapter has unsupported TIF options to test).           |
 
-**Considerations:**
+**Considerations**:
 
 - Similar to TC-E72 but for time-in-force options.
 - Test with TIF values from the Nautilus enum that the adapter does not map.
@@ -1908,10 +1907,10 @@ TC-E88 and TC-E89 run offline as deterministic adapter unit or integration tests
 | **Prerequisite**   | Adapter connected, instrument loaded, no existing position.                                        |
 | **Action**         | Strategy starts with `open_position_on_start_qty` set.                                             |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`.                        |
-| **Pass criteria**  | Position opened on start; market order submitted and filled before limit order maintenance begins. |
+| **Pass criteria**  | Position opened on start. Market order submitted and filled before limit order maintenance begins. |
 | **Skip when**      | Adapter does not support market orders.                                                            |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1921,7 +1920,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -1953,7 +1952,7 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Open position from the strategy session.                                                   |
 | **Action**         | Stop the strategy with `close_positions_on_stop=True` (default).                           |
 | **Event sequence** | Closing order: `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderFilled`. |
-| **Pass criteria**  | Positions closed, or only exact sub-precision residuals remain; no open orders remain.     |
+| **Pass criteria**  | Positions closed, or only exact sub-precision residuals remain. No open orders remain.     |
 | **Skip when**      | Adapter does not support market orders.                                                    |
 
 ### TC-E83: Unsubscribe on stop
@@ -1963,10 +1962,10 @@ ExecTesterConfig::builder()
 | **Prerequisite**   | Active data subscriptions (quotes, trades, book).                |
 | **Action**         | Stop the strategy with `can_unsubscribe=True` (default).         |
 | **Event sequence** | Data subscriptions removed.                                      |
-| **Pass criteria**  | No further data events received after stop; clean disconnection. |
+| **Pass criteria**  | No further data events received after stop. Clean disconnection. |
 | **Skip when**      | Adapter does not support unsubscribe.                            |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -1976,7 +1975,7 @@ ExecTesterConfig(
 )
 ```
 
-**Rust config:**
+**Rust config**:
 
 ```rust
 ExecTesterConfig::builder()
@@ -2001,7 +2000,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Each open order is loaded into the cache with correct `venue_order_id`, status=ACCEPTED, price, quantity, side, and order type. |
 | **Skip when**      | Never.                                                                                                                          |
 
-**Considerations:**
+**Considerations**:
 
 - Leave limit orders open from a prior test session (do not cancel on stop).
 - Configure `external_order_instrument_ids` so strategy registration creates the active claim used
@@ -2022,7 +2021,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Each filled order is loaded into the cache with correct `venue_order_id`, status=FILLED, fill price, fill quantity, and commission. |
 | **Skip when**      | Never.                                                                                                                              |
 
-**Considerations:**
+**Considerations**:
 
 - Requires orders that filled in a prior session.
 - Verify fill price, quantity, and commission match the venue's reported values.
@@ -2041,7 +2040,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Position loaded into cache with correct instrument, side=LONG, quantity, and entry price matching the venue. |
 | **Skip when**      | Never.                                                                                                       |
 
-**Considerations:**
+**Considerations**:
 
 - Open a long position in a prior session and stop the strategy without closing it
   (`close_positions_on_stop=False`).
@@ -2058,7 +2057,7 @@ ExecTesterConfig::builder()
 | **Pass criteria**  | Position loaded into cache with correct instrument, side=SHORT, quantity, and entry price matching the venue. |
 | **Skip when**      | Never.                                                                                                        |
 
-**Considerations:**
+**Considerations**:
 
 - Open a short position in a prior session and stop the strategy without closing it
   (`close_positions_on_stop=False`).
@@ -2071,17 +2070,17 @@ ExecTesterConfig::builder()
 | ------------------ | --------------------------------------------------------------------------------------------------------------- |
 | **Prerequisite**   | A deterministic fixture produces an out-of-range commission for an owned, confirmed fill.                       |
 | **Action**         | Exercise direct fill, mass-status, targeted report, and inferred-fill commission paths with the fixture.        |
-| **Event sequence** | Report requests return an error; engine reconciliation logs a hook error and emits no fallback inferred fill.   |
-| **Pass criteria**  | The error is observable; startup fails or inferred work defers; a later valid response reconciles exactly once. |
+| **Event sequence** | Report requests return an error. Engine reconciliation logs a hook error and emits no fallback inferred fill.   |
+| **Pass criteria**  | The error is observable. Startup fails or inferred work defers. A later valid response reconciles exactly once. |
 | **Skip when**      | The adapter does not calculate commission for fill reports.                                                     |
 
-**Considerations:**
+**Considerations**:
 
 - Assert that no zero or generic commission replaces the failed venue calculation.
 - Exercise the inferred-fill hook as well as direct `FillReport` construction.
 - Skip the inferred-fill portion when the adapter does not override the shared commission hook.
-- Assert that hook quantity, price, and liquidity inputs match the emitted inferred fill, including
-  the back-solved price of an incremental residual after a prior fill.
+- Assert that hook quantity, price, and liquidity inputs match the emitted inferred fill. Include the
+  back-solved price of an incremental residual after a prior fill.
 - Valid explicit fills may apply, but the residual quantity and dependent terminal transition stay
   pending.
 - A position-only synthetic correction without trade evidence is not a commission calculation
@@ -2093,15 +2092,14 @@ ExecTesterConfig::builder()
 | ------------------ | -------------------------------------------------------------------------------------------------------------------- |
 | **Prerequisite**   | A private fill fixture produces an out-of-range commission and has a stable venue trade ID.                          |
 | **Action**         | Deliver the invalid trade, replace its commission with a valid value, then redeliver the same trade ID.              |
-| **Event sequence** | The first delivery emits no fill and changes no fill, terminal, or deduplication state; the replay emits one fill.   |
-| **Pass criteria**  | No panic or fallback occurs; the valid replay applies exactly once; REST reconciliation can recover a missed replay. |
+| **Event sequence** | The first delivery emits no fill and changes no fill, terminal, or deduplication state. The replay emits one fill.   |
+| **Pass criteria**  | No panic or fallback occurs. The valid replay applies exactly once. REST reconciliation can recover a missed replay. |
 | **Skip when**      | The adapter has no private fill stream or does not calculate commission for private fills.                           |
 
-**Considerations:**
+**Considerations**:
 
-- For a venue trade that fills several owned orders, make one report fail and assert that the first
-  delivery emits none of them. This prevents a replay from duplicating reports built before the
-  failure.
+- For a venue trade that fills several owned orders, make one report fail. Assert that the first delivery
+  emits none of those reports. This prevents a replay from duplicating reports built before the failure.
 - Assert that the adapter consumes the deduplication key only after all reports construct and route
   successfully.
 - Assert that a failed trade does not confirm or terminalize its order.
@@ -2110,10 +2108,9 @@ ExecTesterConfig::builder()
 
 ## Group 10: Options trading
 
-Test options-specific execution behavior. Options instruments typically
-have different constraints from linear derivatives: venues may restrict
-order types, support alternative pricing modes, or disallow conditional
-orders. Exact restrictions vary by venue; consult the adapter guide.
+Test options-specific execution behavior. Options instruments typically have different constraints from linear
+derivatives: venues may restrict order types, support alternative pricing modes, or disallow conditional
+orders. Exact restrictions vary by venue. Consult the adapter guide.
 
 These tests require a `CryptoOption` instrument. Use an OTM option with
 reasonable liquidity for fills.
@@ -2124,7 +2121,7 @@ reasonable liquidity for fills.
 | TC-E91  | Limit SELL option             | Place a limit sell on an option instrument.                           | No options support. |
 | TC-E92  | Limit with alt pricing        | Place a limit order with adapter-specific pricing via `order_params`. | No alt pricing.     |
 | TC-E94  | Unsupported order type denied | Submit an order type the adapter rejects for options.                 | No options support. |
-| TC-E96  | Conditional order rejected    | Submit a stop/conditional order on an option; expect rejection.       | No options support. |
+| TC-E96  | Conditional order rejected    | Submit a stop/conditional order on an option. Expect rejection.       | No options support. |
 | TC-E99  | FOK limit option              | Place a FOK limit order on an option instrument.                      | No FOK options.     |
 | TC-E100 | Cancel option order           | Cancel an open limit order on an option instrument.                   | No options support. |
 | TC-E101 | Reconcile option position     | Reconcile an open option position from a prior session.               | No options support. |
@@ -2139,7 +2136,7 @@ reasonable liquidity for fills.
 | **Pass criteria**  | Order accepted by venue with correct instrument, side, price, and quantity. |
 | **Skip when**      | Adapter does not support options trading.                                   |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -2161,7 +2158,7 @@ ExecTesterConfig(
 | **Pass criteria**  | Order accepted by venue with correct instrument, side, price, and quantity. |
 | **Skip when**      | Adapter does not support options trading.                                   |
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -2180,17 +2177,17 @@ ExecTesterConfig(
 | **Prerequisite**   | Adapter connected, option instrument loaded.                        |
 | **Action**         | Place limit order with adapter-specific pricing via `order_params`. |
 | **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted`.          |
-| **Pass criteria**  | Order accepted; venue acknowledges the alternative pricing mode.    |
+| **Pass criteria**  | Order accepted. Venue acknowledges the alternative pricing mode.    |
 | **Skip when**      | Adapter does not support alternative pricing modes for options.     |
 
-**Considerations:**
+**Considerations**:
 
 - The `price` field on the order object may be a placeholder when alternative pricing
   is active. Consult the adapter guide for supported parameter keys.
 - Example: OKX supports `px_usd` (USD price) and `px_vol` (implied volatility).
 - Verify in venue responses that the pricing mode is reflected correctly.
 
-**Python config:**
+**Python config**:
 
 ```python
 ExecTesterConfig(
@@ -2212,10 +2209,10 @@ ExecTesterConfig(
 | **Pass criteria**  | Order does not fill. Denial or rejection reason references the unsupported order type.                      |
 | **Skip when**      | Adapter does not support options.                                                                           |
 
-**Considerations:**
+**Considerations**:
 
-- The exact rejection point varies by adapter. Some adapters deny locally before
-  submitting; others submit and relay the venue rejection.
+- The exact rejection point varies by adapter. Some adapters deny locally before submitting. Others submit and
+  relay the venue rejection.
 - ExecTester can trigger a market order via `open_position_on_start_qty` on an
   option instrument. Some unsupported types (e.g. `MarketToLimit`) require
   manual or programmatic submission.
@@ -2231,7 +2228,7 @@ ExecTesterConfig(
 | **Pass criteria**  | Order does not fill. Reason references unsupported conditional order type.                                  |
 | **Skip when**      | Adapter does not support options, or adapter supports conditionals for options.                             |
 
-**Considerations:**
+**Considerations**:
 
 - Test each conditional type the adapter documents as unsupported for options
   (e.g. `STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`,
@@ -2249,7 +2246,7 @@ ExecTesterConfig(
 | **Pass criteria**  | Order fills completely or is canceled. No partial fills.                                       |
 | **Skip when**      | Adapter does not support FOK for options.                                                      |
 
-**Considerations:**
+**Considerations**:
 
 - Some venues use a dedicated order type for options FOK orders (e.g. OKX uses
   `op_fok`). The adapter handles this mapping transparently.
@@ -2262,7 +2259,7 @@ ExecTesterConfig(
 | **Prerequisite**   | Open limit order from TC-E90 or TC-E91.                        |
 | **Action**         | Cancel the open limit order.                                   |
 | **Event sequence** | `OrderPendingCancel` -> `OrderCanceled`.                       |
-| **Pass criteria**  | Order canceled; no longer appears in open orders on the venue. |
+| **Pass criteria**  | Order canceled. No longer appears in open orders on the venue. |
 | **Skip when**      | Adapter does not support options.                              |
 
 ### TC-E101: Reconcile option position
@@ -2275,7 +2272,7 @@ ExecTesterConfig(
 | **Pass criteria**  | Position loaded into cache with correct instrument, side, quantity, and entry price. |
 | **Skip when**      | Adapter does not support options.                                                    |
 
-**Considerations:**
+**Considerations**:
 
 - Open an option position in a prior session and stop without closing
   (`close_positions_on_stop=False`).
@@ -2285,8 +2282,8 @@ ExecTesterConfig(
 
 ## ExecTester configuration reference
 
-Quick reference for every Python `ExecTesterConfig` parameter. Defaults are resolved values after
-construction; the Rust builder uses equivalent defaults.
+Quick reference for each Python `ExecTesterConfig` parameter. Defaults are resolved values after construction.
+The Rust builder uses equivalent defaults.
 
 | Parameter                                       | Type                  | Default                | Affects groups |
 | ----------------------------------------------- | --------------------- | ---------------------- | -------------- |

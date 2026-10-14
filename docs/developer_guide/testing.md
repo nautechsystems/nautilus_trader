@@ -1,8 +1,8 @@
 # Testing
 
-Our automated tests serve as executable specifications for the trading platform.
-A healthy suite documents intended behavior, gives contributors confidence to refactor, and catches regressions before they reach production.
-Tests also double as living examples that clarify complex flows and provide rapid CI feedback so issues surface early.
+Automated tests serve as executable specifications for the trading platform. They document intended
+behavior, support confident refactoring, and catch regressions before production. Tests also provide
+examples of complex flows and rapid CI feedback so issues surface early.
 
 The suite covers these categories:
 
@@ -18,23 +18,24 @@ The suite covers these categories:
 
 Tests and runtime contracts form one design system. The
 [Design by contract](rust.md#design-by-contract) ladder pushes invariants into the type
-system where possible; the testing ladder below escalates the remaining unknowns through
-larger input spaces and richer execution models. Each layer extends coverage to inputs
-or execution states the layer below cannot reach.
+system where possible. The testing ladder below escalates the remaining unknowns through larger input spaces
+and richer execution models. Each layer extends coverage to inputs or execution states the layer below cannot
+reach.
 
 Not every module requires every technique. Use this section to decide which layers apply
 before adding tests or `debug_assert!` statements.
 
 ### Mechanism ladder
 
-Runtime contracts are covered in the [Rust guide](rust.md#design-by-contract): prefer the
-type system first, then `check_*` from `nautilus_core::correctness` at API boundaries,
-then `debug_assert!` for internal invariants, then `assert!` for soundness-critical or
-always-on checks.
+The [Rust guide](rust.md#design-by-contract) covers runtime contracts. The order of preference is:
 
-Test layers follow a parallel escalation. Start at the lowest layer that proves what
-matters; climb only when the layer below stops detecting regressions or when the input
-space grows beyond hand-picked cases.
+1. The type system.
+1. `check_*` from `nautilus_core::correctness` at API boundaries.
+1. `debug_assert!` for internal invariants.
+1. `assert!` for soundness-critical or always-on checks.
+
+Test layers follow a parallel escalation. Start at the lowest layer that proves what matters. Climb only if
+that layer stops detecting regressions or the input space grows beyond hand-picked cases.
 
 | Layer                    | Trigger condition                                                               |
 | ------------------------ | ------------------------------------------------------------------------------- |
@@ -53,9 +54,9 @@ not a current obligation.
 
 ### Projection rule
 
-Module shape determines which layers pay off. Not every module warrants the full ladder.
-Apply the rule at module granularity, not crate granularity: an adapter crate contains
-pure parsers and I/O-bound client loops, and each row applies to a different part.
+Module shape determines which layers pay off. Some modules do not need the full ladder. Apply the rule to each
+module, not each crate. An adapter crate contains pure parsers and I/O-bound client loops. Each row applies to
+a different part.
 
 | Module shape                        | Layers that apply                             | Example                                |
 | ----------------------------------- | --------------------------------------------- | -------------------------------------- |
@@ -67,9 +68,9 @@ pure parsers and I/O-bound client loops, and each row applies to a different par
 
 ### When not to add coverage
 
-- Add `debug_assert!` only where a test can reach it. Release builds strip the check, so
-  an unexercised assertion has no signal. A targeted unit test counts as a harness; a
-  proptest or fuzz harness amplifies the signal.
+- Add `debug_assert!` only where a test can reach it. Release builds strip the check, so an unexercised
+  assertion has no signal. A targeted unit test counts as a harness. A proptest or fuzz harness amplifies the
+  signal.
 - Prefer a proptest over a hand-written edge-case test when the invariant spans a whole
   class of inputs. Targeted unit tests remain valid for known venue pathologies and as
   regression reproducers for shrunk counterexamples.
@@ -92,22 +93,21 @@ non-determinism. Before promoting a module to run under DST, verify the followin
   `std::thread::spawn`, or `tokio::task::spawn_blocking` escape the seam. Blocking-thread
   and OS-thread primitives break madsim determinism the same way an ambient clock read
   does.
-- Replay-sensitive IDs (`trade_id`, `venue_order_id`) are pure functions of their inputs;
-  see `crates/execution/src/reconciliation/ids.rs`. Ephemeral event UUIDs on other
-  reconciliation paths do not need to be deterministic.
+- Replay-sensitive IDs (`trade_id`, `venue_order_id`) are pure functions of their inputs. See
+  `crates/execution/src/reconciliation/ids.rs`. Ephemeral event UUIDs on other reconciliation paths do not
+  need to be deterministic.
 
-The `surface` probe in `crates/common/src/live/dst.rs` only pins the re-export shape;
-it does not check that callers actually use the seam. Enforcement is by review. Run the
-audit whenever a new async module enters the workspace or an existing module gains new
-control-plane scheduling.
+The `surface` probe in `crates/common/src/live/dst.rs` only pins the re-export shape. It does not check that
+callers actually use the seam. Enforcement is by review. Run the audit whenever a new async module enters the
+workspace or an existing module gains new control-plane scheduling.
 
 ## Property-based testing
 
 Property testing verifies that logic holds for *all* valid inputs, not just hand-picked examples.
 We use [`proptest`](https://altsysrq.github.io/proptest-book/intro.html) in Rust to enforce invariants.
 
-- **Use cases:** Core domain types (`Price`, `Quantity`, `UnixNanos`), accounting engines, matching engines, and state machines.
-- **Example invariants:**
+- **Use cases**: Core domain types (`Price`, `Quantity`, `UnixNanos`), accounting engines, matching engines, and state machines.
+- **Example invariants**:
   - Round-trip serialization: `parse(to_string(value)) == value`
   - Inverse operations: `(A + B) - B == A`
   - Transitivity: `If A < B and B < C, then A < C`
@@ -116,8 +116,8 @@ We use [`proptest`](https://altsysrq.github.io/proptest-book/intro.html) in Rust
 
 Fuzzing introduces unstructured or malicious data to the system to verify it fails gracefully.
 
-- **Use cases:** Network boundaries, exchange data parsers (JSON, FIX, WebSocket feeds), and complex state machines.
-- **Goal:** The system returns a `Result::Err` and never panics, hangs, or leaks memory when encountering malformed data.
+- **Use cases**: Network boundaries, exchange data parsers (JSON, FIX, WebSocket feeds), and complex state machines.
+- **Goal**: The system returns a `Result::Err` and never panics, hangs, or leaks memory when encountering malformed data.
 
 Adapter fuzz binaries are registered in each adapter package behind its `fuzz` feature. Run all
 registered targets for one adapter from the repository root:
@@ -126,9 +126,10 @@ registered targets for one adapter from the repository root:
 scripts/fuzz-adapter.sh derive
 ```
 
-The workspace pins `libfuzzer-sys`, and `nautilus-live` owns the shared libFuzzer integration. A
-separate `publish = false` package is reserved for fuzz targets that require dependencies which
-must not enter a published adapter graph, such as Lighter's git-pinned Pornin differential oracle.
+The workspace pins `libfuzzer-sys`, and `nautilus-live` owns the shared libFuzzer integration. A separate
+`publish = false` package is reserved only for fuzz targets whose dependencies must not enter a published
+adapter graph.
+Lighter's git-pinned Pornin differential oracle is one such dependency.
 
 When building or modifying core types, write property tests to cover the mathematical boundaries.
 
@@ -142,8 +143,10 @@ Use parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid 
 CI runs `scripts/ci/check_test_network.py` through `make test-scripts` to flag direct network calls
 with non-local literal addresses, explicit live-test switches, and fork-RPC options. It checks test
 directories and Rust files from their named test module onward. Loopback addresses and reserved
-fixture domains are allowed. This is a heuristic regression check: it does not resolve variable
-destinations, follow calls into other code, or enforce network isolation.
+fixture domains are allowed.
+
+**Check limits**: This heuristic does not resolve variable destinations, follow calls into other
+code, or enforce network isolation.
 
 ### Python tests
 
@@ -161,14 +164,13 @@ global Rust state conflicts. Use `make pytest` rather than invoking pytest direc
 `PYTEST_XDIST_AUTO_NUM_WORKERS` to change the worker count, for example
 `make pytest PYTEST_XDIST_AUTO_NUM_WORKERS=8`.
 
-Local `make pytest` runs use the debug extension from `make build-debug`.
-CI tests a release wheel.
-Do not write `python/tests/` cases that probe Rust panic paths in process with
-`pytest.raises(BaseException)` or similar broad catches.
-Those tests can appear to pass against the debug build and abort the interpreter against the
-release wheel.
-For abort-prone PyO3 or FFI methods, verify the Python signature and parameter names, or isolate
-the call in a subprocess.
+Local `make pytest` runs use the debug extension from `make build-debug`. CI tests a release wheel. Do not
+probe Rust panic paths in process in `python/tests/` with `pytest.raises(BaseException)` or similar broad
+catches. These tests can appear to pass against the debug build and abort the interpreter against the release
+wheel.
+
+For abort-prone PyO3 or FFI methods, verify the Python signature and parameter names, or isolate the
+call in a subprocess.
 
 For the registered Rust benchmark set:
 
@@ -192,11 +194,12 @@ cargo nextest run --workspace --features "$(bash scripts/cargo-features.bash)" -
 
 :::info
 `cargo nextest` is the supported runner for the full Rust unit and integration suite. The suite
-relies on nextest's per-test process isolation for process-global and thread-local state, including
-logging, the message bus, and deterministic test state. Plain `cargo test --workspace` runs a test
-binary's cases in a shared process, so it is not a supported full-suite gate and is not guaranteed to
-pass. Plain `cargo test` remains appropriate for doctests and focused tests that are known to work
-with the libtest runner.
+relies on per-test process isolation for process-global and thread-local state, including logging,
+the message bus, and deterministic test state.
+
+Plain `cargo test --workspace` runs a test binary's cases in a shared process, so it is not a
+supported full-suite gate and is not guaranteed to pass. Plain `cargo test` remains appropriate for
+doctests and focused tests known to work with the libtest runner.
 :::
 
 #### Rust doctests
@@ -240,13 +243,12 @@ make cargo-test-crate-nautilus-serialization FEATURES="capnp"
 
 ### General
 
-- Name test functions after what they exercise; you do not need to encode the expected
-  assertions in the name.
+- Name test functions after what they exercise. You do not need to encode the expected assertions in the name.
 - Add docstrings when they clarify setup, scenarios, or expectations.
 - **Group assertions** when possible: perform all setup/act steps first, then assert
   together to avoid the act-assert-act smell.
-- Use `unwrap`, `expect`, or direct `panic!`/`assert` calls inside tests; clarity and
-  conciseness matter more than defensive error handling here.
+- Use `unwrap`, `expect`, or direct `panic!`/`assert` calls inside tests. Clarity and conciseness matter more
+  than defensive error handling here.
 - Do not capture log output to assert on log messages. Log capture in tests is fragile
   because loggers are global state, test execution order is non-deterministic, and the
   assertions break when log wording changes. Instead, verify the observable behavior
@@ -276,22 +278,27 @@ see the [Rust guide](rust.md#testing-conventions).
 ## Waiting for asynchronous effects
 
 In Rust tests, prefer a notification channel or another event owned by the test over repeated
-condition evaluation. Subscribe before reading the authoritative state, then recheck it after every
-notification so a transition between the read and the await cannot be missed. When no suitable
-signal exists, use `wait_until_async(...)` from `nautilus_common::testing`; it stops as soon as the
-condition succeeds and applies a bounded timeout. Use a fixed sleep only when the time window itself
-is under test.
+condition evaluation:
+
+1. Subscribe before reading the authoritative state.
+1. Recheck it after every notification so a transition between the read and the await cannot be missed.
+
+When no suitable signal exists, use `wait_until_async(...)` from `nautilus_common::testing`. It stops as soon
+as the condition succeeds and applies a bounded timeout. Use a fixed sleep only when the time window itself is
+under test.
 
 ## Mocks
 
-Prefer hand-written stubs that return fixed values over mocking frameworks. Use `MagicMock` only when you need to assert call counts/arguments or simulate complex state changes. Avoid mocking the objects you're actually testing.
+Prefer hand-written stubs that return fixed values over mocking frameworks. Use `MagicMock` only to
+assert call counts or arguments, or to simulate complex state changes. Avoid mocking the objects
+you test.
 
 ## Code coverage
 
-Aim for high coverage without sacrificing appropriate error handling or causing "test induced damage" to the architecture.
-
-Some branches remain untestable without modifying production behavior.
-For example, a final condition in a defensive if-else block may only trigger for unexpected values; leave these checks in place so future changes can exercise them if needed.
+Aim for high coverage without sacrificing error handling or changing the architecture solely for
+tests. Some branches remain untestable without modifying production behavior. For example, the final
+condition in a defensive if-else block may trigger only for unexpected values. Leave these checks
+in place so future changes can exercise them if needed.
 
 Design-time exceptions can also be impractical to test, so 100% coverage is not the target.
 
@@ -332,9 +339,11 @@ make sync
 )
 ```
 
-Start the Python program or notebook with the Python debugger, then attach LLDB or GDB to that
-Python process for Rust breakpoints. The repository does not generate editor launch
-configurations, so configure both debugger sessions in the editor you use.
+1. Start the Python program or notebook with the Python debugger.
+1. Attach LLDB or GDB to that Python process for Rust breakpoints.
+
+The repository does not generate editor launch configurations, so configure both debugger sessions in the
+editor you use.
 
 ## Data type testing
 
@@ -350,8 +359,8 @@ existing types are tested, so new types can follow the same pattern.
 | DataActor subscribe    | `crates/common/src/actor/tests.rs`          | Actor subscribes and receives data via typed publish.      |
 | DataActor unsubscribe  | `crates/common/src/actor/tests.rs`          | Actor stops receiving data after unsubscribe.              |
 | PyO3 actor dispatch    | `crates/common/src/python/actor.rs`         | Rust handler dispatches to Python `on_*` method.           |
-| Python Actor subscribe | `python/tests/unit/common/test_actor.py`    | Python actor subscribes; command count increments.         |
-| Python Actor unsub     | `python/tests/unit/common/test_actor.py`    | Python actor unsubscribes; subscription list clears.       |
+| Python Actor subscribe | `python/tests/unit/common/test_actor.py`    | Python actor subscribes. Command count increments.         |
+| Python Actor unsub     | `python/tests/unit/common/test_actor.py`    | Python actor unsubscribes. Subscription list clears.       |
 | Adapter live tests     | `docs/developer_guide/spec_data_testing.md` | Live data acceptance tests (DataTester).                   |
 
 ### Coverage per data type

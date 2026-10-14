@@ -2,18 +2,17 @@
 
 ## Code Style
 
-The current codebase can be used as a guide for formatting conventions.
-Additional guidelines are provided below.
+Use the codebase as a guide to formatting conventions, supplemented by the rules below.
 
 ### Universal formatting rules
 
 The following applies to **all** source files (Rust, Python, shell, etc.):
 
 - Use **spaces only**, never hard tab characters.
-- Lines should generally stay below **100 characters**; wrap thoughtfully when necessary.
-- Use American English spelling (`color`, `serialize`, `behavior`), enforced by `.typos.toml`.
-  Preserve external API spellings through exact identifier exceptions; exclude verbatim data and generated files.
-  Run `prek run typos --all-files` to check the repository.
+- Lines should generally stay below **100 characters**. Wrap thoughtfully when necessary.
+- Use American English spelling (`color`, `serialize`, `behavior`), enforced by `.typos.toml`. Preserve
+  external API spellings through exact identifier exceptions. Exclude verbatim data and generated files. Run
+  `prek run typos --all-files` to check the repository.
 
 ### Shell scripts
 
@@ -26,17 +25,16 @@ structure, testing, formatting, and linting requirements.
 1. Generally leave **one blank line above** every comment block or docstring so it is visually separated from code.
 2. Use *sentence case* - capitalize the first letter, keep the rest lowercase unless proper nouns or acronyms.
 3. Do not use double spaces after periods.
-4. **Single-line comments** *must not* end with a period *unless* the line ends with a URL or inline Markdown link - in those cases leave the punctuation exactly as the link requires.
+4. **Single-line comments** *must not* end with a period, except when they end with a URL or inline Markdown
+   link. For those exceptions, keep the punctuation that the link needs.
 5. **Multi-line comments** should separate sentences with commas (not period-per-line). The final line *should* end with a period.
-6. Keep comments concise; favor clarity and only explain the non-obvious - *less is more*.
+6. Keep comments concise. Favor clarity and only explain the non-obvious - *less is more*.
 7. Avoid emoji symbols in text.
 
 ### Doc comment mood
 
-**Rust** doc comments should be written in the **indicative mood** - e.g. *"Returns a cached client."*
-
-This convention aligns with the prevailing style of the Rust ecosystem and makes generated
-documentation feel natural to end-users.
+Write Rust doc comments in the **indicative mood**, for example, *"Returns a cached client."* This
+matches the prevailing Rust ecosystem style and makes generated documentation natural for end-users.
 
 ### Terminology and phrasing
 
@@ -65,18 +63,20 @@ documentation feel natural to end-users.
    wire models after the venue concept, such as `HyperliquidExchangeAction`. Preserve established
    public names, historical release entries, and source names in migration tables.
 
-5. **Runtime qualifiers**: Use `Live` when a type selects or configures real-time runtime semantics,
-   such as `LiveNode` versus `BacktestNode`, `LiveClock` versus `VirtualClock`, and the
-   `LiveDataEngineConfig`, `LiveRiskEngineConfig`, and `LiveExecutionEngineConfig` family versus
-   reusable core engine configs. Omit `Live` from the ordinary adapter client family because a
-   connected client is the default. Qualify alternate implementations by their behavior, such as
-   `SandboxExecutionClient` or `DatabentoHistoricalClient`. An explicit live/historical protocol
-   pair may retain `Live` to distinguish the two implementations.
+5. **Runtime qualifiers**: Use `Live` when a type selects or configures real-time runtime semantics. Examples
+   include `LiveNode` versus `BacktestNode`, and `LiveClock` versus `VirtualClock`. The
+   `LiveDataEngineConfig`, `LiveRiskEngineConfig`, and `LiveExecutionEngineConfig` family differs from
+   reusable core engine configs in the same way.
+
+   Omit `Live` from the ordinary adapter client family because a connected client is the default. Qualify
+   alternate implementations by their behavior, such as `SandboxExecutionClient` or
+   `DatabentoHistoricalClient`. An explicit live/historical protocol pair may retain `Live` to distinguish the
+   two implementations.
 
 6. **Adapter factory configs**: Name the data and execution inputs `<Venue>DataClientConfig` and
-   `<Venue>ExecutionClientConfig`. Factories consume these client configs directly rather than a
-   separate factory config wrapper. `LiveNodeConfig` owns `trader_id`; venue-specific `account_id`
-   values belong on execution client configs.
+   `<Venue>ExecutionClientConfig`. Factories consume these client configs directly rather than a separate
+   factory config wrapper. `LiveNodeConfig` owns `trader_id`. Venue-specific `account_id` values belong on
+   execution client configs.
 
 #### Data loading APIs
 
@@ -101,10 +101,10 @@ representation. Include the representation only when real sibling formats exist.
 
 #### Adapter package facades
 
-Each package under `python/nautilus_trader/adapters/` is a thin facade over the private
-`_libnautilus` extension. Every adapter `__init__.py` declares a deterministic `__all__` that is
-the single source of truth for its public API; `python/generate_stubs.py` copies that list into the
-matching `.pyi` so runtime and stub exports agree exactly.
+Each package under `python/nautilus_trader/adapters/` is a thin facade over the private `_libnautilus`
+extension. Each adapter `__init__.py` declares a deterministic `__all__` as the single source of truth for its
+public API. `python/generate_stubs.py` copies that list into the matching `.pyi`. Thus, runtime and stub
+exports agree exactly.
 
 A venue adapter exposes its canonical identity constants plus the supported public surface:
 
@@ -114,17 +114,23 @@ A venue adapter exposes its canonical identity constants plus the supported publ
 - stateless loaders (`load_*`, `stream_*`, `convert_*`) and intentional utilities
   (`decode_*`, `get_*_arrow_schema_map`)
 
-Keep the facade thin. Never add raw HTTP or WebSocket clients, wire models, endpoint URL resolvers
-(`get_*_url`, `*_HTTP_URL`), caches, or other internals to `__all__` merely for structural parity.
-Data providers (such as `databento` and `tardis`), the `blockchain` data client, the `sandbox`
-execution client, and the multi-venue `interactive_brokers` broker omit venue constants because the
-constants would be meaningless for them.
+Keep the facade thin. Do not add internals to `__all__` only for structural parity. This includes raw HTTP or
+WebSocket clients, wire models, endpoint URL resolvers (`get_*_url`, `*_HTTP_URL`), and caches. These packages
+omit venue constants because the constants would be meaningless for them:
 
-Order `__all__` entries so the `RUF022` pre-commit gate owns sort order; do not hand-order the list.
+- Data providers, such as `databento` and `tardis`.
+- The `blockchain` data client.
+- The `sandbox` execution client.
+- The multi-venue `interactive_brokers` broker.
+
+Order `__all__` entries so the `RUF022` pre-commit gate owns sort order. Do not hand-order the list.
 
 ### Formatting
 
-1. For longer lines of code, and when passing more than a couple of arguments, you should take a new line which aligns at the next logical indent (rather than attempting a hanging 'vanity' alignment off an opening parenthesis). This practice conserves space to the right, keeps important code more central in view, and survives function/method name changes.
+1. For longer code lines and calls with more than a couple of arguments, the recommended layout uses the next
+   logical indent. Start a new line at that indent, rather than a hanging 'vanity' alignment from an opening
+   parenthesis. This practice saves space to the right and keeps important code more central in view. The
+   layout also survives function or method name changes.
 
 2. The closing parenthesis should be located on a new line, aligned at the logical indent.
 
@@ -178,9 +184,9 @@ Fix PR #4544 review feedback               # issue or pull request number in the
 ### Conventional Commits
 
 Do NOT use [Conventional Commits](https://www.conventionalcommits.org/) syntax for commit messages or pull
-request titles. Many editors and AI assistants emit that format by default, but no commit in this
-repository's history uses it, and the type and scope ceremony duplicates what the subject already carries.
-Pull request titles matter here too, because a squash merge turns the PR title into the commit subject.
+request titles. Many editors and AI assistants emit that format by default. But no commit in this repository's
+history uses it. The type and scope repeat information that the subject already gives. Pull request titles
+matter here too, because a squash merge turns the PR title into the commit subject.
 
 ### Body
 
@@ -198,9 +204,8 @@ restate the diff.
 - Reference issues from the body, typically on a final line: `Resolves #4534` when the commit closes the
   issue, or `Related to #4547` when it is partial work.
 - GitHub appends the pull request number to the subject on squash merge, producing subjects such as
-  `Fix TWAP child-order sizing and interval validation (#4544)`. Do not add that suffix by hand, and
-  do not reference a pull request or issue anywhere else in the subject either. The subject has no
-  room for detail the body carries better, and a hand-written number duplicates or contradicts the
-  appended one.
+  `Fix TWAP child-order sizing and interval validation (#4544)`. Do not add that suffix by hand. Do not
+  reference a pull request or issue anywhere else in the subject. The subject has no room for detail the body
+  carries better, and a hand-written number duplicates or contradicts the appended one.
 - Aim to keep the pull request title short enough for the appended suffix to leave the squash-merged
   subject at 60 characters or fewer.
