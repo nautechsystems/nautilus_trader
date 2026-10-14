@@ -464,10 +464,10 @@ cross or immediately match. Other venue rejections leave it `false`.
 | `REDUCE_ONLY_WOULD_INCREASE_POSITION`            | A reduce-only order would increase the position.                                      |
 | `ORDER_LIST_INCOMPLETE`                          | The order list is missing orders in the cache.                                        |
 | `ORDER_LIST_DENIED`                              | The order was denied because its order list failed risk checks.                       |
-| `TRADING_HALTED`                                 | Trading halted. New submissions and modifications denied.                             |
-| `TRADING_STATE_REDUCING`                         | Trading reducing. Only eligible reduce-only submissions permitted.                    |
+| `TRADING_HALTED`                                 | Trading is halted; new submissions and modifications are denied.                      |
+| `TRADING_STATE_REDUCING`                         | Trading is reducing; only eligible reduce-only submissions are permitted.             |
 | `RATE_LIMIT_EXCEEDED`                            | The order submission rate limit was exceeded.                                         |
-| `STREAM_RECONCILING`                             | The execution stream is unavailable or recovering. Retry after recovery.              |
+| `STREAM_RECONCILING`                             | The execution stream is unavailable or recovering; retry after recovery.              |
 | `NO_EXECUTION_CLIENT`                            | No execution client was found for the routed command.                                 |
 | `CLIENT_VENUE_MISMATCH`                          | The execution client does not handle the order venue.                                 |
 | `SUBMIT_FAILED`                                  | Submitting the order to the execution client failed.                                  |
