@@ -1060,9 +1060,6 @@ impl DataClient for InteractiveBrokersDataClient {
             .context("Failed to convert instrument_id to IB contract")?;
 
         let instrument_id = cmd.instrument_id;
-        let price_magnifier = self
-            .instrument_provider
-            .get_price_magnifier(&cmd.instrument_id);
         let data_sender = self.data_sender.clone();
         let option_greeks_cache = Arc::clone(&self.option_greeks_cache);
         let clock = self.clock;
@@ -1077,7 +1074,6 @@ impl DataClient for InteractiveBrokersDataClient {
                 client_clone,
                 contract,
                 instrument_id,
-                price_magnifier,
                 data_sender,
                 option_greeks_cache,
                 clock,

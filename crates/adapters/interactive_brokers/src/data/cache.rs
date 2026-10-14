@@ -403,21 +403,17 @@ impl OptionGreeksCache {
 
     /// Updates cached state from an IB option computation tick.
     ///
-    /// IB reports a magnified option's underlying price in the contract's market data unit, and
-    /// its price-denominated greeks per unit of that price. These are expressed in the
-    /// instrument's units, where prices are divided by `price_magnifier` (`M`): the underlying
-    /// price is divided by `M`, gamma, a second derivative with respect to price, is multiplied
-    /// by `M`, and vega and theta are divided by `M`. Delta, the implied volatilities, rho and
-    /// open interest are unchanged, and a `price_magnifier` below 1 means 1.
+    /// IB reports a magnified option's computation in the contract's currency, not in its market
+    /// data unit: for an OZC option quoted in cents, the underlying price is in dollars and the
+    /// greeks are per dollar. The computation is therefore already in the instrument's units and
+    /// no price magnifier applies.
     pub fn update_from_computation(
         &mut self,
         instrument_id: InstrumentId,
         computation: &OptionComputation,
-        price_magnifier: i32,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Option<OptionGreeks> {
-        let magnifier = f64::from(price_magnifier.max(1));
         let cached = self.greeks.entry(instrument_id).or_default();
 
         match computation.field {
@@ -428,15 +424,15 @@ impl OptionGreeksCache {
                 }
 
                 if let Some(gamma) = computation.gamma {
-                    greeks.gamma = gamma * magnifier;
+                    greeks.gamma = gamma;
                 }
 
                 if let Some(vega) = computation.vega {
-                    greeks.vega = vega / magnifier;
+                    greeks.vega = vega;
                 }
 
                 if let Some(theta) = computation.theta {
-                    greeks.theta = theta / magnifier;
+                    greeks.theta = theta;
                 }
 
                 greeks.rho = 0.0; // IB does not publish rho in tickOptionComputation
@@ -462,7 +458,7 @@ impl OptionGreeksCache {
         }
 
         if let Some(underlying_price) = computation.underlying_price {
-            cached.underlying_price = Some(underlying_price / magnifier);
+            cached.underlying_price = Some(underlying_price);
         }
 
         self.try_build_greeks(instrument_id, ts_event, ts_init)
@@ -885,7 +881,6 @@ mod tests {
                 underlying_price: Some(155.0),
                 ..Default::default()
             },
-            1,
             UnixNanos::new(1),
             UnixNanos::new(1),
         );
@@ -904,7 +899,6 @@ mod tests {
                 underlying_price: Some(155.0),
                 ..Default::default()
             },
-            1,
             UnixNanos::new(2),
             UnixNanos::new(2),
         );
@@ -922,100 +916,38 @@ mod tests {
         assert_eq!(greeks.open_interest, None);
     }
 
-    fn model_computation() -> OptionComputation {
-        OptionComputation {
-            field: TickType::ModelOption,
-            implied_volatility: Some(0.25),
-            delta: Some(0.45),
-            gamma: Some(0.02),
-            vega: Some(0.5),
-            theta: Some(-0.3),
-            underlying_price: Some(486.25),
+    #[rstest]
+    fn test_option_greeks_cache_keeps_magnified_option_computation_units() {
+        // OZCX6 C0480 (priceMagnifier 100) on the IB paper Gateway: quotes in cents (bid 5.5),
+        // while the model computation is in dollars (option price 0.056, underlying 4.81)
+        let mut cache = OptionGreeksCache::new();
+        let computation = OptionComputation {
+            field: TickType::DelayedModelOption,
+            implied_volatility: Some(0.168_589_714_471_248_57),
+            delta: Some(0.536_139_125_076_405),
+            option_price: Some(0.055_970_557_886_452_07),
+            gamma: Some(3.126_512_157_892_507_5),
+            vega: Some(0.002_999_584_948_674_465),
+            theta: Some(-0.002_886_804_069_145_994),
+            underlying_price: Some(4.810_008_049_011_230_5),
             ..Default::default()
-        }
-    }
-
-    #[rstest]
-    fn test_option_greeks_cache_converts_magnified_option_to_instrument_units() {
-        let mut cache = OptionGreeksCache::new();
-
-        let greeks = cache
-            .update_from_computation(
-                instrument_id(),
-                &model_computation(),
-                100,
-                UnixNanos::new(1),
-                UnixNanos::new(1),
-            )
-            .unwrap();
-
-        assert_eq!(greeks.underlying_price, Some(4.8625));
-        assert!((greeks.gamma - 2.0).abs() < 1e-12);
-        assert!((greeks.vega - 0.005).abs() < 1e-15);
-        assert!((greeks.theta - -0.003).abs() < 1e-15);
-        assert_eq!(greeks.delta, 0.45);
-        assert_eq!(greeks.mark_iv, Some(0.25));
-        assert_eq!(greeks.rho, 0.0);
-    }
-
-    #[rstest]
-    #[case(1)]
-    #[case(10)]
-    #[case(100)]
-    fn test_option_greeks_cache_scales_price_denominated_fields_by_magnifier(
-        #[case] magnifier: i32,
-    ) {
-        let mut cache = OptionGreeksCache::new();
-        let computation = model_computation();
-        let m = f64::from(magnifier);
+        };
 
         let greeks = cache
             .update_from_computation(
                 instrument_id(),
                 &computation,
-                magnifier,
                 UnixNanos::new(1),
                 UnixNanos::new(1),
             )
             .unwrap();
 
-        // The fields that are not prices are unchanged for every magnifier
-        assert_eq!(greeks.delta, 0.45);
-        assert_eq!(greeks.mark_iv, Some(0.25));
-        assert_eq!(greeks.rho, 0.0);
-
-        // The price-denominated fields follow the scaling identities for P' = P / M
-        assert!((greeks.underlying_price.unwrap() * m - 486.25).abs() < 1e-9);
-        assert!((greeks.gamma / m - 0.02).abs() < 1e-12);
-        assert!((greeks.vega * m - 0.5).abs() < 1e-12);
-        assert!((greeks.theta * m - -0.3).abs() < 1e-12);
-
-        if magnifier == 1 {
-            assert_eq!(greeks.underlying_price, Some(486.25));
-            assert_eq!(greeks.gamma, 0.02);
-            assert_eq!(greeks.vega, 0.5);
-            assert_eq!(greeks.theta, -0.3);
-        }
-    }
-
-    #[rstest]
-    #[case(0)]
-    #[case(-5)]
-    fn test_option_greeks_cache_treats_magnifier_below_one_as_one(#[case] magnifier: i32) {
-        let mut cache = OptionGreeksCache::new();
-
-        let greeks = cache
-            .update_from_computation(
-                instrument_id(),
-                &model_computation(),
-                magnifier,
-                UnixNanos::new(1),
-                UnixNanos::new(1),
-            )
-            .unwrap();
-
-        assert_eq!(greeks.underlying_price, Some(486.25));
-        assert_eq!(greeks.gamma, 0.02);
+        assert_eq!(greeks.underlying_price, computation.underlying_price);
+        assert_eq!(Some(greeks.delta), computation.delta);
+        assert_eq!(Some(greeks.gamma), computation.gamma);
+        assert_eq!(Some(greeks.vega), computation.vega);
+        assert_eq!(Some(greeks.theta), computation.theta);
+        assert_eq!(greeks.mark_iv, computation.implied_volatility);
     }
 
     #[rstest]
@@ -1035,7 +967,6 @@ mod tests {
                 underlying_price: Some(155.0),
                 ..Default::default()
             },
-            1,
             UnixNanos::new(1),
             UnixNanos::new(1),
         );

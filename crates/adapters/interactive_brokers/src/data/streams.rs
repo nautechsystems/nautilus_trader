@@ -1273,7 +1273,6 @@ pub(super) async fn handle_option_greeks_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_magnifier: i32,
     data_sender: EventSender<DataEvent>,
     option_greeks_cache: Arc<tokio::sync::Mutex<OptionGreeksCache>>,
     clock: &'static AtomicTime,
@@ -1324,7 +1323,6 @@ pub(super) async fn handle_option_greeks_subscription(
                             process_option_greeks_tick_result(
                                 tick_result,
                                 context.instrument_id,
-                                price_magnifier,
                                 &context.data_sender,
                                 &option_greeks_cache,
                                 context.clock,
@@ -2345,7 +2343,6 @@ where
 async fn process_option_greeks_tick_result<I, E>(
     tick_result: Result<I, E>,
     instrument_id: InstrumentId,
-    price_magnifier: i32,
     data_sender: &EventSender<DataEvent>,
     option_greeks_cache: &Arc<tokio::sync::Mutex<OptionGreeksCache>>,
     clock: &'static AtomicTime,
@@ -2361,13 +2358,7 @@ where
 
             let greeks = {
                 let mut cache = option_greeks_cache.lock().await;
-                cache.update_from_computation(
-                    instrument_id,
-                    &computation,
-                    price_magnifier,
-                    ts_event,
-                    ts_init,
-                )
+                cache.update_from_computation(instrument_id, &computation, ts_event, ts_init)
             };
 
             Ok(send_option_greeks(greeks, data_sender, instrument_id))
@@ -3738,7 +3729,6 @@ mod tests {
                 ..Default::default()
             })),
             instrument_id,
-            1,
             &sender.clone().into(),
             &greeks_cache,
             clock,
@@ -3757,7 +3747,6 @@ mod tests {
                 ..Default::default()
             })),
             instrument_id,
-            1,
             &sender.clone().into(),
             &greeks_cache,
             clock,
@@ -3774,7 +3763,6 @@ mod tests {
                 value: 1000.0,
             })),
             instrument_id,
-            1,
             &sender.clone().into(),
             &greeks_cache,
             clock,
@@ -3797,7 +3785,6 @@ mod tests {
                 ..Default::default()
             })),
             instrument_id,
-            1,
             &sender.clone().into(),
             &greeks_cache,
             clock,
@@ -3840,7 +3827,6 @@ mod tests {
                 advanced_order_reject_json: String::new(),
             })),
             instrument_id,
-            1,
             &sender.clone().into(),
             &greeks_cache,
             clock,

@@ -684,9 +684,8 @@ given, in IB's units, so a magnified contract's tag or condition price is the pr
 it, not the Nautilus price.
 
 Position average cost is a price in the contract's currency times the multiplier, so the adapter
-divides it by the multiplier only. A magnified option's greeks are expressed in the same units: the
-underlying price and the price-denominated greeks (gamma, vega, and theta) are converted, while
-delta, the implied volatilities, and open interest are not.
+divides it by the multiplier only. IB reports a magnified option's computation (the underlying price
+and the greeks) in the contract's currency already, so the adapter publishes it unchanged.
 
 ## Configuration reference
 
