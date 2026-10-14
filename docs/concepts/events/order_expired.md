@@ -11,9 +11,9 @@ Fills received after expiry still update the order and position:
 - A partial fill keeps the order `EXPIRED`.
 - A fill that completes its quantity changes it to `FILLED`.
 
-If a fill arrives after the most recent expiry and the order is still `EXPIRED` or `FILLED`, the
-next `OrderExpired` is recorded and published without changing the order's status or timestamps.
-Further expiry events are rejected until another fill arrives.
+If a fill arrives after the most recent expiry and the order is still `EXPIRED` or `FILLED`, Nautilus records
+and publishes the next `OrderExpired`. This event does not change the order's status or timestamps. Further
+expiry events are rejected until another fill arrives.
 
 ## Fields
 

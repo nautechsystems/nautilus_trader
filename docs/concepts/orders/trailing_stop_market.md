@@ -7,10 +7,9 @@ price as the market moves favorably. It releases a *Market* order when triggered
 
 ## Use cases
 
-Use a *Trailing-Stop-Market* order to protect gains while allowing a position to continue through
-favorable moves. A tight offset can trigger on ordinary volatility, while a wide offset can give
-back more profit. The released *Market* order can also slip, be rejected, or remain unfilled on a
-sharp reversal.
+Use a *Trailing-Stop-Market* order to protect gains while allowing a position to continue through favorable
+moves. A tight offset can trigger on ordinary volatility, while a wide offset can give back more profit. The
+released *Market* order can also slip, be rejected, or stay unfilled on a sharp reversal.
 
 ## Example
 
@@ -78,8 +77,8 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
 ```
 
 :::info
-If both `activation_price` and `trigger_price` are omitted, the order activates immediately at the
-current market and its trigger price materializes from `trailing_offset` on the first update.
+If both `activation_price` and `trigger_price` are omitted, the order activates immediately at the current
+market. On the first update, its trigger price materializes from `trailing_offset`.
 :::
 
 See the

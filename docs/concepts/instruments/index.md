@@ -4,8 +4,8 @@ An instrument represents the specification for a tradable asset, contract, or lo
 synthetic market. Market data, orders, positions, accounting, portfolio calculations,
 and adapter symbology all refer back to an `InstrumentId` and its instrument definition.
 
-NautilusTrader exposes the same instrument model to Rust and Python users. Rust
-examples use `nautilus_model`; Python examples use `nautilus_trader.model`.
+NautilusTrader exposes the same instrument model to Rust and Python users. Rust examples use `nautilus_model`.
+Python examples use `nautilus_trader.model`.
 
 ## Instrument types
 
@@ -113,8 +113,8 @@ definitions contain the scheme name, and loading validates it against the curren
 **Migration from v1**:
 
 - `FixedTickScheme` no longer accepts `min_tick` or `max_tick` and has no `min_price` or `max_price`
-  attributes. Fixed schemes use the representable `Price` range, including negative prices; the
-  built-in Forex schemes no longer impose their v1 price bounds.
+  attributes. Fixed schemes use the representable `Price` range, including negative prices. The built-in Forex
+  schemes no longer impose their v1 price bounds.
 - The `increment` argument requires a `Price`. Replace float values with `Price.from_str("0.05")`.
 
 Fixed tick increments use `Price` to preserve their exact value. Navigation returns `None` if the
@@ -144,10 +144,10 @@ assert str(scheme.next_bid_price(1.13)) == "1.10"
 assert str(scheme.next_ask_price(1.13)) == "1.15"
 ```
 
-Tier definitions use `(start, stop, step)` with an inclusive start and exclusive stop.
-Each tier expands to at most `max_ticks_per_tier` prices, including tiers with an infinite stop.
-The Python default is 100. A finite tier that exceeds the cap is truncated without an error;
-choose a cap large enough to include every required price.
+Tier definitions use `(start, stop, step)` with an inclusive start and exclusive stop. Each tier expands to at
+most `max_ticks_per_tier` prices, including tiers with an infinite stop. The Python default is 100. A finite
+tier that exceeds the cap is truncated without an error. Choose a cap large enough to include each required
+price.
 
 ```rust tab="Rust"
 use nautilus_model::instruments::{TickScheme, TieredTickScheme, register_tick_scheme};
@@ -173,8 +173,7 @@ register_tick_scheme(
 ### Registration and lookup
 
 - **Names**: ASCII, trimmed, and case-insensitive.
-- **Lifetime**: registration lasts for the process lifetime; a registered name cannot be replaced
-  or removed.
+- **Lifetime**: registration lasts for the process lifetime. A registered name cannot be replaced or removed.
 - **Protected names**: built-ins such as `BETFAIR` and `TOPIX100`, and aliases such as
   `FIXED_PRECISION_01` for `FIXED_PRECISION_1`, cannot be replaced or removed.
 - **Listing**: `list_tick_schemes()` returns canonical built-in and registered names in sorted order.
@@ -192,9 +191,8 @@ for unknown or duplicate names must catch `ValueError` instead.
 
 ## Symbology
 
-Every instrument has a unique `InstrumentId` made from a Nautilus symbol and venue,
-separated by a period. The separate `raw_symbol` field preserves the venue's native
-symbol.
+Each instrument has a unique `InstrumentId` made from a Nautilus symbol and venue, separated by a period. The
+separate `raw_symbol` field preserves the venue's native symbol.
 
 **Binance Futures example**: the Ethereum perpetual contract uses this identifier.
 
@@ -202,13 +200,13 @@ symbol.
 ETHUSDT-PERP.BINANCE
 ```
 
-Native symbols should be unique for a venue, but this is not guaranteed by every
-exchange. The Nautilus `{symbol}.{venue}` pair must be unique inside a system.
+Native symbols should be unique for a venue, but not all exchanges guarantee this. The Nautilus
+`{symbol}.{venue}` pair must be unique inside a system.
 
 :::warning
-The instrument definition must match the market data and venue order semantics. An
-incorrect instrument can truncate prices or quantities, calculate notional values with
-the wrong currency, or make a backtest accept prices a live venue would reject.
+The instrument definition must match the market data and venue order semantics. An incorrect instrument can
+truncate prices or quantities, or calculate notional values with the wrong currency. It can also make a
+backtest accept prices a live venue would reject.
 :::
 
 ## Rust and Python surfaces
@@ -318,7 +316,7 @@ quantities match the venue steps before submission.
 Margin models use `margin_init` and `margin_maint` to calculate initial and maintenance margin.
 
 Instruments do not carry maker or taker fee rates. Backtest and sandbox commission uses a
-[fee model](../behavioral_models.md); live commissions come from venue fills.
+[fee model](../behavioral_models.md). Live commissions come from venue fills.
 
 **Fee model rate convention**:
 

@@ -41,8 +41,8 @@ and `-`.
 | Comments            | `// line`, `/* block */`                       | Comments are ignored.                                                 |
 
 :::note
-New formulas should use raw `InstrumentId` values. For backward compatibility, formulas that
-replace `-` with `_` in component IDs remain accepted.
+New formulas should use raw `InstrumentId` values. For backward compatibility, formulas that replace `-` with
+`_` in component IDs stay accepted.
 :::
 
 ### Operator precedence
@@ -99,7 +99,7 @@ produce a clear error at construction time.
 | --------------- | ----- | ----------------------------------------------------------------------------------------------- |
 | Stack depth     | 32    | Maximum number of intermediate values on the evaluation stack.                                  |
 | Local variables | 16    | Maximum number of distinct local variable names.                                                |
-| Nesting depth   | 128   | Maximum syntax nesting and expression tree depth; the top-level expression counts as one level. |
+| Nesting depth   | 128   | Maximum syntax nesting and expression tree depth. The top-level expression counts as one level. |
 
 A weighted sum of 8 components uses a peak stack depth of 3 and zero locals. A weighted sum of
 N components builds a tree of depth N + 1, so the nesting depth limit caps a weighted sum at
@@ -127,9 +127,9 @@ Before creating a synthetic instrument, ensure all component instruments exist i
 component's quote or trade feed as well as the synthetic's. Synthetic quotes derive only from component
 quotes, and synthetic trades only from component trades.
 
-When a component tick arrives, the engine combines it with the latest cached prices of the other
-components to calculate the synthetic price. Until **every component has produced at least one
-tick**, the synthetic publishes nothing.
+When a component tick arrives, the engine combines it with the latest cached prices of the other components to
+calculate the synthetic price. Until **each component has produced at least one tick**, the synthetic
+publishes nothing.
 
 The following example creates a synthetic instrument with an actor or strategy. This synthetic
 represents a simple spread between Bitcoin and Ethereum spot prices on Binance. It assumes that
@@ -196,7 +196,7 @@ self.submit_order(order)
 
 ## Performance
 
-Formulas compile once at construction time and evaluate on every incoming component price tick. The expression
+Formulas compile once at construction time and evaluate on each incoming component price tick. The expression
 engine uses a zero-allocation `f64` stack for evaluation, adding negligible overhead to the tick-processing
 path.
 
@@ -232,9 +232,9 @@ Measured on Apple M4 Pro, rustc 1.94.1, release profile (opt-level 3):
 
 ## Error handling
 
-Nautilus validates synthetic instruments at every boundary. Formula compilation rejects
-unknown symbols, type errors, and capacity overflows. Evaluation rejects wrong input counts and
-non-finite prices (NaN, Infinity) before they reach the formula.
+Nautilus validates synthetic instruments at each boundary. Formula compilation rejects unknown symbols, type
+errors, and capacity overflows. Evaluation rejects wrong input counts and non-finite prices (NaN, Infinity)
+before they reach the formula.
 
 See the
 [`SyntheticInstrument` API Reference](/docs/python-api-latest/model/instruments.html#nautilus_trader.model.SyntheticInstrument)

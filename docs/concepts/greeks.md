@@ -28,7 +28,7 @@ a Rust-native type exposed to Python through PyO3.
 | `gamma`            | `float`            | Rate of change of delta per unit underlying.        |
 | `vega`             | `float`            | Venue-reported vega.                                |
 | `theta`            | `float`            | Venue-reported theta.                               |
-| `rho`              | `float`            | Venue-reported rho; defaults to zero.               |
+| `rho`              | `float`            | Venue-reported rho, with zero as the default.       |
 | `mark_iv`          | `float` or None    | Mark implied volatility.                            |
 | `bid_iv`           | `float` or None    | Bid implied volatility.                             |
 | `ask_iv`           | `float` or None    | Ask implied volatility.                             |
@@ -55,9 +55,9 @@ aggregation, strike range filtering, and snapshot modes.
 
 ### Persistence and replay
 
-`OptionGreeks` is a native member of the `Data` enum, so it persists to the data catalog and replays
-in backtests as built-in market data rather than custom data. Use the type-specific catalog methods
-to write and query it:
+`OptionGreeks` is a native member of the `Data` enum. Thus, it persists to the data catalog and replays in
+backtests as built-in market data rather than custom data. Use the type-specific catalog methods to write and
+query it:
 
 ```python
 catalog.write_option_greeks(greeks)  # greeks: list[OptionGreeks]
@@ -77,10 +77,10 @@ The native `OptionGreeks` fields form the core schema: the five standard Greeks 
 `vega`, `theta`, and `rho`) plus implied volatility, underlying price, open interest, and
 convention. These field names are stable.
 
-No single schema covers every Greeks use case. Put venue-specific or model-specific values such as
-`vanna`, `volga`, `charm`, calibration inputs, or surface metadata in
-[custom data](custom_data.md), not the native type. Optional venue fields are nullable.
-`convention` is non-nullable and defaults to `GreeksConvention.BLACK_SCHOLES` in Python.
+No single schema covers all Greeks use cases. Put venue-specific or model-specific values such as `vanna`,
+`volga`, `charm`, calibration inputs, or surface metadata in [custom data](custom_data.md), not the native
+type. Optional venue fields are nullable. `convention` is non-nullable and defaults to
+`GreeksConvention.BLACK_SCHOLES` in Python.
 
 ### Underlying Rust types
 
@@ -176,8 +176,8 @@ For option instruments, the calculator performs these steps:
 
 1. Look up the instrument and reject expired options or unsupported option spreads before using cached Greeks.
 1. Resolve the underlying when a fresh or shocked valuation needs it.
-1. Retrieve prices from the cache. Standard instruments prefer `MID` and fall back to `LAST`; true
-   index instruments prefer the cached index price.
+1. Retrieve prices from the cache. Standard instruments prefer `MID` and fall back to `LAST`. True index
+   instruments prefer the cached index price.
 1. Look up yield curves from the cache, falling back to `flat_interest_rate`.
 1. Solve implied volatility from a valid market premium and compute checked Greeks.
 1. Return a `GreeksData` object with the computed values.
@@ -187,13 +187,12 @@ Missing instrument definitions, expired options, option spreads, invalid shocked
 and failed implied-volatility solves raise `ValueError`. Expiration is checked before returning cached
 option Greeks.
 
-The calculator derives carry as `r - q` when a dividend yield or curve is available and holds carry
-fixed at zero otherwise. Shocked cached valuations retain their cached numeric inputs and choose
-carry rate sensitivity from the current call's dividend yield or available dividend curve.
+The calculator derives carry as `r - q` when a dividend yield or curve is available and holds carry fixed at
+zero otherwise. Shocked cached valuations keep their cached numeric inputs and choose carry rate sensitivity
+from the current call's dividend yield or available dividend curve.
 
-For non-option instruments such as futures and equities, the calculator returns `GreeksData` with
-`delta=1` or beta-weighted delta and zero gamma, vega, theta, and rho. Option-specific fields retain
-their default values.
+For non-option instruments such as futures and equities, the calculator returns `GreeksData` with `delta=1` or
+beta-weighted delta and zero gamma, vega, theta, and rho. Option-specific fields keep their default values.
 
 #### Shock scenarios
 
@@ -273,57 +272,56 @@ Filters:
 - `instrument_id`: restrict to a single instrument.
 - `strategy_id`: restrict to a single strategy.
 - `side`: filter by position side, such as `LONG` or `SHORT`.
-- `greeks_filter`: callable that receives per-position `GreeksData` after `pnl`, `price`, and the
-  Greek values are scaled by the contract multiplier, then signed position quantity; return `True`
-  to include it. Instrument context, including `multiplier` and `quantity`, stays unchanged.
-  Use these values directly: `to_portfolio_greeks()` or Python scalar multiplication applies the
-  multiplier again.
+- `greeks_filter`: callable that receives per-position `GreeksData` after `pnl`, `price`, and the Greek values
+  are scaled by the contract multiplier, then signed position quantity. Return `True` to include it.
+  Instrument context, including `multiplier` and `quantity`, stays unchanged. Use these values directly:
+  `to_portfolio_greeks()` or Python scalar multiplication applies the multiplier again.
 
-A failed instrument valuation or a nonfinite aggregate raises `ValueError`; the calculation does not
-return a partial portfolio result.
+A failed instrument valuation or a nonfinite aggregate raises `ValueError`. The calculation does not return a
+partial portfolio result.
 
 ### GreeksData
 
 `GreeksData` carries the context of a single instrument's Greeks computation and is exposed from
-`nautilus_trader.model`. Requested caching and publication use the unshocked option valuation only
-after validation succeeds; cached valuations bypass those operations, including when shocks are applied. The Rust
-`GreeksCalculator` can publish to the `data.GreeksData.instrument_id={symbol}` topic; the Python
-surface does not expose that flag.
+`nautilus_trader.model`. Requested caching and publication use the unshocked option valuation only after
+validation succeeds. Cached valuations bypass those operations, including when shocks are applied. The Rust
+`GreeksCalculator` can publish to the `data.GreeksData.instrument_id={symbol}` topic. The Python surface does
+not expose that flag.
 
-| Field              | Type           | Description                                                         |
-| ------------------ | -------------- | ------------------------------------------------------------------- |
-| `ts_init`          | `int`          | Initialization timestamp in nanoseconds.                            |
-| `ts_event`         | `int`          | Event timestamp in nanoseconds.                                     |
-| `instrument_id`    | `InstrumentId` | Instrument for the calculation.                                     |
-| `is_call`          | `bool`         | `True` for a call or non-option result; `False` for a put.          |
-| `strike`           | `float`        | Strike price.                                                       |
-| `expiry`           | `int`          | Expiry date as a `YYYYMMDD` integer.                                |
-| `expiry_in_days`   | `int`          | Days to expiry.                                                     |
-| `expiry_in_years`  | `float`        | Years to expiry (`expiry_in_days / 365.25`).                        |
-| `multiplier`       | `float`        | Contract multiplier.                                                |
-| `quantity`         | `float`        | Quantity, set to 1 by `instrument_greeks()`.                        |
-| `underlying_price` | `float`        | Underlying price used in the calculation.                           |
-| `interest_rate`    | `float`        | Interest rate used in the calculation.                              |
-| `cost_of_carry`    | `float`        | Cost of carry (`r - dividend yield` when supplied; otherwise zero). |
-| `vol`              | `float`        | Implied volatility.                                                 |
-| `pnl`              | `float`        | PnL relative to the position entry, when a position is provided.    |
-| `price`            | `float`        | Option model price; non-option position PnL when supplied.          |
-| `delta`            | `float`        | Delta.                                                              |
-| `gamma`            | `float`        | Gamma.                                                              |
-| `vega`             | `float`        | Vega per one percentage point of volatility.                        |
-| `theta`            | `float`        | Daily theta.                                                        |
-| `rho`              | `float`        | Rho per one percentage point of interest rate.                      |
-| `itm_prob`         | `float`        | In-the-money probability.                                           |
+| Field              | Type           | Description                                                             |
+| ------------------ | -------------- | ----------------------------------------------------------------------- |
+| `ts_init`          | `int`          | Initialization timestamp in nanoseconds.                                |
+| `ts_event`         | `int`          | Event timestamp in nanoseconds.                                         |
+| `instrument_id`    | `InstrumentId` | Instrument for the calculation.                                         |
+| `is_call`          | `bool`         | `True` for a call or non-option result, `False` for a put.              |
+| `strike`           | `float`        | Strike price.                                                           |
+| `expiry`           | `int`          | Expiry date as a `YYYYMMDD` integer.                                    |
+| `expiry_in_days`   | `int`          | Days to expiry.                                                         |
+| `expiry_in_years`  | `float`        | Years to expiry (`expiry_in_days / 365.25`).                            |
+| `multiplier`       | `float`        | Contract multiplier.                                                    |
+| `quantity`         | `float`        | Quantity, set to 1 by `instrument_greeks()`.                            |
+| `underlying_price` | `float`        | Underlying price used in the calculation.                               |
+| `interest_rate`    | `float`        | Interest rate used in the calculation.                                  |
+| `cost_of_carry`    | `float`        | Cost of carry (`r - dividend yield` when supplied, or zero without it). |
+| `vol`              | `float`        | Implied volatility.                                                     |
+| `pnl`              | `float`        | PnL relative to the position entry, when a position is provided.        |
+| `price`            | `float`        | Option model price, or non-option position PnL when supplied.           |
+| `delta`            | `float`        | Delta.                                                                  |
+| `gamma`            | `float`        | Gamma.                                                                  |
+| `vega`             | `float`        | Vega per one percentage point of volatility.                            |
+| `theta`            | `float`        | Daily theta.                                                            |
+| `rho`              | `float`        | Rho per one percentage point of interest rate.                          |
+| `itm_prob`         | `float`        | In-the-money probability.                                               |
 
 `GreeksData.to_portfolio_greeks()` applies the contract multiplier once to `pnl`, `price`, and all
 five Greek values, including `rho`, and returns `PortfolioGreeks` with the same timestamps.
 It leaves position quantity scaling to the caller and preserves the per-unit `GreeksData`.
 In Python, `scalar * greeks_data` converts and scales the result, returning `PortfolioGreeks`.
 
-`portfolio_greeks()` uses this multiplier-first, quantity-second scaling before filtering and
-aggregation. The intermediate `quantity` field remains `1` and is not part of `PortfolioGreeks`.
-Rust callers use `quantity * &greeks_data.to_portfolio_greeks()` for the same result.
-The Rust expression `quantity * &greeks_data` retains quantity-only scaling and returns `GreeksData`.
+`portfolio_greeks()` uses this multiplier-first, quantity-second scaling before filtering and aggregation. The
+intermediate `quantity` field stays `1` and is not part of `PortfolioGreeks`. Rust callers use
+`quantity * &greeks_data.to_portfolio_greeks()` for the same result. The Rust expression
+`quantity * &greeks_data` keeps quantity-only scaling and returns `GreeksData`.
 
 ### PortfolioGreeks
 
@@ -364,8 +362,8 @@ Use `nautilus_trader.serialization.pyobjects_to_arrow_record_batch_bytes()` to e
 `ParquetDataCatalog.write_record_arrow_bytes()` with the matching record selector to store them.
 
 Python does not expose a `YieldCurveData` class. Before the first yield-curve write, call
-`query_record_arrow_bytes(NautilusRecordType.YieldCurveData)` to obtain an empty Arrow stream with
-the native schema. Its columns are `ts_init`, `ts_event`, `curve_name`, `tenors`, and `interest_rates`.
+`query_record_arrow_bytes(NautilusRecordType.YieldCurveData)` to get an empty Arrow stream with the native
+schema. Its columns are `ts_init`, `ts_event`, `curve_name`, `tenors`, and `interest_rates`.
 
 Read recorded values with `query_record_arrow_bytes()` or `query_record_arrow_stream()`.
 These queries return Arrow data. Calculated records do not participate in `OptionGreeks`
@@ -379,17 +377,16 @@ market-data replay or populate the calculator's caches.
 | Latency               | Arrives with market data                              | Computed on demand                                |
 | Venues                | Bybit, Deribit, Derive, Interactive Brokers, and OKX  | Any cached option with required prices            |
 | Shock scenarios       | Not supported                                         | Spot, vol, and time shocks                        |
-| Portfolio aggregation | Manual, such as iterating an `OptionChainSlice`       | Built-in via `portfolio_greeks()`                 |
+| Portfolio aggregation | Manual, such as iterating an `OptionChainSlice`       | Built-in through `portfolio_greeks()`             |
 | Beta weighting        | Not supported                                         | Built-in                                          |
-| Backtest support      | Via recorded `OptionGreeks` data                      | From cached prices at any point in time           |
+| Backtest support      | From recorded `OptionGreeks` data                     | From cached prices at any point in time           |
 | Values                | delta, gamma, vega, theta, rho, IV, and open interest | delta, gamma, vega, theta, rho, itm_prob, and vol |
 | Data type             | `OptionGreeks`                                        | `GreeksData` and `PortfolioGreeks`                |
 
 ## Greek definitions
 
-These terms appear across both paths. The local Black-Scholes functions scale vega and theta as
-described above. `OptionGreeks` retains the values reported by each venue or broker and records their
-`convention`.
+These terms appear across both paths. The local Black-Scholes functions scale vega and theta as described
+above. `OptionGreeks` keeps the values reported by each venue or broker and records their `convention`.
 
 | Greek    | Field      | Definition                                                                                                        |
 | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------- |

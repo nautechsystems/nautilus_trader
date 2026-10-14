@@ -10,10 +10,10 @@ form is stored:
 | `SimulatedVenueConfig` and `SimulatedExchange` | `SimulationModuleHandle` | Any linked Rust trait implementation. |
 
 :::warning[Shared module state]
-`SimulationModuleHandle` owns an `Rc<dyn SimulationModule>`, so cloning a handle shares the module
-and its state. Cloning a built-in enum value copies its state, while cloning a Python bridge retains
-the same Python object. Venues or runs that require isolated state therefore use distinct module
-instances, including **distinct Python objects**.
+`SimulationModuleHandle` owns an `Rc<dyn SimulationModule>`, so cloning a handle shares the module and its
+state. Cloning a built-in enum value copies its state, while cloning a Python bridge keeps the same Python
+object. Venues or runs that require isolated state thus use distinct module instances, including **distinct
+Python objects**.
 :::
 
 ## Lifecycle
@@ -24,15 +24,15 @@ The exchange runs each module through this lifecycle:
 1. `process` runs for each module in order against the same read-only exchange snapshot after
    commands have settled for the timestamp. Processing stops at the first failure, and the exchange
    applies no adjustments from that timestamp.
-1. For each completed result in order, the exchange applies its batch as ordered `Money`
-   adjustments, then calls that module's `acknowledge` exactly once with the corresponding outcomes,
-   including for an empty batch.
+1. For each completed result in order, the exchange applies its batch as ordered `Money` adjustments. It then
+   calls that module's `acknowledge` exactly once with the corresponding outcomes, including for an empty
+   batch.
 
 ## Failure handling
 
-- **Lifecycle failures**: Failures from `pre_process`, `process`, `acknowledge`, or `reset` leave the
-  exchange in an error state until every module resets successfully. This prevents a failed
-  acknowledgement from replaying adjustments that the account may already contain.
+- **Lifecycle failures**: Failures from `pre_process`, `process`, `acknowledge`, or `reset` leave the exchange
+  in an error state until each module resets successfully. This prevents a failed acknowledgement from
+  replaying adjustments that the account may already contain.
 - **Diagnostic failures**: These return to the engine with the module index and hook name without
   changing the exchange error state.
 
@@ -47,8 +47,8 @@ The `process` hook for a Python `SimulationModule` subclass receives an owned
 - The order books.
 - The open positions.
 
-The bridge does not expose mutable cache or matching-engine state. Python exceptions retain the hook
-name as they propagate through the exchange and `BacktestEngine.run`.
+The bridge does not expose mutable cache or matching-engine state. Python exceptions keep the hook name as
+they propagate through the exchange and `BacktestEngine.run`.
 
 ## Linked native types
 
@@ -81,4 +81,4 @@ The CFD swap module defers the whole batch when any of these inputs is missing:
 
 The module logs one warning per booking date, instrument, and failure kind before quieter retries.
 
-Perpetual funding remains part of `SimulatedExchange` and is not a simulation module.
+Perpetual funding stays part of `SimulatedExchange` and is not a simulation module.

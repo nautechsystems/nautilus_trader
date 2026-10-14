@@ -2,10 +2,10 @@
 
 Emulation lets you use order types even when your trading venue does not natively support them.
 
-The `OrderEmulator` monitors the market data selected by `emulation_trigger`. When the local order
-matches its release condition, the emulator transforms it into a `MARKET` or `LIMIT` order and routes
-it to the configured execution algorithm or the execution engine. For example, an emulated
-`STOP_LIMIT` becomes a `LIMIT` order after its stop price triggers.
+The `OrderEmulator` monitors the market data selected by `emulation_trigger`. When the local order matches its
+release condition, the emulator transforms it into a `MARKET` or `LIMIT` order. It routes that order to the
+configured execution algorithm or the execution engine. For example, an emulated `STOP_LIMIT` becomes a
+`LIMIT` order after its stop price triggers.
 
 ## Submitting an order for emulation
 
@@ -36,15 +36,14 @@ unsupported trigger type as an error.
 - For emulated `LIMIT` orders, it compares the limit price with that market data and releases a
   `MARKET` order when matched.
 
-**Cached data**: when the emulator creates a matching core for a trigger instrument, the first
-order's `emulation_trigger` selects the cached market data used to seed it.
+**Cached data**: the emulator creates a matching core for a trigger instrument. The first order's
+`emulation_trigger` selects the cached market data used to seed that core.
 
 - `DEFAULT` and `BID_ASK` use the latest cached quote's bid and ask.
 - `LAST_PRICE` uses the latest cached trade price.
 
-An eligible order that matches this data releases on submission **without an `OrderEmulated`
-event**. If the selected source has no cached data, the order remains emulated until matching
-market data arrives.
+An eligible order that matches this data releases on submission **without an `OrderEmulated` event**. If the
+selected source has no cached data, the order stays emulated until matching market data arrives.
 
 ## Technical details
 
@@ -81,8 +80,7 @@ A strategy can modify or cancel emulated orders, and a cancel-all request includ
 :::
 
 :::info
-An emulated order retains its client order ID when transformed, so cache queries continue to use the
-same ID.
+An emulated order keeps its client order ID when transformed, so cache queries continue to use the same ID.
 :::
 
 ### Held emulated orders
@@ -99,8 +97,8 @@ same ID.
 **Release sequence**: when market data matches an emulated order, release performs these actions
 in order.
 
-1. It transforms the order into a `MARKET` or `LIMIT` order through another `OrderInitialized`
-   event, with `emulation_trigger` set to `None` so components no longer treat it as emulated.
+1. It transforms the order into a `MARKET` or `LIMIT` order through another `OrderInitialized` event. This
+   sets `emulation_trigger` to `None`, so components no longer treat the order as emulated.
 1. It updates the original `SubmitOrder` command to describe the transformed order.
 1. It sends that command to the configured `ExecutionAlgorithm` or, otherwise, the `ExecutionEngine`.
    The execution engine routes an eligible order to an `ExecutionClient`.
@@ -130,9 +128,9 @@ calculation. If the order triggers before that calculation succeeds, the emulato
 and keeps the order emulated. Once a market update lets the calculation produce a limit price,
 the next matching update releases the order.
 
-For example, the `LAST_OR_BID_ASK` trigger type needs a last trade price. A `BID_ASK` emulation
-trigger subscribes the emulator to quotes only, so the order stays held until trade data reaches
-the cache, such as from a strategy's trade subscription.
+For example, the `LAST_OR_BID_ASK` trigger type needs a last trade price. A `BID_ASK` emulation trigger
+subscribes the emulator to quotes only. Thus, the order stays held until trade data reaches the cache (such as
+from a strategy's trade subscription).
 :::
 
 ## Querying

@@ -1,8 +1,8 @@
 # Bar-Based Execution
 
-Bar data records the open, high, low, close, and volume for an interval. It does not record when
-each price occurred within that interval or whether the high preceded the low. Bar-based execution
-therefore simulates a plausible intrabar path rather than reconstructing the original trades.
+Bar data records the open, high, low, close, and volume for an interval. It does not record when each price
+occurred within that interval or whether the high preceded the low. Bar-based execution thus simulates a
+plausible intrabar path rather than reconstructing the original trades.
 
 NautilusTrader converts each execution bar into synthetic market updates for an L1 order book.
 Resting orders match as those updates move through the bar.
@@ -36,8 +36,8 @@ Bar execution applies only when:
 - The venue uses `BookType.L1_MBP`.
 - The bar has an external aggregation source.
 
-Internally aggregated bars and bars sent to L2 or L3 venues still reach subscribed strategies, but
-they do not update the matching engine's book or trigger matching.
+Internally aggregated bars and bars sent to L2 or L3 venues still reach subscribed strategies. These bars do
+not update the matching engine's book or trigger matching.
 
 For each applicable bar, the engine:
 
@@ -47,8 +47,8 @@ For each applicable bar, the engine:
 1. Matches orders after each synthetic update.
 1. Dispatches the complete bar to actors and strategies.
 
-Orders already resting at the start of the bar can therefore fill at an intermediate OHLC point.
-Orders submitted from `on_bar` arrive only after all four points for that bar have been processed.
+Orders already resting at the start of the bar can thus fill at an intermediate OHLC point. Orders submitted
+from `on_bar` arrive only after all four points for that bar have been processed.
 
 ## OHLC price simulation
 
@@ -58,7 +58,7 @@ instrument's minimum `size_increment`, each point uses the minimum increment.
 
 The venue's `bar_adaptive_high_low_ordering` option controls the intrabar path:
 
-- With `False` (the default), every bar uses `Open -> High -> Low -> Close`.
+- With `False` (the default), each bar uses `Open -> High -> Low -> Close`.
 - With `True`, the engine visits the extreme closest to the open first:
   - If the open is closer to the high, it uses `Open -> High -> Low -> Close`.
   - If the open is closer to the low, it uses `Open -> Low -> High -> Close`.
@@ -68,8 +68,8 @@ Its accuracy depends on the market, interval, and data source. An
 [exploratory EUR/USD analysis](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363)
 motivates the distance heuristic but does not establish a general accuracy rate.
 
-The path matters when both a protective stop and a profit target lie inside the same bar because
-the first visited level determines which order can fill first.
+The first visited level determines which order can fill first. Thus, the path matters when a protective stop
+and a profit target lie inside the same bar.
 
 Configure adaptive ordering on the venue:
 
@@ -106,10 +106,10 @@ Bar N's OHLC sequence runs before `on_bar(N)`. Without a latency model, an order
 A latency model delays the order's effective arrival. Once the command reaches its arrival
 timestamp, the engine can release it from the venue's latency queue in two ways:
 
-- **Instrument market data**: Exchange-routed data for the order's instrument releases the command.
-  With bar-only data and no intervening timer events, the first bar at or after arrival completes
-  its OHLC sweep before the order settles, so the order sees that bar's close. Quote or trade ticks
-  can release it earlier against the book state they establish.
+- **Instrument market data**: Exchange-routed data for the order's instrument releases the command. With
+  bar-only data and no intervening timer events, the first bar at or after arrival completes its OHLC sweep
+  before the order settles. Thus, the order sees that bar's close. Quote or trade ticks can release it earlier
+  against the book state they establish.
 - **Unrestricted settlement**: Points such as actor or strategy timers, funding-rate settlement,
   or shutdown drains release all commands due at that time.
 
@@ -137,10 +137,10 @@ engine.add_venue(
 ```
 
 :::warning[Next-bar-open fills and look-ahead]
-The engine does not provide a native next-bar-open fill mode. A strategy can form a signal from a
-completed prior bar without look-ahead, but the next bar's open is processed before that next bar
-is dispatched. Using the current bar's open from its `on_bar` callback would introduce look-ahead;
-using latency with bar-only data normally settles against a later book state, not the next open.
+The engine does not provide a native next-bar-open fill mode. A strategy can form a signal from a completed
+prior bar without look-ahead. But the engine processes the next bar's open before it dispatches that bar. If a
+strategy uses the current bar's open from its `on_bar` callback, it introduces look-ahead. With bar-only data,
+latency normally causes settlement against a later book state, not the next open.
 :::
 
 ## Internal bar aggregation timing

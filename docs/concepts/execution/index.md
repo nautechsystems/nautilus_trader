@@ -12,7 +12,7 @@ Use the execution guides according to the question you need to answer:
 | Which statuses and transitions can an order have?    | [Orders: order state flow](../orders/index.md#order-state-flow).   |
 | Which policies govern venue-boundary execution?      | [Execution policies](policies.md).                                 |
 | How do execution algorithms split and manage orders? | [Execution algorithms](algorithms.md).                             |
-| How does live state recover and remain consistent?   | [Execution reconciliation](reconciliation.md).                     |
+| How does live state recover and stay consistent?     | [Execution reconciliation](reconciliation.md).                     |
 | How do I configure a live node?                      | [Live node configuration](../../how_to/configure_live_trading.md). |
 | How does a live node schedule and monitor execution? | [Live trading](../live.md).                                        |
 
@@ -49,9 +49,9 @@ Commands follow different routes:
   `exec_algorithm_id` is set, and to the `RiskEngine` otherwise.
 - `submit_order_list(...)` follows the same branching behavior based on emulation and
   `exec_algorithm_id`.
-- `modify_order(...)` routes to the `OrderEmulator` for emulated orders, to an `ExecutionAlgorithm`
-  when the order has an `exec_algorithm_id` and is still active within the local system, and to the
-  `RiskEngine` otherwise.
+- For emulated orders, `modify_order(...)` routes to the `OrderEmulator`. For non-emulated orders, it routes
+  to an `ExecutionAlgorithm` if the order has an `exec_algorithm_id` and is still active within the local
+  system. Otherwise, it routes to the `RiskEngine`.
 - Cancel and query commands can route directly to the `OrderEmulator`, `ExecutionAlgorithm`, or
   `ExecutionEngine`, depending on the command and order state.
 
@@ -99,7 +99,7 @@ The `OmsType` enum has three variants:
 
 - `UNSPECIFIED`: The strategy uses the owning execution client's OMS type.
 - `NETTING`: Positions combine into one position per instrument and strategy.
-- `HEDGING`: Multiple positions per instrument and strategy can remain open.
+- `HEDGING`: Multiple positions per instrument and strategy can stay open.
 
 When the strategy and venue OMS types differ, the `ExecutionEngine` assigns or overrides
 `position_id` values on `OrderFilled` events. A **virtual position** exists in NautilusTrader but not
@@ -112,8 +112,8 @@ as a separate venue position.
 | `NETTING`    | `HEDGING` | One virtual position across the venue positions.                    |
 | `HEDGING`    | `NETTING` | Multiple virtual positions against the venue's single net position. |
 
-If a fill resolves to a cached position for a different instrument, the `ExecutionEngine` logs an
-error and drops the fill. The order remains non-terminal so a subsequent valid fill can be applied.
+If a fill resolves to a cached position for a different instrument, the `ExecutionEngine` logs an error and
+drops the fill. The order stays non-terminal so a subsequent valid fill can be applied.
 
 For reductions of inherited inventory, see [Reducing external positions](reconciliation.md#reducing-external-positions).
 
@@ -129,7 +129,7 @@ The engine identifies ownership according to the operation:
   uses the one registered client that matches the fill's account and handles its instrument venue.
   This account lookup also covers spread-leg fills without a cached order.
 
-For fills associated with an order, an existing cached position retains its recorded OMS type.
+For fills associated with an order, an existing cached position keeps its recorded OMS type.
 
 If ownership is absent or ambiguous, fills use `NETTING` unless the strategy supplies an explicit
 override. Venue and default command routes do not select the fill's OMS type. Configure a backtest
@@ -143,10 +143,9 @@ Venue position modes may require adapter-specific configuration. For example, se
 Custom position IDs are only valid under `HEDGING` OMS. `NETTING` has one position per instrument
 and strategy, with a deterministic ID of the form `{instrument_id}-{strategy_id}`.
 
-The `ExecutionEngine` enforces this at submit time. If the effective OMS resolves to
-`NETTING` and `submit_order` (or `submit_order_list`) is called with a `position_id` that
-does not match `{instrument_id}-{strategy_id}`, the order is denied with an
-`OrderDenied` event explaining the mismatch.
+The `ExecutionEngine` enforces this at submit time. If the effective OMS resolves to `NETTING`, a supplied
+`position_id` must match `{instrument_id}-{strategy_id}` in `submit_order` (or `submit_order_list`). A
+mismatch denies the order with an `OrderDenied` event that explains the mismatch.
 
 This rule still permits the common closing idiom: `Strategy.close_position(position)`
 forwards `position.id`, which under `NETTING` is exactly the deterministic ID, so it is
@@ -160,10 +159,9 @@ so the combination is rejected with an explicit `OrderDenied` reason. See
 
 ### Position replay across NETTING cycles
 
-Under `NETTING` the engine reuses one position ID across close and reopen cycles, so a position's
-replay log can accumulate every fill ever applied to that ID. The
-`ExecutionEngineConfig.carry_replay_events_on_reopen` option controls whether that log survives a
-reopen:
+Under `NETTING` the engine reuses one position ID across close and reopen cycles. Thus, a position's replay
+log can accumulate each fill ever applied to that ID. The
+`ExecutionEngineConfig.carry_replay_events_on_reopen` option controls whether that log survives a reopen:
 
 | `carry_replay_events_on_reopen` | Behavior                                                       |
 | ------------------------------- | -------------------------------------------------------------- |
@@ -177,18 +175,18 @@ reopen:
   fill from a prior cycle. Without the carried log, the engine finds no matching position fragment
   and rejects the correction.
 
-Realized-PnL snapshots follow the correction. A fill void that reaches an earlier cycle rebuilds the
-position across the cycle boundary, moving the boundaries its archived snapshots describe, so the
-engine settles those snapshots into the corrected history's own closed cycles and realized PnL counts
-each cycle once. A void confined to the current cycle leaves the archive intact. See
+Realized-PnL snapshots follow the correction. A fill void that reaches an earlier cycle rebuilds the position
+across the cycle boundary. This moves the boundaries its archived snapshots describe. Thus, the engine settles
+those snapshots into the corrected history's own closed cycles, and realized PnL counts each cycle once. A
+void confined to the current cycle leaves the archive intact. See
 [Position snapshotting](../positions.md#position-snapshotting).
 
 ## Risk engine
 
-The `RiskEngine` is a component of every Nautilus system, including backtest, sandbox, and live
-environments. It sits on the submit and modify path, and it also receives order events such as
-`OrderReleased` from the `OrderEmulator`. Cancel and query commands route directly to other
-execution components and do not pass through the `RiskEngine`.
+The `RiskEngine` is a component of each Nautilus system, including backtest, sandbox, and live environments.
+It sits on the submit and modify path, and it also receives order events such as `OrderReleased` from the
+`OrderEmulator`. Cancel and query commands route directly to other execution components and do not pass
+through the `RiskEngine`.
 
 Unless bypassed in `RiskEngineConfig`, the engine validates:
 
@@ -268,9 +266,9 @@ Only allowlist a venue when its downstream execution client enforces whole-posit
 configuration.
 
 :::warning
-The simulated exchange does not interpret `close_position` or replace the placeholder with the
-open position quantity. Leave simulated backtest venues out of `full_position_exit_venues`; model
-a backtest exit with an explicit quantity and `reduce_only` instead.
+The simulated exchange does not interpret `close_position` or replace the placeholder with the open position
+quantity. Leave simulated backtest venues out of `full_position_exit_venues`. Model a backtest exit with an
+explicit quantity and `reduce_only` instead.
 :::
 
 ### Trading state
@@ -323,10 +321,10 @@ spawned-order behavior, and cache queries.
 | `True`          | One `CancelOrder` per matching order.                   | Matching orders associated with the calling strategy.          | Each order follows its normal cancel route.         |
 | `False`         | One root `CancelAllOrders`, even without local matches. | Matching orders for one resolved execution client and account. | The execution engine creates the required children. |
 
-Broad mode delegates before the strategy inspects its cache. The command therefore reaches the
-resolved execution client even when NautilusTrader has no matching local order. This allows a venue
-bulk-cancel endpoint to remove an order that exists at the venue but is missing from the local cache.
-When the adapter provides such an endpoint, the single command can also reduce cancel request volume.
+Broad mode delegates before the strategy inspects its cache. The command thus reaches the resolved execution
+client even when NautilusTrader has no matching local order. This allows a venue bulk-cancel endpoint to
+remove an order that exists at the venue but is missing from the local cache. When the adapter provides such
+an endpoint, the single command can also reduce cancel request volume.
 
 For a local execution client, the `ExecutionEngine` resolves the root command to exactly one client
 in this order:
@@ -365,21 +363,21 @@ flowchart LR
     resolve --> algo
 ```
 
-Broad mode selects one client before fan-out; it never broadcasts across all execution clients.
-Call `cancel_all_orders(...)` once per client to cancel across several clients.
+Broad mode selects one client before fan-out. It never broadcasts across all execution clients. Call
+`cancel_all_orders(...)` once per client to cancel across several clients.
 
-Every child has a new command ID, copies the root parameters, correlates to the root operation, and
-records the root command as its cause. Instrument and optional side filters apply to every local
-route. The selected execution account also bounds matching-engine cancellation, including orders in
-`SUBMITTED` and other cancelable in-flight states.
+Each child has a new command ID, copies the root parameters, correlates to the root operation, and records the
+root command as its cause. Instrument and optional side filters apply to each local route. The selected
+execution account also bounds matching-engine cancellation, including orders in `SUBMITTED` and other
+cancelable in-flight states.
 
 Client ownership applies to local emulated and execution-algorithm orders:
 
-- Orders already assigned to another client remain untouched.
+- Orders already assigned to another client stay untouched.
 - When the root omits `client_id`, matching unassigned orders are claimed by the client selected by
   the engine before local cancellation.
-- When the root supplies `client_id`, unassigned orders remain untouched because the engine cannot
-  infer that they belong to the explicit client.
+- When the root supplies `client_id`, unassigned orders stay untouched because the engine cannot infer that
+  they belong to the explicit client.
 - An emulated order matches its traded instrument, even when another instrument supplies its trigger.
 
 An explicitly configured external execution client receives the original root command unchanged.
@@ -387,9 +385,9 @@ The external client owns any fan-out needed behind that boundary.
 
 ## Command outcomes
 
-Execution commands distinguish definitive local failures, definitive venue results, and unknown
-live outcomes. An unknown outcome remains in flight for stream updates, polling, queries, or
-reconciliation. Retry exhaustion can later apply a synthetic terminal reconciliation event.
+Execution commands distinguish definitive local failures, definitive venue results, and unknown live outcomes.
+An unknown outcome stays in flight for stream updates, polling, queries, or reconciliation. Retry exhaustion
+can later apply a synthetic terminal reconciliation event.
 
 See [Execution policies](policies.md#command-outcomes) for the evidence classes,
 delivery and retry limits, persistence boundary, and terminal reconciliation provenance. See
@@ -424,8 +422,8 @@ Price and quantity checks can also emit these code-led reasons on `OrderModifyRe
 - `QUANTITY_EXCEEDS_MAXIMUM`
 - `QUANTITY_BELOW_MINIMUM`
 
-For price reasons, `field` is `PRICE` or `TRIGGER_PRICE` and names the rejected command field.
-Other modification rejection reasons remain free-form; `OrderDeniedCode` does not classify them.
+For price reasons, `field` is `PRICE` or `TRIGGER_PRICE` and names the rejected command field. Other
+modification rejection reasons stay free-form. `OrderDeniedCode` does not classify them.
 
 `OrderRejected.due_post_only` is `true` only when venue evidence proves that a post-only order would
 cross or immediately match. Other venue rejections leave it `false`.
@@ -466,10 +464,10 @@ cross or immediately match. Other venue rejections leave it `false`.
 | `REDUCE_ONLY_WOULD_INCREASE_POSITION`            | A reduce-only order would increase the position.                                      |
 | `ORDER_LIST_INCOMPLETE`                          | The order list is missing orders in the cache.                                        |
 | `ORDER_LIST_DENIED`                              | The order was denied because its order list failed risk checks.                       |
-| `TRADING_HALTED`                                 | Trading is halted; new submissions and modifications are denied.                      |
-| `TRADING_STATE_REDUCING`                         | Trading is reducing; only eligible reduce-only submissions are permitted.             |
+| `TRADING_HALTED`                                 | Trading halted. New submissions and modifications denied.                             |
+| `TRADING_STATE_REDUCING`                         | Trading reducing. Only eligible reduce-only submissions permitted.                    |
 | `RATE_LIMIT_EXCEEDED`                            | The order submission rate limit was exceeded.                                         |
-| `STREAM_RECONCILING`                             | The execution stream is unavailable or recovering; retry after recovery.              |
+| `STREAM_RECONCILING`                             | The execution stream is unavailable or recovering. Retry after recovery.              |
 | `NO_EXECUTION_CLIENT`                            | No execution client was found for the routed command.                                 |
 | `CLIENT_VENUE_MISMATCH`                          | The execution client does not handle the order venue.                                 |
 | `SUBMIT_FAILED`                                  | Submitting the order to the execution client failed.                                  |
@@ -514,7 +512,7 @@ venue reporting. Quantity alone does not identify the cause.
 
 Live fills can arrive through two channels:
 
-- Real-time fill events arriving via WebSocket.
+- Real-time fill events arriving through WebSocket.
 - Periodic reconciliation polling the venue for fill history and position status.
 
 Stable `trade_id` values let the engine deduplicate the same fill across both channels. If the
@@ -534,10 +532,10 @@ The `allow_overfills` configuration option (default: `False`) controls how overf
 | `False`           | Logs and rejects the fill. A standalone reconciliation fill may raise quantity first. |
 | `True`            | Logs a warning, applies the fill, and tracks the excess in `overfill_qty`.            |
 
-When `allow_overfills` is false and the execution client allows that overfill, the engine raises
-the order quantity to the filled quantity plus that fill, then applies the fill. An already filled
-order is not raised. Adapter fill events, fills bundled with an order report, and live-manager
-projected fills do not use this raise.
+When `allow_overfills` is false and the execution client allows that overfill, the engine raises the order
+quantity to the filled quantity plus that fill. It then applies the fill. An already filled order is not
+raised. Adapter fill events, fills bundled with an order report, and live-manager projected fills do not use
+this raise.
 
 When overfills are allowed, the order's `overfill_qty` field tracks the excess quantity.
 The order transitions to `FILLED` status and `leaves_qty` is clamped to zero.
@@ -559,28 +557,28 @@ the latest fill for the `trade_id` on:
 - `last_px`
 - `last_qty`
 
-An exact match is skipped with a warning. If the `trade_id` matches but the price differs, the
-fill is a price restatement: the order restates its average price and the engine restates the
-open position's average without applying quantity. If another field differs, `Order.apply()`
-rejects the reused ID, and the engine logs and drops the fill.
+An exact match is skipped with a warning. If the `trade_id` matches but the price differs, the fill is a price
+restatement. The order restates its average price, and the engine restates the open position's average without
+applying quantity. If another field differs, `Order.apply()` rejects the reused ID, and the engine logs and
+drops the fill.
 
 #### Reconciliation path
 
 The reconciliation path checks `trade_id` before generating an `OrderFilled` event. It drops a
 report when that ID already exists on the order, regardless of its price or quantity.
 
-Synthetic and inferred reconciliation fills use deterministic IDs. Replaying the same inputs after
-a restart therefore produces the same `trade_id` and is deduplicated.
+Synthetic and inferred reconciliation fills use deterministic IDs. Replaying the same inputs after a restart
+thus produces the same `trade_id` and is deduplicated.
 
 ### Declined fill notification
 
-When the `ExecutionEngine` rejects an `OrderFilled` or `OrderFillVoided` instead of applying it,
-for example as a duplicate, an overfill, or for an order it cannot find, it publishes the unchanged
-event on `events.order_fill_declined.{instrument_id}`. An adapter that tracks whether its fills and
-corrections were applied can subscribe to this topic.
+When the `ExecutionEngine` rejects an `OrderFilled` or `OrderFillVoided` instead of applying it, it publishes
+the unchanged event on `events.order_fill_declined.{instrument_id}`. For example, it rejects duplicates,
+overfills, or events for orders it cannot find. An adapter that tracks whether its fills and corrections were
+applied can subscribe to this topic.
 
-Each rejection site logs the reason; the published event does not carry it. The engine does not
-publish on this topic for reconciliation projections, which update only the order.
+Each rejection site logs the reason. The published event does not carry it. The engine does not publish on
+this topic for reconciliation projections, which update only the order.
 
 ### Configuration
 
@@ -621,16 +619,16 @@ not reopen `VOIDED`. See the complete
 
 A void is a venue action on a trade it already reported. The causes recur across asset classes:
 
-- **Erroneous execution review**: the venue nullifies a print that is substantially inconsistent with
-  the market at the time of execution, or one caused by an exchange system fault.
+- **Erroneous execution review**: the venue nullifies a print that is substantially inconsistent with the
+  market at the time of execution. It also nullifies prints caused by an exchange system fault.
 - **Settlement failure**: a matched trade fails to settle, so the fill never takes economic effect.
 - **Event invalidation**: the underlying event is abandoned or a competitor is withdrawn, so matched
   positions carry no exposure.
 - **Post-trade restatement**: the venue restates the quantity or fees of a trade during clearing.
 
-A venue price adjustment is expressed as a new `OrderFilled` carrying the same `trade_id` at the
-new price, which restates the trade's accounting without changing its matched quantity. The
-`OrderFillVoided` event itself corrects quantity, not price.
+A venue price adjustment uses a new `OrderFilled` with the same `trade_id` at the new price. This restates the
+trade's accounting without changing its matched quantity. The `OrderFillVoided` event itself corrects
+quantity, not price.
 
 A break reaches the client differently by venue. FIX venues signal one through
 [`ExecType <150>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_150.html) values `H` (trade
@@ -650,10 +648,11 @@ Each venue publishes the conditions under which it acts:
 | Betfair          | Voided bets, reported as cumulative size voided (`sv`).  | [Void bets on the Stream API](https://support.developer.betfair.com/hc/en-us/articles/360000391492-How-are-void-bets-treated-by-the-Stream-API). |
 | Polymarket       | `FAILED` trade status after an on-chain revert or reorg. | [User channel](https://docs.polymarket.com/developers/CLOB/websocket/user-channel).                                                              |
 
-Nautilus adapters emit `OrderFillVoided` where the venue publishes the void on a stream the adapter
-consumes: [Betfair](../../integrations/betfair.md#voided-fills) from the order change message `sv`
-field, and
-[Polymarket](../../integrations/polymarket.md#trades) from the user channel trade status.
+Nautilus adapters emit `OrderFillVoided` where the venue publishes the void on a stream the adapter consumes.
+The supported adapters and sources are:
+
+- [Betfair](../../integrations/betfair.md#voided-fills): the order change message `sv` field.
+- [Polymarket](../../integrations/polymarket.md#trades): the user channel trade status.
 
 ## Related guides
 

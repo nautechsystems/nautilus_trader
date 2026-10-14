@@ -10,7 +10,7 @@ Backtests settle perpetual funding from `FundingRateUpdate` data at funding boun
 - With `next_funding_ns`, the simulated exchange stores the latest rate, and the backtest clock
   emits one `FundingSettlement` at that timestamp.
 - Without `next_funding_ns`, the exchange settles only when `ts_event` lands on the `interval` boundary.
-- Updates without a boundary remain strategy data and do not create funding payments.
+- Updates without a boundary stay strategy data and do not create funding payments.
 
 ```mermaid
 flowchart LR
@@ -27,14 +27,14 @@ flowchart LR
 The settlement adjusts the open position and the matching account balance before the portfolio
 observes the new state.
 
-`PositionAdjusted` remains the position accounting event. A **positive funding rate** debits long
-positions and credits short positions. The adjustment changes realized PnL, and the matching
-account balance update records the cash movement.
+`PositionAdjusted` stays the position accounting event. A **positive funding rate** debits long positions and
+credits short positions. The adjustment changes realized PnL, and the matching account balance update records
+the cash movement.
 
 ## Accounts
 
-Every backtest venue uses one of three `account_type` values: `CASH`, `MARGIN`, or `BETTING`.
-The low-level API accepts model types directly:
+Each backtest venue uses one of three `account_type` values: `CASH`, `MARGIN`, or `BETTING`. The low-level API
+accepts model types directly:
 
 ```python
 from decimal import Decimal
@@ -86,9 +86,8 @@ venue = BacktestVenueConfig(
 
 ## Margin models
 
-Margin accounts use `LeveragedMarginModel` by default. Pass `StandardMarginModel` when the
-simulation should reserve the instrument's fixed initial and maintenance margin percentages
-without reducing them by account leverage.
+Margin accounts use `LeveragedMarginModel` by default. To reserve the instrument's fixed initial and
+maintenance margin percentages without account leverage reductions, pass `StandardMarginModel`.
 
 ```python
 from decimal import Decimal

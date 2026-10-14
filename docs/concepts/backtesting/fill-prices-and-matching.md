@@ -55,9 +55,9 @@ tick worse unless that price would:
 
 This **deterministic residual rule** is separate from probabilistic fill-model slippage.
 
-Trade-driven matching has one additional rule. If a trade provides fill evidence at a price absent
-from the book, the engine fills at the order's limit price and caps the quantity at the trade size.
-See [trade-based execution](trade-execution.md#trade-driven-matching).
+Trade-driven matching has one additional rule. If a trade provides fill evidence at a price absent from the
+book, the engine fills at the order's limit price. It caps that fill's quantity at the trade size. See
+[trade-based execution](trade-execution.md#trade-driven-matching).
 
 Fill models can change prices or provide a synthetic depth book. See
 [fill models](fill-models.md).
@@ -114,8 +114,8 @@ The engine calculates the boundary at fill time:
 - BUY: `ask + (points * price_increment)`
 - SELL: `bid - (points * price_increment)`
 
-For an instrument with a 0.01 price increment, 100 points allow a BUY to fill at most 1.00 above
-the current ask. Levels beyond the boundary are excluded, so the order can remain partially filled.
+For an instrument with a 0.01 price increment, 100 points allow a BUY to fill at most 1.00 above the current
+ask. Levels beyond the boundary are excluded, so the order can stay partially filled.
 
 - A market order gets its boundary when processed.
 - A stop-market order gets its boundary when triggered, using the bid or ask at that time.
@@ -168,13 +168,13 @@ For example:
 1. The ask is 100.10 for 50 units.
 1. A BUY LIMIT for 1,000 units rests at 100.05.
 1. The next ask is 100.00 for 30 units.
-1. With consumption enabled, 30 units fill and 970 remain open.
+1. With consumption enabled, 30 units fill and 970 stay open.
 1. Later updates can provide more fresh size.
 
 ### Trade consumption
 
-A trade can provide executable size at a price absent from the current book. With consumption
-enabled, trade-driven fills share that size instead of letting every order consume the full trade.
+A trade can provide executable size at a price absent from the current book. With consumption enabled,
+trade-driven fills share that size instead of letting each order consume the full trade.
 
 For L2 and L3 books, the triggering trade may already have consumed displayed depth. The engine
 accounts for that volume before triggered orders use the remaining level. It skips this adjustment
@@ -189,8 +189,8 @@ Consumption tracking estimates **available size**, not **order priority**. Set `
 book and trade data for displayed-queue tracking, or use `prob_fill_on_limit` for a probabilistic
 approximation.
 
-Trade-driven fills are also opportunistic: a print proves that liquidity existed momentarily, not
-that it remained available after the recorded trade.
+Trade-driven fills are also opportunistic: a print proves that liquidity existed momentarily, not that it
+stayed available after the recorded trade.
 
 ## Precision requirements
 
@@ -201,8 +201,8 @@ quantity `1` is valid for size precision 3, and price `100` is valid for price p
 For these instruments, higher precision is rejected even when the extra decimals are zeros:
 `1.0000` is invalid for size precision 3.
 
-Fractional fills and quantity reductions retain exact values. A quantity `1` order partially filled
-for `0.500` reports `0.500` filled and `0.500` remaining.
+Fractional fills and quantity reductions keep exact values. A quantity `1` order partially filled for `0.500`
+reports `0.500` filled and `0.500` remaining.
 
 DeFi builds can use instrument precisions above `FIXED_PRECISION`. For those instruments, the
 validated order fields listed below require **exact precision**: both precision 17 and precision 0
@@ -218,7 +218,7 @@ The outcome of invalid precision depends on where it enters the matching engine:
 | Executable `Bar` | Open, high, low, close, and volume                   | Log a warning and skip the bar.                              |
 | New order        | Quantity, display quantity, price, and trigger price | Reject the order.                                            |
 | Order update     | Quantity, price, and trigger price                   | Reject the modification.                                     |
-| Generated fill   | Fill price and quantity                              | Normalize when compatible; otherwise warn and skip the fill. |
+| Generated fill   | Fill price and quantity                              | Normalize when compatible. Otherwise warn and skip the fill. |
 
 The engine logs an error after **20 consecutive market-data precision mismatches**. With
 `shutdown_on_error=True`, that error can request a normal backtest shutdown. A valid quote, trade,

@@ -12,10 +12,9 @@ The visualization system has three parts:
 - **Theme system**: consistent styling with built-in and custom themes.
 - **Configuration**: declarative specification of what to render and how to display it.
 
-Tearsheets are written as **self-contained HTML files** that can be viewed in any modern
-browser, shared with stakeholders, or archived for future reference. Passing a static
-image extension (such as `.png` or `.pdf`) as the output path exports a static image
-via Kaleido instead.
+Tearsheets are written as **self-contained HTML files** that can be viewed in any modern browser, shared with
+stakeholders, or archived for future reference. An output path with a static image extension (such as `.png`
+or `.pdf`) exports a static image through Kaleido.
 
 :::note
 The visualization system requires the `visualization` extra. It installs Pandas for
@@ -66,8 +65,8 @@ create_tearsheet(
 )
 ```
 
-To include starting account balances from node reports, retain the node state. The node is also
-required when the configured tearsheet includes a cache-backed chart such as `bars_with_fills`.
+To include starting account balances from node reports, keep the node state. The node is also required when
+the configured tearsheet includes a cache-backed chart such as `bars_with_fills`.
 
 Follow the complete [`BacktestNode` setup](backtesting/apis-and-runs.md#high-level-api),
 setting `dispose_on_completion=False` on its `BacktestRunConfig`. Then pass the completed result and
@@ -135,8 +134,8 @@ For `BacktestEngine` input, return-based charts require a single currency. They 
 equity snapshots, falling back to account reports, and cannot be built for mixed-currency accounts without a
 filter. Pass `currency` for multi-currency backtests so return charts use the selected currency.
 
-For `BacktestResult` input, `currency` filters PnL statistics and account balances. The result's
-**stored return series remains unchanged**.
+For `BacktestResult` input, `currency` filters PnL statistics and account balances. The result's **stored
+return series stays unchanged**.
 
 ## Available charts
 
@@ -154,8 +153,8 @@ The tearsheet can include any combination of the following built-in charts:
 | `yearly_returns`  | Bar         | Annual return percentages.                              |
 | `bars_with_fills` | Candlestick | Price bars (OHLC) with order fills overlaid as markers. |
 
-All charts are registered in the chart registry and are configured via chart objects in
-`TearsheetConfig.charts` (each chart object maps to a built-in chart name).
+The chart registry contains all charts. Chart objects in `TearsheetConfig.charts` configure them (each chart
+object maps to a built-in chart name).
 
 ### Run information table
 
@@ -199,20 +198,19 @@ create_tearsheet(
 )
 ```
 
-The benchmark series is plotted as-is; ensure the index aligns with your strategy's
-return dates for accurate comparison.
+The benchmark series is plotted as-is. Ensure the index aligns with your strategy's return dates for accurate
+comparison.
 
 ### Monthly and yearly returns
 
-The `monthly_returns` and `yearly_returns` charts default to compounded (time-weighted)
-returns: each cell measures the period's gain against the running start-of-period balance,
-and the periods compound to the total return.
+The `monthly_returns` and `yearly_returns` charts default to compounded (time-weighted) returns. Each cell
+measures the period's gain against the running start-of-period balance. The periods compound to the total
+return.
 
-Set `compounding=False` to report simple, non-compounding returns measured against fixed
-initial capital. Each cell then measures the period's gain as a percentage of the starting
-capital, so the periods sum to the total return instead of compounding to it. This is the
-nominal rate of return, the convention used for constant-capital strategies that trade fixed
-size and withdraw profits.
+Set `compounding=False` to report simple, non-compounding returns measured against fixed initial capital. Each
+cell then measures the period's gain as a percentage of the starting capital. Thus, the periods sum to the
+total return instead of compounding to it. This is the nominal rate of return, the convention used for
+constant-capital strategies that trade fixed size and withdraw profits.
 
 ```python
 config = TearsheetConfig(
@@ -224,10 +222,10 @@ config = TearsheetConfig(
 create_tearsheet(engine=engine, config=config)
 ```
 
-The standalone `create_monthly_returns_heatmap()` and `create_yearly_returns()` functions
-accept the same `compounding` argument. For the non-compounding figures to faithfully
-represent constant capital, size positions at a fixed quantity rather than as a fraction of
-current equity; otherwise later periods inflate as the running balance grows.
+The standalone `create_monthly_returns_heatmap()` and `create_yearly_returns()` functions accept the same
+`compounding` argument. For the non-compounding figures to faithfully represent constant capital, size
+positions at a fixed quantity rather than as a fraction of current equity. Otherwise later periods inflate as
+the running balance grows.
 
 ## Themes
 
@@ -279,9 +277,8 @@ register_theme(
 config = TearsheetConfig(theme="corporate")
 ```
 
-The theme system automatically provides sensible defaults for `table_*` colors based on
-the `background` and `grid` colors, ensuring backward compatibility with themes registered
-before table-specific colors were introduced.
+The theme system derives default `table_*` colors from the `background` and `grid` colors. These defaults
+preserve compatibility with themes registered before table-specific colors existed.
 
 ## Configuration
 
@@ -328,9 +325,8 @@ config = TearsheetConfig(
 | `height`            | `int`                  | `1500`           | Total height in pixels.             |
 | `show_logo`         | `bool`                 | `True`           | Reserved for future logo rendering. |
 
-When `layout` is `None`, the grid dimensions and row heights are automatically calculated
-based on the number of charts. For 8 charts (the default), a 4x2 grid is used with
-heights `[0.50, 0.22, 0.16, 0.12]` to give more space to the top row tables.
+When `layout` is `None`, the chart count determines the grid dimensions and row heights. The default 8 charts
+use a 4x2 grid with heights `[0.50, 0.22, 0.16, 0.12]`. These heights give more space to the top row tables.
 
 ## Custom charts
 
@@ -385,10 +381,10 @@ register_chart("my_custom", my_custom_chart)
 
 ### Tearsheet integration
 
-For tearsheet integration with proper grid placement, use `register_tearsheet_chart`. Unlike
-`register_chart` (which registers a standalone function that returns its own figure), a tearsheet
-renderer draws traces directly onto a shared subplot grid cell, so its signature takes the target
-`fig` plus the `row` and `col` to render into.
+For tearsheet integration with proper grid placement, use `register_tearsheet_chart`. Unlike `register_chart`
+(which registers a standalone function that returns its own figure), a tearsheet renderer draws traces
+directly onto a shared subplot grid cell. Thus, its signature takes the target `fig` plus the `row` and `col`
+to render into.
 
 ```python
 from nautilus_trader.config import TearsheetConfig
@@ -516,8 +512,8 @@ Pair custom charts with statistics supplied through the same `stats_pnls`, `stat
 `stats_general` dictionaries used by the built-in tearsheet charts.
 
 For `BacktestEngine` input, these values come from `engine.get_result()`, so a statistic registered with
-`Portfolio.register_statistic()` reaches the tearsheet without any extra wiring; see [Custom
-statistics](portfolio.md#custom-statistics).
+`Portfolio.register_statistic()` reaches the tearsheet without any extra wiring. See
+[Custom statistics](portfolio.md#custom-statistics).
 
 For offline analysis, pass compatible dictionaries directly to `create_tearsheet_from_stats()`:
 
@@ -622,10 +618,10 @@ config = TearsheetConfig(
 create_tearsheet(engine=engine, config=config)
 ```
 
-The visualization shows candlesticks for OHLC price action with triangle markers representing order
-fills (up-triangles for buys and down-triangles for sells, colored with the theme's positive and
-negative colors). Charts that need extra configuration (like `bar_type`) take those parameters
-directly on the chart object (e.g. `TearsheetBarsWithFillsChart(bar_type=...)`).
+The visualization shows candlesticks for OHLC price action with triangle markers representing order fills
+(up-triangles for buys and down-triangles for sells, colored with the theme's positive and negative colors).
+Charts that need extra configuration (like `bar_type`) take those parameters directly on the chart object (for
+example, `TearsheetBarsWithFillsChart(bar_type=...)`).
 
 Other individual chart functions include `create_equity_curve`, `create_drawdown_chart`,
 `create_monthly_returns_heatmap`, and more. See the API reference for the complete list.

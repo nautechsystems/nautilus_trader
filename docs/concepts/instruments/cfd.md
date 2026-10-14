@@ -33,15 +33,15 @@ Examples include CFD contracts on FX, equities, indexes, and commodities.
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-**Note**: Python constructors use `instrument_id`; Rust stores the same value as `id`.
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
 - `Cfd` has instrument class `Cfd`.
 - It is never inverse and uses a multiplier of one.
 - It has no activation timestamp, expiration timestamp, strike, or option kind.
-- When a venue offers both a cash instrument and a CFD on the same underlying, use `Cfd`
-  only for the CFD contract and the matching cash type for the underlying market.
+- If a venue offers cash and CFD instruments on the same underlying, use `Cfd` only for the CFD. Use the
+  matching cash type for the underlying market.
 
 ## Example
 

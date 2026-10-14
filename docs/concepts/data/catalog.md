@@ -9,9 +9,9 @@ backtesting, live trading, and research.
 The Rust model and persistence crates define the Arrow schemas for built-in data. Registered custom
 data supplies its schema and encode/decode handlers at runtime.
 
-Instant timestamps use `Timestamp(Nanosecond, Some("UTC"))`; durations remain integers. Arrow readers
-and Nautilus queries preserve the nanoseconds and UTC annotation. SQL readers that map these columns
-to microsecond-precision `TIMESTAMPTZ` can truncate sub-microsecond values.
+Instant timestamps use `Timestamp(Nanosecond, Some("UTC"))`. Durations stay integers. Arrow readers and
+Nautilus queries preserve the nanoseconds and UTC annotation. SQL readers that map these columns to
+microsecond-precision `TIMESTAMPTZ` can truncate sub-microsecond values.
 
 Parquet provides compressed columnar storage and cross-language access. The catalog stores these
 files under one root without requiring a separate database service. A local path or object-store
@@ -49,8 +49,8 @@ Option keys are `object_store` configuration keys for the URI scheme:
 
 - S3, GCS, and Azure keys also take a prefixed form, such as `aws_region`,
   `google_application_credentials`, or `azure_storage_sas_token`.
-- Client options such as `timeout` apply to every remote scheme. Set `allow_http` to `true` to
-  connect over plain `http://`.
+- Client options such as `timeout` apply to each remote scheme. Set `allow_http` to `true` to connect over
+  plain `http://`.
 - S3 also accepts the legacy `key` and `secret` names.
 - An unknown key fails with an error that names it.
 
@@ -72,9 +72,9 @@ azure_catalog = ParquetDataCatalog(
 )
 ```
 
-The base path of a remote URI, after the bucket, container, or host, must not contain spaces,
-non-ASCII characters, or characters that object-store paths encode, such as `~`, `%`, `#`, `?`,
-`^`, or `|`. The catalog rejects such a URI when it opens, with an error that names it.
+After the bucket, container, or host, the base path of a remote URI must not contain spaces or non-ASCII
+characters. It must also exclude characters that object-store paths encode, such as `~`, `%`, `#`, `?`, `^`,
+or `|`. The catalog rejects such a URI when it opens, with an error that names it.
 
 ## Compression and row groups
 
@@ -105,15 +105,14 @@ catalog = DataCatalogConfig(path="./catalog", compression="snappy", max_row_grou
 | LZ4          | `lz4`, `lz4_raw`         | `5`                       |
 | zstd         | `zstd`                   | `6`                       |
 
-Construction fails for any other compression name and for a zero `batch_size` or
-`max_row_group_size`. `params` carries only options for an external catalog backend; the Parquet
-catalog rejects any `params` key.
+Construction fails for any other compression name and for a zero `batch_size` or `max_row_group_size`.
+`params` carries only options for an external catalog backend. The Parquet catalog rejects any `params` key.
 
 :::info
-`lz4` and `lz4_raw` name the same codec: the catalog writes Parquet `LZ4_RAW`. The Parquet format
-deprecates the older Hadoop-framed `LZ4` codec, so the catalog never writes it, and compression code
-`5` writes `LZ4_RAW` even though Parquet numbers `LZ4_RAW` as `7`. Files written earlier with the
-Hadoop-framed codec remain readable.
+`lz4` and `lz4_raw` name the same codec: the catalog writes Parquet `LZ4_RAW`. The Parquet format deprecates
+the older Hadoop-framed `LZ4` codec, so the catalog never writes it. Compression code `5` writes `LZ4_RAW`
+even though Parquet numbers `LZ4_RAW` as `7`. Files written earlier with the Hadoop-framed codec stay
+readable.
 
 LZO is not supported because the Parquet writer cannot produce it, so the name `lzo` and code `3`
 fail at construction.
@@ -176,9 +175,8 @@ Custom data uses `data/custom/<type_name>/` with optional identifier path segmen
 Instruments use one directory per concrete instrument class, such as `data/currency_pair/` or
 `data/equity/`, rather than a shared `instruments` directory.
 
-Catalog queries, and therefore backtests, read **only these canonical directories**. Queries do
-not read legacy layouts such as `data/trade_tick/`, `data/quote_tick/`, and the Python-written
-`data/custom_<snake_case>/`.
+Catalog queries, and thus backtests, read **only these canonical directories**. Queries do not read legacy
+layouts such as `data/trade_tick/`, `data/quote_tick/`, and the Python-written `data/custom_<snake_case>/`.
 
 To upgrade a catalog that still uses a legacy layout, convert it with
 [nautilus catalog migrate-parquet](../../how_to/migrate_parquet_catalog.md).
@@ -214,8 +212,8 @@ trades = catalog.query_trade_ticks(
 
 - `data_type` is a `NautilusDataType` value: `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`,
   `OrderBookDepth`, `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`,
-  `OptionGreeks`, `InstrumentClose`, or `Instrument`. `Instrument` loads every instrument class the
-  catalog holds for the selected identifiers.
+  `OptionGreeks`, `InstrumentClose`, or `Instrument`. `Instrument` loads each instrument class the catalog
+  holds for the selected identifiers.
 - `catalog_path` identifies the catalog root.
 - One of `instrument_id`, `instrument_ids`, or `bar_types` is required.
 - `start_time` and `end_time` are optional UNIX nanosecond bounds.
@@ -384,8 +382,7 @@ ignores in `.cargo/audit.toml` and `deny.toml` until DataFusion migrates.
 
 Catalog operations rename, consolidate, or delete data files. Their type selectors are:
 
-- `NautilusDataType`: Selects a data family; `NautilusDataType.Instrument` covers every instrument
-  class.
+- `NautilusDataType`: Selects a data family. `NautilusDataType.Instrument` covers each instrument class.
 - `NautilusRecordType`: Selects a record family.
 - `NautilusInstrumentType`: Targets one instrument class.
 
@@ -394,15 +391,14 @@ ranged deletes.
 
 ### Reset file names
 
-Reset Parquet file names to match their content timestamps so filename-based filtering remains
-accurate. `reset_all_file_names()` processes the entire catalog; `reset_data_file_names(...)`
-targets a data path.
+Reset Parquet file names to match their content timestamps so filename-based filtering stays accurate.
+`reset_all_file_names()` processes the entire catalog. `reset_data_file_names(...)` targets a data path.
 
 For data types partitioned by instrument:
 
 - Supply an instrument ID to target that instrument's directory.
-- Without an ID, the operation recursively reads the type directory and renames each file within
-  its own instrument directory, checking every directory's intervals before renaming any file.
+- Without an ID, the operation recursively reads the type directory and renames each file within its own
+  instrument directory. It checks each directory's intervals before it renames any file.
 
 ```python
 catalog.reset_all_file_names()
@@ -421,28 +417,27 @@ When the file contents are still disjoint, recover the directory with a filename
 1. Back up the affected directory. The reset renames files one at a time, so an I/O failure
    partway through can leave some files renamed. On object stores that rename by copying then
    deleting, a failure can also leave a file under both names.
-1. Run `reset_data_file_names(...)` for the affected path. For custom data types, use
-   `reset_all_file_names()` instead, which covers every leaf directory including custom layouts.
-1. If the reset reports that a new name is held by another file, rename that file to an unused
-   interval name outside the data range, then run the reset again. Repeat until it succeeds.
+1. Run `reset_data_file_names(...)` for the affected path. For custom data types, use `reset_all_file_names()`
+   instead, which covers each leaf directory including custom layouts.
+1. If the reset reports that another file holds a new name, rename that file. Use an unused interval name
+   outside the data range. Then run the reset again. Repeat until it succeeds.
 1. Confirm each renamed file matches its content range, then write a later disjoint interval to
    confirm the directory accepts writes again.
 
-The reset processes one directory at a time. Before renaming any file in a directory, it reads
-each file's `ts_init` range. It fails when the content ranges overlap or when a file's new name is
-the current name of another file, and it then leaves every file name in that directory unchanged.
-Directories reset before the failing one keep their new names.
+The reset processes one directory at a time. Before renaming any file in a directory, it reads each file's
+`ts_init` range. It fails when content ranges overlap or when a file's new name is the current name of another
+file. On failure, it leaves each file name in that directory unchanged. Directories reset before the failing
+one keep their new names.
 
-Use filename reset only for filename-only damage. When file contents overlap, resetting names
-cannot reconcile the data, so the reset fails; rebuild the affected range from source through a
-separately validated process instead.
+Use filename reset only for filename-only damage. When file contents overlap, a filename reset cannot
+reconcile the data, so the reset fails. Rebuild the affected range from source through a separately validated
+process.
 
 ### Consolidate catalog
 
-Combine small Parquet files to reduce file count and query overhead.
-With no bounds, `consolidate_catalog()` processes each leaf data directory in the catalog.
-`consolidate_data(...)` operates on one directory; supply an instrument ID for data types
-partitioned by instrument.
+Combine small Parquet files to reduce file count and query overhead. With no bounds, `consolidate_catalog()`
+processes each leaf data directory in the catalog. `consolidate_data(...)` operates on one directory. Supply
+an instrument ID for data types partitioned by instrument.
 
 ```python
 catalog.consolidate_catalog()
@@ -469,8 +464,8 @@ optional bounds. Supply an identifier to the data-type method for data partition
 - **Catalog-wide method**: Processes quotes, trades, order book deltas, order book depths, bars,
   index prices, mark prices, instrument closes, and registered custom types. It logs a warning
   and skips other types.
-- **Data-type method**: Rejects instrument and record selectors, which have no period-typed
-  rewrite; use `consolidate_data(...)` for those.
+- **Data-type method**: Rejects instrument and record selectors, which have no period-typed rewrite. Use
+  `consolidate_data(...)` for those.
 
 ```python
 DAY_NS = 86_400_000_000_000
@@ -560,5 +555,5 @@ Feather sources. With a positive `promotion_interval_ms`:
 See [stream data into a Parquet catalog](../../how_to/stream_parquet_catalog.md) for defaults,
 configuration, query visibility, and recovery.
 
-`StreamingFeatherWriter` remains available for direct staging. Its completed sessions can be converted
-manually with `ParquetDataCatalog.convert_stream_to_data()`.
+`StreamingFeatherWriter` stays available for direct staging. Its completed sessions can be converted manually
+with `ParquetDataCatalog.convert_stream_to_data()`.

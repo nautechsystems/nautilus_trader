@@ -50,35 +50,34 @@ If you omit the callback:
 
 ## Order events
 
-Order events initialize an order, change its state, or correct its fill history. The execution
-pipeline applies them to the order and cache, then publishes them on the `MessageBus`. The table
-below shows the primary transitions; partially filled, external, and triggered orders support
-additional transitions documented in the full
-[order state flow](../orders/index.md#order-state-flow).
+Order events initialize an order, change its state, or correct its fill history. The execution pipeline
+applies them to the order and cache, then publishes them on the `MessageBus`. The table below shows the
+primary transitions. Partially filled, external, and triggered orders support additional transitions
+documented in the full [order state flow](../orders/index.md#order-state-flow).
 
-| Event                                             | Primary transition                            | Handler                    |
-| ------------------------------------------------- | --------------------------------------------- | -------------------------- |
-| [`OrderInitialized`](order_initialized.md)        | Create or materialize order                   | `on_order_initialized`     |
-| [`OrderDenied`](order_denied.md)                  | Initialized -> Denied                         | `on_order_denied`          |
-| [`OrderEmulated`](order_emulated.md)              | Initialized -> Emulated                       | `on_order_emulated`        |
-| [`OrderReleased`](order_released.md)              | Emulated -> Released                          | `on_order_released`        |
-| [`OrderSubmitted`](order_submitted.md)            | Initialized/Released -> Submitted             | `on_order_submitted`       |
-| [`OrderAccepted`](order_accepted.md)              | Submitted -> Accepted                         | `on_order_accepted`        |
-| [`OrderRejected`](order_rejected.md)              | Submitted -> Rejected                         | `on_order_rejected`        |
-| [`OrderTriggered`](order_triggered.md)            | Accepted -> Triggered                         | `on_order_triggered`       |
-| [`OrderPendingUpdate`](order_pending_update.md)   | Accepted -> PendingUpdate                     | `on_order_pending_update`  |
-| [`OrderPendingCancel`](order_pending_cancel.md)   | Accepted -> PendingCancel                     | `on_order_pending_cancel`  |
-| [`OrderUpdated`](order_updated.md)                | PendingUpdate -> previous status              | `on_order_updated`         |
-| [`OrderModifyRejected`](order_modify_rejected.md) | PendingUpdate -> previous status              | `on_order_modify_rejected` |
-| [`OrderCancelRejected`](order_cancel_rejected.md) | PendingCancel -> previous status              | `on_order_cancel_rejected` |
-| [`OrderCanceled`](order_canceled.md)              | PendingCancel/Accepted -> Canceled            | `on_order_canceled`        |
-| [`OrderExpired`](order_expired.md)                | Accepted -> Expired                           | `on_order_expired`         |
-| [`OrderFilled`](order_filled.md)                  | Accepted -> Filled/PartiallyFilled            | `on_order_filled`          |
-| [`OrderFillVoided`](order_fill_voided.md)         | Correct known fill; otherwise assert terminal | `on_order_fill_voided`     |
+| Event                                             | Primary transition                                     | Handler                    |
+| ------------------------------------------------- | ------------------------------------------------------ | -------------------------- |
+| [`OrderInitialized`](order_initialized.md)        | Create or materialize order                            | `on_order_initialized`     |
+| [`OrderDenied`](order_denied.md)                  | Initialized -> Denied                                  | `on_order_denied`          |
+| [`OrderEmulated`](order_emulated.md)              | Initialized -> Emulated                                | `on_order_emulated`        |
+| [`OrderReleased`](order_released.md)              | Emulated -> Released                                   | `on_order_released`        |
+| [`OrderSubmitted`](order_submitted.md)            | Initialized/Released -> Submitted                      | `on_order_submitted`       |
+| [`OrderAccepted`](order_accepted.md)              | Submitted -> Accepted                                  | `on_order_accepted`        |
+| [`OrderRejected`](order_rejected.md)              | Submitted -> Rejected                                  | `on_order_rejected`        |
+| [`OrderTriggered`](order_triggered.md)            | Accepted -> Triggered                                  | `on_order_triggered`       |
+| [`OrderPendingUpdate`](order_pending_update.md)   | Accepted -> PendingUpdate                              | `on_order_pending_update`  |
+| [`OrderPendingCancel`](order_pending_cancel.md)   | Accepted -> PendingCancel                              | `on_order_pending_cancel`  |
+| [`OrderUpdated`](order_updated.md)                | PendingUpdate -> previous status                       | `on_order_updated`         |
+| [`OrderModifyRejected`](order_modify_rejected.md) | PendingUpdate -> previous status                       | `on_order_modify_rejected` |
+| [`OrderCancelRejected`](order_cancel_rejected.md) | PendingCancel -> previous status                       | `on_order_cancel_rejected` |
+| [`OrderCanceled`](order_canceled.md)              | PendingCancel/Accepted -> Canceled                     | `on_order_canceled`        |
+| [`OrderExpired`](order_expired.md)                | Accepted -> Expired                                    | `on_order_expired`         |
+| [`OrderFilled`](order_filled.md)                  | Accepted -> Filled/PartiallyFilled                     | `on_order_filled`          |
+| [`OrderFillVoided`](order_fill_voided.md)         | Correct known fill or assert terminal for unknown fill | `on_order_fill_voided`     |
 
 ### Common Python order event fields
 
-Every concrete Python order event exposes these fields:
+Each concrete Python order event exposes these fields:
 
 | Field             | Description                                                  |
 | ----------------- | ------------------------------------------------------------ |
@@ -103,10 +102,10 @@ Position lifecycle events describe cached position changes caused by fills and f
 The `ExecutionEngine` processes each `OrderFilled`, updates or creates a position, and emits the
 corresponding lifecycle event.
 
-When an `OrderFillVoided` corrects a locally applied fill, it rebuilds each affected cached position
-from its effective fill history. It does not emit an opposite fill. After publishing the correction,
-the engine emits `PositionChanged` for a corrected position that remains open or `PositionClosed`
-for one that is closed. An order-only correction does not produce a position event.
+When an `OrderFillVoided` corrects a locally applied fill, it rebuilds each affected cached position from its
+effective fill history. It does not emit an opposite fill. After publishing the correction, the engine emits
+`PositionChanged` for a corrected position that stays open or `PositionClosed` for one that is closed. An
+order-only correction does not produce a position event.
 
 | Event                                    | When it fires                                  | Handler               |
 | ---------------------------------------- | ---------------------------------------------- | --------------------- |
@@ -161,19 +160,19 @@ Step by step:
 1. **Position lifecycle**: the engine creates or updates the position in one of three ways:
    - **No position exists** for this ID: the engine creates a `Position` from the fill, adds it to
      the `Cache`, and emits `PositionOpened`.
-   - **Position exists and remains open** after the fill: the engine applies the fill to the
-     position, updates the `Cache`, and emits `PositionChanged`.
+   - **Position exists and stays open** after the fill: the engine applies the fill to the position, updates
+     the `Cache`, and emits `PositionChanged`.
    - **Position exists and closes** (quantity reaches zero): the engine applies the fill, updates
      the `Cache`, and emits `PositionClosed`.
-1. **Position flip**: when a fill reverses the position, for example a sell of 15 against a long 10, the
-   engine splits the fill into two parts: one that closes the original position (`PositionClosed`)
-   and one that opens the new position (`PositionOpened`).
+1. **Position flip**: when a fill reverses the position (for example, a sell of 15 against a long 10), the
+   engine splits the fill into two parts. One closes the original position (`PositionClosed`). The other opens
+   the new position (`PositionOpened`).
 
 ### Position event fields
 
-The three position lifecycle event classes share a core field set and expose additional fields as
-the position develops. A check mark means the Python class exposes the field; a dash means the field
-is absent from that class.
+The three position lifecycle event classes share a core field set and expose additional fields as the position
+develops. A check mark means the Python class exposes the field. A dash means the field is absent from that
+class.
 
 | Field              | Opened | Changed | Closed | Description                                  |
 | ------------------ | ------ | ------- | ------ | -------------------------------------------- |
@@ -224,7 +223,7 @@ opening_order_id = position.opening_order_id
 
 `AccountState` events represent balance and margin snapshots. They fire when:
 
-- The venue reports an account update (via the execution client).
+- The venue reports an account update (through the execution client).
 - The `Portfolio` recalculates account state after a position update (for margin accounts with
   `calculate_account_state` enabled).
 

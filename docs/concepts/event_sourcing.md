@@ -1,15 +1,15 @@
 # Event Sourcing
 
-Event sourcing gives NautilusTrader a durable, ordered record of the messages that change engine
-state. The event store records those messages at the system boundary, then readers, replay tools,
-and verifiers use the same log to reconstruct what happened and to rebuild state.
+Event sourcing gives NautilusTrader a durable, ordered record of the messages that change engine state. The
+event store records those messages at the system boundary. Readers, replay tools, and verifiers then use the
+same log to reconstruct what happened and to rebuild state.
 
 **Core principles**:
 
 - The event store is the durable authority for state-affecting history.
 - The cache is a write-through projection, not the source of truth.
 - Cache replay rebuilds state by applying captured history to cache-owned state.
-- Market data stays in the data catalog; the event store records the messages that affect state.
+- Market data stays in the data catalog. The event store records the messages that affect state.
 - External I/O becomes replayable only when Nautilus captures it as commands, raw reports, or
   other state-affecting inputs.
 
@@ -22,9 +22,9 @@ plus [docs.rs](https://docs.rs/nautilus-event-store) as the API reference.
 
 ## Why event sourcing
 
-The cache answers "what is true now". The event store answers "how did Nautilus get here". It gives
-readers, replay tools, and verifiers a run-scoped history that does not require strategy logic,
-venue queries, or the live cache to explain past state.
+The cache answers "what is true now". The event store answers "how did Nautilus get here". It gives readers,
+replay tools, and verifiers a run-scoped history. That history explains past state without strategy logic,
+venue queries, or the live cache.
 
 The event store provides a durable basis to:
 
@@ -65,12 +65,11 @@ world.
 
 Two capture rules distinguish data responses and instrument closes from streamed observations:
 
-- **Data responses**: every response to an engine request is captured, including book,
-  option-chain reference price, and custom-data responses. Only those listed under
-  [Cache replay](#cache-replay) have rules that apply them back to cache state; the rest are
-  inspection records.
-- **Instrument closes**: every published `InstrumentClose` is captured because contract expiration
-  settles positions.
+- **Data responses**: each response to an engine request is captured, including book, option-chain reference
+  price, and custom-data responses. Only those listed under [Cache replay](#cache-replay) have rules that
+  apply them back to cache state. The rest are inspection records.
+- **Instrument closes**: each published `InstrumentClose` is captured because contract expiration settles
+  positions.
 
 ## Boundaries
 
@@ -83,8 +82,8 @@ The event store is intentionally narrow:
 
 ## Capture flow
 
-Capture happens at the message bus dispatch boundary, so the tap sees every state-affecting message
-before downstream handlers observe it.
+Capture happens at the message bus dispatch boundary, so the tap sees each state-affecting message before
+downstream handlers observe it.
 
 ```mermaid
 flowchart LR
@@ -127,9 +126,9 @@ Some messages are expected to cross more than one tap-visible boundary:
   on its strategy topic.
 - Trading commands hop from strategy to risk to execution.
 
-Duplicate dispatches of one message land within a single engine cycle, so the capture adapter
-deduplicates against a bounded window of recently captured message identities (event id, command
-id). Each logical message becomes one entry, and replay does not apply the same event twice.
+Duplicate dispatches of one message land within a single engine cycle. Thus, the capture adapter deduplicates
+against a bounded window of recently captured message identities (event id, command id). Each logical message
+becomes one entry, and replay does not apply the same event twice.
 
 ## Lifecycle options
 
@@ -145,10 +144,9 @@ extractor registries. Lifecycle options replace any of the three:
 - A backend opener that returns any `EventStore` implementation for the new run.
 - A data-marker extractor registry factory for the configured marker classes.
 
-The backend opener is the simulation-safe path for memory capture. A DST harness or focused test can
-open `MemoryBackend` through the normal lifecycle, keep the same bus tap and writer semantics, and
-read the captured entries in-process after seal. With a `MemoryBackend` opener, capture needs no
-`redb` run file.
+The backend opener is the simulation-safe path for memory capture. A DST harness or focused test can open
+`MemoryBackend` through the normal lifecycle with the same bus tap and writer semantics. It can then read the
+captured entries in-process after seal. With a `MemoryBackend` opener, capture needs no `redb` run file.
 
 Under `cfg(madsim)`, the writer commits each submit synchronously, so the captured `seq` order is
 deterministic.
@@ -168,9 +166,9 @@ Each event-store entry is one captured message plus metadata:
 
 `seq` orders replay. Timestamps help explain the run, but they do not override `seq`.
 
-Secondary indices cover lookup by `client_order_id` and `venue_order_id`. A `correlation_id` index
-can be added when a concrete inspection caller needs that lookup pattern; until then, correlation
-scans can walk the captured stream.
+Secondary indices cover lookup by `client_order_id` and `venue_order_id`. A `correlation_id` index can be
+added when a concrete inspection caller needs that lookup pattern. Until then, correlation scans can walk the
+captured stream.
 
 ## Correlation model
 
@@ -201,8 +199,8 @@ diagram above as the design contract, not as a description of what a captured ru
 The default encoder registry registers extractors for trading commands, data commands, and data
 responses. Those extractors forward whatever the message carries. In practice:
 
-- **Data messages**: only data requests and data responses yield populated headers. A request
-  contributes its `request_id`; a response carries a required `correlation_id`.
+- **Data messages**: only data requests and data responses yield populated headers. A request contributes its
+  `request_id`. A response carries a required `correlation_id`.
 - **Trading commands**: in-tree producers leave `correlation_id` and `causation_id` unset.
 - **Events and reports**: order, position, and account events, execution reports, and time events
   have no extractor.
@@ -268,8 +266,8 @@ flowchart TD
     RunEnded --> Ended["Ended manifest"]
 ```
 
-A run opens with `RunStarted` and closes with `RunEnded`; snapshot anchors are optional points
-recorded while the manifest stays `Running`.
+A run opens with `RunStarted` and closes with `RunEnded`. Snapshot anchors are optional points recorded while
+the manifest stays `Running`.
 
 - `RunStarted` is the first entry of a fresh run. A repeated `open()` in the same process seals
   the current session before it starts a new run.
@@ -277,9 +275,9 @@ recorded while the manifest stays `Running`.
   can record anchors against the durable high-watermark.
 - A clean shutdown, kernel drop, or reset/rerun seal appends `RunEnded` and seals the manifest as
   `Ended`.
-- A fail-stopped (halted) session skips the in-process seal; the recovery sweep on the next boot
-  owns it. The halt signal is scoped to the run that fired it: a later `open()` re-arms a fresh
-  signal, so one halt does not poison subsequent runs in the same process.
+- A fail-stopped (halted) session skips the in-process seal. The recovery sweep on the next boot owns it. The
+  halt signal is scoped to the run that fired it. A later `open()` re-arms a fresh signal, so one halt does
+  not poison subsequent runs in the same process.
 
 ## Recovery sealing
 
@@ -318,9 +316,8 @@ The sweep never leaves the trader unbootable because one run file is damaged:
 - **Repair**: after a hard kill (SIGKILL, OOM kill, or power loss), redb refuses to open the run
   file read-only. The listing falls back to a writable open, which performs redb's repair pass
   before recovery proceeds.
-- **Skip and retry**: a file that still cannot be opened, or that lacks a manifest, is skipped
-  with a logged error and retried on the next boot. Recovery and retention continue over the
-  healthy runs.
+- **Skip and retry**: if a file still cannot be opened or lacks a manifest, recovery skips it and logs an
+  error. Recovery retries that file on the next boot. Recovery and retention continue over the healthy runs.
 
 Only `CrashedRecovered` predecessors become `parent_run_id`. A configured `replay_from_run_id`
 overrides a recovered parent after validation.
@@ -340,9 +337,8 @@ The Rust replay-input API keeps planning separate from execution:
 
 Catalog planners take explicit `CatalogSliceSelector` values and a read-only `ReplayCatalog`:
 
-- **Planning**: resolves catalog time bounds from the event-store scan unless the selector supplies
-  explicit bounds, reports missing catalog slices, and preserves `seq` as the entry ordering
-  authority.
+- **Planning**: resolves catalog time bounds from the event-store scan unless the selector supplies explicit
+  bounds. It reports missing catalog slices and preserves `seq` as the entry ordering authority.
 - **Loading**: returns `ReplayInputs` with event-store entries in `seq` order and catalog records
   grouped under their selected slice.
 
@@ -367,9 +363,9 @@ These APIs **do not**:
 
 ## Cache replay
 
-Kernel-managed replay uses `EventStoreConfig::replay_from_run_id`. When set, the kernel restores
-cache state from the sealed run, records that run as the parent of the fresh child run, and skips
-live engines, clients, startup, and venue reconciliation.
+Kernel-managed replay uses `EventStoreConfig::replay_from_run_id`. When set, the kernel restores cache state
+from the sealed run and records that run as the parent of the fresh child run. It skips live engines, clients,
+startup, and venue reconciliation.
 
 **Replay requirements**:
 
@@ -396,29 +392,28 @@ The loader **does not**:
 - Derive identifiers again
 - Re-arm clocks
 
-Fired `TimeEvent`s and raw venue reports are inspection records on this path; replay applies the
-synthesized order, position, and account events captured later in the run.
+Fired `TimeEvent`s and raw venue reports are inspection records on this path. Replay applies the synthesized
+order, position, and account events captured later in the run.
 
 ## Data marker sidecar
 
 :::note
-The marker sidecar is opt-in via `EventStoreConfig.data_markers` and stays off by default.
+The marker sidecar is opt-in through `EventStoreConfig.data_markers` and stays off by default.
 :::
 
-Exact data delivery order is not inferred from catalog timestamps. The marker sidecar records
-data observed at the message-bus dispatch boundary, in a file beside the event-store run at
-`<base>/<instance_id>/<run_id>.markers.redb`, without writing full market-data payloads into
-`EventStoreEntry` rows.
+Exact data delivery order is not inferred from catalog timestamps. The marker sidecar records data observed at
+the message-bus dispatch boundary in `<base>/<instance_id>/<run_id>.markers.redb`, beside the event-store run.
+It does not write full market-data payloads into `EventStoreEntry` rows.
 
-The sidecar supports one audit claim: when marker capture is enabled, Nautilus observed data
-delivery in `marker_seq` order at the bus boundary for that run, and each marker carries enough
-identity to join back to candidate catalog rows. It cannot:
+The sidecar supports one audit claim. When marker capture is enabled, Nautilus observed data delivery in
+`marker_seq` order at the bus boundary for that run. Each marker carries enough identity to join back to
+candidate catalog rows. It cannot:
 
 - Prove that catalog timestamps alone define bus order.
 - Reconstruct a data point when the catalog row is absent or changed.
 - Prove venue send order before Nautilus observed the message.
 - Say anything about runs where marker capture was disabled.
-- Guarantee that every observed data message produced a marker.
+- Guarantee that each observed data message produced a marker.
 
 The sidecar trades completeness for isolation from the trading path, so it does not inherit the
 entry writer's backpressure contract. A marker submit that finds the bounded channel full drops the
@@ -429,10 +424,10 @@ marker rather than stalling the caller or halting the run. Its sequence becomes 
 
 ### Ordering and identity
 
-Markers do not consume event-store `seq` values and do not create gaps in the entry table. Each
-marker has its own monotonically increasing `marker_seq` plus `event_seq_before`, the largest
-event-store `seq` assigned before the marker was observed. Event-store `seq` remains the
-replay-order authority for state-affecting entries.
+Markers do not consume event-store `seq` values and do not create gaps in the entry table. Each marker has its
+own monotonically increasing `marker_seq` plus `event_seq_before`, the largest event-store `seq` assigned
+before the marker was observed. Event-store `seq` stays the replay-order authority for state-affecting
+entries.
 
 For sealed-run analysis:
 
@@ -446,16 +441,14 @@ The sidecar has two marker kinds:
   the previous snapshot. A `StreamCursor` carries the stream `slot`, the highest `ts_init` seen
   in that slot (`ts_init_hi`), and the record `count`. A `StreamDictEntry` maps each `slot` to its
   `data_cls` (`BookDeltas`, `BookDepth`, `Quote`, `Trade`, `Bar`) and instrument `identifier`.
-- **High-fidelity markers**: `HiFiMarker` is opt-in per instrument via
-  `DataMarkerConfig.high_fidelity`. Each records `marker_seq`, `event_seq_before`, `slot`,
-  `ts_event`, `ts_init`, `same_ts_ordinal`, and a 32-byte `record_fingerprint` over the canonical
-  typed row fields.
+- **High-fidelity markers**: `HiFiMarker` is opt-in per instrument through `DataMarkerConfig.high_fidelity`.
+  Each records `marker_seq`, `event_seq_before`, `slot`, `ts_event`, `ts_init`, `same_ts_ordinal`, and a
+  32-byte `record_fingerprint` over the canonical typed row fields.
 
-`same_ts_ordinal` and `record_fingerprint` disambiguate duplicate same-timestamp data without
-storing prices, quantities, sizes, or MessagePack payloads. If two catalog rows are byte-identical
-for the same key and timestamp, the sidecar can prove that Nautilus observed two deliveries in a
-specific marker order; it cannot name a unique physical catalog row after catalog compaction
-rewrites row order.
+`same_ts_ordinal` and `record_fingerprint` disambiguate duplicate same-timestamp data without storing prices,
+quantities, sizes, or MessagePack payloads. Two catalog rows can be byte-identical for the same key and
+timestamp. In this case, the sidecar can prove that Nautilus observed two deliveries in a specific marker
+order. It cannot name a unique physical catalog row after catalog compaction rewrites row order.
 
 ### Verification and replay boundaries
 
@@ -466,15 +459,15 @@ The stable contract is the marker schema, opt-in capture and reader primitives, 
 verification, and catalog join rules. Analysis tools can build on that contract to select windows,
 interpret venue-specific data, rank or cluster markers, present reports, and package run bundles.
 
-With marker capture disabled, no data marker writer is installed. Cache replay and live restart do
-not read this sidecar: snapshot-tail replay still applies event-store entries in `seq` order, and
-live restart still boots from cache-owned state plus the event-store parent link.
+With marker capture disabled, no data marker writer is installed. Cache replay and live restart do not read
+this sidecar. Snapshot-tail replay still applies event-store entries in `seq` order. Live restart still boots
+from cache-owned state plus the event-store parent link.
 
 ## Snapshot-anchored recovery
 
-Cache snapshots are owned by the cache. The event store stores only the snapshot anchor: the
-high-watermark at snapshot time, an opaque cache-owned `blob_ref` naming the snapshot, and the
-cache-owned `content_hash` for that blob.
+Cache snapshots are owned by the cache. The event store stores only the snapshot anchor. This contains the
+high-watermark at snapshot time, an opaque cache-owned `blob_ref` naming the snapshot, and the cache-owned
+`content_hash` for that blob.
 
 ```mermaid
 sequenceDiagram
@@ -502,8 +495,8 @@ Recovery cases are ordered by how far the message progressed:
 | After snapshot anchor                | Load latest snapshot and replay entries after anchor.            |
 
 :::info
-Live restart still uses snapshot-plus-reconcile. Event-store recovery becomes the live restart path
-only after capture coverage and replay rules cover every state-affecting path.
+Live restart still uses snapshot-plus-reconcile. Event-store recovery becomes the live restart path only after
+capture coverage and replay rules cover each state-affecting path.
 :::
 
 Replay correctness depends on four checks:
@@ -515,13 +508,13 @@ Replay correctness depends on four checks:
 
 ## Retention planning
 
-Retention uses whole run files as the reclaim unit. The event store exposes a non-destructive
-planner that lists sealed run manifests, inspects their latest snapshot-anchor status, and returns
-candidate run files for a later supervisor or operator process to reclaim.
+Retention uses whole run files as the reclaim unit. The event store exposes a non-destructive planner. It
+lists sealed run manifests, inspects their latest snapshot-anchor status, and returns candidate run files. A
+supervisor or operator process can reclaim those files later.
 
 The planner supports three modes:
 
-- `Full`: keep every sealed run and return no reclaim candidates.
+- `Full`: keep each sealed run and return no reclaim candidates.
 - `Bounded { keep_last }`: keep the newest sealed runs and also keep at least one known-good
   restore point.
 - `SnapshotAnchored`: reclaim only sealed runs older than the newest known-good restore point.
@@ -534,26 +527,24 @@ as a restore point.
 **Retention safeguards**:
 
 - `Running` runs are never listed as sealed runs or selected as reclaim candidates.
-- Missing, corrupt, or invalid snapshot anchors do not count as restore points. The planner
-  returns no candidates when it cannot prove that at least one structurally valid restore point
-  remains.
+- Missing, corrupt, or invalid snapshot anchors do not count as restore points. The planner returns no
+  candidates when it cannot prove that at least one structurally valid restore point stays.
 
 **Validation limit**: the planner never loads the snapshot blob. Its check stops at the anchor, so
 it cannot rule out a restore failure caused by a missing or altered blob.
 
 ## Integrity and verification
 
-Every entry carries a canonical hash over its full content. Readers and verifiers recompute the
-hash and report mismatches. The verifier also checks manifest/high-watermark status, validates
-secondary indices against the entry table, and reports snapshot anchors that fail to decode or
-point past the durable high-watermark.
+Each entry carries a canonical hash over its full content. Readers and verifiers recompute the hash and report
+mismatches. The verifier also checks manifest/high-watermark status and validates secondary indices against
+the entry table. It reports snapshot anchors that fail to decode or point past the durable high-watermark.
 
 :::warning
 A `clean` verdict proves structural integrity, not restorability or capture completeness:
 
-- The verifier checks the snapshot anchor but never loads or hashes the blob it names, so a run
-  whose blob is missing or altered verifies clean and fails at restore. The retention planner picks
-  restore points on the same anchor-only evidence.
+- The verifier checks the snapshot anchor but never loads or hashes the blob it names. Thus, a run whose blob
+  is missing or altered verifies clean and fails at restore. The retention planner picks restore points on the
+  same anchor-only evidence.
 - Marker verification counts recorded gaps as coverage, so a run that dropped markers under
   backpressure verifies clean.
 - A run that fail-stopped mid-session verifies clean over what it did capture, and says nothing
@@ -586,11 +577,11 @@ corrupt run_id=1700000000-cafe0001 status=Ended high_watermark=3 entries_scanned
 
 The `markers=` field reports the sidecar scan:
 
-| Value                | Meaning                                                                             |
-| -------------------- | ----------------------------------------------------------------------------------- |
-| `absent`             | No `<run_id>.markers.redb` beside the run file.                                     |
-| `clean` or `corrupt` | Sidecar read; scanned snapshot, high-fidelity, gap, and dictionary counts reported. |
-| `error`              | Sidecar present but could not be opened or scanned.                                 |
+| Value                | Meaning                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| `absent`             | No `<run_id>.markers.redb` beside the run file.                                                     |
+| `clean` or `corrupt` | Sidecar read with counts of scanned snapshots, high-fidelity markers, gaps, and dictionary entries. |
+| `error`              | Sidecar present but could not be opened or scanned.                                                 |
 
 Exit codes:
 
@@ -663,10 +654,9 @@ Together they let a run reproduce engine behavior inside the deterministic simul
 manifest records the inputs that identify such a run alongside the captured log itself: `seed`,
 `binary_hash`, `config_hash`, and `schema_version`.
 
-Under `cfg(madsim)`, the writer commits synchronously instead of spawning its writer thread. When a
-simulation harness supplies a `MemoryBackend` opener through lifecycle options, capture stays
-in-process and does not require `redb` files. Redb remains the default durable backend outside that
-advanced options path.
+Under `cfg(madsim)`, the writer commits synchronously instead of spawning its writer thread. When a simulation
+harness supplies a `MemoryBackend` opener through lifecycle options, capture stays in-process and does not
+require `redb` files. Redb stays the default durable backend outside that advanced options path.
 
-Adapter network I/O remains outside bit-identical replay unless Nautilus captures the relevant
-raw inputs and routes them through deterministic interfaces.
+Adapter network I/O stays outside bit-identical replay unless Nautilus captures the relevant raw inputs and
+routes them through deterministic interfaces.

@@ -23,8 +23,8 @@ target integration's capabilities before relying on an option.
 - **Aggressive**: an order whose type is `MARKET`, or one that executes as a marketable order and
   takes liquidity.
 - **Passive**: an order that rests without taking liquidity.
-- **Active local**: an order that remains within the local system boundary at one of these
-  non-terminal statuses:
+- **Active local**: an order that stays within the local system boundary at one of these non-terminal
+  statuses:
   - `INITIALIZED`
   - `EMULATED`
   - `RELEASED`
@@ -54,10 +54,10 @@ target integration's capabilities before relying on an option.
   local, and `SUBMITTED` is in-flight until the venue acknowledges the order.
 
 :::warning[Open and closed are not complements]
-Test for a finished order with `is_closed`, never by negating `is_open`. An order at one of the four
-statuses above is not open, but it is not finished either. Every order is `SUBMITTED` immediately
-after submission, so code which treats "not open" as done abandons orders the venue is still
-processing. Use `is_inflight` for the awaiting-venue case.
+Test for a finished order with `is_closed`, never by negating `is_open`. An order at one of the four statuses
+above is not open, but it is not finished either. Each order is `SUBMITTED` immediately after submission, so
+code which treats "not open" as done abandons orders the venue is still processing. Use `is_inflight` for the
+awaiting-venue case.
 :::
 
 ### Order state flow
@@ -136,9 +136,9 @@ event provenance, delivery limits, and reconciliation policy.
 - A partial fill leaves the order `EXPIRED`.
 - A fill that completes its quantity changes it to `FILLED`.
 
-If a fill arrives after the most recent expiry and the order is still `EXPIRED` or `FILLED`, the
-next `OrderExpired` leaves its status and timestamps unchanged. The event remains in the order's
-history, and the execution engine publishes it to strategy handlers. Further expiry events are
+If a fill arrives after the most recent expiry and the order is still `EXPIRED` or `FILLED`, Nautilus records
+the next `OrderExpired`. This event leaves the order's status and timestamps unchanged. The event stays in the
+order's history, and the execution engine publishes it to strategy handlers. Further expiry events are
 rejected until another fill arrives.
 
 ### Order status definitions
@@ -151,8 +151,8 @@ rejected until another fill arrives.
 | `RELEASED`         | Order was released from the `OrderEmulator` component.                                         |
 | `SUBMITTED`        | Order was submitted to the venue (awaiting acknowledgement).                                   |
 | `ACCEPTED`         | Order was acknowledged by the venue as received and valid (may now be working).                |
-| `REJECTED`         | Order is terminal as rejected; `reconciliation` and `reason` provide the available provenance. |
-| `CANCELED`         | Order is terminal as canceled; status alone does not identify venue, local, or policy cause.   |
+| `REJECTED`         | Order is terminal as rejected. `reconciliation` and `reason` provide the available provenance. |
+| `CANCELED`         | Order is terminal as canceled. Status alone does not identify venue, local, or policy cause.   |
 | `EXPIRED`          | Order reached its GTD expiration (terminal).                                                   |
 | `TRIGGERED`        | A stop-limit, trailing-stop-limit, or limit-if-touched order triggered on the venue.           |
 | `PENDING_UPDATE`   | Order is pending a modification request on the venue.                                          |
@@ -168,14 +168,14 @@ Support varies by venue and adapter.
 
 ### Time in force
 
-Time in force specifies how long an order remains active before any unfilled quantity is canceled.
+Time in force specifies how long an order stays active before any unfilled quantity is canceled.
 
-- **`GTC` (Good Till Cancel)**: The order remains active until canceled by the trader or the venue.
+- **`GTC` (Good Till Cancel)**: The order stays active until canceled by the trader or the venue.
 - **`IOC` (Immediate or Cancel / Fill and Kill)**: The order executes immediately, with any
   unfilled portion canceled.
 - **`FOK` (Fill or Kill)**: The order executes immediately in full or not at all.
-- **`GTD` (Good Till Date)**: The order remains active until a specified expiration date and time.
-- **`DAY` (Good for session/day)**: The order remains active until the end of the current trading session.
+- **`GTD` (Good Till Date)**: The order stays active until a specified expiration date and time.
+- **`DAY` (Good for session/day)**: The order stays active until the end of the current trading session.
 - **`AT_THE_OPEN` (OPG)**: The order is only active at the open of the trading session.
 - **`AT_THE_CLOSE`**: The order is only active at the close of the trading session.
 
@@ -244,11 +244,11 @@ their constraints.
 
 ## Order factory
 
-Use the built-in `OrderFactory` to create orders. Each Python `Strategy` exposes one as
-`self.order_factory`; the Rust strategy API exposes it through `self.order()`.
+Use the built-in `OrderFactory` to create orders. Each Python `Strategy` exposes one as `self.order_factory`.
+The Rust strategy API exposes it through `self.order()`.
 
-The factory assigns the trader and strategy IDs, generates client order and initialization IDs when
-needed, records the initial timestamp, and applies defaults for the selected order type.
+The factory assigns the trader and strategy IDs, and generates client order and initialization IDs when
+needed. It records the initial timestamp and applies defaults for the selected order type.
 
 The examples in these guides create orders from a `Strategy` context.
 
@@ -258,8 +258,8 @@ for further details.
 
 ## Order types
 
-NautilusTrader supports the following order types. Each links to a dedicated guide with a code
-example; optional parameters are marked with a comment showing the default value.
+NautilusTrader supports the following order types. Each links to a dedicated guide with a code example.
+Optional parameters are marked with a comment showing the default value.
 
 | Order type                                        | Category             | Description                                                                 |
 | ------------------------------------------------- | -------------------- | --------------------------------------------------------------------------- |
@@ -267,7 +267,7 @@ example; optional parameters are marked with a comment showing the default value
 | [`LIMIT`](limit.md)                               | Passive              | Rests in the book and trades only at the limit price or better.             |
 | [`STOP_MARKET`](stop_market.md)                   | Conditional          | Once the trigger price is hit, places a *Market* order.                     |
 | [`STOP_LIMIT`](stop_limit.md)                     | Conditional          | Once the trigger price is hit, places a *Limit* order at the set price.     |
-| [`MARKET_TO_LIMIT`](market_to_limit.md)           | Hybrid               | Submits as *Market*; any remainder rests as a *Limit* at the fill price.    |
+| [`MARKET_TO_LIMIT`](market_to_limit.md)           | Hybrid               | Submits as *Market*. Any remainder rests as a *Limit* at the fill price.    |
 | [`MARKET_IF_TOUCHED`](market_if_touched.md)       | Conditional          | Once the trigger price is touched, places a *Market* order.                 |
 | [`LIMIT_IF_TOUCHED`](limit_if_touched.md)         | Conditional          | Once the trigger price is touched, places a *Limit* order at the set price. |
 | [`TRAILING_STOP_MARKET`](trailing_stop_market.md) | Conditional trailing | Trails the trigger by an offset, then places a *Market* order.              |
@@ -291,9 +291,9 @@ defines one.
 | Trailing-Stop-Market | `3` (Stop) + trailing peg            |
 | Trailing-Stop-Limit  | `4` (Stop Limit) + trailing peg      |
 
-† FIX defines no dedicated `OrdType` for *Limit-If-Touched*; it is commonly sent as `4` (Stop Limit)
-with a favorable trigger. Trailing stops likewise have no dedicated value and are modeled as `3`/`4`
-plus trailing peg fields.
+† FIX defines no dedicated `OrdType` for *Limit-If-Touched*. It is commonly sent as `4` (Stop Limit) with a
+favorable trigger. Trailing stops likewise have no dedicated value and are modeled as `3`/`4` plus trailing
+peg fields.
 
 ## Advanced orders
 

@@ -5,17 +5,17 @@ updates should affect linked orders. The component that handles the list determi
 the backtest matching engine, local order emulator, live adapter and venue, or strategy code.
 
 :::warning
-An `OrderList` or `ContingencyType` does not guarantee that every live adapter or venue implements
-the relationship. Check the target integration before relying on native contingency behavior.
+An `OrderList` or `ContingencyType` does not guarantee that all live adapters or venues implement the
+relationship. Check the target integration before relying on native contingency behavior.
 :::
 
 ## Order lists
 
-An order list groups contingent orders or a larger batch under one `order_list_id`. Orders in the
-list do not need a contingency relationship; their own metadata defines any relationship.
+An order list groups contingent orders or a larger batch under one `order_list_id`. Orders in the list do not
+need a contingency relationship. Their own metadata defines any relationship.
 
-Production constructors require every order in a list to use the same venue. Orders may target
-different instruments at that venue, such as pairs, calendar spreads, or multi-leg strategies.
+Production constructors require each order in a list to use the same venue. Orders may target different
+instruments at that venue, such as pairs, calendar spreads, or multi-leg strategies.
 
 The list takes its representative `instrument_id` from the first order. Consumers that need the
 actual instrument must resolve each order individually.
@@ -28,16 +28,14 @@ actual instrument must resolve each order individually.
   data use the list's representative instrument. For a mixed list, this produces a single-instrument
   bound rather than per-instrument accuracy.
 - **Cache lookups**: `cache.order_lists(instrument_id=...)` filters against the representative
-  `instrument_id`; lists containing other instruments will not match queries for those other
-  instruments.
+  `instrument_id`. Lists containing other instruments will not match queries for those other instruments.
 - **Position IDs**: The execution engine denies mixed-instrument lists when a `position_id` is
   supplied (a position belongs to a single instrument, regardless of OMS).
-- **Adapter batching**: `submit_order_list` implementations vary. Some iterate orders per leg and
-  resolve each order's own `instrument_id` against the venue API; others still build the batch
-  request around the list's representative `instrument_id` and will misroute non-first
-  orders. Treat mixed-instrument lists as adapter-specific; verify the target adapter's
-  behavior before relying on it. Backtesting and strategy-managed routing avoid relying on an
-  adapter's mixed-instrument batch behavior.
+- **Adapter batching**: `submit_order_list` implementations vary. Some iterate orders per leg and resolve each
+  order's own `instrument_id` against the venue API. Others still build the batch request around the list's
+  representative `instrument_id` and will misroute non-first orders. Treat mixed-instrument lists as
+  adapter-specific. Verify the target adapter's behavior before relying on it. Backtesting and
+  strategy-managed routing avoid relying on an adapter's mixed-instrument batch behavior.
 
 ## Contingency types
 
@@ -58,8 +56,8 @@ orders that are not active local. The strategy sends the resulting cancel and qu
 commands through the normal execution path before it calls the specific and aggregate user
 order-event handlers.
 
-The `OrderEmulator` always owns active-local orders. Enabling strategy management therefore does
-not make the strategy and emulator manage the same order.
+The `OrderEmulator` always owns active-local orders. Enabling strategy management thus does not make the
+strategy and emulator manage the same order.
 
 The option manages non-active-local orders that are already open. It does not add native venue
 support or submit a non-active-local OTO child.
@@ -71,17 +69,17 @@ support or submit a non-active-local OTO child.
 1. The parent order enters its execution path.
 1. One or more child orders reference the parent and wait for the configured release condition.
 
-The handler determines where the children wait. The backtest engine can hold them locally, while a
-live adapter may send native venue instructions, submit all legs, reject the list, or require the
-strategy to manage the relationship.
+The handler determines where the children wait. The backtest engine can hold them locally. A live adapter may
+send native venue instructions, submit all legs, reject the list, or require the strategy to manage the
+relationship.
 
 #### Child sizing
 
 Before the parent's first fill, strategy management propagates parent quantity updates to open,
 non-active-local OTO children.
 
-After filling starts, each parent event starts the child target at the parent's cumulative filled
-quantity. For an execution spawn, this quantity includes fills from every order in the spawn.
+After filling starts, each parent event starts the child target at the parent's cumulative filled quantity.
+For an execution spawn, this quantity includes fills from each order in the spawn.
 
 **Position-linked sizing**: for a parent linked to a position, the manager then adjusts the target
 in order.
@@ -117,13 +115,13 @@ with the remaining linked children.
 
 **Target application**: parent events apply the validated target according to the child and parent state.
 
-| Condition                                                | Action                                                     |
-| -------------------------------------------------------- | ---------------------------------------------------------- |
-| Managed child has a different positive target            | Update its total quantity.                                 |
-| Target is zero; parent or execution spawn remains active | Keep the child unchanged and wait for executable quantity. |
-| Target is zero; parent or execution spawn closes         | Cancel the child.                                          |
-| Child fills meet or exceed the positive target           | Cancel any remaining quantity.                             |
-| Active-local child reaches an executable positive target | The active-local emulator submits it once.                 |
+| Condition                                                 | Action                                                     |
+| --------------------------------------------------------- | ---------------------------------------------------------- |
+| Managed child has a different positive target             | Update its total quantity.                                 |
+| Target is zero and parent or execution spawn stays active | Keep the child unchanged and wait for executable quantity. |
+| Target is zero and parent or execution spawn closes       | Cancel the child.                                          |
+| Child fills meet or exceed the positive target            | Cancel any remaining quantity.                             |
+| Active-local child reaches an executable positive target  | The active-local emulator submits it once.                 |
 
 A child fill or update does not recalculate the target immediately. The next parent event refreshes
 it.
@@ -137,13 +135,13 @@ it.
 
 :::info
 The default `BacktestVenueConfig` mode is `OtoTriggerMode.PARTIAL`. Set `oto_trigger_mode` to
-`OtoTriggerMode.FULL` to wait for a complete fill. This setting controls release timing; it does not
-promise pro rata child sizing. Verify child quantities when the parent fills partially.
+`OtoTriggerMode.FULL` to wait for a complete fill. This setting controls release timing. It does not promise
+pro rata child sizing. Verify child quantities when the parent fills partially.
 :::
 
-With `support_contingent_orders` enabled, the backtest venue sizes each child as if it covers the
-parent's whole quantity. When the parent is modified or closes, each child's remaining quantity
-covers what the parent can still hold, less what the children have filled between them.
+With `support_contingent_orders` enabled, the backtest venue sizes each child as if it covers the parent's
+whole quantity. When the parent is modified or closes, each child's remaining quantity covers what the parent
+can still hold. This excludes what the children have filled between them.
 
 **Parent capacity**:
 
@@ -155,26 +153,24 @@ the parent's quantity, and closing the parent only shrinks them.
 
 - Released children keep working for the parent's filled quantity. A child with nothing left to
   cover is canceled.
-- Reducing the parent to its filled quantity completes it, so `OtoTriggerMode.FULL` releases held
-  children at that quantity, and a child that fills on release leaves the others only what it did
-  not fill.
+- Reducing the parent to its filled quantity completes it. Thus, `OtoTriggerMode.FULL` releases held children
+  at that quantity. A child that fills on release leaves the others only what it did not fill.
 - Canceling or expiring the parent cancels held children, so a partially filled parent that closes
   this way under `OtoTriggerMode.FULL` leaves its fills without children.
 
 **Quantity units**: the venue compares quantities in the parent's units.
 
-- A child that still holds a quote quantity, under a parent whose quantity is in base, is compared
-  as the base quantity at its price, else its trigger price, else the best bid for a sell or the
-  best ask for a buy in the parent's book. It holds that base quantity once the venue resizes it,
-  and whenever the parent closes as above, so a later conversion cannot take it past the parent's
-  fills. Without such a price it is not resized.
+- Under a parent whose quantity is in base, a child that still holds a quote quantity is compared as base
+  quantity. Conversion uses its price, then its trigger price if absent. If neither exists, it uses the best
+  bid for a sell or the best ask for a buy in the parent's book. It holds that base quantity once the venue
+  resizes it, and whenever the parent closes as above. Thus, a later conversion cannot take it past the
+  parent's fills. Without such a price it is not resized.
 - A parent that still holds a quote quantity, such as a stop that converts when it fills, resizes
   only the children that hold one too.
 - Inverse instruments have no quote conversion, so their quantities compare as they are.
-- A child on another instrument covers the parent's quantity one to one. Once its own
-  instrument's engine matches it, what remains for it to cover is rounded down to that
-  instrument's size precision, and a quote quantity converts by that instrument, at its own price
-  or trigger price only.
+- A child on another instrument covers the parent's quantity one to one. Once its own instrument's engine
+  matches it, the quantity it still needs to cover is rounded down to that instrument's size precision. At
+  that point, a quote quantity converts by that instrument, at its own price or trigger price only.
 
 Reduce-only children also track the position between these events, as described in
 [Backtest reduce-only resizing](#backtest-reduce-only-resizing).
@@ -208,7 +204,7 @@ as complete protection.
 
 - **Backtest local matching**: a full or partial fill in one OCO order causes a best-effort request
   to cancel its open siblings.
-- **Local order manager**: applies this behavior only while a sibling remains active local.
+- **Local order manager**: applies this behavior only while a sibling stays active local.
 - **Strategy management enabled**: the strategy requests cancellation for open, non-active-local
   siblings. Otherwise, the adapter or venue determines cancellation behavior.
 
@@ -243,16 +239,16 @@ its remaining quantity to siblings that meet both conditions.
 **Sibling quantities**: siblings do not need to be `reduce_only`. Each sibling's quantity update
 follows these rules.
 
-- Add the sibling's prior fills to the propagated remaining quantity to obtain its total quantity.
+- Add the sibling's prior fills to the propagated remaining quantity to get its total quantity.
 - Apply the sibling's own cached parent's filled-quantity cap, when available.
 - Never reduce the total below the sibling's prior fills.
 
-The order already being filled retains its active fill loop's quantity rules. This propagation does
-not trigger matching itself.
+The order already being filled keeps its active fill loop's quantity rules. This propagation does not trigger
+matching itself.
 
-Resized quantities are in base. An order that still holds a quote quantity, such as an untriggered
-stop, takes its resized quantity in base, so its trigger does not convert it again. Inverse
-instruments have no quote conversion, so the order keeps its quantity denomination.
+Resized quantities are in base. An order that still holds a quote quantity (such as an untriggered stop) takes
+its resized quantity in base. Thus, its trigger does not convert it again. Inverse instruments have no quote
+conversion, so the order keeps its quantity denomination.
 
 #### Backtest cancellation at zero capacity
 
@@ -283,12 +279,12 @@ The model enforces only part of the remaining consistency.
 - `OrderList.validate` does not verify shared `order_list_id` values, parent references, or other
   cross-field relationships.
 
-Modification, cancellation, and rejection behavior depends on the component managing the
-contingency. Do not assume a parent update or cancellation cascades in every live integration.
+Modification, cancellation, and rejection behavior depends on the component managing the contingency. Do not
+assume a parent update or cancellation cascades in all live integrations.
 
 :::warning
-Handle `OrderDenied` and `OrderRejected` events for every leg. Adapter or venue failures can affect
-legs independently and leave a position without its intended protection.
+Handle `OrderDenied` and `OrderRejected` events for each leg. Adapter or venue failures can affect legs
+independently and leave a position without its intended protection.
 :::
 
 ## Bracket orders
@@ -306,8 +302,8 @@ Create brackets with
 [`OrderFactory`](/docs/python-api-latest/common.html#nautilus_trader.common.OrderFactory), which
 also supports different entry and exit types, trigger settings, and execution instructions.
 
-**Example**: bracket a *Market* entry to BUY 10 ETHUSDT-PERP contracts with a take-profit *Limit*
-at 3,300 USDT and a stop-loss *Stop-Market* triggering at 2,800 USDT.
+**Example**: bracket a *Market* entry to BUY 10 ETHUSDT-PERP contracts. Use a take-profit *Limit* at 3,300
+USDT and a stop-loss *Stop-Market* with a trigger at 2,800 USDT.
 
 ```rust tab="Rust"
 use nautilus_model::{

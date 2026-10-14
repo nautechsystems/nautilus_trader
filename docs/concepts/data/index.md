@@ -35,7 +35,7 @@ See [Message Bus](../message_bus.md#topic-hierarchy) for the topic hierarchy.
 A Rust `OrderBook` maintains state for one instrument in backtesting and live trading. NautilusTrader
 supports these book types:
 
-- `L3_MBO`: Level 3 market-by-order (MBO) data, keyed by order ID at every price level.
+- `L3_MBO`: Level 3 market-by-order (MBO) data, keyed by order ID at each price level.
 - `L2_MBP`: Level 2 market-by-price (MBP) data, aggregated by price level.
 - `L1_MBP`: Level 1 market-by-price (MBP) top-of-book data, also known as best bid and offer (BBO).
 
@@ -47,12 +47,10 @@ backtests.
 Each `OrderBookDelta` carries a `flags` field using `RecordFlag` bitmask values
 to signal event boundaries to the `DataEngine`:
 
-- `F_LAST`: Marks the final delta in a logical event group. When `buffer_deltas`
-  is enabled, the `DataEngine` accumulates deltas and only publishes to
-  subscribers when it encounters `F_LAST`. Every event group **must** end with
-  a delta that has `F_LAST` set. `BacktestNode` also closes each replayed
-  `OrderBookDeltas` batch at this flag; see
-  [order book delta replay](../backtesting/apis-and-runs.md#order-book-delta-replay).
+- `F_LAST`: Marks the final delta in a logical event group. When `buffer_deltas` is enabled, the `DataEngine`
+  accumulates deltas and only publishes to subscribers when it encounters `F_LAST`. Each event group **must**
+  end with a delta that has `F_LAST` set. `BacktestNode` also closes each replayed `OrderBookDeltas` batch at
+  this flag. See [order book delta replay](../backtesting/apis-and-runs.md#order-book-delta-replay).
 - `F_SNAPSHOT`: Marks deltas that belong to a snapshot (as opposed to an
   incremental update). Snapshot sequences begin with a `Clear` action followed
   by `Add` deltas reconstructing the full book state. The last delta in a
@@ -330,7 +328,7 @@ These methods work together in a typical workflow:
 1. `subscribe_bars()` continues the stream with live bars.
 
 The request returns a correlation ID. Historical data arrives through `on_historical_bars()` as a
-`Sequence[Bar]`; live data arrives through `on_bar()` one bar at a time.
+`Sequence[Bar]`. Live data arrives through `on_bar()` one bar at a time.
 
 ```python
 from collections.abc import Sequence
@@ -399,7 +397,7 @@ from milliseconds through years:
 | `time_bars_build_with_no_updates`   | `bool`                      | `True`      | When `True`, bars are emitted even if no market updates arrived during the interval.                                                                         |
 | `time_bars_origin_offset`           | `dict[BarAggregation, int]` | `{}`        | Maps aggregation types to nanosecond offsets that shift bar alignment.                                                                                       |
 | `time_bars_build_delay`             | `int`                       | `0`         | Delay in microseconds before building a bar. Useful in backtests to ensure data at bar boundary timestamps is processed before the timer fires.              |
-| `time_bars_time_zone`               | `str` or `None`             | `None`      | IANA time zone for daily and longer calendar boundaries; defaults to UTC.                                                                                    |
+| `time_bars_time_zone`               | `str` or `None`             | `None`      | IANA time zone for daily and longer calendar boundaries, with UTC as the default.                                                                            |
 
 For example, an offset of `34_200_000_000_000` nanoseconds for `BarAggregation.DAY` aligns daily
 bar boundaries to 09:30 UTC.
@@ -446,12 +444,11 @@ Origin offsets apply to nominal local boundaries before DST resolution:
 
 - **DST gaps**: A boundary in a gap shifts forward by the gap.
 - **Repeated boundaries**: A repeated boundary uses its first occurrence.
-- **Month-end clamping**: Only the affected boundary is clamped; later months retain the nominal
-  origin.
+- **Month-end clamping**: Only the affected boundary is clamped. Later months keep the nominal origin.
 
-Build delay adds elapsed microseconds after each resolved boundary. Bar timestamps remain UTC
-UNIX nanoseconds, and periods shorter than a day retain UTC alignment. These calendar boundaries
-do not include exchange sessions, holidays, or early closes.
+Build delay adds elapsed microseconds after each resolved boundary. Bar timestamps stay UTC UNIX nanoseconds,
+and periods shorter than a day keep UTC alignment. These calendar boundaries do not include exchange sessions,
+holidays, or early closes.
 
 ## Timestamps
 
@@ -501,8 +498,8 @@ event time, while `ts_init` usually records local object initialization after re
 
 ### Other notes and considerations
 
-- For data from external sources, `ts_init` is usually the local receipt or normalization time,
-  but clock skew means it is not guaranteed to be greater than or equal to `ts_event`.
+- For data from external sources, `ts_init` is usually the local receipt or normalization time. Clock skew
+  means that `ts_init` is not guaranteed to be greater than or equal to `ts_event`.
 - For data created within NautilusTrader, `ts_init` and `ts_event` can match.
 - Some types with `ts_init` do not have `ts_event` because:
   - The initialization of an object happens at the same time as the event itself.
@@ -510,21 +507,21 @@ event time, while `ts_init` usually records local object initialization after re
 
 #### Persisted data
 
-The `ts_init` field preserves the original initialization timestamp. For venue data this is
-typically receipt time; for internally created data it is the creation time of that object.
+The `ts_init` field preserves the original initialization timestamp. For venue data this is typically receipt
+time. For internally created data it is the creation time of that object.
 
 ## Data flow
 
-From the `DataEngine` onward, data follows the same pathway in every
-[environment context](../architecture.md#environment-contexts): backtest, sandbox, and live.
-The entry path differs:
+From the `DataEngine` onward, data follows the same pathway in each
+[environment context](../architecture.md#environment-contexts): backtest, sandbox, and live. The entry path
+differs:
 
 - In live and sandbox modes, a venue adapter creates a normalized data object and sends it through
   a channel.
 - In backtests, the engine feeds data directly.
 
-In every environment, the `DataEngine` stores cached types in the `Cache` and publishes data on
-the `MessageBus` to subscribed handlers. For a step-by-step trace with a sequence diagram, see
+In each environment, the `DataEngine` stores cached types in the `Cache` and publishes data on the
+`MessageBus` to subscribed handlers. For a step-by-step trace with a sequence diagram, see
 [Data flow: life of a quote tick](../architecture.md#data-flow-life-of-a-quote-tick).
 
 See [Custom data](#custom-data) to define and publish another data type.
@@ -584,10 +581,9 @@ For a precision below `FIXED_PRECISION`, the raw value must be divisible by
 produce an incorrect value.
 :::
 
-Current catalog price and size columns for fixed-point market data use `Decimal128(38, 16)`. Their
-decoded values are decimals; their physical mantissas use the storage scale, which can differ from
-the model's raw integer scale. Use `from_raw()` only for integers already encoded at the active model
-scale.
+Current catalog price and size columns for fixed-point market data use `Decimal128(38, 16)`. Their decoded
+values are decimals. Their physical mantissas use the storage scale, which can differ from the model's raw
+integer scale. Use `from_raw()` only for integers already encoded at the active model scale.
 
 #### Legacy raw value correction
 
@@ -641,22 +637,22 @@ storage options, and the migration report.
 
 Custom payloads use `DataType` for identity and routing and `CustomData` as the common wrapper:
 
-- **Python payloads**: Pure Python payloads can use the fallback wrapper without registration for
-  in-process routing. Every Python payload wrapped in `CustomData`, including an unregistered
-  in-process payload, must expose `ts_event` and `ts_init` as UNIX nanosecond timestamps.
+- **Python payloads**: Pure Python payloads can use the fallback wrapper without registration for in-process
+  routing. Each Python payload wrapped in `CustomData`, including an unregistered in-process payload, must
+  expose `ts_event` and `ts_init` as UNIX nanosecond timestamps.
 - **Registration**: Register a type before reconstructing it from JSON or using Arrow, Parquet,
   or Feather persistence.
-- **Rust payloads**: Same-binary Rust types can register native handlers; live-only Rust types may
-  omit Arrow support.
+- **Rust payloads**: Same-binary Rust types can register native handlers. Live-only Rust types may omit Arrow
+  support.
 
 See [Custom data](../custom_data.md) for the registry, wrapper, and persistence architecture.
 
 ### Pure Python catalog example
 
-A Python class used with the catalog supplies timestamps, JSON callbacks, an Arrow schema, and
-Arrow batch callbacks. `@customdataclass` generates the serialization methods and schema from
-the class annotations. It also supplies `ts_event` and `ts_init`; pass them to the constructor
-without declaring them as dataclass fields.
+A Python class used with the catalog supplies timestamps, JSON callbacks, an Arrow schema, and Arrow batch
+callbacks. `@customdataclass` generates the serialization methods and schema from the class annotations. It
+also supplies `ts_event` and `ts_init`. Pass them to the constructor without declaring them as dataclass
+fields.
 
 Register the class once during startup:
 
@@ -739,9 +735,9 @@ def on_data(self, data: CustomData) -> None:
         tick = data.data
 ```
 
-`publish_data` derives the message-bus topic from its `data_type` argument, including that
-argument's metadata. This argument can override the `CustomData` wrapper's own `data_type`; use the
-same value for both unless the override is intentional.
+`publish_data` derives the message-bus topic from its `data_type` argument, including that argument's
+metadata. This argument can override the `CustomData` wrapper's own `data_type`. Use the same value for both
+unless the override is intentional.
 
 `on_data` receives all subscribed custom data, so inspect `data_type` before using `.data`.
 

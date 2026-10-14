@@ -18,9 +18,9 @@ events to the engine asynchronously, so the cache changes **when the engine proc
 when the adapter first receives it.
 
 For quotes, trades, and bars, the `DataEngine` attempts to write to the `Cache` before publishing to
-subscribers. After a successful write, the latest value is available by the time the strategy
-handler runs. Order book deltas and depth snapshots are published directly; `BookUpdater`
-subscriptions maintain current book state separately:
+subscribers. After a successful write, the latest value is available by the time the strategy handler runs.
+Order book deltas and depth snapshots are published directly. `BookUpdater` subscriptions maintain current
+book state separately:
 
 ```mermaid
 flowchart LR
@@ -135,9 +135,9 @@ gate them because they are recovery snapshots rather than bounded market-data hi
 `CacheConfig` controls cache behavior. Connection settings belong to the concrete backing config,
 such as `RedisCacheConfig` or `PostgresCacheConfig`.
 
-A backing is a recovery mechanism, not a complete event archive or a synchronized distributed
-cache. Each node owns its in-memory cache; pointing multiple nodes at the same database namespace
-does not keep those caches coherent.
+A backing is a recovery mechanism, not a complete event archive or a synchronized distributed cache. Each node
+owns its in-memory cache. Pointing multiple nodes at the same database namespace does not keep those caches
+coherent.
 
 Rust-native callers build a concrete database config and use the `CacheDatabaseFactory` trait to
 construct the adapter passed into the system builder:
@@ -215,16 +215,16 @@ come from `nautilus_trader.infrastructure`.
 
 A Postgres backing is scoped to the node's trader ID, so several nodes can share one database:
 
-- The node loads and writes only its own orders, positions, snapshots, and accounts, keyed by trader, so two
-  traders can reuse the same client order or position IDs.
+- The node loads and writes only its own orders, positions, snapshots, and accounts, keyed by trader. Thus,
+  two traders can reuse the same client order or position IDs.
 - `flush_on_start` deletes only that trader's rows.
 - Currencies, instruments, instrument closes, market data, and general data stay shared across traders.
 
 :::warning
-Upgrading an existing database is a required migration step. Account events persisted before
-trader scoping have no trader, and nothing establishes which trader owns them, so connecting fails
-while any exist. This blocks every node using that database. The error lists the affected accounts.
-Run `nautilus database init`, then assign each account to its trader:
+Upgrading an existing database is a required migration step. Account events persisted before trader scoping
+have no trader, and nothing establishes which trader owns them, so connecting fails while any exist. This
+blocks each node using that database. The error lists the affected accounts. Run `nautilus database init`,
+then assign each account to its trader:
 
 ```bash
 nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>
@@ -261,15 +261,15 @@ bar_count = self.cache.bar_count(bar_type)
 has_bars = self.cache.has_bars(bar_type)
 ```
 
-Bars are kept **newest-first per bar type**. A newer bar is added; an older bar is skipped but is still
+Bars are kept **newest-first per bar type**. A newer bar is added. An older bar is skipped but is still
 delivered in the response.
 
 - **Time bars**: a bar with the same `ts_event` replaces the cached one (the later data wins), so duplicates
   from overlapping historical requests do not accumulate.
 - **Non-time bars**: Renko bricks or volume bars emitted from a single update can legitimately share a
   `ts_event`. All bars at the same timestamp are kept, including any re-delivered by an overlapping request.
-- **Internal request aggregation**: bars generated while servicing a request are inserted at their ordered
-  position instead of skipped, since the cache is their only delivery path.
+- **Internal request aggregation**: the cache inserts request-generated bars at their ordered position instead
+  of skipping them. The cache is their only delivery path.
 
 Quotes and trades likewise accumulate all ticks, including those sharing a timestamp.
 
@@ -456,8 +456,7 @@ venue_orders_count = self.cache.orders_total_count(
 
 #### Positions
 
-The `Cache` retains positions until they are purged or reset and provides several ways to query
-them.
+The `Cache` keeps positions until they are purged or reset and provides several ways to query them.
 
 ##### Position access
 
@@ -522,9 +521,9 @@ account = self.cache.account_for_venue(venue)  # Retrieve account for a specific
 account_id = self.cache.account_id(venue)  # Retrieve account ID for a venue
 ```
 
-A venue lookup resolves only when exactly one account is issued under the venue (the account ID
-prefix, such as `BINANCE` in `BINANCE-001`). When several accounts share a venue,
-`account_for_venue` and `account_id` return `None`; retrieve those accounts by ID.
+A venue lookup resolves only when exactly one account is issued under the venue (the account ID prefix, such
+as `BINANCE` in `BINANCE-001`). When several accounts share a venue, `account_for_venue` and `account_id`
+return `None`. Get those accounts by ID.
 
 #### Instruments
 
@@ -553,8 +552,7 @@ the live trading engine can keep memory bounded without restarting the system.
 
 Use these to drop a single entity. Each refuses to purge while the entity is still active.
 
-- `cache.purge_order(client_order_id)`: removes the order and every order-keyed index entry.
-  Skips open orders.
+- `cache.purge_order(client_order_id)`: removes the order and each order-keyed index entry. Skips open orders.
 - `cache.purge_position(position_id)`: removes the position, its snapshots, and position-keyed
   index entries. Skips open positions.
 - `cache.purge_instrument(instrument_id)`: removes the instrument and its transient per-instrument
@@ -590,10 +588,10 @@ Purging it removes the history needed to route later fills and can cause the eng
 
 #### Automatic purging in live trading
 
-`LiveExecutionEngineConfig` schedules the bulk purges on a timer. All purge intervals default to `None`,
-which disables the corresponding loop. Set an interval to enable a loop and set its buffer or
-lookback to control how recent entries remain protected. This example uses the recommended starting
-values from the live-trading configuration guide:
+`LiveExecutionEngineConfig` schedules the bulk purges on a timer. All purge intervals default to `None`, which
+disables the corresponding loop. Set an interval to enable a loop and set its buffer or lookback to control
+how recent entries stay protected. This example uses the recommended starting values from the live-trading
+configuration guide:
 
 ```python
 from nautilus_trader.config import LiveExecutionEngineConfig
@@ -648,8 +646,7 @@ The `Cache` and `Portfolio` serve different purposes:
 
 **Cache**:
 
-- Retains execution objects, selected object histories, and bounded recent market data until purge
-  or reset.
+- Keeps execution objects, selected object histories, and bounded recent market data until purge or reset.
 - Applies local state changes immediately, such as initializing an order before submission.
 - Applies external events when the engine processes them, such as when an order fills.
 
@@ -681,8 +678,8 @@ Use cache entries for shared, serialized data and strategy variables for local w
 
 - Available to actors and strategies that share the system cache.
 - Can persist general byte entries when a backing database is configured and writes complete.
-- Remains available when an individual strategy resets, but a cache or execution-engine reset clears
-  the in-memory entries.
+- Stays available when an individual strategy resets, but a cache or execution-engine reset clears the
+  in-memory entries.
 
 **Strategy variables**:
 

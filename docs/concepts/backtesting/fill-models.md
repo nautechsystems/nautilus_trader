@@ -13,7 +13,7 @@ those levels, and `prob_fill_on_limit` can model whether a touched limit order f
 With an L1 book, including books updated from quotes, trades, or bars:
 
 - `prob_fill_on_limit` controls whether a limit order fills when its price is touched.
-- `prob_slippage` is evaluated for every fill, regardless of order type or liquidity side.
+- `prob_slippage` is evaluated for each fill, regardless of order type or liquidity side.
 - A successful slippage draw moves the fill one tick against the order direction.
 - A model may provide a synthetic L2 book to represent liquidity beyond the best bid and ask.
 
@@ -29,10 +29,10 @@ These defaults do not disable the matching engine's separate residual-fill rule 
 market-style orders.
 
 :::warning
-Historical order book data remains immutable after a fill. With
-`liquidity_consumption=False`, the same displayed size can support more than one simulated order in
-an iteration. Set `liquidity_consumption=True` to track consumed size per level until fresh data
-arrives. See [order book immutability](fill-prices-and-matching.md#order-book-immutability).
+Historical order book data stays immutable after a fill. With `liquidity_consumption=False`, the same
+displayed size can support more than one simulated order in an iteration. Set `liquidity_consumption=True` to
+track consumed size per level until fresh data arrives. See
+[order book immutability](fill-prices-and-matching.md#order-book-immutability).
 :::
 
 ## Available models
@@ -56,15 +56,15 @@ arrives. See [order book immutability](fill-prices-and-matching.md#order-book-im
 **Instrument scale**: Tier sizes are model constants expressed in instrument quantity units.
 Confirm that they suit the instrument's scale before using a tiered model.
 
-Synthetic books omit any level outside the instrument's `min_price` and `max_price`, or at a zero or
-negative price for an instrument that does not allow one.
+Synthetic books omit any level outside the instrument's `min_price` and `max_price`. They also omit zero or
+negative prices when the instrument does not allow them.
 
 `CompetitionAwareFillModel` accepts `liquidity_factor` values in `[0.0, 1.0]`, defaults to `0.3`,
 and clamps the calculated size to at least one instrument quantity unit.
 
 **Python state**: The bindings do not expose the state setters for `VolumeSensitiveFillModel` or
-`MarketHoursFillModel`. From Python, these models retain their initial values of 1,000 recent-volume
-units and normal-liquidity mode, respectively.
+`MarketHoursFillModel`. From Python, these models keep their initial values of 1,000 recent-volume units and
+normal-liquidity mode, respectively.
 
 ## Configuration
 
@@ -170,11 +170,11 @@ For L1 books, this value controls a one-tick adverse move on each fill:
 
 - `0.0`: Never add model slippage.
 - `0.5`: Add one tick on half of fills on average.
-- `1.0`: Add one tick to every fill.
+- `1.0`: Add one tick to each fill.
 
-The draw applies to maker and taker fills. It does not apply to L2 or L3 books. A slip that would
-cross the instrument's `min_price` or `max_price`, or reach a zero or negative price where the
-instrument does not allow one, keeps the original fill price.
+The draw applies to maker and taker fills. It does not apply to L2 or L3 books. A slip keeps the original fill
+price if it would cross the instrument's `min_price` or `max_price`. It also keeps that price if it would
+reach a zero or negative price that the instrument does not allow.
 
 ## Synthetic order books
 

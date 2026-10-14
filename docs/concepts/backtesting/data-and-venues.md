@@ -6,9 +6,9 @@ Historical data advances the backtest clock, updates simulated market state, and
 callbacks. The venue's `book_type` determines which data can update the matching book, so the
 configuration must match the available data.
 
-Order book data exposes more execution detail than quotes, trades, or bars, but even a recorded
-book cannot show how a simulated order would have changed the market. NautilusTrader supports the
-following data in descending order of detail:
+Order book data exposes more execution detail than quotes, trades, or bars. But even a recorded book cannot
+show how a simulated order would have changed the market. NautilusTrader supports the following data in
+descending order of detail:
 
 ```mermaid
 flowchart LR
@@ -38,9 +38,9 @@ more simulation assumptions.
 
 ### Choosing data: cost vs. accuracy
 
-Bar data can be sufficient for early strategy development and is often cheaper and easier to
-obtain than tick or order book data. It cannot establish intrabar price order, spread, depth, or
-queue position, so execution-sensitive strategies need more granular validation.
+Bar data can be sufficient for early strategy development and is often cheaper and easier to get than tick or
+order book data. It cannot establish intrabar price order, spread, depth, or queue position, so
+execution-sensitive strategies need more granular validation.
 
 :::tip
 Start with bars to test the core signal when appropriate. Move to quotes, trades, or depth data
