@@ -4541,31 +4541,29 @@ bus.subscribe('dispatch.*', raw, priority=100)
 
         proptest::proptest! {
             #[rstest]
-            fn channel_contexts_restore_and_release(actions in proptest::collection::vec((0u8..4, proptest::bool::ANY), 0..64)) {
+            fn channel_contexts_restore_and_release(actions in proptest::collection::vec(0usize..3, 0..64)) {
                 clear().unwrap();
                 let owner = thread::current().id();
                 let roots = [retain(0).unwrap(), retain(0).unwrap()];
                 let accounting = roots[0].accounting.clone();
                 let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
-                for (i, &(root, _)) in actions.iter().enumerate() {
+                for (i, &root) in actions.iter().enumerate() {
                     let message = if root < 2 {
-                        roots[usize::from(root)].with_chain(|| DispatchMessage::new(i, owner))
+                        roots[root].with_chain(|| DispatchMessage::new(i, owner))
                     } else { DispatchMessage::from(i) };
                     tx.send(message).unwrap();
                 }
 
-                for (i, &(root, unwind)) in actions.iter().enumerate() {
+                for (i, &root) in actions.iter().enumerate() {
                     let message = rx.try_recv().unwrap();
                     roots[1].with_chain(|| {
-                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| message.dispatch(|value| {
+                        message.dispatch(|value| {
                             assert_eq!(value, i);
                             let current = DISPATCH.with_borrow(|state| state.current.clone());
-                            if root < 2 { assert!(Rc::ptr_eq(current.as_ref().unwrap(), &roots[usize::from(root)].chain)); }
+                            if root < 2 { assert!(Rc::ptr_eq(current.as_ref().unwrap(), &roots[root].chain)); }
                             else { assert!(current.is_none()); }
-                            assert!(!unwind, "injected handler panic");
-                        })));
-                        assert_eq!(result.is_err(), unwind);
+                        });
                         assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(state.current.as_ref().unwrap(), &roots[1].chain)));
                     });
                 }
@@ -4574,6 +4572,75 @@ bus.subscribe('dispatch.*', raw, priority=100)
                 assert_eq!(accounting.bytes.get(), 0);
                 clear().unwrap();
             }
+        }
+
+        #[rstest]
+        #[case(0, false)]
+        #[case(0, true)]
+        #[case(1, false)]
+        #[case(1, true)]
+        #[case(2, false)]
+        #[case(2, true)]
+        fn channel_contexts_restore_and_release_after_handler(
+            #[case] root: usize,
+            #[case] unwind: bool,
+        ) {
+            clear().unwrap();
+            let owner = thread::current().id();
+            let roots = [retain(0).unwrap(), retain(0).unwrap()];
+            let accounting = roots[0].accounting.clone();
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+            let message = if root < roots.len() {
+                roots[root].with_chain(|| DispatchMessage::new(17u32, owner))
+            } else {
+                DispatchMessage::from(17u32)
+            };
+
+            tx.send(message).unwrap();
+
+            roots[1].with_chain(|| {
+                let mut received = None;
+                let mut current = None;
+                let panic_message = "injected handler panic";
+                let message = rx.try_recv().unwrap();
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    message.dispatch(|value| {
+                        received = Some(value);
+                        current = DISPATCH.with_borrow(|state| state.current.clone());
+
+                        if unwind {
+                            std::panic::panic_any(panic_message);
+                        }
+                    });
+                }));
+
+                assert_eq!(received, Some(17));
+
+                if root < roots.len() {
+                    assert!(Rc::ptr_eq(current.as_ref().unwrap(), &roots[root].chain));
+                } else {
+                    assert!(current.is_none());
+                }
+
+                if unwind {
+                    let e = result.unwrap_err();
+                    assert_eq!(e.downcast_ref::<&str>(), Some(&panic_message));
+                } else {
+                    result.unwrap();
+                }
+
+                assert!(DISPATCH.with_borrow(|state| Rc::ptr_eq(
+                    state.current.as_ref().unwrap(),
+                    &roots[1].chain
+                )));
+                assert_eq!(accounting.contexts.get(), 0);
+            });
+
+            drop(roots);
+
+            assert_eq!(accounting.bytes.get(), 0);
+            clear().unwrap();
         }
     }
 }
