@@ -16,6 +16,7 @@
 //! WebSocket lifecycle checks on the deterministic transport path.
 
 #![cfg(all(feature = "simulation", madsim))]
+#![warn(clippy::clone_on_ref_ptr)]
 
 use std::time::Duration;
 
