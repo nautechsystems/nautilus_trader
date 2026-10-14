@@ -1994,6 +1994,8 @@ mod serial_tests {
         };
         let quote = QuoteTick::default();
         let trade = TradeTick::default();
+        let ready_topic = "test.quotes.ready";
+        let (built_tx, built_rx) = mpsc::channel::<()>();
         let (ready_tx, ready_rx) = mpsc::channel::<()>();
         let (quote_tx, quote_rx) = mpsc::channel::<QuoteTick>();
         let (trade_tx, trade_rx) = mpsc::channel::<TradeTick>();
@@ -2036,36 +2038,18 @@ mod serial_tests {
                         let _ = trade_tx.send(*trade);
                     });
 
+                    let ready_handler = TypedHandler::from(move |_: &QuoteTick| {
+                        let _ = ready_tx.send(());
+                    });
+
+                    msgbus::subscribe_quotes(ready_topic.into(), ready_handler, None);
                     msgbus::subscribe_quotes("data.quotes.*".into(), quote_handler, None);
                     msgbus::subscribe_trades("data.trades.*".into(), trade_handler, None);
                     msgbus::get_message_bus()
                         .borrow_mut()
                         .add_streaming_type(BusPayloadType::QuoteTick);
-                    let result = tokio::time::timeout(Duration::from_secs(10), async {
-                        let run = node.run();
-                        tokio::pin!(run);
-
-                        let announce_ready = async {
-                            for _ in 0..100 {
-                                if handle.is_running() {
-                                    ready_tx.send(())?;
-                                    return Ok(());
-                                }
-                                tokio::time::sleep(Duration::from_millis(10)).await;
-                            }
-
-                            anyhow::bail!("node B did not reach running state")
-                        };
-
-                        tokio::select! {
-                            result = &mut run => result,
-                            ready = announce_ready => {
-                                ready?;
-                                run.await
-                            }
-                        }
-                    })
-                    .await;
+                    built_tx.send(())?;
+                    let result = tokio::time::timeout(Duration::from_secs(10), node.run()).await;
                     msgbus::get_message_bus().borrow_mut().dispose();
 
                     match result {
@@ -2077,9 +2061,9 @@ mod serial_tests {
             }
         });
 
-        ready_rx
+        built_rx
             .recv_timeout(Duration::from_secs(5))
-            .expect("node B should start Redis ingress");
+            .expect("node B should build and register subscriptions");
 
         let node_a = thread::spawn(move || -> anyhow::Result<()> {
             let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -2105,6 +2089,21 @@ mod serial_tests {
                 let _node = LiveNodeBuilder::from_config(config)?
                     .with_external_msgbus_factory(Box::new(redis_config))
                     .build()?;
+
+                // A running node does not guarantee its Redis reader has set its initial cursor
+                wait_until_async(
+                    || {
+                        let ready = ready_rx.try_recv().is_ok();
+
+                        if !ready {
+                            msgbus::publish_quote(ready_topic.into(), &quote);
+                        }
+
+                        async move { ready }
+                    },
+                    Duration::from_secs(5),
+                )
+                .await;
 
                 msgbus::publish_trade("data.trades.TEST".into(), &trade);
                 msgbus::publish_quote("data.quotes.TEST".into(), &quote);
