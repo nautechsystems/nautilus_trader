@@ -1038,7 +1038,7 @@ pub fn parse_futures_order_status_report(
     Ok(OrderStatusReport {
         account_id,
         instrument_id,
-        client_order_id: order.cli_ord_id.as_ref().map(|s| s.as_str().into()),
+        client_order_id: echoed_client_order_id(order.client_order_id()),
         venue_order_id,
         order_side,
         order_type,
@@ -1119,7 +1119,7 @@ pub fn parse_futures_order_event_status_report(
     Ok(OrderStatusReport {
         account_id,
         instrument_id,
-        client_order_id: event.cli_ord_id.as_ref().map(|s| s.as_str().into()),
+        client_order_id: echoed_client_order_id(event.cli_ord_id.as_deref()),
         venue_order_id,
         order_side,
         order_type,
@@ -1151,6 +1151,15 @@ pub fn parse_futures_order_event_status_report(
         cancel_reason: None,
         ts_triggered: None,
     })
+}
+
+/// The client order ID a futures response echoes, if it carries a valid one. An empty or invalid
+/// echo, which another tool on the account may have sent, names no order rather than failing the
+/// read.
+fn echoed_client_order_id(echoed: Option<&str>) -> Option<ClientOrderId> {
+    echoed
+        .filter(|id| !id.is_empty())
+        .and_then(|id| ClientOrderId::new_checked(id).ok())
 }
 
 /// Parses a Kraken futures `/orders/status` entry into a Nautilus
@@ -1228,7 +1237,7 @@ pub fn parse_futures_order_status_details_report(
     Ok(OrderStatusReport {
         account_id,
         instrument_id: instrument.id(),
-        client_order_id: details.order.cli_ord_id.as_ref().map(|s| s.as_str().into()),
+        client_order_id: echoed_client_order_id(details.order.cli_ord_id.as_deref()),
         venue_order_id,
         order_side,
         order_type,
@@ -1351,7 +1360,7 @@ pub fn parse_futures_fill_report(
         report_id: UUID4::new(),
         ts_event,
         ts_init,
-        client_order_id: fill.cli_ord_id.as_ref().map(|s| s.as_str().into()),
+        client_order_id: echoed_client_order_id(fill.client_order_id()),
         venue_position_id: None,
     })
 }
@@ -1521,6 +1530,21 @@ mod tests {
         let path = format!("test_data/{filename}");
         std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to load test data from {path}: {e}"))
+    }
+
+    /// A futures response can echo a client order ID another tool on the account sent, so an empty
+    /// or otherwise invalid one names no order rather than failing the parse.
+    #[rstest]
+    #[case::valid(Some("O-1"), Some("O-1"))]
+    #[case::absent(None, None)]
+    #[case::empty(Some(""), None)]
+    #[case::whitespace(Some(" "), None)]
+    #[case::non_ascii(Some("ordre-\u{e9}"), None)]
+    fn test_echoed_client_order_id(#[case] echoed: Option<&str>, #[case] expected: Option<&str>) {
+        assert_eq!(
+            echoed_client_order_id(echoed),
+            expected.map(ClientOrderId::from)
+        );
     }
 
     #[rstest]
@@ -2283,6 +2307,7 @@ mod tests {
             last_update_time: "2023-11-14T22:13:20.000Z".to_string(),
             trigger_signal: None,
             cli_ord_id: Some("my-tp-1".to_string()),
+            cli_ord_id_snake_case: None,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2316,6 +2341,7 @@ mod tests {
             last_update_time: "2023-11-14T22:13:20.000Z".to_string(),
             trigger_signal: None,
             cli_ord_id: Some("my-tpl-1".to_string()),
+            cli_ord_id_snake_case: None,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");

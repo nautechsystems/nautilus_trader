@@ -964,11 +964,11 @@ impl KrakenFuturesWebSocketClient {
         });
     }
 
-    /// Caches a client order for truncated ID resolution and instrument lookup.
+    /// Caches a client order for shortened ID resolution and instrument lookup.
     ///
-    /// Kraken Futures limits client order IDs to 18 characters, so orders with
-    /// longer IDs are truncated. This method stores the mapping from truncated
-    /// to full ID, and from venue order ID to instrument ID for cancel messages.
+    /// An order sent with its client order ID shortened by `truncate_cl_ord_id` is echoed in
+    /// that form. This method stores the mapping from the shortened to the full ID, and from
+    /// venue order ID to instrument ID for cancel messages.
     pub fn cache_client_order(
         &self,
         client_order_id: ClientOrderId,
