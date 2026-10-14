@@ -489,7 +489,12 @@ impl GreeksCalculator {
         check_greeks_values(pnl, final_greeks.price, final_greeks.greeks)?;
 
         if is_fresh {
-            self.store_option_greeks(&greeks_data, cache_greeks, publish_greeks);
+            self.store_option_greeks(
+                &greeks_data,
+                underlying_instrument_id.symbol.as_str(),
+                cache_greeks,
+                publish_greeks,
+            );
         }
 
         let mut greeks_data = shocked_greeks.unwrap_or(greeks_data);
@@ -533,20 +538,13 @@ impl GreeksCalculator {
         Ok(valuation_time)
     }
 
-    fn store_option_greeks(&self, data: &GreeksData, cache: bool, publish: bool) {
-        if cache {
-            self.cache
-                .borrow_mut()
-                .add_greeks(data.clone())
-                .unwrap_or_default();
+    fn store_option_greeks(&self, data: &GreeksData, underlying: &str, cache: bool, publish: bool) {
+        if cache && let Err(e) = self.cache.borrow_mut().add_greeks(data.clone()) {
+            log::error!("Failed to add GreeksData to cache: {e}");
         }
 
         if publish {
-            let topic = format!(
-                "data.GreeksData.instrument_id={}",
-                data.instrument_id.symbol.as_str()
-            )
-            .into();
+            let topic = greeks_topic(underlying, &data.instrument_id.to_string()).into();
             msgbus::publish_greeks(topic, data);
         }
     }
@@ -788,8 +786,6 @@ impl GreeksCalculator {
         )?;
 
         let greeks_data = GreeksData::new(
-            utc_now_ns,
-            utc_now_ns,
             instrument_id,
             is_call,
             strike,
@@ -812,6 +808,8 @@ impl GreeksCalculator {
                 rho: greeks.rho,
             },
             greeks.itm_prob,
+            utc_now_ns,
+            utc_now_ns,
         );
 
         check_option_greeks_data(&greeks_data)?;
@@ -871,8 +869,6 @@ impl GreeksCalculator {
             None,
         )?;
         Ok(GreeksData::new(
-            greeks_data.ts_event,
-            greeks_data.ts_event,
             greeks_data.instrument_id,
             greeks_data.is_call,
             greeks_data.strike,
@@ -895,6 +891,8 @@ impl GreeksCalculator {
                 rho: greeks.rho,
             },
             greeks.itm_prob,
+            greeks_data.ts_event,
+            greeks_data.ts_event,
         ))
     }
 
@@ -1103,7 +1101,7 @@ impl GreeksCalculator {
     ) -> anyhow::Result<PortfolioGreeks> {
         let ts_event = self.clock.borrow().timestamp_ns();
         let mut portfolio_greeks =
-            PortfolioGreeks::new(ts_event, ts_event, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            PortfolioGreeks::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ts_event, ts_event);
 
         // Set default values
         let flat_interest_rate = flat_interest_rate.unwrap_or(0.0425);
@@ -1394,14 +1392,15 @@ impl GreeksCalculator {
             .map(|price| price.as_f64())
     }
 
-    /// Subscribes to Greeks data for a given underlying instrument.
+    /// Subscribes to Greeks data for options whose underlying symbol equals `underlying`.
     ///
-    /// Useful for reading greeks from a backtesting data catalog and caching them for later use.
+    /// Pass `"*"` to receive Greeks for every underlying. Without a `handler`, the subscription
+    /// adds received Greeks to the cache.
     pub fn subscribe_greeks<F>(&self, underlying: &str, handler: Option<F>)
     where
         F: Fn(&GreeksData) + 'static,
     {
-        let pattern = format!("data.GreeksData.instrument_id={underlying}*").into();
+        let pattern = greeks_topic(underlying, "*").into();
 
         if let Some(custom_handler) = handler {
             let typed_handler = TypedHandler::from(custom_handler);
@@ -1409,13 +1408,19 @@ impl GreeksCalculator {
         } else {
             let cache_ref = self.cache.clone();
             let typed_handler = TypedHandler::from(move |greeks: &GreeksData| {
-                let mut cache = cache_ref.borrow_mut();
-                cache.add_greeks(greeks.clone()).unwrap_or_default();
+                if let Err(e) = cache_ref.borrow_mut().add_greeks(greeks.clone()) {
+                    log::error!("Failed to add GreeksData to cache: {e}");
+                }
             });
 
             msgbus::subscribe_greeks(pattern, typed_handler, None);
         }
     }
+}
+
+// Keyed by underlying symbol and full instrument ID so venues and symbol prefixes never collide
+fn greeks_topic(underlying: &str, instrument_id: &str) -> String {
+    format!("data.GreeksData.underlying={underlying}.instrument_id={instrument_id}")
 }
 
 fn check_option_greeks_data(data: &GreeksData) -> Result<(), OptionValuationError> {
@@ -2494,6 +2499,61 @@ mod tests {
     }
 
     #[rstest]
+    #[case::underlying("AAPL", 1)]
+    #[case::underlying_prefix("AAP", 0)]
+    #[case::all_underlyings("*", 1)]
+    fn test_subscribe_greeks_matches_underlying_symbol_exactly(
+        #[case] underlying: &str,
+        #[case] expected_count: usize,
+    ) {
+        msgbus::set_message_bus(Rc::new(RefCell::new(msgbus::MessageBus::default())));
+        let (calculator, option_id, now_ns) = option_calculator();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let captured = received.clone();
+        calculator.subscribe_greeks(
+            underlying,
+            Some(move |data: &GreeksData| captured.borrow_mut().push(data.instrument_id)),
+        );
+
+        InstrumentGreeksParams::builder()
+            .instrument_id(option_id)
+            .publish_greeks(true)
+            .ts_event(now_ns)
+            .build()
+            .calculate(&calculator)
+            .unwrap();
+        msgbus::set_message_bus(Rc::new(RefCell::new(msgbus::MessageBus::default())));
+
+        assert_eq!(*received.borrow(), vec![option_id; expected_count]);
+    }
+
+    #[rstest]
+    fn test_publish_greeks_topic_includes_underlying_and_instrument_id() {
+        msgbus::set_message_bus(Rc::new(RefCell::new(msgbus::MessageBus::default())));
+        let (calculator, option_id, now_ns) = option_calculator();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let captured = received.clone();
+        let topic = "data.GreeksData.underlying=AAPL.instrument_id=AAPL250417C00150000.OPRA";
+
+        let handler = TypedHandler::from(move |data: &GreeksData| {
+            captured.borrow_mut().push(data.instrument_id);
+        });
+
+        msgbus::subscribe_greeks(topic.into(), handler, None);
+
+        InstrumentGreeksParams::builder()
+            .instrument_id(option_id)
+            .publish_greeks(true)
+            .ts_event(now_ns)
+            .build()
+            .calculate(&calculator)
+            .unwrap();
+        msgbus::set_message_bus(Rc::new(RefCell::new(msgbus::MessageBus::default())));
+
+        assert_eq!(*received.borrow(), vec![option_id]);
+    }
+
+    #[rstest]
     fn test_portfolio_greeks_filter_reenters_calculator_and_caches() {
         let (calculator, position, now_ns) = portfolio_option_calculator();
         let option_id = position.instrument_id;
@@ -2642,14 +2702,14 @@ mod tests {
         assert_portfolio_greeks_eq(
             &result,
             &PortfolioGreeks::new(
-                now_ns,
-                now_ns,
                 expected[0],
                 expected[1],
                 expected[2],
                 0.0,
                 0.0,
                 0.0,
+                now_ns,
+                now_ns,
             ),
         );
     }
@@ -2761,7 +2821,7 @@ mod tests {
         );
         assert_portfolio_greeks_eq(
             &calculate_portfolio_greeks(&calculator, Some(PositionSide::Flat)).unwrap(),
-            &PortfolioGreeks::new(now_ns, now_ns, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            &PortfolioGreeks::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, now_ns, now_ns),
         );
     }
 
@@ -2949,8 +3009,6 @@ mod tests {
             );
 
             let data = GreeksData {
-                ts_init: UnixNanos::from(11),
-                ts_event: UnixNanos::from(13),
                 instrument_id: instrument.id(),
                 is_call: false,
                 strike: 19.0,
@@ -2967,6 +3025,8 @@ mod tests {
                 price,
                 greeks,
                 itm_prob: 0.75,
+                ts_event: UnixNanos::from(13),
+                ts_init: UnixNanos::from(11),
             };
 
             let mut cache = cache.borrow_mut();
@@ -4263,11 +4323,11 @@ mod tests {
             .cache
             .borrow_mut()
             .add_yield_curve(YieldCurve::new(
-                now_ns,
-                now_ns,
                 "AAPL.OPRA".to_string(),
                 vec![0.0, 5.0, 10.0],
                 vec![0.02, 0.02, 0.02],
+                now_ns,
+                now_ns,
             ))
             .unwrap();
 
@@ -5343,11 +5403,11 @@ mod tests {
             .cache
             .borrow_mut()
             .add_yield_curve(YieldCurve::new(
-                now,
-                now,
                 "AAPL.OPRA".to_string(),
                 vec![0.0],
                 vec![0.05],
+                now,
+                now,
             ))
             .unwrap();
         let result = InstrumentGreeksParams::builder()

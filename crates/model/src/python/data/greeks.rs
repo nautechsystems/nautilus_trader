@@ -80,16 +80,6 @@ impl GreeksData {
     }
 
     #[getter]
-    fn ts_init(&self) -> u64 {
-        self.ts_init.as_u64()
-    }
-
-    #[getter]
-    fn ts_event(&self) -> u64 {
-        self.ts_event.as_u64()
-    }
-
-    #[getter]
     fn instrument_id(&self) -> crate::identifiers::InstrumentId {
         self.instrument_id
     }
@@ -188,6 +178,16 @@ impl GreeksData {
     fn itm_prob(&self) -> f64 {
         self.itm_prob
     }
+
+    #[getter]
+    fn ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    fn ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
 }
 
 #[cfg(feature = "python")]
@@ -200,16 +200,6 @@ impl PortfolioGreeks {
 
     fn __add__(&self, other: &Self) -> Self {
         self.clone() + other.clone()
-    }
-
-    #[getter]
-    fn ts_init(&self) -> u64 {
-        self.ts_init.as_u64()
-    }
-
-    #[getter]
-    fn ts_event(&self) -> u64 {
-        self.ts_event.as_u64()
     }
 
     #[getter]
@@ -246,6 +236,16 @@ impl PortfolioGreeks {
     fn rho(&self) -> f64 {
         self.greeks.rho
     }
+
+    #[getter]
+    fn ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    fn ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
+    }
 }
 
 #[cfg(feature = "python")]
@@ -261,11 +261,11 @@ impl YieldCurve {
         ts_init: u64,
     ) -> PyResult<Self> {
         let curve = Self::new(
-            ts_init.into(),
-            ts_event.into(),
             curve_name,
             tenors,
             interest_rates,
+            ts_event.into(),
+            ts_init.into(),
         );
         curve.validate().map_err(to_pyvalue_err)?;
         Ok(curve)
@@ -273,16 +273,6 @@ impl YieldCurve {
 
     fn __repr__(&self) -> String {
         self.to_string()
-    }
-
-    #[getter]
-    fn ts_init(&self) -> u64 {
-        self.ts_init.as_u64()
-    }
-
-    #[getter]
-    fn ts_event(&self) -> u64 {
-        self.ts_event.as_u64()
     }
 
     #[getter]
@@ -298,6 +288,16 @@ impl YieldCurve {
     #[getter]
     fn interest_rates(&self) -> Vec<f64> {
         self.interest_rates.clone()
+    }
+
+    #[getter]
+    fn ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    fn ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 }
 

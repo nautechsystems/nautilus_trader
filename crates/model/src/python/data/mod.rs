@@ -635,7 +635,8 @@ fn py_decode_record_batch_to_custom_data(
 ///
 /// # Errors
 ///
-/// Returns an error if the class lacks required methods or the type is already registered.
+/// Returns an error if the class lacks required methods, or if a Rust custom data type with a
+/// different class already uses the type name.
 ///
 /// # Example
 ///
@@ -666,6 +667,12 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
     } else {
         data_class.getattr("__name__")?.extract()?
     };
+
+    if registry::conflicts_with_rust_class(&type_name, data_class) {
+        return Err(to_pyvalue_err(format!(
+            "Custom data type \"{type_name}\" is already registered for a different Rust class"
+        )));
+    }
 
     #[cfg(feature = "arrow")]
     if !data_class.hasattr("decode_record_batch_py")? {

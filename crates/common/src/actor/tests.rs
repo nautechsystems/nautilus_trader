@@ -956,8 +956,6 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
         ..stub_instrument_status
     };
     let greeks = GreeksData::new(
-        UnixNanos::from(7),
-        UnixNanos::from(8),
         instrument_id,
         true,
         1.0,
@@ -980,6 +978,8 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
             rho: 0.03,
         },
         0.6,
+        UnixNanos::from(8),
+        UnixNanos::from(7),
     );
     let option_greeks = OptionGreeks {
         instrument_id,

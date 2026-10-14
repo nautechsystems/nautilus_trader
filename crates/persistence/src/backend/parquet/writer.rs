@@ -1284,8 +1284,6 @@ mod tests {
         }
 
         let greeks = GreeksData::new(
-            13.into(),
-            11.into(),
             "ESZ26 C7000.XCME".parse().unwrap(),
             false,
             7000.5,
@@ -1308,6 +1306,8 @@ mod tests {
                 rho: 1.7,
             },
             0.62,
+            11.into(),
+            13.into(),
         );
 
         let mut second = greeks.clone();
@@ -1316,8 +1316,6 @@ mod tests {
         families.insert(assert_native_record_promotion(&[greeks, second], automatic));
 
         let portfolio = PortfolioGreeks {
-            ts_init: 17.into(),
-            ts_event: 19.into(),
             pnl: -125.5,
             price: 4310.25,
             greeks: OptionGreekValues {
@@ -1327,6 +1325,8 @@ mod tests {
                 theta: -12.25,
                 rho: 3.75,
             },
+            ts_event: 19.into(),
+            ts_init: 17.into(),
         };
 
         let mut second = portfolio.clone();

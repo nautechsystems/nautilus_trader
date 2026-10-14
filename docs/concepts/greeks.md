@@ -285,13 +285,11 @@ partial portfolio result.
 `GreeksData` carries the context of a single instrument's Greeks computation and is exposed from
 `nautilus_trader.model`. Requested caching and publication use the unshocked option valuation only after
 validation succeeds. Cached valuations bypass those operations, including when shocks are applied. The Rust
-`GreeksCalculator` can publish to the `data.GreeksData.instrument_id={symbol}` topic. The Python surface does
-not expose that flag.
+`GreeksCalculator` can publish to the `data.GreeksData.underlying={underlying}.instrument_id={instrument_id}` topic,
+keyed by the underlying symbol and the full option instrument ID. The Python surface does not expose that flag.
 
 | Field              | Type           | Description                                                             |
 | ------------------ | -------------- | ----------------------------------------------------------------------- |
-| `ts_init`          | `int`          | Initialization timestamp in nanoseconds.                                |
-| `ts_event`         | `int`          | Event timestamp in nanoseconds.                                         |
 | `instrument_id`    | `InstrumentId` | Instrument for the calculation.                                         |
 | `is_call`          | `bool`         | `True` for a call or non-option result, `False` for a put.              |
 | `strike`           | `float`        | Strike price.                                                           |
@@ -312,6 +310,8 @@ not expose that flag.
 | `theta`            | `float`        | Daily theta.                                                            |
 | `rho`              | `float`        | Rho per one percentage point of interest rate.                          |
 | `itm_prob`         | `float`        | In-the-money probability.                                               |
+| `ts_event`         | `int`          | Event timestamp in nanoseconds.                                         |
+| `ts_init`          | `int`          | Initialization timestamp in nanoseconds.                                |
 
 `GreeksData.to_portfolio_greeks()` applies the contract multiplier once to `pnl`, `price`, and all
 five Greek values, including `rho`, and returns `PortfolioGreeks` with the same timestamps.
@@ -334,8 +334,6 @@ The Python `GreeksData` and `PortfolioGreeks` types support scalar-left multipli
 
 | Field      | Type    | Description                                                         |
 | ---------- | ------- | ------------------------------------------------------------------- |
-| `ts_init`  | `int`   | Initialization timestamp in nanoseconds.                            |
-| `ts_event` | `int`   | Event timestamp in nanoseconds.                                     |
 | `pnl`      | `float` | Aggregate PnL after multiplier and signed-quantity scaling.         |
 | `price`    | `float` | Aggregate model value after multiplier and signed-quantity scaling. |
 | `delta`    | `float` | Portfolio delta.                                                    |
@@ -343,6 +341,8 @@ The Python `GreeksData` and `PortfolioGreeks` types support scalar-left multipli
 | `vega`     | `float` | Portfolio vega.                                                     |
 | `theta`    | `float` | Portfolio theta.                                                    |
 | `rho`      | `float` | Portfolio rho per one percentage point of interest rate.            |
+| `ts_event` | `int`   | Event timestamp in nanoseconds.                                     |
+| `ts_init`  | `int`   | Initialization timestamp in nanoseconds.                            |
 
 ### Yield curves
 
@@ -373,8 +373,9 @@ def on_data(self, data: CustomData) -> None:
 
 The Python constructor is `YieldCurve(curve_name, tenors, interest_rates, ts_event, ts_init)`.
 It raises `ValueError` when `tenors` and `interest_rates` differ in length, hold two points or none, or
-hold a non-finite value, and when `tenors` is not strictly increasing. `cache.add_yield_curve()` rejects
-the same curves, including curves decoded from the catalog or JSON, so the calculator never evaluates them.
+hold a non-finite value, and when `tenors` does not strictly increase with each step wide enough to
+interpolate. `cache.add_yield_curve()` rejects the same curves, including curves decoded from the catalog
+or JSON, so the calculator never evaluates them.
 Python registers the type on import. In Rust, call
 `nautilus_serialization::ensure_custom_data_registered::<YieldCurve>()` before catalog or
 streaming writes and queries.

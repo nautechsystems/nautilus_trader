@@ -27,7 +27,7 @@ use nautilus_core::{
     UnixNanos,
     correctness::{CorrectnessResult, check_equal_usize, check_predicate_true},
     datetime::unix_nanos_to_iso8601,
-    math::quadratic_interpolation,
+    math::{quadratic_interpolation, too_close_for_interpolation},
 };
 use serde::{Deserialize, Serialize};
 
@@ -561,8 +561,6 @@ fn check_valuation_result(
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct GreeksData {
-    pub ts_init: UnixNanos,
-    pub ts_event: UnixNanos,
     pub instrument_id: InstrumentId,
     pub is_call: bool,
     pub strike: f64,
@@ -581,14 +579,14 @@ pub struct GreeksData {
     pub greeks: OptionGreekValues,
     // in the money probability, P(phi * S_T > phi * K), phi = 1 if is_call else -1
     pub itm_prob: f64,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl GreeksData {
     #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
-        ts_init: UnixNanos,
-        ts_event: UnixNanos,
         instrument_id: InstrumentId,
         is_call: bool,
         strike: f64,
@@ -605,10 +603,10 @@ impl GreeksData {
         price: f64,
         greeks: OptionGreekValues,
         itm_prob: f64,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Self {
         Self {
-            ts_init,
-            ts_event,
             instrument_id,
             is_call,
             strike,
@@ -625,6 +623,8 @@ impl GreeksData {
             price,
             greeks,
             itm_prob,
+            ts_event,
+            ts_init,
         }
     }
 
@@ -636,8 +636,6 @@ impl GreeksData {
         ts_event: UnixNanos,
     ) -> Self {
         Self {
-            ts_init: ts_event,
-            ts_event,
             instrument_id,
             is_call: true,
             strike: 0.0,
@@ -657,6 +655,8 @@ impl GreeksData {
                 ..Default::default()
             },
             itm_prob: 0.0,
+            ts_event,
+            ts_init: ts_event,
         }
     }
 
@@ -666,11 +666,11 @@ impl GreeksData {
     #[must_use]
     pub fn to_portfolio_greeks(&self) -> PortfolioGreeks {
         PortfolioGreeks {
-            ts_init: self.ts_init,
-            ts_event: self.ts_event,
             pnl: self.pnl * self.multiplier,
             price: self.price * self.multiplier,
             greeks: self.greeks * self.multiplier,
+            ts_event: self.ts_event,
+            ts_init: self.ts_init,
         }
     }
 }
@@ -691,8 +691,6 @@ impl HasGreeks for GreeksData {
 impl Default for GreeksData {
     fn default() -> Self {
         Self {
-            ts_init: UnixNanos::default(),
-            ts_event: UnixNanos::default(),
             instrument_id: InstrumentId::from("ES.GLBX"),
             is_call: true,
             strike: 0.0,
@@ -709,6 +707,8 @@ impl Default for GreeksData {
             price: 0.0,
             greeks: OptionGreekValues::default(),
             itm_prob: 0.0,
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
         }
     }
 }
@@ -717,7 +717,7 @@ impl Display for GreeksData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "GreeksData(instrument_id={}, expiry={}, itm_prob={:.2}%, vol={:.2}%, pnl={:.2}, price={:.2}, delta={:.2}, gamma={:.2}, vega={:.2}, theta={:.2}, quantity={}, ts_init={})",
+            "GreeksData(instrument_id={}, expiry={}, itm_prob={:.2}%, vol={:.2}%, pnl={:.2}, price={:.2}, delta={:.2}, gamma={:.2}, vega={:.2}, theta={:.2}, quantity={}, ts_event={}, ts_init={})",
             self.instrument_id,
             self.expiry,
             self.itm_prob * 100.0,
@@ -729,6 +729,7 @@ impl Display for GreeksData {
             self.greeks.vega,
             self.greeks.theta,
             self.quantity,
+            unix_nanos_to_iso8601(self.ts_event),
             unix_nanos_to_iso8601(self.ts_init)
         )
     }
@@ -740,8 +741,6 @@ impl Mul<&GreeksData> for f64 {
 
     fn mul(self, g: &GreeksData) -> GreeksData {
         GreeksData {
-            ts_init: g.ts_init,
-            ts_event: g.ts_event,
             instrument_id: g.instrument_id,
             is_call: g.is_call,
             strike: g.strike,
@@ -758,6 +757,8 @@ impl Mul<&GreeksData> for f64 {
             price: self * g.price,
             greeks: g.greeks * self,
             itm_prob: g.itm_prob,
+            ts_event: g.ts_event,
+            ts_init: g.ts_init,
         }
     }
 }
@@ -778,29 +779,27 @@ impl HasTsInit for GreeksData {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct PortfolioGreeks {
-    pub ts_init: UnixNanos,
-    pub ts_event: UnixNanos,
     pub pnl: f64,
     pub price: f64,
     pub greeks: OptionGreekValues,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl PortfolioGreeks {
     #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
-        ts_init: UnixNanos,
-        ts_event: UnixNanos,
         pnl: f64,
         price: f64,
         delta: f64,
         gamma: f64,
         vega: f64,
         theta: f64,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Self {
         Self {
-            ts_init,
-            ts_event,
             pnl,
             price,
             greeks: OptionGreekValues {
@@ -810,6 +809,8 @@ impl PortfolioGreeks {
                 theta,
                 rho: 0.0,
             },
+            ts_event,
+            ts_init,
         }
     }
 }
@@ -824,11 +825,11 @@ impl Deref for PortfolioGreeks {
 impl Default for PortfolioGreeks {
     fn default() -> Self {
         Self {
-            ts_init: UnixNanos::default(),
-            ts_event: UnixNanos::default(),
             pnl: 0.0,
             price: 0.0,
             greeks: OptionGreekValues::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
         }
     }
 }
@@ -855,11 +856,11 @@ impl Add for PortfolioGreeks {
 
     fn add(self, other: Self) -> Self {
         Self {
-            ts_init: self.ts_init,
-            ts_event: self.ts_event,
             pnl: self.pnl + other.pnl,
             price: self.price + other.price,
             greeks: self.greeks + other.greeks,
+            ts_event: self.ts_event,
+            ts_init: self.ts_init,
         }
     }
 }
@@ -875,11 +876,11 @@ impl Mul<&PortfolioGreeks> for f64 {
 
     fn mul(self, g: &PortfolioGreeks) -> PortfolioGreeks {
         PortfolioGreeks {
-            ts_init: g.ts_init,
-            ts_event: g.ts_event,
             pnl: self * g.pnl,
             price: self * g.price,
             greeks: g.greeks * self,
+            ts_event: g.ts_event,
+            ts_init: g.ts_init,
         }
     }
 }
@@ -918,28 +919,28 @@ impl HasGreeks for BlackScholesGreeksResult {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct YieldCurve {
-    pub ts_init: UnixNanos,
-    pub ts_event: UnixNanos,
     pub curve_name: String,
     pub tenors: Vec<f64>,
     pub interest_rates: Vec<f64>,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 impl YieldCurve {
     #[must_use]
     pub fn new(
-        ts_init: UnixNanos,
-        ts_event: UnixNanos,
         curve_name: String,
         tenors: Vec<f64>,
         interest_rates: Vec<f64>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
     ) -> Self {
         Self {
-            ts_init,
-            ts_event,
             curve_name,
             tenors,
             interest_rates,
+            ts_event,
+            ts_init,
         }
     }
 
@@ -958,7 +959,8 @@ impl YieldCurve {
     /// # Errors
     ///
     /// Returns an error if `tenors` and `interest_rates` differ in length, hold two points or
-    /// none, or hold a non-finite value, or if `tenors` is not strictly increasing.
+    /// none, or hold a non-finite value, or if `tenors` does not strictly increase with each
+    /// step wide enough to interpolate.
     pub fn validate(&self) -> CorrectnessResult<()> {
         check_equal_usize(
             self.tenors.len(),
@@ -980,8 +982,10 @@ impl YieldCurve {
             "`tenors` and `interest_rates` must be finite",
         )?;
         check_predicate_true(
-            self.tenors.is_sorted_by(|a, b| a < b),
-            "`tenors` must be strictly increasing",
+            self.tenors
+                .windows(2)
+                .all(|pair| pair[0] < pair[1] && !too_close_for_interpolation(pair[0], pair[1])),
+            "`tenors` must be strictly increasing, with each step wide enough to interpolate",
         )
     }
 }
@@ -990,7 +994,7 @@ impl Display for YieldCurve {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "InterestRateCurve(curve_name={}, ts_event={}, ts_init={})",
+            "YieldCurve(curve_name={}, ts_event={}, ts_init={})",
             self.curve_name,
             unix_nanos_to_iso8601(self.ts_event),
             unix_nanos_to_iso8601(self.ts_init)
@@ -1047,11 +1051,11 @@ impl CustomDataTrait for YieldCurve {
 impl Default for YieldCurve {
     fn default() -> Self {
         Self {
-            ts_init: UnixNanos::default(),
-            ts_event: UnixNanos::default(),
             curve_name: "USD".to_string(),
             tenors: vec![0.5, 1.0, 1.5, 2.0, 2.5],
             interest_rates: vec![0.04, 0.04, 0.04, 0.04, 0.04],
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
         }
     }
 }
@@ -1065,8 +1069,6 @@ mod tests {
 
     fn create_test_greeks_data() -> GreeksData {
         GreeksData::new(
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(1_500_000_000),
             InstrumentId::from("SPY240315C00500000.OPRA"),
             true,
             500.0,
@@ -1089,29 +1091,31 @@ mod tests {
                 rho: 0.0,
             },
             0.75,
+            UnixNanos::from(1_500_000_000),
+            UnixNanos::from(1_000_000_000),
         )
     }
 
     fn create_test_portfolio_greeks() -> PortfolioGreeks {
         PortfolioGreeks::new(
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(1_500_000_000),
             1500.0,
             125.5,
             2.15,
             0.008,
             42.7,
             -2.3,
+            UnixNanos::from(1_500_000_000),
+            UnixNanos::from(1_000_000_000),
         )
     }
 
     fn create_test_yield_curve() -> YieldCurve {
         YieldCurve::new(
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(1_500_000_000),
             "USD".to_string(),
             vec![0.25, 0.5, 1.0, 2.0, 5.0],
             vec![0.025, 0.03, 0.035, 0.04, 0.045],
+            UnixNanos::from(1_500_000_000),
+            UnixNanos::from(1_000_000_000),
         )
     }
 
@@ -1390,14 +1394,10 @@ mod tests {
         let greeks = create_test_greeks_data();
         let display_str = format!("{greeks}");
 
-        assert!(display_str.contains("GreeksData"));
-        assert!(display_str.contains("SPY240315C00500000.OPRA"));
-        assert!(display_str.contains("20240315"));
-        assert!(display_str.contains("75.00%")); // itm_prob * 100
-        assert!(display_str.contains("20.00%")); // vol * 100
-        assert!(display_str.contains("250.00")); // pnl
-        assert!(display_str.contains("25.50")); // price
-        assert!(display_str.contains("0.65")); // delta
+        assert_eq!(
+            display_str,
+            "GreeksData(instrument_id=SPY240315C00500000.OPRA, expiry=20240315, itm_prob=75.00%, vol=20.00%, pnl=250.00, price=25.50, delta=0.65, gamma=0.00, vega=15.20, theta=-0.08, quantity=1, ts_event=1970-01-01T00:00:01.500000000Z, ts_init=1970-01-01T00:00:01.000000000Z)"
+        );
     }
 
     #[rstest]
@@ -1476,37 +1476,34 @@ mod tests {
         let portfolio_greeks = create_test_portfolio_greeks();
         let display_str = format!("{portfolio_greeks}");
 
-        assert!(display_str.contains("PortfolioGreeks"));
-        assert!(display_str.contains("1500.00")); // pnl
-        assert!(display_str.contains("125.50")); // price
-        assert!(display_str.contains("2.15")); // delta
-        assert!(display_str.contains("0.01")); // gamma (rounded)
-        assert!(display_str.contains("42.70")); // vega
-        assert!(display_str.contains("-2.30")); // theta
+        assert_eq!(
+            display_str,
+            "PortfolioGreeks(pnl=1500.00, price=125.50, delta=2.15, gamma=0.01, vega=42.70, theta=-2.30, ts_event=1970-01-01T00:00:01.500000000Z, ts_init=1970-01-01T00:00:01.000000000Z)"
+        );
     }
 
     #[rstest]
     fn test_portfolio_greeks_addition() {
         let mut greeks1 = PortfolioGreeks::new(
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(1_500_000_000),
             100.0,
             50.0,
             1.0,
             0.005,
             20.0,
             -1.0,
+            UnixNanos::from(1_500_000_000),
+            UnixNanos::from(1_000_000_000),
         );
 
         let mut greeks2 = PortfolioGreeks::new(
-            UnixNanos::from(2_000_000_000),
-            UnixNanos::from(2_500_000_000),
             200.0,
             75.0,
             1.5,
             0.003,
             25.0,
             -1.5,
+            UnixNanos::from(2_500_000_000),
+            UnixNanos::from(2_000_000_000),
         );
 
         greeks1.greeks.rho = 12.0;
@@ -1625,11 +1622,11 @@ mod tests {
     #[rstest]
     fn test_yield_curve_get_rate_single_point() {
         let curve = YieldCurve::new(
-            UnixNanos::default(),
-            UnixNanos::default(),
             "USD".to_string(),
             vec![1.0],
             vec![0.05],
+            UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         assert_eq!(curve.get_rate(0.5), 0.05);
@@ -1656,8 +1653,10 @@ mod tests {
         let curve = create_test_yield_curve();
         let display_str = format!("{curve}");
 
-        assert!(display_str.contains("InterestRateCurve"));
-        assert!(display_str.contains("USD"));
+        assert_eq!(
+            display_str,
+            "YieldCurve(curve_name=USD, ts_event=1970-01-01T00:00:01.500000000Z, ts_init=1970-01-01T00:00:01.000000000Z)"
+        );
     }
 
     #[rstest]
@@ -1684,11 +1683,11 @@ mod tests {
         #[case] interest_rates: Vec<f64>,
     ) {
         let curve = YieldCurve::new(
-            UnixNanos::default(),
-            UnixNanos::default(),
             "USD".to_string(),
             tenors,
             interest_rates,
+            UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         assert!(curve.validate().is_ok());
@@ -1702,17 +1701,18 @@ mod tests {
     #[case(vec![0.25, f64::INFINITY, 5.0], vec![0.04, 0.05, 0.06], "must be finite")]
     #[case(vec![0.05, 0.05, 1.0], vec![0.04, 0.05, 0.06], "strictly increasing")]
     #[case(vec![1.0, 0.5, 2.0], vec![0.04, 0.05, 0.06], "strictly increasing")]
+    #[case(vec![1.0, 1.0 + f64::EPSILON, 2.0], vec![0.04, 0.05, 0.06], "wide enough")]
     fn test_yield_curve_validate_rejects_curves_get_rate_cannot_evaluate(
         #[case] tenors: Vec<f64>,
         #[case] interest_rates: Vec<f64>,
         #[case] message: &str,
     ) {
         let curve = YieldCurve::new(
-            UnixNanos::default(),
-            UnixNanos::default(),
             "USD".to_string(),
             tenors,
             interest_rates,
+            UnixNanos::default(),
+            UnixNanos::default(),
         );
 
         let error = curve.validate().unwrap_err();
@@ -1787,8 +1787,6 @@ mod tests {
     #[rstest]
     fn test_greeks_data_put_option() {
         let greeks = GreeksData::new(
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::from(1_500_000_000),
             InstrumentId::from("SPY240315P00480000.OPRA"),
             false, // Put option
             480.0,
@@ -1811,6 +1809,8 @@ mod tests {
                 rho: 0.0,
             },
             0.25,
+            UnixNanos::from(1_500_000_000),
+            UnixNanos::from(1_000_000_000),
         );
 
         assert!(!greeks.is_call);

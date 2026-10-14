@@ -225,12 +225,16 @@ pub fn quadratic_interpolation(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
     )
 }
 
-// Returns `true` if `x1` and `x2` are too close, relative to their magnitude,
-// for numerically stable interpolation. The threshold scales with
-// `max(1, |x1|, |x2|)`, giving an absolute floor of `2 * f64::EPSILON` for
-// small values and a relative bound for large values.
+/// Returns `true` if `x1` and `x2` are too close, relative to their magnitude,
+/// for numerically stable interpolation.
+///
+/// The threshold scales with `max(1, |x1|, |x2|)`, giving an absolute floor of
+/// `2 * f64::EPSILON` for small values and a relative bound for large values.
+/// [`linear_weight`] and [`quad_polynomial`] panic when this returns `true` for
+/// their abscissas.
 #[inline]
-fn too_close_for_interpolation(x1: f64, x2: f64) -> bool {
+#[must_use]
+pub fn too_close_for_interpolation(x1: f64, x2: f64) -> bool {
     const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
     let scale = 1.0_f64.max(x1.abs()).max(x2.abs());
     (x2 - x1).abs() < EPSILON * scale

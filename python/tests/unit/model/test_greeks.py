@@ -16,6 +16,8 @@
 Test contract-notional Greeks conversion and Python composition.
 """
 
+import sys
+
 import pytest
 
 from nautilus_trader.model import GreeksData
@@ -191,6 +193,7 @@ def test_greeks_right_scalar_multiplication_unsupported(
         ([], [], "one rate or at least three points"),
         ([0.25, 1.0, 5.0], [0.04, float("nan"), 0.05], "must be finite"),
         ([0.05, 0.05, 1.0], [0.04, 0.05, 0.06], "strictly increasing"),
+        ([1.0, 1.0 + sys.float_info.epsilon, 2.0], [0.04, 0.05, 0.06], "wide enough"),
     ],
 )
 def test_yield_curve_rejects_shapes_that_cannot_interpolate(

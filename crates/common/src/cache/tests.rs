@@ -1834,19 +1834,19 @@ fn test_add_instrument_close_persists_replacement() {
 #[rstest]
 fn test_add_yield_curve_rejects_curve_get_rate_cannot_evaluate(mut cache: Cache) {
     let valid = YieldCurve::new(
-        UnixNanos::from(1),
-        UnixNanos::from(1),
         "USD".to_string(),
         vec![0.0],
         vec![0.04],
+        UnixNanos::from(1),
+        UnixNanos::from(1),
     );
 
     let invalid = YieldCurve::new(
-        UnixNanos::from(2),
-        UnixNanos::from(2),
         "USD".to_string(),
         vec![],
         vec![],
+        UnixNanos::from(2),
+        UnixNanos::from(2),
     );
     cache.add_yield_curve(valid).unwrap();
 

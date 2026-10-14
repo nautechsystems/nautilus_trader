@@ -211,7 +211,8 @@ This path stays fully native in Rust for encode/decode.
 1. Otherwise, use the Python wrapper and callback handlers.
 
 The idempotent `ensure_*` registrations do not overwrite existing handlers. For each type name, the first
-Arrow registration keeps its schema, encoder, and decoder. After correcting an already-registered Python
+Arrow registration keeps its schema, encoder, and decoder. Registering a different class under the type name of a
+PyO3-exposed Rust type, such as `YieldCurve`, raises `ValueError`. After correcting an already-registered Python
 class's Arrow schema, restart the process before registering it again.
 
 ## Wrapper backends

@@ -116,7 +116,10 @@ implementation.
 ## Notes
 
 - When setting `publish_greeks` to `true`, the calculator publishes typed `GreeksData` to the
-  message bus with a topic format of `data.GreeksData.instrument_id={symbol}`.
+  message bus with a topic format of
+  `data.GreeksData.underlying={underlying}.instrument_id={instrument_id}`.
+- `subscribe_greeks(underlying, ...)` receives Greeks for options whose underlying symbol equals
+  `underlying`. Pass `"*"` to receive Greeks for every underlying.
 - Greeks subscriptions are handled through `subscribe_greeks`; `DataActor::on_data` receives
   `CustomData` wrappers and is not the greeks delivery path.
 - When subscribing to greeks data, you can provide a custom handler or use the default handler

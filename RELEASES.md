@@ -45,6 +45,10 @@ Released on TBD (UTC).
 - Changed `Order` to require `non_reopened_voided_qty` (#5133), thanks @abhijeetvichare76
 - Changed `ReconciliationResult` literals; add empty `order_only_fill_keys` (#5114), thanks @zhaow-de
 - Changed `PortfolioGreeks::from(GreeksData)` to apply the contract multiplier
+- Changed `GreeksData::new`, `PortfolioGreeks::new`, and `YieldCurve::new` to take `ts_event` and `ts_init` last
+- Changed calculated Greeks topics to `data.GreeksData.underlying={underlying}.instrument_id={instrument_id}`
+- Changed `GreeksCalculator::subscribe_greeks` to match underlying symbols exactly; pass `"*"`, not `""`, for all
+- Changed `register_custom_data_class` to raise `ValueError` for another class using a PyO3 Rust type's name
 - Changed `OptionSeriesId::new` to require a reference instrument; use `new_derived` to derive it
 - Changed `OptionSeriesId::from_expiry` and `from_expiry_ns`; pass `None` as the final argument to derive a reference
 - Changed `OptionSeriesId::from_crypto_option` and struct literals to require `underlying_instrument_id`

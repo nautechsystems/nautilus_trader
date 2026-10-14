@@ -178,8 +178,6 @@ impl DecodeTypedFromRecordBatch for GreeksData {
         (0..batch.num_rows())
             .map(|row| {
                 Ok(Self {
-                    ts_init: ts_init.value(row).into(),
-                    ts_event: ts_event.value(row).into(),
                     instrument_id: instrument_id
                         .value(row)
                         .parse::<InstrumentId>()
@@ -199,6 +197,8 @@ impl DecodeTypedFromRecordBatch for GreeksData {
                     price: price.value(row),
                     greeks: greeks[row],
                     itm_prob: itm_prob.value(row),
+                    ts_event: ts_event.value(row).into(),
+                    ts_init: ts_init.value(row).into(),
                 })
             })
             .collect()
@@ -265,11 +265,11 @@ impl DecodeTypedFromRecordBatch for PortfolioGreeks {
         (0..batch.num_rows())
             .map(|row| {
                 Ok(Self {
-                    ts_init: ts_init.value(row).into(),
-                    ts_event: ts_event.value(row).into(),
                     pnl: pnl.value(row),
                     price: price.value(row),
                     greeks: greeks[row],
+                    ts_event: ts_event.value(row).into(),
+                    ts_init: ts_init.value(row).into(),
                 })
             })
             .collect()
@@ -338,11 +338,11 @@ impl DecodeTypedFromRecordBatch for YieldCurve {
         (0..batch.num_rows())
             .map(|row| {
                 Ok(Self {
-                    ts_init: ts_init.value(row).into(),
-                    ts_event: ts_event.value(row).into(),
                     curve_name: curve_name.value(row).to_string(),
                     tenors: decode_float_list(tenors, "tenors", row)?,
                     interest_rates: decode_float_list(interest_rates, "interest_rates", row)?,
+                    ts_event: ts_event.value(row).into(),
+                    ts_init: ts_init.value(row).into(),
                 })
             })
             .collect()
@@ -505,8 +505,6 @@ mod tests {
     #[rstest]
     fn test_greeks_data_round_trip() {
         let first = GreeksData::new(
-            13.into(),
-            11.into(),
             "ESZ26 C7000.XCME".parse().unwrap(),
             false,
             7000.5,
@@ -523,6 +521,8 @@ mod tests {
             98.75,
             sensitivities(),
             0.62,
+            11.into(),
+            13.into(),
         );
         let mut second = first.clone();
         second.instrument_id = "ESZ26 P6900.XCME".parse().unwrap();
@@ -578,11 +578,11 @@ mod tests {
     #[rstest]
     fn test_portfolio_greeks_round_trip() {
         let values = [PortfolioGreeks {
-            ts_init: 17.into(),
-            ts_event: 19.into(),
             pnl: -125.5,
             price: 4310.25,
             greeks: sensitivities(),
+            ts_event: 19.into(),
+            ts_init: 17.into(),
         }];
 
         let batch = PortfolioGreeks::encode_batch(&values[0].metadata(), &values).unwrap();
@@ -600,11 +600,11 @@ mod tests {
     #[rstest]
     fn test_yield_curve_registered_custom_data_round_trip() {
         let curve = YieldCurve::new(
-            29.into(),
-            23.into(),
             "USD-SOFR".to_string(),
             vec![0.25, 1.0, 5.0],
             vec![0.043, 0.041, 0.038],
+            23.into(),
+            29.into(),
         );
         let item: Arc<dyn CustomDataTrait> = Arc::new(curve.clone());
 
@@ -633,11 +633,11 @@ mod tests {
     #[case(vec![], vec![-0.0, f64::from_bits(0x3fe0_0000_0000_0001)])]
     fn test_yield_curve_round_trip(#[case] tenors: Vec<f64>, #[case] interest_rates: Vec<f64>) {
         let curve = YieldCurve::new(
-            29.into(),
-            23.into(),
             "USD-SOFR".to_string(),
             tenors,
             interest_rates,
+            23.into(),
+            29.into(),
         );
         let batch =
             YieldCurve::encode_batch(&curve.metadata(), std::slice::from_ref(&curve)).unwrap();
@@ -689,11 +689,11 @@ mod tests {
     #[case("rho")]
     fn test_portfolio_greeks_rejects_null_values(#[case] name: &'static str) {
         let value = PortfolioGreeks {
-            ts_init: 17.into(),
-            ts_event: 19.into(),
             pnl: -125.5,
             price: 4310.25,
             greeks: sensitivities(),
+            ts_event: 19.into(),
+            ts_init: 17.into(),
         };
 
         let batch = PortfolioGreeks::encode_batch(&value.metadata(), &[value]).unwrap();
@@ -721,11 +721,11 @@ mod tests {
         };
 
         let value = YieldCurve::new(
-            29.into(),
-            23.into(),
             "USD-SOFR".to_string(),
             vec![0.25],
             vec![0.043],
+            23.into(),
+            29.into(),
         );
         let batch = YieldCurve::encode_batch(&value.metadata(), &[value]).unwrap();
         let index = batch.schema().index_of("curve_name").unwrap();
@@ -755,11 +755,11 @@ mod tests {
     #[case("interest_rates")]
     fn test_yield_curve_rejects_null_values(#[case] name: &'static str) {
         let value = YieldCurve::new(
-            29.into(),
-            23.into(),
             "USD-SOFR".to_string(),
             vec![0.25],
             vec![0.043],
+            23.into(),
+            29.into(),
         );
         let batch = YieldCurve::encode_batch(&value.metadata(), &[value]).unwrap();
         let index = batch.schema().index_of(name).unwrap();
