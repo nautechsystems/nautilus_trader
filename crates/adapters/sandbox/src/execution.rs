@@ -131,6 +131,29 @@ impl SandboxExecutionClient {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<Self> {
+        let fee_model = config.fee_model.clone().map(FeeModelHandle::from).ok_or_else(|| {
+            anyhow::anyhow!(
+                "SandboxExecutionClientConfig requires an explicit fee_model, including an explicit zero-fee model"
+            )
+        })?;
+
+        Ok(Self::new_with_fee_model(
+            core, config, clock, cache, fee_model,
+        ))
+    }
+
+    /// Creates a sandbox execution client with a runtime fee model.
+    ///
+    /// The supplied model takes precedence over `config.fee_model` and is shared
+    /// across all matching engines for this client.
+    #[must_use]
+    pub fn new_with_fee_model(
+        core: ExecutionClientCore,
+        config: SandboxExecutionClientConfig,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        fee_model: FeeModelHandle,
+    ) -> Self {
         let mut balances = AHashMap::new();
         for money in &config.starting_balances {
             balances.insert(money.currency.code.to_string(), *money);
@@ -141,12 +164,6 @@ impl SandboxExecutionClient {
             .clone()
             .map(FillModelHandle::from)
             .unwrap_or_default();
-
-        let fee_model = config.fee_model.clone().map(FeeModelHandle::from).ok_or_else(|| {
-            anyhow::anyhow!(
-                "SandboxExecutionClientConfig requires an explicit fee_model, including an explicit zero-fee model"
-            )
-        })?;
 
         let inner = Rc::new_cyclic(|weak: &std::rc::Weak<RefCell<SandboxInner>>| {
             RefCell::new(SandboxInner {
@@ -175,7 +192,7 @@ impl SandboxExecutionClient {
             core.base_currency,
         );
 
-        Ok(Self {
+        Self {
             core: RefCell::new(core),
             factory,
             config,
@@ -183,7 +200,7 @@ impl SandboxExecutionClient {
             handlers: RefCell::new(None),
             clock,
             cache,
-        })
+        }
     }
 
     /// Returns a reference to the configuration.
